@@ -186,6 +186,54 @@ TEST(PaperSigner, R20_PitViolation_AsOfInFuture) {
     EXPECT_EQ(resp.error, signer::SignerError::PitViolation);
 }
 
+// SIGNER-01 修 (小宋 W8 W1 retro 发现):
+// 现有 R20_PitViolation_AsOfInFuture 已验 as_of > now,
+// 但缺独立 case 专门验证仅 event_ts > now 的场景.
+// PaperSigner::AssertChainTs: event > 0 && ds >= event && ... && as_of <= now.
+// event_ts > now → as_of >= event > now → as_of > now → PitViolation.
+// 本 case 明确标注此语义, 补 SIGNER-01 盲点.
+TEST(PaperSigner, SIGNER01_R20_PitViolation_EventTsInFuture) {
+    signer::paper::VirtualNonceProvider   n{0};
+    signer::paper::VirtualGasEstimator    g;
+    signer::paper::VirtualConfirmWatcher  c{0xA0};
+    signer::paper::PaperSigner            s{&n, &g, &c};
+
+    const std::int64_t now = infra::wal::pit::NowRealtimeNs();
+
+    // event_ts > now (整条链必然在未来, as_of > now 触发 PitViolation)
+    signer::SignRequest req;
+    req.intent_id         = 100;
+    req.event_ts_ns       = now + 10'000'000'000LL;   // +10s future
+    req.data_source_ts_ns = req.event_ts_ns + 1'000LL;
+    req.ingestion_ts_ns   = req.data_source_ts_ns + 1'000LL;
+    req.as_of_ts_ns       = req.ingestion_ts_ns   + 1'000LL;
+
+    const auto resp = s.Sign(req);
+    EXPECT_EQ(resp.error, signer::SignerError::PitViolation)
+        << "SIGNER-01: event_ts > now must cause PitViolation";
+
+    // R-11: 即使 PIT 失败, audit_wal_kind 仍硬填 PaperAudit
+    EXPECT_EQ(resp.audit_wal_kind, infra::wal::WalKind::PaperAudit)
+        << "SIGNER-01: PaperAudit must be set even on PitViolation";
+
+    // R-20: nonce 未消耗 (PIT 入口拒绝)
+    EXPECT_EQ(n.Peek(), 0u)
+        << "SIGNER-01: nonce must not be consumed on PitViolation";
+
+    // edge case: event_ts = now + 100ms (明显未来, 远大于 Sign() 执行时间)
+    // 注: +1ns 不可靠 — Sign() 执行本身 >1ns, 内部 NowRealtimeNs() 会超过 now+1ns
+    //      SIGNER-01 盲点揭示: 只有"远大于执行时间"的未来 ts 才能稳定测试
+    signer::SignRequest req2;
+    req2.intent_id         = 101;
+    req2.event_ts_ns       = now + 100'000'000LL;   // +100ms future (稳定可测)
+    req2.data_source_ts_ns = req2.event_ts_ns + 1'000LL;
+    req2.ingestion_ts_ns   = req2.data_source_ts_ns + 1'000LL;
+    req2.as_of_ts_ns       = req2.ingestion_ts_ns   + 1'000LL;
+    const auto resp2 = s.Sign(req2);
+    EXPECT_EQ(resp2.error, signer::SignerError::PitViolation)
+        << "SIGNER-01: +100ms in future for event_ts must trigger PitViolation";
+}
+
 TEST(PaperSigner, NonceConsumedOnSuccess_NotOnPitViolation) {
     signer::paper::VirtualNonceProvider   n{0};
     signer::paper::VirtualGasEstimator    g;
