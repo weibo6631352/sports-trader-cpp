@@ -1,7 +1,8 @@
 <!--
-  sports-trader-cpp PR 模板 (老高 v1.1, W5 Wave 24).
-  规范来源: docs/RESEARCH/laogao-code-conventions-v1.md + laogao-pr-review-v1.1.md
+  sports-trader-cpp PR 模板 (老高 v1.7, W9 Wave 60).
+  规范来源: docs/RESEARCH/laogao-code-conventions-v1.md + laogao-pr-review-v1.7.md
   改本模板需走 PR + 老高/老郭/老雷 三方任一签字.
+  v1.7 新增: §9.5 ADR-027 cite block checkbox / §9.6 worktree commit verify checkbox.
 
   填写约定:
   - 7 节描述全部必填, 缺一被 reject.
@@ -267,6 +268,64 @@ FOM ref: <!-- 例: W7-F-04 或 N/A (不改 FOM 管控文件) -->
 - [ ] **abi_lock v1.5 自检** (改 include/stcpp/crypto/ed25519.hpp 或 CMakeLists.txt 含 stcpp_crypto_ed25519):
       PR description 已含 `ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>`;
       crypto INTERFACE target 变更影响 signer_v52 / STRATEGY_DECAYED CLI 下游, 已列下游 audit 清单
+
+---
+
+### 9.5 v1.7 新增自检 (Wave 60 — ADR-027 Enforce-3 配套)
+
+<!--
+  ADR-027 Enforce-1/3 (W9 W4 老高 CI 上线): 核心数据结构 SSOT cite C1-C4 强 enforce
+    C1: PR description 含 polymarket_ssot + goalserve_ssot 引用 (或 N/A 声明)
+    C2: OrderIntent/SignedOrder struct 含 token_id 字段
+    C3: Side enum 含 Buy + Sell (旧 BuyYes/BuyNo 不满足)
+    C4: PR description / diff 含 *-handshake-v*.md 文件引用
+  受约束的 6 个核心 struct:
+    OrderIntent / SignedOrder / Position / MarketInfo / FairValue / OrderBookSnapshot
+  abi_lock v1.7 新增:
+    OrderIntent / Position / Side / Outcome / SignV52Request / PositionKey ABI lock
+-->
+
+- [ ] **ADR-027 C1 SSOT cite 自检**: 本 PR 是否改动核心 struct?
+      - [ ] 未改动 OrderIntent / SignedOrder / Position 等 6 个核心 struct (N/A, 跳过)
+      - [ ] 改动了, PR description 已含 `polymarket_ssot_cite:` 引用
+            (`laoli-w8-polymarket-data-structure-ssot-v1.md`)
+      - [ ] 改动了, PR description 已含 `goalserve_ssot_cite:` 引用
+            (`xiaoduan-w8-goalserve-data-structure-ssot-v1.md`)
+            或显式声明 `goalserve_ssot_cite: N/A (struct 不涉及 Goalserve 数据路径)`
+- [ ] **ADR-027 C2 token_id 自检**: 本 PR 修改 OrderIntent / SignedOrder struct?
+      - [ ] 未修改 (N/A)
+      - [ ] 修改了, struct body 含 `token_id` 字段声明
+            (ADR-027 绝对约束: CLOB 下单必须字段, 缺失 = P0)
+- [ ] **ADR-027 C3 Side enum 自检**: 本 PR 修改 Side enum?
+      - [ ] 未修改 (N/A)
+      - [ ] 修改了, enum 含 `Buy = 0` 和 `Sell = 1` 两个值
+            (旧形态 `BuyYes/BuyNo` 不满足, 须重构)
+- [ ] **ADR-027 C4 handshake cite 自检**: 本 PR 改动核心 struct?
+      - [ ] 未改动 (N/A)
+      - [ ] 改动了, PR description 含 `*-handshake-v*.md` 文件引用
+            (如 `laoli-laoSun-handshake-v1.md` 或 `laohan-laosun-orderintent-signer-handshake-v1.md`)
+- [ ] **abi_lock v1.7 自检** (改 OrderIntent / Position / Side / Outcome / SignV52Request / PositionKey 时):
+      PR description 已含 `ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>`;
+      OrderIntent v0.5 4 处 ABI break 均为 L2, 需老韩 + 老孙 + GM 三方签 (laohan-w9-orderintent-v05-spec-v1.md §3.1)
+
+### 9.6 v1.7 worktree commit verify 自检 (Wave 60 — ADR-024 §3.1 防 GM 错 #19)
+
+<!--
+  ADR-024 §3.1 + GM 错 #19 防重演:
+    派单 prompt 含 isolation=worktree 时, 必须配套 pwd verify 步骤.
+    sub-agent 完成交付后必须在 worktree branch commit (不可直接写 main).
+  CI job ci-grep-worktree-commit-check FAIL:
+    docs/MEETINGS/*.md 改动中 isolation="worktree" 缺 "pwd verify" → FAIL
+-->
+
+- [ ] **ADR-024 worktree commit 自检**: 本 PR 涉及 Agent 工具调用?
+      - [ ] 不涉及 (N/A)
+      - [ ] 涉及, 所有 `isolation="worktree"` 派单均已配套 `pwd verify` 步骤
+            (docs/MEETINGS/ 派单 md 中, ±12 行窗口内含 "pwd verify")
+      - [ ] P0 紧急例外 (< 2h), 已在派单 md 中注明 "P0 例外, 老板 ack"
+- [ ] **sub-agent commit 自检**: 本 wave 所有 sub-agent 产出已 git commit 到 worktree branch?
+      - [ ] 是 (worktree branch commit hash 已在 §5 测试验证节贴出)
+      - [ ] N/A (本 PR 无 sub-agent 产出)
 
 ---
 

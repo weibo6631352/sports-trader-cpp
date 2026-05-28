@@ -1,18 +1,24 @@
 #!/usr/bin/env python3
-# tests/ci_grep/abi_lock.py — ABI lock enforce (老李-老孙 handshake v1 + crypto v1.5)
+# tests/ci_grep/abi_lock.py — ABI lock enforce (老李-老孙 handshake v1 + crypto + struct v1.7)
 #
-# Owner: 老高 (#17, code-quality-reviewer, F 顾问团)  v1.5 W8 Wave 35
+# Owner: 老高 (#17, code-quality-reviewer, F 顾问团)  v1.7 W9 Wave 60
 # 关联: docs/RESEARCH/laoli-laoSun-handshake-v1.md (ABI lock 规则 + 4 等级)
-#       docs/RESEARCH/laogao-pr-review-v1.5.md §2.18
+#       docs/RESEARCH/laogao-pr-review-v1.7.md §2
+#       docs/RESEARCH/laohan-w9-orderintent-v05-spec-v1.md §3.4
+#       docs/RESEARCH/laosun-w9-signer-v53-abi-align-spec-v1.md §4
 #       .github/workflows/pr.yml job ci-grep-abi-lock
+#       ADR-027 Enforce-3 (老高 W9 W4 上线)
 #
-# v1.5 新增 (W8 Wave 35):
-#   - ABI_LOCKED_FILES 加 include/stcpp/crypto/ed25519.hpp
-#   - CMakeLists.txt 含 stcpp_crypto_ed25519 关键词时触发 ABI lock 检查
-#   - crypto INTERFACE target 变更 = 下游 signer_v52 / STRATEGY_DECAYED CLI ABI 破坏
+# v1.7 新增 (W9 Wave 60):
+#   - ABI_LOCKED_STRUCTS: OrderIntent struct (老韩 W9 W2 改, 4 ABI break)
+#   - ABI_LOCKED_STRUCTS: Position struct (老周 W8 W4 ABI gap audit 发现)
+#   - ABI_LOCKED_ENUMS: Outcome enum (新增, ADR-027)
+#   - ABI_LOCKED_ENUMS: Side enum (新增, ADR-027)
+#   - ABI_LOCKED_IPC: SignV52Request (老孙 W9 W2 改, +token_id +side +outcome)
+#   - ABI_LOCKED_KEYS: PositionLedger key 从 MarketId → PositionKey (老周 W8 W4)
+#   - Rule 4: 改上述 struct/enum 时 PR description 必须含 ABI ref 行
 #
-# 规则 (2 条, v1.4 保留 + v1.5 扩展文件范围):
-#
+# v1.5 规则 (保留):
 #   Rule 1: PR 改 ABI_LOCKED_FILES 中任一文件时,
 #           PR description 必须含:
 #             "ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>"
@@ -22,8 +28,12 @@
 #           若等级为 L2 或 L3 (handshake 文档中三方签要求),
 #           PR description 必须含 "三方签" 字样.
 #
-#   Rule 3 (v1.5 新): CMakeLists.txt 含 stcpp_crypto_ed25519 关键词变更时,
+#   Rule 3 (v1.5): CMakeLists.txt 含 stcpp_crypto_ed25519 关键词变更时,
 #           PR description 必须含 ABI ref 行 (crypto INTERFACE target = ABI 边界).
+#
+#   Rule 4 (v1.7 新): PR diff 改动 OrderIntent / Position / SignV52Request struct
+#           定义文件时, PR description 必须含 ABI ref 行.
+#           (ADR-027 Enforce-3 配套)
 #
 # 扫描方式:
 #   本脚本通过 git diff --name-only origin/<base>...HEAD 探测变更文件.
@@ -56,11 +66,33 @@ ABI_LOCKED_FILES = {
     "include/stcpp/polymarket/live/live_pm_client.hpp",
     # v1.5 W8: 老孙 ed25519 wrapper ABI lock (SecureBuffer + Ed25519 sign/verify 接口)
     "include/stcpp/crypto/ed25519.hpp",
+    # v1.7 W9: OrderIntent 定义文件 (老韩 W9 W2 4 ABI breaks, ADR-027 Enforce-3)
+    "include/stcpp/risk/risk_gateway.hpp",
+    # v1.7 W9: SignV52Request IPC 结构 (老孙 W9 W2, +token_id +side +outcome)
+    "include/stcpp/signer/signer_iface.hpp",
+    # v1.7 W9: Position / PositionRecord ABI (老周 W8 W4 gap audit, PositionKey 变更)
+    "include/stcpp/infra/wal/position_record.hpp",
+    "include/stcpp/infra/wal/position_ledger.hpp",
+    # v1.7 W9: Side + Outcome enum (signal_iface.hpp, ADR-027 新增)
+    "include/stcpp/strategy/signal_iface.hpp",
 }
 
 # v1.5: CMake target 含此关键词时触发 ABI lock 检查 (crypto INTERFACE target = ABI 边界)
 ABI_LOCKED_CMAKE_KEYWORDS = {
     "stcpp_crypto_ed25519",
+}
+
+# v1.7: struct/enum 关键词触发检查 (diff 中新增/修改这些 struct/enum 定义时需 ABI ref)
+# 匹配 diff 新增行中的 "struct OrderIntent" / "enum class Side" 等模式
+ABI_LOCKED_STRUCT_KEYWORDS = {
+    "struct OrderIntent",
+    "struct Position",
+    "struct SignV52Request",
+    "enum class Side",
+    "enum class Outcome",
+    # PositionLedger key 类型 (PositionKey)
+    "PositionKey",
+    "PositionLedger",
 }
 
 # Rule 1: PR description 必须含 ABI ref 行
@@ -126,8 +158,36 @@ def check_static_assert_changes(repo_root: Path, changed_files: list[str]) -> bo
     return False
 
 
+def check_struct_keyword_changes(repo_root: Path, changed_files: list[str]) -> list[str]:
+    """Return list of ABI struct keywords found in diff new lines.
+
+    v1.7: scan diff for struct/enum definition changes in ABI_LOCKED_STRUCT_KEYWORDS.
+    Returns matched keywords found in added lines of the diff.
+    """
+    triggered: list[str] = []
+    if not changed_files:
+        return triggered
+    try:
+        result = subprocess.run(
+            ["git", "diff", "origin/main...HEAD", "--", *changed_files],
+            capture_output=True,
+            text=True,
+            cwd=repo_root,
+            timeout=10,
+        )
+        diff_text = result.stdout
+        for line in diff_text.splitlines():
+            if line.startswith("+") and not line.startswith("+++"):
+                for kw in ABI_LOCKED_STRUCT_KEYWORDS:
+                    if kw in line and kw not in triggered:
+                        triggered.append(kw)
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return triggered
+
+
 def main() -> int:
-    ap = argparse.ArgumentParser(description="ABI lock enforce (handshake v1 配套)")
+    ap = argparse.ArgumentParser(description="ABI lock enforce (handshake v1 + struct v1.7)")
     ap.add_argument(
         "--repo-root",
         type=Path,
@@ -173,20 +233,26 @@ def main() -> int:
             except OSError:
                 pass
 
-    if not changed_abi_files:
+    # Rule 4 (v1.7): struct/enum 关键词出现在 diff 新增行
+    struct_kw_triggered = check_struct_keyword_changes(repo_root, changed_files)
+
+    if not changed_abi_files and not struct_kw_triggered:
         print("[abi_lock] PASS: 本 PR 未修改 ABI 锁定文件, 检查跳过")
         return 0
 
-    print(f"[abi_lock] 检测到 ABI 锁定文件变更: {changed_abi_files}")
+    if changed_abi_files:
+        print(f"[abi_lock] 检测到 ABI 锁定文件变更: {changed_abi_files}")
     if cmake_abi_triggered:
         print("[abi_lock] (Rule 3 v1.5) CMakeLists.txt 含 stcpp_crypto_ed25519 关键词 — crypto INTERFACE ABI 边界触发")
+    if struct_kw_triggered:
+        print(f"[abi_lock] (Rule 4 v1.7) diff 新增行含 ABI 锁定 struct/enum 关键词: {struct_kw_triggered}")
 
     errors: list[str] = []
 
     # Rule 1: PR description 必须含 ABI ref 行
     if not _ABI_REF_RE.search(pr_body):
         errors.append(
-            "ABI lock Rule 1: 修改 pm_client.hpp / live_pm_client.hpp 时, "
+            "ABI lock Rule 1: 修改 ABI 锁定文件时, "
             "PR description 必须含:\n"
             "  'ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>'\n"
             "  示例: 'ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-02 L1'"
@@ -216,6 +282,18 @@ def main() -> int:
                     "请确认 ABI ref 行中的等级标记."
                 )
 
+    # Rule 4 (v1.7): 改 OrderIntent / Position / Side / Outcome / SignV52Request / PositionKey
+    #   时必须含 ABI ref 行 (ADR-027 Enforce-3)
+    if struct_kw_triggered and not _ABI_REF_RE.search(pr_body):
+        struct_kw_str = ", ".join(struct_kw_triggered)
+        errors.append(
+            f"ABI lock Rule 4 (v1.7 ADR-027 Enforce-3): diff 含 ABI 锁定 struct/enum 关键词 "
+            f"({struct_kw_str}), PR description 必须含:\n"
+            "  'ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>'\n"
+            "  OrderIntent/Side/Outcome/SignV52Request/PositionKey 变更均为 ABI breaking.\n"
+            "  见 docs/RESEARCH/laohan-w9-orderintent-v05-spec-v1.md §3.4 等级表"
+        )
+
     if not errors:
         print("[abi_lock] PASS: ABI lock 检查通过")
         return 0
@@ -230,7 +308,9 @@ def main() -> int:
         "  在 PR description §Why 或专门一行加:\n"
         "    ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-<编号> L<等级>\n"
         "  L2/L3 需额外加: 三方签 (老李 / 老孙 / GM 或 老郭 / 老韩 / GM)\n"
-        "  详见 docs/RESEARCH/laoli-laoSun-handshake-v1.md §1 改动等级表",
+        "  详见 docs/RESEARCH/laoli-laoSun-handshake-v1.md §1 改动等级表\n"
+        "  v1.7 新增 Rule 4: OrderIntent/Side/Outcome/SignV52Request/PositionKey\n"
+        "  改动均需 ABI ref 行 (ADR-027 Enforce-3)",
         file=sys.stderr,
     )
     return 1

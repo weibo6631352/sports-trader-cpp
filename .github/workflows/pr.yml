@@ -1,20 +1,24 @@
 name: PR Checks
-# 老高 v1.5 (W8 Wave 35) — v1.4 + 2 新 Python grep job + abi_lock v1.5 crypto + ADR-023
+# 老高 v1.7 (W9 Wave 60) — v1.5 + 3 新 Python grep job + abi_lock v1.7 struct + ADR-027
 # 红线: PR <= 8 min, 命中即 reject
 # 改本文件: 老高 + 老郭 + 老雷 三方任一签字, PR 描述带 "spec by 老郭" 走 ADR-005 派单
 #
-# v1.5 新增 job (Wave 35 GM 错 #21 补救, ADR-021/023 配套):
-#   ci-grep-ic-no-self-test   — IC 漏写测试 WARN W8-W9, FAIL W10 (ADR-023 IC 自测唯一裁判)
-#   ci-grep-worktree-check    — ADR-021 worktree 隔离 FAIL W8 起 (派单 md subagent_type= 必含 isolation)
-#   ci-grep-abi-lock 升 v1.5  — 加 ed25519.hpp + CMakeLists stcpp_crypto_ed25519 关键词 ABI lock
+# v1.7 新增 job (Wave 60, ADR-027 Enforce-3 上线):
+#   ci-grep-core-data-structure-ssot  — ADR-027 C1-C4 SSOT cite + token_id + Side enum + handshake
+#   ci-grep-worktree-commit-check     — ADR-024 §3.1 isolation=worktree 必伴 pwd verify (防 GM 错 #19)
+#   ci-grep-gm-merge-audit            — ADR-024 §6 GM merge commit message 格式 WARN (老郭 spec)
+#   ci-grep-abi-lock 升 v1.7          — 加 OrderIntent/Position/Side/Outcome/SignV52Request/PositionKey
 #
+# v1.5 (W8 Wave 35) 2 新 job 保留:
+#   ci-grep-ic-no-self-test   — IC 漏写测试 WARN W8-W9, FAIL W10
+#   ci-grep-worktree-check    — ADR-021 worktree 隔离 FAIL W8 起
 # v1.4 (W7 Wave 33) 5 新 job 保留:
 #   ci-grep-gm-commit-author / ci-grep-binary-large-file / ci-grep-fom
 #   ci-grep-abi-cascade / ci-grep-adr010-wno
 # v1.2 (W6 Wave 28) 5 新 job 保留:
 #   ci-grep-r20-pit-chain / ci-grep-r12-wss-blocking / ci-grep-r33-5host-paper
 #   ci-grep-hmac-4bug / ci-grep-adr009-model-tier
-# 总 grep job: 15 → 17
+# 总 grep job: 17 → 20
 
 on:
   pull_request:
@@ -484,3 +488,60 @@ jobs:
         with: { python-version: '3.11' }
       - name: Run worktree_check.py
         run: python3 tests/ci_grep/worktree_check.py
+
+  # ---------------------------------------------------------------------------
+  # v1.7 新增: 3 Python grep job (Wave 60 — ADR-027 Enforce-3 + ADR-024 §3.1/§6)
+  # ---------------------------------------------------------------------------
+
+  ci-grep-core-data-structure-ssot:
+    # ADR-027 Enforce-3: 核心数据结构 SSOT cite C1-C4 检查
+    # C1: PR description 含 polymarket_ssot + goalserve_ssot 引用
+    # C2: OrderIntent/SignedOrder struct 含 token_id 字段
+    # C3: Side enum 含 Buy + Sell
+    # C4: PR 含 *-handshake-v*.md 引用
+    name: ADR-027 核心数据结构 SSOT cite C1-C4 (v1.7, FAIL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run core_data_structure_ssot_check.py
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tests/ci_grep/core_data_structure_ssot_check.py
+
+  ci-grep-worktree-commit-check:
+    # ADR-024 §3.1: isolation=worktree 派单必须配套 pwd verify (防 GM 错 #19)
+    # Rule A (FAIL): isolation=worktree 缺 pwd verify
+    # Rule B (WARN): 疑似 sub-agent 跨写 main
+    name: ADR-024 worktree+pwd verify 强约束 (v1.7, Rule A FAIL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run worktree_commit_check.py
+        run: python3 tests/ci_grep/worktree_commit_check.py
+
+  ci-grep-gm-merge-audit:
+    # ADR-024 §6 GM merge commit message 格式 WARN (老郭 spec)
+    # GM 老雷 merge 时 commit message 建议含 "merge: <persona> <Wave NN>"
+    # 当前 WARN-only (exit 0), 不阻断 PR
+    name: ADR-024 GM merge commit message audit (v1.7, WARN-only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run gm_merge_audit.py
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tests/ci_grep/gm_merge_audit.py
