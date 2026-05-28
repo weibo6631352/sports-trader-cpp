@@ -300,8 +300,8 @@ TEST(GoalserveDevig_T4, HappyPath_BuyYes) {
     GoalserveDevigSignal sig(f.goalserve, f.pm, f.games, BANKROLL_USDC);
     auto const out = sig.tick(make_ctx());
     ASSERT_TRUE(out.has_value());
-    // PM_mid=0.40 < p_yes_fair~0.461 → BUY_YES
-    EXPECT_EQ(out->side, Side::BuyYes);
+    // PM_mid=0.40 < p_yes_fair~0.461 → BUY (v0.5: Side::Buy, outcome 由 Orchestrator 层设)
+    EXPECT_EQ(out->side, Side::Buy);
     EXPECT_EQ(out->signal_id, SignalId::P0_01_PinnacleNoVig);  // ABI lock
     EXPECT_GT(out->edge_bps, 0);
     EXPECT_GT(out->suggested_size_usdc, 0);
@@ -321,7 +321,8 @@ TEST(GoalserveDevig_T4, HappyPath_BuyNo) {
     GoalserveDevigSignal sig(f.goalserve, f.pm, f.games, BANKROLL_USDC);
     auto const out = sig.tick(make_ctx());
     ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out->side, Side::BuyNo);
+    // v0.5: side=Buy (outcome 由 Orchestrator 层按 token_id 决定)
+    EXPECT_EQ(out->side, Side::Buy);
 }
 
 // Cond 1: edge ≤ 0.05 → nullopt

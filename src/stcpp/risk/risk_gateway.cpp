@@ -1,19 +1,29 @@
-// stcpp/risk/risk_gateway.cpp — RiskGateway v0.1 (老韩 Sprint-2 W4 Wave 19)
-//   + W5 Wave 24 ADR-004 patch (老沈, 2026-05-28): position_caps / liquidity 顺序互换
+// stcpp/risk/risk_gateway.cpp — RiskGateway v0.5 (老沈 W9 Wave 57 P0)
+//   + v0.4 origin: W5 Wave 24 ADR-004 patch (老沈, 2026-05-28)
 //
-// 21 reject rule short-circuit 优先级 (SSOT = ADR-004, 见
-// docs/ADR/2026-05-28-r07-r08-liquidity-vs-position-cap-priority.md):
-//   state → invalid_intent (含 PIT) → duplicate → stale_data → market →
-//   position_caps (cap/exposure/bankroll/loss) → liquidity (depth/fill/slippage) →
-//   signal (CI / negated_by_slip) → strategy_decayed → AUDIT_WAL_BACKPRESSURE
+// v0.5 变更:
+//   OrderIntent: market_id → condition_id, +token_id, +outcome, is_buy → side
+//   check_invalid_intent_: + token_id/condition_id 非空校验 (MISSING_TOKEN_ID / MISSING_CONDITION_ID)
+//   check_position_caps_: R6.2a per_condition + R6.2b per_outcome (EXCEED_PER_OUTCOME_CAP)
+//   check_stale_data_: + R8.4 book_token_id_mismatch (BOOK_TOKEN_ID_MISMATCH)
+//   check_market_: 使用 condition_id 查 market_active / market_state
+//   emit_audit_: market_id → condition_id + token_id + outcome + side
+//   State_: + condition_exposure / token_exposure / token_book_freshness_ms
+//   DRAIN 放行条件: is_close=true AND side=Sell (laohan spec §2.4)
 //
-// 注: signal.EDGE_NEGATED_BY_SLIPPAGE 读 d.slippage_bps 由 liquidity 阶段填. liquidity
-// 仍在 signal 之前, 数据流不破 (ADR-004 §4 note).
+// cite:
+//   polymarket_ssot_cite: laoli-w8-polymarket-data-structure-ssot-v1.md §3 §4.1 §6
+//   goalserve_ssot_cite:  N/A (OrderIntent 不接 Goalserve)
+//   handshake_cite:       laoli-laoSun-handshake-v1.md §3 SignedOrder ABI lock
+//   adr_ref:              ADR-027 §4 Enforce-1/2/3/4
 //
-// emit 失败 → AUDIT_WAL_BACKPRESSURE; INTERNAL_ERROR 兜底.
+// 10 reject rule short-circuit 顺序 (SSOT = ADR-004):
+//   state → invalid_intent → duplicate → stale_data → market →
+//   position_caps (R6.2a + R6.2b) → liquidity → signal → strategy_decayed → AUDIT_WAL_BACKPRESSURE
 
 #include "stcpp/risk/risk_gateway.hpp"
 
+#include <cctype>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -32,7 +42,7 @@ namespace {
     return infra::wal::pit::NowRealtimeNs();
 }
 
-// PIT 4 ts 5 violation 映射 (老韩 v0.3.1 + 老孙 v5.1)
+// PIT 4 ts violation mapping (老韩 v0.3.1 + 老孙 v5.1)
 [[nodiscard]] InvalidIntentSubReason pit_violation_to_sub(OrderIntent const& it,
                                                           std::int64_t now_ns) noexcept {
     if (it.event_ts_ns <= 0) {
@@ -49,7 +59,7 @@ namespace {
     return !(x != x) && x > -1e300 && x < 1e300;
 }
 
-// SlippageModel sub_reason → RM sub_reason (lib-local → risk::)
+// SlippageModel sub_reason → RM sub_reason
 [[nodiscard]] InvalidIntentSubReason map_slippage_sub(numerical::InvalidIntentSubReason s) noexcept {
     using S = numerical::InvalidIntentSubReason;
     switch (s) {
@@ -63,14 +73,30 @@ namespace {
     return InvalidIntentSubReason::NONE;
 }
 
+// v0.5: token_id 格式校验 (uint256 string: 纯数字, 最多 77 位)
+// SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 §5 T-05
+[[nodiscard]] bool is_valid_token_id(std::string const& tid) noexcept {
+    if (tid.empty() || tid.size() > 77u) return false;
+    for (char c : tid) {
+        if (!std::isdigit(static_cast<unsigned char>(c))) return false;
+    }
+    return true;
+}
+
 }  // namespace
 
-// pImpl: 幂等 cache + per-market exposure / freshness / state / 信号缓存
+// pImpl: 幂等 cache + per-market/condition/token exposure / freshness / state / signal
 struct RiskGateway::State_ {
     mutable std::mutex                                     mu;
     std::unordered_set<std::string>                        seen_signal_ids;
+    // v0.4 兼容: market_id (= condition_id) → exposure
     std::unordered_map<std::string, std::int64_t>          market_exposure_usdc;
+    // v0.5: per-condition + per-token exposure
+    std::unordered_map<std::string, std::int64_t>          condition_exposure_usdc;
+    std::unordered_map<std::string, std::int64_t>          token_exposure_usdc;
     std::unordered_map<std::string, std::uint32_t>         market_freshness_ms;
+    // v0.5: per-token book freshness (R8.4)
+    std::unordered_map<std::string, std::uint32_t>         token_book_freshness_ms;
     std::unordered_map<std::string, MarketState>           market_state;
     std::unordered_map<std::string, bool>                  market_active;
     std::unordered_map<std::string, double>                signal_edge_ci_lower;
@@ -87,12 +113,26 @@ RiskGateway::RiskGateway(RiskConfig cfg,
 
 RiskGateway::~RiskGateway() = default;
 
-// ---------- setter (W5 接真账本 / 真 ledger) ----------------------------------
+// ---------- setters ----------------------------------------------------------
 
 void RiskGateway::set_market_exposure(std::string const& m, std::int64_t v) noexcept {
     std::lock_guard<std::mutex> g(s_->mu);
+    // v0.4 兼容: 同时写 market_exposure_usdc + condition_exposure_usdc
     s_->market_exposure_usdc[m] = v;
+    s_->condition_exposure_usdc[m] = v;
 }
+
+void RiskGateway::set_condition_exposure(std::string const& cid, std::int64_t v) noexcept {
+    std::lock_guard<std::mutex> g(s_->mu);
+    s_->condition_exposure_usdc[cid] = v;
+    s_->market_exposure_usdc[cid] = v;  // keep compat map in sync
+}
+
+void RiskGateway::set_outcome_exposure(std::string const& token_id, std::int64_t v) noexcept {
+    std::lock_guard<std::mutex> g(s_->mu);
+    s_->token_exposure_usdc[token_id] = v;
+}
+
 void RiskGateway::set_edge_ci_lower(std::string const& sig, double v) noexcept {
     std::lock_guard<std::mutex> g(s_->mu); s_->signal_edge_ci_lower[sig] = v;
 }
@@ -101,6 +141,9 @@ void RiskGateway::set_strategy_ev_ratio(std::string const& sid, double r) noexce
 }
 void RiskGateway::set_market_freshness_ms(std::string const& m, std::uint32_t ms) noexcept {
     std::lock_guard<std::mutex> g(s_->mu); s_->market_freshness_ms[m] = ms;
+}
+void RiskGateway::set_token_book_freshness_ms(std::string const& token_id, std::uint32_t ms) noexcept {
+    std::lock_guard<std::mutex> g(s_->mu); s_->token_book_freshness_ms[token_id] = ms;
 }
 void RiskGateway::set_market_state(std::string const& m, MarketState st) noexcept {
     std::lock_guard<std::mutex> g(s_->mu); s_->market_state[m] = st;
@@ -112,54 +155,46 @@ void RiskGateway::clear_idempotency() noexcept {
     std::lock_guard<std::mutex> g(s_->mu); s_->seen_signal_ids.clear();
 }
 
-// ---------- audit_id 生成 (ULID stub: 6B ts ms-big-endian + 6B seq + 4B rand) -
+// ---------- audit_id 生成 (ULID stub) ----------------------------------------
 //
-// BUG-W5-001 patch (老沈, W5 Wave 24, 2026-05-28):
-//   原实现 seq 段 `seq >> ((9 - i) * 8)` 在 i=0 时 shift = 72, 而 seq 是
-//   `uint64_t` (64 位), shift >= 64 为 UB; -O2 整段被优化成 0, 14 个
-//   RiskGatewayTest.R* 在 release 模式 audit_id 全零, R-1 invariant 破.
-//   修法 1 (小宋 W5 W3): seq 占 6 byte big-endian (shift < 48 安全, 与 ts_ms 段
-//   同语义), out[12..15] 4 byte 留 randomness (paper v0.1 占位 0, M5 接老孙
-//   ULID generator / BLAKE3 时填). precedence 括号同步加, 防 `>> n & 0xFF`
-//   按 `>> (n & 0xFF)` 误解.
-//
-// 红线复核: R-1 (audit_id 非空 invariant), 签名 ABI 不动 (static, std::int64_t →
-//          std::array<uint8_t,16>), enum 数值不动.
+// BUG-W5-001 patch: seq 段 shift 修正 (原 shift=72 是 uint64 UB)
+// 见 老沈 W5 Wave 24 注释.
 
 std::array<std::uint8_t, 16> RiskGateway::next_audit_id(std::int64_t now_ns) noexcept {
-    // ULID monotonic stub. 单测用; 真上线 M5 接老孙 ULID generator + thread-local seq.
     static std::atomic<std::uint64_t> g_seq{0};
     std::array<std::uint8_t, 16> out{};
-    // ts_ms big-endian 6 byte (shift < 48 安全)
     auto const ts_ms = static_cast<std::uint64_t>(now_ns / 1'000'000LL);
     for (int i = 0; i < 6; ++i) {
         out[static_cast<std::size_t>(i)] =
             static_cast<std::uint8_t>((ts_ms >> ((5 - i) * 8)) & 0xFFu);
     }
-    // seq big-endian 6 byte (shift < 48 安全; 原 10 byte = shift 72 是 UB)
     auto const seq = g_seq.fetch_add(1, std::memory_order_relaxed);
     for (int i = 0; i < 6; ++i) {
         out[6 + static_cast<std::size_t>(i)] =
             static_cast<std::uint8_t>((seq >> ((5 - i) * 8)) & 0xFFu);
     }
-    // out[12..15] 4 byte randomness 占位 (M5 老孙 ULID rand / BLAKE3 接)
     for (int i = 12; i < 16; ++i) {
         out[static_cast<std::size_t>(i)] = 0;
     }
     return out;
 }
 
-// ---------- 21 rule helpers --------------------------------------------------
+// ---------- 10 rule helpers --------------------------------------------------
 
+// 1. state
 bool RiskGateway::check_state_(OrderIntent const& it, RiskDecision& d) const noexcept {
     auto const st = state_.load(std::memory_order_acquire);
-    // 开仓在 HALTED / DRAIN / SAFE_MODE 一律拒. 平仓 (is_close) 在 DRAIN / SAFE_MODE 放行, HALTED 仍拒.
+    // v0.5 DRAIN 放行条件: is_close=true AND side=Sell (laohan spec §2.4)
     switch (st) {
         case RmState::HALTED:
             d.reject = RejectCode::STATE_HALTED;
             return true;
         case RmState::DRAIN:
-            if (!it.is_close) { d.reject = RejectCode::STATE_DRAIN; return true; }
+            // DRAIN: 仅 is_close=true + side=Sell 放行
+            if (!it.is_close || it.side != Side::Sell) {
+                d.reject = RejectCode::STATE_DRAIN;
+                return true;
+            }
             return false;
         case RmState::SAFE_MODE:
             if (!it.is_close) { d.reject = RejectCode::STATE_SAFE_MODE; return true; }
@@ -171,32 +206,51 @@ bool RiskGateway::check_state_(OrderIntent const& it, RiskDecision& d) const noe
     return false;
 }
 
+// 2. invalid_intent
 bool RiskGateway::check_invalid_intent_(OrderIntent const& it, RiskDecision& d) const noexcept {
     auto const now = now_realtime_ns();
-    // (a) R-20 4 ts PIT chain (5 violation)
-    auto const pit_sub = pit_violation_to_sub(it, now);
-    auto fail = [&](InvalidIntentSubReason s) noexcept {
+    auto fail = [&](InvalidIntentSubReason s) noexcept -> bool {
         d.reject = RejectCode::INVALID_INTENT; d.sub_reason = s; return true;
     };
+
+    // (a) R-20 4 ts PIT chain
+    auto const pit_sub = pit_violation_to_sub(it, now);
     if (pit_sub != InvalidIntentSubReason::NONE) return fail(pit_sub);
-    if (it.book_snapshot_ts_ns <= 0)             return fail(InvalidIntentSubReason::BOOK_TS_ZERO);
+
+    // (b) book_snapshot_ts
+    if (it.book_snapshot_ts_ns <= 0) return fail(InvalidIntentSubReason::BOOK_TS_ZERO);
     constexpr std::int64_t STALE_60S_NS = 60'000'000'000LL;
     if (now - it.book_snapshot_ts_ns > STALE_60S_NS) return fail(InvalidIntentSubReason::BOOK_TS_STALE);
+
+    // (c) NaN / Inf
     if (!is_finite(it.price) || !is_finite(it.book_depth_l1_usdc) || !is_finite(it.tick_size))
         return fail(InvalidIntentSubReason::NAN_OR_INF);
+
+    // (d) 负值 / 零
     if (it.size_usdc <= 0 || it.price <= 0.0 || it.price >= 1.0 ||
         it.book_depth_l1_usdc <= 0.0 || it.tick_size <= 0.0)
         return fail(InvalidIntentSubReason::NEGATIVE);
-    // tick 仅 {0.001, 0.01}
+
+    // (e) tick: {0.001, 0.01}
     constexpr double TICK_TOL = 1e-9;
-    double const a1 = std::fabs(it.tick_size - 0.001);
-    double const a2 = std::fabs(it.tick_size - 0.01);
-    if (a1 > TICK_TOL && a2 > TICK_TOL) return fail(InvalidIntentSubReason::ILLEGAL_TICK);
-    if (it.feature_snapshot_id.empty() || it.market_id.empty() || it.signal_id.empty())
+    if (std::fabs(it.tick_size - 0.001) > TICK_TOL && std::fabs(it.tick_size - 0.01) > TICK_TOL)
+        return fail(InvalidIntentSubReason::ILLEGAL_TICK);
+
+    // (f) 必填字段
+    if (it.feature_snapshot_id.empty() || it.signal_id.empty())
         return fail(InvalidIntentSubReason::TS_UNKNOWN_SRC);
+
+    // (g) v0.5: condition_id 非空
+    if (it.condition_id.empty()) return fail(InvalidIntentSubReason::MISSING_CONDITION_ID);
+
+    // (h) v0.5: token_id 非空 + 格式 (uint256 纯数字, ≤77 位)
+    if (it.token_id.empty()) return fail(InvalidIntentSubReason::MISSING_TOKEN_ID);
+    if (!is_valid_token_id(it.token_id)) return fail(InvalidIntentSubReason::INVALID_TOKEN_ID_FORMAT);
+
     return false;
 }
 
+// 3. duplicate
 bool RiskGateway::check_duplicate_(OrderIntent const& it, RiskDecision& d) noexcept {
     std::lock_guard<std::mutex> g(s_->mu);
     auto const [it_, inserted] = s_->seen_signal_ids.insert(it.signal_id);
@@ -208,42 +262,62 @@ bool RiskGateway::check_duplicate_(OrderIntent const& it, RiskDecision& d) noexc
     return false;
 }
 
+// 4. stale_data (含 R8.4 book_token_id_mismatch)
 bool RiskGateway::check_stale_data_(OrderIntent const& it, RiskDecision& d) const noexcept {
     std::lock_guard<std::mutex> g(s_->mu);
 
-    // recon 全局 freshness (10s WARNING / 30s HALT, 不分 MarketState)
+    // recon 全局 freshness (30s HALT)
     auto const recon_ms = recon_freshness_ms_.load(std::memory_order_acquire);
     if (recon_ms > 30'000) {
         d.reject = RejectCode::STALE_DATA;
         return true;
     }
 
-    // market freshness vs MarketState 阈值
-    auto fs_it = s_->market_freshness_ms.find(it.market_id);
-    if (fs_it == s_->market_freshness_ms.end()) {
-        return false;  // 无数据 = 不判 stale (其他 rule 拦)
+    // market freshness vs MarketState 阈值 (按 condition_id 查)
+    // v0.5: 优先查 condition_id, 兼容 v0.4 market_id
+    std::string const& key = it.condition_id.empty() ? it.condition_id : it.condition_id;
+    auto fs_it = s_->market_freshness_ms.find(key);
+    if (fs_it != s_->market_freshness_ms.end()) {
+        auto st_it = s_->market_state.find(key);
+        MarketState const st = (st_it == s_->market_state.end()) ? MarketState::INPLAY_HOT : st_it->second;
+        auto const th = threshold_of(st);
+        if (fs_it->second > th.halt_ms) {
+            d.reject = RejectCode::STALE_DATA;
+            return true;
+        }
     }
-    auto st_it = s_->market_state.find(it.market_id);
-    MarketState const st = (st_it == s_->market_state.end()) ? MarketState::INPLAY_HOT : st_it->second;
-    auto const th = threshold_of(st);
-    if (fs_it->second > th.halt_ms) {
-        d.reject = RejectCode::STALE_DATA;
-        return true;
+
+    // R8.4 (v0.5): book_snapshot_ts ↔ token_id 一致性
+    // 若 token_book_freshness_ms 已设置, 校验 token_id 对应 book 是否 stale
+    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §4.1
+    if (!it.token_id.empty()) {
+        auto tbf_it = s_->token_book_freshness_ms.find(it.token_id);
+        if (tbf_it != s_->token_book_freshness_ms.end()) {
+            // 若 token book freshness 超 stale threshold (和 market 同档位), 拒
+            auto st_it = s_->market_state.find(it.condition_id);
+            MarketState const st = (st_it == s_->market_state.end()) ? MarketState::INPLAY_HOT : st_it->second;
+            auto const th = threshold_of(st);
+            if (tbf_it->second > th.halt_ms) {
+                d.reject = RejectCode::STALE_DATA;
+                d.sub_reason = InvalidIntentSubReason::BOOK_TOKEN_ID_MISMATCH;
+                return true;
+            }
+        }
     }
-    // WARNING: DEFERRED (此 v0.1 暂返 REJECTED + STALE_DATA, W5 真接 Decision::DEFERRED)
-    // 这里保守先不开 DEFERRED 分支, 待小肖 Kelly 0.5x 落地后开 (v0.3 §14.5)
+
     return false;
 }
 
+// 5. market
 bool RiskGateway::check_market_(OrderIntent const& it, RiskDecision& d) const noexcept {
-    // MARKET_TYPE_NOT_ENABLED (MVP 简化: 全部归 moneyline, 后续接 market_metadata)
     if (!cfg_.enable_moneyline && !cfg_.enable_totals && !cfg_.enable_spreads) {
         d.reject = RejectCode::MARKET_TYPE_NOT_ENABLED;
         return true;
     }
-    // MARKET_NOT_ACTIVE
+    // v0.5: 按 condition_id 查 market_active
     std::lock_guard<std::mutex> g(s_->mu);
-    auto a_it = s_->market_active.find(it.market_id);
+    std::string const& key = it.condition_id.empty() ? it.condition_id : it.condition_id;
+    auto a_it = s_->market_active.find(key);
     if (a_it != s_->market_active.end() && !a_it->second) {
         d.reject = RejectCode::MARKET_NOT_ACTIVE;
         return true;
@@ -251,58 +325,46 @@ bool RiskGateway::check_market_(OrderIntent const& it, RiskDecision& d) const no
     return false;
 }
 
-bool RiskGateway::check_liquidity_(OrderIntent const& it, RiskDecision& d) const noexcept {
-    // 调 SlippageModel (小肖 v1)
-    numerical::SlippageInput in{
-        .order_size_usdc      = static_cast<double>(it.size_usdc),
-        .quote_price          = it.price,
-        .book_depth_l1_usdc   = it.book_depth_l1_usdc,
-        .book_snapshot_ts_ns  = it.book_snapshot_ts_ns,
-        .wall_now_ns          = now_realtime_ns(),
-        .tick_size            = it.tick_size,
-    };
-    auto const out = numerical::SlippageModel::compute(in, numerical::SlippageMode::Linear);
-    d.slippage_bps       = out.slippage_bps;
-    d.expected_fill_rate = out.expected_fill_rate;
-
-    switch (out.reject) {
-        case numerical::RejectCode::Ok:
-            break;
-        case numerical::RejectCode::InvalidIntent:
-            // 不应到这里 (check_invalid_intent_ 已过), 但 fail-closed
-            d.reject     = RejectCode::INVALID_INTENT;
-            d.sub_reason = map_slippage_sub(out.sub_reason);
-            return true;
-        case numerical::RejectCode::ExceedBookDepth:
-            d.reject = RejectCode::EXCEED_BOOK_DEPTH;
-            return true;
-        case numerical::RejectCode::FillRateBelowFloor:
-            d.reject = RejectCode::LOW_FILL_RATE;
-            return true;
-    }
-    // EXCESSIVE_SLIPPAGE 兜底 (即使 fill_rate ok, slippage_bps 也可能爆)
-    auto const slip_abs = out.slippage_bps < 0 ? -out.slippage_bps : out.slippage_bps;
-    if (slip_abs > cfg_.excessive_slippage_bps) {
-        d.reject = RejectCode::EXCESSIVE_SLIPPAGE;
-        return true;
-    }
-    return false;
-}
-
+// 6. position_caps (ADR-004 前移)
 bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) const noexcept {
     // EXCEED_PER_ORDER_CAP
     if (it.size_usdc > cfg_.per_order_cap_usdc) {
         d.reject = RejectCode::EXCEED_PER_ORDER_CAP;
         return true;
     }
-    // EXCEED_MARKET_EXPOSURE
+
     std::lock_guard<std::mutex> g(s_->mu);
-    auto e_it = s_->market_exposure_usdc.find(it.market_id);
-    std::int64_t const cur = (e_it == s_->market_exposure_usdc.end()) ? 0 : e_it->second;
-    if (cur + it.size_usdc > cfg_.market_exposure_cap_usdc) {
-        d.reject = RejectCode::EXCEED_MARKET_EXPOSURE;
-        return true;
+
+    // R6.2a: per_condition cap (v0.5, uses condition_id)
+    // Falls back to market_exposure_usdc for v0.4 compat
+    {
+        std::int64_t cur = 0;
+        auto ce_it = s_->condition_exposure_usdc.find(it.condition_id);
+        if (ce_it != s_->condition_exposure_usdc.end()) {
+            cur = ce_it->second;
+        } else {
+            // v0.4 compat fallback
+            auto me_it = s_->market_exposure_usdc.find(it.condition_id);
+            if (me_it != s_->market_exposure_usdc.end()) cur = me_it->second;
+        }
+        if (cur + it.size_usdc > cfg_.market_exposure_cap_usdc) {
+            d.reject = RejectCode::EXCEED_CONDITION_EXPOSURE;
+            return true;
+        }
     }
+
+    // R6.2b: per_outcome cap (v0.5, uses token_id)
+    // Only check if token_id is set and per_outcome_cap_usdc > 0
+    if (!it.token_id.empty() && cfg_.per_outcome_cap_usdc > 0) {
+        std::int64_t cur_tok = 0;
+        auto te_it = s_->token_exposure_usdc.find(it.token_id);
+        if (te_it != s_->token_exposure_usdc.end()) cur_tok = te_it->second;
+        if (cur_tok + it.size_usdc > cfg_.per_outcome_cap_usdc) {
+            d.reject = RejectCode::EXCEED_PER_OUTCOME_CAP;
+            return true;
+        }
+    }
+
     // INSUFFICIENT_BANKROLL
     auto const br = bankroll_usdc_.load(std::memory_order_acquire);
     if (it.size_usdc > br) {
@@ -324,16 +386,51 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
     return false;
 }
 
+// 7. liquidity
+bool RiskGateway::check_liquidity_(OrderIntent const& it, RiskDecision& d) const noexcept {
+    numerical::SlippageInput in{
+        .order_size_usdc      = static_cast<double>(it.size_usdc),
+        .quote_price          = it.price,
+        .book_depth_l1_usdc   = it.book_depth_l1_usdc,
+        .book_snapshot_ts_ns  = it.book_snapshot_ts_ns,
+        .wall_now_ns          = now_realtime_ns(),
+        .tick_size            = it.tick_size,
+    };
+    auto const out = numerical::SlippageModel::compute(in, numerical::SlippageMode::Linear);
+    d.slippage_bps       = out.slippage_bps;
+    d.expected_fill_rate = out.expected_fill_rate;
+
+    switch (out.reject) {
+        case numerical::RejectCode::Ok:
+            break;
+        case numerical::RejectCode::InvalidIntent:
+            d.reject     = RejectCode::INVALID_INTENT;
+            d.sub_reason = map_slippage_sub(out.sub_reason);
+            return true;
+        case numerical::RejectCode::ExceedBookDepth:
+            d.reject = RejectCode::EXCEED_BOOK_DEPTH;
+            return true;
+        case numerical::RejectCode::FillRateBelowFloor:
+            d.reject = RejectCode::LOW_FILL_RATE;
+            return true;
+    }
+    auto const slip_abs = out.slippage_bps < 0 ? -out.slippage_bps : out.slippage_bps;
+    if (slip_abs > cfg_.excessive_slippage_bps) {
+        d.reject = RejectCode::EXCESSIVE_SLIPPAGE;
+        return true;
+    }
+    return false;
+}
+
+// 8. signal
 bool RiskGateway::check_signal_(OrderIntent const& it, RiskDecision& d) const noexcept {
     std::lock_guard<std::mutex> g(s_->mu);
     auto ci_it = s_->signal_edge_ci_lower.find(it.signal_id);
     if (ci_it != s_->signal_edge_ci_lower.end()) {
-        // EDGE_CI_NEGATIVE: CI 下界 ≤ floor → 拒
         if (ci_it->second <= cfg_.edge_ci_lower_floor) {
             d.reject = RejectCode::EDGE_CI_NEGATIVE;
             return true;
         }
-        // EDGE_NEGATED_BY_SLIPPAGE: edge_lower (bps) < slippage_bps → 净 edge 负
         auto const edge_bps = static_cast<std::int32_t>(ci_it->second * 10'000.0);
         if (edge_bps < d.slippage_bps) {
             d.reject = RejectCode::EDGE_NEGATED_BY_SLIPPAGE;
@@ -343,6 +440,7 @@ bool RiskGateway::check_signal_(OrderIntent const& it, RiskDecision& d) const no
     return false;
 }
 
+// 9. strategy_decayed
 bool RiskGateway::check_strategy_decayed_(OrderIntent const& it, RiskDecision& d) const noexcept {
     std::lock_guard<std::mutex> g(s_->mu);
     auto r_it = s_->strategy_ev_ratio.find(it.strategy_id);
@@ -354,20 +452,23 @@ bool RiskGateway::check_strategy_decayed_(OrderIntent const& it, RiskDecision& d
     return false;
 }
 
+// emit_audit_ (v0.5: market_id → condition_id + token_id + outcome + side)
 bool RiskGateway::emit_audit_(OrderIntent const& it, RiskDecision& d) noexcept {
-    AuditRecord rec{
-        .audit_id          = d.audit_id,
-        .event_ts_ns       = it.event_ts_ns,
-        .data_source_ts_ns = it.data_source_ts_ns,
-        .ingestion_ts_ns   = it.ingestion_ts_ns,
-        .as_of_ts_ns       = it.as_of_ts_ns,
-        .reject            = d.reject,
-        .sub_reason        = d.sub_reason,
-        .decision          = d.decision,
-        .market_id         = it.market_id,
-        .signal_id         = it.signal_id,
-    };
-    if (!emitter_) return true;  // 测试 no-op
+    AuditRecord rec{};
+    rec.audit_id          = d.audit_id;
+    rec.event_ts_ns       = it.event_ts_ns;
+    rec.data_source_ts_ns = it.data_source_ts_ns;
+    rec.ingestion_ts_ns   = it.ingestion_ts_ns;
+    rec.as_of_ts_ns       = it.as_of_ts_ns;
+    rec.reject            = d.reject;
+    rec.sub_reason        = d.sub_reason;
+    rec.decision          = d.decision;
+    rec.condition_id      = it.condition_id;   // v0.5: renamed from market_id
+    rec.token_id          = it.token_id;       // v0.5: new
+    rec.outcome           = static_cast<std::uint8_t>(it.outcome);  // v0.5: new
+    rec.side_val          = static_cast<std::uint8_t>(it.side);     // v0.5: new
+    rec.signal_id         = it.signal_id;
+    if (!emitter_) return true;
     return emitter_->emit(rec);
 }
 
@@ -382,27 +483,24 @@ RiskDecision RiskGateway::evaluate(OrderIntent const& intent) noexcept {
     d.audit_id       = next_audit_id(t0);
     d.decision_ts_ns = t0;
 
-    // 优先级 short-circuit (R-1 invariant: code != INVALID_INTENT → sub_reason = NONE)
     auto reject_here = [&]() noexcept {
         d.decision = Decision::REJECTED;
         if (!emit_audit_(intent, d)) { d.reject = RejectCode::AUDIT_WAL_BACKPRESSURE; }
         if (d.reject != RejectCode::INVALID_INTENT) d.sub_reason = InvalidIntentSubReason::NONE;
     };
+
     if (check_state_(intent, d))            { reject_here(); return d; }
     if (check_invalid_intent_(intent, d))   { reject_here(); return d; }
     if (check_duplicate_(intent, d))        { reject_here(); return d; }
     if (check_stale_data_(intent, d))       { reject_here(); return d; }
     if (check_market_(intent, d))           { reject_here(); return d; }
-    // ADR-004 (2026-05-28, 老郭): position_caps 前移到 liquidity 之前.
-    //   理由 (摘): 红线 (cap/bankroll/loss) > 客观状态 (book depth); cheap→expensive
-    //   short-circuit (cap ~30ns vs slippage 50-200ns); 多重违规时报根因 (sizer bug)
-    //   而非市场表象, audit / 调试更准.
+    // ADR-004: position_caps 前移 (红线先于市场客观状态)
     if (check_position_caps_(intent, d))    { reject_here(); return d; }
     if (check_liquidity_(intent, d))        { reject_here(); return d; }
     if (check_signal_(intent, d))           { reject_here(); return d; }
     if (check_strategy_decayed_(intent, d)) { reject_here(); return d; }
 
-    // 全过 APPROVED (R-1: 仍 emit audit 留痕)
+    // APPROVED
     d.decision = Decision::APPROVED;
     d.reject   = RejectCode::INTERNAL_ERROR;  // 占位; APPROVED 时忽略
     if (!emit_audit_(intent, d)) {

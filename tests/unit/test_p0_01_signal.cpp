@@ -129,8 +129,8 @@ TEST(P0_01_Signal, HappyPath_BuyYes_5CondAllPass) {
     PinnacleNoVigSignal sig(f.pinnacle, f.pm, f.games, BANKROLL_USDC);
     auto const out = sig.tick(make_ctx());
     ASSERT_TRUE(out.has_value());
-    // PM_mid=0.40 < p_yes_fair=0.461538 → BUY_YES
-    EXPECT_EQ(out->side, Side::BuyYes);
+    // PM_mid=0.40 < p_yes_fair=0.461538 → BUY (v0.5: Side::Buy, outcome 由 Orchestrator 层设)
+    EXPECT_EQ(out->side, Side::Buy);
     EXPECT_EQ(out->signal_id, SignalId::P0_01_PinnacleNoVig);
     // edge = 0.061538 → 615 bps (round to nearest)
     EXPECT_GE(out->edge_bps, 610);
@@ -157,7 +157,8 @@ TEST(P0_01_Signal, HappyPath_BuyNo_PmAbove) {
     PinnacleNoVigSignal sig(f.pinnacle, f.pm, f.games, BANKROLL_USDC);
     auto const out = sig.tick(make_ctx());
     ASSERT_TRUE(out.has_value());
-    EXPECT_EQ(out->side, Side::BuyNo);
+    // v0.5: side=Buy (outcome 由 Orchestrator 层按 token_id 决定, BuyNo = side=Buy + outcome=No token)
+    EXPECT_EQ(out->side, Side::Buy);
 }
 
 // Cond 1 negative: edge ≤ 0.05

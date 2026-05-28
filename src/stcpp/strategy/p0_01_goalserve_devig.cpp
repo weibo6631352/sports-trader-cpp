@@ -225,7 +225,8 @@ std::optional<SignalOutput> GoalserveDevigSignal::tick(SignalContext const& ctx)
     // ----- 装配 SignalOutput (ABI 不动) -----
     SignalOutput out;
     out.signal_id           = SignalId::P0_01_PinnacleNoVig;  // ABI lock (老周)
-    out.side                = (pm.mid < dv.p_yes_fair_avg) ? Side::BuyYes : Side::BuyNo;
+    // v0.5: Side 解耦 outcome; Buy = 开仓方向 (outcome 由 Orchestrator 层根据 price 比较设 token_id)
+    out.side                = Side::Buy;
     out.edge_bps            = round_to_bps(edge_abs);
     out.suggested_size_usdc = size_usdc;
     out.confidence          = clamp01(edge_abs / CONFIDENCE_NORMALIZER);
