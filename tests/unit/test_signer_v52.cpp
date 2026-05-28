@@ -1,9 +1,11 @@
-// tests/unit/test_signer_v52.cpp — SignerV52 v5.2 cpp v0.2 单测 (18 测试)
+// tests/unit/test_signer_v52.cpp — SignerV52 v5.3 cpp 单测 (18 测试, v5.1 migration)
 //
 // Owner: 老孙 (#06)
 // Wave 30 W6: signer v5.2 cpp v0.1 + IPC msgpack + Ed25519 paper mock + 8 测试 (原始)
 // Wave 36 W8: ADR-023 IC 自测 + SIGNER-01 future-ts 修 (小宋 W8 W1 retro)
 //   W8 W2 升级: 新增 NewT1-NewT8 共 8 cases (总计 18 tests)
+// Wave 58 W9: v5.3 migration — signature_type 改 1 (Magic Safe EOA, HMAC bug #2 修正)
+//             新增 token_id + side 字段填 valid default; 旧行为不变
 //
 // 测试矩阵 (原始 T1-T8 + Bonus 10 cases):
 //   T1: paper mode SignerV52 Ed25519 mock signature (64B detached)
@@ -60,8 +62,13 @@ SignV52Request MakeValidRequest() {
     req.as_of_ts_ns        = base + 3'000'000LL;       // +3ms (still ≤ now since base = now-1s)
     req.data_source_ts_source = 0U;  // UpstreamPayload
     req.market_id          = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+    // v5.3 新增字段: token_id + side (valid defaults for migration)
+    req.token_id           = "1677202003548168512111076196662317438975560192301735320827449539424843146463";
+    req.side               = 0U;    // Buy (valid)
     req.outcome            = 0U;    // YES
-    req.signature_type     = 2U;    // EIP-712 (HMAC bug #3 enforce)
+    // v5.3 修正: signature_type = 1 (Magic Safe EOA, HMAC bug #2 修正)
+    // v5.1 曾填 2 (错误值); v5.3 修正为 1 (SSOT §5 T-10, handshake §84)
+    req.signature_type     = 1U;    // 1 = Magic Safe EOA (CORRECT in v5.3)
     req.intent_id          = 42ULL;
     // audit_id 非零 (BUG-W5-001)
     req.audit_id[0]  = 0xDE;
@@ -192,27 +199,29 @@ TEST(SignerV52, T4_DataSourceTsSourceEnumAbiLock) {
 }
 
 // ============================================================
-// T5: signature_type=2 paper 强 reject (sigType != 2 → InternalError)
-// HMAC bug #3 教训: paper 不真签但接口 reserve; sigType=1 永久禁止
+// T5: signature_type enforce (v5.3: sigType=1 accept; sigType=2 reject)
+// HMAC bug #2 修正 (v5.3): v5.1 曾错填 2; v5.3 修正为 1 (Magic Safe EOA)
+// cite: SSOT §5 T-10, handshake §84 signatureType
 // ============================================================
-TEST(SignerV52, T5_SignatureTypeMustBeTwo) {
+TEST(SignerV52, T5_SignatureTypeMustBeOne) {
     SignerV52 signer{execution::ExecutionMode::Paper};
 
-    // sigType=2 → Ok
+    // sigType=1 → Ok (Magic Safe EOA — CORRECT in v5.3)
     {
         auto req = MakeValidRequest();
-        req.signature_type = 2U;
+        req.signature_type = 1U;  // 正确值 (v5.3 修正)
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::Ok) << "sigType=2 must be accepted";
+        EXPECT_EQ(resp.error, SignV52Error::Ok) << "sigType=1 (Magic Safe EOA) must be accepted in v5.3";
     }
 
-    // sigType=1 → InternalError (HMAC bug #3 反模式禁止)
+    // sigType=2 → InternalError (HMAC bug #2 的错误值, v5.3 修正后禁止)
+    // v5.1 曾 enforce == 2 (错误); v5.3 修正: 2 = FORBIDDEN
     {
         auto req = MakeValidRequest();
-        req.signature_type = 1U;  // BUG#3: Magic 1-of-1 Safe — FORBIDDEN
+        req.signature_type = 2U;  // v5.1 的错误值, 现在被 v5.3 拒绝
         const auto resp = signer.Sign(req);
         EXPECT_EQ(resp.error, SignV52Error::InternalError)
-            << "sigType=1 (HMAC bug #3) must be rejected";
+            << "sigType=2 must be rejected in v5.3 (was HMAC bug #2 error value)";
     }
 
     // sigType=0 → InternalError
@@ -270,11 +279,11 @@ TEST(SignerV52, T6_AuditIdNonZero) {
 }
 
 // ============================================================
-// T7: HMAC bug 4 反模式验证
-// 老孙 v3 §A 永久 enforce:
+// T7: HMAC bug 4 反模式验证 (v5.3 migration)
+// 老孙 v3 §A 永久 enforce + v5.3 sigType 修正:
 //   BUG#1: rstrip 尾斜杠 (url_path 末尾 '/')
-//   BUG#2: base64 padding ('=' 不能 rstrip)
-//   BUG#3: sigType=1 (上面 T5 已覆盖; 此处强调概念)
+//   BUG#2: sigType=2 现在是 FORBIDDEN (v5.3 修正: 正确值是 1)
+//   BUG#3: base64 padding ('=' 不能 rstrip, live M5+ 层约束)
 //   BUG#4: path 拼 querystring (canonical_path 禁含 '?')
 // 注: signer v52 本身不做 HMAC 构造 (live M5+ live_pm_client.cpp 负责);
 //     此测试验证 signer 层 API 约束反映了 bug 教训.
@@ -293,13 +302,13 @@ TEST(SignerV52, T7_HmacBug4AntiPatternEnforced) {
             << "BUG#1: signer must not crash on trailing slash in market_id";
     }
 
-    // BUG#3 教训: sigType=1 永久禁止 (T5 详细, 此处仅再确认)
+    // BUG#2 修正 (v5.3): sigType=2 永久禁止 (v5.1 曾是正确值, v5.3 修正后变为 FORBIDDEN)
     {
         auto req = MakeValidRequest();
-        req.signature_type = 1U;  // FORBIDDEN
+        req.signature_type = 2U;  // FORBIDDEN in v5.3 (HMAC bug #2 error value)
         const auto resp = signer.Sign(req);
         EXPECT_EQ(resp.error, SignV52Error::InternalError)
-            << "BUG#3: sigType=1 must always be rejected";
+            << "BUG#2 修正 (v5.3): sigType=2 must be rejected";
     }
 
     // BUG#4 教训: market_id 含 '?' (querystring 混入) — signer 不崩溃
@@ -311,14 +320,13 @@ TEST(SignerV52, T7_HmacBug4AntiPatternEnforced) {
             << "BUG#4: signer must not crash on querystring in market_id";
     }
 
-    // BUG#2 教训: signature_type=2 允许 (base64 padding 保留 — live M5+ 层约束)
-    // 此处验证 sigType=2 正常流程
+    // sigType=1 是 v5.3 正确值 (Magic Safe EOA, HMAC bug #2 修正)
     {
         auto req = MakeValidRequest();
-        req.signature_type = 2U;  // CORRECT: EIP-712
+        req.signature_type = 1U;  // CORRECT in v5.3: Magic Safe EOA
         const auto resp = signer.Sign(req);
         EXPECT_EQ(resp.error, SignV52Error::Ok)
-            << "BUG#2: sigType=2 (EIP-712) must be accepted";
+            << "sigType=1 (Magic Safe EOA) must be accepted in v5.3";
         EXPECT_EQ(resp.signature.size(), 64U);
     }
 }
@@ -357,9 +365,10 @@ TEST(SignerV52, T8_Ed25519PublicKeyMismatchFail) {
 #ifdef STCPP_SIGNER_V52_LIBSODIUM
     // 有 libsodium: 用 signer_b 的公钥验证 signer_a 的签名 → 必须失败
 
-    // 重建 msg (与 signer_v52.cpp Sign() 中构造一致)
+    // 重建 msg (与 signer_v52.cpp Sign() 一致, v5.3 格式)
+    // v5.3: event_ts(8B LE) || market_id || token_id || side(1B) || outcome(1B) || audit_id(16B)
     std::vector<std::uint8_t> msg;
-    msg.reserve(8U + req.market_id.size() + 1U + 16U);
+    msg.reserve(8U + req.market_id.size() + req.token_id.size() + 1U + 1U + 16U);
     for (std::size_t i = 0; i < 8U; ++i) {
         msg.push_back(static_cast<std::uint8_t>(
             (static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
@@ -367,6 +376,10 @@ TEST(SignerV52, T8_Ed25519PublicKeyMismatchFail) {
     for (const char c : req.market_id) {
         msg.push_back(static_cast<std::uint8_t>(c));
     }
+    for (const char c : req.token_id) {
+        msg.push_back(static_cast<std::uint8_t>(c));
+    }
+    msg.push_back(req.side);
     msg.push_back(req.outcome);
     for (const auto b : req.audit_id) {
         msg.push_back(b);
@@ -479,9 +492,10 @@ TEST(SignerV52, NewT1_Ed25519TrueSignVerifyRoundTrip) {
     const auto pk = signer.PublicKeyBytes();
     ASSERT_EQ(pk.size(), 32U);
 
-    // 重建签名消息 (与 signer_v52.cpp Sign() 中构造一致)
+    // 重建签名消息 (与 signer_v52.cpp Sign() 中构造一致, v5.3 格式)
+    // v5.3: event_ts(8B LE) || market_id || token_id || side(1B) || outcome(1B) || audit_id(16B)
     std::vector<std::uint8_t> msg;
-    msg.reserve(8U + req.market_id.size() + 1U + 16U);
+    msg.reserve(8U + req.market_id.size() + req.token_id.size() + 1U + 1U + 16U);
     for (std::size_t i = 0U; i < 8U; ++i) {
         msg.push_back(static_cast<std::uint8_t>(
             (static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
@@ -489,6 +503,12 @@ TEST(SignerV52, NewT1_Ed25519TrueSignVerifyRoundTrip) {
     for (const char c : req.market_id) {
         msg.push_back(static_cast<std::uint8_t>(c));
     }
+    // v5.3 新增: token_id bytes
+    for (const char c : req.token_id) {
+        msg.push_back(static_cast<std::uint8_t>(c));
+    }
+    // v5.3 新增: side (1B)
+    msg.push_back(req.side);
     msg.push_back(req.outcome);
     for (const auto b : req.audit_id) {
         msg.push_back(b);
@@ -512,7 +532,7 @@ TEST(SignerV52, NewT2_SignV52RequestAllFieldsRoundTrip) {
     SignerV52 signer{execution::ExecutionMode::Paper};
 
     auto req = MakeValidRequest();
-    // 覆盖所有字段 (IPC 协议 v5.1 完整性)
+    // 覆盖所有字段 (IPC 协议 v5.3 完整性)
     const std::int64_t base = infra::wal::pit::NowRealtimeNs() - 2'000'000'000LL;
     req.event_ts_ns        = base;
     req.data_source_ts_ns  = base + 1'000'000LL;
@@ -520,8 +540,10 @@ TEST(SignerV52, NewT2_SignV52RequestAllFieldsRoundTrip) {
     req.as_of_ts_ns        = base + 3'000'000LL;
     req.data_source_ts_source = 1U;  // UpstreamHeader
     req.market_id          = "0xdeadbeefcafebabe0000111122223333";
+    req.token_id           = "9876543210987654321098765432109876543210987654321098765432109876543";
+    req.side               = 1U;   // Sell
     req.outcome            = 1U;   // NO
-    req.signature_type     = 2U;
+    req.signature_type     = 1U;   // v5.3: Magic Safe EOA (HMAC bug #2 修正)
     req.intent_id          = 9999ULL;
     req.audit_id.fill(0xABU);
 
@@ -670,9 +692,10 @@ TEST(SignerV52, NewT6_SignVerifyRoundTripConsistentViaCryptoApi) {
     const auto pk = signer.PublicKeyBytes();
     ASSERT_EQ(pk.size(), 32U);
 
-    // 重建消息 (与 signer_v52.cpp 一致)
+    // 重建消息 (与 signer_v52.cpp 一致, v5.3 格式)
+    // v5.3: event_ts(8B LE) || market_id || token_id || side(1B) || outcome(1B) || audit_id(16B)
     std::vector<std::uint8_t> msg;
-    msg.reserve(8U + req.market_id.size() + 1U + 16U);
+    msg.reserve(8U + req.market_id.size() + req.token_id.size() + 1U + 1U + 16U);
     for (std::size_t i = 0U; i < 8U; ++i) {
         msg.push_back(static_cast<std::uint8_t>(
             (static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
@@ -680,6 +703,12 @@ TEST(SignerV52, NewT6_SignVerifyRoundTripConsistentViaCryptoApi) {
     for (const char c : req.market_id) {
         msg.push_back(static_cast<std::uint8_t>(c));
     }
+    // v5.3 新增: token_id bytes
+    for (const char c : req.token_id) {
+        msg.push_back(static_cast<std::uint8_t>(c));
+    }
+    // v5.3 新增: side (1B)
+    msg.push_back(req.side);
     msg.push_back(req.outcome);
     for (const auto b : req.audit_id) {
         msg.push_back(b);

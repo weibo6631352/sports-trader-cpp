@@ -770,4 +770,39 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
         DISCOVERY_TIMEOUT 30
         PROPERTIES LABELS "unit;signer;v52;ed25519;ipc;w6"
     )
+
+    # 老孙 W9 Wave 58: signer v5.3 新增 7 ctest (T1-T7)
+    #   T1: token_id ABI binding (EIP-712 Order.tokenId)
+    #   T2: side 0/1 round-trip + side=2 拒签
+    #   T3: HMAC bug 4 反陷阱 (sigType=1 accept; sigType=2 reject — v5.3 修正)
+    #   T4: SecureBuffer<64> sodium_memzero 维持
+    #   T5: paper/live 共用 stcpp_crypto_ed25519
+    #   T6: v5.1 cases migration (旧行为不回退)
+    #   T7: P99 < 8us hot path (100k 次 CLOCK_MONOTONIC_RAW)
+    # ADR-027 Enforce-1 cite: SSOT §3.5 + handshake §84
+    add_executable(test_signer_v53_pit
+        test_signer_v53_pit.cpp
+    )
+    target_link_libraries(test_signer_v53_pit PRIVATE
+        GTest::gtest_main
+        stcpp_signer_v52_paper
+        stcpp_infra_wal
+    )
+    target_compile_options(test_signer_v53_pit PRIVATE
+        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    )
+    target_include_directories(test_signer_v53_pit PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(test_signer_v53_pit PRIVATE cxx_std_20)
+    target_compile_definitions(test_signer_v53_pit PRIVATE
+        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    )
+    gtest_discover_tests(test_signer_v53_pit
+        DISCOVERY_TIMEOUT 60
+        PROPERTIES LABELS "unit;signer;v53;token_id;side;adr027;w9"
+    )
 endif()
