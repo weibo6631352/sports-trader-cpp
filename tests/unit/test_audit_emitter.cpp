@@ -2,7 +2,8 @@
 //
 // 覆盖:
 //   A1  12 AET 各 1 emit case (含 STRATEGY_DECAYED / UNLOCK)
-//   A2  hash chain 3 record 串联校验 (prev → current → prev_next)
+//   A2  hash chain 3 record 串联校验 (prev → current → prev_next)  [弱断言, DEPRECATED — 见 A2-Strong]
+//   A2-Strong  hash chain 3 record 强断言: mirror chain 逐步本地重算验证正确值 (AUDIT-01 W8 Wave 36)
 //   A3  4 ts PIT 不等式 emit 前必拦 (R-20)
 //   A4  老韩 invariant: sub_reason 仅 INVALID_INTENT 时非 NONE
 //   A5  R-11: AuditRecord 满足 WalRecord concept (编译期) + WalWriter<AuditRecord> 实例化通过
@@ -28,6 +29,7 @@
 #include "stcpp/infra/wal/wal_writer.hpp"
 #include "stcpp/observability/audit_emitter.hpp"
 #include "stcpp/observability/audit_record.hpp"
+#include "stcpp/observability/blake3_hash.hpp"
 #include "stcpp/risk/reject_enum.hpp"
 
 // 复用 emitter.cpp 已有的模板实例化 (避免链接错误).
@@ -205,6 +207,9 @@ TEST(AuditEmitter, Emit_ReconDrift) {
 }
 
 // ---------- A2 hash chain 3 record 串联 ----------------------------------
+//
+// DEPRECATED (AUDIT-01 W8 Wave 36, 老唐): 此 case 仅断言相邻 hash 不同 (弱断言),
+// 不验证 hash 正确值. 保留作回归基线. 强断言见 HashChain_3Record_LinkedStrong.
 
 TEST(AuditEmitter, HashChain_3Record_Linked) {
     auto w_or = OpenWriter();
@@ -414,6 +419,75 @@ TEST(AuditEmitterPool, PublicEmitWithInjectedChain) {
     // hash_chain_verify_global 验证全局 chain 连续
     EXPECT_TRUE(pool.hash_chain_verify_global(1, 5))
         << "M1-A06: pool 5 笔全局 chain verify 应通过";
+}
+
+// ---------- A2-Strong: AUDIT-01 W8 Wave 36 强断言 (老唐 IC 自测, ADR-023) ------
+//
+// 小宋 W8 W1 retro 发现: HashChain_3Record_Linked 仅断言相邻 hash 不同 (弱断言),
+// 无法保证 chain 计算正确. 本 case 补齐: mirror chain 逐步本地重算, 每步严格验证
+// emitter 内部 hash 等于 Blake3Hasher::hash_chain(mirror_prev, payload).
+// 与 test_blake3_audit.cpp::T2_Chain_RecomputeMatches 同模式 (跨 target 强一致).
+
+TEST(AuditEmitter, HashChain_3Record_LinkedStrong) {
+    using stcpp::observability::Blake3Hasher;
+
+    auto w_or = OpenWriter();
+    ASSERT_TRUE(w_or.has_value());
+    AuditEmitter em{w_or.value().get()};
+
+    // chain 起点 = 全 0
+    const Blake3Hasher::Hash256 zero{};
+    ASSERT_EQ(em.last_hash(), zero);
+
+    // mirror chain: 本地与 emitter 同步推进, 逐步验证正确值
+    Blake3Hasher::Hash256 mirror_prev{};
+
+    // --- record 0: seq=1, OrderApproved ---
+    const auto ctx0 = make_valid_input(AuditEventType::OrderApproved);
+    ASSERT_TRUE(em.emit_decision(ctx0).has_value());
+    {
+        const auto seq     = static_cast<std::uint64_t>(1);
+        const auto payload = Blake3Hasher::compute_payload_hash(
+            seq,
+            static_cast<std::uint8_t>(AuditEventType::OrderApproved),
+            ctx0.decision_ts);
+        const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
+        EXPECT_EQ(em.last_hash(), expected)
+            << "A2-Strong seq=1: emitter hash != local recompute";
+        mirror_prev = expected;
+    }
+
+    // --- record 1: seq=2, OrderApproved ---
+    const auto ctx1 = make_valid_input(AuditEventType::OrderApproved);
+    ASSERT_TRUE(em.emit_decision(ctx1).has_value());
+    {
+        const auto seq     = static_cast<std::uint64_t>(2);
+        const auto payload = Blake3Hasher::compute_payload_hash(
+            seq,
+            static_cast<std::uint8_t>(AuditEventType::OrderApproved),
+            ctx1.decision_ts);
+        const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
+        EXPECT_EQ(em.last_hash(), expected)
+            << "A2-Strong seq=2: emitter hash != local recompute";
+        mirror_prev = expected;
+    }
+
+    // --- record 2: seq=3, OrderFilled ---
+    const auto ctx2 = make_valid_input(AuditEventType::OrderFilled);
+    ASSERT_TRUE(em.emit_decision(ctx2).has_value());
+    {
+        const auto seq     = static_cast<std::uint64_t>(3);
+        const auto payload = Blake3Hasher::compute_payload_hash(
+            seq,
+            static_cast<std::uint8_t>(AuditEventType::OrderFilled),
+            ctx2.decision_ts);
+        const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
+        EXPECT_EQ(em.last_hash(), expected)
+            << "A2-Strong seq=3: emitter hash != local recompute";
+        // mirror_prev = expected;  // 循环结束, 不再需要更新
+    }
+
+    EXPECT_EQ(em.emitted_count(), 3u) << "A2-Strong: emitted_count 应为 3";
 }
 
 }  // namespace

@@ -56,7 +56,7 @@ target_include_directories(stcpp_blake3
 target_compile_options(stcpp_blake3 PRIVATE
     -Wno-cast-align -Wno-conversion -Wno-sign-conversion
     -Wno-shadow -Wno-old-style-cast
-    -Wno-unused-function -Wno-unused-but-set-variable
+    -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable
 )
 
 # macOS / Linux 平台差异: blake3_dispatch.c 检测 SIMD 特性
