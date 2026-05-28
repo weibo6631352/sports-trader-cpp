@@ -13,3 +13,14 @@ cmake-build-*/
 *.key
 *.pem
 secrets/
+
+# Python venv (量化预研, 见 scripts/activate-quant.sh)
+.venv/
+.venv-*/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Claude Code 本地配置 (不入 git; 团队共享走 .mcp.json)
+.claude/settings.local.json
+

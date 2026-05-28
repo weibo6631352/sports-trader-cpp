@@ -1,0 +1,15 @@
+{
+  "_comment": "项目级 MCP 配置, 入 git 共享. 不放 token / secret. Node 26 + npx 缓存有 ESM 兼容问题, 优先用全局二进制 /opt/homebrew/bin/mcp-server-filesystem (通过 npm i -g @modelcontextprotocol/server-filesystem 安装).",
+  "mcpServers": {
+    "chrome-devtools": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["chrome-devtools-mcp@latest"]
+    },
+    "filesystem": {
+      "type": "stdio",
+      "command": "/opt/homebrew/bin/mcp-server-filesystem",
+      "args": ["/Users/wangweibo/code/sports-trader-cpp"]
+    }
+  }
+}
