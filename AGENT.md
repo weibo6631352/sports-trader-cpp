@@ -2,8 +2,11 @@
 
 > 班底导航 + 战斗单元归属 + 汇报关系。维护人：老雷 + 小林。
 > 详细 persona 见 `.claude/agents/NN-<name>.md`。
+> **花名册 (工号 / 入职日 / 状态) 见 [`docs/HIRING/employee-registry.md`](docs/HIRING/employee-registry.md)** (HR 小林主权，新人入职硬流程)。
 
-**当前规模：** 58 agent（45 类 + 10 IC Pool + 1 HR + 1 UX + 1 Dogfood）
+**当前规模：** 57 agent persona / 48 file（44 类 + 1 GM 老雷 + 10 IC Pool 小卢×10 + 1 HR 小林 + 1 UX 小尤 + 1 dogfood 小宫）
+
+> 注：file #35 `senior-cpp-ic-pool.md` 是 1 个 file 含 10 IC persona（共享同 spec），所以 file 数 48 ≠ persona 数 57。GM 老雷 2026-05-28 数学修正：之前 commit `c417bc3` 写 "58 (45 类)" 实际 44 类，差 1。
 
 ---
 

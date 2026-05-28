@@ -68,14 +68,17 @@ endif()
 
 # 子模块 (Sprint-2 W3 Wave 18: WAL framework skeleton 起步)
 add_subdirectory(src/stcpp/infra/wal)
-# add_subdirectory(src/stcpp/risk)
-# add_subdirectory(src/stcpp/signer)
-# add_subdirectory(src/stcpp/execution)
-# ...
+# Sprint-2 W4 Wave 19: 老韩 RiskGateway v0.1 (paper mode 走通)
+add_subdirectory(src/stcpp/risk)
+# Sprint-2 W4 Wave 19: 老唐 AuditEmitter v0.1 (接老王 WAL framework)
+add_subdirectory(src/stcpp/observability)
+# Sprint-2 W4 Wave 19: 小段 Goalserve client adapter v0.1 (stub)
+add_subdirectory(src/stcpp/data)
+# Sprint-2 W4 Wave 19: 小蒋 paper engine v0.1 (signer + virtual matcher + paper main)
+add_subdirectory(src/stcpp/signer)
+add_subdirectory(src/stcpp/execution)
+add_subdirectory(src/stcpp/bin)
+# Sprint-2 W4 Wave 19: P0-01 Pinnacle no-vig + LiveSection (小程 spec + 小卢 IC 实施)
+add_subdirectory(src/stcpp/strategy)
 
-# 主二进制 (build-time mode switch, 老高 R-7)
-# 三 target 物理隔离 — paper signer 不出现在 live binary
-# add_executable(stcpp_${STCPP_EXEC_MODE} src/stcpp/bin/main.cpp)
-# target_compile_definitions(stcpp_${STCPP_EXEC_MODE} PRIVATE STCPP_EXEC_MODE_${STCPP_EXEC_MODE})
-
-message(STATUS "stcpp project scaffold (Sprint-2 W3). 等 W3 owner commit 代码后陆续 uncomment.")
+message(STATUS "stcpp project scaffold (Sprint-2 W4 Wave 19). paper engine v0.1 + 3 virtual mock.")

@@ -136,28 +136,53 @@
 
 **W3 仪式**: Daily standup 紧盯 W3-02 paper engine 联调 (R-21 闸 2 关键事件); 周三老胡周报给老雷 (双轨 OKR + paper 联调进度).
 
-### 1.6.3 W4 派单 (2026-07-06 Mon → 2026-07-10 Fri) — M1 节点
+### 1.6.3 W4 派单 (2026-06-29 Mon → 2026-07-03 Fri) — 各部门落代码 v0.1
+
+> **W3 末 update (2026-05-28 Wave 19, 老胡)**: W3 ADR-003 整改 4/4 全闭环 + C++ 骨架 + WAL/SlippageModel/测试 framework 落代码 + 51/51 ctest pass, **W4 重排为各部门落代码 v0.1 (代码 commits 不再是文档)**. W3-02 ~ W3-04 evaluate() 代码挪到 W4 是 Agreed (工程顺序依赖). M1 节点评审顺延到 W5 (与原计划 7/9 一致).
 
 | # | Owner | 交付 | 截止 | 验收人 | 状态 |
 |---|---|---|---|---|---|
-| W4-01 | 老郭 + 老周 + 老韩 + 老胡 | **M1 节点评审** (T+6 周 2026-07-09): 架构 v1.0 冻结 + 数据接入联调 + RM C++ 实施 + paper engine 联调 W1 通过 + R-20 落地 | 7/9 (Thu) | GM 老雷 | **Agreed** (OKR M1 deadline) |
-| W4-02 | 老陈 + 老吴 + 小段 | **跨洋网络实测联调** (S1-021 残留): us-east-1 → Polymarket / Goalserve / Polygon edge 实测 p50/p95/p99/p99.9/max 五档, 老郭基于实测重定 RM 阈值 (R-01 触发条件评估) | 7/10 (Fri) | 老韩 + 老郭 | **Agreed** |
-| W4-03 | 老姜 + 老李 + 老周 | vCPU0 4-5 conn burst 压测 (D-07 验 p99 < 50us); 不达标走老钱 §5.2 升级路径 (MVP NBA only) | 7/8 (Tue) | GM 老雷 | **Compromised** (压测结果若不达标, 走兜底升级) |
-| W4-04 | 小余 + 小邓 + 小蒋 | **数据接入联调** (M1 KR-A-4 + KR-D-1/D-2): Goalserve + Polymarket REST/WSS 端到端跑通, p99 延迟 < 200ms; ETL pipeline + paper engine 接通; 4 ts 不等式全程校验 | 7/9 (Thu) | 老周 + 老胡 | **Agreed** |
-| W4-05 | 小米 | M1 文档归档 + 风险登记 v3 出 (M1 通过后关闭对应风险) | 7/10 (Fri) | 老胡 + 老雷 | **Agreed** |
-| W4-06 | 老练 | CI hard block 4 条全跑通: R-12 静态扫 + grep co_await + 14 HMAC test vector + schema_drift_chaos + R-20 时间戳缺失 (新加) | 7/10 (Fri) | 老郭 + 老高 | **Agreed** |
-| W4-07 | 小林 | HC-01 老冀 + HC-02 小秦 入职状态确认; 6/30 deadline 后实际入职情况 → 触发兜底? | 7/10 (Fri) | 老胡 + 老雷 | **Escalated** (若 7/10 未入职, 触发甘特 §4.4 兜底: 老叶兼链上运维 [deferred 后影响降低] + 老周兼信号-执行, M3 顺延 2 周) |
-| W4-08 | 老胡 | Sprint-2 retro + Sprint-3 backlog v0.1 启动 | 7/10 (Fri) | 老雷 | **Agreed** |
+| W4-01 | 老韩 | **RiskGateway::evaluate() C++ v0.1** (基于 v0.3.1, 接 WAL writer + audit emit + 5 档 STALE + AET_SIGN_FAILED, p99 ≤ 200us 含 audit) | 7/3 (Fri) | 老姜 + 老郭 + 老王 | **Agreed** |
+| W4-02 | 老唐 + 老韩 | **audit_writer C++ v0.1** (BLAKE3 加 4 ts + GroupCommit 接老王 WAL framework + fail-closed 反压 3 场景) | 7/3 (Fri) | 小宋 + 老王 | **Agreed** |
+| W4-03 | 小蒋 | **paper engine main C++ v0.1** (skeleton → main: 接 RM v0.1 + SlippageModel + PaperSigner mock + paper_audit.wal 闭环; R-21 闸 2) | 7/3 (Fri) | 老韩 + 小肖 + 老孙 | **Agreed** |
+| W4-04 | 小程 + 小梁 | **P0-01 signal C++ v0.1** (catalog YAML 改 0.05 已 W1 交 → 落代码: signal_engine 输出 P0-01 触发条件 + INPLAY_HOT_CRIT hot 判定接小袁) | 7/3 (Fri) | 老钱 + 小袁 | **Agreed** |
+| W4-05 | 老李 | **Polymarket client C++ v0.1** (基于 endpoint matrix v3 + 14 HMAC test vector + REST + WSS 2 conn + /books active 池过滤) | 7/3 (Fri) | 老孙 + 老郭 | **Agreed** |
+| W4-06 | 小段 | **Goalserve client C++ v0.1** (基于 official-doc v3 + sport×odds v2.1, 11 sport 探针 + inplay/livescore/pregame 三 stream) | 7/3 (Fri) | 小余 + 老胡 | **Agreed** |
+| W4-07 | 老孙 | **Polygon RPC mock C++ v0.1** (上链 deferred 后 mock: virtual_nonce / virtual_gas / virtual_confirm 三 stub + SecureBuffer 仍生效) | 7/3 (Fri) | 老沈 + 小蒋 | **Agreed** |
+| W4-08 | 小袁 | **microstructure C++ v0.1** (INPLAY_HOT_CRIT 一档 + Mode A++ fill_rate sampler + hot 判定 code-level 给 RM v0.1) | 7/3 (Fri) | 老韩 + 小蒋 + 老钱 | **Agreed** |
+| W4-09 | 小余 | **etl-pipeline C++ v0.1** (R-20 4 ts 不等式 + 5 endpoint ETL + WSS cold storage 90 天 + blake3 diff) — W2 Compromised 必交 | 7/3 (Fri) | 老胡 + 小邓 | **Compromised** (W2/W3 已推, W4 不可再推, 不达标升级老雷) |
+| W4-10 | 小邓 | **ML shadow signal C++ v0.1** (model_id + feature_snapshot_id + inference_ts + data-contract v1.1 接口) | 7/3 (Fri) | 小程 + 老郭 | **Agreed** |
+| W4-11 | 小冯 | **WSS raw frame cold storage v0.1** (90 天 + 1s snapshot 重建 + active 池配合) | 7/3 (Fri) | 小余 + 老李 | **Agreed** |
+| W4-12 | 小宋 | **CI 反模式拦截**: (1) R-3 grep `sports-tail-trader` / `gh api repos/weibo6631352/...` (GM 错 #3 enforcement); (2) schema_drift_chaos daily; (3) R-20 PIT grep 升级到 hard block | 7/3 (Fri) | 老练 + 老郭 | **Agreed** |
+| W4-13 | 老胡 | **风险登记 v2.1** (R-21 闸 2 验证 + R-31 PIT 闭环 + R-35/R-36/R-37 新增) + GM 周报 W4 | 7/1 (Wed) | 老雷 | **Agreed** |
+| W4-14 | 小米 | W3 12 篇 R-20 回灌 → W4 增量 8 篇 (W3 落代码后的接口文档同步) + GM 错 #3 归档入 incident log | 7/3 (Fri) | 老胡 + 老雷 | **Agreed** |
 
-**W4 仪式**: M1 评审会 7/9 (Thu) 14:00, GM 主持; Sprint-2 retro 推 7/10 (Fri) 16:00 (原 6/26 因 W4 跨 sprint 边界顺延).
+**W4 仪式**: Daily standup 紧盯 W4-03 paper engine main (R-21 闸 2 核心事件) + W4-09 小余 etl-pipeline (W2/W3 累计 Compromised, W4 必交); Mid-week 7/1 (Wed) 老胡周报给老雷.
 
-### 1.6.4 W2-W4 派单总计
+### 1.6.4 W5 派单 (2026-07-06 Mon → 2026-07-10 Fri) — M1 节点评审 + 端到端联调
+
+| # | Owner | 交付 | 截止 | 验收人 | 状态 |
+|---|---|---|---|---|---|
+| W5-01 | 老郭 + 老周 + 老韩 + 老胡 | **M1 节点评审** (T+6 周 2026-07-09): 架构 v1.0 冻结 + 数据接入联调 + RM C++ v0.1 验收 + paper engine main W1 通过 + R-20 落地全闭环 | 7/9 (Thu) | GM 老雷 | **Agreed** (OKR M1 deadline) |
+| W5-02 | 老陈 + 老吴 + 小段 | **跨洋网络实测联调** (S1-021 残留): us-east-1 → Polymarket / Goalserve / Polygon edge 实测 p50/p95/p99/p99.9/max 五档, 老郭基于实测重定 RM 阈值 (R-01 触发条件评估) | 7/10 (Fri) | 老韩 + 老郭 | **Agreed** |
+| W5-03 | 老姜 + 老李 + 老周 | vCPU0 4-5 conn burst 压测 (D-07 验 p99 < 50us); 不达标走老钱 §5.2 升级路径 (MVP NBA only) | 7/8 (Tue) | GM 老雷 | **Compromised** (压测结果若不达标, 走兜底升级) |
+| W5-04 | 小余 + 小邓 + 小蒋 | **数据接入端到端联调** (M1 KR-A-4 + KR-D-1/D-2): Goalserve + Polymarket REST/WSS 端到端跑通, p99 延迟 < 200ms; ETL pipeline + paper engine 接通; 4 ts 不等式全程校验 (R-31 闭环验证) | 7/9 (Thu) | 老周 + 老胡 | **Agreed** |
+| W5-05 | 小蒋 + 老韩 | **paper engine 联调 W2** (W4 main 落地后 → 跑通虚拟下单 → RM 审批 → PaperSigner mock → 虚拟 confirm → paper_audit.wal 闭环; R-21 闸 3 — 联调真跑通) | 7/8 (Tue) | 老周 + GM | **Agreed** |
+| W5-06 | 小米 | M1 文档归档 + 风险登记 v3 出 (M1 通过后关闭对应风险) | 7/10 (Fri) | 老胡 + 老雷 | **Agreed** |
+| W5-07 | 老练 | CI hard block 全跑通: R-3 老项目反模式 + R-12 静态扫 + grep co_await + 14 HMAC test vector + schema_drift_chaos + R-20 时间戳缺失 | 7/10 (Fri) | 老郭 + 老高 | **Agreed** |
+| W5-08 | 小林 | HC-01 老冀 + HC-02 小秦 入职状态确认; 6/30 deadline 后实际入职情况 → 触发兜底? | 7/10 (Fri) | 老胡 + 老雷 | **Escalated** (若 7/10 未入职, 触发甘特 §4.4 兜底: 老叶兼链上运维 [deferred 后影响降低] + 老周兼信号-执行, M3 顺延 2 周) |
+| W5-09 | 老胡 | Sprint-2 retro + Sprint-3 backlog v0.1 启动 | 7/10 (Fri) | 老雷 | **Agreed** |
+
+**W5 仪式**: M1 评审会 7/9 (Thu) 14:00, GM 主持; Sprint-2 retro 7/10 (Fri) 16:00.
+
+### 1.6.5 W2-W5 派单总计 (W3 末 update)
 
 - **W2**: 13 项 (Agreed 11 / Compromised 2 / Escalated 0)
-- **W3**: 13 项 (Agreed 13 / Compromised 0 / Escalated 0)
-- **W4**: 8 项 (Agreed 6 / Compromised 1 / Escalated 1)
-- **合计**: 34 项 (Agreed 30 / Compromised 3 / Escalated 1)
-- **deferred 归档**: 5 项 (S2-008 polygon-rpc / S2-009 nonce_mgr / W3-06 receiver sweep / Sygnum 承诺 / 跨 vendor KMS 硬约束)
+- **W3**: 13 项 (Agreed 5 / 部分 Agreed 3 / Compromised 5 / Escalated 0) — 实际 ADR-003 整改 + C++ 骨架 + WAL/SlippageModel/测试 framework 落代码超额, evaluate() 代码挪 W4
+- **W4**: 14 项 (Agreed 13 / Compromised 1 / Escalated 0) — 各部门落代码 v0.1
+- **W5**: 9 项 (Agreed 7 / Compromised 1 / Escalated 1) — M1 节点 + 端到端联调
+- **合计**: 49 项 (Agreed 36 / 部分 3 / Compromised 9 / Escalated 1)
+- **deferred 归档**: 5 项不变 (S2-008 / S2-009 / W3-06 / Sygnum / 跨 vendor KMS)
 
 ---
 

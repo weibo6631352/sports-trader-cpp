@@ -4,7 +4,7 @@ Polymarket 体育市场量化交易系统 — C++ ground-up.
 
 ## 状态（2026-05-28 Sprint-2 W1 末）
 
-- **班底就位 58 agent**（45 类 + 10 IC pool + 小林 HR + 小尤 UX + 小宫 dogfood）
+- **班底就位 57 agent persona / 48 file**（44 类 + 1 GM 老雷 + 10 IC pool + 小林 HR + 小尤 UX + 小宫 dogfood）
 - **Sprint-1 完成**：26 任务 + 16 真实发言 retro + 18 GM 决议 + 20+ 红线 + 78 RESEARCH + 13 ADR
 - **当前阶段**：Sprint-2 W2，paper trading skeleton 落代码中
 - **MVP 路线**：M1 (T+6 周) 数据接入 → M5 (T+24 周) 实盘首笔
