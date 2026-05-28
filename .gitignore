@@ -2,6 +2,8 @@ build/
 build-*/
 build_*/
 cmake-build-*/
+data/
+*.parquet
 .cache/
 *.o
 *.so
