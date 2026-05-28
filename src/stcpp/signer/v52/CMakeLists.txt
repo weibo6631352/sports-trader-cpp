@@ -1,83 +1,39 @@
-# src/stcpp/signer/v52/CMakeLists.txt — SignerV52 (C++20 重写, 撤 Rust)
+# src/stcpp/signer/v52/CMakeLists.txt — SignerV52 (C++20, libsodium ExternalProject_Add)
 #
 # Owner: 老孙 (#06, crypto-signing-expert)
-# Wave 30 W6: signer v5.2 cpp v0.1 IPC + Ed25519 paper mock
+# Wave 34 W8: libsodium FetchContent ExternalProject_Add cpp v0.2
+#             撤 W6 W3 brew find_library 兼容性 hack (老周 C-02 review)
 #
 # 落:
-#   laoSun-signer-v5.2-cpp-design.md §3
-#   laoshan-sop-v6.md §6 (老沈 W6 Wave 29: vcpkg unofficial-sodium 已撤)
+#   laoshan-sop-v6.md §6 (Option A 实施: FetchContent + ExternalProject_Add)
+#   老沈 W7 ack: stcpp_crypto_ed25519 INTERFACE target 共用 (signer v52 + CLI)
+#   ADR-018 §X target 命名规范
+#
+# 变更说明 (W8 vs W6):
+#   - 撤 W6 find_library SODIUM_LIBRARY / find_path SODIUM_INCLUDE_DIR 全路径 hack
+#   - 撤 STCPP_SIGNER_V52_LIBSODIUM=0/1 双路径 (mock + brew)
+#   - 改单一路径: 依赖 stcpp_crypto_ed25519 (ExternalProject_Add libsodium-1.0.20)
+#   - stcpp_signer_v52_sodium INTERFACE wrapper 已由 stcpp_crypto_ed25519 替代, 废弃
 #
 # 红线:
-#   R-7  paper → stcpp_signer_v52_paper (Ed25519 mock); live/backtest stub (M5+)
-#   STCPP_EXEC_MODE: paper / live / backtest (顶层 CMake 注入)
-#
-# libsodium 策略 (W6 W3):
-#   - 优先 find_package(libsodium) (homebrew macOS / apt Linux 预装)
-#   - homebrew: /opt/homebrew/Cellar/libsodium/1.0.22/ (macOS arm64)
-#   - 不做 FetchContent git clone (网络不稳, W6 W3 deadline 约束)
-#   - 与老沈 SOP §6 "FetchContent libsodium source" 精神一致:
-#     老沈指 "不走 vcpkg unofficial-sodium"; 本地已有 brew libsodium = source 同等效果
-#   - M5+ 若 CI 无 brew: 补 FetchContent ExternalProject_Add (老孙 W6 W4 跟进)
+#   R-7  paper → stcpp_signer_v52_paper 链 stcpp_crypto_ed25519
+#   R-11 paper mode: secret_key 用固定 mock (0x42 seed), 非真私钥
+#   R-12 不在 hot path (启动期签名)
+#   HMAC bug 4 (老孙 v3 §A) — 永久 enforcement (grep 见 hmac_4bug.py)
+#   BUG-W5-001 防御 (shift safety, 不复用)
 
-option(STCPP_BUILD_SIGNER_V52 "Build signer v5.2 (paper Ed25519 mock + IPC)" ON)
+option(STCPP_BUILD_SIGNER_V52 "Build signer v5.2 (ExternalProject_Add libsodium)" ON)
 
 if(NOT STCPP_BUILD_SIGNER_V52)
     return()
 endif()
 
-# ---------- libsodium 查找 (homebrew prebuilt, macOS + Linux) ----------
-#
-# 策略: 先尝试 find_library / find_path 找 homebrew 安装;
-# 找不到则 STCPP_SIGNER_V52_LIBSODIUM=0 (走 mock 路径, 测试仍能过 T1-T7)
-
-set(LIBSODIUM_FOUND FALSE)
-
-# macOS Homebrew arm64 路径
-find_library(SODIUM_LIBRARY
-    NAMES sodium libsodium
-    PATHS
-        /opt/homebrew/lib
-        /usr/local/lib
-        /usr/lib
-    NO_DEFAULT_PATH
-)
-
-find_path(SODIUM_INCLUDE_DIR
-    NAMES sodium.h
-    PATHS
-        /opt/homebrew/include
-        /usr/local/include
-        /usr/include
-    NO_DEFAULT_PATH
-)
-
-if(SODIUM_LIBRARY AND SODIUM_INCLUDE_DIR)
-    set(LIBSODIUM_FOUND TRUE)
-    message(STATUS "stcpp_signer_v52: libsodium found: ${SODIUM_LIBRARY} (include: ${SODIUM_INCLUDE_DIR})")
-else()
-    message(STATUS "stcpp_signer_v52: libsodium NOT found — paper will use deterministic mock (no real Ed25519)")
-endif()
-
-# ---------- stcpp_signer_v52_sodium (INTERFACE wrapper) ----------
-#
-# 如果找到 libsodium, 创建 IMPORTED target wrapper;
-# 否则创建空 INTERFACE target (mock 路径不需要 sodium).
-
-add_library(stcpp_signer_v52_sodium INTERFACE)
-
-if(LIBSODIUM_FOUND)
-    target_include_directories(stcpp_signer_v52_sodium
-        INTERFACE ${SODIUM_INCLUDE_DIR}
-    )
-    target_link_libraries(stcpp_signer_v52_sodium
-        INTERFACE ${SODIUM_LIBRARY}
-    )
-    target_compile_definitions(stcpp_signer_v52_sodium
-        INTERFACE STCPP_SIGNER_V52_LIBSODIUM=1
-    )
-endif()
-
 # ---------- stcpp_signer_v52_paper ----------
+#
+# paper mode: Ed25519 mock (secret_key = 0x42 seed, 非真私钥 — R-11)
+# 依赖 stcpp_crypto_ed25519 (ExternalProject_Add libsodium-1.0.20-RELEASE)
+#
+# live / backtest: stub (M5+ secp256k1 真切)
 
 if(STCPP_EXEC_MODE STREQUAL "paper")
     add_library(stcpp_signer_v52_paper STATIC
@@ -88,21 +44,19 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     )
     target_compile_features(stcpp_signer_v52_paper PUBLIC cxx_std_20)
     target_compile_definitions(stcpp_signer_v52_paper
-        PUBLIC  STCPP_EXEC_MODE_paper=1
+        PUBLIC STCPP_EXEC_MODE_paper=1
     )
     target_link_libraries(stcpp_signer_v52_paper
         PUBLIC  stcpp_infra_wal
-        PUBLIC  stcpp_signer_v52_sodium
+        PUBLIC  stcpp_crypto_ed25519
     )
+    message(STATUS "stcpp_signer_v52: paper mode — stcpp_crypto_ed25519 (ExternalProject_Add libsodium)")
 endif()
 
-# live / backtest stub (M5+ secp256k1 真切, W6 W3 只 stub)
+# live / backtest stub (M5+ secp256k1 真切, W8 只 stub)
 # if(STCPP_EXEC_MODE STREQUAL "live")
 #     add_library(stcpp_signer_v52_live STATIC signer_v52.cpp)
+#     target_link_libraries(stcpp_signer_v52_live
+#         PUBLIC stcpp_crypto_ed25519  # M5+ 替换为 secp256k1 EIP-712 实现
+#     )
 # endif()
-
-if(LIBSODIUM_FOUND)
-    message(STATUS "stcpp_signer_v52: STCPP_EXEC_MODE=${STCPP_EXEC_MODE}, libsodium ${SODIUM_LIBRARY}")
-else()
-    message(STATUS "stcpp_signer_v52: STCPP_EXEC_MODE=${STCPP_EXEC_MODE}, mock mode (no libsodium)")
-endif()

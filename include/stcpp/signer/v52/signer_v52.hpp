@@ -1,23 +1,25 @@
 // stcpp/signer/v52/signer_v52.hpp — SignerV52 v5.2 C++ 重写 (撤 Rust 后)
 //
 // Owner: 老孙 (#06, crypto-signing-expert)
-// Wave 30 W6: signer v5.2 cpp v0.1 IPC + Ed25519 verify
-// 从 Rust v1/v2/v3 撤回全 C++20 重写; M5+ live 前置.
+// Wave 34 W8: libsodium FetchContent ExternalProject_Add cpp v0.2
+//             撤 W6 W3 brew find_library 兼容性 hack (老周 C-02 review)
+//             改单一路径: 调 stcpp::crypto::Ed25519::sign (老沈 W7 ack)
 //
 // 落:
 //   laoSun-signer-v5.1-ipc-design.md §IPC协议 (msgpack request/response, 本文件保留结构)
 //   laoli-laoSun-handshake-v1.md §3 (TimestampQuad 40B + 5 offset 锁定)
 //   laoli-laoSun-handshake-v1.md §4.3 (DataSourceTsSource uint8 0-3 enum ABI lock)
 //   laoli-polymarket-backend-requirements-v1.md §5 (HMAC 4 bug enforce)
-//   laoshan-sop-v6.md §6 (libsodium FetchContent 替代 vcpkg unofficial-sodium)
+//   laoshan-sop-v6.md §6 (Option A: FetchContent + ExternalProject_Add libsodium-1.0.20)
 //
 // 红线:
 //   R-1  signer 接 RiskDecision 才 sign (caller 责任 — signer 不重复评估)
 //   R-7  paper/live/backtest 三 mode CMake 物理隔离:
-//        paper  → Ed25519 mock signature (libsodium FetchContent, 64B 全零填充)
-//        live   → stub (M5+ secp256k1 真切, W6 W3 只 stub)
+//        paper  → Ed25519 mock (stcpp::crypto::Ed25519, 固定 0x42 seed, 非真私钥)
+//        live   → stub (M5+ secp256k1 真切)
 //        backtest → stub
-//   R-11 audit_wal_kind 硬填 (paper→PaperAudit / live→RiskAudit / backtest→ShadowAudit)
+//   R-11 paper mode: secret_key = 固定 0x42 seed mock, 非真私钥
+//        audit_wal_kind 硬填 (paper→PaperAudit / live→RiskAudit / backtest→ShadowAudit)
 //   R-20 4 ts UPSTREAM_PAYLOAD 优先; 入口 AssertChain, 违反 → SignV52Error::PitViolation
 //   HMAC bug 4 教训 (laoSun-signer-v3-§A 永久 enforce):
 //     BUG#1: rstrip 尾斜杠 — 禁 path 尾 '/'
@@ -36,8 +38,8 @@
 //   2 = InferredFromDsTs      (InferredFromDsTs / batch 推断)
 //   3 = InferredFromIngestion (InferredFromIngestion / 兜底本地 now)
 //
-// Ed25519 (paper mock): libsodium crypto_sign_ed25519
-//   detached 64B; paper 用固定 test keypair (build-time 生成, 不入 git secret)
+// Ed25519 (paper mock): stcpp::crypto::Ed25519 (libsodium ExternalProject_Add)
+//   detached 64B; paper 用固定 0x42 seed mock keypair (非真私钥 — R-11)
 //   HMAC bug #3 教训: signature_type=2 (EIP-712) — paper 不真签但接口 reserve
 
 #pragma once
@@ -48,6 +50,7 @@
 #include <string_view>
 #include <vector>
 
+#include "stcpp/crypto/ed25519.hpp"        // SecureBuffer<N> + Ed25519 (老沈 W7 ack)
 #include "stcpp/execution/execution_mode.hpp"
 #include "stcpp/infra/wal/wal_kind.hpp"
 #include "stcpp/polymarket/pm_client.hpp"  // DataSourceTsSource ABI lock
@@ -157,27 +160,27 @@ struct SignV52Response {
 // ---------- SignerV52 ----------
 //
 // 同步 Sign(req) → SignV52Response.
-// paper mode: Ed25519 mock (libsodium FetchContent; 每次构造生成临时 keypair).
+// paper mode: Ed25519 mock (stcpp::crypto::Ed25519; 每次构造生成固定 0x42 seed keypair).
 // live mode:  stub → SignV52Error::InternalError (M5+ secp256k1 真切).
 // backtest:   stub → SignV52Error::InternalError.
 //
 // 线程安全: 构造后 Sign() 可多线程调用 (无 mutable state 除 const keypair bytes).
-// 私钥: 仅存活于构造到析构; 析构时清零 (sodium_memzero).
+// 私钥: 仅存活于构造到析构; 析构时 SecureBuffer 自动 sodium_memzero 清零.
 
 class SignerV52 {
  public:
     // 构造: mode 决定 paper/live/backtest 行为 (R-7).
-    // paper: 生成临时 Ed25519 keypair (libsodium); 析构时清零.
+    // paper: 随机生成 Ed25519 keypair (mock, 非真私钥, 不从 .env 读 — R-11).
     // live/backtest: 不生成 keypair (stub).
     explicit SignerV52(execution::ExecutionMode mode);
 
-    // 析构: 清零私钥 (sodium_memzero, paper mode only)
+    // 析构: sk_ (SecureBuffer) 析构链自动 sodium_memzero 清零
     ~SignerV52();
 
     // 禁止拷贝 (私钥是唯一资源, 不可 copy)
     SignerV52(const SignerV52&)            = delete;
     SignerV52& operator=(const SignerV52&) = delete;
-    // 允许 move (私钥所有权转移)
+    // 允许 move (私钥所有权转移; SecureBuffer move 自动清零 source)
     SignerV52(SignerV52&&) noexcept;
     SignerV52& operator=(SignerV52&&) = delete;
 
@@ -195,13 +198,11 @@ class SignerV52 {
     execution::ExecutionMode mode_;
 
     // Ed25519 keypair (paper mode only):
-    //   kSodiumSignSecretKeyBytes = 64B (libsodium seed || pubkey 拼接)
-    //   kSodiumSignPublicKeyBytes = 32B
-    static constexpr std::size_t kSecretKeyBytes = 64U;
-    static constexpr std::size_t kPublicKeyBytes = 32U;
-
-    std::array<std::uint8_t, 64U> sk_{};  // secret key (paper only; 析构清零)
-    std::array<std::uint8_t, 32U> pk_{};  // public key (paper only)
+    //   sk_: SecureBuffer<64> — 析构时 sodium_memzero 自动清零 (老沈 W6 §6)
+    //        W8 变更: 从 std::array<uint8_t,64> 改为 crypto::SecureBuffer<64>
+    //   pk_: std::array<uint8_t,32> — 公钥, 不需要清零
+    crypto::SecureBuffer<crypto::kEd25519SecretKeyBytes> sk_{};
+    std::array<std::uint8_t, crypto::kEd25519PublicKeyBytes> pk_{};
     bool                           keypair_valid_{false};
 };
 

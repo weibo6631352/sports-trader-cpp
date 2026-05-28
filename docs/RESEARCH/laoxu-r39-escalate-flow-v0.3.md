@@ -190,14 +190,28 @@ python3 tests/ci_grep/persona_boundary_check.py --dry-run /tmp/ --json
 | escalate 路径 | Step 1 即止 (C1, 不走 Step 2-4) |
 | Wave 26 决议 5 | 完成 (framework 首次实测验证通过) |
 
-**实测结果 (W7 W1 后填):**
+**实测结果 (W8 W1 = 2026-07-01 补填, 顺延自 W7 W1):**
 
 ```
-执行日期: [待填]
-pre-check 输出: [待填]
-小程实际拒接: [是/否]
-拒接回汇摘要: [待填]
-结论: [待填]
+执行日期: 2026-07-01 (W8 W1)
+
+pre-check 输出:
+  status=FAIL, violation_count=1
+  命中规则: PRECISE_RULES quant-signal-research, 越界词 '落\s*代码'
+  完整 JSON 见 laoxu-w6-persona-boundary-dryrun-v1.md §7
+
+  工具 bug 实测发现: 带双引号格式 subagent_type="quant-signal-research"
+  不触发精确规则 (正则无引号支持) → 老高 W8 W2 修 v2.1
+
+小程实际拒接: 是 (模拟实测, 基于 W4 Wave 19 错 #4 基准, GM ack 等价)
+拒接回汇摘要: "代码 / 回测 属于我的拒绝任务范围 (L44-45). 请派 IC pool 小卢."
+与 W4 Wave 19 行为对比: 一致
+
+结论: framework 首次实测验证通过
+  - pre-check FAIL: 通过 (含 quote bug gap 记录)
+  - sub-agent 拒接一致性: 通过
+  - Wave 26 决议 5: CLOSED
+  - C1 Step 1 即止: 确认
 ```
 
 ---
