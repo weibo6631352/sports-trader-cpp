@@ -1,32 +1,37 @@
-// stcpp/signer/v52/signer_v52.cpp — SignerV52 实现 (C++20, libsodium ExternalProject_Add)
+// stcpp/signer/v52/signer_v52.cpp — SignerV52 v5.3 实现 (C++20, libsodium ExternalProject_Add)
 //
 // Owner: 老孙 (#06)
 // Wave 34 W8: libsodium FetchContent ExternalProject_Add cpp v0.2
 //             撤 W6 W3 STCPP_SIGNER_V52_LIBSODIUM=0/1 双路径 (mock + brew)
 //             改单一路径: 调 stcpp::crypto::Ed25519::sign(secret_key, message)
+// Wave 58 W9: v5.3 — token_id/side/outcome 字段; side 0/1 校验; sigType enforce 修 (1);
+//             EIP-712 message 含 token_id bytes; reject_reason 填写
 //
-// 落:
-//   laoshan-sop-v6.md §6 (Option A 实施)
-//   老沈 W7 ack: stcpp_crypto_ed25519 INTERFACE target 共用
+// ADR-027 cite (Enforce-1 强 enforce):
+//   polymarket_ssot_cite: docs/RESEARCH/laoli-w8-polymarket-data-structure-ssot-v1.md §3.5
+//   handshake_cite:       docs/RESEARCH/laoli-laoSun-handshake-v1.md §84
+//   goalserve_ssot_cite:  N/A
+//   adr_cite:             docs/ADR/2026-06-W4-adr-027-core-data-structure-ssot-enforce.md
 //
 // 红线执行:
-//   R-1  signer 不做 RM 评估 — 由 caller 保证已通过 RiskGateway (assert 层只校 ts)
+//   R-1  signer 不做 RM 评估 — 由 caller 保证已通过 RiskGateway
 //   R-7  STCPP_EXEC_MODE_paper / live / backtest 三 mode CMake 物理隔离
-//   R-11 paper mode: secret_key 用固定 mock (32B 全 0x42 seed), 非真私钥
-//        audit_wal_kind 硬填 (paper→PaperAudit / live→RiskAudit / backtest→ShadowAudit)
+//   R-11 paper mode: secret_key 随机 keypair (非真私钥); audit_wal_kind 硬填
 //   R-20 4 ts UPSTREAM_PAYLOAD 优先; 入口 AssertChain
-//   HMAC bug 4 教训 (永久 enforce; 本实现不做 HMAC, 但 API 约束见 §A 注释):
-//     BUG#1 rstrip: CallerSide — url_path 最后 '/' 必须去掉再传入
-//     BUG#2 param_type: base64 必须保留 padding '='
-//     BUG#3 sigType: signature_type 必须 = 2 (EIP-712); req.signature_type != 2 → REJECT
-//     BUG#4 path+query: canonical_path 与 query_string 分离; 禁混入 path
-//   BUG-W5-001 防御 (shift safety, 不复用):
-//     本文件不自写 shift / xor 对签名字节操作; 仅调 stcpp::crypto::Ed25519 API
+//   HMAC bug 4 教训 (永久 enforce; 本实现不做 HMAC, 但 API 约束见注释):
+//     BUG#1 rstrip: url_path 最后 '/' 必须去掉
+//     BUG#2 sigType: signature_type 必须 = 1 (Magic Safe EOA); != 1 → REJECT
+//             v5.1 曾错填 2; v5.3 修正 (SSOT §5 T-10, handshake §84)
+//     BUG#3 base64 padding: '=' 保留 (live M5+ 层约束)
+//     BUG#4 path+query: canonical_path 与 query_string 分离
+//   BUG-W5-001 防御: 不自写 shift/xor; 仅调 stcpp::crypto::Ed25519 API
 //
 // paper mode 签名流程 (R-11):
-//   1. 构造时生成临时 Ed25519 keypair (crypto::Ed25519::generate_keypair)
+//   1. 构造时生成随机 Ed25519 keypair (crypto::Ed25519::generate_keypair)
 //      secret_key 存入 SecureBuffer<64> (析构时 sodium_memzero 清零)
-//   2. Sign(req): 调 crypto::Ed25519::sign(sk_, message) → 64B detached sig
+//   2. Sign(req): 校验 side 0/1; sigType == 1; 4 ts chain;
+//      构建 EIP-712 proxy message (含 token_id bytes);
+//      调 crypto::Ed25519::sign(sk_, message) → 64B detached sig
 //   3. 析构: SecureBuffer 析构自动清零 sk_
 //
 // live mode (M5+):
@@ -67,14 +72,35 @@ namespace {
     return false;
 }
 
-// ---------- HMAC bug #3 enforce: signature_type 必须 = 2 ----------
+// ---------- HMAC bug #2 enforce: signature_type 必须 = 1 ----------
 //
-// paper mode 不真签, 但接口 reserve 给 live W5+.
-// sig_type != 2 → InternalError (caller bug, EIP-712 必须 2).
-// 教训: bug #3 sigType=1 (Magic 1-of-1 Safe) 是历史错误.
+// v5.3 修正: signature_type 必须 = 1 (Magic Safe EOA 1-of-1, Polymarket CTF funder).
+// v5.1 曾错误 enforce == 2; v5.3 修正为 1 (SSOT §5 T-10, handshake §84).
+// sig_type != 1 → InternalError, reject_reason = "invalid_signature_type".
+// 教训: HMAC bug #2 = "填了 2 而非 1"; 正确值是 1.
 
 [[nodiscard]] bool ValidateSignatureType(std::uint8_t sig_type) noexcept {
-    return sig_type == 2U;  // 2 = EIP-712; 1 = FORBIDDEN (HMAC bug #3)
+    return sig_type == 1U;  // 1 = Magic Safe EOA; 2 = FORBIDDEN (HMAC bug #2 修正)
+}
+
+// ---------- v5.3 side 校验: 必须 0 (Buy) 或 1 (Sell) ----------
+//
+// side=2 或其他值 → InvalidSide 拒签, reject_reason = "invalid_side".
+// 与老韩 v0.5 Side enum 一致: 0=Buy, 1=Sell.
+// cite: SSOT §3.5 side + handshake §84 side
+
+[[nodiscard]] bool ValidateSide(std::uint8_t side) noexcept {
+    return side == 0U || side == 1U;
+}
+
+// ---------- v5.3 token_id 非空校验 ----------
+//
+// v5.3 要求 token_id 必须非空 (uint256 decimal string, 来自 OrderIntent).
+// 空 token_id = INVALID_INTENT (msgpack v1.2 → v1.3 未更新, 缺字段).
+// cite: laosun-w9-signer-v53-abi-align-spec-v1.md §4.3
+
+[[nodiscard]] bool ValidateTokenId(const std::string& token_id) noexcept {
+    return !token_id.empty();
 }
 
 // ---------- WalKind 按 mode 硬填 (R-11) ----------
@@ -193,37 +219,69 @@ SignV52Response SignerV52::Sign(const SignV52Request& req) noexcept {
         return resp;
     }
 
-    // HMAC bug #3 enforce: signature_type 必须 = 2 (EIP-712)
+    // HMAC bug #2 enforce: signature_type 必须 = 1 (Magic Safe EOA)
+    // v5.1 错填 2; v5.3 修正 (SSOT §5 T-10, handshake §84)
     if (!ValidateSignatureType(req.signature_type)) {
         resp.error = SignV52Error::InternalError;
+        resp.reject_reason = "invalid_signature_type";
         return resp;
     }
 
     // BUG-W5-001: audit_id 必须非零
     if (!AuditIdNonZero(req.audit_id)) {
         resp.error = SignV52Error::InternalError;
+        resp.reject_reason = "invalid_audit_id";
+        return resp;
+    }
+
+    // v5.3: side 必须 0 (Buy) 或 1 (Sell)
+    // cite: SSOT §3.5 side + handshake §84 side + 老韩 v0.5 Side enum
+    if (!ValidateSide(req.side)) {
+        resp.error = SignV52Error::InvalidSide;
+        resp.reject_reason = "invalid_side";
+        return resp;
+    }
+
+    // v5.3: token_id 必须非空 (uint256 decimal string)
+    // cite: SSOT §3.5 token_id + handshake §84 tokenId
+    if (!ValidateTokenId(req.token_id)) {
+        resp.error = SignV52Error::InvalidIntent;
+        resp.reject_reason = "invalid_token_id";
         return resp;
     }
 
     // ---------- 构建签名消息 ----------
     //
-    // paper 不做真 EIP-712 domain hash — 留 marker bytes 便于审计 trace
-    // 签名内容: event_ts(8B LE) || market_id(变长) || outcome(1B) || audit_id(16B)
+    // paper 使用 EIP-712 proxy 消息格式 (含 token_id bytes, v5.3 新增)
+    // 签名内容: event_ts(8B LE) || market_id(变长) || token_id(变长) || side(1B)
+    //           || outcome(1B) || audit_id(16B)
+    //
+    // token_id 进 EIP-712 Order.tokenId (uint256 bignum encoding) — v5.3 关键变更
+    // cite: laosun-w9-signer-v53-abi-align-spec-v1.md §3.2
     //
     // BUG-W5-001 shift safety: 仅用 static_cast 字节提取, 不自写位移宏
     std::vector<std::uint8_t> msg;
-    msg.reserve(8U + req.market_id.size() + 1U + 16U);
+    msg.reserve(8U + req.market_id.size() + req.token_id.size() + 1U + 1U + 16U);
 
     // event_ts_ns (8B little-endian)
     for (std::size_t i = 0U; i < 8U; ++i) {
         msg.push_back(static_cast<std::uint8_t>(
             (static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
     }
-    // market_id (UTF-8 bytes)
+    // market_id (UTF-8 bytes, condition_id)
     for (const char c : req.market_id) {
         msg.push_back(static_cast<std::uint8_t>(c));
     }
-    // outcome (1B)
+    // token_id (UTF-8 bytes, uint256 decimal string — v5.3 新增)
+    // 进 EIP-712 Order.tokenId; paper proxy 消息直接附 string bytes
+    // cite: SSOT §3.5 token_id + handshake §84 tokenId
+    for (const char c : req.token_id) {
+        msg.push_back(static_cast<std::uint8_t>(c));
+    }
+    // side (1B: 0=Buy, 1=Sell — v5.3 新增)
+    // cite: SSOT §3.5 side + handshake §84 side
+    msg.push_back(req.side);
+    // outcome (1B, audit only — 不进 EIP-712 Order struct, 但 paper proxy 消息含)
     msg.push_back(req.outcome);
     // audit_id (16B)
     for (const auto b : req.audit_id) {
