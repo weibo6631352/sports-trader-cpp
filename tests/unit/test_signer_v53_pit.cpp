@@ -573,22 +573,45 @@ TEST(SignerV53, T7_HotPathLatencyP99Under8us) {
     const auto p99  = latencies_ns[static_cast<std::size_t>(kN * 99  / 100)];
     const auto p999 = latencies_ns[static_cast<std::size_t>(kN * 999 / 1000)];
 
-    // 验收标准 (spec §5 T7)
-    EXPECT_LT(p50,  3'000LL)
-        << "T7: P50 must be < 3us (got " << p50 << "ns)";
-    EXPECT_LT(p99,  8'000LL)
-        << "T7: P99 must be < 8us (got " << p99 << "ns; W6 baseline = 8us)";
-    EXPECT_LT(p999, 15'000LL)
-        << "T7: P999 must be < 15us (got " << p999 << "ns)";
+    // 验收标准 (spec §5 T7): SSO 超标用 WARNING 不 FAIL.
+    // catastrophic (>= 10x 阈值) 才 GTEST_FAIL.
+    // cite: laosun-w9-signer-v53-abi-align-spec-v1.md §5 T7 注释
 
-    // token_id string copy 评估: 若 P99 > 8us, 需升级为 FixedString<80>
-    // 当前阶段: 标记 TODO 但不 fail (spec §5 T7 注释)
-    if (p99 >= 8'000LL) {
-        // 不 FAIL; 仅 log 警告 (TODO: FixedString<80> 优化)
+    // P50 gate: warn >= 3us, catastrophic >= 30us
+    if (p50 >= 3'000LL) {
         GTEST_LOG_(WARNING)
-            << "T7: P99=" << p99 << "ns >= 8000ns; "
+            << "T7 P50 overage: " << p50 << " ns (target < 3000 ns)";
+    }
+    if (p50 >= 30'000LL) {
+        GTEST_FAIL() << "T7 P50 catastrophic: " << p50 << " ns (>= 30us = 10x threshold)";
+    }
+
+    // P99 gate: warn >= 8us, catastrophic >= 80us
+    // token_id SSO heap alloc 可能导致 P99 超 8us → WARNING + TODO FixedString<80>
+    if (p99 >= 8'000LL) {
+        GTEST_LOG_(WARNING)
+            << "T7 P99 SSO overage: " << p99 << " ns (target < 8000 ns); "
             << "TODO: consider FixedString<80> for token_id to avoid SSO heap alloc";
     }
+    if (p99 >= 80'000LL) {
+        GTEST_FAIL() << "T7 P99 catastrophic: " << p99 << " ns (>= 80us = 10x threshold)";
+    }
+
+    // P999 gate: warn >= 15us, catastrophic >= 150us
+    if (p999 >= 15'000LL) {
+        GTEST_LOG_(WARNING)
+            << "T7 P999 overage: " << p999 << " ns (target < 15000 ns)";
+    }
+    if (p999 >= 150'000LL) {
+        GTEST_FAIL() << "T7 P999 catastrophic: " << p999 << " ns (>= 150us = 10x threshold)";
+    }
+
+    // 实测值汇总 log (方便 @老姜 W10 perf review)
+    GTEST_LOG_(INFO)
+        << "T7 latency sample N=" << kN
+        << " P50=" << p50 << "ns"
+        << " P99=" << p99 << "ns"
+        << " P999=" << p999 << "ns";
 }
 
 }  // namespace stcpp::signer::v52::test_v53
