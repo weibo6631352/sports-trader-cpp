@@ -11,6 +11,7 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     add_executable(stcpp_paper paper.cpp)
     target_compile_definitions(stcpp_paper PRIVATE STCPP_EXEC_MODE_paper=1)
     target_link_libraries(stcpp_paper PRIVATE
+        stcpp_process_lock      # W5 Wave 25: 防多开 (R-7/R-11/R-12)
         stcpp_signer_paper
         stcpp_execution_paper
         stcpp_infra_wal

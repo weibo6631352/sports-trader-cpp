@@ -195,7 +195,7 @@
 
 **W5 细化仪式**: 7/8 (Tue) 14:00 W5 mid-week check (老胡主持), 重点盯 W5-04bis E2E smoke test 是否可在 7/10 跑通; 7/10 (Fri) 上午 10:00 老胡 + 老雷 1:1 review 9 项交付, 下午 M1 评审会前确认无阻塞.
 
-### 1.6.5 W2-W5 派单总计 (W3 末 update, W4 Wave 20 中期再 update)
+### 1.6.5 W2-W5 派单总计 (W3 末 update, W4 Wave 20 中期再 update, W5 末 Wave 25 6/01 主管周同步 update)
 
 - **W2**: 13 项 (Agreed 11 / Compromised 2 / Escalated 0)
 - **W3**: 13 项 (Agreed 5 / 部分 Agreed 3 / Compromised 5 / Escalated 0) — 实际 ADR-003 整改 + C++ 骨架 + WAL/SlippageModel/测试 framework 落代码超额, evaluate() 代码挪 W4
@@ -204,6 +204,44 @@
 - **W5 细化** (Wave 20 中期 update): 9 项 (Agreed 9 / Compromised 0 / Escalated 0) — M1 代码补齐 + e2e smoke + Prometheus + Docker compose [§1.6.4-bis]
 - **合计**: **58 项** (Agreed 45 / 部分 3 / Compromised 9 / Escalated 1)
 - **deferred 归档**: 5 项不变 (S2-008 / S2-009 / W3-06 / Sygnum / 跨 vendor KMS)
+
+#### 1.6.5.bis W5 主管周同步 v1 outcomes (2026-06-01, Wave 25, 老胡)
+
+> **背景**: ADR-005 立的"主管周同步"第一次正式会议 (W5 试点末 → W6 硬约束首次). 集成 5 主管 + 老郭 + GM/CPO/HR 7 个独立 input. 会议纪要 `docs/MEETINGS/2026-06-01-manager-sync-w5-v1.md`.
+
+**W5 末 Wave 24 战果 (commit 3ab5dfb):**
+- **测试**: 260 → 312 (100% PASS, 全模块 + integration 14 case 新增)
+- **代码新增**: 老李 PolymarketClient v0.1 1050 行 + 小冯 PM WSS subscriber 1044 行 + 小宋 integration test framework 1132 行 + 老沈 ADR-004 patch 82 行 + 老沈 BUG-W5-001 P0 patch 97 行 + 老高 PR review v1.1 213 行 + 老徐 escalate flow v0.2 363 行
+- **红线 enforce**: R-1 (audit_id 非空) + R-7 (paper/live CMake 物理隔离) + R-11 (4 wal) + R-12 (WSS 非阻塞 p99 3.9us) + R-20 (4ts UPSTREAM_PAYLOAD) + R-33 (第 5 host)
+
+**W5 主管层试点 KPI 实测 (6/01 会上确认):**
+- **主管派单覆盖率 100%** (目标 ≥ 70%, **超目标 30 pp**) — W5 Wave 24 6 IC + 4 follow-up 任务全部 spec by 主管
+- **主管 SLA / GM SLA**: 6/1 EOD 截止收集 (会议纪要 §4 占位等回填)
+- **协商会次数 0** (软肋, 6/02 W5 二启动第 1 次)
+- **IC 越主管找 GM**: 0 次
+- **GM 越主管派 IC**: 1 次 (BUG-W5-001 老沈 P0 紧急 < 2h, ADR-005 §3.2 例外允许)
+
+**W5 末 W6 启动 8 决议 (6/01 会上拍板, 详见 §8 决议清单):**
+1. ADR-004 patch + BUG-W5-001 patch 4 会签 closeout (老韩 + 老郭 + 老高 + GM)
+2. ADR-006 候选 HTTP client cpp-httplib (老郭倾向)
+3. ADR-007 候选 VirtualMatcher 切 Mode A — W5 末再切
+4. **ADR-008 撤回 Pinnacle 路径 (小段 v3 推翻 v2.1) → 立 Goalserve fair value de-vig 算法选型** (小梁 W6 起建模)
+5. **GM 错 #9 永久 enforcement 4 条 ack** (查 vN + owner 点名推翻 + 周报 SSOT 段 + Pinnacle 撤回)
+6. **周报模板升 v2** (`docs/META/weekly-report-template-v2.md` 加 §4 SSOT 版本演进段, 老胡 owner, W5 五首次套用)
+7. **主管层 W5 试点 → W6 硬约束转换** — 2026-07-13 (W6 一) 起 5 题自检第 5 题 enforce
+8. 月度主管轮值 GM 助理 6 月启动 (老周)
+
+**W5 末验收清单 (W6 一硬约束转换前):**
+- [ ] 6/01 EOD: 14 跨主管 ASK 回填 ack 状态 (主管 SLA + GM SLA 真数字)
+- [ ] 6/01 EOD: ADR-004 + BUG-W5-001 patch 4 会签 closeout
+- [ ] 6/02 14:00: 第 1 次需求-工程协商会启动 (老胡主持 30min)
+- [ ] 6/02 EOD: 小田归属仲裁升老雷拍板 (ASK-A-4 + ASK-D-1 同议题)
+- [ ] 6/06 EOW: HC-04/05/06/07/08 5 JD 草稿 (小林 owner, 5 主管联签)
+- [ ] W5 五 周报首次套用 v2 模板 (SSOT 版本演进段首次落地: 小段 v2.1 → v3 推翻 Pinnacle, Pinnacle 决议 6/01 撤回)
+
+**W6 启动日期:** 2026-07-13 (W6 一), 主管层硬约束首次运行, GM 派 IC 5 题自检第 5 题 fail 拒派单, IC 越主管找 GM 拒接 (例外按 ADR-005 §3.2: 顾问团 / 紧急 P0 < 2h / 主管本人 / 跨多单元统筹)
+
+**W6 派单总数:** 50+ ticket (老胡 master backlog 维护, W5 末 backlog v1 交, 周报 §6 公示)
 
 ---
 

@@ -149,6 +149,11 @@ docs/
 每个 sub-agent 召唤时按 `.claude/agents/NN-<name>.md` 中的 persona 与边界行事。约束：
 
 - **工具：** Read / Grep / Glob / Bash / Edit / Write
+- **Model 分级 (ADR-009, 老板 2026-05-28 verbatim):** "开发人员一般情况使用 Sonnet only 模型就够了, 只有管理层以上才默认更高的模型, 避免浪费我的 claude token"
+  - **Opus 4.7 (默认更高)**: GM 老雷 (E-045) / CPO 老钱 (E-015) / HR 小林 (E-046) / 5 主管 (老周 E-001 / 老韩 E-009 / 小梁 E-018 / 小余 E-022 / 老胡 E-026) / F 协调 老郭 (E-016)
+  - **Sonnet only**: 其余 50+ persona (IC + 顾问, 包括 老何/老高/小邓/老叶/老徐/小白 顾问, 因为 advisor 不是 line manager)
+  - **例外**: GM 紧急 P0 + 复杂战略 ADR 可临时升 Opus, 派单 prompt 显式标 `model: opus (例外: <理由>)`
+  - **派单 enforce**: GM 派 IC 时 Agent tool 必传 `model: "sonnet"`, 漏传 fall-back Sonnet, 不要 default 高级模型
 - **语言纪律（2026-05-28 GM 最终版，无 Rust）：**
   - **生产代码全部 C++20**：热路径、决策、网络、订单、风控、paper engine、**signer**、长跑常驻服务，全部 C++
   - **Python 仅两用：**

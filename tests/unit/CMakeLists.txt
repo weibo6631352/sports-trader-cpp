@@ -375,6 +375,34 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
     )
 endif()
 
+# 小卢 W5 Wave 25: SingleInstanceLock 7 用例 (laozhou-single-instance-spec-v1.md §3.1)
+#   T1 acquire→release→reacquire  T2 双进程 child 失败  T3 kill-9 后 reacquire
+#   T4 paper/live/backtest 物理隔离  T5 PID file 内容格式  T6 SIGTERM unlink  T7 race 1-wins
+add_executable(test_single_instance
+    test_single_instance.cpp
+)
+target_link_libraries(test_single_instance PRIVATE
+    GTest::gtest_main
+    stcpp_process_lock
+)
+target_compile_options(test_single_instance PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+target_include_directories(test_single_instance PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_single_instance PRIVATE cxx_std_20)
+target_compile_definitions(test_single_instance PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    STCPP_PID_DIR="/tmp/stcpp_test"
+    STCPP_BUILD_COMMIT="test-build"
+)
+gtest_discover_tests(test_single_instance
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;process;single-instance;w5"
+)
+
 # 小冯 W5 Wave 24: PM WSS subscriber v0.1 (8 sub topic + reconnect + heartbeat + back-pressure)
 #   T1  8 sub topic × 各 1 case (parse 4 ts)
 #   T2  reconnect (transport disconnect → AsyncConnect 再调)

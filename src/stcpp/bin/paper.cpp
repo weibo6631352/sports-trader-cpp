@@ -1,11 +1,13 @@
-// stcpp/bin/paper.cpp — paper engine main 入口 (W4 Wave 19 stub loop)
+// stcpp/bin/paper.cpp — paper engine main 入口 (W4 Wave 19 stub loop; W5 Wave 25 防多开)
 //
 // 落:
 //   xiaojiang-paper-engine-skeleton-v1.md §5 (main loop skeleton)
 //   ADR gm-signoff-paper-trade R-7  build-time mode 锁
+//   laozhou-single-instance-spec-v1.md §3 集成点 3 (main() 第一行 SingleInstanceLock)
 //
 // W4 当前: 仅启动 ExecutionContext(Paper) + 跑一个 stub loop, 打印 1 次心跳后退出.
 // W5 接: Polymarket WSS → 信号 → RiskGateway → PaperSigner → VirtualMatcher → paper_audit.wal
+// W5 Wave 25: SingleInstanceLock 作为 main() 第一行强约束, 失败 exit(4).
 
 #include <chrono>
 #include <cstdio>
@@ -14,6 +16,7 @@
 
 #include "stcpp/execution/execution_mode.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
+#include "stcpp/infra/process/single_instance.hpp"
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/signer/paper/paper_signer.hpp"
 
@@ -82,6 +85,19 @@ void RunStubLoop() {
 
 int main() {
     using namespace stcpp::execution;
+
+    // W5 Wave 25 — 防多开 (R-7/R-11/R-12):
+    // SingleInstanceLock 是 main() 第一行强约束, 在任何 WSS/WAL/RM/signer 启动之前.
+    // 失败抛 SingleInstanceLockFailure → stderr 打印 + exit(4) (spec §2.2 / §3 集成点 3).
+    // lock 持锁至 main 退出 (RAII), 不进 event loop (R-12).
+    try {
+        static stcpp::infra::process::SingleInstanceLock s_lock{ExecutionMode::Paper};
+        stcpp::infra::process::InstallSigtermHandler(
+            stcpp::infra::process::SingleInstanceLock::path_for(ExecutionMode::Paper));
+    } catch (const stcpp::infra::process::SingleInstanceLockFailure& e) {
+        std::fprintf(stderr, "[paper.main] %s\n", e.what());
+        return 4;
+    }
 
     // R-7: build-time 锁; 不允许 runtime 切换. Init 一次性.
 #if !(defined(STCPP_EXEC_MODE_paper) || defined(STCPP_EXEC_MODE_PAPER))
