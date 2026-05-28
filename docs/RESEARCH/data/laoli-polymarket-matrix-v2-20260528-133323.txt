@@ -1,0 +1,266 @@
+# laoli polymarket matrix v2 — 20260528-133323
+# raw: /tmp/laoli_v2_20260528-133323
+
+===== 0. CLOB /time + 基础探活 =====
+  clob_time=1779946404  local=1779946404  delta=0s
+
+===== A. gamma API 全覆盖 =====
+
+--- A.1 GET /sports ---
+  http=200 sports=192 bytes=51866 t=1.591921s
+  sport sample: 1,2,3,95,5,
+
+--- A.2 GET /tags?limit=500 ---
+  http=200 tags=100 bytes=18425 t=0.927134s
+  体育相关 tag_slug 命中:
+    champions-league
+    influenza
+    investec-champions-cup
+    major-league-cricket
+    soccer-trsk
+
+--- A.3 GET /series?limit=500 ---
+  http=200 series=50 bytes=1613016 t=2.110411s
+  ?sport=nba  http=200 returned=20 bytes=678071 t=1.904328s
+
+--- A.4 GET /events?tag_slug=X (全 sport 复用率) ---
+tag_slug                   http   events  markets     tokens  size_KB
+  nba                         200       29      702       1404   2436.5
+  mlb                         200      100     1977       3954   7611.5
+  nfl                         200       48      665       1330   2437.8
+  nhl                         200       15      826       1652   2664.1
+  soccer                      200      100     1934       3868   7125.7
+  tennis                      200      100     1077       2154   4124.6
+  mma                         200       20      368        736   1303.0
+  golf                        200       13      596       1192   1929.7
+  ncaa                        200        4      127        254    468.4
+  ncaa-basketball             200        0        0          0      0.0
+  ncaa-football               200        1       16         32     57.5
+  mls                         200       15      397        794   1393.0
+  epl                         200        4       83        164    310.6
+  la-liga                     200        5      104        208    372.8
+  bundesliga                  200        0        0          0      0.0
+  champions-league            200       11      336        672   1255.6
+  formula-1                   200        0        0          0      0.0
+  cricket                     200      100      368        736   1895.9
+  esports                     200      100     1254       2508   5003.4
+  boxing                      200        2        2          4     14.0
+  wnba                        200       49      470        940   1824.4
+  ufc                         200       59      804       1608   2892.8
+  nascar                      200        0        0          0      0.0
+
+--- A.5 /events 不同过滤组合行为 ---
+  ?closed=false&active=true  http=200 events=20 bytes=428391 t=2.213699s
+  ?closed=true&active=false&limit=10  http=200 events=10 bytes=60395 t=1.788570s
+  ?active=true&limit=10  http=200 events=10 bytes=60395 t=1.434264s
+
+--- A.6 /events/{id} per-item 跨 sport 抽样 ---
+  nba event=27830  per_item_markets=30  listing_markets=30  bytes=96542 t=1.974834s  match=YES
+  mlb event=175364  per_item_markets=1  listing_markets=1  bytes=6457 t=1.533617s  match=YES
+  soccer event=30615  per_item_markets=60  listing_markets=60  bytes=217625 t=1.558277s  match=YES
+
+--- A.7 GET /markets/{id} (gamma) ---
+  nba market_id=553856  http=200 bytes=3571 t=1.192742s
+  listing.markets[0] keys: acceptingOrders,acceptingOrdersTimestamp,active,approved,archived,automaticallyActive,bestAsk,bestBid,clearBookOnStart,clobRewards,clobTokenIds,closed,competitive,conditionId,createdAt,cyom,deploying,deployingTimestamp,description,enableOrderBook,endDate,endDateIso,featured,feeSchedule,feeType,feesEnabled,funded,groupItemThreshold,groupItemTitle,hasReviewedDates,holdingRewardsEnabled,icon,id,image,lastTradePrice,liquidity,liquidityClob,liquidityNum,makerBaseFee,manualActivation,marketMakerAddress,negRisk,negRiskMarketID,negRiskOther,negRiskRequestID,new,oneMonthPriceChange,oneWeekPriceChange,orderMinSize,orderPriceMinTickSize,outcomePrices,outcomes,pagerDutyNotificationEnabled,pendingDeployment,question,questionID,ready,requiresTranslation,resolutionSource,resolvedBy,restricted,rewardsMaxS
+  single market keys     : acceptingOrders,acceptingOrdersTimestamp,active,approved,archived,automaticallyActive,bestAsk,bestBid,clearBookOnStart,clobRewards,clobTokenIds,closed,competitive,conditionId,createdAt,cyom,deploying,deployingTimestamp,description,enableOrderBook,endDate,endDateIso,featured,feeSchedule,feeType,feesEnabled,funded,groupItemThreshold,groupItemTitle,hasReviewedDates,holdingRewardsEnabled,icon,id,image,lastTradePrice,liquidity,liquidityClob,liquidityNum,makerBaseFee,manualActivation,marketMakerAddress,negRisk,negRiskMarketID,negRiskOther,negRiskRequestID,new,oneMonthPriceChange,oneWeekPriceChange,orderMinSize,orderPriceMinTickSize,outcomePrices,outcomes,pagerDutyNotificationEnabled,pendingDeployment,question,questionID,ready,requiresTranslation,resolutionSource,resolvedBy,restricted,rewardsMaxS
+
+===== B. CLOB REST 全覆盖 =====
+  样本 token_id=4950029985683103...  conditionId=0x22e7b5e35423e7...
+
+--- B.1 GET /markets 分页 ---
+  page1: http=200 data=1000 limit=1000 count_total=1000 next_cursor=MTAwMA== bytes=1823307 t=2.123989s
+  page2 cursor=MTAwMA==: http=200 data=1000 bytes=1674843 t=2.298042s
+
+--- B.2 sampling-markets vs sampling-simplified-markets ---
+  /sampling-markets: http=200 data=1000 bytes=2402344 t=3.072924s
+    sample[0] keys: accepting_order_timestamp,accepting_orders,active,archived,closed,condition_id,description,enable_order_book,end_date_iso,fpmm,game_start_time,icon,image,is_50_50_outcome,maker_base_fee,market_slug,minimum_order_size,minimum_tick_size,neg_risk,neg_risk_market_id,neg_risk_request_id,notifications_ena
+  /sampling-simplified-markets: http=200 data=1000 bytes=582440 t=1.892846s
+    sample[0] keys: accepting_orders,active,archived,closed,condition_id,rewards,tokens
+
+--- B.3 GET /markets/{condition_id} (clob 视角) ---
+  http=200 bytes=1977 t=1.027800s
+  keys: accepting_order_timestamp,accepting_orders,active,archived,closed,condition_id,description,enable_order_book,end_date_iso,fpmm,game_start_time,icon,image,is_50_50_outcome,maker_base_fee,market_slug,minimum_order_size,minimum_tick_size,neg_risk,neg_risk_market_id,neg_risk_request_id,notifications_enabled,question,question_id,rewards,seconds_delay,tags,taker_base_fee,tokens
+
+--- B.4 GET /book?token_id= ---
+  http=200 bids=45 asks=39 bytes=3046 t=1.360746s
+
+--- B.5 POST /books batch (501 / 500 边界确认) ---
+  可用 token 池: 5358
+  batch=1 http=200 returned=0 bytes=3 t=1.083228s
+  batch=10 http=200 returned=3 bytes=3678 t=1.101313s
+  batch=100 http=200 returned=52 bytes=55797 t=3.349958s
+  batch=500 http=200 returned=271 bytes=301894 t=2.079260s
+  batch=501 http=400 returned=1 bytes=38 t=1.829844s
+
+--- B.6 /price /midpoint /spread ---
+  /price side=BUY: http=200 bytes=17 t=1.717298s  body={"price":"0.57"}
+  /price side=SELL: http=200 bytes=17 t=1.264987s  body={"price":"0.58"}
+  /midpoint: http=200 bytes=16 t=1.555553s  body={"mid":"0.575"}
+  /spread: http=200 bytes=18 t=1.028821s  body={"spread":"0.01"}
+
+--- B.7 /tick-size /neg-risk ---
+  /tick-size: http=200 bytes=27 t=1.048807s  body={"minimum_tick_size":0.01}
+  /neg-risk: http=200 bytes=18 t=1.071695s  body={"neg_risk":true}
+
+--- B.8 /prices-history (interval / fidelity / startTs+endTs) ---
+  market=<TOK>&interval=1d&fidelity=60: http=200 pts=25 bytes=689 t=1.026931s
+  market=<TOK>&interval=1h&fidelity=1: http=200 pts=61 bytes=1661 t=1.422081s
+  market=<TOK>&interval=1w&fidelity=1440: http=200 pts=8 bytes=230 t=1.500501s
+  market=<TOK>&startTs=1779942804&endTs=1779946404&fidelity=1: http=200 pts=61 bytes=1661 t=1.066569s
+
+--- B.9 /trades 公开 filter ---
+  /trades?market=<CID>&limit=10: http=401 bytes=41 t=1.414848s
+  /trades?asset_id=<TOK>&limit=10: http=401 bytes=41 t=1.040974s
+
+===== B+. CLOB 私有 endpoint (L2 HMAC) =====
+
+--- B+.1 GET /auth/api-keys ---
+  signer EOA = 0xB9c8261f9108856970b69C440E6913a33aD438d7
+  {"http": 401, "t_s": 1.5, "bytes": 0, "body": "{\"error\":\"Unauthorized/Invalid api key\"}\n"}
+
+--- B+.2 GET /auth/derive-api-key (L1) ---
+  {"http": 200, "t_s": 1.091, "bytes": 186, "body": "{\"apiKey\": \"<APIKEY_REDACTED>\", \"secret\": \"<SECRET_REDACTED>\", \"passphrase\": \"<PASSPHRASE_REDACTED>\"}"}
+
+--- B+.3 GET /trades (我方, L2) ---
+  {"http": 401, "t_s": 1.033, "bytes": 0, "body": "{\"error\":\"Unauthorized/Invalid api key\"}\n"}
+
+--- B+.4 GET /data/orders (我方活跃单, L2) ---
+  {"http": 401, "t_s": 1.048, "bytes": 0, "body": "{\"error\":\"Unauthorized/Invalid api key\"}\n"}
+
+--- B+.5 GET /balance-allowance (signature_type sweep) ---
+  {"signature_type": 0, "http": 401, "t_s": 1.31, "bytes": 0, "body": "{"error":"Unauthorized/Invalid api key"}n"}
+  {"signature_type": 1, "http": 401, "t_s": 1.146, "bytes": 0, "body": "{"error":"Unauthorized/Invalid api key"}n"}
+  {"signature_type": 2, "http": 401, "t_s": 1.067, "bytes": 0, "body": "{"error":"Unauthorized/Invalid api key"}n"}
+
+--- B+.6 GET /data/order/<fake>  鉴权探活 ---
+  {"http": 401, "t_s": 1.056, "bytes": 0, "body": "{\"error\":\"Unauthorized/Invalid api key\"}\n"}
+
+===== C. data-api 全覆盖 =====
+
+--- C.1 GET /positions ---
+  ?user=<F>: http=200 returned=24 bytes=21742 t=1.301489s
+  ?user=<F>&sortBy=CURRENT&sortDirection=DESC: http=200 returned=24 bytes=21742 t=1.292950s
+  ?user=<F>&redeemable=true: http=200 returned=24 bytes=21742 t=1.773391s
+  ?user=<F>&mergeable=true: http=200 returned=0 bytes=2 t=1.247962s
+  ?user=<F>&sizeThreshold=0.1: http=200 returned=25 bytes=22635 t=1.779260s
+
+--- C.2 GET /value ---
+  http=200 bytes=65 t=1.305490s body=[{"user":"0x78de3c8264c546fffed8d9a1396cddef7c8686be","value":0}]
+
+--- C.3 GET /trades by user ---
+  ?limit=10: http=200 returned=10 bytes=8798 t=1.532700s
+  ?limit=100: http=200 returned=100 bytes=87999 t=1.700020s
+  ?side=BUY&limit=10: http=200 returned=10 bytes=8774 t=1.817616s
+  ?takerOnly=true&limit=10: http=200 returned=10 bytes=8798 t=1.215979s
+
+--- C.4 GET /activity 跨 type ---
+  type=<none>: http=200 returned=50 bytes=45104 t=1.835929s  observed_types=REDEEM,TRADE
+  type=TRADE: http=200 returned=50 bytes=45475 t=2.512342s  observed_types=TRADE
+  type=REDEEM: http=200 returned=14 bytes=11407 t=1.383707s  observed_types=REDEEM
+  type=MERGE: http=200 returned=0 bytes=2 t=1.482658s  observed_types=
+  type=SPLIT: http=200 returned=0 bytes=2 t=1.217699s  observed_types=
+  type=REWARD: http=200 returned=0 bytes=2 t=1.693400s  observed_types=
+  type=DEPOSIT: http=200 returned=0 bytes=2 t=1.738906s  observed_types=
+  type=WITHDRAWAL: http=200 returned=0 bytes=2 t=1.770118s  observed_types=
+  type=CONVERT: http=400 returned=1 bytes=157 t=1.606642s  observed_types=
+  type=SPLIT_REWARDS: http=400 returned=1 bytes=163 t=1.038476s  observed_types=
+
+--- C.5 data-api 未文档 endpoint 探活 ---
+  /holdings?user=<FUNDER>: http=404
+  /pnl?user=<FUNDER>: http=404
+  /user/<FUNDER>: http=404
+  /leaderboard?limit=5: http=404
+  /markets: http=404
+  /series: http=404
+  /events: http=404
+
+===== D. WebSocket 全 channel =====
+
+--- D.1 /ws/market 单连接多 token ---
+  N=1: {"subscribed": 1, "open_s": 1.89, "first_msg_s": 2.526, "duration_s": 6.527, "msgs": 1, "bytes": 3, "unique_assets": 0, "event_types": {}}
+  N=50: {"subscribed": 50, "open_s": 1.363, "first_msg_s": 2.552, "duration_s": 21.204, "msgs": 69, "bytes": 65032, "unique_assets": 23, "event_types": {"book": 23, "price_change": 68}}
+  N=100: {"subscribed": 100, "open_s": 1.658, "first_msg_s": 2.891, "duration_s": 20.001, "msgs": 161, "bytes": 152560, "unique_assets": 52, "event_types": {"book": 52, "price_change": 160}}
+  N=300: {"subscribed": 300, "open_s": 1.833, "first_msg_s": 4.314, "duration_s": 20.004, "msgs": 686, "bytes": 596220, "unique_assets": 158, "event_types": {"book": 158, "price_change": 685}}
+  N=500: {"subscribed": 500, "open_s": 1.384, "first_msg_s": 4.159, "duration_s": 20.075, "msgs": 1014, "bytes": 916773, "unique_assets": 271, "event_types": {"book": 271, "price_change": 1013}}
+
+--- D.2 /ws/user 鉴权 + 多 condition_id ---
+  user channel: {"subscribed_cids": 20, "open_s": 1.27, "first_msg_s": -1, "msgs": 0, "bytes": 0, "note": "silent=healthy (no order events)"}
+
+===== E. 限流压测 =====
+--- E.1 gamma /events 20 并发 ---
+   1 200 2.101503
+   1 200 2.107704
+   1 200 2.111419
+   1 200 2.112080
+   1 200 2.114973
+   1 200 2.138606
+   1 200 2.236030
+   1 200 2.339132
+   1 200 2.343019
+   1 200 2.346765
+   1 200 2.347779
+   1 200 2.382584
+   1 200 2.409372
+   1 200 2.543200
+   1 200 2.543378
+   1 200 2.543873
+   1 200 2.554644
+   1 200 2.559764
+   1 200 2.639818
+   1 200 2.648406
+--- E.2 clob /price 30 并发 ---
+   1 200 1.019024
+   1 200 1.021490
+   1 200 1.034102
+   1 200 1.035806
+   1 200 1.040333
+   1 200 1.041458
+   1 200 1.042229
+   1 200 1.044105
+   1 200 1.046171
+   1 200 1.046404
+   1 200 1.046711
+   1 200 1.051499
+   1 200 1.052740
+   1 200 1.053916
+   1 200 1.057435
+   1 200 1.066991
+   1 200 1.068154
+   1 200 1.070189
+   1 200 1.099518
+   1 200 1.103467
+   1 200 1.126414
+   1 200 1.171288
+   1 200 1.337066
+   1 200 1.342988
+   1 200 1.343057
+   1 200 1.347649
+   1 200 1.355947
+   1 200 1.358168
+   1 200 1.361223
+   1 200 1.659627
+--- E.3 data /positions 20 并发 ---
+   1 200 1.228163
+   1 200 1.236149
+   1 200 1.240709
+   1 200 1.241414
+   1 200 1.487754
+   1 200 1.489177
+   1 200 1.490292
+   1 200 1.490665
+   1 200 1.499164
+   1 200 1.503123
+   1 200 1.504840
+   1 200 1.534949
+   1 200 1.535473
+   1 200 1.539288
+   1 200 1.540855
+   1 200 1.554206
+   1 200 1.570170
+   1 200 1.803594
+   1 200 1.815906
+   1 200 1.827834
+
+===== 汇总 =====
+raw: /tmp/laoli_v2_20260528-133323
+report: /Users/wangweibo/code/sports-trader-cpp/docs/RESEARCH/data/laoli-polymarket-matrix-v2-20260528-133323.txt

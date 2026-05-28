@@ -1,0 +1,63 @@
+# Reuse probe 20260528-131341
+# project: sports-trader-cpp
+# proxy: http://127.0.0.1:7890
+
+===== A. Polymarket gamma /events nested markets 复用率 =====
+  limit=5  events=5  total_markets=198  median_markets/event=32  max_markets/event=60  total_tokens=396  bytes=696489
+  limit=10  events=10  total_markets=445  median_markets/event=60  max_markets/event=102  total_tokens=890  bytes=1547770
+  limit=20  events=20  total_markets=874  median_markets/event=53  max_markets/event=139  total_tokens=1748  bytes=2935245
+  limit=50  events=50  total_markets=1217  median_markets/event=5  max_markets/event=139  total_tokens=2434  bytes=4286430
+
+===== B. /events/{id} 单调用 vs nested (复用证伪) =====
+  event 27829  markets=32  bytes=104553  total_s=1.228940
+  event 27830  markets=30  bytes=96632  total_s=1.181838
+  event 30615  markets=60  bytes=217869  total_s=1.623435
+  event 32756  markets=16  bytes=57229  total_s=1.897286
+  event 33506  markets=60  bytes=220196  total_s=2.257350
+
+===== C. CLOB /markets 分页规模 (next_cursor) =====
+  page1: data=1000  limit=1000  count_total=1000  next_cursor=MTAwMA==  bytes=1823307
+
+===== D. CLOB /sampling-simplified-markets 全量 =====
+  data=1000  bytes=582414  total_s=1.964457
+
+===== E. CLOB /books 批量上限测试 =====
+  可用 token_id 池: 800
+  batch=50  http=200  returned=6  total_s=1.562567  bytes=20109
+  batch=100  http=200  returned=12  total_s=2.333472  bytes=53129
+  batch=200  http=200  returned=74  total_s=2.511402  bytes=271988
+  batch=400  http=200  returned=118  total_s=1.945506  bytes=394073
+
+===== F. /prices-history 单 vs (尝试) bulk =====
+  single token  points=25  bytes=689  total_s=1.060407
+  multi-token ?market=A,B,C http=200  bytes=15
+
+===== G. Goalserve 联赛级 endpoint 复用率 =====
+  bsktbl/nba-scores   http=200 games=0 bytes=190 total_s=2.828102
+  bsktbl/nba-shedule  http=200 games=0 bytes=755435 total_s=3.971531
+  bsktbl/inplay       http=200 games=0 bytes=107 total_s=2.727381
+  football/nfl-scores http=200 games=0 bytes=21113 total_s=7.021864
+  baseball/usa        http=200 games=0 bytes=161123 total_s=2.602587
+  hockey/nhl-scores   http=200 games=0 bytes=20530 total_s=3.110222
+  soccer/inplay       http=200 matches=1 categories=0
+0 bytes=276 total_s=8.700462
+  soccer/home         http=200 matches=141 categories=51 bytes=144120 total_s=4.368465
+  tennis/home         http=200 matches=0 bytes=90028 total_s=2.720092
+
+===== H. Goalserve incremental 参数测试 =====
+  ?lastupdate=<now-1h>  size=116020 vs baseline=116020  (相同=参数被忽略, 不同=有效)
+  If-Modified-Since (-60s)  http=200  (304=支持 / 200=不支持)
+  ETag/Last-Modified/Cache-Control 响应头:
+    cache-control: no-cache
+
+===== I. Polymarket WSS 100-token 单连接订阅验证 =====
+  尝试订阅 100 tokens 在单个 WSS 连接
+  WSS result: {"open_s": 1.295, "first_msg_s": 2.591, "duration_s": 5.596, "msgs": 1, "bytes": 52863, "unique_asset_ids_seen": 12, "tokens_subscribed": 100}
+
+===== J. NBA 同 series (季后赛系列赛) 多比赛字段对比 =====
+
+  发现  个 ≥2 场对决 (可能是 series / 季后赛)
+
+===== 汇总 =====
+  原始数据 raw: /tmp/reuse_probe_20260528-131341
+  报告: /Users/wangweibo/code/sports-trader-cpp/docs/RESEARCH/data/laoli-xiaoduan-reuse-probe-20260528-131341.txt

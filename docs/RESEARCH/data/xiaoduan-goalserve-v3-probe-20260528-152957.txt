@@ -1,0 +1,146 @@
+# xiaoduan v3 goalserve official-doc probe 20260528-152957
+# proxy: http://127.0.0.1:7890
+
+===== §1. inplay.goalserve.com 8 sport (官方说每秒推送 gzip JSON, 含真 odds) =====
+  [inplay-soccer-nokey] http=200 bytes=24806 ttfb=1.012034 total=1.645512 Content-Type: application/json
+  [inplay-soccer-qkey] http=200 bytes=24804 ttfb=0.992195 total=1.334491 Content-Type: application/json
+  [inplay-basket-nokey] http=200 bytes=6226 ttfb=0.961560 total=0.963984 Content-Type: application/json
+  [inplay-basket-qkey] http=200 bytes=6298 ttfb=0.969388 total=0.971778 Content-Type: application/json
+  [inplay-tennis-nokey] http=200 bytes=68306 ttfb=0.985162 total=2.027889 Content-Type: application/json
+  [inplay-tennis-qkey] http=200 bytes=68314 ttfb=0.980775 total=1.930411 Content-Type: application/json
+  [inplay-volleyball-nokey] http=200 bytes=3051 ttfb=0.995350 total=0.997493 Content-Type: application/json
+  [inplay-volleyball-qkey] http=200 bytes=3137 ttfb=0.976371 total=0.978383 Content-Type: application/json
+  [inplay-amfootball-nokey] http=200 bytes=104 ttfb=0.961407 total=0.962212 Content-Type: application/json
+  [inplay-amfootball-qkey] http=200 bytes=104 ttfb=0.967141 total=0.967957 Content-Type: application/json
+  [inplay-esports-nokey] http=200 bytes=104 ttfb=1.023413 total=1.024275 Content-Type: application/json
+  [inplay-esports-qkey] http=200 bytes=104 ttfb=1.002906 total=1.003767 Content-Type: application/json
+  [inplay-hockey-nokey] http=200 bytes=104 ttfb=0.977817 total=0.978698 Content-Type: application/json
+  [inplay-hockey-qkey] http=429 bytes=69 ttfb=0.959019 total=0.959945 Content-Type: text/json
+  [inplay-baseball-nokey] http=200 bytes=104 ttfb=0.994016 total=0.994874 Content-Type: application/json
+  [inplay-baseball-qkey] http=200 bytes=104 ttfb=0.957202 total=0.958066 Content-Type: application/json
+
+===== §2. pregame odds 真格式 /getodds/soccer?cat=<cat>_10 =====
+  [getodds-soccer] http=000 bytes=0 ttfb=0.000000 total=20.004745 
+  [getodds-basket] http=500 bytes=1936 ttfb=9.409434 total=9.410374 Content-Type: text/html; charset=utf-8
+  [getodds-tennis] http=500 bytes=1936 ttfb=11.531195 total=11.944218 Content-Type: text/html; charset=utf-8
+  [getodds-hockey] http=200 bytes=185628 ttfb=3.031440 total=4.136922 Content-Type: application/json; charset=utf-8
+  [getodds-handball] http=500 bytes=1936 ttfb=3.368013 total=3.956691 Content-Type: text/html; charset=utf-8
+  [getodds-volleyball] http=500 bytes=1936 ttfb=2.126774 total=2.127525 Content-Type: text/html; charset=utf-8
+  [getodds-football] http=500 bytes=1936 ttfb=1.203327 total=1.205239 Content-Type: text/html; charset=utf-8
+  [getodds-baseball] http=500 bytes=1936 ttfb=1.435245 total=1.436146 Content-Type: text/html; charset=utf-8
+  [getodds-cricket] http=500 bytes=1936 ttfb=2.052412 total=2.053269 Content-Type: text/html; charset=utf-8
+  [getodds-rugby] http=500 bytes=1936 ttfb=1.234855 total=1.235636 Content-Type: text/html; charset=utf-8
+  [getodds-rugbyleague] http=500 bytes=1936 ttfb=0.679548 total=0.680153 Content-Type: text/html; charset=utf-8
+  [getodds-boxing] http=500 bytes=1936 ttfb=1.548950 total=1.936986 Content-Type: text/html; charset=utf-8
+  [getodds-esports] http=500 bytes=1936 ttfb=10.320558 total=10.321443 Content-Type: text/html; charset=utf-8
+  [getodds-futsal] http=200 bytes=27928 ttfb=1.252136 total=1.877323 Content-Type: application/json; charset=utf-8
+  [getodds-mma] http=500 bytes=1936 ttfb=0.691475 total=1.505302 Content-Type: text/html; charset=utf-8
+  [getodds-darts] http=500 bytes=1936 ttfb=5.735943 total=6.138194 Content-Type: text/html; charset=utf-8
+  [getodds-table_tennis] http=500 bytes=1936 ttfb=5.677055 total=5.678909 Content-Type: text/html; charset=utf-8
+
+===== §3. ts 增量协议实测 =====
+  [ts-full] http=500 bytes=1936 ttfb=2.243635 total=2.255051 Content-Type: text/html; charset=utf-8
+  抠到的 ts 值: <none>
+
+===== §4. dictionaries (odds-markets + states) =====
+  [dict-mk-soccer] http=200 bytes=4866 ttfb=0.925779 total=0.933762 Content-Type: application/json; charset=utf-8
+  [dict-st-soccer] http=200 bytes=1024 ttfb=1.073956 total=1.074633 Content-Type: application/json; charset=utf-8
+  [dict-mk-basketball] http=500 bytes=53 ttfb=0.932130 total=0.932853 Content-Type: application/json
+  [dict-st-basketball] http=404 bytes=0 ttfb=1.625874 total=1.626182 
+  [dict-mk-tennis] http=200 bytes=2118 ttfb=0.953875 total=0.970046 Content-Type: application/json; charset=utf-8
+  [dict-st-tennis] http=500 bytes=53 ttfb=1.110522 total=1.111375 Content-Type: application/json
+  [dict-mk-baseball] http=200 bytes=1685 ttfb=0.988478 total=0.989724 Content-Type: application/json; charset=utf-8
+  [dict-st-baseball] http=500 bytes=53 ttfb=1.051546 total=1.052331 Content-Type: application/json
+  [dict-mk-hockey] http=200 bytes=2020 ttfb=1.027571 total=1.029898 Content-Type: application/json; charset=utf-8
+  [dict-st-hockey] http=500 bytes=53 ttfb=1.084477 total=1.085216 Content-Type: application/json
+  [dict-mk-amfootball] http=200 bytes=828 ttfb=1.409263 total=1.410166 Content-Type: application/json; charset=utf-8
+  [dict-st-amfootball] http=200 bytes=28 ttfb=1.073126 total=1.073965 Content-Type: application/json; charset=utf-8
+  [dict-mk-volleyball] http=200 bytes=2414 ttfb=0.958415 total=2.260690 Content-Type: application/json; charset=utf-8
+  [dict-st-volleyball] http=500 bytes=53 ttfb=1.144096 total=1.145012 Content-Type: application/json
+  [dict-mk-esports] http=500 bytes=53 ttfb=0.962392 total=0.963096 Content-Type: application/json
+  [dict-st-esports] http=500 bytes=53 ttfb=1.095691 total=1.096233 Content-Type: application/json
+
+===== §5. settlement endpoint (oddsfeed.goalserve.com) =====
+  [settle-single] http=200 bytes=16 ttfb=1.193518 total=1.194236 Content-Type: application/json
+  [settle-batch-time] http=429 bytes=46 ttfb=1.018904 total=1.019697 Content-Type: text/json
+  [settle-batch-mid] http=200 bytes=2 ttfb=0.757644 total=0.758256 Content-Type: application/json
+
+===== §6. Match Result by ID (inplay.goalserve.com/results/yyyyMM/MID.json) =====
+  [result-example] http=404 bytes=0 ttfb=0.947269 total=1.501217 
+  [result-202604] http=404 bytes=0 ttfb=1.609543 total=1.609945 
+
+===== §7. inplay-pregame mapping endpoint 5 sport =====
+  [mapping-soccernew-inplay-mapping] http=200 bytes=379 ttfb=5.777121 total=5.778161 Content-Type: application/json; charset=utf-8
+  [mapping-esports-inplay-mapping] http=200 bytes=328 ttfb=12.298843 total=12.299875 Content-Type: application/json; charset=utf-8
+  [mapping-tennis_scores-inplay-mapping] http=200 bytes=1137 ttfb=1.164019 total=1.165116 Content-Type: application/json; charset=utf-8
+  [mapping-basketball-inplay-mapping] http=500 bytes=1772 ttfb=0.728330 total=0.729267 Content-Type: text/html; charset=utf-8
+  [mapping-baseball-inplay-mapping] http=200 bytes=385 ttfb=0.674892 total=0.675935 Content-Type: application/json; charset=utf-8
+
+===== §8. livescore.goalserve.com (第二域名) =====
+  [livescore-soccer-home] http=200 bytes=50148 ttfb=0.971634 total=1.582033 Content-Type: application/xml
+  [livescore-soccer-live] http=429 bytes=17 ttfb=1.255847 total=1.256626 Content-Type: text/plain; charset=utf-8
+
+===== §9. raw file inventory + magic byte sniff =====
+  dict-mk-amfootball.json                          3822 json/text
+  dict-mk-baseball.json                            9719 json/text
+  dict-mk-basketball.json                            53 json/text
+  dict-mk-esports.json                               53 json/text
+  dict-mk-hockey.json                             11631 json/text
+  dict-mk-soccer.json                             26903 json/text
+  dict-mk-tennis.json                             10965 json/text
+  dict-mk-volleyball.json                         15101 json/text
+  dict-st-amfootball.json                             2 json/text
+  dict-st-baseball.json                              53 json/text
+  dict-st-basketball.json: EMPTY
+  dict-st-esports.json                               53 json/text
+  dict-st-hockey.json                                53 json/text
+  dict-st-soccer.json                              4896 json/text
+  dict-st-tennis.json                                53 json/text
+  dict-st-volleyball.json                            53 json/text
+  getodds-baseball.json                            1936 gzip
+  getodds-basket.json                              1936 gzip
+  getodds-boxing.json                              1936 gzip
+  getodds-cricket.json                             1936 gzip
+  getodds-darts.json                               1936 gzip
+  getodds-esports.json                             1936 gzip
+  getodds-football.json                            1936 gzip
+  getodds-futsal.json                            229391 other(efbbbf7b)
+  getodds-handball.json                            1936 gzip
+  getodds-hockey.json                           1543708 other(efbbbf7b)
+  getodds-mma.json                                 1936 gzip
+  getodds-rugby.json                               1936 gzip
+  getodds-rugbyleague.json                         1936 gzip
+  getodds-table_tennis.json                        1936 gzip
+  getodds-tennis.json                              1936 gzip
+  getodds-volleyball.json                          1936 gzip
+  inplay-amfootball-nokey.gz                        108 json/text
+  inplay-amfootball-qkey.gz                         108 json/text
+  inplay-baseball-nokey.gz                          108 json/text
+  inplay-baseball-qkey.gz                           108 json/text
+  inplay-basket-nokey.gz                          42261 json/text
+  inplay-basket-qkey.gz                           42266 json/text
+  inplay-esports-nokey.gz                           108 json/text
+  inplay-esports-qkey.gz                            108 json/text
+  inplay-hockey-nokey.gz                            108 json/text
+  inplay-hockey-qkey.gz                              51 json/text
+  inplay-soccer-nokey.gz                         192424 json/text
+  inplay-soccer-qkey.gz                          192424 json/text
+  inplay-tennis-nokey.gz                         526551 json/text
+  inplay-tennis-qkey.gz                          526551 json/text
+  inplay-volleyball-nokey.gz                      18652 json/text
+  inplay-volleyball-qkey.gz                       18691 json/text
+  livescore-soccer-home.json                      50148 xml/html
+  livescore-soccer-live.json                         17 other(546f6f20)
+  mapping-baseball-inplay-mapping.json              523 json/text
+  mapping-basketball-inplay-mapping.json           1772 gzip
+  mapping-esports-inplay-mapping.json               369 json/text
+  mapping-soccernew-inplay-mapping.json             530 json/text
+  mapping-tennis_scores-inplay-mapping.json        4371 json/text
+  result-202604.json: EMPTY
+  result-example.json: EMPTY
+  settle-batch-mid.json                               2 json/text
+  settle-batch.json                                  46 json/text
+  settle-single.json                                 16 json/text
+  ts-full.json                                     1936 gzip
+
+===== DONE 20260528-152957 =====  RAW_DIR=/tmp/xiaoduan_v3_20260528-152957

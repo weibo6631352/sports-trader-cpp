@@ -1,0 +1,8 @@
+ts,host,endpoint,gz_off_bytes,gz_on_bytes,ratio_pct,saved_pct
+2026-05-28T15:46:54,www.goalserve.com,nba-schedule,755435,116020,15.4,84.6
+2026-05-28T15:47:12,www.goalserve.com,nhl-schedule,3717142,600790,16.2,83.8
+2026-05-28T15:47:29,www.goalserve.com,soccer-home,143202,21321,14.9,85.1
+2026-05-28T15:47:34,www.goalserve.com,bsktbl-inplay,70,185,264.3,-164.3
+2026-05-28T15:47:49,inplay.goalserve.com,inplay-soccer-stream,curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to inplay.goalserve.com:443 
+0,curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL in connection to inplay.goalserve.com:443 
+0,0,0

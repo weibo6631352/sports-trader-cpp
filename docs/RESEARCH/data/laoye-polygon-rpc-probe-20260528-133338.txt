@@ -1,0 +1,181 @@
+# 老叶 Polygon RPC probe 20260528-133338
+# project: sports-trader-cpp
+# constraint: read-only, <=10 calls/endpoint
+
+----------------------------------------------------------------
+0. 测试 vendor / endpoint 清单
+   Alchemy demo:     https://polygon-mainnet.g.alchemy.com/v2/demo
+   QuickNode demo:   https://docs-demo.polygon-mainnet.quiknode.pro/
+   dRPC public:      https://polygon.drpc.org
+   Polygon public:   https://polygon-rpc.com
+   LlamaRPC:         https://polygon.llamarpc.com
+----------------------------------------------------------------
+
+=========== Vendor: alchemy ===========
+  [alchemy] eth_chainId  n=5  ok=0/5  t_s=min/med/max=0.973/0.994/1.411  size=0B
+  [alchemy] eth_blockNumber  n=10  ok=2/10  t_s=min/med/max=0.939/0.980/2.312  size=0B
+  [alchemy] eth_gasPrice  n=5  ok=0/5  t_s=min/med/max=0.974/1.019/1.308  size=0B
+  [alchemy] eth_maxPriorityFeePerGas  n=5  ok=0/5  t_s=min/med/max=1.112/1.394/2.126  size=0B
+  [alchemy] eth_feeHistory(20blocks)  n=5  ok=2/5  t_s=min/med/max=1.010/1.270/1.692  size=0B
+  [alchemy] eth_getBalance  n=5  ok=0/5  t_s=min/med/max=0.998/1.374/1.465  size=0B
+  [alchemy] eth_getTransactionCount  n=5  ok=1/5  t_s=min/med/max=1.026/1.397/1.523  size=0B
+  [alchemy] eth_getCode(USDC.e)  n=3  ok=0/3  t_s=min/med/max=1.028/1.039/1.095  size=0B
+  [alchemy] eth_getStorageAt  n=3  ok=0/3  t_s=min/med/max=1.008/1.408/1.808  size=0B
+  [alchemy] eth_call(balanceOf)  n=5  ok=2/5  t_s=min/med/max=1.014/1.029/1.485  size=0B
+  [alchemy] eth_estimateGas(transfer)  n=3  ok=1/3  t_s=min/med/max=1.006/1.047/1.546  size=0B
+  [alchemy] eth_getBlockByNumber(latest,full)  n=3  ok=0/3  t_s=min/med/max=1.086/1.091/1.420  size=0B
+  [alchemy] eth_getBlockByNumber(latest,hashonly)  n=3  ok=0/3  t_s=min/med/max=1.000/1.010/1.373  size=0B
+  [alchemy] eth_getBlockByNumber(old,hashonly)  n=3  ok=1/3  t_s=min/med/max=1.009/1.010/1.023  size=0B
+  [alchemy] eth_getLogs(CTFExchange@latest)  n=3  ok=0/3  t_s=min/med/max=1.028/1.035/1.401  size=0B
+  [alchemy] batch(3 calls)  n=3  ok=0/3  t_s=min/med/max=1.073/1.088/1.138  size=0B
+
+=========== Vendor: quicknode ===========
+  [quicknode] eth_chainId  n=5  ok=0/5  t_s=min/med/max=0.419/0.427/0.925  size=0B
+  [quicknode] eth_blockNumber  n=10  ok=0/10  t_s=min/med/max=0.411/0.633/1.090  size=0B
+  [quicknode] eth_gasPrice  n=5  ok=0/5  t_s=min/med/max=0.427/0.721/0.850  size=0B
+  [quicknode] eth_maxPriorityFeePerGas  n=5  ok=0/5  t_s=min/med/max=0.413/0.712/0.848  size=0B
+  [quicknode] eth_feeHistory(20blocks)  n=5  ok=0/5  t_s=min/med/max=0.418/0.427/1.065  size=0B
+  [quicknode] eth_getBalance  n=5  ok=0/5  t_s=min/med/max=0.425/0.433/5.640  size=0B
+  [quicknode] eth_getTransactionCount  n=5  ok=0/5  t_s=min/med/max=0.435/0.621/0.817  size=0B
+  [quicknode] eth_getCode(USDC.e)  n=3  ok=0/3  t_s=min/med/max=0.410/0.431/0.677  size=0B
+  [quicknode] eth_getStorageAt  n=3  ok=0/3  t_s=min/med/max=0.436/0.615/0.625  size=0B
+  [quicknode] eth_call(balanceOf)  n=5  ok=0/5  t_s=min/med/max=0.405/0.407/0.823  size=0B
+  [quicknode] eth_estimateGas(transfer)  n=3  ok=0/3  t_s=min/med/max=0.417/0.421/0.656  size=0B
+  [quicknode] eth_getBlockByNumber(latest,full)  n=3  ok=0/3  t_s=min/med/max=0.431/0.438/0.446  size=0B
+  [quicknode] eth_getBlockByNumber(latest,hashonly)  n=3  ok=0/3  t_s=min/med/max=0.427/0.887/0.907  size=0B
+  [quicknode] eth_getBlockByNumber(old,hashonly)  n=3  ok=0/3  t_s=min/med/max=0.429/0.445/0.810  size=0B
+  [quicknode] eth_getLogs(CTFExchange@latest)  n=3  ok=0/3  t_s=min/med/max=0.413/0.437/0.441  size=0B
+  [quicknode] batch(3 calls)  n=3  ok=0/3  t_s=min/med/max=0.429/0.429/0.463  size=0B
+
+=========== Vendor: drpc ===========
+  [drpc] eth_chainId  n=5  ok=5/5  t_s=min/med/max=0.782/0.787/1.411  size=40B
+  [drpc] eth_blockNumber  n=10  ok=10/10  t_s=min/med/max=0.786/1.188/1.865  size=45B
+  [drpc] eth_gasPrice  n=5  ok=5/5  t_s=min/med/max=1.250/1.316/1.754  size=48B
+  [drpc] eth_maxPriorityFeePerGas  n=5  ok=5/5  t_s=min/med/max=0.856/0.877/1.605  size=47B
+  [drpc] eth_feeHistory(20blocks)  n=5  ok=5/5  t_s=min/med/max=1.046/1.417/1.482  size=1927B
+  [drpc] eth_getBalance  n=5  ok=5/5  t_s=min/med/max=1.038/1.216/1.592  size=58B
+  [drpc] eth_getTransactionCount  n=5  ok=5/5  t_s=min/med/max=0.886/0.905/1.490  size=39B
+  [drpc] eth_getCode(USDC.e)  n=3  ok=3/3  t_s=min/med/max=0.886/1.388/1.583  size=4112B
+  [drpc] eth_getStorageAt  n=3  ok=3/3  t_s=min/med/max=0.895/1.293/1.319  size=102B
+  [drpc] eth_call(balanceOf)  n=5  ok=5/5  t_s=min/med/max=0.880/0.943/1.388  size=102B
+  [drpc] eth_estimateGas(transfer)  n=3  ok=3/3  t_s=min/med/max=0.831/0.834/1.037  size=389B
+  [drpc] eth_getBlockByNumber(latest,full)  n=3  ok=3/3  t_s=min/med/max=1.580/1.645/2.040  size=310118B
+  [drpc] eth_getBlockByNumber(latest,hashonly)  n=3  ok=3/3  t_s=min/med/max=1.225/1.312/1.696  size=14416B
+  [drpc] eth_getBlockByNumber(old,hashonly)  n=3  ok=3/3  t_s=min/med/max=0.820/1.218/1.322  size=1571B
+  [drpc] eth_getLogs(CTFExchange@latest)  n=3  ok=3/3  t_s=min/med/max=0.852/1.119/1.652  size=36B
+  [drpc] batch(3 calls)  n=3  ok=3/3  t_s=min/med/max=0.928/0.933/1.361  size=137B
+
+=========== Vendor: public ===========
+  [public] eth_chainId  n=5  ok=0/5  t_s=min/med/max=0.772/1.139/1.481  size=101B
+  [public] eth_blockNumber  n=10  ok=0/10  t_s=min/med/max=0.771/1.121/1.688  size=101B
+  [public] eth_gasPrice  n=5  ok=0/5  t_s=min/med/max=0.769/0.794/1.106  size=101B
+  [public] eth_maxPriorityFeePerGas  n=5  ok=0/5  t_s=min/med/max=0.788/1.114/1.922  size=101B
+  [public] eth_feeHistory(20blocks)  n=5  ok=0/5  t_s=min/med/max=0.771/0.791/1.114  size=101B
+  [public] eth_getBalance  n=5  ok=0/5  t_s=min/med/max=0.794/1.133/1.613  size=101B
+  [public] eth_getTransactionCount  n=5  ok=0/5  t_s=min/med/max=0.778/0.949/1.163  size=101B
+  [public] eth_getCode(USDC.e)  n=3  ok=0/3  t_s=min/med/max=0.787/0.803/1.145  size=101B
+  [public] eth_getStorageAt  n=3  ok=0/3  t_s=min/med/max=0.766/0.779/1.118  size=101B
+  [public] eth_call(balanceOf)  n=5  ok=0/5  t_s=min/med/max=0.787/1.193/2.884  size=101B
+  [public] eth_estimateGas(transfer)  n=3  ok=0/3  t_s=min/med/max=1.182/1.199/1.990  size=101B
+  [public] eth_getBlockByNumber(latest,full)  n=3  ok=0/3  t_s=min/med/max=0.803/1.860/2.116  size=101B
+  [public] eth_getBlockByNumber(latest,hashonly)  n=3  ok=0/3  t_s=min/med/max=0.802/0.845/1.806  size=101B
+  [public] eth_getBlockByNumber(old,hashonly)  n=3  ok=0/3  t_s=min/med/max=1.304/1.567/2.420  size=101B
+  [public] eth_getLogs(CTFExchange@latest)  n=3  ok=0/3  t_s=min/med/max=1.486/1.753/1.952  size=101B
+  [public] batch(3 calls)  n=3  ok=0/3  t_s=min/med/max=1.064/1.195/1.904  size=101B
+
+=========== Vendor: llama ===========
+  [llama] eth_chainId  n=5  ok=0/5  t_s=min/med/max=0.362/0.380/0.546  size=0B
+  [llama] eth_blockNumber  n=10  ok=0/10  t_s=min/med/max=0.360/0.373/1.256  size=0B
+  [llama] eth_gasPrice  n=5  ok=0/5  t_s=min/med/max=0.363/0.367/0.648  size=0B
+  [llama] eth_maxPriorityFeePerGas  n=5  ok=0/5  t_s=min/med/max=0.363/0.367/0.818  size=0B
+  [llama] eth_feeHistory(20blocks)  n=5  ok=0/5  t_s=min/med/max=0.364/0.369/0.373  size=0B
+  [llama] eth_getBalance  n=5  ok=0/5  t_s=min/med/max=0.362/0.377/0.613  size=0B
+  [llama] eth_getTransactionCount  n=5  ok=0/5  t_s=min/med/max=0.362/0.366/0.377  size=0B
+  [llama] eth_getCode(USDC.e)  n=3  ok=0/3  t_s=min/med/max=0.369/0.370/0.376  size=0B
+  [llama] eth_getStorageAt  n=3  ok=0/3  t_s=min/med/max=0.364/0.365/0.466  size=0B
+  [llama] eth_call(balanceOf)  n=5  ok=0/5  t_s=min/med/max=0.366/0.376/0.781  size=0B
+  [llama] eth_estimateGas(transfer)  n=3  ok=0/3  t_s=min/med/max=0.370/0.381/0.496  size=0B
+  [llama] eth_getBlockByNumber(latest,full)  n=3  ok=0/3  t_s=min/med/max=0.368/0.395/0.402  size=0B
+  [llama] eth_getBlockByNumber(latest,hashonly)  n=3  ok=0/3  t_s=min/med/max=0.423/0.465/0.939  size=0B
+  [llama] eth_getBlockByNumber(old,hashonly)  n=3  ok=0/3  t_s=min/med/max=0.363/0.375/0.375  size=0B
+  [llama] eth_getLogs(CTFExchange@latest)  n=3  ok=0/3  t_s=min/med/max=0.368/0.371/0.482  size=0B
+  [llama] batch(3 calls)  n=3  ok=0/3  t_s=min/med/max=0.369/0.369/0.374  size=0B
+
+----------------------------------------------------------------
+Z. JSON-RPC batch 上限实测
+----------------------------------------------------------------
+
+--- batch probe: alchemy ---
+  [alchemy] batch_size=1  http=429  t_s=1.088682  size=0B  returned=-2
+  [alchemy] batch_size=10  http=429  t_s=1.577192  size=0B  returned=-2
+  [alchemy] batch_size=50  http=429  t_s=2.589395  size=0B  returned=-2
+  [alchemy] batch_size=100  http=429  t_s=1.120934  size=0B  returned=-2
+  [alchemy] batch_size=200  http=429  t_s=2.381917  size=0B  returned=-2
+  [alchemy] batch_size=500  http=200  t_s=1.757906  size=23891B  returned=500
+  [alchemy] batch_size=1000  http=429  t_s=2.103325  size=0B  returned=-2
+
+--- batch probe: quicknode ---
+  [quicknode] batch_size=1  http=000  t_s=0.422418  size=0B  returned=-2
+  [quicknode] batch_size=10  http=000  t_s=0.438136  size=0B  returned=-2
+  [quicknode] batch_size=50  http=000  t_s=0.798964  size=0B  returned=-2
+  [quicknode] batch_size=100  http=000  t_s=0.664133  size=0B  returned=-2
+  [quicknode] batch_size=200  http=000  t_s=0.849002  size=0B  returned=-2
+  [quicknode] batch_size=500  http=000  t_s=0.503597  size=0B  returned=-2
+  [quicknode] batch_size=1000  http=000  t_s=0.424034  size=0B  returned=-2
+
+--- batch probe: drpc ---
+  [drpc] batch_size=1  http=200  t_s=1.191148  size=47B  returned=1
+  [drpc] batch_size=10  http=200  t_s=0.809742  size=461B  returned=10
+  [drpc] batch_size=50  http=200  t_s=0.835794  size=2341B  returned=50
+  [drpc] batch_size=100  http=200  t_s=1.171444  size=4691B  returned=100
+  [drpc] batch_size=200  http=500  t_s=1.180204  size=34491B  returned=200
+  [drpc] batch_size=500  http=500  t_s=1.618404  size=86391B  returned=500
+  [drpc] batch_size=1000  http=500  t_s=3.416404  size=172891B  returned=1000
+
+--- batch probe: public ---
+  [public] batch_size=1  http=401  t_s=1.125750  size=101B  returned=-1
+  [public] batch_size=10  http=401  t_s=1.797872  size=101B  returned=-1
+  [public] batch_size=50  http=401  t_s=1.195485  size=101B  returned=-1
+  [public] batch_size=100  http=401  t_s=0.993625  size=101B  returned=-1
+  [public] batch_size=200  http=401  t_s=2.120667  size=101B  returned=-1
+  [public] batch_size=500  http=401  t_s=0.823878  size=101B  returned=-1
+  [public] batch_size=1000  http=401  t_s=2.800729  size=101B  returned=-1
+
+----------------------------------------------------------------
+Y. WebSocket subscription 复用 (单连接订阅 newHeads + logs)
+----------------------------------------------------------------
+[drpc] connecting wss://polygon.drpc.org
+[drpc] handshake_ms=1177
+[drpc] sub_newHeads=0x13bdf826bc666ea2cfcdda286e411bfac41a8e17
+[drpc] sub_logs(CTFExchange)=0xc7712494ac8779b6e6ebe322aba40ea8d56c4336
+[drpc] sub_pending=None
+[drpc] === results over 20s ===
+[drpc] newHeads:   count=11  avg_interval_s=1.81  avg_msg_B=2329
+[drpc] logs:       count=20  avg_msg_B=734
+
+[alchemy_demo] connecting wss://polygon-mainnet.g.alchemy.com/v2/demo
+[alchemy_demo] error: server rejected WebSocket connection: HTTP 429
+
+
+----------------------------------------------------------------
+X. Polygon 特有 RPC: bor_getCurrentValidators / bor_getCurrentProposer / eth_getRootHash
+----------------------------------------------------------------
+  [alchemy] bor_getCurrentValidators  n=3  ok=0/3  t_s=min/med/max=0.995/1.399/1.447  size=0B
+  [alchemy] bor_getCurrentProposer  n=3  ok=1/3  t_s=min/med/max=1.040/1.042/1.537  size=0B
+  [alchemy] eth_getRootHash  n=2  ok=0/2  t_s=min/med/max=1.111/1.526/1.526  size=0B
+  [quicknode] bor_getCurrentValidators  n=3  ok=0/3  t_s=min/med/max=0.421/0.428/0.503  size=0B
+  [quicknode] bor_getCurrentProposer  n=3  ok=0/3  t_s=min/med/max=0.465/0.798/5.420  size=0B
+  [quicknode] eth_getRootHash  n=2  ok=0/2  t_s=min/med/max=0.397/0.783/0.783  size=0B
+  [drpc] bor_getCurrentValidators  n=3  ok=3/3  t_s=min/med/max=1.073/1.442/1.675  size=125B
+  [drpc] bor_getCurrentProposer  n=3  ok=3/3  t_s=min/med/max=0.978/1.286/1.474  size=78B
+  [drpc] eth_getRootHash  n=2  ok=2/2  t_s=min/med/max=1.106/2.442/2.442  size=100B
+  [public] bor_getCurrentValidators  n=3  ok=0/3  t_s=min/med/max=0.823/0.834/1.298  size=101B
+  [public] bor_getCurrentProposer  n=3  ok=0/3  t_s=min/med/max=0.773/1.074/1.302  size=101B
+  [public] eth_getRootHash  n=2  ok=0/2  t_s=min/med/max=1.161/1.340/1.340  size=101B
+
+Heimdall public API:
+  GET https://heimdall-api.polygon.technology/clerk/event-record/list  http=501  t_s=1.253810  size=54B
+  GET https://heimdall-api.polygon.technology/staking/validator-set  http=501  t_s=1.821880  size=52B
+  GET https://heimdall-api.polygon.technology/checkpoints/latest  http=200  t_s=1.505748  size=239B
+
+DONE.

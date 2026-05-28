@@ -1,0 +1,553 @@
+# xiaoduan v2 goalserve full matrix probe 20260528-133314
+# proxy: http://127.0.0.1:7890
+
+
+===== 1. Basketball =====
+  [bsktbl-inplay#1] http=200 bytes=217 ttfb=3.187145 total=3.187768  path=bsktbl/inplay
+  [bsktbl-inplay#2] http=200 bytes=217 ttfb=2.436482 total=2.437161  path=bsktbl/inplay
+  [bsktbl-inplay#3] http=200 bytes=217 ttfb=6.082858 total=6.083634  path=bsktbl/inplay
+  [bsktbl-home#1] http=200 bytes=1269 ttfb=1.626368 total=1.626652  path=bsktbl/home
+  [bsktbl-home#2] http=200 bytes=1269 ttfb=2.157557 total=2.158427  path=bsktbl/home
+  [bsktbl-nba-scores#1] http=200 bytes=265 ttfb=1.690079 total=1.690738  path=bsktbl/nba-scores
+  [bsktbl-nba-scores#2] http=200 bytes=265 ttfb=1.938769 total=1.939325  path=bsktbl/nba-scores
+  [bsktbl-nba-shedule#1] http=200 bytes=116020 ttfb=1.843093 total=2.600425  path=bsktbl/nba-shedule
+  [bsktbl-nba-schedule#1] http=500 bytes=1769 ttfb=3.333575 total=3.333831  path=bsktbl/nba-schedule
+  [bsktbl-wnba-scores#1] http=200 bytes=8914 ttfb=2.124958 total=2.126091  path=bsktbl/wnba-scores
+  [bsktbl-wnba-shedule#1] http=200 bytes=13892 ttfb=2.074946 total=2.075777  path=bsktbl/wnba-shedule
+  [bsktbl-ncaa-scores#1] http=200 bytes=261 ttfb=2.110053 total=2.110833  path=bsktbl/ncaa-scores
+  [bsktbl-ncaa-shedule#1] http=200 bytes=540368 ttfb=2.770751 total=3.835893  path=bsktbl/ncaa-shedule
+  [bsktbl-euroleague#1] http=500 bytes=1769 ttfb=2.208057 total=2.208448  path=bsktbl/euroleague
+  [bsktbl-nba-standing#1] http=200 bytes=2185 ttfb=2.026854 total=2.027218  path=bsktbl/nba-standings
+  [bsktbl-nba-players#1] http=500 bytes=1769 ttfb=1.797103 total=1.797775  path=bsktbl/nba-players
+  [bsktbl-nba-teams#1] http=500 bytes=1769 ttfb=2.189659 total=2.190335  path=bsktbl/nba-teams
+  [bsktbl-nba-roster#1] http=500 bytes=1769 ttfb=6.858574 total=6.859273  path=bsktbl/nba-roster
+  [bsktbl-nba-injuries#1] http=500 bytes=1769 ttfb=3.419904 total=3.420494  path=bsktbl/nba-injuries
+  [bsktbl-nba-statistic#1] http=500 bytes=1769 ttfb=2.010331 total=2.010815  path=bsktbl/nba-stats
+  [bsktbl-nba-leaders#1] http=500 bytes=1769 ttfb=2.804093 total=2.804801  path=bsktbl/nba-leaders
+  [bsktbl-nba-h2h#1] http=500 bytes=1769 ttfb=2.752494 total=2.752918  path=bsktbl/nba-h2h
+  [bsktbl-livescore#1] http=500 bytes=1769 ttfb=1.684585 total=1.684894  path=bsktbl/livescore
+  [bsktbl-results#1] http=500 bytes=1769 ttfb=2.514364 total=2.514719  path=bsktbl/results
+  [bsktbl-d-1#1] http=200 bytes=5094 ttfb=1.774660 total=1.775660  path=bsktbl/d-1
+  [bsktbl-nba-odds#1] http=500 bytes=1769 ttfb=2.937422 total=2.937602  path=bsktbl/nba-odds
+  [bsktbl-nba-getodds#1] http=500 bytes=1769 ttfb=2.523159 total=2.523784  path=bsktbl/nba-getodds
+
+===== 2. Football (NFL/NCAA) =====
+  [football-inplay#1] http=200 bytes=219 ttfb=2.525591 total=2.526441  path=football/inplay
+  [football-inplay#2] http=200 bytes=219 ttfb=3.638762 total=3.639612  path=football/inplay
+  [football-home#1] http=200 bytes=192 ttfb=1.739438 total=1.740148  path=football/home
+  [football-nfl-scores#1] http=200 bytes=4103 ttfb=1.769623 total=1.770607  path=football/nfl-scores
+  [football-nfl-scores#2] http=200 bytes=4103 ttfb=2.110876 total=2.111856  path=football/nfl-scores
+  [football-nfl-shedule#1] http=200 bytes=201 ttfb=3.165004 total=3.165772  path=football/nfl-shedule
+  [football-nfl-schedule#1] http=200 bytes=208 ttfb=2.171985 total=2.172789  path=football/nfl-schedule
+  [football-nfl-standings#1] http=200 bytes=2065 ttfb=5.862348 total=5.863237  path=football/nfl-standings
+  [football-nfl-players#1] http=200 bytes=0 ttfb=2.227561 total=2.227735  path=football/nfl-players
+  [football-nfl-injuries#1] http=200 bytes=0 ttfb=2.580623 total=2.581002  path=football/nfl-injuries
+  [football-nfl-stats#1] http=200 bytes=0 ttfb=5.798573 total=5.798912  path=football/nfl-stats
+  [football-nfl-leaders#1] http=200 bytes=0 ttfb=3.144619 total=3.144904  path=football/nfl-leaders
+  [football-nfl-rankings#1] http=200 bytes=0 ttfb=9.164986 total=9.165387  path=football/nfl-rankings
+  [football-ncaa-scores#1] http=200 bytes=0 ttfb=7.764451 total=7.764792  path=football/ncaa-scores
+  [football-ncaa-shedule#1] http=500 bytes=1752 ttfb=5.271794 total=5.272480  path=football/ncaa-shedule
+  [football-ncaa#1] http=200 bytes=0 ttfb=2.194757 total=2.195143  path=football/ncaa
+  [football-results#1] http=200 bytes=0 ttfb=2.510081 total=2.510431  path=football/results
+  [football-livescore#1] http=200 bytes=0 ttfb=1.891190 total=1.891432  path=football/livescore
+
+===== 3. Baseball =====
+  [baseball-inplay#1] http=200 bytes=192 ttfb=2.137749 total=2.138582  path=baseball/inplay
+  [baseball-inplay#2] http=200 bytes=192 ttfb=1.692587 total=1.693011  path=baseball/inplay
+  [baseball-home#1] http=200 bytes=408 ttfb=1.762080 total=1.762869  path=baseball/home
+  [baseball-usa#1] http=200 bytes=29954 ttfb=2.647620 total=2.806193  path=baseball/usa
+  [baseball-usa#2] http=200 bytes=29954 ttfb=7.176653 total=7.178722  path=baseball/usa
+  [baseball-mlb-scores#1] http=200 bytes=29954 ttfb=2.000124 total=2.145806  path=baseball/mlb-scores
+  [baseball-mlb-shedule#1] http=500 bytes=1808 ttfb=1.996159 total=1.996820  path=baseball/mlb-shedule
+  [baseball-mlb-standings#1] http=500 bytes=1808 ttfb=1.758442 total=1.758951  path=baseball/mlb-standings
+  [baseball-mlb-players#1] http=500 bytes=1808 ttfb=1.781924 total=1.782463  path=baseball/mlb-players
+  [baseball-mlb-injuries#1] http=500 bytes=1808 ttfb=2.165277 total=2.165387  path=baseball/mlb-injuries
+  [baseball-mlb-stats#1] http=500 bytes=1808 ttfb=1.754490 total=1.755203  path=baseball/mlb-stats
+  [baseball-mlb-leaders#1] http=500 bytes=1808 ttfb=6.480317 total=6.480874  path=baseball/mlb-leaders
+  [baseball-mlb-pitchers#1] http=500 bytes=1808 ttfb=6.104227 total=6.104890  path=baseball/mlb-pitchers
+  [baseball-mlb-batters#1] http=500 bytes=1808 ttfb=1.692009 total=1.692353  path=baseball/mlb-batters
+  [baseball-milb#1] http=500 bytes=1808 ttfb=2.035028 total=2.035234  path=baseball/milb
+  [baseball-japan#1] http=200 bytes=5607 ttfb=1.843744 total=1.844700  path=baseball/japan
+  [baseball-korea#1] http=200 bytes=3321 ttfb=2.258383 total=2.259399  path=baseball/korea
+  [baseball-mlb-odds#1] http=500 bytes=1808 ttfb=2.163940 total=2.164589  path=baseball/mlb-odds
+  [baseball-getodds#1] http=500 bytes=1808 ttfb=2.101441 total=2.102116  path=baseball/getodds
+
+===== 4. Soccer =====
+  [soccer-inplay-xml#1] http=200 bytes=327 ttfb=2.433034 total=2.433756  path=soccer/inplay
+  [soccer-inplay-xml#2] http=200 bytes=327 ttfb=2.079140 total=2.079881  path=soccer/inplay
+  [soccernew-inplay#1] http=200 bytes=327 ttfb=6.248546 total=6.249425  path=soccernew/inplay
+  [soccernew-inplay#2] http=200 bytes=327 ttfb=3.370145 total=3.370779  path=soccernew/inplay
+  [soccer-home#1] http=200 bytes=21594 ttfb=2.890286 total=3.040504  path=soccer/home
+  [soccernew-home#1] http=200 bytes=18496 ttfb=2.754296 total=2.755336  path=soccernew/home
+  [soccer-livescore#1] http=200 bytes=0 ttfb=3.245720 total=3.246161  path=soccer/livescore
+  [soccer-standings#1] http=200 bytes=0 ttfb=2.472205 total=2.472528  path=soccer/standings
+  [soccer-shedule#1] http=200 bytes=0 ttfb=2.219212 total=2.219409  path=soccer/shedule
+  [soccer-schedule#1] http=200 bytes=0 ttfb=2.569649 total=2.569997  path=soccer/schedule
+  [soccer-d-1#1] http=200 bytes=72023 ttfb=8.550102 total=8.877062  path=soccer/d-1
+  [soccer-getodds#1] http=200 bytes=0 ttfb=2.048226 total=2.048624  path=soccer/getodds
+  [soccer-comments#1] http=200 bytes=0 ttfb=2.507759 total=2.508112  path=soccer/comments
+  [soccer-epl#1] http=200 bytes=0 ttfb=3.441964 total=3.442392  path=soccer/epl
+  [soccer-bundesliga#1] http=200 bytes=0 ttfb=1.642714 total=1.642978  path=soccer/bundesliga
+  [soccer-laliga#1] http=200 bytes=0 ttfb=1.666649 total=1.666919  path=soccer/laliga
+  [soccer-mls#1] http=200 bytes=0 ttfb=1.612831 total=1.613008  path=soccer/mls
+  [soccer-champions#1] http=200 bytes=0 ttfb=9.348866 total=9.349093  path=soccer/champions-league
+  [soccer-europa#1] http=200 bytes=0 ttfb=5.579249 total=5.579374  path=soccer/europa-league
+  [soccer-worldcup#1] http=200 bytes=39481 ttfb=4.601009 total=5.069223  path=soccer/worldcup
+  [soccernew-1204#1] http=500 bytes=1799 ttfb=2.050400 total=2.050801  path=soccernew/1204
+  [soccernew-leagues#1] http=200 bytes=10240 ttfb=2.464767 total=2.465717  path=soccernew/leagues
+
+===== 5. Hockey =====
+  [hockey-inplay#1] http=200 bytes=336 ttfb=2.988724 total=2.989290  path=hockey/inplay
+  [hockey-inplay#2] http=200 bytes=336 ttfb=2.927317 total=2.927978  path=hockey/inplay
+  [hockey-home#1] http=200 bytes=2137 ttfb=2.175871 total=2.176846  path=hockey/home
+  [hockey-nhl-scores#1] http=200 bytes=3736 ttfb=2.618277 total=2.619198  path=hockey/nhl-scores
+  [hockey-nhl-scores#2] http=200 bytes=3736 ttfb=4.913889 total=4.914620  path=hockey/nhl-scores
+  [hockey-nhl-shedule#1] http=200 bytes=600790 ttfb=3.367747 total=4.677175  path=hockey/nhl-shedule
+  [hockey-nhl-schedule#1] http=500 bytes=1759 ttfb=2.528953 total=2.529576  path=hockey/nhl-schedule
+  [hockey-nhl-standings#1] http=200 bytes=2598 ttfb=2.075504 total=2.076328  path=hockey/nhl-standings
+  [hockey-nhl-players#1] http=500 bytes=1759 ttfb=1.699591 total=1.700348  path=hockey/nhl-players
+  [hockey-nhl-injuries#1] http=500 bytes=1759 ttfb=1.782947 total=1.783279  path=hockey/nhl-injuries
+  [hockey-nhl-stats#1] http=500 bytes=1759 ttfb=2.112570 total=2.113201  path=hockey/nhl-stats
+  [hockey-nhl-leaders#1] http=500 bytes=1759 ttfb=2.068128 total=2.068808  path=hockey/nhl-leaders
+  [hockey-khl#1] http=200 bytes=239 ttfb=1.788869 total=1.789716  path=hockey/khl
+  [hockey-livescore#1] http=500 bytes=1759 ttfb=6.108350 total=6.108851  path=hockey/livescore
+  [hockey-getodds#1] http=500 bytes=1759 ttfb=1.917609 total=1.918297  path=hockey/getodds
+
+===== 6. Tennis =====
+  [tennis-home#1] http=200 bytes=12430 ttfb=2.078837 total=2.484218  path=tennis/home
+  [tennis-home#2] http=200 bytes=12430 ttfb=8.703269 total=8.704341  path=tennis/home
+  [tennis-inplay#1] http=500 bytes=1755 ttfb=2.689832 total=2.690502  path=tennis/inplay
+  [tennis-livescore#1] http=500 bytes=1755 ttfb=2.406079 total=2.406522  path=tennis/livescore
+  [tennis-atp#1] http=200 bytes=4597 ttfb=3.966688 total=3.967616  path=tennis/atp
+  [tennis-wta#1] http=200 bytes=4413 ttfb=3.138920 total=3.143923  path=tennis/wta
+  [tennis-atp-shedule#1] http=500 bytes=1755 ttfb=2.715887 total=2.716305  path=tennis/atp-shedule
+  [tennis-wta-shedule#1] http=500 bytes=1755 ttfb=3.002659 total=3.003340  path=tennis/wta-shedule
+  [tennis-results#1] http=500 bytes=1755 ttfb=4.754634 total=4.755336  path=tennis/results
+  [tennis-tournaments#1] http=500 bytes=1755 ttfb=4.971296 total=4.971991  path=tennis/tournaments
+  [tennis-getodds#1] http=500 bytes=1755 ttfb=2.804653 total=2.805343  path=tennis/getodds
+  [tennis-d-1#1] http=500 bytes=1755 ttfb=8.153637 total=8.153823  path=tennis/d-1
+
+===== 7. Cricket =====
+  [cricket-livescore#1] http=200 bytes=46228 ttfb=3.325657 total=3.485552  path=cricket/livescore
+  [cricket-livescore#2] http=200 bytes=46228 ttfb=3.490505 total=3.492037  path=cricket/livescore
+  [cricket-home#1] http=200 bytes=618 ttfb=2.567133 total=2.567893  path=cricket/home
+  [cricket-inplay#1] http=500 bytes=1784 ttfb=7.802831 total=7.803084  path=cricket/inplay
+  [cricket-shedule#1] http=500 bytes=1784 ttfb=2.922309 total=2.922948  path=cricket/shedule
+  [cricket-fixtures#1] http=500 bytes=1784 ttfb=14.253533 total=14.254265  path=cricket/fixtures
+  [cricket-squads#1] http=500 bytes=1784 ttfb=7.134215 total=7.135051  path=cricket/squads
+  [cricket-ipl#1] http=500 bytes=1784 ttfb=6.031907 total=6.032441  path=cricket/ipl
+  [cricket-icc#1] http=500 bytes=1784 ttfb=3.467848 total=3.468515  path=cricket/icc
+  [cricket-rankings#1] http=500 bytes=1784 ttfb=3.516353 total=3.517088  path=cricket/rankings
+  [cricket-getodds#1] http=500 bytes=1784 ttfb=6.092047 total=6.092726  path=cricket/getodds
+
+===== 8. Rugby =====
+  [rugby-inplay#1] http=200 bytes=328 ttfb=5.672624 total=5.673303  path=rugby/inplay
+  [rugby-inplay#2] http=200 bytes=328 ttfb=3.022535 total=3.023415  path=rugby/inplay
+  [rugby-home#1] http=200 bytes=437 ttfb=9.970565 total=9.971428  path=rugby/home
+  [rugby-livescore#1] http=500 bytes=1774 ttfb=6.638052 total=6.638818  path=rugby/livescore
+  [rugbyleague-inplay#1] http=500 bytes=1780 ttfb=3.144448 total=3.145164  path=rugbyleague/inplay
+  [rugbyleague-home#1] http=200 bytes=430 ttfb=2.014209 total=2.015038  path=rugbyleague/home
+  [rugby-shedule#1] http=500 bytes=1774 ttfb=2.864965 total=2.865498  path=rugby/shedule
+  [rugby-getodds#1] http=500 bytes=1774 ttfb=1.804230 total=1.804874  path=rugby/getodds
+
+===== 9. Handball =====
+  [handball-inplay#1] http=200 bytes=213 ttfb=4.967373 total=4.968150  path=handball/inplay
+  [handball-inplay#2] http=200 bytes=213 ttfb=6.347486 total=6.348159  path=handball/inplay
+  [handball-home#1] http=200 bytes=463 ttfb=2.190730 total=2.191275  path=handball/home
+  [handball-livescore#1] http=500 bytes=1789 ttfb=8.044683 total=8.045373  path=handball/livescore
+  [handball-shedule#1] http=500 bytes=1789 ttfb=2.047169 total=2.047907  path=handball/shedule
+  [handball-getodds#1] http=500 bytes=1789 ttfb=2.719454 total=2.720195  path=handball/getodds
+
+===== 10. Volleyball =====
+  [volleyball-inplay#1] http=200 bytes=214 ttfb=2.001959 total=2.002317  path=volleyball/inplay
+  [volleyball-inplay#2] http=200 bytes=214 ttfb=3.589051 total=3.589912  path=volleyball/inplay
+  [volleyball-home#1] http=200 bytes=187 ttfb=2.057519 total=2.058204  path=volleyball/home
+  [volleyball-livescore#1] http=500 bytes=1791 ttfb=2.898601 total=2.899209  path=volleyball/livescore
+  [volleyball-shedule#1] http=500 bytes=1791 ttfb=2.172959 total=2.173526  path=volleyball/shedule
+  [volleyball-getodds#1] http=500 bytes=1791 ttfb=2.148784 total=2.149307  path=volleyball/getodds
+
+===== 11. 小众 indoor (badminton/tabletennis/snooker/darts) =====
+  [badminton-inplay#1] http=200 bytes=0 ttfb=3.668545 total=3.668957  path=badminton/inplay
+  [badminton-home#1] http=200 bytes=1984 ttfb=2.014636 total=2.015133  path=badminton/home
+  [tabletennis-inplay#1] http=200 bytes=479 ttfb=1.616672 total=1.617504  path=tabletennis/inplay
+  [tabletennis-home#1] http=200 bytes=476 ttfb=1.700586 total=1.701308  path=tabletennis/home
+  [table-tennis-home#1] http=200 bytes=476 ttfb=2.685268 total=2.686000  path=table-tennis/home
+  [snooker-inplay#1] http=200 bytes=0 ttfb=2.544929 total=2.545326  path=snooker/inplay
+  [snooker-home#1] http=200 bytes=1374 ttfb=1.639948 total=1.640760  path=snooker/home
+  [darts-home#1] http=200 bytes=1023 ttfb=3.043058 total=3.043627  path=darts/home
+  [darts-home#2] http=200 bytes=1023 ttfb=2.740811 total=2.741687  path=darts/home
+  [darts-inplay#1] http=200 bytes=0 ttfb=1.894929 total=1.895301  path=darts/inplay
+
+===== 12. Boxing / MMA / UFC =====
+  [boxing-shedule#1] http=500 bytes=1797 ttfb=2.456706 total=2.457455  path=boxing/shedule
+  [boxing-schedule#1] http=500 bytes=1797 ttfb=1.906459 total=1.907190  path=boxing/schedule
+  [boxing-home#1] http=200 bytes=187 ttfb=2.443001 total=2.443670  path=boxing/home
+  [boxing-fighters#1] http=500 bytes=1797 ttfb=2.051041 total=2.051388  path=boxing/fighters
+  [boxing-results#1] http=500 bytes=1797 ttfb=2.043556 total=2.044297  path=boxing/results
+  [boxing-getodds#1] http=500 bytes=1797 ttfb=1.909955 total=1.910485  path=boxing/getodds
+  [mma-schedule#1] http=200 bytes=13972 ttfb=3.757010 total=3.757617  path=mma/schedule
+  [mma-schedule#2] http=200 bytes=13972 ttfb=6.386477 total=6.387532  path=mma/schedule
+  [mma-shedule#1] http=200 bytes=0 ttfb=2.554322 total=2.554671  path=mma/shedule
+  [mma-home#1] http=200 bytes=188 ttfb=1.997251 total=1.997991  path=mma/home
+  [mma-fighters#1] http=200 bytes=32695 ttfb=5.109464 total=5.612169  path=mma/fighters
+  [mma-results#1] http=200 bytes=0 ttfb=2.103565 total=2.103932  path=mma/results
+  [mma-rankings#1] http=200 bytes=0 ttfb=2.339889 total=2.340265  path=mma/rankings
+  [mma-getodds#1] http=200 bytes=0 ttfb=1.709188 total=1.709440  path=mma/getodds
+  [ufc-schedule#1] http=200 bytes=481 ttfb=1.921236 total=1.921829  path=ufc/schedule
+
+===== 13. Golf =====
+  [golf-home#1] http=200 bytes=0 ttfb=2.034080 total=2.034456  path=golf/home
+  [golf-inplay#1] http=200 bytes=0 ttfb=1.768115 total=1.768455  path=golf/inplay
+  [golf-leaderboard#1] http=200 bytes=0 ttfb=1.671701 total=1.672057  path=golf/leaderboard
+  [golf-pga#1] http=200 bytes=2637 ttfb=6.104059 total=6.104866  path=golf/pga
+  [golf-lpga#1] http=200 bytes=208 ttfb=1.687473 total=1.687909  path=golf/lpga
+  [golf-european#1] http=200 bytes=0 ttfb=2.366883 total=2.367180  path=golf/european
+  [golf-masters#1] http=200 bytes=0 ttfb=2.685058 total=2.685414  path=golf/masters
+  [golf-tournaments#1] http=200 bytes=0 ttfb=5.720112 total=5.720468  path=golf/tournaments
+  [golf-shedule#1] http=200 bytes=0 ttfb=12.909197 total=12.909436  path=golf/shedule
+  [golf-players#1] http=200 bytes=0 ttfb=2.986811 total=2.987231  path=golf/players
+  [golf-rankings#1] http=200 bytes=0 ttfb=2.885760 total=2.886154  path=golf/rankings
+  [golf-getodds#1] http=200 bytes=0 ttfb=1.730243 total=1.730586  path=golf/getodds
+
+===== 14. Motorsport =====
+  [f1-home#1] http=200 bytes=168 ttfb=3.134732 total=3.135503  path=f1/home
+  [f1-shedule#1] http=200 bytes=168 ttfb=1.996973 total=1.997860  path=f1/shedule
+  [f1-schedule#1] http=200 bytes=168 ttfb=3.047197 total=3.047731  path=f1/schedule
+  [f1-results#1] http=200 bytes=168 ttfb=2.891960 total=2.892740  path=f1/results
+  [f1-standings#1] http=200 bytes=168 ttfb=3.351388 total=3.352178  path=f1/standings
+  [f1-drivers#1] http=200 bytes=958 ttfb=2.148664 total=2.149525  path=f1/drivers
+  [f1-races#1] http=200 bytes=168 ttfb=2.633630 total=2.633961  path=f1/races
+  [f1-livetiming#1] http=200 bytes=168 ttfb=1.724117 total=1.724366  path=f1/livetiming
+  [f1-getodds#1] http=200 bytes=168 ttfb=2.103111 total=2.103916  path=f1/getodds
+  [formula1-home#1] http=200 bytes=476 ttfb=2.525031 total=2.525699  path=formula1/home
+  [nascar-home#1] http=500 bytes=1791 ttfb=2.127972 total=2.128316  path=nascar/home
+  [nascar-shedule#1] http=500 bytes=1791 ttfb=1.898797 total=1.899460  path=nascar/shedule
+  [nascar-results#1] http=500 bytes=1791 ttfb=2.489872 total=2.490605  path=nascar/results
+  [motogp-home#1] http=500 bytes=1802 ttfb=1.938932 total=1.939601  path=motogp/home
+  [motogp-shedule#1] http=500 bytes=1802 ttfb=3.434196 total=3.434955  path=motogp/shedule
+  [indycar-home#1] http=200 bytes=476 ttfb=2.216483 total=2.217339  path=indycar/home
+  [racing-home#1] http=200 bytes=0 ttfb=8.706185 total=8.706407  path=racing/home
+
+===== 15. Esports =====
+  [esports-inplay#1] http=200 bytes=0 ttfb=10.378191 total=10.378484  path=esports/inplay
+  [esports-home#1] http=200 bytes=4355 ttfb=4.166067 total=4.166996  path=esports/home
+  [esports-shedule#1] http=200 bytes=0 ttfb=2.204958 total=2.205110  path=esports/shedule
+  [esports-lol#1] http=200 bytes=0 ttfb=2.234019 total=2.234409  path=esports/lol
+  [esports-csgo#1] http=200 bytes=0 ttfb=2.994519 total=2.994665  path=esports/csgo
+  [esports-cs2#1] http=200 bytes=0 ttfb=2.035791 total=2.036113  path=esports/cs2
+  [esports-dota2#1] http=200 bytes=0 ttfb=7.285116 total=7.285509  path=esports/dota2
+  [esports-valorant#1] http=200 bytes=0 ttfb=4.286318 total=4.286441  path=esports/valorant
+  [esoccer-inplay#1] http=200 bytes=479 ttfb=2.416107 total=2.416822  path=esoccer/inplay
+
+===== 16. Horse racing / others =====
+  [horseracing-home#1] http=200 bytes=476 ttfb=1.848441 total=1.849082  path=horseracing/home
+  [horse-racing-home#1] http=200 bytes=476 ttfb=4.195841 total=4.196444  path=horse-racing/home
+  [racing-uk#1] http=200 bytes=159142 ttfb=3.192807 total=3.830979  path=racing/uk
+  [greyhound-home#1] http=200 bytes=476 ttfb=2.675568 total=2.676179  path=greyhound/home
+  [cycling-home#1] http=200 bytes=0 ttfb=1.976737 total=1.977121  path=cycling/home
+  [athletics-home#1] http=200 bytes=476 ttfb=2.477596 total=2.478127  path=athletics/home
+
+===== 17. odds endpoint sport-by-sport 二次确认 =====
+  [getodds-basketball#1] http=200 bytes=0 ttfb=2.530752 total=2.530871  path=getodds/basketball
+  [getodds-soccer#1] http=200 bytes=0 ttfb=6.179485 total=6.179868  path=getodds/soccer
+  [getodds-football#1] http=200 bytes=0 ttfb=1.852860 total=1.853131  path=getodds/football
+  [getodds-baseball#1] http=200 bytes=0 ttfb=1.716288 total=1.716662  path=getodds/baseball
+  [getodds-hockey#1] http=200 bytes=0 ttfb=3.188554 total=3.188814  path=getodds/hockey
+  [getodds-tennis#1] http=200 bytes=0 ttfb=1.841846 total=1.842212  path=getodds/tennis
+  [getodds-cricket#1] http=200 bytes=0 ttfb=2.267420 total=2.267670  path=getodds/cricket
+  [getodds-rugby#1] http=200 bytes=0 ttfb=2.095853 total=2.096242  path=getodds/rugby
+  [getodds-handball#1] http=200 bytes=0 ttfb=1.711725 total=1.712055  path=getodds/handball
+  [getodds-volleyball#1] http=200 bytes=0 ttfb=1.735041 total=1.735313  path=getodds/volleyball
+  [getodds-boxing#1] http=200 bytes=0 ttfb=3.153158 total=3.153536  path=getodds/boxing
+  [getodds-mma#1] http=200 bytes=0 ttfb=1.903236 total=1.903628  path=getodds/mma
+  [getodds-golf#1] http=200 bytes=0 ttfb=2.258124 total=2.258420  path=getodds/golf
+  [getodds-f1#1] http=200 bytes=0 ttfb=4.805989 total=4.806132  path=getodds/f1
+  [getodds-esports#1] http=200 bytes=0 ttfb=1.724028 total=1.724385  path=getodds/esports
+  [getodds-darts#1] http=200 bytes=0 ttfb=2.510694 total=2.511058  path=getodds/darts
+  [getodds-snooker#1] http=200 bytes=0 ttfb=2.695019 total=2.695398  path=getodds/snooker
+  [getodds-soccer-bm#1] http=200 bytes=0 ttfb=6.286563 total=6.286969  path=getodds/soccer?bookmakers=bet365
+  [getodds-soccer-pinn#1] http=200 bytes=0 ttfb=2.267552 total=2.267924  path=getodds/soccer?bookmakers=pinnacle
+  [odds-soccer#1] http=200 bytes=181 ttfb=8.580679 total=8.581379  path=odds/soccer
+  [odds-basketball#1] http=200 bytes=181 ttfb=5.860392 total=5.861180  path=odds/basketball
+  [odds-feed#1] http=200 bytes=181 ttfb=6.030639 total=6.031276  path=odds/feed
+
+===== 18. incremental 协议二次确认 =====
+  [lastupd-nbashed#1] http=200 bytes=116020 ttfb=3.075978 total=3.759563  path=bsktbl/nba-shedule?lastupdate=1779947256
+  [lastupd-soccer-in#1] http=200 bytes=327 ttfb=1.984708 total=1.985450  path=soccer/inplay?lastupdate=1779947256
+  [lastupd-mlb#1] http=200 bytes=29954 ttfb=2.225342 total=2.374459  path=baseball/usa?lastupdate=1779947256
+
+===== 19. 字段刷新频率 (45s 间隔 × 4 次, 跑 inplay 拿 diff) =====
+  [diff-bsktbl-inplay-t1] http=200 bytes=217 ttfb=1.618754 total=1.619481  path=bsktbl/inplay
+  [diff-soccer-inplay-t1] http=200 bytes=327 ttfb=2.018249 total=2.019121  path=soccernew/inplay
+  [diff-tennis-home-t1] http=200 bytes=12430 ttfb=2.437654 total=2.438474  path=tennis/home
+  [diff-baseball-usa-t1] http=200 bytes=29954 ttfb=3.561554 total=3.645032  path=baseball/usa
+  [diff-bsktbl-inplay-t2] http=200 bytes=217 ttfb=2.271459 total=2.271875  path=bsktbl/inplay
+  [diff-soccer-inplay-t2] http=200 bytes=327 ttfb=2.931895 total=2.932592  path=soccernew/inplay
+  [diff-tennis-home-t2] http=200 bytes=12430 ttfb=2.860289 total=2.860880  path=tennis/home
+  [diff-baseball-usa-t2] http=200 bytes=29954 ttfb=6.777107 total=7.317936  path=baseball/usa
+  [diff-bsktbl-inplay-t3] http=200 bytes=217 ttfb=1.777086 total=1.777918  path=bsktbl/inplay
+  [diff-soccer-inplay-t3] http=200 bytes=327 ttfb=2.543893 total=2.544443  path=soccernew/inplay
+  [diff-tennis-home-t3] http=200 bytes=12430 ttfb=5.256568 total=5.257701  path=tennis/home
+  [diff-baseball-usa-t3] http=200 bytes=29954 ttfb=2.186712 total=2.188469  path=baseball/usa
+  [diff-bsktbl-inplay-t4] http=200 bytes=217 ttfb=2.482279 total=2.483130  path=bsktbl/inplay
+  [diff-soccer-inplay-t4] http=200 bytes=327 ttfb=4.252139 total=4.252692  path=soccernew/inplay
+  [diff-tennis-home-t4] http=200 bytes=12430 ttfb=2.125477 total=2.126375  path=tennis/home
+  [diff-baseball-usa-t4] http=200 bytes=29954 ttfb=4.045373 total=4.185139  path=baseball/usa
+
+===== 20. per-file size dump (用于 v2 矩阵) =====
+  athletics-home-1: 560 bytes
+  badminton-home-1: 11323 bytes
+  badminton-inplay-1: 0 bytes
+  baseball-getodds-1: 1808 bytes
+  baseball-home-1: 742 bytes
+  baseball-inplay-1: 82 bytes
+  baseball-inplay-2: 82 bytes
+  baseball-japan-1: 43775 bytes
+  baseball-korea-1: 24131 bytes
+  baseball-milb-1: 1808 bytes
+  baseball-mlb-batters-1: 1808 bytes
+  baseball-mlb-injuries-1: 1808 bytes
+  baseball-mlb-leaders-1: 1808 bytes
+  baseball-mlb-odds-1: 1808 bytes
+  baseball-mlb-pitchers-1: 1808 bytes
+  baseball-mlb-players-1: 1808 bytes
+  baseball-mlb-scores-1: 161123 bytes
+  baseball-mlb-shedule-1: 1808 bytes
+  baseball-mlb-standings-1: 1808 bytes
+  baseball-mlb-stats-1: 1808 bytes
+  baseball-usa-1: 161123 bytes
+  baseball-usa-2: 161123 bytes
+  boxing-fighters-1: 1797 bytes
+  boxing-getodds-1: 1797 bytes
+  boxing-home-1: 75 bytes
+  boxing-results-1: 1797 bytes
+  boxing-schedule-typo-1: 1797 bytes
+  boxing-shedule-1: 1797 bytes
+  bsktbl-d-1-1: 20971 bytes
+  bsktbl-euroleague-1: 1769 bytes
+  bsktbl-home-1: 4218 bytes
+  bsktbl-home-2: 4218 bytes
+  bsktbl-inplay-1: 107 bytes
+  bsktbl-inplay-2: 107 bytes
+  bsktbl-inplay-3: 107 bytes
+  bsktbl-livescore-1: 1769 bytes
+  bsktbl-nba-getodds-1: 1769 bytes
+  bsktbl-nba-h2h-1: 1769 bytes
+  bsktbl-nba-injuries-1: 1769 bytes
+  bsktbl-nba-leaders-1: 1769 bytes
+  bsktbl-nba-odds-1: 1769 bytes
+  bsktbl-nba-players-1: 1769 bytes
+  bsktbl-nba-roster-1: 1769 bytes
+  bsktbl-nba-schedule-typo-1: 1769 bytes
+  bsktbl-nba-scores-1: 190 bytes
+  bsktbl-nba-scores-2: 190 bytes
+  bsktbl-nba-shedule-1: 755435 bytes
+  bsktbl-nba-standings-1: 8106 bytes
+  bsktbl-nba-stats-1: 1769 bytes
+  bsktbl-nba-teams-1: 1769 bytes
+  bsktbl-ncaa-scores-1: 178 bytes
+  bsktbl-ncaa-shedule-1: 3274453 bytes
+  bsktbl-results-1: 1769 bytes
+  bsktbl-wnba-scores-1: 52731 bytes
+  bsktbl-wnba-shedule-1: 162943 bytes
+  cricket-fixtures-1: 1784 bytes
+  cricket-getodds-1: 1784 bytes
+  cricket-home-1: 1708 bytes
+  cricket-icc-1: 1784 bytes
+  cricket-inplay-1: 1784 bytes
+  cricket-ipl-1: 1784 bytes
+  cricket-livescore-1: 269178 bytes
+  cricket-livescore-2: 269178 bytes
+  cricket-rankings-1: 1784 bytes
+  cricket-shedule-1: 1784 bytes
+  cricket-squads-1: 1784 bytes
+  cycling-home-1: 0 bytes
+  darts-home-1: 7138 bytes
+  darts-home-2: 7138 bytes
+  darts-inplay-1: 0 bytes
+  diff-baseball-usa-t1: 161123 bytes
+  diff-baseball-usa-t2: 161123 bytes
+  diff-baseball-usa-t3: 161123 bytes
+  diff-baseball-usa-t4: 161123 bytes
+  diff-bsktbl-inplay-t1: 107 bytes
+  diff-bsktbl-inplay-t2: 107 bytes
+  diff-bsktbl-inplay-t3: 107 bytes
+  diff-bsktbl-inplay-t4: 107 bytes
+  diff-soccer-inplay-t1: 276 bytes
+  diff-soccer-inplay-t2: 276 bytes
+  diff-soccer-inplay-t3: 276 bytes
+  diff-soccer-inplay-t4: 276 bytes
+  diff-tennis-home-t1: 90028 bytes
+  diff-tennis-home-t2: 90028 bytes
+  diff-tennis-home-t3: 90028 bytes
+  diff-tennis-home-t4: 90028 bytes
+  esoccer-inplay-1: 562 bytes
+  esports-cs2-1: 0 bytes
+  esports-csgo-1: 0 bytes
+  esports-dota2-1: 0 bytes
+  esports-home-1: 30726 bytes
+  esports-inplay-1: 0 bytes
+  esports-lol-1: 0 bytes
+  esports-shedule-1: 0 bytes
+  esports-valorant-1: 0 bytes
+  f1-drivers-1: 2569 bytes
+  f1-getodds-1: 50 bytes
+  f1-home-1: 50 bytes
+  f1-livetiming-1: 50 bytes
+  f1-races-1: 50 bytes
+  f1-results-1: 50 bytes
+  f1-schedule-typo-1: 50 bytes
+  f1-shedule-1: 50 bytes
+  f1-standings-1: 50 bytes
+  football-home-1: 82 bytes
+  football-inplay-1: 107 bytes
+  football-inplay-2: 107 bytes
+  football-livescore-1: 0 bytes
+  football-ncaa-1: 0 bytes
+  football-ncaa-scores-1: 0 bytes
+  football-ncaa-shedule-1: 1752 bytes
+  football-nfl-injuries-1: 0 bytes
+  football-nfl-leaders-1: 0 bytes
+  football-nfl-players-1: 0 bytes
+  football-nfl-rankings-1: 0 bytes
+  football-nfl-schedule-typo-1: 104 bytes
+  football-nfl-scores-1: 21113 bytes
+  football-nfl-scores-2: 21113 bytes
+  football-nfl-shedule-1: 97 bytes
+  football-nfl-standings-1: 8924 bytes
+  football-nfl-stats-1: 0 bytes
+  football-results-1: 0 bytes
+  formula1-home-1: 560 bytes
+  getodds-baseball-1: 0 bytes
+  getodds-basketball-1: 0 bytes
+  getodds-boxing-1: 0 bytes
+  getodds-cricket-1: 0 bytes
+  getodds-darts-1: 0 bytes
+  getodds-esports-1: 0 bytes
+  getodds-f1-1: 0 bytes
+  getodds-football-1: 0 bytes
+  getodds-golf-1: 0 bytes
+  getodds-handball-1: 0 bytes
+  getodds-hockey-1: 0 bytes
+  getodds-mma-1: 0 bytes
+  getodds-rugby-1: 0 bytes
+  getodds-snooker-1: 0 bytes
+  getodds-soccer-1: 0 bytes
+  getodds-soccer-bm365-1: 0 bytes
+  getodds-soccer-pinn-1: 0 bytes
+  getodds-tennis-1: 0 bytes
+  getodds-volleyball-1: 0 bytes
+  golf-european-1: 0 bytes
+  golf-getodds-1: 0 bytes
+  golf-home-1: 0 bytes
+  golf-inplay-1: 0 bytes
+  golf-leaderboard-1: 0 bytes
+  golf-lpga-1: 107 bytes
+  golf-masters-1: 0 bytes
+  golf-pga-1: 8411 bytes
+  golf-players-1: 0 bytes
+  golf-rankings-1: 0 bytes
+  golf-shedule-1: 0 bytes
+  golf-tournaments-1: 0 bytes
+  greyhound-home-1: 560 bytes
+  handball-getodds-1: 1789 bytes
+  handball-home-1: 900 bytes
+  handball-inplay-1: 105 bytes
+  handball-inplay-2: 105 bytes
+  handball-livescore-1: 1789 bytes
+  handball-shedule-1: 1789 bytes
+  hockey-getodds-1: 1759 bytes
+  hockey-home-1: 9455 bytes
+  hockey-inplay-1: 283 bytes
+  hockey-inplay-2: 283 bytes
+  hockey-khl-1: 153 bytes
+  hockey-livescore-1: 1759 bytes
+  hockey-nhl-injuries-1: 1759 bytes
+  hockey-nhl-leaders-1: 1759 bytes
+  hockey-nhl-players-1: 1759 bytes
+  hockey-nhl-schedule-typo-1: 1759 bytes
+  hockey-nhl-scores-1: 20530 bytes
+  hockey-nhl-scores-2: 20530 bytes
+  hockey-nhl-shedule-1: 3717142 bytes
+  hockey-nhl-standings-1: 10789 bytes
+  hockey-nhl-stats-1: 1759 bytes
+  horse-racing-home-dash-1: 560 bytes
+  horseracing-home-1: 560 bytes
+  indycar-home-1: 560 bytes
+  lastupdate-mlb-1: 161123 bytes
+  lastupdate-nba-shedule-1: 755435 bytes
+  lastupdate-soccer-inplay-1: 276 bytes
+  mma-fighters-1: 110988 bytes
+  mma-getodds-1: 0 bytes
+  mma-home-1: 77 bytes
+  mma-rankings-1: 0 bytes
+  mma-results-1: 0 bytes
+  mma-schedule-1: 71522 bytes
+  mma-schedule-2: 71522 bytes
+  mma-shedule-typo-1: 0 bytes
+  motogp-home-1: 1802 bytes
+  motogp-shedule-1: 1802 bytes
+  nascar-home-1: 1791 bytes
+  nascar-results-1: 1791 bytes
+  nascar-shedule-1: 1791 bytes
+  odds-basketball-root-1: 65 bytes
+  odds-feed-1: 65 bytes
+  odds-soccer-root-1: 65 bytes
+  racing-home-1: 0 bytes
+  racing-uk-1: 1468574 bytes
+  rugby-getodds-1: 1774 bytes
+  rugby-home-1: 574 bytes
+  rugby-inplay-1: 280 bytes
+  rugby-inplay-2: 280 bytes
+  rugby-livescore-1: 1774 bytes
+  rugby-shedule-1: 1774 bytes
+  rugbyleague-home-1: 572 bytes
+  rugbyleague-inplay-1: 1780 bytes
+  snooker-home-1: 7070 bytes
+  snooker-inplay-1: 0 bytes
+  soccer-bundesliga-1: 0 bytes
+  soccer-champions-1: 0 bytes
+  soccer-comments-1: 0 bytes
+  soccer-d-1-1: 455271 bytes
+  soccer-epl-1: 0 bytes
+  soccer-europa-1: 0 bytes
+  soccer-getodds-1: 0 bytes
+  soccer-home-1: 145026 bytes
+  soccer-inplay-xml-1: 276 bytes
+  soccer-inplay-xml-2: 276 bytes
+  soccer-laliga-1: 0 bytes
+  soccer-livescore-1: 0 bytes
+  soccer-mls-1: 0 bytes
+  soccer-schedule-typo-1: 0 bytes
+  soccer-shedule-1: 0 bytes
+  soccer-standings-1: 0 bytes
+  soccer-worldcup-1: 340717 bytes
+  soccernew-home-1: 114568 bytes
+  soccernew-inplay-1: 276 bytes
+  soccernew-inplay-2: 276 bytes
+  soccernew-leagueid-1204-1: 1799 bytes
+  soccernew-leagues-1: 54801 bytes
+  table-tennis-home-dash-1: 560 bytes
+  tabletennis-home-1: 560 bytes
+  tabletennis-inplay-1: 562 bytes
+  tennis-atp-ranking-1: 15787 bytes
+  tennis-atp-shedule-1: 1755 bytes
+  tennis-d-1-1: 1755 bytes
+  tennis-getodds-1: 1755 bytes
+  tennis-home-1: 90028 bytes
+  tennis-home-2: 90028 bytes
+  tennis-inplay-1: 1755 bytes
+  tennis-livescore-1: 1755 bytes
+  tennis-results-1: 1755 bytes
+  tennis-tournaments-1: 1755 bytes
+  tennis-wta-ranking-1: 15861 bytes
+  tennis-wta-shedule-1: 1755 bytes
+  ufc-schedule-1: 564 bytes
+  volleyball-getodds-1: 1791 bytes
+  volleyball-home-1: 78 bytes
+  volleyball-inplay-1: 107 bytes
+  volleyball-inplay-2: 107 bytes
+  volleyball-livescore-1: 1791 bytes
+  volleyball-shedule-1: 1791 bytes
+
+==== DONE. RAW_DIR=/tmp/xiaoduan_v2_20260528-133314  REPORT=/Users/wangweibo/code/sports-trader-cpp/docs/RESEARCH/data/xiaoduan-goalserve-v2-probe-20260528-133314.txt ====

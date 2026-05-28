@@ -1,0 +1,1910 @@
+<?xml version="1.0" encoding="utf-8"?>
+<scores sport="soccer" updated="27.05.2026 20:23:50">
+  <category name="Africa: Africa Cup Of Nations U17 - Play Offs" gid="21561" id="5362" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="16:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="16:00" commentary_available="" heatmap="" venue="" v="0" groupId="156" coveredLive="True" static_id="3856673" fix_id="4364123" id="6922686">
+        <localteam name="Egypt U17" goals="?" id="41605" />
+        <visitorteam name="Tanzania U17" goals="?" id="27621" />
+        <localteam1 name="Egypt U17" goals="?" />
+        <visitorteam1 name="Tanzania U17" goals="?" />
+        <localteam2 name="Egypt U17" goals="?" />
+        <visitorteam2 name="Tanzania U17" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="19:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="19:00" commentary_available="" heatmap="" venue="" v="0" groupId="156" coveredLive="True" static_id="3856674" fix_id="4364124" id="6922312">
+        <localteam name="Morocco U17" goals="?" id="20212" />
+        <visitorteam name="Senegal U17" goals="?" id="31155" />
+        <localteam1 name="Morocco U17" goals="?" />
+        <visitorteam1 name="Senegal U17" goals="?" />
+        <localteam2 name="Morocco U17" goals="?" />
+        <visitorteam2 name="Senegal U17" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Albania: Kategoria E Parë - Additional Match" gid="38262" id="1066" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="13:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="13:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3855792" fix_id="4363242" id="6916554">
+        <localteam name="Kukesi" goals="?" id="5713" />
+        <visitorteam name="Butrinti Sarande" goals="?" id="5700" />
+        <localteam1 name="Kukesi" goals="?" />
+        <visitorteam1 name="Butrinti Sarande" goals="?" />
+        <localteam2 name="Kukesi" goals="?" />
+        <visitorteam2 name="Butrinti Sarande" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Argentina: Reserve League - Apertura" gid="18879" id="18879" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="18:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3824114" fix_id="4331533" id="6921229">
+        <localteam name="Aldosivi 2" goals="?" id="36055" />
+        <visitorteam name="Talleres Cordoba 2" goals="?" id="32444" />
+        <localteam1 name="Aldosivi 2" goals="?" />
+        <visitorteam1 name="Talleres Cordoba 2" goals="?" />
+        <localteam2 name="Aldosivi 2" goals="?" />
+        <visitorteam2 name="Talleres Cordoba 2" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="18:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3824121" fix_id="4331540" id="6921230">
+        <localteam name="Gimnasia L.P. 2" goals="?" id="36047" />
+        <visitorteam name="Barracas Central 2" goals="?" id="36068" />
+        <localteam1 name="Gimnasia L.P. 2" goals="?" />
+        <visitorteam1 name="Barracas Central 2" goals="?" />
+        <localteam2 name="Gimnasia L.P. 2" goals="?" />
+        <visitorteam2 name="Barracas Central 2" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="18:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3824124" fix_id="4331543" id="6921231">
+        <localteam name="Lanus 2" goals="?" id="36064" />
+        <visitorteam name="Platense 2" goals="?" id="36058" />
+        <localteam1 name="Lanus 2" goals="?" />
+        <visitorteam1 name="Platense 2" goals="?" />
+        <localteam2 name="Lanus 2" goals="?" />
+        <visitorteam2 name="Platense 2" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="18:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3824129" fix_id="4331548" id="6921232">
+        <localteam name="Sarmiento Junin 2" goals="?" id="36059" />
+        <visitorteam name="Rosario Central 2" goals="?" id="36053" />
+        <localteam1 name="Sarmiento Junin 2" goals="?" />
+        <visitorteam1 name="Rosario Central 2" goals="?" />
+        <localteam2 name="Sarmiento Junin 2" goals="?" />
+        <visitorteam2 name="Rosario Central 2" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="18:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3824130" fix_id="4331549" id="6921233">
+        <localteam name="Union de Santa Fe 2" goals="?" id="36056" />
+        <visitorteam name="Gimnasia Mendoza 2" goals="?" id="43963" />
+        <localteam1 name="Union de Santa Fe 2" goals="?" />
+        <visitorteam1 name="Gimnasia Mendoza 2" goals="?" />
+        <localteam2 name="Union de Santa Fe 2" goals="?" />
+        <visitorteam2 name="Gimnasia Mendoza 2" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="22:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="22:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3824127" fix_id="4331546" id="6921234">
+        <localteam name="River Plate 2" goals="?" id="36057" />
+        <visitorteam name="San Lorenzo 2" goals="?" id="36070" />
+        <localteam1 name="River Plate 2" goals="?" />
+        <visitorteam1 name="San Lorenzo 2" goals="?" />
+        <localteam2 name="River Plate 2" goals="?" />
+        <visitorteam2 name="San Lorenzo 2" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Aruba: Division Di Honor - Relegation" gid="37859" id="1084" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3855818" fix_id="4363268" id="6917229">
+        <localteam name="Atl. Deportivo" goals="0" id="44356" />
+        <visitorteam name="Deportivo Nacional" goals="0" id="6128" />
+        <localteam1 name="Atl. Deportivo" goals="0" />
+        <visitorteam1 name="Deportivo Nacional" goals="0" />
+        <localteam2 name="Atl. Deportivo" goals="0" />
+        <visitorteam2 name="Deportivo Nacional" goals="0" />
+        <events>
+        </events>
+        <ht score="[0-1]" />
+        <ft score="[0-2]" />
+      </match>
+    </matches>
+  </category>
+  <category name="Austria: Regionalliga East" gid="37667" id="1092" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="17:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="17:00" commentary_available="" heatmap="" venue="ARBÖ-Arena" coveredLive="True" v="0" static_id="3721002" fix_id="4228399" id="6875607">
+        <localteam name="Traiskirchen" goals="?" id="24725" />
+        <visitorteam name="Neusiedl" goals="?" id="6436" />
+        <localteam1 name="Traiskirchen" goals="?" />
+        <visitorteam1 name="Neusiedl" goals="?" />
+        <localteam2 name="Traiskirchen" goals="?" />
+        <visitorteam2 name="Neusiedl" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Azerbaijan: Premier League - Relegation" gid="38316" id="1094" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="14:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="14:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3856654" fix_id="4364104" id="6922304">
+        <localteam name="Gabala" goals="?" id="6589" />
+        <visitorteam name="Mingachevir" goals="?" id="6559" />
+        <localteam1 name="Gabala" goals="?" />
+        <visitorteam1 name="Mingachevir" goals="?" />
+        <localteam2 name="Gabala" goals="?" />
+        <visitorteam2 name="Mingachevir" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Barbados: Premier League" gid="1698" id="1698" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="01:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="01:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3825868" fix_id="4333288" id="6915483">
+        <localteam name="Brittons Hill" goals="?" id="6656" />
+        <visitorteam name="Ellerton FC" goals="?" id="18483" />
+        <localteam1 name="Brittons Hill" goals="?" />
+        <visitorteam1 name="Ellerton FC" goals="?" />
+        <localteam2 name="Brittons Hill" goals="?" />
+        <visitorteam2 name="Ellerton FC" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="23:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="23:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3825869" fix_id="4333289" id="6917026">
+        <localteam name="Paradise SC" goals="?" id="6661" />
+        <visitorteam name="Kickstart" goals="?" id="39452" />
+        <localteam1 name="Paradise SC" goals="?" />
+        <visitorteam1 name="Kickstart" goals="?" />
+        <localteam2 name="Paradise SC" goals="?" />
+        <visitorteam2 name="Kickstart" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Belarus: Belarusian Cup" gid="38013" id="1775" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="15:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3855998" fix_id="4363448" id="6916750">
+        <localteam name="Stanles Pinsk" goals="?" id="31144" />
+        <visitorteam name="Krumkachy" goals="?" id="23364" />
+        <localteam1 name="Stanles Pinsk" goals="?" />
+        <visitorteam1 name="Krumkachy" goals="?" />
+        <localteam2 name="Stanles Pinsk" goals="?" />
+        <visitorteam2 name="Krumkachy" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="15:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3855999" fix_id="4363449" id="6916751">
+        <localteam name="Technolog Mogilev" goals="?" id="36388" />
+        <visitorteam name="FC Slonim" goals="?" id="6700" />
+        <localteam1 name="Technolog Mogilev" goals="?" />
+        <visitorteam1 name="FC Slonim" goals="?" />
+        <localteam2 name="Technolog Mogilev" goals="?" />
+        <visitorteam2 name="FC Slonim" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="15:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3856000" fix_id="4363450" id="6916752">
+        <localteam name="Viktoria Mar. Gorka" goals="?" id="25989" />
+        <visitorteam name="Nadezhda Baranovici" goals="?" id="34632" />
+        <localteam1 name="Viktoria Mar. Gorka" goals="?" />
+        <visitorteam1 name="Nadezhda Baranovici" goals="?" />
+        <localteam2 name="Viktoria Mar. Gorka" goals="?" />
+        <visitorteam2 name="Nadezhda Baranovici" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Bhutan: Premier League" gid="18915" id="18915" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="10:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="10:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="" fix_id="" id="6921235">
+        <localteam name="Paro" goals="?" id="32339" />
+        <visitorteam name="Transport United" goals="?" id="18622" />
+        <localteam1 name="Paro" goals="?" />
+        <visitorteam1 name="Transport United" goals="?" />
+        <localteam2 name="Paro" goals="?" />
+        <visitorteam2 name="Transport United" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Amapaense 2" gid="19219" id="19219" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="18:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:30" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="" fix_id="" id="6874250">
+        <localteam name="Bare AP" goals="?" id="" />
+        <visitorteam name="Santana EC" goals="?" id="7558" />
+        <localteam1 name="Bare AP" goals="?" />
+        <visitorteam1 name="Santana EC" goals="?" />
+        <localteam2 name="Bare AP" goals="?" />
+        <visitorteam2 name="Santana EC" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Catarinense 2" gid="18992" id="18992" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" venue="" v="90" static_id="3854156" fix_id="4361606" id="6875334">
+        <localteam name="Fluminense-SC" goals="0" id="41356" />
+        <visitorteam name="Gremio Juventus" goals="1" id="7401" />
+        <localteam1 name="Fluminense-SC" goals="0" />
+        <visitorteam1 name="Gremio Juventus" goals="1" />
+        <localteam2 name="Fluminense-SC" goals="0" />
+        <visitorteam2 name="Gremio Juventus" goals="1" />
+        <events>
+          <event type="goal" minute="54" extra_min="" team="visitorteam" player="A. Neto" result="[0 - 1]" playerId="" assist="" assistid="" eventid="68753341" />
+        </events>
+        <ht score="[0-0]" />
+        <ft score="[0-1]" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Copa Centro-Oeste - Play Offs" gid="38248" id="19212" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3855624" fix_id="4363074" id="6905048">
+        <localteam name="Rio Branco ES" goals="2" agg="false" id="7529" />
+        <visitorteam name="Anapolis" goals="1" agg="true" id="7121" />
+        <localteam1 name="Rio Branco ES" goals="2" />
+        <visitorteam1 name="Anapolis" goals="1" />
+        <localteam2 name="Rio Branco ES" goals="2" />
+        <visitorteam2 name="Anapolis" goals="1" />
+        <events>
+          <event type="goal" minute="18" extra_min="" team="localteam" player="" result="[1 - 0]" playerId="" assist="" assistid="" eventid="69050481" />
+          <event type="goal" minute="45" extra_min="5" team="localteam" player="" result="[2 - 0]" playerId="" assist="" assistid="" eventid="69050482" />
+          <event type="redcard" minute="57" extra_min="" team="visitorteam" player="" result="" playerId="" assist="" assistid="" eventid="69050483" />
+          <event type="redcard" minute="74" extra_min="" team="localteam" player="" result="" playerId="" assist="" assistid="" eventid="69050484" />
+          <event type="goal" minute="90" extra_min="7" team="visitorteam" player="" result="[2 - 1]" playerId="" assist="" assistid="" eventid="69050485" />
+        </events>
+        <ht score="[2-0]" />
+        <ft score="[2-1]" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Copa Espirito Santo" gid="18979" id="18979" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="21:45" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="21:45" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3853327" fix_id="4360777" id="6744635">
+        <localteam name="Rio Branco ES" goals="?" id="7529" />
+        <visitorteam name="Vilavelhense" goals="?" id="7672" />
+        <localteam1 name="Rio Branco ES" goals="?" />
+        <visitorteam1 name="Vilavelhense" goals="?" />
+        <localteam2 name="Rio Branco ES" goals="?" />
+        <visitorteam2 name="Vilavelhense" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Copa Norte - Play Offs" gid="38247" id="19211" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="00:00" timer="" inj_time="" inj_minute="" date="May 29" formatted_date="29.05.2026" time="00:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3854895" fix_id="4362345" id="6875231">
+        <localteam name="Nacional-AM" goals="?" id="7447" />
+        <visitorteam name="Paysandu PA" goals="?" id="7487" />
+        <localteam1 name="Nacional-AM" goals="?" />
+        <visitorteam1 name="Paysandu PA" goals="?" />
+        <localteam2 name="Nacional-AM" goals="?" />
+        <visitorteam2 name="Paysandu PA" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Copa Do Nordeste - Play Offs" gid="38245" id="2076" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="" venue="" v="90" static_id="3854892" fix_id="4362342" id="6875237">
+        <localteam name="ABC" goals="3" agg="false" id="7096" />
+        <visitorteam name="Vitoria" goals="4" agg="true" id="7675" />
+        <localteam1 name="ABC" goals="3" />
+        <visitorteam1 name="Vitoria" goals="4" />
+        <localteam2 name="ABC" goals="3" />
+        <visitorteam2 name="Vitoria" goals="4" />
+        <events>
+          <event type="goal" minute="16" extra_min="" team="localteam" player="Luiz Fernando" result="[1 - 0]" playerId="527391" assist="" assistid="" eventid="68752371" />
+          <event type="yellowcard" minute="20" extra_min="" team="localteam" player="Wellington Reis" result="" playerId="228702" assist="" assistid="" eventid="68752372" />
+          <event type="goal" minute="21" extra_min="" team="visitorteam" player="Nathan Mendes" result="[1 - 1]" playerId="698682" assist="" assistid="" eventid="68752373" />
+          <event type="yellowcard" minute="27" extra_min="" team="visitorteam" player="Marinho" result="" playerId="33226" assist="" assistid="" eventid="68752374" />
+          <event type="goal" minute="36" extra_min="" team="localteam" player="Luiz Fernando" result="[2 - 1]" playerId="527391" assist="Dudu Mandai" assistid="396279" eventid="68752375" />
+          <event type="subst" minute="40" extra_min="" team="visitorteam" player="Luan Candido" result="" playerId="506219" assist="Nathan Mendes" assistid="698682" eventid="68752376" />
+          <event type="yellowcard" minute="45" extra_min="4" team="localteam" player="Wellington Carvalho" result="" playerId="245339" assist="" assistid="" eventid="68752377" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="Rene" result="" playerId="932524" assist="Renato Kayzer" assistid="420897" eventid="68752378" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="Erick" result="" playerId="472497" assist="Marinho" assistid="33226" eventid="68752379" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="Bruno Leite" result="" playerId="592958" assist="Joao Pedro" assistid="475984" eventid="687523710" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="Rikelmi" result="" playerId="1206241" assist="Wellington Reis" assistid="228702" eventid="687523711" />
+          <event type="yellowcard" minute="64" extra_min="" team="visitorteam" player="Caique Goncalves" result="" playerId="395234" assist="" assistid="" eventid="687523712" />
+          <event type="subst" minute="68" extra_min="" team="visitorteam" player="Ze Breno" result="" playerId="951396" assist="Caique Goncalves" assistid="395234" eventid="687523713" />
+          <event type="goal" minute="73" extra_min="" team="visitorteam" player="Baralhas" result="[2 - 2]" playerId="480918" assist="" assistid="" eventid="687523714" />
+          <event type="subst" minute="77" extra_min="" team="visitorteam" player="Fabricio" result="" playerId="590949" assist="D. Tarzia" assistid="948986" eventid="687523715" />
+          <event type="subst" minute="77" extra_min="" team="localteam" player="Lima" result="" playerId="433627" assist="Luiz Fernando" assistid="527391" eventid="687523716" />
+          <event type="yellowcard" minute="81" extra_min="" team="visitorteam" player="Lucas Arcanjo" result="" playerId="592415" assist="" assistid="" eventid="687523717" />
+          <event type="subst" minute="87" extra_min="" team="localteam" player="Jefferson Vinicius" result="" playerId="669763" assist="Dudu Mandai" assistid="396279" eventid="687523718" />
+          <event type="goal" minute="88" extra_min="" team="localteam" player="Igor Bahia" result="[3 - 2]" playerId="1107166" assist="" assistid="" eventid="687523719" />
+          <event type="goal" minute="89" extra_min="" team="visitorteam" player="Fabricio" result="[3 - 3]" playerId="590949" assist="" assistid="" eventid="687523720" />
+          <event type="yellowcard" minute="90" extra_min="4" team="localteam" player="Bruno Leite" result="" playerId="592958" assist="" assistid="" eventid="687523721" />
+          <event type="goal" minute="90" extra_min="5" team="visitorteam" player="Erick (pen.)" result="[3 - 4]" playerId="472497" assist="" assistid="" eventid="687523722" />
+        </events>
+        <ht score="[2-1]" />
+        <ft score="[3-4]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="" venue="" v="90" static_id="3854893" fix_id="4362343" id="6875474">
+        <localteam name="Sport Recife" goals="0" agg="false" id="7621" />
+        <visitorteam name="Fortaleza" goals="2" agg="true" id="7308" />
+        <localteam1 name="Sport Recife" goals="0" />
+        <visitorteam1 name="Fortaleza" goals="2" />
+        <localteam2 name="Sport Recife" goals="0" />
+        <visitorteam2 name="Fortaleza" goals="2" />
+        <events>
+          <event type="yellowcard" minute="12" extra_min="" team="localteam" player="Pedro Perotti" result="" playerId="433625" assist="" assistid="" eventid="68754741" />
+          <event type="goal" minute="36" extra_min="" team="visitorteam" player="J. B. Miritello" result="[0 - 1]" playerId="642097" assist="Mauricio Junior" assistid="1107122" eventid="68754742" />
+          <event type="yellowcard" minute="45" extra_min="2" team="visitorteam" player="J. B. Miritello" result="" playerId="642097" assist="" assistid="" eventid="68754743" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="Rodrigo" result="" playerId="1104432" assist="Pierre" assistid="650735" eventid="68754744" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="Rodriguinho" result="" playerId="813184" assist="Mailton" assistid="541261" eventid="68754745" />
+          <event type="goal" minute="57" extra_min="" team="visitorteam" player="J. B. Miritello" result="[0 - 2]" playerId="642097" assist="" assistid="" eventid="68754746" />
+          <event type="subst" minute="60" extra_min="" team="localteam" player="de Pena Carlos" result="" playerId="248706" assist="Yago Felipe" assistid="333198" eventid="68754747" />
+          <event type="subst" minute="60" extra_min="" team="localteam" player="Iury Castilho" result="" playerId="336709" assist="Clayson" assistid="234507" eventid="68754748" />
+          <event type="subst" minute="61" extra_min="" team="localteam" player="Augusto" result="" playerId="1199422" assist="Madson" assistid="173980" eventid="68754749" />
+          <event type="subst" minute="61" extra_min="" team="visitorteam" player="Welliton" result="" playerId="625878" assist="Vitinho" assistid="669790" eventid="687547410" />
+          <event type="yellowcard" minute="73" extra_min="" team="visitorteam" player="Mauricio Junior" result="" playerId="1107122" assist="" assistid="" eventid="687547411" />
+          <event type="subst" minute="73" extra_min="" team="visitorteam" player="G. Fuentes" result="" playerId="358507" assist="Mauricio Junior" assistid="1107122" eventid="687547412" />
+          <event type="subst" minute="78" extra_min="" team="localteam" player="Edson Lucas" result="" playerId="699329" assist="Biel Fonseca" assistid="691709" eventid="687547413" />
+          <event type="yellowred" minute="88" extra_min="" team="visitorteam" player="J. B. Miritello" result="" playerId="642097" assist="" assistid="" eventid="687547414" />
+          <event type="subst" minute="90" extra_min="5" team="visitorteam" player="Paulo Baya" result="" playerId="648298" assist="Luiz Fernando" assistid="395693" eventid="687547415" />
+          <event type="yellowcard" minute="90" extra_min="8" team="localteam" player="Benevenuto" result="" playerId="444966" assist="" assistid="" eventid="687547416" />
+        </events>
+        <ht score="[0-1]" />
+        <ft score="[0-2]" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Brasileiro U20" gid="18735" id="18735" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="18:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3836858" fix_id="4344289" id="6917205">
+        <localteam name="RB Bragantino U20" goals="?" id="35781" />
+        <visitorteam name="Corinthians U20" goals="?" id="27948" />
+        <localteam1 name="RB Bragantino U20" goals="?" />
+        <visitorteam1 name="Corinthians U20" goals="?" />
+        <localteam2 name="RB Bragantino U20" goals="?" />
+        <visitorteam2 name="Corinthians U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Acreano U20" gid="18987" id="18987" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="21:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="21:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="" fix_id="" id="6819052">
+        <localteam name="Sao Francisco U20" goals="?" id="" />
+        <visitorteam name="Santa Cruz U20" goals="?" id="30550" />
+        <localteam1 name="Sao Francisco U20" goals="?" />
+        <visitorteam1 name="Santa Cruz U20" goals="?" />
+        <localteam2 name="Sao Francisco U20" goals="?" />
+        <visitorteam2 name="Santa Cruz U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="23:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="23:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="" fix_id="" id="6819053">
+        <localteam name="Nauas EC U20" goals="?" id="" />
+        <visitorteam name="Galvez U20" goals="?" id="30569" />
+        <localteam1 name="Nauas EC U20" goals="?" />
+        <visitorteam1 name="Galvez U20" goals="?" />
+        <localteam2 name="Nauas EC U20" goals="?" />
+        <visitorteam2 name="Galvez U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Amazonense U20" gid="" id="" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="19:00" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="19:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="" fix_id="" id="6893480">
+        <localteam name="Manauara U20" goals="?" id="" />
+        <visitorteam name="Manaus U20" goals="?" id="" />
+        <localteam1 name="Manauara U20" goals="?" />
+        <visitorteam1 name="Manaus U20" goals="?" />
+        <localteam2 name="Manauara U20" goals="?" />
+        <visitorteam2 name="Manaus U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="19:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="19:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="" fix_id="" id="6893483">
+        <localteam name="Inter Academy U20" goals="?" id="" />
+        <visitorteam name="Cliper U20" goals="?" id="" />
+        <localteam1 name="Inter Academy U20" goals="?" />
+        <visitorteam1 name="Cliper U20" goals="?" />
+        <localteam2 name="Inter Academy U20" goals="?" />
+        <visitorteam2 name="Cliper U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Brazil: Paraibano U20" gid="19001" id="19001" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="22:00" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="22:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="" fix_id="" id="6917337">
+        <localteam name="Serrano PB U20" goals="?" id="40412" />
+        <visitorteam name="Treze PB U20" goals="?" id="40423" />
+        <localteam1 name="Serrano PB U20" goals="?" />
+        <visitorteam1 name="Treze PB U20" goals="?" />
+        <localteam2 name="Serrano PB U20" goals="?" />
+        <visitorteam2 name="Treze PB U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="18:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="" fix_id="" id="6917338">
+        <localteam name="Spartax U20" goals="?" id="40414" />
+        <visitorteam name="Desportiva Guarabira U20" goals="?" id="40417" />
+        <localteam1 name="Spartax U20" goals="?" />
+        <visitorteam1 name="Desportiva Guarabira U20" goals="?" />
+        <localteam2 name="Spartax U20" goals="?" />
+        <visitorteam2 name="Desportiva Guarabira U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="22:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="22:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="" fix_id="" id="6917339">
+        <localteam name="Sport PB U20" goals="?" id="40416" />
+        <visitorteam name="Auto Esporte U20" goals="?" id="40415" />
+        <localteam1 name="Sport PB U20" goals="?" />
+        <visitorteam1 name="Auto Esporte U20" goals="?" />
+        <localteam2 name="Sport PB U20" goals="?" />
+        <visitorteam2 name="Auto Esporte U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Bulgaria: Efbet League - Relegation" gid="38220" id="1154" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="14:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="14:00" commentary_available="1154" heatmap="" venue="" coveredLive="True" v="0" static_id="3856609" fix_id="4364059" id="6921880">
+        <localteam name="Septemvri Sofia" goals="?" id="7834" />
+        <visitorteam name="Yantra Gabrovo" goals="?" id="7797" />
+        <localteam1 name="Septemvri Sofia" goals="?" />
+        <visitorteam1 name="Yantra Gabrovo" goals="?" />
+        <localteam2 name="Septemvri Sofia" goals="?" />
+        <visitorteam2 name="Yantra Gabrovo" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Colombia: Liga Women" gid="18834" id="18834" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="20:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="20:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3836234" fix_id="4343665" id="6900137">
+        <localteam name="Real Santander W" goals="?" id="34729" />
+        <visitorteam name="Once Caldas W" goals="?" id="41893" />
+        <localteam1 name="Real Santander W" goals="?" />
+        <visitorteam1 name="Once Caldas W" goals="?" />
+        <localteam2 name="Real Santander W" goals="?" />
+        <visitorteam2 name="Once Caldas W" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="20:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="20:30" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3836231" fix_id="4343662" id="6884320">
+        <localteam name="Llaneros W" goals="?" id="34277" />
+        <visitorteam name="Santa Fe W" goals="?" id="34288" />
+        <localteam1 name="Llaneros W" goals="?" />
+        <visitorteam1 name="Santa Fe W" goals="?" />
+        <localteam2 name="Llaneros W" goals="?" />
+        <visitorteam2 name="Santa Fe W" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="00:30" timer="" inj_time="" inj_minute="" date="May 29" formatted_date="29.05.2026" time="00:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3836233" fix_id="4343664" id="6884321">
+        <localteam name="Orsomarso W" goals="?" id="35851" />
+        <visitorteam name="Junior W" goals="?" id="34287" />
+        <localteam1 name="Orsomarso W" goals="?" />
+        <visitorteam1 name="Junior W" goals="?" />
+        <localteam2 name="Orsomarso W" goals="?" />
+        <visitorteam2 name="Junior W" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Czech Republic: 3. Cfl - Group B" gid="37766" id="1180" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="15:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3801107" fix_id="4308521" id="6875165">
+        <localteam name="Jablonec B" goals="?" id="8530" />
+        <visitorteam name="Neratovice" goals="?" id="19372" />
+        <localteam1 name="Jablonec B" goals="?" />
+        <visitorteam1 name="Neratovice" goals="?" />
+        <localteam2 name="Jablonec B" goals="?" />
+        <visitorteam2 name="Neratovice" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Denmark: A-Liga Women - Championship Group" gid="" id="19147" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="17:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="17:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="" fix_id="" id="6796278">
+        <localteam name="KoldingQ W" goals="?" id="33151" />
+        <visitorteam name="Fortuna Hjorring W" goals="?" id="26941" />
+        <localteam1 name="KoldingQ W" goals="?" />
+        <visitorteam1 name="Fortuna Hjorring W" goals="?" />
+        <localteam2 name="KoldingQ W" goals="?" />
+        <visitorteam2 name="Fortuna Hjorring W" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Ecuador: Copa Ecuador" gid="37725" id="18727" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="23:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="23:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3853291" fix_id="4360741" id="6849195">
+        <localteam name="EL Nacional" goals="?" id="8859" />
+        <visitorteam name="U. Catolica" goals="?" id="8877" />
+        <localteam1 name="EL Nacional" goals="?" />
+        <visitorteam1 name="U. Catolica" goals="?" />
+        <localteam2 name="EL Nacional" goals="?" />
+        <visitorteam2 name="U. Catolica" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Egypt: Premier League - Relegation Group" gid="1193" id="1193" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="14:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="14:00" commentary_available="1193" heatmap="" venue="" coveredLive="True" v="0" static_id="3843736" fix_id="4351168" id="6890367">
+        <localteam name="Petrojet" goals="?" id="8947" />
+        <visitorteam name="El Gouna" goals="?" id="8902" />
+        <localteam1 name="Petrojet" goals="?" />
+        <visitorteam1 name="El Gouna" goals="?" />
+        <localteam2 name="Petrojet" goals="?" />
+        <visitorteam2 name="El Gouna" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="17:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="17:00" commentary_available="1193" heatmap="" venue="" coveredLive="True" v="0" static_id="3843730" fix_id="4351162" id="6884471">
+        <localteam name="El Gaish" goals="?" id="8901" />
+        <visitorteam name="Wadi Degla" goals="?" id="8958" />
+        <localteam1 name="El Gaish" goals="?" />
+        <visitorteam1 name="Wadi Degla" goals="?" />
+        <localteam2 name="El Gaish" goals="?" />
+        <visitorteam2 name="Wadi Degla" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="17:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="17:00" commentary_available="1193" heatmap="" venue="" coveredLive="True" v="0" static_id="3843734" fix_id="4351166" id="6916445">
+        <localteam name="El Ismaily" goals="?" id="8930" />
+        <visitorteam name="Pharco" goals="?" id="27205" />
+        <localteam1 name="El Ismaily" goals="?" />
+        <visitorteam1 name="Pharco" goals="?" />
+        <localteam2 name="El Ismaily" goals="?" />
+        <visitorteam2 name="Pharco" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Estonia: Esiliiga" gid="1207" id="1207" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="16:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="16:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3829289" fix_id="4336714" id="6873337">
+        <localteam name="FC Tallinn" goals="?" id="33245" />
+        <visitorteam name="Maardu" goals="?" id="25421" />
+        <localteam1 name="FC Tallinn" goals="?" />
+        <visitorteam1 name="Maardu" goals="?" />
+        <localteam2 name="FC Tallinn" goals="?" />
+        <visitorteam2 name="Maardu" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="16:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="16:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3829290" fix_id="4336715" id="6872537">
+        <localteam name="Levadia U21" goals="?" id="9531" />
+        <visitorteam name="Elva" goals="?" id="9480" />
+        <localteam1 name="Levadia U21" goals="?" />
+        <visitorteam1 name="Elva" goals="?" />
+        <localteam2 name="Levadia U21" goals="?" />
+        <visitorteam2 name="Elva" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="16:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="16:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3829291" fix_id="4336716" id="6872539">
+        <localteam name="Tartu Welco" goals="?" id="27084" />
+        <visitorteam name="Nomme Kalju U21" goals="?" id="9510" />
+        <localteam1 name="Tartu Welco" goals="?" />
+        <visitorteam1 name="Nomme Kalju U21" goals="?" />
+        <localteam2 name="Tartu Welco" goals="?" />
+        <visitorteam2 name="Nomme Kalju U21" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Estonia: Esiliiga B" gid="19006" id="19006" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="15:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3832725" fix_id="4340150" id="6874329">
+        <localteam name="Tallinna Kalev U21" goals="?" id="9523" />
+        <visitorteam name="Tammeka U21" goals="?" id="19583" />
+        <localteam1 name="Tallinna Kalev U21" goals="?" />
+        <visitorteam1 name="Tammeka U21" goals="?" />
+        <localteam2 name="Tallinna Kalev U21" goals="?" />
+        <visitorteam2 name="Tammeka U21" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="16:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="16:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3832722" fix_id="4340147" id="6873338">
+        <localteam name="Narva U21" goals="?" id="40660" />
+        <visitorteam name="Johvi Phoenix" goals="?" id="21725" />
+        <localteam1 name="Narva U21" goals="?" />
+        <visitorteam1 name="Johvi Phoenix" goals="?" />
+        <localteam2 name="Narva U21" goals="?" />
+        <visitorteam2 name="Johvi Phoenix" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="16:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="16:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3832723" fix_id="4340148" id="6873339">
+        <localteam name="Tulevik" goals="?" id="19087" />
+        <visitorteam name="Parnu JK Vaprus U21" goals="?" id="41602" />
+        <localteam1 name="Tulevik" goals="?" />
+        <visitorteam1 name="Parnu JK Vaprus U21" goals="?" />
+        <localteam2 name="Tulevik" goals="?" />
+        <visitorteam2 name="Parnu JK Vaprus U21" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Ethiopia: Premier League" gid="2487" id="2487" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3851476" fix_id="4358926" id="6902940">
+        <localteam name="Dire Dawa" goals="?" id="25199" />
+        <visitorteam name="St. George" goals="?" id="9574" />
+        <localteam1 name="Dire Dawa" goals="?" />
+        <visitorteam1 name="St. George" goals="?" />
+        <localteam2 name="Dire Dawa" goals="?" />
+        <visitorteam2 name="St. George" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3851477" fix_id="4358927" id="6902941">
+        <localteam name="Hawassa" goals="?" id="9564" />
+        <visitorteam name="Ethiopia Bunna" goals="?" id="20191" />
+        <localteam1 name="Hawassa" goals="?" />
+        <visitorteam1 name="Ethiopia Bunna" goals="?" />
+        <localteam2 name="Hawassa" goals="?" />
+        <visitorteam2 name="Ethiopia Bunna" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="15:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3851478" fix_id="4358928" id="6902942">
+        <localteam name="Mechal" goals="?" id="9565" />
+        <visitorteam name="Arba Menche" goals="?" id="9563" />
+        <localteam1 name="Mechal" goals="?" />
+        <visitorteam1 name="Arba Menche" goals="?" />
+        <localteam2 name="Mechal" goals="?" />
+        <visitorteam2 name="Arba Menche" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Europe: Euro U17" gid="37772" id="2109" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="11:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="11:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3850554" fix_id="4358004" id="6815329">
+        <localteam name="Belgium U17" goals="?" id="6738" />
+        <visitorteam name="Spain U17" goals="?" id="15623" />
+        <localteam1 name="Belgium U17" goals="?" />
+        <visitorteam1 name="Spain U17" goals="?" />
+        <localteam2 name="Belgium U17" goals="?" />
+        <visitorteam2 name="Spain U17" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="16:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="16:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3850555" fix_id="4358005" id="6815332">
+        <localteam name="Estonia U17" goals="?" id="35482" />
+        <visitorteam name="Croatia U17" goals="?" id="35480" />
+        <localteam1 name="Estonia U17" goals="?" />
+        <visitorteam1 name="Croatia U17" goals="?" />
+        <localteam2 name="Estonia U17" goals="?" />
+        <visitorteam2 name="Croatia U17" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Finland: Ykkonen" gid="37742" id="1530" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="15:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3827856" fix_id="4335281" id="6873353">
+        <localteam name="Jazz Pori" goals="?" id="9685" />
+        <visitorteam name="SalPa" goals="?" id="9780" />
+        <localteam1 name="Jazz Pori" goals="?" />
+        <visitorteam1 name="SalPa" goals="?" />
+        <localteam2 name="Jazz Pori" goals="?" />
+        <visitorteam2 name="SalPa" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="15:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3827857" fix_id="4335282" id="6873354">
+        <localteam name="JJK Jyvaskyla" goals="?" id="9690" />
+        <visitorteam name="OLS Oulu" goals="?" id="9750" />
+        <localteam1 name="JJK Jyvaskyla" goals="?" />
+        <visitorteam1 name="OLS Oulu" goals="?" />
+        <localteam2 name="JJK Jyvaskyla" goals="?" />
+        <visitorteam2 name="OLS Oulu" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Georgia: Crystalbet Erovnuli Liga" gid="1224" id="1224" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="16:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="16:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3820514" fix_id="4327929" id="6883619">
+        <localteam name="Torpedo Kutaisi" goals="?" id="10239" />
+        <visitorteam name="Gagra" goals="?" id="10207" />
+        <localteam1 name="Torpedo Kutaisi" goals="?" />
+        <visitorteam1 name="Gagra" goals="?" />
+        <localteam2 name="Torpedo Kutaisi" goals="?" />
+        <visitorteam2 name="Gagra" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Georgia: Liga 3" gid="18984" id="18984" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3818641" fix_id="4326056" id="6902922">
+        <localteam name="Betlemi" goals="?" id="21473" />
+        <visitorteam name="Dinamo Tbilisi 2" goals="?" id="21759" />
+        <localteam1 name="Betlemi" goals="?" />
+        <visitorteam1 name="Dinamo Tbilisi 2" goals="?" />
+        <localteam2 name="Betlemi" goals="?" />
+        <visitorteam2 name="Dinamo Tbilisi 2" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3818642" fix_id="4326057" id="6875936">
+        <localteam name="Didube" goals="?" id="33659" />
+        <visitorteam name="WIT Georgia" goals="?" id="10242" />
+        <localteam1 name="Didube" goals="?" />
+        <visitorteam1 name="WIT Georgia" goals="?" />
+        <localteam2 name="Didube" goals="?" />
+        <visitorteam2 name="WIT Georgia" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3818643" fix_id="4326058" id="6902923">
+        <localteam name="Gardabani" goals="?" id="25695" />
+        <visitorteam name="Gonio" goals="?" id="36381" />
+        <localteam1 name="Gardabani" goals="?" />
+        <visitorteam1 name="Gonio" goals="?" />
+        <localteam2 name="Gardabani" goals="?" />
+        <visitorteam2 name="Gonio" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3818644" fix_id="4326059" id="6875421">
+        <localteam name="Iberia 2010" goals="?" id="31162" />
+        <visitorteam name="Iveria Khashuri" goals="?" id="44043" />
+        <localteam1 name="Iberia 2010" goals="?" />
+        <visitorteam1 name="Iveria Khashuri" goals="?" />
+        <localteam2 name="Iberia 2010" goals="?" />
+        <visitorteam2 name="Iveria Khashuri" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3818645" fix_id="4326060" id="6875422">
+        <localteam name="Khobi" goals="?" id="10214" />
+        <visitorteam name="Loco. Tbilisi" goals="?" id="10218" />
+        <localteam1 name="Khobi" goals="?" />
+        <visitorteam1 name="Loco. Tbilisi" goals="?" />
+        <localteam2 name="Khobi" goals="?" />
+        <visitorteam2 name="Loco. Tbilisi" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3818646" fix_id="4326061" id="6902924">
+        <localteam name="Margveti 2006" goals="?" id="34567" />
+        <visitorteam name="Iberia 1999 2" goals="?" id="33662" />
+        <localteam1 name="Margveti 2006" goals="?" />
+        <visitorteam1 name="Iberia 1999 2" goals="?" />
+        <localteam2 name="Margveti 2006" goals="?" />
+        <visitorteam2 name="Iberia 1999 2" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3818647" fix_id="4326062" id="6902925">
+        <localteam name="Merani Tbilisi" goals="?" id="10220" />
+        <visitorteam name="Tbilisi 2025" goals="?" id="33657" />
+        <localteam1 name="Merani Tbilisi" goals="?" />
+        <visitorteam1 name="Tbilisi 2025" goals="?" />
+        <localteam2 name="Merani Tbilisi" goals="?" />
+        <visitorteam2 name="Tbilisi 2025" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3818648" fix_id="4326063" id="6875423">
+        <localteam name="Orbi" goals="?" id="34573" />
+        <visitorteam name="Guria" goals="?" id="10209" />
+        <localteam1 name="Orbi" goals="?" />
+        <visitorteam1 name="Guria" goals="?" />
+        <localteam2 name="Orbi" goals="?" />
+        <visitorteam2 name="Guria" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Germany: Regionalliga Play Offs" gid="2710" id="1227" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="17:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="17:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="" fix_id="" id="6914168">
+        <localteam name="Lokomotive Leipzig" goals="?" id="10489" />
+        <visitorteam name="Wurzburger Kickers" goals="?" id="10695" />
+        <localteam1 name="Lokomotive Leipzig" goals="?" />
+        <visitorteam1 name="Wurzburger Kickers" goals="?" />
+        <localteam2 name="Lokomotive Leipzig" goals="?" />
+        <visitorteam2 name="Wurzburger Kickers" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Iraq: Stars League" gid="2024" id="2024" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="15:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3856615" fix_id="4364065" id="6922025">
+        <localteam name="Al Karkh" goals="?" id="18734" />
+        <visitorteam name="Al Shorta" goals="?" id="11512" />
+        <localteam1 name="Al Karkh" goals="?" />
+        <visitorteam1 name="Al Shorta" goals="?" />
+        <localteam2 name="Al Karkh" goals="?" />
+        <visitorteam2 name="Al Shorta" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="15:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3856616" fix_id="4364066" id="6922026">
+        <localteam name="Al Minaa" goals="?" id="11506" />
+        <visitorteam name="Al Talaba" goals="?" id="11517" />
+        <localteam1 name="Al Minaa" goals="?" />
+        <visitorteam1 name="Al Talaba" goals="?" />
+        <localteam2 name="Al Minaa" goals="?" />
+        <visitorteam2 name="Al Talaba" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="15:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3856617" fix_id="4364067" id="6922027">
+        <localteam name="Naft Missan" goals="?" id="18739" />
+        <visitorteam name="Al Quwa Al Jawiya" goals="?" id="11510" />
+        <localteam1 name="Naft Missan" goals="?" />
+        <visitorteam1 name="Al Quwa Al Jawiya" goals="?" />
+        <localteam2 name="Naft Missan" goals="?" />
+        <visitorteam2 name="Al Quwa Al Jawiya" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="17:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="17:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3856618" fix_id="4364068" id="6922028">
+        <localteam name="Al-Qassim" goals="?" id="32074" />
+        <visitorteam name="Al Najaf" goals="?" id="11508" />
+        <localteam1 name="Al-Qassim" goals="?" />
+        <visitorteam1 name="Al Najaf" goals="?" />
+        <localteam2 name="Al-Qassim" goals="?" />
+        <visitorteam2 name="Al Najaf" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="17:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="17:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3856619" fix_id="4364069" id="6922029">
+        <localteam name="Zakho" goals="?" id="11534" />
+        <visitorteam name="Erbil" goals="?" id="11519" />
+        <localteam1 name="Zakho" goals="?" />
+        <visitorteam1 name="Erbil" goals="?" />
+        <localteam2 name="Zakho" goals="?" />
+        <visitorteam2 name="Erbil" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Italy: Primavera 1 - Play Offs" gid="38288" id="4425" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="18:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3856807" fix_id="4364258" id="6923082">
+        <localteam name="Fiorentina U20" goals="?" id="40914" />
+        <visitorteam name="Parma U20" goals="?" id="42619" />
+        <localteam1 name="Fiorentina U20" goals="?" />
+        <visitorteam1 name="Parma U20" goals="?" />
+        <localteam2 name="Fiorentina U20" goals="?" />
+        <visitorteam2 name="Parma U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Kazakhstan: Premier League" gid="1276" id="1276" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="10:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="10:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3838548" fix_id="4345979" id="6884259">
+        <localteam name="Okzhetpes" goals="?" id="12235" />
+        <visitorteam name="Aktobe" goals="?" id="12218" />
+        <localteam1 name="Okzhetpes" goals="?" />
+        <visitorteam1 name="Aktobe" goals="?" />
+        <localteam2 name="Okzhetpes" goals="?" />
+        <visitorteam2 name="Aktobe" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="11:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="11:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3838547" fix_id="4345978" id="6883629">
+        <localteam name="Kyzylzhar" goals="?" id="23155" />
+        <visitorteam name="Zhetysu Taldykorgan" goals="?" id="12281" />
+        <localteam1 name="Kyzylzhar" goals="?" />
+        <visitorteam1 name="Zhetysu Taldykorgan" goals="?" />
+        <localteam2 name="Kyzylzhar" goals="?" />
+        <visitorteam2 name="Zhetysu Taldykorgan" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="13:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="13:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3838544" fix_id="4345975" id="6883628">
+        <localteam name="Atyrau" goals="?" id="12233" />
+        <visitorteam name="Tobol" goals="?" id="12267" />
+        <localteam1 name="Atyrau" goals="?" />
+        <visitorteam1 name="Tobol" goals="?" />
+        <localteam2 name="Atyrau" goals="?" />
+        <visitorteam2 name="Tobol" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="14:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="14:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3838546" fix_id="4345977" id="6915634">
+        <localteam name="Kaisar Kyzylorda" goals="?" id="12249" />
+        <visitorteam name="Yelimay Semey" goals="?" id="37907" />
+        <localteam1 name="Kaisar Kyzylorda" goals="?" />
+        <visitorteam1 name="Yelimay Semey" goals="?" />
+        <localteam2 name="Kaisar Kyzylorda" goals="?" />
+        <visitorteam2 name="Yelimay Semey" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="14:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="14:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3838550" fix_id="4345981" id="6915633">
+        <localteam name="Zhenis" goals="?" id="34620" />
+        <visitorteam name="Kaspij Aktau" goals="?" id="12251" />
+        <localteam1 name="Zhenis" goals="?" />
+        <visitorteam1 name="Kaspij Aktau" goals="?" />
+        <localteam2 name="Zhenis" goals="?" />
+        <visitorteam2 name="Kaspij Aktau" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="15:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3838549" fix_id="4345980" id="6916535">
+        <localteam name="Ordabasy" goals="?" id="12258" />
+        <visitorteam name="Kairat Almaty" goals="?" id="12248" />
+        <localteam1 name="Ordabasy" goals="?" />
+        <visitorteam1 name="Kairat Almaty" goals="?" />
+        <localteam2 name="Ordabasy" goals="?" />
+        <visitorteam2 name="Kairat Almaty" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Kenya: Super League" gid="18885" id="18885" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3856860" fix_id="4364311" id="6922870">
+        <localteam name="Darajani Gogo" goals="?" id="37686" />
+        <visitorteam name="MOFA" goals="?" id="39854" />
+        <localteam1 name="Darajani Gogo" goals="?" />
+        <visitorteam1 name="MOFA" goals="?" />
+        <localteam2 name="Darajani Gogo" goals="?" />
+        <visitorteam2 name="MOFA" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3856861" fix_id="4364312" id="6922871">
+        <localteam name="Kabati" goals="?" id="42958" />
+        <visitorteam name="Luanda Villa" goals="?" id="38799" />
+        <localteam1 name="Kabati" goals="?" />
+        <visitorteam1 name="Luanda Villa" goals="?" />
+        <localteam2 name="Kabati" goals="?" />
+        <visitorteam2 name="Luanda Villa" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3856862" fix_id="4364313" id="6922872">
+        <localteam name="Mwatate United" goals="?" id="36646" />
+        <visitorteam name="Naivas FC" goals="?" id="36647" />
+        <localteam1 name="Mwatate United" goals="?" />
+        <visitorteam1 name="Naivas FC" goals="?" />
+        <localteam2 name="Mwatate United" goals="?" />
+        <visitorteam2 name="Naivas FC" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="12:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="12:00" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3856863" fix_id="4364314" id="6922873">
+        <localteam name="Soy United" goals="?" id="43311" />
+        <visitorteam name="Kisumu All-Stars" goals="?" id="31298" />
+        <localteam1 name="Soy United" goals="?" />
+        <visitorteam1 name="Kisumu All-Stars" goals="?" />
+        <localteam2 name="Soy United" goals="?" />
+        <visitorteam2 name="Kisumu All-Stars" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Kuwait: Premier League" gid="1284" id="1284" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="16:20" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="16:20" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3854963" fix_id="4362413" id="6875515">
+        <localteam name="Al-Fahaheel" goals="?" id="12369" />
+        <visitorteam name="Al Salmiya" goals="?" id="12375" />
+        <localteam1 name="Al-Fahaheel" goals="?" />
+        <visitorteam1 name="Al Salmiya" goals="?" />
+        <localteam2 name="Al-Fahaheel" goals="?" />
+        <visitorteam2 name="Al Salmiya" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Kyrgyzstan: Premier Liga" gid="2709" id="2709" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="14:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="14:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3838194" fix_id="4345625" id="6911458">
+        <localteam name="Ilbirs" goals="?" id="29600" />
+        <visitorteam name="Abdysh-Ata" goals="?" id="25602" />
+        <localteam1 name="Ilbirs" goals="?" />
+        <visitorteam1 name="Abdysh-Ata" goals="?" />
+        <localteam2 name="Ilbirs" goals="?" />
+        <visitorteam2 name="Abdysh-Ata" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Montenegro: Montenegrin Cup" gid="37933" id="2104" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="18:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3854773" fix_id="4362223" id="6875086">
+        <localteam name="Decic" goals="?" id="13058" />
+        <visitorteam name="Mornar Bar" goals="?" id="13083" />
+        <localteam1 name="Decic" goals="?" />
+        <visitorteam1 name="Mornar Bar" goals="?" />
+        <localteam2 name="Decic" goals="?" />
+        <visitorteam2 name="Mornar Bar" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Poland: Division 1 - Promotion - Play Offs" gid="38317" id="1348" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="15:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="15:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3856652" fix_id="4364102" id="6922307">
+        <localteam name="Chrobry Glogow" goals="?" id="14125" />
+        <visitorteam name="LKS Lodz" goals="?" id="14071" />
+        <localteam1 name="Chrobry Glogow" goals="?" />
+        <visitorteam1 name="LKS Lodz" goals="?" />
+        <localteam2 name="Chrobry Glogow" goals="?" />
+        <visitorteam2 name="LKS Lodz" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="18:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3856653" fix_id="4364103" id="6922308">
+        <localteam name="Wieczysta Krakow" goals="?" id="34627" />
+        <visitorteam name="Polonia Warszawa" goals="?" id="14158" />
+        <localteam1 name="Wieczysta Krakow" goals="?" />
+        <visitorteam1 name="Polonia Warszawa" goals="?" />
+        <localteam2 name="Wieczysta Krakow" goals="?" />
+        <visitorteam2 name="Polonia Warszawa" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Portugal: Liga Portugal - Relegation" gid="38294" id="1352" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="19:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="19:00" commentary_available="1352" heatmap="" venue="" coveredLive="True" v="0" static_id="3855710" fix_id="4363160" id="6914885">
+        <localteam name="Casa Pia" goals="?" id="14283" />
+        <visitorteam name="Torreense" goals="?" id="14437" />
+        <localteam1 name="Casa Pia" goals="?" />
+        <visitorteam1 name="Torreense" goals="?" />
+        <localteam2 name="Casa Pia" goals="?" />
+        <visitorteam2 name="Torreense" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="South America: Copa Libertadores - Group Stage" gid="37696" id="1040" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="1040" venue="" v="90" static_id="3845404" fix_id="4352836" id="6917241">
+        <localteam name="Bolivar" goals="1" id="6983" />
+        <visitorteam name="Ind. Rivadavia" goals="3" id="6004" />
+        <localteam1 name="Bolivar" goals="1" />
+        <visitorteam1 name="Ind. Rivadavia" goals="3" />
+        <localteam2 name="Bolivar" goals="1" />
+        <visitorteam2 name="Ind. Rivadavia" goals="3" />
+        <events>
+          <event type="yellowcard" minute="25" extra_min="" team="visitorteam" player="S. Studer" result="" playerId="698567" assist="Roughing" assistid="" eventid="69172411" />
+          <event type="yellowcard" minute="41" extra_min="" team="localteam" player="Pato Rodriguez" result="" playerId="24759" assist="Tripping" assistid="" eventid="69172412" />
+          <event type="yellowcard" minute="45" extra_min="" team="visitorteam" player="J. I. Florentin Bobadilla" result="" playerId="396806" assist="" assistid="" eventid="69172413" />
+          <event type="yellowcard" minute="45" extra_min="6" team="visitorteam" player="J. M. Elordi" result="" playerId="443574" assist="Unsportsmanlike conduct" assistid="" eventid="69172414" />
+          <event type="goal" minute="45" extra_min="7" team="visitorteam" player="L. Bucca" result="[0 - 1]" playerId="678690" assist="M. Fernandez" assistid="625451" eventid="69172415" />
+          <event type="goal" minute="55" extra_min="" team="localteam" player="M. Cauteruccio" result="[1 - 1]" playerId="91601" assist="Robson Matheus" assistid="600749" eventid="69172416" />
+          <event type="subst" minute="58" extra_min="" team="visitorteam" player="S. Villa" result="" playerId="364033" assist="J. I. Florentin Bobadilla" assistid="396806" eventid="69172417" />
+          <event type="subst" minute="67" extra_min="" team="visitorteam" player="R. Atencio" result="" playerId="828489" assist="M. Fernandez" assistid="625451" eventid="69172418" />
+          <event type="subst" minute="67" extra_min="" team="visitorteam" player="L. Costa" result="" playerId="605646" assist="S. Studer" assistid="698567" eventid="69172419" />
+          <event type="subst" minute="72" extra_min="" team="visitorteam" player="D. Crego" result="" playerId="1148938" assist="F. Sartori" assistid="714897" eventid="691724110" />
+          <event type="subst" minute="72" extra_min="" team="visitorteam" player="A. Riep" result="" playerId="737609" assist="L. Bucca" assistid="678690" eventid="691724111" />
+          <event type="subst" minute="76" extra_min="" team="localteam" player="L. L. Chavez Cruz" result="" playerId="698505" assist="C. A. Melgar" assistid="455277" eventid="691724112" />
+          <event type="subst" minute="76" extra_min="" team="localteam" player="L. Paz" result="" playerId="857200" assist="J. Sagredo" assistid="1104467" eventid="691724113" />
+          <event type="yellowcard" minute="79" extra_min="" team="localteam" player="X. Arreaga" result="" playerId="338815" assist="Roughing" assistid="" eventid="691724114" />
+          <event type="subst" minute="81" extra_min="" team="localteam" player="J. Garcia" result="" playerId="475758" assist="Pato Rodriguez" assistid="24759" eventid="691724115" />
+          <event type="subst" minute="81" extra_min="" team="localteam" player="S. Echeverria" result="" playerId="49914" assist="I. Gariglio" assistid="679168" eventid="691724116" />
+          <event type="subst" minute="84" extra_min="" team="localteam" player="E. Saavedra" result="" playerId="310482" assist="Robson Matheus" assistid="600749" eventid="691724117" />
+          <event type="yellowcard" minute="86" extra_min="" team="visitorteam" player="L. Gomez" result="" playerId="434063" assist="Tripping" assistid="" eventid="691724118" />
+          <event type="goal" minute="90" extra_min="2" team="visitorteam" player="S. Villa" result="[1 - 2]" playerId="364033" assist="J. M. Elordi" assistid="443574" eventid="691724119" />
+          <event type="goal" minute="90" extra_min="5" team="visitorteam" player="D. Crego" result="[1 - 3]" playerId="1148938" assist="" assistid="" eventid="691724120" />
+        </events>
+        <ht score="[0-1]" />
+        <ft score="[1-3]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="1040" venue="" v="90" static_id="3845406" fix_id="4352838" id="6917242">
+        <localteam name="Corinthians" goals="0" id="7241" />
+        <visitorteam name="Platense" goals="2" id="6033" />
+        <localteam1 name="Corinthians" goals="0" />
+        <visitorteam1 name="Platense" goals="2" />
+        <localteam2 name="Corinthians" goals="0" />
+        <visitorteam2 name="Platense" goals="2" />
+        <events>
+          <event type="yellowcard" minute="13" extra_min="" team="visitorteam" player="A. Lagos" result="" playerId="620128" assist="Foul" assistid="" eventid="69172421" />
+          <event type="goal" minute="21" extra_min="" team="visitorteam" player="F. Zapiola (pen.)" result="[0 - 1]" playerId="744823" assist="" assistid="" eventid="69172422" />
+          <event type="yellowcard" minute="33" extra_min="" team="visitorteam" player="J. Gauto" result="" playerId="651103" assist="Tripping" assistid="" eventid="69172423" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="Kaio Cesar" result="" playerId="859308" assist="M. Depay" assistid="161289" eventid="69172424" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="Z. Labyad" result="" playerId="102889" assist="Raniele" assistid="444159" eventid="69172425" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="J. Saborido" result="" playerId="616436" assist="A. Lagos" assistid="620128" eventid="69172426" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="M. Mendia" result="" playerId="929140" assist="J. Gauto" assistid="651103" eventid="69172427" />
+          <event type="yellowcard" minute="47" extra_min="" team="localteam" player="Matheuzinho" result="" playerId="534272" assist="Foul" assistid="" eventid="69172428" />
+          <event type="goal" minute="57" extra_min="" team="visitorteam" player="F. Zapiola" result="[0 - 2]" playerId="744823" assist="" assistid="" eventid="69172429" />
+          <event type="yellowcard" minute="64" extra_min="" team="localteam" player="Allan" result="" playerId="411698" assist="Unsportsmanlike conduct" assistid="" eventid="691724210" />
+          <event type="subst" minute="66" extra_min="" team="localteam" player="A. Carrillo" result="" playerId="110254" assist="Allan" assistid="411698" eventid="691724211" />
+          <event type="subst" minute="76" extra_min="" team="visitorteam" player="L. Heredia" result="" playerId="337735" assist="K. Retamar" assistid="570137" eventid="691724212" />
+          <event type="subst" minute="82" extra_min="" team="localteam" player="Pedro Raul" result="" playerId="471390" assist="Yuri Alberto" assistid="474975" eventid="691724213" />
+          <event type="subst" minute="82" extra_min="" team="localteam" player="J. Lingard" result="" playerId="220119" assist="R. Garro" assistid="534453" eventid="691724214" />
+          <event type="subst" minute="87" extra_min="" team="visitorteam" player="S. Quiros" result="" playerId="889474" assist="F. Zapiola" assistid="744823" eventid="691724215" />
+          <event type="subst" minute="90" extra_min="4" team="visitorteam" player="S. Dalmasso" result="" playerId="954068" assist="I. Gomez" assistid="449541" eventid="691724216" />
+        </events>
+        <ht score="[0-1]" />
+        <ft score="[0-2]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="1040" venue="" v="90" static_id="3845410" fix_id="4352842" id="6917243">
+        <localteam name="Fluminense" goals="3" id="7304" />
+        <visitorteam name="La Guaira" goals="1" id="17554" />
+        <localteam1 name="Fluminense" goals="3" />
+        <visitorteam1 name="La Guaira" goals="1" />
+        <localteam2 name="Fluminense" goals="3" />
+        <visitorteam2 name="La Guaira" goals="1" />
+        <events>
+          <event type="goal" minute="10" extra_min="" team="localteam" player="J. Savarino (pen.)" result="[1 - 0]" playerId="282136" assist="" assistid="" eventid="69172431" />
+          <event type="goal" minute="12" extra_min="" team="visitorteam" player="F. Londono" result="[1 - 1]" playerId="650328" assist="" assistid="" eventid="69172432" />
+          <event type="goal" minute="28" extra_min="" team="localteam" player="Hercules" result="[2 - 1]" playerId="660831" assist="Martinelli" assistid="671412" eventid="69172433" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="Nonato" result="" playerId="440539" assist="Hercules" assistid="660831" eventid="69172434" />
+          <event type="subst" minute="58" extra_min="" team="visitorteam" player="C. Faya" result="" playerId="1101856" assist="M. Gonzalez" assistid="825608" eventid="69172435" />
+          <event type="subst" minute="58" extra_min="" team="visitorteam" player="M. Sulbaran" result="" playerId="691084" assist="J. Meza" assistid="121597" eventid="69172436" />
+          <event type="subst" minute="58" extra_min="" team="visitorteam" player="J. Perdomo" result="" playerId="605369" assist="J. Correa" assistid="1202496" eventid="69172437" />
+          <event type="goal" minute="66" extra_min="" team="localteam" player="A. Canobbio" result="[3 - 1]" playerId="452566" assist="" assistid="" eventid="69172438" />
+          <event type="subst" minute="74" extra_min="" team="visitorteam" player="A. Uribe" result="" playerId="140949" assist="Y. Rivas" assistid="565449" eventid="69172439" />
+          <event type="subst" minute="78" extra_min="" team="localteam" player="F. Bernal" result="" playerId="710590" assist="Martinelli" assistid="671412" eventid="691724310" />
+          <event type="subst" minute="83" extra_min="" team="localteam" player="K. Serna" result="" playerId="607099" assist="J. Savarino" assistid="282136" eventid="691724311" />
+          <event type="subst" minute="84" extra_min="" team="visitorteam" player="N. Hernandez" result="" playerId="260031" assist="L. Martinez" assistid="1101955" eventid="691724312" />
+          <event type="subst" minute="90" extra_min="1" team="localteam" player="Y. Soteldo" result="" playerId="313965" assist="L. Acosta" assistid="329796" eventid="691724313" />
+          <event type="subst" minute="90" extra_min="1" team="localteam" player="G. Cano" result="" playerId="17809" assist="John Kennedy" assistid="687475" eventid="691724314" />
+        </events>
+        <ht score="[2-1]" />
+        <ft score="[3-1]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="1040" venue="" v="90" static_id="3845417" fix_id="4352849" id="6917244">
+        <localteam name="Penarol" goals="0" id="17440" />
+        <visitorteam name="Santa Fe" goals="1" id="8157" />
+        <localteam1 name="Penarol" goals="0" />
+        <visitorteam1 name="Santa Fe" goals="1" />
+        <localteam2 name="Penarol" goals="0" />
+        <visitorteam2 name="Santa Fe" goals="1" />
+        <events>
+          <event type="goal" minute="13" extra_min="" team="visitorteam" player="A. Zapata" result="[0 - 1]" playerId="284935" assist="N. Bustos" assistid="442053" eventid="69172441" />
+          <event type="subst" minute="24" extra_min="" team="localteam" player="E. Darias" result="" playerId="506234" assist="L. Angulo" assistid="686740" eventid="69172442" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="E. Gularte" result="" playerId="399985" assist="B. Barboza" assistid="1152280" eventid="69172443" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="A. Hernandez" result="" playerId="57168" assist="D. Laxalt" assistid="224322" eventid="69172444" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="Lucas Hernandez" result="" playerId="276174" assist="F. Escobar" assistid="365451" eventid="69172445" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="J. Obrian" result="" playerId="395237" assist="Y. A. Perlaza Perea" assistid="692976" eventid="69172446" />
+          <event type="yellowcard" minute="53" extra_min="" team="localteam" player="E. Gularte" result="" playerId="399985" assist="Tripping" assistid="" eventid="69172447" />
+          <event type="subst" minute="60" extra_min="" team="visitorteam" player="Y. Velasquez" result="" playerId="595930" assist="N. Bustos" assistid="442053" eventid="69172448" />
+          <event type="subst" minute="65" extra_min="" team="visitorteam" player="L. Palacios" result="" playerId="746822" assist="A. Zapata" assistid="284935" eventid="69172449" />
+          <event type="subst" minute="69" extra_min="" team="localteam" player="J. Cabrera" result="" playerId="91737" assist="M. Lemos" assistid="325566" eventid="691724410" />
+          <event type="yellowcard" minute="72" extra_min="" team="visitorteam" player="M. Puerta" result="" playerId="440186" assist="Tripping" assistid="" eventid="691724411" />
+          <event type="subst" minute="74" extra_min="" team="visitorteam" player="I. R. Scarpeta Silgado" result="" playerId="435485" assist="M. Puerta" assistid="440186" eventid="691724412" />
+          <event type="yellowcard" minute="82" extra_min="" team="localteam" player="J. Cabrera" result="" playerId="91737" assist="Tripping" assistid="" eventid="691724413" />
+          <event type="yellowcard" minute="83" extra_min="" team="visitorteam" player="J. Angulo" result="" playerId="290459" assist="Holding" assistid="" eventid="691724414" />
+        </events>
+        <ht score="[0-1]" />
+        <ft score="[0-1]" />
+      </match>
+      <match status="22:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="22:00" commentary_available="1040" heatmap="" venue="" coveredLive="True" v="0" static_id="3845405" fix_id="4352837" id="6921237">
+        <localteam name="Cerro Porteno" goals="?" id="13875" />
+        <visitorteam name="Sporting Cristal" goals="?" id="13938" />
+        <localteam1 name="Cerro Porteno" goals="?" />
+        <visitorteam1 name="Sporting Cristal" goals="?" />
+        <localteam2 name="Cerro Porteno" goals="?" />
+        <visitorteam2 name="Sporting Cristal" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="22:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="22:00" commentary_available="1040" heatmap="" venue="" coveredLive="True" v="0" static_id="3845416" fix_id="4352848" id="6921238">
+        <localteam name="Palmeiras" goals="?" id="7473" />
+        <visitorteam name="Junior" goals="?" id="8145" />
+        <localteam1 name="Palmeiras" goals="?" />
+        <visitorteam1 name="Junior" goals="?" />
+        <localteam2 name="Palmeiras" goals="?" />
+        <visitorteam2 name="Junior" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="00:30" timer="" inj_time="" inj_minute="" date="May 29" formatted_date="29.05.2026" time="00:30" commentary_available="1040" heatmap="" venue="" coveredLive="True" v="0" static_id="3845403" fix_id="4352835" id="6921239">
+        <localteam name="Boca Juniors" goals="?" id="5926" />
+        <visitorteam name="U. Catolica" goals="?" id="8024" />
+        <localteam1 name="Boca Juniors" goals="?" />
+        <visitorteam1 name="U. Catolica" goals="?" />
+        <localteam2 name="Boca Juniors" goals="?" />
+        <visitorteam2 name="U. Catolica" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="00:30" timer="" inj_time="" inj_minute="" date="May 29" formatted_date="29.05.2026" time="00:30" commentary_available="1040" heatmap="" venue="" coveredLive="True" v="0" static_id="3845407" fix_id="4352839" id="6921240">
+        <localteam name="Cruzeiro" goals="?" id="7256" />
+        <visitorteam name="Barcelona SC" goals="?" id="8852" />
+        <localteam1 name="Cruzeiro" goals="?" />
+        <visitorteam1 name="Barcelona SC" goals="?" />
+        <localteam2 name="Cruzeiro" goals="?" />
+        <visitorteam2 name="Barcelona SC" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="South America: Copa Sudamericana - Group Stage" gid="37704" id="1627" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="1627" venue="" v="90" static_id="3845557" fix_id="4352989" id="6917249">
+        <localteam name="Bragantino" goals="2" id="7173" />
+        <visitorteam name="Carabobo" goals="0" id="17525" />
+        <localteam1 name="Bragantino" goals="2" />
+        <visitorteam1 name="Carabobo" goals="0" />
+        <localteam2 name="Bragantino" goals="2" />
+        <visitorteam2 name="Carabobo" goals="0" />
+        <events>
+          <event type="yellowcard" minute="45" extra_min="6" team="localteam" player="H. Mosquera" result="" playerId="811168" assist="" assistid="" eventid="69172491" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="Eduardo Sasha" result="" playerId="153217" assist="Gabriel" assistid="173974" eventid="69172492" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="Fernando Santos" result="" playerId="521572" assist="H. Mosquera" assistid="811168" eventid="69172493" />
+          <event type="subst" minute="66" extra_min="" team="localteam" player="Marcelinho" result="" playerId="1113987" assist="J. Herrera" assistid="815766" eventid="69172494" />
+          <event type="subst" minute="74" extra_min="" team="localteam" player="Vanderlan" result="" playerId="670947" assist="Juninho Capixaba" assistid="428407" eventid="69172495" />
+          <event type="subst" minute="74" extra_min="" team="visitorteam" player="A. Bahachille" result="" playerId="1101950" assist="E. Tortolero" assistid="398786" eventid="69172496" />
+          <event type="subst" minute="75" extra_min="" team="visitorteam" player="L. Martinez" result="" playerId="1204900" assist="J. Berios" assistid="1206737" eventid="69172497" />
+          <event type="goal" minute="76" extra_min="" team="localteam" player="I. Pitta" result="[1 - 0]" playerId="593344" assist="" assistid="" eventid="69172498" />
+          <event type="yellowcard" minute="78" extra_min="" team="localteam" player="I. Pitta" result="" playerId="593344" assist="" assistid="" eventid="69172499" />
+          <event type="yellowcard" minute="81" extra_min="" team="visitorteam" player="L. Bruera" result="" playerId="466004" assist="" assistid="" eventid="691724910" />
+          <event type="subst" minute="82" extra_min="" team="visitorteam" player="Y. Orozco" result="" playerId="24593" assist="M. Nunez" assistid="669743" eventid="691724911" />
+          <event type="subst" minute="84" extra_min="" team="localteam" player="Pedro Henrique" result="" playerId="954775" assist="A. Sant'Anna" assistid="414522" eventid="691724912" />
+          <event type="yellowcard" minute="84" extra_min="" team="visitorteam" player="E. Ramirez" result="" playerId="433302" assist="" assistid="" eventid="691724913" />
+          <event type="subst" minute="90" extra_min="" team="visitorteam" player="D. Meza" result="" playerId="1101758" assist="E. Neira" assistid="683229" eventid="691724914" />
+          <event type="yellowcard" minute="90" extra_min="3" team="localteam" player="Rodriguinho" result="" playerId="829489" assist="" assistid="" eventid="691724915" />
+          <event type="goal" minute="90" extra_min="3" team="localteam" player="Fernando Santos" result="[2 - 0]" playerId="521572" assist="Marcelinho" assistid="1113987" eventid="691724916" />
+        </events>
+        <ht score="[0-0]" />
+        <ft score="[2-0]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="1627" venue="" v="90" static_id="3845565" fix_id="4352997" id="6917251">
+        <localteam name="River Plate" goals="3" id="26044" />
+        <visitorteam name="Blooming" goals="0" id="6982" />
+        <localteam1 name="River Plate" goals="3" />
+        <visitorteam1 name="Blooming" goals="0" />
+        <localteam2 name="River Plate" goals="3" />
+        <visitorteam2 name="Blooming" goals="0" />
+        <events>
+          <event type="pen miss" minute="11" extra_min="" team="localteam" player="M. Salas" result="" playerId="432685" assist="M. Salas" assistid="432685" eventid="69172511" />
+          <event type="goal" minute="57" extra_min="" team="localteam" player="M. Salas" result="[1 - 0]" playerId="432685" assist="L. Martinez Quarta" assistid="404648" eventid="69172512" />
+          <event type="yellowcard" minute="60" extra_min="" team="localteam" player="M. Salas" result="" playerId="432685" assist="" assistid="" eventid="69172513" />
+          <event type="yellowcard" minute="64" extra_min="" team="visitorteam" player="G. Centella" result="" playerId="1104578" assist="" assistid="" eventid="69172514" />
+          <event type="subst" minute="65" extra_min="" team="visitorteam" player="M. Villarroel" result="" playerId="600739" assist="A. Oliveros" assistid="606656" eventid="69172515" />
+          <event type="subst" minute="66" extra_min="" team="visitorteam" player="C. Menacho" result="" playerId="559361" assist="J. Garces" assistid="186151" eventid="69172516" />
+          <event type="goal" minute="72" extra_min="" team="localteam" player="Fausto Vera (pen.)" result="[2 - 0]" playerId="475795" assist="" assistid="" eventid="69172517" />
+          <event type="subst" minute="76" extra_min="" team="localteam" player="L. Pereyra" result="" playerId="1208607" assist="T. Galvan" assistid="551786" eventid="69172518" />
+          <event type="subst" minute="78" extra_min="" team="visitorteam" player="R. Melgar" result="" playerId="1131597" assist="G. Centella" assistid="1104578" eventid="69172519" />
+          <event type="subst" minute="78" extra_min="" team="localteam" player="J. Asuzu" result="" playerId="1228392" assist="M. Salas" assistid="432685" eventid="691725110" />
+          <event type="subst" minute="78" extra_min="" team="visitorteam" player="P. Loza" result="" playerId="1131434" assist="R. Hinojosa" assistid="618386" eventid="691725111" />
+          <event type="subst" minute="83" extra_min="" team="visitorteam" player="S. Severiche" result="" playerId="1104576" assist="J. S. Mercado Galvez" assistid="452974" eventid="691725112" />
+          <event type="goal" minute="84" extra_min="" team="localteam" player="L. Silva" result="[3 - 0]" playerId="1223726" assist="L. Martinez Quarta" assistid="404648" eventid="691725113" />
+          <event type="subst" minute="85" extra_min="" team="localteam" player="S. Lencina" result="" playerId="830715" assist="Fausto Vera" assistid="475795" eventid="691725114" />
+          <event type="subst" minute="86" extra_min="" team="localteam" player="U. Gimenez" result="" playerId="827801" assist="F. Bustos" assistid="289918" eventid="691725115" />
+        </events>
+        <ht score="[0-0]" />
+        <ft score="[3-0]" />
+      </match>
+      <match status="00:30" timer="" inj_time="" inj_minute="" date="May 29" formatted_date="29.05.2026" time="00:30" commentary_available="1627" heatmap="" venue="" coveredLive="True" v="0" static_id="3845555" fix_id="4352987" id="6921242">
+        <localteam name="America De Cali" goals="?" id="8124" />
+        <visitorteam name="Macara" goals="?" id="8870" />
+        <localteam1 name="America De Cali" goals="?" />
+        <visitorteam1 name="Macara" goals="?" />
+        <localteam2 name="America De Cali" goals="?" />
+        <visitorteam2 name="Macara" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="00:30" timer="" inj_time="" inj_minute="" date="May 29" formatted_date="29.05.2026" time="00:30" commentary_available="1627" heatmap="" venue="" coveredLive="True" v="0" static_id="3845569" fix_id="4353001" id="6921243">
+        <localteam name="Tigre" goals="?" id="6067" />
+        <visitorteam name="Alianza Atl." goals="?" id="13903" />
+        <localteam1 name="Tigre" goals="?" />
+        <visitorteam1 name="Alianza Atl." goals="?" />
+        <localteam2 name="Tigre" goals="?" />
+        <visitorteam2 name="Alianza Atl." goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Sudan: Premier League - Championship Group" gid="29257" id="1401" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="13:45" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="13:45" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3856936" fix_id="4364387" id="6944874">
+        <localteam name="Al-Hilal Omdurman II" goals="?" id="44007" />
+        <visitorteam name="Hilal Alsahil" goals="?" id="16332" />
+        <localteam1 name="Al-Hilal Omdurman II" goals="?" />
+        <visitorteam1 name="Hilal Alsahil" goals="?" />
+        <localteam2 name="Al-Hilal Omdurman II" goals="?" />
+        <visitorteam2 name="Hilal Alsahil" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="13:45" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="13:45" commentary_available="" heatmap="" venue="" coveredLive="False" v="0" static_id="3856937" fix_id="4364388" id="6944875">
+        <localteam name="Umm Mughad" goals="?" id="41712" />
+        <visitorteam name="Hilal El-Fasher" goals="?" id="23021" />
+        <localteam1 name="Umm Mughad" goals="?" />
+        <visitorteam1 name="Hilal El-Fasher" goals="?" />
+        <localteam2 name="Umm Mughad" goals="?" />
+        <visitorteam2 name="Hilal El-Fasher" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="Sweden: Svenska Cupen - Qualification" gid="38145" id="1406" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="17:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="17:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3855910" fix_id="4363360" id="6916619">
+        <localteam name="Assyriska FF" goals="?" id="16412" />
+        <visitorteam name="Vasalund" goals="?" id="16589" />
+        <localteam1 name="Assyriska FF" goals="?" />
+        <visitorteam1 name="Vasalund" goals="?" />
+        <localteam2 name="Assyriska FF" goals="?" />
+        <visitorteam2 name="Vasalund" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="USA: Usl Championship" gid="37786" id="1438" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:30" commentary_available="1438" venue="" v="90" static_id="3804918" fix_id="4312332" id="6883952">
+        <localteam name="Sporting Jax" goals="4" id="42117" />
+        <visitorteam name="San Antonio" goals="4" id="25457" />
+        <localteam1 name="Sporting Jax" goals="4" />
+        <visitorteam1 name="San Antonio" goals="4" />
+        <localteam2 name="Sporting Jax" goals="4" />
+        <visitorteam2 name="San Antonio" goals="4" />
+        <events>
+          <event type="goal" minute="6" extra_min="" team="localteam" player="E. Jaaskelainen" result="[1 - 0]" playerId="531528" assist="R. Pedder" assistid="562013" eventid="68839521" />
+          <event type="goal" minute="23" extra_min="" team="localteam" player="K. Sadlier (pen.)" result="[2 - 0]" playerId="155834" assist="" assistid="" eventid="68839522" />
+          <event type="yellowcard" minute="43" extra_min="" team="visitorteam" player="R. Sanchez" result="" playerId="181797" assist="Foul" assistid="" eventid="68839523" />
+          <event type="goal" minute="45" extra_min="" team="localteam" player="K. Sadlier (pen.)" result="[3 - 0]" playerId="155834" assist="" assistid="" eventid="68839524" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="A. Ward" result="" playerId="591941" assist="R. Buckmaster" assistid="591885" eventid="68839525" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="E. Cuello" result="" playerId="596625" assist="C. Calov" assistid="616313" eventid="68839526" />
+          <event type="goal" minute="48" extra_min="" team="visitorteam" player="D. Erofeev" result="[3 - 1]" playerId="1117040" assist="N. Blanco" assistid="489505" eventid="68839527" />
+          <event type="goal" minute="51" extra_min="" team="visitorteam" player="C. Sorto" result="[3 - 2]" playerId="1116449" assist="E. Cuello" assistid="596625" eventid="68839528" />
+          <event type="goal" minute="54" extra_min="" team="visitorteam" player="A. Ward" result="[3 - 3]" playerId="591941" assist="J. Hernandez" assistid="481691" eventid="68839529" />
+          <event type="yellowcard" minute="64" extra_min="" team="localteam" player="J. Rossiter" result="" playerId="281570" assist="Foul" assistid="" eventid="688395210" />
+          <event type="subst" minute="70" extra_min="" team="localteam" player="W. Kuzain" result="" playerId="479017" assist="K. Sadlier" assistid="155834" eventid="688395211" />
+          <event type="goal" minute="76" extra_min="" team="visitorteam" player="C. Sorto" result="[3 - 4]" playerId="1116449" assist="N. Blanco" assistid="489505" eventid="688395212" />
+          <event type="subst" minute="78" extra_min="" team="localteam" player="D. Armstrong" result="" playerId="1126544" assist="J. Rossiter" assistid="281570" eventid="688395213" />
+          <event type="subst" minute="78" extra_min="" team="visitorteam" player="L. Berron" result="" playerId="1117043" assist="C. Sorto" assistid="1116449" eventid="688395214" />
+          <event type="subst" minute="78" extra_min="" team="visitorteam" player="L. Haakenson" result="" playerId="648593" assist="D. Erofeev" assistid="1117040" eventid="688395215" />
+          <event type="subst" minute="78" extra_min="" team="visitorteam" player="A. Souahy" result="" playerId="259267" assist="A. Crognale" assistid="1117039" eventid="688395216" />
+          <event type="subst" minute="84" extra_min="" team="localteam" player="L. Granitur" result="" playerId="1211653" assist="E. Rito" assistid="1101809" eventid="688395217" />
+          <event type="yellowcard" minute="85" extra_min="" team="localteam" player="A. Gomez" result="" playerId="954468" assist="Foul" assistid="" eventid="688395218" />
+          <event type="yellowcard" minute="87" extra_min="" team="localteam" player="W. Kuzain" result="" playerId="479017" assist="Foul" assistid="" eventid="688395219" />
+          <event type="goal" minute="89" extra_min="" team="localteam" player="R. Pedder" result="[4 - 4]" playerId="562013" assist="D. Armstrong" assistid="1126544" eventid="688395220" />
+          <event type="yellowcard" minute="90" extra_min="3" team="visitorteam" player="N. Blanco" result="" playerId="489505" assist="Foul" assistid="" eventid="688395221" />
+        </events>
+        <ht score="[3-0]" />
+        <ft score="[4-4]" />
+      </match>
+    </matches>
+  </category>
+  <category name="USA: Usl League One" gid="37951" id="5267" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" venue="" v="90" static_id="3805256" fix_id="4312670" id="6875576">
+        <localteam name="Chattanooga Red Wolves" goals="5" id="30736" />
+        <visitorteam name="Richmond Kickers" goals="0" id="17373" />
+        <localteam1 name="Chattanooga Red Wolves" goals="5" />
+        <visitorteam1 name="Richmond Kickers" goals="0" />
+        <localteam2 name="Chattanooga Red Wolves" goals="5" />
+        <visitorteam2 name="Richmond Kickers" goals="0" />
+        <events>
+          <event type="goal" minute="4" extra_min="" team="localteam" player="R. Mensah" result="[1 - 0]" playerId="1116793" assist="M. Bentley" assistid="1116427" eventid="68755761" />
+          <event type="goal" minute="11" extra_min="" team="localteam" player="O. Tapia" result="[2 - 0]" playerId="1213907" assist="" assistid="" eventid="68755762" />
+          <event type="yellowcard" minute="12" extra_min="" team="visitorteam" player="Y. Fillion" result="" playerId="400860" assist="" assistid="" eventid="68755763" />
+          <event type="yellowcard" minute="27" extra_min="" team="localteam" player="T. Adewole" result="" playerId="1116784" assist="" assistid="" eventid="68755764" />
+          <event type="yellowcard" minute="27" extra_min="" team="localteam" player="Y. Lelin" result="" playerId="1158876" assist="" assistid="" eventid="68755765" />
+          <event type="yellowcard" minute="45" extra_min="4" team="visitorteam" player="H. Anderson" result="" playerId="1157566" assist="" assistid="" eventid="68755766" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="S. Vinberg" result="" playerId="1116721" assist="T. Pannholzer" assistid="1184911" eventid="68755767" />
+          <event type="goal" minute="48" extra_min="" team="localteam" player="M. Bentley" result="[3 - 0]" playerId="1116427" assist="O. Tapia" assistid="1213907" eventid="68755768" />
+          <event type="goal" minute="58" extra_min="" team="localteam" player="O. Hernandez" result="[4 - 0]" playerId="1116822" assist="J. Ramos" assistid="1116835" eventid="68755769" />
+          <event type="subst" minute="60" extra_min="" team="visitorteam" player="A. Amer" result="" playerId="1212597" assist="A. Sasankhah" assistid="1212601" eventid="687557610" />
+          <event type="subst" minute="60" extra_min="" team="visitorteam" player="D. Moore" result="" playerId="1126235" assist="J. Kirkland" assistid="1157559" eventid="687557611" />
+          <event type="subst" minute="60" extra_min="" team="visitorteam" player="L. Johnson" result="" playerId="1157568" assist="M. Murana" assistid="489775" eventid="687557612" />
+          <event type="yellowcard" minute="61" extra_min="" team="visitorteam" player="S. Layton" result="" playerId="1167952" assist="" assistid="" eventid="687557613" />
+          <event type="subst" minute="62" extra_min="" team="localteam" player="P. Hernandez" result="" playerId="1116840" assist="O. Tapia" assistid="1213907" eventid="687557614" />
+          <event type="subst" minute="62" extra_min="" team="localteam" player="C. Engmann" result="" playerId="1175878" assist="T. Adewole" assistid="1116784" eventid="687557615" />
+          <event type="subst" minute="71" extra_min="" team="visitorteam" player="B. Howell" result="" playerId="1157562" assist="H. Anderson" assistid="1157566" eventid="687557616" />
+          <event type="subst" minute="73" extra_min="" team="localteam" player="A. Lombardi" result="" playerId="1158877" assist="O. Hernandez" assistid="1116822" eventid="687557617" />
+          <event type="subst" minute="73" extra_min="" team="localteam" player="G. Mercer" result="" playerId="1158887" assist="J. Ayimbila" assistid="1116836" eventid="687557618" />
+          <event type="goal" minute="81" extra_min="" team="localteam" player="R. Mensah" result="[5 - 0]" playerId="1116793" assist="P. Hernandez" assistid="1116840" eventid="687557619" />
+          <event type="subst" minute="86" extra_min="" team="localteam" player="N. Donoho" result="" playerId="1213908" assist="R. Mensah" assistid="1116793" eventid="687557620" />
+          <event type="yellowcard" minute="90" extra_min="2" team="visitorteam" player="D. Barnathan" result="" playerId="1157557" assist="" assistid="" eventid="687557621" />
+        </events>
+        <ht score="[2-0]" />
+        <ft score="[5-0]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" venue="" v="90" static_id="3805257" fix_id="4312671" id="6882555">
+        <localteam name="New York Cosmos" goals="1" id="22099" />
+        <visitorteam name="Union Omaha" goals="2" id="32382" />
+        <localteam1 name="New York Cosmos" goals="1" />
+        <visitorteam1 name="Union Omaha" goals="2" />
+        <localteam2 name="New York Cosmos" goals="1" />
+        <visitorteam2 name="Union Omaha" goals="2" />
+        <events>
+          <event type="yellowcard" minute="24" extra_min="" team="visitorteam" player="S. Owusu" result="" playerId="507903" assist="" assistid="" eventid="68825551" />
+          <event type="yellowcard" minute="31" extra_min="" team="visitorteam" player="S. Guediri" result="" playerId="549821" assist="" assistid="" eventid="68825552" />
+          <event type="yellowcard" minute="45" extra_min="2" team="localteam" player="N. Mendonca" result="" playerId="1116830" assist="" assistid="" eventid="68825553" />
+          <event type="subst" minute="46" extra_min="" team="visitorteam" player="K. Tekiela" result="" playerId="414332" assist="D. Gutierrez" assistid="819186" eventid="68825554" />
+          <event type="subst" minute="46" extra_min="" team="localteam" player="J. Milovanov" result="" playerId="1213335" assist="D. Sidoel" assistid="381101" eventid="68825555" />
+          <event type="yellowcard" minute="49" extra_min="" team="visitorteam" player="B. Malone" result="" playerId="1175981" assist="" assistid="" eventid="68825556" />
+          <event type="goal" minute="60" extra_min="" team="visitorteam" player="A. Gomez" result="[0 - 1]" playerId="1116577" assist="D. Borczak" assistid="1166507" eventid="68825557" />
+          <event type="subst" minute="61" extra_min="" team="visitorteam" player="P. Botello Faz" result="" playerId="1158833" assist="A. Gomez" assistid="1116577" eventid="68825558" />
+          <event type="subst" minute="61" extra_min="" team="visitorteam" player="Y. Boudadi" result="" playerId="1125477" assist="C. Lawrence" assistid="1213270" eventid="68825559" />
+          <event type="subst" minute="61" extra_min="" team="visitorteam" player="S. Ors Navarro" result="" playerId="1116918" assist="D. Borczak" assistid="1166507" eventid="688255510" />
+          <event type="subst" minute="61" extra_min="" team="localteam" player="A. Puentes" result="" playerId="1213900" assist="N. Zielonka" assistid="1116780" eventid="688255511" />
+          <event type="yellowcard" minute="75" extra_min="" team="localteam" player="S. Guenzatti" result="" playerId="1117090" assist="" assistid="" eventid="688255512" />
+          <event type="goal" minute="80" extra_min="" team="localteam" player="A. Holt" result="[1 - 1]" playerId="1116916" assist="A. Puentes" assistid="1213900" eventid="688255513" />
+          <event type="subst" minute="83" extra_min="" team="visitorteam" player="Gabriel Cabral" result="" playerId="1116614" assist="L. Wootton" assistid="1117042" eventid="688255514" />
+          <event type="subst" minute="83" extra_min="" team="localteam" player="P. Bohui" result="" playerId="1213336" assist="N. Mendonca" assistid="1116830" eventid="688255515" />
+          <event type="subst" minute="83" extra_min="" team="localteam" player="W. Noecker" result="" playerId="1215044" assist="J. Chavez" assistid="1158889" eventid="688255516" />
+          <event type="pen miss" minute="85" extra_min="" team="visitorteam" player="P. Botello Faz" result="" playerId="1158833" assist="P. Botello Faz" assistid="1158833" eventid="688255517" />
+          <event type="yellowcard" minute="90" extra_min="3" team="localteam" player="P. Bohui" result="" playerId="1213336" assist="" assistid="" eventid="688255518" />
+          <event type="goal" minute="90" extra_min="4" team="visitorteam" player="K. Tekiela" result="[1 - 2]" playerId="414332" assist="" assistid="" eventid="688255519" />
+        </events>
+        <ht score="[0-0]" />
+        <ft score="[1-2]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="01:00" commentary_available="" venue="" v="90" static_id="3805255" fix_id="4312669" id="6883959">
+        <localteam name="Boise" goals="0" id="43933" />
+        <visitorteam name="Sarasota Paradise" goals="2" id="38128" />
+        <localteam1 name="Boise" goals="0" />
+        <visitorteam1 name="Sarasota Paradise" goals="2" />
+        <localteam2 name="Boise" goals="0" />
+        <visitorteam2 name="Sarasota Paradise" goals="2" />
+        <events>
+          <event type="yellowcard" minute="45" extra_min="" team="localteam" player="T. Amang" result="" playerId="1117142" assist="" assistid="" eventid="68839591" />
+          <event type="subst" minute="49" extra_min="" team="localteam" player="M. Ndiaye" result="" playerId="1212585" assist="D. Gasso" assistid="1117087" eventid="68839592" />
+          <event type="goal" minute="55" extra_min="" team="visitorteam" player="C. O'Dwyer" result="[0 - 1]" playerId="1157555" assist="J. Bolanos" assistid="1116782" eventid="68839593" />
+          <event type="goal" minute="60" extra_min="" team="visitorteam" player="G. McLaughlin" result="[0 - 2]" playerId="1116864" assist="S. Roed" assistid="1145105" eventid="68839594" />
+          <event type="subst" minute="64" extra_min="" team="visitorteam" player="M. Tainio" result="" playerId="486639" assist="S. Roed" assistid="1145105" eventid="68839595" />
+          <event type="subst" minute="64" extra_min="" team="visitorteam" player="M. Bolduc" result="" playerId="1157561" assist="E. Bryant" assistid="542226" eventid="68839596" />
+          <event type="subst" minute="65" extra_min="" team="localteam" player="Luan Brito" result="" playerId="891064" assist="T. Amang" assistid="1117142" eventid="68839597" />
+          <event type="subst" minute="65" extra_min="" team="localteam" player="J. Hanson" result="" playerId="639515" assist="T. Moshobane" assistid="603059" eventid="68839598" />
+          <event type="subst" minute="75" extra_min="" team="visitorteam" player="D. Brulinski" result="" playerId="1212589" assist="J. Bolanos" assistid="1116782" eventid="68839599" />
+          <event type="subst" minute="76" extra_min="" team="visitorteam" player="J. Pettersen" result="" playerId="1104210" assist="G. McLaughlin" assistid="1116864" eventid="688395910" />
+          <event type="subst" minute="76" extra_min="" team="localteam" player="O. Yehya" result="" playerId="1212592" assist="D. Kostyshyn" assistid="477496" eventid="688395911" />
+          <event type="subst" minute="76" extra_min="" team="localteam" player="K. Oyler" result="" playerId="1215408" assist="N. Moon" assistid="1125451" eventid="688395912" />
+          <event type="yellowcard" minute="81" extra_min="" team="visitorteam" player="A. Sogaard" result="" playerId="509262" assist="" assistid="" eventid="688395913" />
+          <event type="subst" minute="89" extra_min="" team="visitorteam" player="A. Rodriguez" result="" playerId="1212586" assist="R. Valentine" assistid="1158852" eventid="688395914" />
+        </events>
+        <ht score="[0-0]" />
+        <ft score="[0-2]" />
+      </match>
+    </matches>
+  </category>
+  <category name="USA: Usl League Two" gid="37877" id="1437" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834688" fix_id="4342116" id="6917260">
+        <localteam name="AC Connecticut" goals="0" id="24388" />
+        <visitorteam name="Albany Rush" goals="0" id="36271" />
+        <localteam1 name="AC Connecticut" goals="0" />
+        <visitorteam1 name="Albany Rush" goals="0" />
+        <localteam2 name="AC Connecticut" goals="0" />
+        <visitorteam2 name="Albany Rush" goals="0" />
+        <events>
+        </events>
+        <ht score="[1-1]" />
+        <ft score="[1-3]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834689" fix_id="4342117" id="6917261">
+        <localteam name="Appalachian" goals="0" id="37886" />
+        <visitorteam name="Charlotte Independ. 2" goals="0" id="32574" />
+        <localteam1 name="Appalachian" goals="0" />
+        <visitorteam1 name="Charlotte Independ. 2" goals="0" />
+        <localteam2 name="Appalachian" goals="0" />
+        <visitorteam2 name="Charlotte Independ. 2" goals="0" />
+        <events>
+        </events>
+        <ht score="[1-2]" />
+        <ft score="[1-4]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834690" fix_id="4342118" id="6917262">
+        <localteam name="Boston Bolts" goals="0" id="30846" />
+        <visitorteam name="NEFC" goals="0" id="17349" />
+        <localteam1 name="Boston Bolts" goals="0" />
+        <visitorteam1 name="NEFC" goals="0" />
+        <localteam2 name="Boston Bolts" goals="0" />
+        <visitorteam2 name="NEFC" goals="0" />
+        <events>
+        </events>
+        <ht score="[1-2]" />
+        <ft score="[1-2]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" venue="" v="90" static_id="3834696" fix_id="4342124" id="6917263">
+        <localteam name="Brevard SC" goals="0" id="38124" />
+        <visitorteam name="Miami City" goals="0" id="24778" />
+        <localteam1 name="Brevard SC" goals="0" />
+        <visitorteam1 name="Miami City" goals="0" />
+        <localteam2 name="Brevard SC" goals="0" />
+        <visitorteam2 name="Miami City" goals="0" />
+        <events>
+        </events>
+        <ht score="[0-0]" />
+        <ft score="[0-0]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834692" fix_id="4342120" id="6917264">
+        <localteam name="Fort Lauderdale" goals="0" id="32381" />
+        <visitorteam name="Lakeland United" goals="0" id="44192" />
+        <localteam1 name="Fort Lauderdale" goals="0" />
+        <visitorteam1 name="Lakeland United" goals="0" />
+        <localteam2 name="Fort Lauderdale" goals="0" />
+        <visitorteam2 name="Lakeland United" goals="0" />
+        <events>
+        </events>
+        <ht score="[1-0]" />
+        <ft score="[1-0]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834693" fix_id="4342121" id="6917265">
+        <localteam name="Hickory" goals="0" id="40393" />
+        <visitorteam name="Charlotte Eagles" goals="0" id="17296" />
+        <localteam1 name="Hickory" goals="0" />
+        <visitorteam1 name="Charlotte Eagles" goals="0" />
+        <localteam2 name="Hickory" goals="0" />
+        <visitorteam2 name="Charlotte Eagles" goals="0" />
+        <events>
+        </events>
+        <ht score="[1-2]" />
+        <ft score="[2-3]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" venue="" v="90" static_id="3834694" fix_id="4342122" id="6917266">
+        <localteam name="Hill City" goals="0" id="44198" />
+        <visitorteam name="Charlottesville Blues" goals="0" id="39597" />
+        <localteam1 name="Hill City" goals="0" />
+        <visitorteam1 name="Charlottesville Blues" goals="0" />
+        <localteam2 name="Hill City" goals="0" />
+        <visitorteam2 name="Charlottesville Blues" goals="0" />
+        <events>
+        </events>
+        <ht score="[0-0]" />
+        <ft score="[0-0]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834695" fix_id="4342123" id="6917267">
+        <localteam name="Long Island" goals="0" id="17336" />
+        <visitorteam name="Staten Island ASC" goals="0" id="39596" />
+        <localteam1 name="Long Island" goals="0" />
+        <visitorteam1 name="Staten Island ASC" goals="0" />
+        <localteam2 name="Long Island" goals="0" />
+        <visitorteam2 name="Staten Island ASC" goals="0" />
+        <events>
+        </events>
+        <ht score="[1-0]" />
+        <ft score="[3-0]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834698" fix_id="4342126" id="6917268">
+        <localteam name="Pittsburgh Riverhounds 2" goals="0" id="44204" />
+        <visitorteam name="Steel City" goals="0" id="39725" />
+        <localteam1 name="Pittsburgh Riverhounds 2" goals="0" />
+        <visitorteam1 name="Steel City" goals="0" />
+        <localteam2 name="Pittsburgh Riverhounds 2" goals="0" />
+        <visitorteam2 name="Steel City" goals="0" />
+        <events>
+        </events>
+        <ht score="[0-0]" />
+        <ft score="[0-2]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834699" fix_id="4342127" id="6917269">
+        <localteam name="RC New Jersey" goals="0" id="34669" />
+        <visitorteam name="Reading" goals="0" id="17368" />
+        <localteam1 name="RC New Jersey" goals="0" />
+        <visitorteam1 name="Reading" goals="0" />
+        <localteam2 name="RC New Jersey" goals="0" />
+        <visitorteam2 name="Reading" goals="0" />
+        <events>
+        </events>
+        <ht score="[1-0]" />
+        <ft score="[1-0]" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:30" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834704" fix_id="4342132" id="6917270">
+        <localteam name="Hudson Valley" goals="0" id="36268" />
+        <visitorteam name="Ironbound SC" goals="0" id="38123" />
+        <localteam1 name="Hudson Valley" goals="0" />
+        <visitorteam1 name="Ironbound SC" goals="0" />
+        <localteam2 name="Hudson Valley" goals="0" />
+        <visitorteam2 name="Ironbound SC" goals="0" />
+        <events>
+        </events>
+        <ht score="[0-3]" />
+        <ft score="[2-3]" />
+      </match>
+      <match status="23:30" timer="" inj_time="" inj_minute="" date="May 27" formatted_date="27.05.2026" time="23:30" commentary_available="" venue="" v="30" static_id="3834705" fix_id="4342133" id="6917271">
+        <localteam name="Manhattan" goals="?" id="30856" />
+        <visitorteam name="Westchester Flames" goals="?" id="17407" />
+        <localteam1 name="Manhattan" goals="?" />
+        <visitorteam1 name="Westchester Flames" goals="?" />
+        <localteam2 name="Manhattan" goals="?" />
+        <visitorteam2 name="Westchester Flames" goals="?" />
+        <events>
+        </events>
+        <ht score="" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834691" fix_id="4342119" id="6917272">
+        <localteam name="Dothan United" goals="0" id="39582" />
+        <visitorteam name="Birmingham 2" goals="0" id="39581" />
+        <localteam1 name="Dothan United" goals="0" />
+        <visitorteam1 name="Birmingham 2" goals="0" />
+        <localteam2 name="Dothan United" goals="0" />
+        <visitorteam2 name="Birmingham 2" goals="0" />
+        <events>
+        </events>
+        <ht score="[3-0]" />
+        <ft score="[4-0]" />
+      </match>
+      <match status="00:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834708" fix_id="4342136" id="6917273">
+        <localteam name="Midwest United" goals="?" id="36266" />
+        <visitorteam name="Kalamazoo FC" goals="?" id="34672" />
+        <localteam1 name="Midwest United" goals="?" />
+        <visitorteam1 name="Kalamazoo FC" goals="?" />
+        <localteam2 name="Midwest United" goals="?" />
+        <visitorteam2 name="Kalamazoo FC" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:00" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834697" fix_id="4342125" id="6917274">
+        <localteam name="Mississippi Brilla" goals="0" id="17346" />
+        <visitorteam name="Hattiesburg" goals="0" id="39580" />
+        <localteam1 name="Mississippi Brilla" goals="0" />
+        <visitorteam1 name="Hattiesburg" goals="0" />
+        <localteam2 name="Mississippi Brilla" goals="0" />
+        <visitorteam2 name="Hattiesburg" goals="0" />
+        <events>
+        </events>
+        <ht score="[1-0]" />
+        <ft score="[2-2]" />
+      </match>
+      <match status="00:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834700" fix_id="4342128" id="6917275">
+        <localteam name="River Light" goals="?" id="39604" />
+        <visitorteam name="RKC SC" goals="?" id="38120" />
+        <localteam1 name="River Light" goals="?" />
+        <visitorteam1 name="RKC SC" goals="?" />
+        <localteam2 name="River Light" goals="?" />
+        <visitorteam2 name="RKC SC" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="00:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:00" commentary_available="" venue="" v="10" static_id="3834701" fix_id="4342129" id="6917276">
+        <localteam name="Rockford Raptors" goals="?" id="44195" />
+        <visitorteam name="Chicago Dutch Lions" goals="?" id="36276" />
+        <localteam1 name="Rockford Raptors" goals="?" />
+        <visitorteam1 name="Chicago Dutch Lions" goals="?" />
+        <localteam2 name="Rockford Raptors" goals="?" />
+        <visitorteam2 name="Chicago Dutch Lions" goals="?" />
+        <events>
+        </events>
+        <ht score="" />
+      </match>
+      <match status="00:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834702" fix_id="4342130" id="6917277">
+        <localteam name="St. Croix" goals="?" id="36261" />
+        <visitorteam name="Minneapolis City" goals="?" id="32472" />
+        <localteam1 name="St. Croix" goals="?" />
+        <visitorteam1 name="Minneapolis City" goals="?" />
+        <localteam2 name="St. Croix" goals="?" />
+        <visitorteam2 name="Minneapolis City" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="00:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="00:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834706" fix_id="4342134" id="6917278">
+        <localteam name="Springfield FC" goals="?" id="42123" />
+        <visitorteam name="Peoria" goals="?" id="32546" />
+        <localteam1 name="Springfield FC" goals="?" />
+        <visitorteam1 name="Peoria" goals="?" />
+        <localteam2 name="Springfield FC" goals="?" />
+        <visitorteam2 name="Peoria" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="01:30" commentary_available="" heatmap="" venue="" v="60" coveredLive="True" static_id="3834949" fix_id="4342377" id="6921244">
+        <localteam name="San Francisco City" goals="0" id="25582" />
+        <visitorteam name="Marin" goals="0" id="36249" />
+        <localteam1 name="San Francisco City" goals="0" />
+        <visitorteam1 name="Marin" goals="0" />
+        <localteam2 name="San Francisco City" goals="0" />
+        <visitorteam2 name="Marin" goals="0" />
+        <events>
+        </events>
+        <ht score="[3-1]" />
+        <ft score="[4-4]" />
+      </match>
+      <match status="02:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="02:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834703" fix_id="4342131" id="6921245">
+        <localteam name="Ventura" goals="?" id="17399" />
+        <visitorteam name="Capo" goals="?" id="37889" />
+        <localteam1 name="Ventura" goals="?" />
+        <visitorteam1 name="Capo" goals="?" />
+        <localteam2 name="Ventura" goals="?" />
+        <visitorteam2 name="Capo" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="02:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="02:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834707" fix_id="4342135" id="6921246">
+        <localteam name="Stars FC" goals="?" id="42137" />
+        <visitorteam name="AMSG FC" goals="?" id="39610" />
+        <localteam1 name="Stars FC" goals="?" />
+        <visitorteam1 name="AMSG FC" goals="?" />
+        <localteam2 name="Stars FC" goals="?" />
+        <visitorteam2 name="AMSG FC" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="23:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="23:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834714" fix_id="4342142" id="6921247">
+        <localteam name="Lansing City" goals="?" id="36257" />
+        <visitorteam name="Oakland County" goals="?" id="32543" />
+        <localteam1 name="Lansing City" goals="?" />
+        <visitorteam1 name="Oakland County" goals="?" />
+        <localteam2 name="Lansing City" goals="?" />
+        <visitorteam2 name="Oakland County" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="23:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="23:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834709" fix_id="4342137" id="6921248">
+        <localteam name="Utah United" goals="?" id="39611" />
+        <visitorteam name="Real Colorado" goals="?" id="44208" />
+        <localteam1 name="Utah United" goals="?" />
+        <visitorteam1 name="Real Colorado" goals="?" />
+        <localteam2 name="Utah United" goals="?" />
+        <visitorteam2 name="Real Colorado" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="23:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="23:30" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834716" fix_id="4342144" id="6921249">
+        <localteam name="Patuxent" goals="?" id="36248" />
+        <visitorteam name="Annapolis Blues" goals="?" id="40368" />
+        <localteam1 name="Patuxent" goals="?" />
+        <visitorteam1 name="Annapolis Blues" goals="?" />
+        <localteam2 name="Patuxent" goals="?" />
+        <visitorteam2 name="Annapolis Blues" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="00:00" timer="" inj_time="" inj_minute="" date="May 29" formatted_date="29.05.2026" time="00:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834711" fix_id="4342139" id="6921250">
+        <localteam name="Edgewater Castle" goals="?" id="44194" />
+        <visitorteam name="Sueno" goals="?" id="39600" />
+        <localteam1 name="Edgewater Castle" goals="?" />
+        <visitorteam1 name="Sueno" goals="?" />
+        <localteam2 name="Edgewater Castle" goals="?" />
+        <visitorteam2 name="Sueno" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="00:00" timer="" inj_time="" inj_minute="" date="May 29" formatted_date="29.05.2026" time="00:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834713" fix_id="4342141" id="6921251">
+        <localteam name="Houston FC" goals="?" id="30850" />
+        <visitorteam name="Laredo Heat" goals="?" id="17335" />
+        <localteam1 name="Houston FC" goals="?" />
+        <visitorteam1 name="Laredo Heat" goals="?" />
+        <localteam2 name="Houston FC" goals="?" />
+        <visitorteam2 name="Laredo Heat" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="00:00" timer="" inj_time="" inj_minute="" date="May 29" formatted_date="29.05.2026" time="00:00" commentary_available="" heatmap="" venue="" coveredLive="True" v="0" static_id="3834715" fix_id="4342143" id="6921252">
+        <localteam name="Memphis FC" goals="?" id="44202" />
+        <visitorteam name="Louisiana" goals="?" id="32476" />
+        <localteam1 name="Memphis FC" goals="?" />
+        <visitorteam1 name="Louisiana" goals="?" />
+        <localteam2 name="Memphis FC" goals="?" />
+        <visitorteam2 name="Louisiana" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+  <category name="USA: Usl Cup" gid="38238" id="18976" iscup="True" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="FT" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="01:00" commentary_available="" venue="" v="90" static_id="3852997" fix_id="4360447" id="6871927">
+        <localteam name="El Paso" goals="2" id="30618" />
+        <visitorteam name="AV Alta" goals="0" id="42003" />
+        <localteam1 name="El Paso" goals="2" />
+        <visitorteam1 name="AV Alta" goals="0" />
+        <localteam2 name="El Paso" goals="2" />
+        <visitorteam2 name="AV Alta" goals="0" />
+        <events>
+          <event type="yellowcard" minute="17" extra_min="" team="visitorteam" player="A. Aoumaich" result="" playerId="1117209" assist="" assistid="" eventid="68719271" />
+          <event type="yellowcard" minute="31" extra_min="" team="localteam" player="A. Mendez" result="" playerId="448513" assist="" assistid="" eventid="68719272" />
+          <event type="yellowcard" minute="33" extra_min="" team="localteam" player="A. Moreno" result="" playerId="288281" assist="" assistid="" eventid="68719273" />
+          <event type="subst" minute="57" extra_min="" team="visitorteam" player="G. Antwi" result="" playerId="1212596" assist="S. Higareda" assistid="1221360" eventid="68719274" />
+          <event type="subst" minute="58" extra_min="" team="visitorteam" player="J. Villalobos" result="" playerId="1116695" assist="C. Bahena Jr" assistid="1212600" eventid="68719275" />
+          <event type="subst" minute="58" extra_min="" team="visitorteam" player="C. Ortiz" result="" playerId="1158870" assist="A. Aoumaich" assistid="1117209" eventid="68719276" />
+          <event type="subst" minute="61" extra_min="" team="localteam" player="G. Diaz" result="" playerId="1125549" assist="O. Mora" assistid="1116967" eventid="68719277" />
+          <event type="subst" minute="61" extra_min="" team="localteam" player="D. Abitia" result="" playerId="832707" assist="R. Rubin" assistid="289555" eventid="68719278" />
+          <event type="subst" minute="61" extra_min="" team="localteam" player="Gabriel Torres" result="" playerId="1116533" assist="A. Moreno" assistid="288281" eventid="68719279" />
+          <event type="subst" minute="70" extra_min="" team="visitorteam" player="M. Ibarra" result="" playerId="237160" assist="O. Lay" assistid="1116707" eventid="687192710" />
+          <event type="subst" minute="71" extra_min="" team="localteam" player="D. Gomez" result="" playerId="1117067" assist="A. Mendez" assistid="448513" eventid="687192711" />
+          <event type="goal" minute="72" extra_min="" team="localteam" player="N. Dollenmayer" result="[1 - 0]" playerId="1116954" assist="G. Diaz" assistid="1125549" eventid="687192712" />
+          <event type="yellowcard" minute="74" extra_min="" team="localteam" player="D. Abitia" result="" playerId="832707" assist="" assistid="" eventid="687192713" />
+          <event type="subst" minute="74" extra_min="" team="visitorteam" player="J. Mariona" result="" playerId="1117210" assist="E. Ceja" assistid="1116708" eventid="687192714" />
+          <event type="goal" minute="79" extra_min="" team="localteam" player="D. Abitia" result="[2 - 0]" playerId="832707" assist="Gabriel Torres" assistid="1116533" eventid="687192715" />
+          <event type="subst" minute="89" extra_min="" team="localteam" player="A. Ortiz" result="" playerId="249644" assist="R. Coronado" assistid="1116956" eventid="687192716" />
+          <event type="yellowcard" minute="90" extra_min="3" team="localteam" player="G. Diaz" result="" playerId="1125549" assist="" assistid="" eventid="687192717" />
+        </events>
+        <ht score="[0-0]" />
+        <ft score="[2-0]" />
+      </match>
+    </matches>
+  </category>
+  <category name="World: Friendly International" gid="37829" id="1535" iscup="False" file_group="home">
+    <matches date="May 27" formatted_date="27.05.2026">
+      <match status="09:30" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="09:30" commentary_available="1535" heatmap="" venue="" coveredLive="False" v="0" static_id="3839800" fix_id="4347231" id="6759940">
+        <localteam name="Greece U19" goals="?" id="18206" />
+        <visitorteam name="England U18" goals="?" id="21535" />
+        <localteam1 name="Greece U19" goals="?" />
+        <visitorteam1 name="England U18" goals="?" />
+        <localteam2 name="Greece U19" goals="?" />
+        <visitorteam2 name="England U18" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="10:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="10:00" commentary_available="1535" heatmap="" venue="" coveredLive="False" v="0" static_id="3856804" fix_id="4364255" id="6923117">
+        <localteam name="North Macedonia U19" goals="?" id="18196" />
+        <visitorteam name="Slovenia U18" goals="?" id="19666" />
+        <localteam1 name="North Macedonia U19" goals="?" />
+        <visitorteam1 name="Slovenia U18" goals="?" />
+        <localteam2 name="North Macedonia U19" goals="?" />
+        <visitorteam2 name="Slovenia U18" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="18:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:00" commentary_available="1535" heatmap="" venue="" coveredLive="True" v="0" static_id="3854291" fix_id="4361741" id="6921253">
+        <localteam name="Egypt" goals="?" id="8878" />
+        <visitorteam name="Russia" goals="?" id="14778" />
+        <localteam1 name="Egypt" goals="?" />
+        <visitorteam1 name="Russia" goals="?" />
+        <localteam2 name="Egypt" goals="?" />
+        <visitorteam2 name="Russia" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="18:45" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="18:45" commentary_available="1535" heatmap="" venue="" coveredLive="True" v="0" static_id="3838430" fix_id="4345861" id="6745515">
+        <localteam name="Ireland" goals="?" id="11536" />
+        <visitorteam name="Qatar" goals="?" id="14492" />
+        <localteam1 name="Ireland" goals="?" />
+        <visitorteam1 name="Qatar" goals="?" />
+        <localteam2 name="Ireland" goals="?" />
+        <visitorteam2 name="Qatar" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+      <match status="22:00" timer="" inj_time="" inj_minute="" date="May 28" formatted_date="28.05.2026" time="22:00" commentary_available="1535" heatmap="" venue="" coveredLive="True" v="0" static_id="3856805" fix_id="4364256" id="6923118">
+        <localteam name="Colombia U20" goals="?" id="8119" />
+        <visitorteam name="Costa Rica U20" goals="?" id="8184" />
+        <localteam1 name="Colombia U20" goals="?" />
+        <visitorteam1 name="Costa Rica U20" goals="?" />
+        <localteam2 name="Colombia U20" goals="?" />
+        <visitorteam2 name="Costa Rica U20" goals="?" />
+        <events />
+        <ht score="" />
+      </match>
+    </matches>
+  </category>
+</scores>

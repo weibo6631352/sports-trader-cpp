@@ -1,0 +1,2049 @@
+{
+  "meta": {
+    "owner": "laoli",
+    "target": "https://polymarket.com/zh/sports/live",
+    "final_url": "https://polymarket.com/zh/sports/live",
+    "page_title": "体育实时预测市场和赔率 2026 | Polymarket",
+    "start_utc": "2026-05-28T08:43:16.199533Z",
+    "end_utc": "2026-05-28T08:44:17.499706Z",
+    "playwright_version": "1.60.0",
+    "anonymous": true
+  },
+  "stats": {
+    "total_requests": 341,
+    "api_requests": 9,
+    "api_responses": 9
+  },
+  "api_requests": [
+    {
+      "url": "https://polymarket.com/api/geoblock/wallet-lists",
+      "method": "GET",
+      "host": "polymarket.com",
+      "path": "/api/geoblock/wallet-lists",
+      "query_params": {},
+      "post_data": null,
+      "resource_type": "xhr",
+      "timestamp_utc": "2026-05-28T08:43:39.614025Z",
+      "key_headers": {
+        "referer": "https://polymarket.com/zh/sports/live",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "url": "https://gamma-api.polymarket.com/is-logged-in",
+      "method": "GET",
+      "host": "gamma-api.polymarket.com",
+      "path": "/is-logged-in",
+      "query_params": {},
+      "post_data": null,
+      "resource_type": "xhr",
+      "timestamp_utc": "2026-05-28T08:43:39.614125Z",
+      "key_headers": {
+        "referer": "https://polymarket.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "url": "https://polymarket.com/api/tags/filtered?tag=102982&status=active&locale=zh",
+      "method": "GET",
+      "host": "polymarket.com",
+      "path": "/api/tags/filtered",
+      "query_params": {
+        "tag": "102982",
+        "status": "active",
+        "locale": "zh"
+      },
+      "post_data": null,
+      "resource_type": "xhr",
+      "timestamp_utc": "2026-05-28T08:43:39.614194Z",
+      "key_headers": {
+        "referer": "https://polymarket.com/zh/sports/live",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "url": "https://clob.polymarket.com/rewards/markets/0xa9db600590209698097db2fb8382989ea1cf6a9b91f0428b2e1d4f35d724c3ff?sponsored=true",
+      "method": "GET",
+      "host": "clob.polymarket.com",
+      "path": "/rewards/markets/0xa9db600590209698097db2fb8382989ea1cf6a9b91f0428b2e1d4f35d724c3ff",
+      "query_params": {
+        "sponsored": "true"
+      },
+      "post_data": null,
+      "resource_type": "xhr",
+      "timestamp_utc": "2026-05-28T08:43:39.614378Z",
+      "key_headers": {
+        "referer": "https://polymarket.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "url": "https://polymarket.com/api/meta/capi",
+      "method": "POST",
+      "host": "polymarket.com",
+      "path": "/api/meta/capi",
+      "query_params": {},
+      "post_data": "{\"event_name\":\"PageView\",\"event_time\":1779957819,\"event_id\":\"01b3e92a-4fb9-4d6d-b536-86f7f31a7a5d\",\"event_source_url\":\"https://polymarket.com/zh/sports/live\",\"client_user_agent\":\"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36\"}",
+      "resource_type": "fetch",
+      "timestamp_utc": "2026-05-28T08:43:39.642988Z",
+      "key_headers": {
+        "referer": "https://polymarket.com/zh/sports/live",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "url": "https://clob.polymarket.com/books?token_ids",
+      "method": "POST",
+      "host": "clob.polymarket.com",
+      "path": "/books",
+      "query_params": {
+        "token_ids": ""
+      },
+      "post_data": "[{\"token_id\":\"1677202003548168512111076196662317438975560192301735320827449539424843146463\"},{\"token_id\":\"106068569077808213715999258330182977900444867389222227702368250776882475534018\"},{\"token_id\":\"69645972244626426924376173415917634121259126732462892049165139345354340267412\"},{\"token_id\":\"76129624729438685162754918659469407390865596569072660119268297859583254443397\"},{\"token_id\":\"94751170553599069856756731190587159867136841283347287200834597646473688173648\"},{\"token_id\":\"61888542833493836833088356214322014007334819121642668391279940030829851956441\"},{\"token_id\":\"61750202777548388201038708617104847373293220941554360001785999631040054564901\"},{\"token_id\":\"54516335874194241181827017981080271039591380761013782758295856691284087464315\"},{\"token_id\":\"81422438809987511483228973100635933293030470910679958648417614151975692981781\"},{\"token_id\":\"19342893791068172250616904963780316114654098047854820565376564131208892798401\"}]",
+      "resource_type": "xhr",
+      "timestamp_utc": "2026-05-28T08:43:44.375361Z",
+      "key_headers": {
+        "referer": "https://polymarket.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "url": "https://clob.polymarket.com/last-trades-prices",
+      "method": "POST",
+      "host": "clob.polymarket.com",
+      "path": "/last-trades-prices",
+      "query_params": {},
+      "post_data": "[{\"token_id\":\"34975799215805336635380955805640077265859396051479474396712621494741728208353\"},{\"token_id\":\"1677202003548168512111076196662317438975560192301735320827449539424843146463\"},{\"token_id\":\"106068569077808213715999258330182977900444867389222227702368250776882475534018\"},{\"token_id\":\"69645972244626426924376173415917634121259126732462892049165139345354340267412\"},{\"token_id\":\"76129624729438685162754918659469407390865596569072660119268297859583254443397\"},{\"token_id\":\"94751170553599069856756731190587159867136841283347287200834597646473688173648\"},{\"token_id\":\"61888542833493836833088356214322014007334819121642668391279940030829851956441\"},{\"token_id\":\"61750202777548388201038708617104847373293220941554360001785999631040054564901\"},{\"token_id\":\"54516335874194241181827017981080271039591380761013782758295856691284087464315\"},{\"token_id\":\"81422438809987511483228973100635933293030470910679958648417614151975692981781\"},{\"token_id\":\"19342893791068172250616904963780316114654098047854820565376564131208892798401\"}]",
+      "resource_type": "xhr",
+      "timestamp_utc": "2026-05-28T08:43:44.375766Z",
+      "key_headers": {
+        "referer": "https://polymarket.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "url": "https://clob.polymarket.com/rewards/markets/0xdb39d9fb9824d70ce281ea3233794ff18c3c0fd7e75ddc2ffe03d51589230fdb?sponsored=true",
+      "method": "GET",
+      "host": "clob.polymarket.com",
+      "path": "/rewards/markets/0xdb39d9fb9824d70ce281ea3233794ff18c3c0fd7e75ddc2ffe03d51589230fdb",
+      "query_params": {
+        "sponsored": "true"
+      },
+      "post_data": null,
+      "resource_type": "xhr",
+      "timestamp_utc": "2026-05-28T08:44:09.266717Z",
+      "key_headers": {
+        "referer": "https://polymarket.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    },
+    {
+      "url": "https://clob.polymarket.com/books?token_ids",
+      "method": "POST",
+      "host": "clob.polymarket.com",
+      "path": "/books",
+      "query_params": {
+        "token_ids": ""
+      },
+      "post_data": "[{\"token_id\":\"34975799215805336635380955805640077265859396051479474396712621494741728208353\"}]",
+      "resource_type": "xhr",
+      "timestamp_utc": "2026-05-28T08:44:14.375077Z",
+      "key_headers": {
+        "referer": "https://polymarket.com/",
+        "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+      }
+    }
+  ],
+  "api_responses": [
+    {
+      "url": "https://polymarket.com/api/tags/filtered?tag=102982&status=active&locale=zh",
+      "status": 200,
+      "headers": {
+        "content-encoding": "br",
+        "etag": "W/\"13kbbzo9vbv21m\"",
+        "age": "224",
+        "x-content-type-options": "nosniff",
+        "x-matched-path": "/api/tags/filtered",
+        "date": "Thu, 28 May 2026 08:39:55 GMT",
+        "content-type": "application/json; charset=utf-8",
+        "strict-transport-security": "max-age=63072000",
+        "content-security-policy": "default-src 'self'; connect-src 'self' https://*.polymarket.com https://*.polymarket.dev wss://*.polymarket.com wss://*.polymarket.dev https://*.walletconnect.com wss://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.org https://*.web3modal.org https://*.amplitude.com https://*.alchemy.com https://*.alchemyapi.io https://assets.vercel.com https://vercel.live https://vercel.com https://cdp.customer.io https://vitals.vercel-insights.com https://*.magic.link https://*.intercom.io wss://*.intercom.io https://*.intercom-messenger.com wss://*.intercom-messenger.com https://*.intercomcdn.com https://*.intercomcdn.eu https://*.intercomusercontent.com https://polymarket-upload.s3.us-east-2.amazonaws.com https://polymarket-next-assets.s3.amazonaws.com https://*.coinbase.com https://*.vercel-scripts.com https://*.google-analytics.com https://www.google.com https://*.facebook.com https://*.facebook.net https://*.redditstatic.com https://*.reddit.com https://analytics.tiktok.com wss://ws-us3.pusher.com https://polygon-rpc.com https://static.ads-twitter.com https://sentry.io https://api.moonpay.com https://static.moonpay.com https://*.fun.xyz wss://*.fun.xyz https://*.quiknode.pro https://*.base.org https://*.zksync.io https://*.daimo.com https://s3-us-west-2.amazonaws.com wss://*.walletlink.org https://*.liadm.com https://api.retention.com https://*.execute-api.us-west-2.amazonaws.com https://alocdn.com https://a.usbrowserspeed.com https://analytics-ipv6.tiktokw.us https://*.snapchat.com https://*.gist.build https://pro.ip-api.com https://www.googleadservices.com https://*.relay.link https://arb1.arbitrum.io https://mainnet.optimism.io https://56.rpc.thirdweb.com https://api.mainnet.abs.xyz https://*.eth https://*.llamarpc.com https://*.drpc.org https://*.publicnode.com https://*.gateway.tenderly.co https://*.meowrpc.com https://*.merkle.io https://*.monad.xyz https://1rpc.io https://rpc.hyperliquid.xyz https://rpc.hypurrscan.io https://rpc.ethereal.trade https://tiles.polymarket.com https://protomaps.github.io https://tile.openweathermap.org https://api.open-meteo.com https://cdn.jsdelivr.net https://*.platform.grcv.io https://*.grid.gg wss://*.grid.gg https://browser-intake-datadoghq.com https://browser-intake-datadoghq.eu https://*.appsflyersdk.com data:; script-src 'self' 'unsafe-eval' https://*.intercom.io https://js.intercomcdn.com https://www.redditstatic.com https://connect.facebook.net https://widget.intercom.io https://va.vercel-scripts.com https://vercel.live https://*.grid.gg https://*.magic.link https://static.moonpay.com https://s3-us-west-2.amazonaws.com/jsstore/ https://api.retention.com https://*.liadm.com https://alocdn.com https://www.youtube.com https://static.ads-twitter.com https://analytics.tiktok.com https://*.snapchat.com https://sc-static.net https://*.appsflyersdk.com; script-src-elem 'self' 'unsafe-inline' https://*.intercom.io https://js.intercomcdn.com https://www.redditstatic.com https://connect.facebook.net https://widget.intercom.io https://va.vercel-scripts.com https://*.grid.gg https://vercel.live https://*.magic.link https://static.moonpay.com https://static.ads-twitter.com https://s3-us-west-2.amazonaws.com/jsstore/ https://analytics.tiktok.com https://cdp.customer.io https://www.dubcdn.com https://www.googletagmanager.com https://*.doubleclick.net https://*.snapchat.com https://sc-static.net https://api.retention.com https://*.liadm.com https://alocdn.com https://www.youtube.com https://*.appsflyersdk.com; frame-src 'self' https://*.youtube.com https://*.walletconnect.com https://*.walletconnect.org https://*.magic.link https://vercel.live https://*.polymarket.com https://*.polymarket.dev https://*.googletagmanager.com https://*.google.com https://*.snapchat.com/ https://player.twitch.tv https://www.facebook.com https://buy.moonpay.com https://player.kick.com https://widget.pandascore.co https://*.swapped.com https://intercom-sheets.com https://www.intercom-reporting.com https://player.vimeo.com https://fast.wistia.net https://*.grid.gg; frame-ancestors 'self' https://auth.magic.link chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch; style-src 'self' 'unsafe-inline' https://vercel.live https://fonts.googleapis.com; img-src 'self' blob: data: https://images.polymarket.com https://polymarket-upload.s3.us-east-2.amazonaws.com https://assets.vercel.com https://*.walletconnect.com https://*.web3modal.org https://alb.reddit.com https://www.facebook.com https://vercel.com https://analytics.twitter.com https://t.co https://sdk-cdn.fun.xyz https://pbs.twimg.com https://www.google.com https://*.gstatic.com https://www.googleadservices.com https://analytics.tiktok.com https://analytics-ipv6.tiktokw.us https://rp.liadm.com https://www.googletagmanager.com https://jsstore.s3-us-west-2.amazonaws.com https://connect.facebook.net https://*.doubleclick.net https://tile.openweathermap.org https://*.swapped.com https://*.giphy.com https://*.grid.gg https://*.intercomcdn.com https://*.intercomcdn.eu https://downloads.au.intercomcdn.com https://*.intercom.io https://static.intercomassets.com https://static.intercomassets.eu https://static.au.intercomassets.com https://uploads.intercomusercontent.com https://*.intercom-attachments-1.com https://*.intercom-attachments-2.com https://*.intercom-attachments-3.com https://*.intercom-attachments-4.com https://*.intercom-attachments-5.com https://*.intercom-attachments-6.com https://*.intercom-attachments-7.com https://*.intercom-attachments-8.com https://*.intercom-attachments-9.com https://*.appsflyersdk.com; font-src 'self' data: https://assets.vercel.com https://js.intercomcdn.com https://fonts.intercomcdn.com https://vercel.live https://unpkg.com https://fonts.reown.com https://fonts.gstatic.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; media-src https://js.intercomcdn.com https://downloads.intercomcdn.com https://downloads.intercomcdn.eu https://downloads.au.intercomcdn.com https://polymarket-upload.s3.us-east-2.amazonaws.com; form-action 'self' https://*.polymarket.com https://*.polymarket.dev https://www.facebook.com https://intercom.help https://api-iam.intercom.io https://api-iam.eu.intercom.io https://api-iam.au.intercom.io; upgrade-insecure-requests",
+        "cache-control": "public, max-age=300",
+        "x-vercel-cache": "HIT",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "document-policy": "js-profiling",
+        "access-control-allow-origin": "*",
+        "server": "Vercel",
+        "x-vercel-id": "hnd1::hkg1::dsg2k-1779957819994-88afa4832daa"
+      },
+      "body_snippet": "[{\"id\":\"100215\",\"label\":\"全部\",\"slug\":\"all\",\"forceShow\":false,\"updatedAt\":\"2026-04-17T20:23:54.340488Z\",\"activeEventsCount\":3},{\"id\":\"2\",\"label\":\"政治\",\"slug\":\"politics\",\"forceShow\":false,\"publishedAt\":\"2023-10-25 18:55:50.674+00\",\"updatedBy\":13,\"createdAt\":\"2023-10-25T18:55:50.681Z\",\"updatedAt\":\"2026-04-17T20:39:54.201881Z\",\"forceHide\":true,\"activeEventsCount\":1513},{\"id\":\"1\",\"label\":\"体育\",\"slug\":\"sports\",\"forceShow\":false,\"publishedAt\":\"2023-10-24 22:37:50.296+00\",\"updatedBy\":15,\"createdAt\":\"2023-10-24T22:37:50.31Z\",\"updatedAt\":\"2026-04-17T20:47:16.461062Z\",\"forceHide\":true,\"activeEventsCount\":3515},{\"id\":\"21\",\"label\":\"加密\",\"slug\":\"crypto\",\"forceShow\":false,\"publishedAt\":\"2023-11-02 21:03:54.55+00\",\"updatedBy\":15,\"createdAt\":\"2023-11-02T21:03:54.564Z\",\"updatedAt\":\"2026-03-09T22:28:03.349847Z\",\"activeEventsCount\":3525},{\"id\":\"78\",\"label\":\"伊朗\",\"slug\":\"iran\",\"forceShow\":false,\"publishedAt\":\"2023-11-02 21:16:51.647+00\",\"updatedBy\":15,\"createdAt\":\"2023-11-02T21:16:51.667Z\",\"updatedAt\":\"2026-04-17T20:19:53.890971Z\",\"activeEventsCount\":105},{\"id\":\"120\",\"label\":\"财务\",\"slug\":\"finance\",\"forceShow\":false,\"publishedAt\":\"2023-11-02 21:22:21.615+00\",\"createdAt\":\"2023-11-02T21:22:21.62Z\",\"updatedAt\":\"2026-04-17T20:17:43.066649Z\",\"activeEventsCount\":325},{\"id\":\"100265\",\"label\":\"地缘政治\",\"slug\":\"geopolitics\",\"forceShow\":true,\"createdAt\":\"2024-06-12T20:13:03.615956Z\",\"updatedAt\":\"2026-04-17T20:49:04.209055Z\",\"activeEventsCount\":391},{\"id\":\"1401\",\"label\":\"科技\",\"slug\":\"tech\",\"forceShow\":false,\"publishedAt\":\"2024-02-21 23:06:12.305+00\",\"createdAt\":\"2024-02-21T23:06:12.324Z\",\"updatedAt\":\"2026-04-17T20:39:14.21105Z\",\"activeEventsCount\":260},{\"id\":\"596\",\"label\":\"文化\",\"slug\":\"pop-culture\",\"forceShow\":false,\"publishedAt\":\"2023-11-29 18:40:13.013+00\",\"createdAt\":\"2023-11-29T18:40:14.63Z\",\"updatedAt\":\"2026-04-17T20:31:50.147585Z\",\"activeEventsCount\":270},{\"id\":\"100328\",\"label\":\"经济\",\"slug\":\"economy\",\"forceShow\":false,\"createdAt\":\"2024-08-05T05:34:54.235643Z\",\"updatedAt\":\"2026-04-17T20:29:06.948273Z\",\"act",
+      "timestamp_utc": "2026-05-28T08:43:40.401914Z"
+    },
+    {
+      "url": "https://polymarket.com/api/geoblock/wallet-lists",
+      "status": 200,
+      "headers": {
+        "strict-transport-security": "max-age=63072000",
+        "content-security-policy": "default-src 'self'; connect-src 'self' https://*.polymarket.com https://*.polymarket.dev wss://*.polymarket.com wss://*.polymarket.dev https://*.walletconnect.com wss://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.org https://*.web3modal.org https://*.amplitude.com https://*.alchemy.com https://*.alchemyapi.io https://assets.vercel.com https://vercel.live https://vercel.com https://cdp.customer.io https://vitals.vercel-insights.com https://*.magic.link https://*.intercom.io wss://*.intercom.io https://*.intercom-messenger.com wss://*.intercom-messenger.com https://*.intercomcdn.com https://*.intercomcdn.eu https://*.intercomusercontent.com https://polymarket-upload.s3.us-east-2.amazonaws.com https://polymarket-next-assets.s3.amazonaws.com https://*.coinbase.com https://*.vercel-scripts.com https://*.google-analytics.com https://www.google.com https://*.facebook.com https://*.facebook.net https://*.redditstatic.com https://*.reddit.com https://analytics.tiktok.com wss://ws-us3.pusher.com https://polygon-rpc.com https://static.ads-twitter.com https://sentry.io https://api.moonpay.com https://static.moonpay.com https://*.fun.xyz wss://*.fun.xyz https://*.quiknode.pro https://*.base.org https://*.zksync.io https://*.daimo.com https://s3-us-west-2.amazonaws.com wss://*.walletlink.org https://*.liadm.com https://api.retention.com https://*.execute-api.us-west-2.amazonaws.com https://alocdn.com https://a.usbrowserspeed.com https://analytics-ipv6.tiktokw.us https://*.snapchat.com https://*.gist.build https://pro.ip-api.com https://www.googleadservices.com https://*.relay.link https://arb1.arbitrum.io https://mainnet.optimism.io https://56.rpc.thirdweb.com https://api.mainnet.abs.xyz https://*.eth https://*.llamarpc.com https://*.drpc.org https://*.publicnode.com https://*.gateway.tenderly.co https://*.meowrpc.com https://*.merkle.io https://*.monad.xyz https://1rpc.io https://rpc.hyperliquid.xyz https://rpc.hypurrscan.io https://rpc.ethereal.trade https://tiles.polymarket.com https://protomaps.github.io https://tile.openweathermap.org https://api.open-meteo.com https://cdn.jsdelivr.net https://*.platform.grcv.io https://*.grid.gg wss://*.grid.gg https://browser-intake-datadoghq.com https://browser-intake-datadoghq.eu https://*.appsflyersdk.com data:; script-src 'self' 'unsafe-eval' https://*.intercom.io https://js.intercomcdn.com https://www.redditstatic.com https://connect.facebook.net https://widget.intercom.io https://va.vercel-scripts.com https://vercel.live https://*.grid.gg https://*.magic.link https://static.moonpay.com https://s3-us-west-2.amazonaws.com/jsstore/ https://api.retention.com https://*.liadm.com https://alocdn.com https://www.youtube.com https://static.ads-twitter.com https://analytics.tiktok.com https://*.snapchat.com https://sc-static.net https://*.appsflyersdk.com; script-src-elem 'self' 'unsafe-inline' https://*.intercom.io https://js.intercomcdn.com https://www.redditstatic.com https://connect.facebook.net https://widget.intercom.io https://va.vercel-scripts.com https://*.grid.gg https://vercel.live https://*.magic.link https://static.moonpay.com https://static.ads-twitter.com https://s3-us-west-2.amazonaws.com/jsstore/ https://analytics.tiktok.com https://cdp.customer.io https://www.dubcdn.com https://www.googletagmanager.com https://*.doubleclick.net https://*.snapchat.com https://sc-static.net https://api.retention.com https://*.liadm.com https://alocdn.com https://www.youtube.com https://*.appsflyersdk.com; frame-src 'self' https://*.youtube.com https://*.walletconnect.com https://*.walletconnect.org https://*.magic.link https://vercel.live https://*.polymarket.com https://*.polymarket.dev https://*.googletagmanager.com https://*.google.com https://*.snapchat.com/ https://player.twitch.tv https://www.facebook.com https://buy.moonpay.com https://player.kick.com https://widget.pandascore.co https://*.swapped.com https://intercom-sheets.com https://www.intercom-reporting.com https://player.vimeo.com https://fast.wistia.net https://*.grid.gg; frame-ancestors 'self' https://auth.magic.link chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch; style-src 'self' 'unsafe-inline' https://vercel.live https://fonts.googleapis.com; img-src 'self' blob: data: https://images.polymarket.com https://polymarket-upload.s3.us-east-2.amazonaws.com https://assets.vercel.com https://*.walletconnect.com https://*.web3modal.org https://alb.reddit.com https://www.facebook.com https://vercel.com https://analytics.twitter.com https://t.co https://sdk-cdn.fun.xyz https://pbs.twimg.com https://www.google.com https://*.gstatic.com https://www.googleadservices.com https://analytics.tiktok.com https://analytics-ipv6.tiktokw.us https://rp.liadm.com https://www.googletagmanager.com https://jsstore.s3-us-west-2.amazonaws.com https://connect.facebook.net https://*.doubleclick.net https://tile.openweathermap.org https://*.swapped.com https://*.giphy.com https://*.grid.gg https://*.intercomcdn.com https://*.intercomcdn.eu https://downloads.au.intercomcdn.com https://*.intercom.io https://static.intercomassets.com https://static.intercomassets.eu https://static.au.intercomassets.com https://uploads.intercomusercontent.com https://*.intercom-attachments-1.com https://*.intercom-attachments-2.com https://*.intercom-attachments-3.com https://*.intercom-attachments-4.com https://*.intercom-attachments-5.com https://*.intercom-attachments-6.com https://*.intercom-attachments-7.com https://*.intercom-attachments-8.com https://*.intercom-attachments-9.com https://*.appsflyersdk.com; font-src 'self' data: https://assets.vercel.com https://js.intercomcdn.com https://fonts.intercomcdn.com https://vercel.live https://unpkg.com https://fonts.reown.com https://fonts.gstatic.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; media-src https://js.intercomcdn.com https://downloads.intercomcdn.com https://downloads.intercomcdn.eu https://downloads.au.intercomcdn.com https://polymarket-upload.s3.us-east-2.amazonaws.com; form-action 'self' https://*.polymarket.com https://*.polymarket.dev https://www.facebook.com https://intercom.help https://api-iam.intercom.io https://api-iam.eu.intercom.io https://api-iam.au.intercom.io; upgrade-insecure-requests",
+        "cache-control": "public",
+        "content-encoding": "br",
+        "x-vercel-cache": "MISS",
+        "etag": "W/\"bkgmhzsfuy85h\"",
+        "age": "0",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-matched-path": "/api/geoblock/wallet-lists",
+        "document-policy": "js-profiling",
+        "date": "Thu, 28 May 2026 08:43:40 GMT",
+        "content-type": "application/json; charset=utf-8",
+        "server": "Vercel",
+        "x-vercel-id": "hnd1::hkg1::xt4nl-1779957819979-e31cd1e88e78"
+      },
+      "body_snippet": "{\"block\":[\"0x39ea25c016a3e90e8e72dbbe215a1ab62429f66f\",\"0xa614588cbf7a0ba6b2d82d674cb237e6e35cffc4\",\"0x0a11c86b56f18decb25c1ba4c2be07a1a1fc3794\",\"0xbfa034a4fd3be5d5611feff507799426f23df65d\",\"0x428ab2ba90eba0a4be7af34c9ac451ab061ac010\",\"0x2cab3defed9cc52827ecf37536a131c7da6cd5aa\",\"0x8462e77e0c0068d603ffebb7f21e579f0119f1fc\",\"0xcb328ec728b1c664e352cc0b7407dfcaa7e84dfb\",\"0xe5dcada7985d5907544b119a92e8d7f395dcfd19\",\"0x07ae8551be970cb1cca11dd7a11f47ae82e70e67\",\"0x3eb9845b9c8f835ad130456f8dab6aef79af5272\",\"0x760dce7ea6e8ba224bffbeb8a7ff4dd1ef122bff\",\"0x70e30cb0f5845fd04bb462931b3af98425d30deb\",\"0x555ce236c0220695b68341bc48c68d52210cc35b\",\"0xe86f3aaa57f63b2afeca68178182a91bc3909962\",\"0xb1253378536231741b001a711ee66ab5e1f218ca\",\"0x131f4fe17d44d236593e9f800f0a1f906a19e7ad\",\"0xa61377ad01e26ca5a370bf3b4e3eb52165619e13\",\"0x41ee28ee05341e7fdddc8d433ba66054cd302ca1\",\"0xcb39c5b0db9c5b6bd1d9273dccc2f98f532a8bc6\",\"0x3be3c0530cfaf944a9e004288a654f424c717c88\",\"0x8c70623f0488295f6f39fe8bcbe13f0760771baf\",\"0x799319c3c7f25f763ed03f307d3a025700e5f1b0\",\"0xd65448affe1475f101378a744a62c00f04cf50d6\",\"0xe8fd9718eff1b9e7d805906640609eaa9678bd71\",\"0x442e71efefa947cdf426e8cc92e58ad84bbec85e\",\"0xf791da446d04282f921f38fbf954ad5caee899a3\",\"0x900556716d63c6370b8dd9c43fb6703d25e87a72\",\"0xa1fd6676e6e404f6dc86e2947f2663bd6727c277\",\"0x2a410f11a6f520398447bf423dcedd25dfd3a568\",\"0xddc58f7839a71787eb94211bc922e0ae2bfb5501\",\"0x9abb2ec2c4483fa70db2410a92d1ada9d1c12840\",\"0x0d09adbae5864468b56e58de46ce08b5b3b3b9d5\",\"0x3d9cf15404ec9e1a40b7678b92f59ffee931a35c\",\"0x17f52a50227ea7aa6042eaae44c84a9a9d59d092\",\"0xe251e71647f9cf551210bb2358a68d0dbdeca20b\",\"0xc44730c6e22f7cff397e56d145aeb9e43b2158f8\",\"0xd0615721936478e5963d1422d622a10d288770f5\",\"0xb949558a617bc970929a37c516716b6ef2df5560\",\"0x60cf8d5b6d706edf50201e8e496057ced55ca226\",\"0xb560058c5542311fda18ac596eb9ebf6450437e7\",\"0x639a36c4ea3895f46eb4c92a50ffcee75fdbda64\",\"0xa03b7ed82639e7a1aef7c7f7e214c8abdaae86aa\",\"0x615baa9dd5c8eed0d3a800d6835df07e453db47e\",\"0x08b00ce",
+      "timestamp_utc": "2026-05-28T08:43:40.407642Z"
+    },
+    {
+      "url": "https://clob.polymarket.com/rewards/markets/0xa9db600590209698097db2fb8382989ea1cf6a9b91f0428b2e1d4f35d724c3ff?sponsored=true",
+      "status": 200,
+      "headers": {
+        "strict-transport-security": "max-age=7776000; includeSubDomains",
+        "content-encoding": "gzip",
+        "cf-cache-status": "DYNAMIC",
+        "access-control-allow-credentials": "true",
+        "cf-ray": "a02bf9198b6cc5bf-NRT",
+        "access-control-allow-origin": "*",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "date": "Thu, 28 May 2026 08:43:40 GMT",
+        "content-type": "application/json",
+        "vary": "Origin",
+        "server": "cloudflare"
+      },
+      "body_snippet": "{\"data\":[{\"condition_id\":\"0xa9db600590209698097db2fb8382989ea1cf6a9b91f0428b2e1d4f35d724c3ff\",\"question\":\"Chisinau: Daniil Glinka vs Liam Broady\",\"market_slug\":\"atp-glinka-broady-2026-05-28\",\"event_slug\":\"atp-glinka-broady-2026-05-28\",\"image\":\"https://polymarket-upload.s3.us-east-2.amazonaws.com/atp-tour-b4390c4fb8.jpg\",\"tokens\":[{\"token_id\":\"34975799215805336635380955805640077265859396051479474396712621494741728208353\",\"outcome\":\"Daniil Glinka\",\"price\":0.22},{\"token_id\":\"82773088632732876402070144327931584784352577981444872691800714203099002987817\",\"outcome\":\"Liam Broady\",\"price\":0.78}],\"rewards_config\":[{\"asset_address\":\"0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB\",\"start_date\":\"2026-05-28\",\"end_date\":\"2500-12-31\",\"id\":402249,\"rate_per_day\":47.99952,\"total_rewards\":0,\"total_days\":173343}],\"rewards_max_spread\":2.5,\"rewards_min_size\":1000,\"market_competitiveness\":9.31304}],\"next_cursor\":\"LTE=\",\"limit\":100,\"count\":1}\n",
+      "timestamp_utc": "2026-05-28T08:43:40.633112Z"
+    },
+    {
+      "url": "https://gamma-api.polymarket.com/is-logged-in",
+      "status": 422,
+      "headers": {
+        "strict-transport-security": "max-age=7776000; includeSubDomains",
+        "cf-cache-status": "DYNAMIC",
+        "access-control-allow-credentials": "true",
+        "cf-ray": "a02bf91bab3495ba-NRT",
+        "access-control-allow-origin": "https://polymarket.com",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "content-length": "58",
+        "date": "Thu, 28 May 2026 08:43:41 GMT",
+        "content-type": "application/json",
+        "vary": "Origin",
+        "server": "cloudflare"
+      },
+      "body_snippet": "{\"type\":\"validation error\",\"error\":\"missing auth cookie\"}\n",
+      "timestamp_utc": "2026-05-28T08:43:41.235904Z"
+    },
+    {
+      "url": "https://polymarket.com/api/meta/capi",
+      "status": 200,
+      "headers": {
+        "strict-transport-security": "max-age=63072000",
+        "content-security-policy": "default-src 'self'; connect-src 'self' https://*.polymarket.com https://*.polymarket.dev wss://*.polymarket.com wss://*.polymarket.dev https://*.walletconnect.com wss://*.walletconnect.com https://*.walletconnect.org wss://*.walletconnect.org https://*.web3modal.org https://*.amplitude.com https://*.alchemy.com https://*.alchemyapi.io https://assets.vercel.com https://vercel.live https://vercel.com https://cdp.customer.io https://vitals.vercel-insights.com https://*.magic.link https://*.intercom.io wss://*.intercom.io https://*.intercom-messenger.com wss://*.intercom-messenger.com https://*.intercomcdn.com https://*.intercomcdn.eu https://*.intercomusercontent.com https://polymarket-upload.s3.us-east-2.amazonaws.com https://polymarket-next-assets.s3.amazonaws.com https://*.coinbase.com https://*.vercel-scripts.com https://*.google-analytics.com https://www.google.com https://*.facebook.com https://*.facebook.net https://*.redditstatic.com https://*.reddit.com https://analytics.tiktok.com wss://ws-us3.pusher.com https://polygon-rpc.com https://static.ads-twitter.com https://sentry.io https://api.moonpay.com https://static.moonpay.com https://*.fun.xyz wss://*.fun.xyz https://*.quiknode.pro https://*.base.org https://*.zksync.io https://*.daimo.com https://s3-us-west-2.amazonaws.com wss://*.walletlink.org https://*.liadm.com https://api.retention.com https://*.execute-api.us-west-2.amazonaws.com https://alocdn.com https://a.usbrowserspeed.com https://analytics-ipv6.tiktokw.us https://*.snapchat.com https://*.gist.build https://pro.ip-api.com https://www.googleadservices.com https://*.relay.link https://arb1.arbitrum.io https://mainnet.optimism.io https://56.rpc.thirdweb.com https://api.mainnet.abs.xyz https://*.eth https://*.llamarpc.com https://*.drpc.org https://*.publicnode.com https://*.gateway.tenderly.co https://*.meowrpc.com https://*.merkle.io https://*.monad.xyz https://1rpc.io https://rpc.hyperliquid.xyz https://rpc.hypurrscan.io https://rpc.ethereal.trade https://tiles.polymarket.com https://protomaps.github.io https://tile.openweathermap.org https://api.open-meteo.com https://cdn.jsdelivr.net https://*.platform.grcv.io https://*.grid.gg wss://*.grid.gg https://browser-intake-datadoghq.com https://browser-intake-datadoghq.eu https://*.appsflyersdk.com data:; script-src 'self' 'unsafe-eval' https://*.intercom.io https://js.intercomcdn.com https://www.redditstatic.com https://connect.facebook.net https://widget.intercom.io https://va.vercel-scripts.com https://vercel.live https://*.grid.gg https://*.magic.link https://static.moonpay.com https://s3-us-west-2.amazonaws.com/jsstore/ https://api.retention.com https://*.liadm.com https://alocdn.com https://www.youtube.com https://static.ads-twitter.com https://analytics.tiktok.com https://*.snapchat.com https://sc-static.net https://*.appsflyersdk.com; script-src-elem 'self' 'unsafe-inline' https://*.intercom.io https://js.intercomcdn.com https://www.redditstatic.com https://connect.facebook.net https://widget.intercom.io https://va.vercel-scripts.com https://*.grid.gg https://vercel.live https://*.magic.link https://static.moonpay.com https://static.ads-twitter.com https://s3-us-west-2.amazonaws.com/jsstore/ https://analytics.tiktok.com https://cdp.customer.io https://www.dubcdn.com https://www.googletagmanager.com https://*.doubleclick.net https://*.snapchat.com https://sc-static.net https://api.retention.com https://*.liadm.com https://alocdn.com https://www.youtube.com https://*.appsflyersdk.com; frame-src 'self' https://*.youtube.com https://*.walletconnect.com https://*.walletconnect.org https://*.magic.link https://vercel.live https://*.polymarket.com https://*.polymarket.dev https://*.googletagmanager.com https://*.google.com https://*.snapchat.com/ https://player.twitch.tv https://www.facebook.com https://buy.moonpay.com https://player.kick.com https://widget.pandascore.co https://*.swapped.com https://intercom-sheets.com https://www.intercom-reporting.com https://player.vimeo.com https://fast.wistia.net https://*.grid.gg; frame-ancestors 'self' https://auth.magic.link chrome-extension://acmacodkjbdgmoleebolmdjonilkdbch; style-src 'self' 'unsafe-inline' https://vercel.live https://fonts.googleapis.com; img-src 'self' blob: data: https://images.polymarket.com https://polymarket-upload.s3.us-east-2.amazonaws.com https://assets.vercel.com https://*.walletconnect.com https://*.web3modal.org https://alb.reddit.com https://www.facebook.com https://vercel.com https://analytics.twitter.com https://t.co https://sdk-cdn.fun.xyz https://pbs.twimg.com https://www.google.com https://*.gstatic.com https://www.googleadservices.com https://analytics.tiktok.com https://analytics-ipv6.tiktokw.us https://rp.liadm.com https://www.googletagmanager.com https://jsstore.s3-us-west-2.amazonaws.com https://connect.facebook.net https://*.doubleclick.net https://tile.openweathermap.org https://*.swapped.com https://*.giphy.com https://*.grid.gg https://*.intercomcdn.com https://*.intercomcdn.eu https://downloads.au.intercomcdn.com https://*.intercom.io https://static.intercomassets.com https://static.intercomassets.eu https://static.au.intercomassets.com https://uploads.intercomusercontent.com https://*.intercom-attachments-1.com https://*.intercom-attachments-2.com https://*.intercom-attachments-3.com https://*.intercom-attachments-4.com https://*.intercom-attachments-5.com https://*.intercom-attachments-6.com https://*.intercom-attachments-7.com https://*.intercom-attachments-8.com https://*.intercom-attachments-9.com https://*.appsflyersdk.com; font-src 'self' data: https://assets.vercel.com https://js.intercomcdn.com https://fonts.intercomcdn.com https://vercel.live https://unpkg.com https://fonts.reown.com https://fonts.gstatic.com; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; media-src https://js.intercomcdn.com https://downloads.intercomcdn.com https://downloads.intercomcdn.eu https://downloads.au.intercomcdn.com https://polymarket-upload.s3.us-east-2.amazonaws.com; form-action 'self' https://*.polymarket.com https://*.polymarket.dev https://www.facebook.com https://intercom.help https://api-iam.intercom.io https://api-iam.eu.intercom.io https://api-iam.au.intercom.io; upgrade-insecure-requests",
+        "cache-control": "public, s-maxage=60, stale-while-revalidate=300",
+        "x-vercel-cache": "MISS",
+        "etag": "\"17a6zzdutk1g\"",
+        "referrer-policy": "strict-origin-when-cross-origin",
+        "x-content-type-options": "nosniff",
+        "x-matched-path": "/api/meta/capi",
+        "document-policy": "js-profiling",
+        "content-length": "16",
+        "date": "Thu, 28 May 2026 08:43:40 GMT",
+        "content-type": "application/json; charset=utf-8",
+        "server": "Vercel",
+        "x-vercel-id": "hnd1::hkg1::5qwwh-1779957820027-151828fdf48d"
+      },
+      "body_snippet": "{\"success\":true}",
+      "timestamp_utc": "2026-05-28T08:43:41.694316Z"
+    },
+    {
+      "url": "https://clob.polymarket.com/last-trades-prices",
+      "status": 200,
+      "headers": {
+        "strict-transport-security": "max-age=7776000; includeSubDomains",
+        "content-encoding": "br",
+        "cf-cache-status": "DYNAMIC",
+        "access-control-allow-credentials": "true",
+        "cf-ray": "a02bf938a9fac5bf-NRT",
+        "access-control-allow-origin": "*",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "date": "Thu, 28 May 2026 08:43:45 GMT",
+        "content-type": "application/json",
+        "vary": "Accept-Encoding, Origin",
+        "server": "cloudflare"
+      },
+      "body_snippet": "[{\"price\":\"0.08\",\"side\":\"BUY\",\"token_id\":\"106068569077808213715999258330182977900444867389222227702368250776882475534018\"},{\"price\":\"0.46\",\"side\":\"BUY\",\"token_id\":\"1677202003548168512111076196662317438975560192301735320827449539424843146463\"},{\"price\":\"0.83\",\"side\":\"BUY\",\"token_id\":\"19342893791068172250616904963780316114654098047854820565376564131208892798401\"},{\"price\":\"0.27\",\"side\":\"BUY\",\"token_id\":\"34975799215805336635380955805640077265859396051479474396712621494741728208353\"},{\"price\":\"0.33\",\"side\":\"BUY\",\"token_id\":\"54516335874194241181827017981080271039591380761013782758295856691284087464315\"},{\"price\":\"0.5\",\"side\":\"BUY\",\"token_id\":\"61750202777548388201038708617104847373293220941554360001785999631040054564901\"},{\"price\":\"0.69\",\"side\":\"BUY\",\"token_id\":\"61888542833493836833088356214322014007334819121642668391279940030829851956441\"},{\"price\":\"0.04\",\"side\":\"SELL\",\"token_id\":\"76129624729438685162754918659469407390865596569072660119268297859583254443397\"},{\"price\":\"0.44\",\"side\":\"BUY\",\"token_id\":\"94751170553599069856756731190587159867136841283347287200834597646473688173648\"}]\n",
+      "timestamp_utc": "2026-05-28T08:43:45.623043Z"
+    },
+    {
+      "url": "https://clob.polymarket.com/books?token_ids",
+      "status": 200,
+      "headers": {
+        "strict-transport-security": "max-age=7776000; includeSubDomains",
+        "content-encoding": "br",
+        "cf-cache-status": "DYNAMIC",
+        "access-control-allow-credentials": "true",
+        "cf-ray": "a02bf938a9fdc5bf-NRT",
+        "access-control-allow-origin": "*",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "date": "Thu, 28 May 2026 08:43:45 GMT",
+        "content-type": "application/json",
+        "vary": "Accept-Encoding, Origin",
+        "server": "cloudflare"
+      },
+      "body_snippet": "[{\"market\":\"0x645f9a4e6fbafd4c5a321661c989ce6e72c1f507e8c8b9d6e69bb256f7e385bf\",\"asset_id\":\"94751170553599069856756731190587159867136841283347287200834597646473688173648\",\"timestamp\":\"1779956692964\",\"hash\":\"e462c41bbbe486531222e3d9c09f3e4aef76d7b8\",\"bids\":[],\"asks\":[],\"min_order_size\":\"5\",\"tick_size\":\"0.01\",\"neg_risk\":false,\"last_trade_price\":\"0.420\"},{\"market\":\"0xce2dc35036912bbc5dab9f48880d0766f2f3e8f5724e74e01df0a0fe9f10169c\",\"asset_id\":\"61888542833493836833088356214322014007334819121642668391279940030829851956441\",\"timestamp\":\"1779957825510\",\"hash\":\"f583a0dc86492d01ecae774bc165321de2b9599e\",\"bids\":[{\"price\":\"0.01\",\"size\":\"259700\"},{\"price\":\"0.02\",\"size\":\"114900\"},{\"price\":\"0.03\",\"size\":\"9400\"},{\"price\":\"0.06\",\"size\":\"45358.83\"},{\"price\":\"0.08\",\"size\":\"13569.12\"},{\"price\":\"0.09\",\"size\":\"750\"},{\"price\":\"0.14\",\"size\":\"4436.5\"},{\"price\":\"0.15\",\"size\":\"2000\"},{\"price\":\"0.18\",\"size\":\"6\"},{\"price\":\"0.2\",\"size\":\"100\"},{\"price\":\"0.22\",\"size\":\"958.77\"},{\"price\":\"0.25\",\"size\":\"5\"},{\"price\":\"0.27\",\"size\":\"108.48\"},{\"price\":\"0.32\",\"size\":\"771.03\"},{\"price\":\"0.33\",\"size\":\"5\"},{\"price\":\"0.34\",\"size\":\"100\"},{\"price\":\"0.35\",\"size\":\"5\"},{\"price\":\"0.37\",\"size\":\"6.29\"},{\"price\":\"0.42\",\"size\":\"7.23\"},{\"price\":\"0.45\",\"size\":\"499.92\"},{\"price\":\"0.46\",\"size\":\"10.87\"},{\"price\":\"0.48\",\"size\":\"5\"},{\"price\":\"0.53\",\"size\":\"6\"},{\"price\":\"0.54\",\"size\":\"440\"},{\"price\":\"0.55\",\"size\":\"9.1\"},{\"price\":\"0.57\",\"size\":\"5\"},{\"price\":\"0.6\",\"size\":\"16.7\"},{\"price\":\"0.61\",\"size\":\"32.42\"},{\"price\":\"0.62\",\"size\":\"50.11\"},{\"price\":\"0.63\",\"size\":\"28\"},{\"price\":\"0.64\",\"size\":\"150\"},{\"price\":\"0.65\",\"size\":\"3447.22\"},{\"price\":\"0.66\",\"size\":\"140\"},{\"price\":\"0.69\",\"size\":\"5\"}],\"asks\":[{\"price\":\"0.99\",\"size\":\"10453.91\"},{\"price\":\"0.98\",\"size\":\"3011.9\"},{\"price\":\"0.97\",\"size\":\"150.19\"},{\"price\":\"0.92\",\"size\":\"1241.46\"},{\"price\":\"0.91\",\"size\":\"9.91\"},{\"price\":\"0.9\",\"size\":\"39.61\"},{\"price\":\"0.89\",\"size\":\"100\"},{\"price\":\"0.86\",\"size\":\"15\"},{\"price\":\"0.85\",\"size\":\"14\"},{\"price\":\"0.78\",\"size\":\"5\"},{\"price\":\"0.74\",\"size",
+      "timestamp_utc": "2026-05-28T08:43:45.990191Z"
+    },
+    {
+      "url": "https://clob.polymarket.com/rewards/markets/0xdb39d9fb9824d70ce281ea3233794ff18c3c0fd7e75ddc2ffe03d51589230fdb?sponsored=true",
+      "status": 200,
+      "headers": {
+        "strict-transport-security": "max-age=7776000; includeSubDomains",
+        "content-encoding": "gzip",
+        "cf-cache-status": "DYNAMIC",
+        "access-control-allow-credentials": "true",
+        "cf-ray": "a02bf9d2e8ee4eaa-NRT",
+        "access-control-allow-origin": "*",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "date": "Thu, 28 May 2026 08:44:10 GMT",
+        "content-type": "application/json",
+        "vary": "Origin",
+        "server": "cloudflare"
+      },
+      "body_snippet": "{\"data\":[{\"condition_id\":\"0xdb39d9fb9824d70ce281ea3233794ff18c3c0fd7e75ddc2ffe03d51589230fdb\",\"question\":\"Chisinau: Radu Albot vs Timofey Skatov\",\"market_slug\":\"atp-albot-skatov-2026-05-28\",\"event_slug\":\"atp-albot-skatov-2026-05-28\",\"image\":\"https://polymarket-upload.s3.us-east-2.amazonaws.com/atp-tour-b4390c4fb8.jpg\",\"tokens\":[{\"token_id\":\"106068569077808213715999258330182977900444867389222227702368250776882475534018\",\"outcome\":\"Radu Albot\",\"price\":0.235},{\"token_id\":\"18782636610205857901983997942360804629631865041963348681659157946600019238751\",\"outcome\":\"Timofey Skatov\",\"price\":0.765}],\"rewards_config\":[{\"asset_address\":\"0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB\",\"start_date\":\"2026-05-28\",\"end_date\":\"2500-12-31\",\"id\":402252,\"rate_per_day\":45,\"total_rewards\":0,\"total_days\":173343}],\"rewards_max_spread\":2.5,\"rewards_min_size\":1000,\"market_competitiveness\":0}],\"next_cursor\":\"LTE=\",\"limit\":100,\"count\":1}\n",
+      "timestamp_utc": "2026-05-28T08:44:10.288328Z"
+    },
+    {
+      "url": "https://clob.polymarket.com/books?token_ids",
+      "status": 200,
+      "headers": {
+        "strict-transport-security": "max-age=7776000; includeSubDomains",
+        "content-encoding": "br",
+        "cf-cache-status": "DYNAMIC",
+        "access-control-allow-credentials": "true",
+        "cf-ray": "a02bf9f03cba4eaa-NRT",
+        "access-control-allow-origin": "*",
+        "alt-svc": "h3=\":443\"; ma=86400",
+        "date": "Thu, 28 May 2026 08:44:15 GMT",
+        "content-type": "application/json",
+        "vary": "Accept-Encoding, Origin",
+        "server": "cloudflare"
+      },
+      "body_snippet": "[{\"market\":\"0xa9db600590209698097db2fb8382989ea1cf6a9b91f0428b2e1d4f35d724c3ff\",\"asset_id\":\"34975799215805336635380955805640077265859396051479474396712621494741728208353\",\"timestamp\":\"1779957854880\",\"hash\":\"14b0a043b365b049f35a1f859028a6effbe2607c\",\"bids\":[{\"price\":\"0.01\",\"size\":\"60947.88\"},{\"price\":\"0.02\",\"size\":\"26370.7\"},{\"price\":\"0.1\",\"size\":\"7\"},{\"price\":\"0.11\",\"size\":\"8\"},{\"price\":\"0.14\",\"size\":\"9\"},{\"price\":\"0.16\",\"size\":\"11\"},{\"price\":\"0.17\",\"size\":\"1022.76\"},{\"price\":\"0.18\",\"size\":\"999.06\"},{\"price\":\"0.19\",\"size\":\"5541.05\"},{\"price\":\"0.2\",\"size\":\"2143.02\"},{\"price\":\"0.21\",\"size\":\"2890.8\"},{\"price\":\"0.22\",\"size\":\"4013.38\"},{\"price\":\"0.23\",\"size\":\"325.84\"}],\"asks\":[{\"price\":\"0.99\",\"size\":\"285356.83\"},{\"price\":\"0.98\",\"size\":\"37411.62\"},{\"price\":\"0.97\",\"size\":\"98700\"},{\"price\":\"0.96\",\"size\":\"1000\"},{\"price\":\"0.94\",\"size\":\"36580\"},{\"price\":\"0.93\",\"size\":\"57358.8\"},{\"price\":\"0.91\",\"size\":\"14376.31\"},{\"price\":\"0.9\",\"size\":\"4260\"},{\"price\":\"0.89\",\"size\":\"23370.7\"},{\"price\":\"0.85\",\"size\":\"4700\"},{\"price\":\"0.8\",\"size\":\"100\"},{\"price\":\"0.78\",\"size\":\"258.89\"},{\"price\":\"0.73\",\"size\":\"108.77\"},{\"price\":\"0.7\",\"size\":\"826.52\"},{\"price\":\"0.66\",\"size\":\"100\"},{\"price\":\"0.6\",\"size\":\"525.72\"},{\"price\":\"0.5\",\"size\":\"560\"},{\"price\":\"0.45\",\"size\":\"5\"},{\"price\":\"0.44\",\"size\":\"420\"},{\"price\":\"0.43\",\"size\":\"3026.19\"},{\"price\":\"0.42\",\"size\":\"5\"},{\"price\":\"0.41\",\"size\":\"10\"},{\"price\":\"0.39\",\"size\":\"97\"},{\"price\":\"0.33\",\"size\":\"5\"},{\"price\":\"0.32\",\"size\":\"7\"},{\"price\":\"0.31\",\"size\":\"25\"},{\"price\":\"0.3\",\"size\":\"29\"},{\"price\":\"0.29\",\"size\":\"53\"},{\"price\":\"0.28\",\"size\":\"61\"},{\"price\":\"0.27\",\"size\":\"265\"},{\"price\":\"0.26\",\"size\":\"1135.09\"},{\"price\":\"0.25\",\"size\":\"1462.66\"},{\"price\":\"0.24\",\"size\":\"5051.21\"}],\"min_order_size\":\"5\",\"tick_size\":\"0.01\",\"neg_risk\":false,\"last_trade_price\":\"0.770\"}]\n",
+      "timestamp_utc": "2026-05-28T08:44:14.988837Z"
+    }
+  ],
+  "all_requests_brief": [
+    {
+      "url": "https://polymarket.com/zh/sports/live",
+      "method": "GET",
+      "type": "document"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/media/InterVariable-s.p.0r27kd5h06n72.woff2?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "font"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0w9z4-o_8b44h.css?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "stylesheet"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0kf2xjo43207~.css?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "stylesheet"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/01jby4_6blka_.css?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "stylesheet"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0o7s~nivrs1sq.css?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "stylesheet"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fest.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fgbr.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fmda.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fkaz.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Ffra.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Flva.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fjpn.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Faus.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fhun.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fury.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Frs.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fhr.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fbg.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Flu.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Ftr.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fro.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fde.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fse.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fita.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fau.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fit.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fun.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fch.png&w=96&q=75",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/native-shell-critical.css?v=2026-05-27T23%3A54%3A45.505Z",
+      "method": "GET",
+      "type": "stylesheet"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0uv4ir2~g-w3n.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0sfw8wqcwxapa.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0ijtz2jjcgaoe.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0uj5h4lkwbvyu.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0229961v~vyw..js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0ij~y7v9-4w.f.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0trvrit-1~zrk.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/05uey0tvbj_w8.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0k510wk.~2.u4.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0y93c0h5.66hn.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/04oas_g3gtsun.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0_bgp1nfi~5mi.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/00604talcthe8.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0maiundj1vphi.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/11j4l8vs5pm38.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/12-rmyholdqbf.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/15asl2ylpv247.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0o~6eoan8.2.l.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0r93ua8ix01t~.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/05ou0a_6c.432.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0b_fpez_so4.5.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0y4abzhusy8th.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0o6u9bsbtuwy1.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0kurer~38_7n-.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/02k.-_p4dwx7d.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0m6o0r0okps82.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/04jbbb-cuawv5.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0i89p7twr9n_d.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0yvvs78-q97d6.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0h-ibkl.-zf8c.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/01gdskte1ip~s.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/02bp3pmxazs_x.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0gc2i032v9ert.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0v2r2ify0ky.7.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0osa5q8no7lyx.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-0odrkb-loxkc3.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/06rzt.ha69a81.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0r2hjosuy2agc.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0vhtt394cngaz.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0bd2sjep0l~us.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0xmzflf9pitgn.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0aijvgi3d1t9o.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0tvndf3g69xtz.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/121xp_ra3gnar.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0g8uk5ememdi1.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0uo.n75_mqsza.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0gof1frq8-_2s.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0m84825.i27c2.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0ormc2.bhsc9u.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/1742-x-zl_251.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0mi.d4xghr~5w.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0n.c58qn0zeaq.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/108j2tll6wmzr.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0.po6y-xi6612.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0ds0n9b~n1w-e.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0w~j1swulo_j6.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/08b3aqrl207~s.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0~az5c1svt-oa.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/06oo66-r~luif.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0d..wnzp_ugc..js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0wmug~bgbef_r.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0clc_xv-_omit.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/01iflc_t4dkmz.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0bxufdlbt7_73.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/099jhg7g0k54v.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0.nvij26x~5_f.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0i71ww1e12e-f.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0g21shu.qja-1.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/11u22cbcn~rei.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0e7i.fd9ig5sp.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0bjcw7gt7g-_i.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0b~9pn_ef3e6g.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0b1lot1rhhh0o.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0.mu64ew6b3e..js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/12dc84n3w.78i.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0s1qbpq8u_2jf.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0bx-l-wi6uyr3.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0~1zty9hsepwn.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/06tvc0sb9qmmk.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-0jyns4zyon6_u.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/build-TfctsWXpff2fKS/_buildManifest.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/build-TfctsWXpff2fKS/_ssgManifest.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/build-TfctsWXpff2fKS/_clientMiddlewareManifest.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://s3-us-west-2.amazonaws.com/jsstore/a/020HDQYO/ge.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://sc-static.net/scevent.min.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/media/InterVariable.0r27kd5h06n72.woff2?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "font"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/nor.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/chl.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/usa.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/bol.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/esp.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/fra.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/bra.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/chn.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/egy.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/per.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/col.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/mar.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/ita.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/swe.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/jpn.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/rou.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/deu.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/gbr.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/ind.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/arg.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/tur.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/rus.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket-upload.s3.us-east-2.amazonaws.com/country-flags/grc.png",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=%2Fimages%2Fbrand%2Flogo-black.png&w=256&q=75&dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/monitoring?o=462071&p=5464845",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0t3~.ypelhn.7.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0vo7-ze8hob48.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0gix7vdhbbbyq.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0ibh7r88yo04m.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/15qmz_5s73528.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0h_d5av561qwv.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0hcp_2k.px~2g.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/send?params=eyJBUElfS0VZIjoicGtfbGl2ZV85OUFCRDIzRjlGMUM4MjY2IiwiRE9NQUlOX09SSUdJTiI6Imh0dHBzOi8vcG9seW1hcmtldC5jb20iLCJFVEhfTkVUV09SSyI6eyJycGNVcmwiOiJodHRwczovL3BvbHlnb24tbWFpbm5ldC5nLmFsY2hlbXkuY29tL3YyL21ld21UdVRZRXhUU0kwbFppc0Qyc3p3bWkzNWZaWS1yIiwiY2hhaW5JZCI6MTM3fSwiaG9zdCI6ImF1dGgubWFnaWMubGluayIsInNkayI6Im1hZ2ljLXNkayIsInZlcnNpb24iOiIzMy4wLjAiLCJsb2NhbGUiOiJlbl9VUyJ9",
+      "method": "GET",
+      "type": "document"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0yhhbsx9fqv12.css",
+      "method": "GET",
+      "type": "stylesheet"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0v2ndl.~4stru.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0dgxvys312-ha.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0-47sftj.ei__.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/06c9.4i1i4q1n.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/turbopack-0ri13.eq8pbwz.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/07dg1mgsfwu.4.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0f4fhljntku4e.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0trr8nd0qv7wd.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0h~jsa_5z33zf.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/17j.y6.rkh13t.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/15de581bogmh8.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0qmvi3tu.2hqj.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/05u1_sgebqkqp.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0.6hue7cyzk-x.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0ehhj-hf~jgo2.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/09~ubxqgzkk9h.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/16wj6j92hmv31.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0odkyz.k2irjy.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/10_fq7lqilmwf.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0x0vif~so~o3p.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/06r_bes741d0t.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/0dhzjc17i04xi.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://auth.magic.link/api/magic-client/cGtfbGl2ZV85OUFCRDIzRjlGMUM4MjY2/config",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://app.launchdarkly.com/sdk/goals/655380969aaa1013a38ba51c",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://events.launchdarkly.com/events/diagnostic/655380969aaa1013a38ba51c",
+      "method": "POST",
+      "type": "xhr"
+    },
+    {
+      "url": "https://app.launchdarkly.com/sdk/evalx/655380969aaa1013a38ba51c/contexts/eyJraW5kIjoidXNlciIsImtleSI6InBrX2xpdmVfOTlBQkQyM0Y5RjFDODI2NiJ9",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://events.launchdarkly.com/events/bulk/655380969aaa1013a38ba51c",
+      "method": "POST",
+      "type": "xhr"
+    },
+    {
+      "url": "https://polymarket.com/monitoring?o=462071&p=5464845",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/monitoring?o=462071&p=5464845",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/09gq5pdgp6-m..js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0xg1i2hy8l~ic.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-worker-0sjn--fhq~1cg.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-worker-0sjn--fhq~1cg.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "blob:https://polymarket.com/95b4a279-da26-4112-8287-972b9231f30e",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtm.js?id=GTM-WW6ZLRTM",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_proxy/dub/script.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/07rcrkfdiiz~k.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/00vk6p_lik0_r.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0l1zup3hwcemx.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0sv6v3.ng12ze.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0klz9feo-.mne.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fest.png&w=256&q=100",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/api/geoblock/wallet-lists",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://gamma-api.polymarket.com/is-logged-in",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://polymarket.com/api/tags/filtered?tag=102982&status=active&locale=zh",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://clob.polymarket.com/rewards/markets/0xa9db600590209698097db2fb8382989ea1cf6a9b91f0428b2e1d4f35d724c3ff?sponsored=true",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/17fdiovunxdzf.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/bcdfa74a30d42b7b/script.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/api/meta/capi",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh.json?locale=zh",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/new.json?locale=zh&category=new",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/sports/atp/atp-glinka-broady-2026-05-28.json?locale=zh&league=atp&slug=atp-glinka-broady-2026-05-28",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/sports/atp/atp-albot-skatov-2026-05-28.json?locale=zh&league=atp&slug=atp-albot-skatov-2026-05-28",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/sports/atp/atp-dalmass-stromba-2026-05-27.json?locale=zh&league=atp&slug=atp-dalmass-stromba-2026-05-27",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/sports/atp/atp-takahas-winter-2026-05-27.json?locale=zh&league=atp&slug=atp-takahas-winter-2026-05-27",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/tos.json?locale=zh",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://tr.snapchat.com/config/com/e8fb67d5-9099-4de2-9750-2c66ef553d13.js?v=3.56.1-2604231811",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://tr.snapchat.com/cm/i?pid=e8fb67d5-9099-4de2-9750-2c66ef553d13&u_scsid=a2a63f6e-33a5-471a-aa54-3ca51c61a23c&u_sclid=f4eaf582-45ef-4bf0-b428-a1194fa32652",
+      "method": "GET",
+      "type": "document"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-0fk4egedmj.~t.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-09hmgdbk65.2h.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/politics.json?locale=zh&category=politics",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/iran.json?locale=zh&category=iran",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/geopolitics.json?locale=zh&category=geopolitics",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/tech.json?locale=zh&category=tech",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/pop-culture.json?locale=zh&category=pop-culture",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/data/build-TfctsWXpff2fKS/zh/economy.json?locale=zh&category=economy",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://sc-static.net/scevent.min.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://tr.snapchat.com/cm/s?bt=1d53c387&pnid=140&cb=1779957820598&u_scsid=4b01c8a0-e7d6-432c-8b54-e3f31314dfb2&u_sclid=6b386993-0698-4b09-bb09-6149c9fd857c",
+      "method": "GET",
+      "type": "document"
+    },
+    {
+      "url": "https://polygon-mainnet.g.alchemy.com/v2/",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://b-code.liadm.com/lc2.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://pixel.tapad.com/idsync/ex/push?partner_id=2884&partner_url=https%3A%2F%2Ftr.snapchat.com%2Fcm%2Fp%3Frand%3D1779904126512%26pnid%3D140%26pcid%3D%24%7BTA_DEVICE_ID%7D",
+      "method": "GET",
+      "type": "document"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0o40o9~xl8.1p.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0bpb2lbcz6~7z.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0.pdiznel50ea.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0.pdiznel50ea.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/118.2f22.uw0e.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/06y0le31-09_1.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0pmvwymjxhtbc.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0pmvwymjxhtbc.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0je33lrdvcp_4.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://pixel.tapad.com/idsync/ex/push/check?partner_id=2884&partner_url=https%3A%2F%2Ftr.snapchat.com%2Fcm%2Fp%3Frand%3D1779904126512%26pnid%3D140%26pcid%3D%24%7BTA_DEVICE_ID%7D",
+      "method": "GET",
+      "type": "document"
+    },
+    {
+      "url": "https://tr.snapchat.com/cm/p?rand=1779904126512&pnid=140&pcid=acbe7aff-cd95-42a2-b112-44fc7ee7ec06",
+      "method": "GET",
+      "type": "document"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0sfw8wqcwxapa.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0i4-l-hg.vc9l.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "other"
+    },
+    {
+      "url": "https://cdp.customer.io/v1/projects/13c96cb84f404fdd65f8/settings",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0avbk9az76s7p.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0zo2ekx2r.uvf.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/038jcpu4rv6u_.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://clob.polymarket.com/books?token_ids",
+      "method": "POST",
+      "type": "xhr"
+    },
+    {
+      "url": "https://clob.polymarket.com/last-trades-prices",
+      "method": "POST",
+      "type": "xhr"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0_xrdee5ev83z.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://tr.snapchat.com/p",
+      "method": "POST",
+      "type": "ping"
+    },
+    {
+      "url": "https://polymarket.com/zh/sports/live",
+      "method": "HEAD",
+      "type": "fetch"
+    },
+    {
+      "url": "https://auth.magic.link/_next/static/chunks/01m5h1yw5vzm_.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=G-LLH3PPH2FV&cx=c&gtm=4e65q2",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/js?id=AW-17709783969&cx=c&gtm=4e65q2",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.redditstatic.com/ads/pixel.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=1&frm=0&ae=g&auid=1411870468.1779957825&dt=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&en=page_view&dl=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&scrsrc=www.googletagmanager.com&rnd=1076454870.1779957825&navt=n&npa=0&ep.ads_data_redaction=0&gtm=45He65q2v9242728359za200zd9242728359xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115938465~115938469~116701382~119168155&apve=1&apvf=f&apvc=1&tft=1779957825082&tfd=26635",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://static.ads-twitter.com/uwt.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://connect.facebook.net/en_US/fbevents.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=D2EB49JC77U067DPLNBG&lib=ttq",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://websdk.appsflyersdk.com/?st=banners&",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://tr.snapchat.com/p",
+      "method": "POST",
+      "type": "ping"
+    },
+    {
+      "url": "https://tr.snapchat.com/p",
+      "method": "POST",
+      "type": "ping"
+    },
+    {
+      "url": "https://pro.ip-api.com/json/?key=HjZs0C1fcOqELGS&fields=16990211",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/01t7l909yqa3z.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/105oilgu_chae.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/10748_i6jwmox.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/118qy9gc1vbr3.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/08~hkae5bj8bb.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/05xdty4sfm32g.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0vcrr6rj29e5f.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0f9e938v_r4e1.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0o8swnpv8txd_.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0.gthddk~h2vc.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0ex885jvlitfr.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0ij4aj5p-f4-h.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0aeq0xvkra_.v.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-0~.1fp9~qv4rn.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0x7cc25d-xg~8.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/12z4-5tfquptw.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0fu.k5juts6s..js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0u2wyekgv2fdz.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-0nu1rj.c9ddvw.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://rp.liadm.com/j?dtstmp=1779957826600&se=e30&duid=e13ec2880fa6--01kspw20xev281vdz4ytrbm3v7&tv=v3.14.0&pu=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&wpn=lc-bundle&wpv=v3.14.0&cd=.polymarket.com&pv=1112f321-bd54-44b3-9c22-f8fdd4ee0a1e",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://a.usbrowserspeed.com/cs?pid=3f6274bd78546e52bd181ff7e115b9515c2959f882a0f0fc2c1603e3fc9a0c9d",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://sr-client-cfg.amplitude.com/config/4572e28e5cd9c6997212cb354d024b58?config_group=browser",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://cdp.customer.io/v1/p",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://www.google-analytics.com/g/collect?v=2&tid=G-LLH3PPH2FV&gtm=45je65q2v889602944z89242728359za20gzb9242728359zd9242728359&_p=1779957819540&gcd=13l3l3l3l1l1&npa=0&dma=0&_eu=AAAAAAAC&_prs=gs&are=1&cid=455634042.1779957828&frm=0&pscdl=noapi&rcb=18&sr=1280x720&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uam=&uamb=0&uap=macOS&uapv=10_15_7&uaw=0&ul=zh-cn&_s=1&tag_exp=0~115616985~115938465~115938469~118128923~119168155&sid=1779957827&sct=1&seg=0&dl=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&dt=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&en=page_view&_fv=1&_nsi=1&_ss=1&_c=1&ep.debug_mode=true&tfd=29082",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://rp.liadm.com/j?dtstmp=1779957826600&se=e30&duid=e13ec2880fa6--01kspw20xev281vdz4ytrbm3v7&tv=v3.14.0&pu=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&wpn=lc-bundle&wpv=v3.14.0&cd=.polymarket.com&pv=1112f321-bd54-44b3-9c22-f8fdd4ee0a1e&n3pc=true",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://sr-client-cfg.amplitude.com/config/4572e28e5cd9c6997212cb354d024b58?config_group=browser",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://www.googletagmanager.com/gtag/destination?id=AW-AW-17709783969&cx=c&gtm=4e65q2",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/17709783969/?random=1779957828760&cv=11&fst=1779957828760&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be65q2v9235922336z89242728359za20gzb9242728359zd9242728359xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115616986~115938465~115938469~116701382&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=2&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&data=event%3Dgtag.config&rfmt=3&fmt=4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/17709783969/?random=1779957828760&cv=11&fst=1779957828760&fmt=8&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be65q2v9235922336z89242728359za20gzb9242728359zd9242728359xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115616986~115938465~115938469~116701382&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=2&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&data=event%3Dgtag.config&gcp=5",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/18071788383/?random=1779957828773&cv=11&fst=1779957828773&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be65q2v9235922336z89242728359za20gzb9242728359zd9242728359xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115616986~115938465~115938469~116701382&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=2&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&data=event%3Dgtag.config&rfmt=3&fmt=4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/18071788383/?random=1779957828773&cv=11&fst=1779957828773&fmt=8&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be65q2v9235922336z89242728359za20gzb9242728359zd9242728359xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115616986~115938465~115938469~116701382&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=2&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&data=event%3Dgtag.config&gcp=5",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=2&frm=0&auid=1411870468.1779957825&dt=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&en=page_view&dl=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&scrsrc=www.googletagmanager.com&rnd=1076454870.1779957825&navt=n&npa=0&gtm=45be65q2v9235922336z89242728359za20gzb9242728359zd9242728359xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115616986~115938465~115938469~116701382&apve=1&apvf=f&apvc=0&tids=AW-17709783969~AW-18071788383&tid=AW-17709783969&tft=1779957828777&tfd=30330",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://sr-client-cfg.amplitude.com/config/4572e28e5cd9c6997212cb354d024b58?config_group=browser",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://sr-client-cfg.amplitude.com/config/4572e28e5cd9c6997212cb354d024b58?config_group=browser",
+      "method": "GET",
+      "type": "fetch"
+    },
+    {
+      "url": "https://t.co/1/i/adsct?bci=4&dv=Asia%2FShanghai%26zh-CN%26Google%20Inc.%26MacIntel%26127%261280%26720%2610%2624%261280%26720%260%26na&eci=3&event=%7B%7D&event_id=f6afe0bd-a72e-406c-84cc-bc3786744630&integration=gtm&p_id=Twitter&p_user_id=0&pl_id=9715ad42-2f2a-43d8-ae96-d13080215375&pt=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&tw_document_href=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&tw_iframe_status=0&tw_pid_src=1&twpid=tw.1779957829862.444481015924442404&txn_id=ogbhb&type=javascript&version=2.3.53",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://analytics.twitter.com/1/i/adsct?bci=4&dv=Asia%2FShanghai%26zh-CN%26Google%20Inc.%26MacIntel%26127%261280%26720%2610%2624%261280%26720%260%26na&eci=3&event=%7B%7D&event_id=f6afe0bd-a72e-406c-84cc-bc3786744630&integration=gtm&p_id=Twitter&p_user_id=0&pl_id=9715ad42-2f2a-43d8-ae96-d13080215375&pt=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&tw_document_href=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&tw_iframe_status=0&tw_pid_src=1&twpid=tw.1779957829862.444481015924442404&txn_id=ogbhb&type=javascript&version=2.3.53",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/static/main.MWQ1MjcwZjdjMQ.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://pixel-config.reddit.com/pixels/t2_a264zkjk/config",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://alb.reddit.com/rp.gif?ts=1779957830793&id=t2_a264zkjk&event=PageVisit&m.value=&m.transactionId=&m.customEventName=&m.products=&m.conversionId=&uuid=ef87c2b1-ac4d-45de-af81-18c07d7c1860&aaid=&external_id=&idfa=&integration=gtm&partner=&partner_version=1.0.2&opt_out=0&sh=1280&sw=720&v=rdt_47ad39b8&dpm=&dpcc=&dprc=",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://connect.facebook.net/signals/config/9598173826948405?v=2.9.327&r=stable&domain=polymarket.com&hme=af8aa31887db259becaf70277daef60bd8bc35c2df82c2acd4258de27ecac4b5&ex_m=104%2C207%2C155%2C22%2C72%2C73%2C146%2C68%2C67%2C11%2C164%2C90%2C16%2C138%2C127%2C39%2C75%2C78%2C134%2C160%2C166%2C8%2C4%2C5%2C7%2C6%2C3%2C91%2C101%2C167%2C172%2C221%2C62%2C188%2C189%2C55%2C279%2C30%2C74%2C233%2C232%2C231%2C23%2C33%2C103%2C61%2C10%2C63%2C97%2C98%2C99%2C105%2C130%2C31%2C29%2C132%2C133%2C129%2C128%2C156%2C76%2C159%2C157%2C158%2C50%2C60%2C123%2C15%2C163%2C45%2C266%2C267%2C265%2C26%2C27%2C28%2C48%2C147%2C77%2C112%2C18%2C20%2C44%2C40%2C42%2C41%2C83%2C92%2C96%2C110%2C145%2C148%2C46%2C111%2C24%2C21%2C119%2C69%2C36%2C150%2C149%2C151%2C142%2C140%2C25%2C35%2C59%2C109%2C162%2C70%2C17%2C153%2C114%2C81%2C66%2C19%2C85%2C86%2C116%2C84%2C136%2C135%2C139%2C161%2C34%2C281%2C297%2C214%2C203%2C204%2C202%2C300%2C291%2C52%2C215%2C107%2C131%2C80%2C121%2C54%2C47%2C49%2C113%2C120%2C126%2C125%2C58%2C64%2C152%2C115%2C37%2C32%2C53%2C56%2C100%2C165%2C1%2C124%2C14%2C122%2C12%2C2%2C57%2C93%2C65%2C118%2C89%2C88%2C168%2C169%2C94%2C95%2C9%2C102%2C51%2C143%2C87%2C79%2C71%2C117%2C106%2C43%2C144%2C0%2C82%2C137%2C141%2C154%2C38%2C108%2C13%2C170",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.facebook.com/tr/?id=9598173826948405&ev=PageView&dl=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rl=&if=false&ts=1779957836098&sw=1280&sh=720&v=2.9.327&r=stable&ec=0&o=4126&fbp=fb.1.1779957836089.915623412337407341&ler=empty&pmd[title]=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&pmd[locale]=zh&pmd[description]=%E5%9C%A8Polymarket%E5%AE%9E%E6%97%B6%E4%BA%A4%E6%98%93%E4%BD%93%E8%82%B2%E8%B5%9B%E4%BA%8B%E3%80%82%E4%BA%A4%E6%98%93NBA%E3%80%81NHL%E3%80%81UFC%E3%80%81MLB%E3%80%81%E8%B6%B3%E7%90%83%E7%AD%8920%E5%A4%9A%E7%A7%8D%E4%BD%93%E8%82%B2%E9%A1%B9%E7%9B%AE%E7%9A%84%E7%8B%AC%E8%B5%A2%E3%80%81%E8%AE%A9%E5%88%86%E5%92%8C%E5%A4%A7%E5%B0%8F%E5%88%86%E5%B8%82%E5%9C%BA%E3%80%82%E5%AE%9E%E6%97%B6%E8%B5%94%E7%8E%87%E5%92%8C%E6%AF%94%E5%88%86%E3%80%82&plt=20951.799999952316&imft=1&tz=480&it=1779957831501&coo=false&ap[currency]=USD&ap[contents]=%5B%7B%22item_price%22%3A0%7D%5D&expv2[0]=pl0&expv2[1]=el2&expv2[2]=bc1&expv2[3]=ra2&expv2[4]=rp2&expv2[5]=im0&expv2[6]=hf1&rqm=GET",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0o40o9~xl8.1p.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0bpb2lbcz6~7z.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://analytics.tiktok.com/i18n/pixel/static/identify_5cff1caf.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://analytics-ipv6.tiktokw.us/ipv6/enrich_ipv6",
+      "method": "POST",
+      "type": "ping"
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "method": "POST",
+      "type": "ping"
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "method": "POST",
+      "type": "ping"
+    },
+    {
+      "url": "https://googleads.g.doubleclick.net/pagead/viewthroughconversion/AW-17709783969/?random=1779957836320&cv=11&fst=1779957836320&bg=ffffff&guid=ON&async=1&gtm=45be65q2z89242728359za20gzb9242728359zd9242728359xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115938465~115938468~116701382~119064591&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=14&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&_tu=CA&rfmt=3&fmt=4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.google.com/rmkt/collect/AW-17709783969/?random=1779957836320&cv=11&fst=1779957836320&fmt=8&bg=ffffff&guid=ON&async=1&gtm=45be65q2z89242728359za20gzb9242728359zd9242728359xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115938465~115938468~116701382~119064591&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=14&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&_tu=CA&gcp=5",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://www.google.com/ccm/collect?rcb=14&frm=0&ae=g&auid=1411870468.1779957825&dt=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&dl=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&scrsrc=www.googletagmanager.com&rnd=1076454870.1779957825&navt=n&npa=0&_tu=CA&gtm=45be65q2z89242728359za20gzb9242728359zd9242728359xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115938465~115938468~116701382~119064591&apve=1&apvf=f&apvc=0&tids=AW-AW-17709783969&tid=AW-AW-17709783969&tft=1779957836328&tfd=37880",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel/act",
+      "method": "POST",
+      "type": "ping"
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/17709783969/?random=1779957828760&cv=11&fst=1779955200000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be65q2v9235922336z89242728359za20gzb9242728359zd9242728359xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115616986~115938465~115938469~116701382&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=2&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&data=event%3Dgtag.config&rfmt=3&fmt=3&is_vtc=1&cid=CAQS7AEABaugfTNo2PLeEhDMlDzYFmsoiZTKEcKIp58IodNFWSYHyqYshE6YR5KvTah0O7XOn9eFBjK-mmtKNOgHbNCIDVSIffHajFBdiNKe08CHCGtj7tt2XfcQbkWTlRjeauAwfonsGVqyFhSWvjmoRJhIw5TNBm_SlOw1fWBlc4W9VqkoqfK6u6m9k9FzR5mcO_BMH3GpLRY1SwChTjr_msx4BhWBGBYV75XshQZuXJdwB1MGb5_e0eqMX282scB4IAPx9-oPhJCtRn8gAfZESof2VD2-QDT52LKc--EIQTmgF9iRIKkwa7de0NmugA&random=24400456&rmt_tld=0&ipr=y",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://www.google.co.jp/pagead/1p-user-list/17709783969/?random=1779957828760&cv=11&fst=1779955200000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be65q2v9235922336z89242728359za20gzb9242728359zd9242728359xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115616986~115938465~115938469~116701382&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=2&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&data=event%3Dgtag.config&rfmt=3&fmt=3&is_vtc=1&cid=CAQS7AEABaugfTNo2PLeEhDMlDzYFmsoiZTKEcKIp58IodNFWSYHyqYshE6YR5KvTah0O7XOn9eFBjK-mmtKNOgHbNCIDVSIffHajFBdiNKe08CHCGtj7tt2XfcQbkWTlRjeauAwfonsGVqyFhSWvjmoRJhIw5TNBm_SlOw1fWBlc4W9VqkoqfK6u6m9k9FzR5mcO_BMH3GpLRY1SwChTjr_msx4BhWBGBYV75XshQZuXJdwB1MGb5_e0eqMX282scB4IAPx9-oPhJCtRn8gAfZESof2VD2-QDT52LKc--EIQTmgF9iRIKkwa7de0NmugA&random=24400456&rmt_tld=1&ipr=y",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/18071788383/?random=1779957828773&cv=11&fst=1779955200000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be65q2v9235922336z89242728359za20gzb9242728359zd9242728359xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115616986~115938465~115938469~116701382&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=2&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&data=event%3Dgtag.config&rfmt=3&fmt=3&is_vtc=1&cid=CAQS7AEABaugfQi9p7G7RDAgGfnl64O-7iLXvwRQ7b-GVQvgcudyk2Le50CvbTEuG7yjbHzJKaBNasN1SHhW4ctRTITU-dDiI3ckLJVmtq9npt_vxMWFjNXPJbiL3ED6-6QX00uSInhF8K3Z68Fmg22AAjeQj8ACMd3zdjmhu9F5Wt_rlD76bwxIgYrivvhbd4sr99cHk2a-YHCxNY2dW6b1czDOSVts-vQFTRXDDB68eUfSL5yGCuZsiKIYwlyNdZr0VTqL9qR4_kp7W7aT95J7dLOFpoYVAhiF2EF5o50SRQJOrWcP3M-YoQO5F433YA&random=2856634246&rmt_tld=0&ipr=y",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://www.google.co.jp/pagead/1p-user-list/18071788383/?random=1779957828773&cv=11&fst=1779955200000&bg=ffffff&guid=ON&async=1&en=gtag.config&gtm=45be65q2v9235922336z89242728359za20gzb9242728359zd9242728359xec&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115616986~115938465~115938469~116701382&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=2&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&data=event%3Dgtag.config&rfmt=3&fmt=3&is_vtc=1&cid=CAQS7AEABaugfQi9p7G7RDAgGfnl64O-7iLXvwRQ7b-GVQvgcudyk2Le50CvbTEuG7yjbHzJKaBNasN1SHhW4ctRTITU-dDiI3ckLJVmtq9npt_vxMWFjNXPJbiL3ED6-6QX00uSInhF8K3Z68Fmg22AAjeQj8ACMd3zdjmhu9F5Wt_rlD76bwxIgYrivvhbd4sr99cHk2a-YHCxNY2dW6b1czDOSVts-vQFTRXDDB68eUfSL5yGCuZsiKIYwlyNdZr0VTqL9qR4_kp7W7aT95J7dLOFpoYVAhiF2EF5o50SRQJOrWcP3M-YoQO5F433YA&random=2856634246&rmt_tld=1&ipr=y",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://tr.snapchat.com/p",
+      "method": "POST",
+      "type": "ping"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0v~flcrbmk5ap.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/10lyqmedctqxn.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/17c88rf0em6wp.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-0u.vgwwfwrcm1.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/16p3bjl0fmx_9.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/12egzsrxksk22.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0y1z775cj8tn2.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0i6r2vr9re79..js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0kn3t8jgluwu1.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0n4_5maim924i.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0zua-g~mgpmgh.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0il8c5qcxf_qd.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0yhzn23cln7.4.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/0jmor6p-9c9m6.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://polymarket.com/_next/static/chunks/turbopack-11ha171npjhr3.js?dpl=dpl_6p4xAtmdWWFevkEnmeHhVnyRosc4",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://www.google.com/pagead/1p-user-list/AW-17709783969/?random=1779957836320&cv=11&fst=1779955200000&bg=ffffff&guid=ON&async=1&gtm=45be65q2z89242728359za20gzb9242728359zd9242728359xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115938465~115938468~116701382~119064591&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=14&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&_tu=CA&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-gEABaugfWsLudFdeMnB2E47vsErLTVuUKYQb6eiu6YAobOKAtZED41A9jrGTzqpB5CJQcT__E72gCi0bHCeH2NCLXGUCdgdDF0S9tih1lnqF4YNyxo-PqeCwBjLL-KlzgazSUJOQVfqQKhVWkJm7T_fxzQH3IhXnEpaLQKpplw5HPZzCbJxcpPPyajmc2ga2HMktbN7PQHb_ihxitZpfby2IMSytI-f3kdJvNPakPUzYsRq9_KLOt8OURltrOsg1XAKnWI6xe1vpbEqQ9awEaHcayMm95Wo5wmGqt368O1JrSdGywObKeqYz2eGU965TIp9MPDeOAPIKXXY&random=3772034527&rmt_tld=0&ipr=y",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://www.google.co.jp/pagead/1p-user-list/AW-17709783969/?random=1779957836320&cv=11&fst=1779955200000&bg=ffffff&guid=ON&async=1&gtm=45be65q2z89242728359za20gzb9242728359zd9242728359xea&gcd=13l3l3l3l1l1&dma=0&tag_exp=0~115938465~115938468~116701382~119064591&u_w=1280&u_h=720&url=https%3A%2F%2Fpolymarket.com%2Fzh%2Fsports%2Flive&rcb=14&frm=0&tiba=%E4%BD%93%E8%82%B2%E5%AE%9E%E6%97%B6%E9%A2%84%E6%B5%8B%E5%B8%82%E5%9C%BA%E5%92%8C%E8%B5%94%E7%8E%87%202026%20%7C%20Polymarket&hn=www.googleadservices.com&npa=0&pscdl=noapi&auid=1411870468.1779957825&uaa=x86&uab=64&uafvl=Chromium%3B148.0.7778.96%7CHeadlessChrome%3B148.0.7778.96%7CNot%252FA)Brand%3B99.0.0.0&uamb=0&uam=&uap=macOS&uapv=10_15_7&uaw=0&_tu=CA&rfmt=3&fmt=3&is_vtc=1&cid=CAQS-gEABaugfWsLudFdeMnB2E47vsErLTVuUKYQb6eiu6YAobOKAtZED41A9jrGTzqpB5CJQcT__E72gCi0bHCeH2NCLXGUCdgdDF0S9tih1lnqF4YNyxo-PqeCwBjLL-KlzgazSUJOQVfqQKhVWkJm7T_fxzQH3IhXnEpaLQKpplw5HPZzCbJxcpPPyajmc2ga2HMktbN7PQHb_ihxitZpfby2IMSytI-f3kdJvNPakPUzYsRq9_KLOt8OURltrOsg1XAKnWI6xe1vpbEqQ9awEaHcayMm95Wo5wmGqt368O1JrSdGywObKeqYz2eGU965TIp9MPDeOAPIKXXY&random=3772034527&rmt_tld=1&ipr=y",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://polymarket.com/_a/batch",
+      "method": "POST",
+      "type": "fetch"
+    },
+    {
+      "url": "https://widget.intercom.io/widget/zryw7npl",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://analytics.tiktok.com/api/v2/pixel",
+      "method": "POST",
+      "type": "ping"
+    },
+    {
+      "url": "https://js.intercomcdn.com/frame-modern.1fd4a57f.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://js.intercomcdn.com/vendor-modern.60bbf292.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://api-iam.intercom.io/messenger/web/launcher_settings",
+      "method": "POST",
+      "type": "xhr"
+    },
+    {
+      "url": "https://api-iam.intercom.io/messenger/web/ping",
+      "method": "POST",
+      "type": "xhr"
+    },
+    {
+      "url": "https://polymarket.com/_next/image?url=https%3A%2F%2Fpolymarket-upload.s3.us-east-2.amazonaws.com%2Fcountry-flags%2Fmda.png&w=256&q=100",
+      "method": "GET",
+      "type": "image"
+    },
+    {
+      "url": "https://clob.polymarket.com/rewards/markets/0xdb39d9fb9824d70ce281ea3233794ff18c3c0fd7e75ddc2ffe03d51589230fdb?sponsored=true",
+      "method": "GET",
+      "type": "xhr"
+    },
+    {
+      "url": "https://js.intercomcdn.com/vendors~locale-zh-CN-json-modern.88de0d7c.js",
+      "method": "GET",
+      "type": "script"
+    },
+    {
+      "url": "https://api-iam.intercom.io/messenger/web/page_view_events",
+      "method": "POST",
+      "type": "xhr"
+    },
+    {
+      "url": "https://clob.polymarket.com/books?token_ids",
+      "method": "POST",
+      "type": "xhr"
+    },
+    {
+      "url": "https://browser-intake-datadoghq.com/api/v2/logs?ddsource=browser&ddtags=sdk_version%3A5.35.1%2Capi%3Afetch%2Cenv%3Aprod%2Cservice%3Aembedded-wallet&dd-api-key=pubb45ab04aad2069e87bdb6fa1e1ce3b21&dd-evp-origin-version=5.35.1&dd-evp-origin=browser&dd-request-id=a96b9f4a-f280-41e6-b049-4dfcb932bf77",
+      "method": "POST",
+      "type": "fetch"
+    }
+  ]
+}

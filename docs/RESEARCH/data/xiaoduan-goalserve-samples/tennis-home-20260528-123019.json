@@ -1,0 +1,943 @@
+<?xml version="1.0" encoding="utf-8"?>
+<scores sport="tennis">
+  <tournament name="ATP  Newport, United States" surface="Grass" id="1142">
+    <matches date="13.07.2022" time="17:00">
+      <match status="17:00" date="13.07.2022" time="17:00" court="Stadium" id="117083890">
+        <player name="A. Bublik" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9500" />
+        <player name="J. Sock" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2261" />
+      </match>
+      <match status="18:30" date="13.07.2022" time="18:30" court="Stadium" id="117083891">
+        <player name="M. Purcell" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4743" />
+        <player name="A. Murray" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1853" />
+      </match>
+      <match status="20:00" date="13.07.2022" time="20:00" court="Stadium" id="117083892">
+        <player name="P. Gojowczyk" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1749" />
+        <player name="J. Isner" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1378" />
+      </match>
+      <match status="21:30" date="13.07.2022" time="21:30" court="Stadium" id="117083893">
+        <player name="F. Auger-Aliassime" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9552" />
+        <player name="J. Kubler" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2117" />
+      </match>
+      <match status="17:00" date="13.07.2022" time="17:00" court="Court 1" id="117083894">
+        <player name="M. Krueger" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3060" />
+        <player name="M. Cressy" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="18:30" date="13.07.2022" time="18:30" court="Court 1" id="117083895">
+        <player name="J. Vesely" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2680" />
+        <player name="S. Johnson" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1719" />
+      </match>
+      <match status="20:00" date="13.07.2022" time="20:00" court="Court 1" id="117083896">
+        <player name="N. Lammons, J. Withrow" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="3586" />
+        <player name="R. Ciamarra, S. Querrey" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="1006" />
+      </match>
+      <match status="17:00" date="13.07.2022" time="17:00" court="Court 2" id="117083897">
+        <player name="Q. Halys" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4719" />
+        <player name="J. Duckworth" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2519" />
+      </match>
+      <match status="19:00" date="13.07.2022" time="19:00" court="Court 2" id="117083898">
+        <player name="B. Bonzi" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9566" />
+        <player name="C. Eubanks" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4310" />
+      </match>
+      <match status="20:30" date="13.07.2022" time="20:30" court="Court 2" id="117083899">
+        <player name="M. Purcell, T. Van Rijthoven" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="4743" id2="8286" />
+        <player name="M. Schnur, A. Sitak" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="4754" id2="1342" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ATP  Bastad, Sweden" surface="Clay" id="1144">
+    <matches date="13.07.2022" time="11:08">
+      <match status="2nd set" date="13.07.2022" time="11:08" court="Centre Court" id="117083900">
+        <player name="A. Ramos-Vinolas" serve="True" game_score="15" sets_won="1" set1="6" set2="2" set3="0" set4="0" set5="0" winner="True" id="1196" />
+        <player name="P. Carreno Busta" serve="False" game_score="15" sets_won="0" set1="4" set2="2" set3="0" set4="0" set5="0" winner="False" id="4806" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Centre Court" id="117083901">
+        <player name="C. Ruud" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9455" />
+        <player name="F. Cerundolo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9542" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Centre Court" id="117083902">
+        <player name="D. Schwartzman" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2496" />
+        <player name="E. Ymer" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9570" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Centre Court" id="117083903">
+        <player name="A. Karatsev" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4315" />
+        <player name="H. Gaston" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="12:00" date="13.07.2022" time="12:00" court="Court 1" id="117083904">
+        <player name="R. Matos, D. Vega Hernandez" serve="True" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="3926" id2="7846" />
+        <player name="F. Bergevi, L. Kubot" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1975" id2="1180" />
+      </match>
+      <match status="13:30" date="13.07.2022" time="13:30" court="Court 1" id="116874319">
+        <player name="A. Behar, T. Brkic" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2384" id2="2576" />
+        <player name="S. Bolelli, F. Fognini" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1213" id2="1394" />
+      </match>
+      <match status="15:00" date="13.07.2022" time="15:00" court="Court 1" id="117083905">
+        <player name="A. Goransson, B. McLachlan" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1980" id2="3101" />
+        <player name="F. Cerundolo, M. Etcheverry T." serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="9542" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="WTA  Lausanne, Switzerland" surface="Clay" id="2541">
+    <matches date="13.07.2022" time="12:08">
+      <match status="1st set" date="13.07.2022" time="12:08" court="Centre Court" id="117083907">
+        <player name="I. Begu" serve="True" game_score="15" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id="1365" />
+        <player name="A. Potapova" serve="False" game_score="15" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Centre Court" id="117083909">
+        <player name="P. Martic" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1511" />
+        <player name="E. Andreeva" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="Centre Court" id="117083910">
+        <player name="C. Burel" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="S. Sorribes Tormo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4921" />
+      </match>
+      <match status="WO" date="13.07.2022" time="11:00" court="Court 1" id="117083911">
+        <player name="L. Jeanjean" serve="False" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="True" id="" />
+        <player name="T. Maria" serve="False" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id="4969" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="12:08" court="Court 1" id="117083912">
+        <player name="M. Kato, A. Sutjiadi" serve="False" game_score="15" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id1="3038" id2="" />
+        <player name="A. Hartono, R. Van der Hoek" serve="True" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id1="" id2="" />
+      </match>
+      <match status="13:30" date="13.07.2022" time="13:30" court="Court 1" id="117083913">
+        <player name="A. Blinkova, V. Gracheva" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="9519" id2="" />
+        <player name="U. Eikeri, T. Zidansek" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2924" id2="" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Court 1" id="117083914">
+        <player name="A. Barnett, O. Nicholls" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="4034" id2="" />
+        <player name="S. Bandecchi, S. Waltert" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="WTA  Budapest, Hungary" surface="Clay" id="1367">
+    <matches date="13.07.2022" time="11:09">
+      <match status="Fin. (Ret)" date="13.07.2022" time="11:09" court="Centre Court" id="117083915">
+        <player name="K. Siniakova" serve="False" game_score="00" sets_won="1" set1="6" set2="0" set3="0" set4="0" set5="0" winner="True" id="4756" />
+        <player name="A. Kalinina" serve="False" game_score="00" sets_won="0" set1="3" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Centre Court" id="117083916">
+        <player name="B. Krejcikova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="8294" />
+        <player name="X. Wang" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2211" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Centre Court" id="117083917">
+        <player name="K. Baindl" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="M. Trevisan" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1418" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Centre Court" id="117083918">
+        <player name="A. Bondar" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="D. Papamichail" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6632" />
+      </match>
+      <match status="2nd set" date="13.07.2022" time="11:09" court="Grandstand 4" id="117083919">
+        <player name="E. Gorgodze" serve="False" game_score="00" sets_won="0" set1="5" set2="0" set3="0" set4="0" set5="0" winner="False" id="3433" />
+        <player name="S. Zhang" serve="True" game_score="00" sets_won="1" set1="7" set2="0" set3="0" set4="0" set5="0" winner="True" id="3554" />
+      </match>
+      <match status="13:00" date="13.07.2022" time="13:00" court="Grandstand 4" id="117083920">
+        <player name="L. Tsurenko" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1084" />
+        <player name="K. Rakhimova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="14:30" date="13.07.2022" time="14:30" court="Grandstand 4" id="117083921">
+        <player name="A. Sasnovich" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3211" />
+        <player name="B. Pera" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="8656" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Grandstand 4" id="117083922">
+        <player name="T. Babos, F. Stollar" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1912" id2="9562" />
+        <player name="A. Danilina, A. Krunic" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="1878" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="12:06" court="Court 1" id="117083923">
+        <player name="K. Piter, K. Zimmermann" serve="True" game_score="40" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id1="1288" id2="1738" />
+        <player name="M. Carle, E. Cocciaretto" serve="False" game_score="15" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id1="" id2="" />
+      </match>
+      <match status="13:30" date="13.07.2022" time="13:30" court="Court 1" id="116874349">
+        <player name="E. Gorgodze, O. Kalashnikova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="3433" id2="1111" />
+        <player name="C. Alves, G. Lee" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1205" id2="2251" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ATP CH Iasi, Romania" surface="Clay" id="">
+    <matches date="13.07.2022" time="10:08">
+      <match status="Susp." date="13.07.2022" time="10:08" court="Centre Court" id="117083924">
+        <player name="L. Klein" serve="False" game_score="00" sets_won="1" set1="6" set2="1" set3="0" set4="0" set5="0" winner="True" id="1746" />
+        <player name="O. Krutykh" serve="True" game_score="00" sets_won="0" set1="3" set2="1" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Centre Court" id="117083926">
+        <player name="L. Wessels" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3320" />
+        <player name="P. Andujar" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1070" />
+      </match>
+      <match status="Susp." date="13.07.2022" time="10:12" court="Court 2" id="117083927">
+        <player name="J. De Loore" serve="False" game_score="00" sets_won="0" set1="3" set2="0" set3="0" set4="0" set5="0" winner="False" id="4329" />
+        <player name="M. Pucinelli De Almeida" serve="True" game_score="00" sets_won="1" set1="5" set2="0" set3="0" set4="0" set5="0" winner="True" id="" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Court 2" id="117083930">
+        <player name="M. Copil, V. Cornea V." serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1160" id2="" />
+        <player name="D. Dutra da Silva, M. Pucinelli De Almeida" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="3592" id2="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="10:07" court="Court 5" id="117083931">
+        <player name="A. Erler, L. Miedler" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id1="" id2="4562" />
+        <player name="S. Gima, C. Jianu F." serve="False" game_score="00" sets_won="0" set1="3" set2="2" set3="0" set4="0" set5="0" winner="False" id1="" id2="" />
+      </match>
+      <match status="13:30" date="13.07.2022" time="13:30" court="Court 5" id="117083935">
+        <player name="Z. Kolar, D. Molchanov" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2001" id2="1429" />
+        <player name="J. De Loore, N. Sanchez Izquierdo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="4329" id2="" />
+      </match>
+      <match status="15:00" date="13.07.2022" time="15:00" court="Court 5" id="117083939">
+        <player name="G. Blancaneaux, R. Olivo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="2628" />
+        <player name="O. Krutykh, D. Poljak" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="4890" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ATP CH Rome, United States" surface="Hard" id="1044">
+    <matches date="13.07.2022" time="00:54">
+      <match status="Fin." date="13.07.2022" time="00:54" court="Court 4" id="117025672">
+        <player name="N. Chappell, B. Sigouin" serve="False" game_score="00" sets_won="2" set1="6" set2="2" set3="10" set4="0" set5="0" winner="True" id1="2875" id2="9450" />
+        <player name="B. Gojo, B. Harris" serve="False" game_score="00" sets_won="1" set1="2" set2="6" set3="4" set4="0" set5="0" winner="False" id1="" id2="3812" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="02:02" court="Court 4" id="116874384">
+        <player name="L. Margaroli, Y. Uchiyama" serve="False" game_score="00" sets_won="0" set1="3" set2="6.5" set3="0" set4="0" set5="0" winner="False" id1="3683" id2="2499" />
+        <player name="B. Shelton, K. Smith" serve="False" game_score="00" sets_won="2" set1="6" set2="7" set3="0" set4="0" set5="0" winner="True" id1="" id2="1313" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Court 4" id="117098576">
+        <player name="Y. Nishioka" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4041" />
+        <player name="P. Kypson" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9556" />
+      </match>
+      <match status="19:00" date="13.07.2022" time="19:00" court="Court 4" id="117098578">
+        <player name="U. Blanch" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="Y. Wu" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4896" />
+      </match>
+      <match status="22:00" date="13.07.2022" time="22:00" court="Court 4" id="117098580">
+        <player name="N. Balaji, J. Nedunchezhiyan" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="3777" id2="3776" />
+        <player name="T. Matsui, K. Uesugi" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1584" id2="6960" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Court 5" id="117098582">
+        <player name="A. McHugh" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="P. Ficovich Juan" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9050" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="Court 5" id="117098583">
+        <player name="B. Fratangelo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4043" />
+        <player name="H. Habib" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="19:00" date="13.07.2022" time="19:00" court="Court 5" id="117098584">
+        <player name="Y. Uchiyama" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2499" />
+        <player name="H. Hsu Yu" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9490" />
+      </match>
+      <match status="20:30" date="13.07.2022" time="20:30" court="Court 5" id="117098587">
+        <player name="A. Galarneau, A. Rybakov" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="8360" id2="7859" />
+        <player name="A. Kovacevic, M. Pervolarakis" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="9525" id2="" />
+      </match>
+      <match status="22:00" date="13.07.2022" time="22:00" court="Court 5" id="117098593">
+        <player name="E. Couacaud, A. Harris" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="6070" id2="3812" />
+        <player name="T. Baadi, S. Mukund" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="9538" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ATP CH Verona, Italy" surface="Clay" id="">
+    <matches date="13.07.2022" time="13:00">
+      <match status="13:00" date="13.07.2022" time="13:00" court="Center" id="117083941">
+        <player name="F. Agamenone" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6709" />
+        <player name="F. Horansky" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3007" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Center" id="117083942">
+        <player name="R. Brancaccio" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="M. Cecchinato" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2275" />
+      </match>
+      <match status="18:00" date="13.07.2022" time="18:00" court="Center" id="117083943">
+        <player name="C. Stebe" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1713" />
+        <player name="S. Ofner" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3544" />
+      </match>
+      <match status="20:00" date="13.07.2022" time="20:00" court="Center" id="117083944">
+        <player name="M. Gigante" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="N. Gombos" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2749" />
+      </match>
+      <match status="13:00" date="13.07.2022" time="13:00" court="Grandstand" id="117083946">
+        <player name="M. Dellien, M. Kestelboim" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2909" id2="9555" />
+        <player name="M. Kalovelonis, V. Manafov" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="4140" id2="4149" />
+      </match>
+      <match status="14:30" date="13.07.2022" time="14:30" court="Grandstand" id="117083947">
+        <player name="M. Bortolotti, S. Martos Gornes" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="3453" id2="" />
+        <player name="Alternate" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Grandstand" id="117083948">
+        <player name="G. Crivellaro, A. Zanotti" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="5031" />
+        <player name="G. Andreozzi, G. Duran" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2631" id2="1996" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="Grandstand" id="117083949">
+        <player name="I. Galarza J., T. Lipovsek Puches" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="6530" />
+        <player name="R. Arneodo, J. Eysseric" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2774" id2="1338" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ATP CH Amersfoort, Netherlands" surface="Clay" id="">
+    <matches date="13.07.2022" time="11:12">
+      <match status="1st set" date="13.07.2022" time="11:12" court="Van Mossel Kia Court" id="117083951">
+        <player name="A. Andreev" serve="False" game_score="40" sets_won="0" set1="4" set2="0" set3="0" set4="0" set5="0" winner="False" id="1612" />
+        <player name="R. Carballes Baena" serve="True" game_score="40" sets_won="0" set1="5" set2="0" set3="0" set4="0" set5="0" winner="False" id="3593" />
+      </match>
+      <match status="19:00" date="13.07.2022" time="19:00" court="Van Mossel Kia Court" id="117083955">
+        <player name="C. Taberner" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9454" />
+        <player name="M. Houkes" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="11:07" court="Schoonderbeek Court" id="117083956">
+        <player name="T. Arribage, L. Sanchez" serve="False" game_score="00" sets_won="2" set1="6" set2="7" set3="0" set4="0" set5="0" winner="True" id1="" id2="1676" />
+        <player name="E. Furness, J. Lock C." serve="False" game_score="00" sets_won="0" set1="1" set2="5" set3="0" set4="0" set5="0" winner="False" id1="" id2="" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Schoonderbeek Court" id="117083957">
+        <player name="I. Gakhov" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="A. Fils" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2941" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Schoonderbeek Court" id="117083958">
+        <player name="A. Collarini, S. Travaglia" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2205" id2="2678" />
+        <player name="A. Andreev, G. Kravchenko" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1612" id2="" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Schoonderbeek Court" id="117083959">
+        <player name="Y. Bhambri, S. Myneni" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2240" id2="4643" />
+        <player name="J. Barranco Cosano, J. Nikles" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="6779" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="KNLTB Court" id="117083960">
+        <player name="A. Fils, L. Van Assche" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2941" id2="" />
+        <player name="J. Cerretani, P. Niklas-Salminen" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1708" id2="4381" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF MH Kassel, Germany" surface="Clay" id="">
+    <matches date="13.07.2022" time="11:07">
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court M" id="117083962">
+        <player name="M. Netuschil" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3526" />
+        <player name="R. Collignon" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Court M" id="117083963">
+        <player name="A. Perez" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2460" />
+        <player name="K. Coppejans" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4193" />
+      </match>
+      <match status="17:00" date="13.07.2022" time="17:00" court="Court M" id="117083964">
+        <player name="T. Fabbiano" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1718" />
+        <player name="M. Agwi" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="2nd set" date="13.07.2022" time="11:07" court="Court 4" id="117083965">
+        <player name="H. Rehberg Max" serve="True" game_score="00" sets_won="1" set1="7" set2="0" set3="0" set4="0" set5="0" winner="True" id="" />
+        <player name="O. Moraing" serve="False" game_score="00" sets_won="0" set1="6.3" set2="0" set3="0" set4="0" set5="0" winner="False" id="8828" />
+      </match>
+      <match status="13:00" date="13.07.2022" time="13:00" court="Court 4" id="117083966">
+        <player name="A. Bulitski" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="E. Esteve Lobato" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6134" />
+      </match>
+      <match status="14:30" date="13.07.2022" time="14:30" court="Court 4" id="117083967">
+        <player name="M. Welte" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3563" />
+        <player name="S. Fanselow" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9532" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Court 4" id="117083968">
+        <player name="B. Bobrov, A. Mannapov" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="3597" />
+        <player name="H. Casanova, E. Esteve Lobato" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="6134" />
+      </match>
+      <match status="2nd set" date="13.07.2022" time="11:12" court="Court 6" id="117083973">
+        <player name="T. Colson" serve="False" game_score="40" sets_won="1" set1="6" set2="3" set3="0" set4="0" set5="0" winner="True" id="" />
+        <player name="I. Nedelko" serve="True" game_score="30" sets_won="0" set1="1" set2="3" set3="0" set4="0" set5="0" winner="False" id="3598" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 6" id="117083974">
+        <player name="A. Taylor, J. Taylor" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="7284" id2="7284" />
+        <player name="B. Battistone, T. Whiting" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2263" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M+W Nur-Sultan, Kazakhstan" surface="Hard" id="">
+    <matches date="13.07.2022" time="06:09">
+      <match status="1st set" date="13.07.2022" time="11:55" court="Court 2" id="117083980">
+        <player name="B. Zhukayev" serve="False" game_score="15" sets_won="0" set1="2" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="D. Yevseyev" serve="True" game_score="40" sets_won="0" set1="1" set2="0" set3="0" set4="0" set5="0" winner="False" id="3531" />
+      </match>
+      <match status="15:00" date="13.07.2022" time="15:00" court="Court 2" id="117083982">
+        <player name="A. Kedryuk, N. Sidorov" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2260" id2="" />
+        <player name="I. Liutarevich, D. Yevseyev" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="3531" />
+      </match>
+      <match status="3rd set" date="13.07.2022" time="09:48" court="Court 3" id="117083985">
+        <player name="N. Abduraimova" serve="True" game_score="40" sets_won="1" set1="1" set2="6" set3="5" set4="0" set5="0" winner="False" id="2358" />
+        <player name="A. Zolotareva" serve="False" game_score="15" sets_won="1" set1="6" set2="2" set3="5" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 3" id="117083986">
+        <player name="S. Purtseladze" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="K. Kravchuk" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1204" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Court 3" id="117083987">
+        <player name="J. Choi" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4500" />
+        <player name="G. Ainitdinova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="15:00" court="Court 3" id="117083988">
+        <player name="A. Santillan, R. Statham" serve="False" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id1="7152" id2="1606" />
+        <player name="A. Ayeni, D. Tashbulatov" serve="False" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id1="" id2="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="06:11" court="Court 4" id="116964827">
+        <player name="M. Shin" serve="False" game_score="00" sets_won="0" set1="3" set2="1" set3="0" set4="0" set5="0" winner="False" id="6794" />
+        <player name="P. Gunneswaran" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="3769" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="07:46" court="Court 4" id="116964832">
+        <player name="I. Yoruk" serve="False" game_score="00" sets_won="0" set1="3" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="A. Raina" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="4588" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="09:19" court="Court 4" id="117083990">
+        <player name="S. Danilov" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="" />
+        <player name="I. Zaytsev" serve="False" game_score="00" sets_won="0" set1="2" set2="4" set3="0" set4="0" set5="0" winner="False" id="3466" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 4" id="117083992">
+        <player name="V. Savinykh, M. Uchijima" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1318" id2="" />
+        <player name="D. Baidaulet, A. Poplavska" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="06:00" court="Court 5" id="116964838">
+        <player name="A. Santillan" serve="False" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id="7152" />
+        <player name="A. Zgirovsky" serve="False" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="3rd set" date="13.07.2022" time="10:31" court="Court 5" id="117083994">
+        <player name="S. Park" serve="True" game_score="30" sets_won="1" set1="2" set2="6" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="V. Lapko" serve="False" game_score="30" sets_won="1" set1="6" set2="3" set3="1" set4="0" set5="0" winner="False" id="9487" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 5" id="117083995">
+        <player name="S. Kenzhibayeva" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="C. Muramatsu" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9008" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="11:54" court="Court 8" id="117084000">
+        <player name="B. Lock" serve="False" game_score="00" sets_won="0" set1="2" set2="0" set3="0" set4="0" set5="0" winner="False" id="4918" />
+        <player name="Z. Tkemaladze" serve="True" game_score="00" sets_won="0" set1="1" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="06:12" court="Court 9" id="116964854">
+        <player name="C. Wong Hong Yi" serve="False" game_score="00" sets_won="0" set1="3" set2="2" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="V. Savinykh" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="1318" />
+      </match>
+      <match status="3rd set" date="13.07.2022" time="10:17" court="Court 9" id="117084004">
+        <player name="B. Cengiz" serve="True" game_score="00" sets_won="1" set1="6" set2="5" set3="0" set4="0" set5="0" winner="False" id="9430" />
+        <player name="N. Han" serve="False" game_score="30" sets_won="1" set1="2" set2="7" set3="3" set4="0" set5="0" winner="False" id="9569" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 9" id="117084005">
+        <player name="P. Kudermetova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="7329" />
+        <player name="A. Ukolova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M Roehampton, Great Britain" surface="Grass" id="">
+    <matches date="13.07.2022" time="12:05">
+      <match status="13:30" date="13.07.2022" time="13:30" court="Grass Ct 8" id="117084008">
+        <player name="J. Paris" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="D. Cox" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1759" />
+      </match>
+      <match status="13:30" date="13.07.2022" time="13:30" court="Grass Ct 9" id="117084012">
+        <player name="Y. Mertens" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1304" />
+        <player name="F. Bass" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="15:00" date="13.07.2022" time="15:00" court="Grass Ct 9" id="117084013">
+        <player name="B. Jones" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1463" />
+        <player name="S. Parker" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4036" />
+      </match>
+      <match status="13:30" date="13.07.2022" time="13:30" court="Grass Ct10" id="117084016">
+        <player name="M. Whitehouse" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2768" />
+        <player name="J. Cash" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2871" />
+      </match>
+      <match status="16:30" date="13.07.2022" time="16:30" court="Grass Ct10" id="117084018">
+        <player name="J. Cash, H. Patten" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2871" id2="" />
+        <player name="R. Golesworthy, J. Mackinlay" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M Uriage, France" surface="Clay" id="">
+    <matches date="13.07.2022" time="10:11">
+      <match status="12:00" date="13.07.2022" time="12:00" court="Central Court" id="117084020">
+        <player name="J. Wojcik" serve="True" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="7396" />
+        <player name="G. Debru" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Central Court" id="117084021">
+        <player name="P. Martin Tiffon" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="L. Poullain" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="7340" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 4" id="117084028">
+        <player name="M. Martinez" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1591" />
+        <player name="D. Jorda Sanchis" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Court 5" id="117084032">
+        <player name="T. Pisane, J. Wojcik" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="7396" />
+        <player name="E. Coulibaly, G. Mpetshi Perricard" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M Telfs, Austria" surface="Clay" id="">
+    <matches date="13.07.2022" time="10:09">
+      <match status="Fin." date="13.07.2022" time="10:09" court="Court 1" id="117084033">
+        <player name="A. Tomas" serve="False" game_score="00" sets_won="0" set1="5" set2="1" set3="0" set4="0" set5="0" winner="False" id="7247" />
+        <player name="N. Schell" serve="False" game_score="00" sets_won="2" set1="7" set2="6" set3="0" set4="0" set5="0" winner="True" id="" />
+      </match>
+      <match status="13:30" date="13.07.2022" time="13:30" court="Court 1" id="117084035">
+        <player name="J. Kroslak" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6901" />
+        <player name="M. Veldheer" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="10:00" court="Court 2" id="117084039">
+        <player name="A. Cozbinov" serve="False" game_score="00" sets_won="0" set1="4" set2="4" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="M. Neuchrist" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="3132" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="10:09" court="Court 3" id="117084043">
+        <player name="P. Heller" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="2745" />
+        <player name="M. Andrejic" serve="False" game_score="00" sets_won="0" set1="3" set2="3" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="13:30" date="13.07.2022" time="13:30" court="Court 3" id="117084045">
+        <player name="K. Kivattsev" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="F. Ferrari" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6894" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Court 3" id="117084048">
+        <player name="L. Lane" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="O. Crawford" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3588" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M Idanha-a-Nova, Portugal" surface="Hard" id="">
+    <matches date="13.07.2022" time="10:11">
+      <match status="Fin." date="13.07.2022" time="10:11" court="Court 1" id="117084051">
+        <player name="M. Cunat" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="" />
+        <player name="I. Sibille" serve="False" game_score="00" sets_won="0" set1="3" set2="1" set3="0" set4="0" set5="0" winner="False" id="4961" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="11:29" court="Court 1" id="117084052">
+        <player name="H. Maia" serve="False" game_score="15" sets_won="0" set1="3" set2="0" set3="0" set4="0" set5="0" winner="False" id="4475" />
+        <player name="O. Jasika" serve="True" game_score="15" sets_won="0" set1="5" set2="0" set3="0" set4="0" set5="0" winner="False" id="4682" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="Court 1" id="117084053">
+        <player name="H. Fu" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="R. Noguchi" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9274" />
+      </match>
+      <match status="19:00" date="13.07.2022" time="19:00" court="Court 1" id="117084054">
+        <player name="G. Oliveira" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3684" />
+        <player name="G. Falcao" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2751" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 2" id="117084056">
+        <player name="R. Agarwal" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="F. Rocha" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2753" />
+      </match>
+      <match status="19:00" date="13.07.2022" time="19:00" court="Court 2" id="117084058">
+        <player name="M. Garcia" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1615" />
+        <player name="M. Gomes" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="11:44" court="Court 3" id="117084060">
+        <player name="R. Ho" serve="True" game_score="15" sets_won="0" set1="2" set2="0" set3="0" set4="0" set5="0" winner="False" id="6219" />
+        <player name="H. Rocha" serve="False" game_score="15" sets_won="0" set1="4" set2="0" set3="0" set4="0" set5="0" winner="False" id="2753" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="Court 3" id="117084061">
+        <player name="T. Torres" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1707" />
+        <player name="F. Coelho" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2883" />
+      </match>
+      <match status="19:00" date="13.07.2022" time="19:00" court="Court 3" id="117084062">
+        <player name="P. Araujo, D. Rodrigues" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="4070" id2="2010" />
+        <player name="R. Ho, K. Stevenson" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="6219" id2="2080" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M+W Lakewood, United States" surface="Hard" id="">
+    <matches date="13.07.2022" time="19:00">
+      <match status="19:00" date="13.07.2022" time="19:00" court="Court 2" id="117098680">
+        <player name="L. Tien" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="S. Bangoura" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1558" />
+      </match>
+      <match status="22:00" date="13.07.2022" time="22:00" court="Court 2" id="117098688">
+        <player name="T. Huang" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3010" />
+        <player name="A. Mayo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9547" />
+      </match>
+      <match status="23:30" date="13.07.2022" time="23:30" court="Court 2" id="117098688">
+        <player name="F. Angele Jaimee" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="K. Mayo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9547" />
+      </match>
+      <match status="01:00" date="14.07.2022" time="01:00" court="Court 2" id="117098692">
+        <player name="A. Asaba, S. Bangoura" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="1558" />
+        <player name="B. Nakashima, B. Swenson" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+      <match status="19:00" date="13.07.2022" time="19:00" court="Court 3" id="117098693">
+        <player name="G. Brunkow" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="C. Farren" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6461" />
+      </match>
+      <match status="20:30" date="13.07.2022" time="20:30" court="Court 3" id="117098694">
+        <player name="D. Vallejo Adolfo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="E. Nava" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1538" />
+      </match>
+      <match status="22:00" date="13.07.2022" time="22:00" court="Court 3" id="117098695">
+        <player name="A. Ansari" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="L. Koenig" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4546" />
+      </match>
+      <match status="22:00" date="13.07.2022" time="22:00" court="Court 4" id="117098700">
+        <player name="T. Yang" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1436" />
+        <player name="F. Scott" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="7278" />
+      </match>
+      <match status="23:30" date="13.07.2022" time="23:30" court="Court 4" id="117098701">
+        <player name="M. Shabaz" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2018" />
+        <player name="H. Rivera" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1966" />
+      </match>
+      <match status="22:00" date="13.07.2022" time="22:00" court="Court 7" id="117098706">
+        <player name="D. Kim" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1022" />
+        <player name="A. Shcherbinina" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="22:00" date="13.07.2022" time="22:00" court="Court 8" id="117098711">
+        <player name="D. Borruel" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="B. Walker" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3315" />
+      </match>
+      <match status="20:30" date="13.07.2022" time="20:30" court="Court 9" id="117098715">
+        <player name="K. Codd" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="M. Jones" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1463" />
+      </match>
+      <match status="23:30" date="13.07.2022" time="23:30" court="Court 9" id="117098717">
+        <player name="D. Marcinkevica" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4803" />
+        <player name="K. Hui" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M+W Cancun, Mexico" surface="Hard" id="1652">
+    <matches date="13.07.2022" time="16:00">
+      <match status="17:30" date="13.07.2022" time="17:30" court="Court 3" id="117084229">
+        <player name="K. Williford" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="H. Sato" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3488" />
+      </match>
+      <match status="21:00" date="13.07.2022" time="21:00" court="Court 3" id="117098723">
+        <player name="A. Yamaguchi, J. Zhu" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="3638" />
+        <player name="A. Becerra, X. Negrete Hernandez" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="00:34" court="Court 4" id="117004490">
+        <player name="K. Ramirez, X. Senties" serve="False" game_score="00" sets_won="0" set1="1" set2="0" set3="0" set4="0" set5="0" winner="False" id1="2490" id2="" />
+        <player name="A. Herrero Linana, M. Krywoj" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id1="" id2="" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="Court 4" id="117098725">
+        <player name="V. Wong" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4516" />
+        <player name="C. Rojas Sofia" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Court 7" id="117098728">
+        <player name="J. Aramburu Contreras Ivar" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="C. Oliveira" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3684" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Court 8" id="117098732">
+        <player name="J. Morandais" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="G. Tumasonis" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6248" />
+      </match>
+      <match status="19:00" date="13.07.2022" time="19:00" court="Court 8" id="117098734">
+        <player name="V. Rodriguez" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1597" />
+        <player name="A. Garcia" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1615" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="Court 9" id="117098737">
+        <player name="A. Hernandez" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1540" />
+        <player name="C. Ramirez" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2490" />
+      </match>
+      <match status="20:30" date="13.07.2022" time="20:30" court="Court 9" id="117098739">
+        <player name="C. Oliveira, G. Tumasonis" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="3684" id2="6248" />
+        <player name="A. Hernandez, F. Rubio Fierros A." serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1540" id2="" />
+      </match>
+      <match status="16:00" date="13.07.2022" time="16:00" court="Court 10" id="117098740">
+        <player name="S. Watanabe" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6961" />
+        <player name="I. Carou" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="20:30" date="13.07.2022" time="20:30" court="Court 10" id="117098743">
+        <player name="L. Britto, F. Yamacita" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="4851" id2="4866" />
+        <player name="R. Jauregui Sainz de Rozas, E. Moheno Y." serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M+W Casablanca, Morocco" surface="Clay" id="1132">
+    <matches date="13.07.2022" time="11:07">
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 7" id="117084065">
+        <player name="M. El Allami" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="K. Kuzmova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9574" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Court 7" id="117084067">
+        <player name="H. El Amine" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="F. Vidal Azorin Jose" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9469" />
+      </match>
+      <match status="13:00" date="13.07.2022" time="13:00" court="Court 1" id="117084073">
+        <player name="L. Brunskog" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3388" />
+        <player name="I. Bachir El Bouhali" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Court 3" id="117084078">
+        <player name="A. Aubriot" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="W. Ahouda" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6800" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M+W Monastir, Tunisia" surface="Hard" id="">
+    <matches date="13.07.2022" time="10:06">
+      <match status="Fin." date="13.07.2022" time="10:06" court="Court 1" id="117084088">
+        <player name="H. Li" serve="False" game_score="00" sets_won="1" set1="2" set2="6" set3="3" set4="0" set5="0" winner="False" id="1135" />
+        <player name="R. Te" serve="False" game_score="00" sets_won="2" set1="6" set2="3" set3="6" set4="0" set5="0" winner="True" id="8189" />
+      </match>
+      <match status="17:00" date="13.07.2022" time="17:00" court="Court 1" id="117084090">
+        <player name="Z. Sonmez" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="F. Ben Hassen" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="7853" />
+      </match>
+      <match status="2nd set" date="13.07.2022" time="10:09" court="Court 2" id="117084091">
+        <player name="L. Mays" serve="False" game_score="1" sets_won="1" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="4042" />
+        <player name="E. Lee" serve="True" game_score="3" sets_won="0" set1="2" set2="6" set3="0" set4="0" set5="0" winner="False" id="2251" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 2" id="117084013">
+        <player name="M. Jones" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1463" />
+        <player name="D. Rincon" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="17:00" date="13.07.2022" time="17:00" court="Court 2" id="117084092">
+        <player name="V. Ivanov, L. Mays" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="4531" id2="4042" />
+        <player name="B. Spasova, E. Zakharova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+      <match status="3rd set" date="13.07.2022" time="10:10" court="Court 4" id="117084096">
+        <player name="O. Iradukunda Guy" serve="False" game_score="A" sets_won="1" set1="6" set2="4" set3="2" set4="0" set5="0" winner="False" id="6793" />
+        <player name="A. Ouakaa" serve="True" game_score="40" sets_won="1" set1="3" set2="6" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="17:00" date="13.07.2022" time="17:00" court="Court 4" id="117084098">
+        <player name="R. Strombachs" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="C. Ferguson" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1083" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="10:05" court="Court 6" id="117084102">
+        <player name="M. Chen" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="1588" />
+        <player name="I. Cho" serve="False" game_score="00" sets_won="0" set1="4" set2="4" set3="0" set4="0" set5="0" winner="False" id="2452" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="11:57" court="Court 7" id="117084106">
+        <player name="O. Brigida" serve="False" game_score="00" sets_won="0" set1="2" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="Q. Sun" serve="True" game_score="00" sets_won="0" set1="1" set2="0" set3="0" set4="0" set5="0" winner="False" id="2296" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 8" id="117084109">
+        <player name="Z. Safarova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1330" />
+        <player name="E. Tothova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="17:00" date="13.07.2022" time="17:00" court="Court 8" id="117084110">
+        <player name="D. Back, B. Jeong" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="1583" />
+        <player name="V. Chaudhari, P. Nugroho" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M Litija, Slovenia" surface="Clay" id="">
+    <matches date="13.07.2022" time="10:10">
+      <match status="1st set" date="13.07.2022" time="12:04" court="Court 1" id="117084112">
+        <player name="M. Kriznik" serve="False" game_score="00" sets_won="0" set1="1" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="P. Rikl" serve="True" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id="8070" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="12:05" court="Court 2" id="117084116">
+        <player name="V. Jovic" serve="False" game_score="00" sets_won="0" set1="1" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="M. Zukas" serve="True" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id="9535" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="10:12" court="Court 3" id="117084119">
+        <player name="T. Compagnucci" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="9436" />
+        <player name="V. Gaubas" serve="False" game_score="00" sets_won="0" set1="4" set2="4" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Court 3" id="117084119">
+        <player name="T. Compagnucci, M. Sakellaridis" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="9436" id2="" />
+        <player name="A. Falabella L., P. Paz J." serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M Pittsburgh, United States" surface="Clay" id="">
+    <matches date="13.07.2022" time="16:00">
+      <match status="16:00" date="13.07.2022" time="16:00" court="Court 9" id="117084127">
+        <player name="J. Bernard" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="C. Harper" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9106" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="Court 11" id="117084136">
+        <player name="P. Brown" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1421" />
+        <player name="T. McCormick" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF M Aprilia, Italy" surface="Clay" id="">
+    <matches date="13.07.2022" time="10:39">
+      <match status="Fin." date="13.07.2022" time="10:39" court="Court Nepta" id="117084139">
+        <player name="N. Baroni, A. Guerrieri" serve="False" game_score="00" sets_won="0" set1="4" set2="2" set3="0" set4="0" set5="0" winner="False" id1="4713" id2="" />
+        <player name="E. Egea F., A. Hidalgo G." serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id1="" id2="" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court CLS" id="117084148">
+        <player name="A. Pecci" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="F. Vilardo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4305" />
+      </match>
+      <match status="16:30" date="13.07.2022" time="16:30" court="Court CLS" id="117084148">
+        <player name="M. Miceli, F. Vilardo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="4305" />
+        <player name="R. Baiant, R. Schaer" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF WH Rome, Italy" surface="Clay" id="1044">
+    <matches date="13.07.2022" time="09:37">
+      <match status="14:00" date="13.07.2022" time="14:00" court="Center Court" id="117084153">
+        <player name="F. Ferro" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="7982" />
+        <player name="F. Di Sarra" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4941" />
+      </match>
+      <match status="20:30" date="13.07.2022" time="20:30" court="Center Court" id="117084155">
+        <player name="C. Paquet" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2599" />
+        <player name="C. Rosatello" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3411" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="09:39" court="Court 2" id="117084156">
+        <player name="D. Shnaider" serve="False" game_score="00" sets_won="2" set1="5" set2="6" set3="6" set4="0" set5="0" winner="True" id="" />
+        <player name="R. Sramkova" serve="False" game_score="00" sets_won="1" set1="7" set2="4" set3="4" set4="0" set5="0" winner="False" id="9523" />
+      </match>
+      <match status="12:00" date="13.07.2022" time="12:00" court="Court 2" id="117084157">
+        <player name="T. Wurth" serve="True" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="G. Ce" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="7390" />
+      </match>
+      <match status="13:30" date="13.07.2022" time="13:30" court="Court 2" id="117084158">
+        <player name="P. Ormaechea" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2640" />
+        <player name="L. Chirico" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4785" />
+      </match>
+      <match status="16:30" date="13.07.2022" time="16:30" court="Court 2" id="117084160">
+        <player name="A. Grymalska, M. Kostyuk" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1930" id2="" />
+        <player name="O. Gadecki, M. Stokke" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="" />
+      </match>
+      <match status="2nd set" date="13.07.2022" time="11:19" court="Court 3" id="117084162">
+        <player name="L. Stefanini" serve="True" game_score="00" sets_won="1" set1="6" set2="1" set3="0" set4="0" set5="0" winner="True" id="8219" />
+        <player name="A. Friedsam" serve="False" game_score="00" sets_won="0" set1="2" set2="2" set3="0" set4="0" set5="0" winner="False" id="3373" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Court 3" id="117084164">
+        <player name="I. Shinikova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4960" />
+        <player name="A. Raggi" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF W Liepaja, Latvia" surface="Clay" id="">
+    <matches date="13.07.2022" time="10:06">
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 1" id="117084167">
+        <player name="K. Nara" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1109" />
+        <player name="E. Tomase" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Court 1" id="117084168">
+        <player name="A. Moratelli" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4940" />
+        <player name="D. Semenistaja" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="10:06" court="Court 2" id="117084170">
+        <player name="O. Babel" serve="False" game_score="00" sets_won="0" set1="4" set2="3" set3="0" set4="0" set5="0" winner="False" id="2824" />
+        <player name="I. Burillo Escorihuela" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="12:05" court="Court 2" id="117084171">
+        <player name="A. Rus" serve="False" game_score="00" sets_won="0" set1="1" set2="0" set3="0" set4="0" set5="0" winner="False" id="1075" />
+        <player name="C. Buyukakcay" serve="True" game_score="00" sets_won="0" set1="0" set2="0" set3="0" set4="0" set5="0" winner="False" id="2104" />
+      </match>
+      <match status="15:00" date="13.07.2022" time="15:00" court="Court 2" id="117084173">
+        <player name="J. Lu, Y. Yuan" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="1308" id2="3337" />
+        <player name="O. Babel, L. Nguyen Tan" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="2824" id2="" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="11:56" court="Court 3" id="117084175">
+        <player name="M. Partaud" serve="False" game_score="00" sets_won="0" set1="1" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="V. Grammatikopoulou" serve="True" game_score="00" sets_won="0" set1="2" set2="0" set3="0" set4="0" set5="0" winner="False" id="3525" />
+      </match>
+      <match status="2nd set" date="13.07.2022" time="10:07" court="Court 4" id="117084177">
+        <player name="X. You" serve="True" game_score="30" sets_won="0" set1="3" set2="5" set3="0" set4="0" set5="0" winner="False" id="7066" />
+        <player name="M. Helgo" serve="False" game_score="40" sets_won="1" set1="6" set2="3" set3="0" set4="0" set5="0" winner="True" id="" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="10:06" court="Court 5" id="117084179">
+        <player name="L. Meyer Auf Der Heide" serve="False" game_score="00" sets_won="0" set1="0" set2="1" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="E. Navarro" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="2109" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="11:30" court="Court 5" id="117084180">
+        <player name="V. Strakhova" serve="False" game_score="15" sets_won="0" set1="3" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="D. Jakupovic" serve="True" game_score="30" sets_won="0" set1="4" set2="0" set3="0" set4="0" set5="0" winner="False" id="2725" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF W Aschaffenburg, Germany" surface="Clay" id="">
+    <matches date="13.07.2022" time="11:11">
+      <match status="15:00" date="13.07.2022" time="15:00" court="Court 1" id="117083956">
+        <player name="A. Kucmova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="S. Sanchez Ana" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1676" />
+      </match>
+      <match status="15:00" date="13.07.2022" time="15:00" court="Center Court" id="117084188">
+        <player name="S. Wagner" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6817" />
+        <player name="M. Barthel" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="1840" />
+      </match>
+      <match status="17:30" date="13.07.2022" time="17:30" court="Center Court" id="117084189">
+        <player name="K. Hobgarski" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="6110" />
+        <player name="D. Salkova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="15:00" date="13.07.2022" time="15:00" court="Court 3" id="117084192">
+        <player name="A. Carreras" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4995" />
+        <player name="I. Khromacheva" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2545" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 4" id="117084195">
+        <player name="J. Terziyska" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="A. Ruzic" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2059" />
+      </match>
+      <match status="15:00" date="13.07.2022" time="15:00" court="Court 4" id="117084196">
+        <player name="T. Smitkova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4558" />
+        <player name="E. Halbauer" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF W Guimaraes, Portugal" surface="Hard" id="2068">
+    <matches date="13.07.2022" time="11:11">
+      <match status="1st set" date="13.07.2022" time="11:11" court="Court 4" id="117084198">
+        <player name="K. Jokic" serve="False" game_score="30" sets_won="0" set1="4" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="I. Murta" serve="True" game_score="40" sets_won="0" set1="5" set2="0" set3="0" set4="0" set5="0" winner="False" id="4882" />
+      </match>
+      <match status="13:00" date="13.07.2022" time="13:00" court="Court 4" id="117084091">
+        <player name="M. Jorge" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="P. Lee" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2251" />
+      </match>
+      <match status="14:30" date="13.07.2022" time="14:30" court="Court 4" id="117084200">
+        <player name="F. Jorge" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="J. Loeb" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="5913" />
+      </match>
+      <match status="1st set" date="13.07.2022" time="11:10" court="Court 3" id="117084202">
+        <player name="P. Ozgen" serve="True" game_score="00" sets_won="0" set1="6" set2="0" set3="0" set4="0" set5="0" winner="False" id="2105" />
+        <player name="J. Defalco" serve="False" game_score="00" sets_won="0" set1="5" set2="0" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="13:00" date="13.07.2022" time="13:00" court="Court 3" id="117084203">
+        <player name="E. Liang" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2294" />
+        <player name="M. Portillo Ramirez" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="14:30" date="13.07.2022" time="14:30" court="Court 3" id="117084204">
+        <player name="H. Arakawa" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="E. Sema" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2089" />
+      </match>
+      <match status="2nd set" date="13.07.2022" time="11:11" court="Court 5" id="117084208">
+        <player name="K. Kanev" serve="True" game_score="15" sets_won="1" set1="6" set2="2" set3="0" set4="0" set5="0" winner="True" id="3036" />
+        <player name="Y. Lee" serve="False" game_score="30" sets_won="0" set1="2" set2="2" set3="0" set4="0" set5="0" winner="False" id="2251" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Court 5" id="117084209">
+        <player name="A. Brogan" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2601" />
+        <player name="B. Grey Sarah" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Court 5" id="117084211">
+        <player name="L. Glushko" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2544" />
+        <player name="K. McPhee" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="7202" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF W Roehampton, Great Britain" surface="Hard" id="">
+    <matches date="13.07.2022" time="11:08">
+      <match status="2nd set" date="13.07.2022" time="11:08" court="Hard Ct 3" id="117084213">
+        <player name="E. Maloney" serve="False" game_score="00" sets_won="0" set1="1" set2="4" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="E. Silva" serve="True" game_score="00" sets_won="1" set1="6" set2="3" set3="0" set4="0" set5="0" winner="True" id="1492" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Hard Ct 3" id="117084106">
+        <player name="J. Duerst, L. Sun" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="2296" />
+        <player name="J. Garland, A. Zhu" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="3638" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Hard Ct 4" id="117084220">
+        <player name="L. Sun" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="2296" />
+        <player name="I. Kruger" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Hard Ct 4" id="117084221">
+        <player name="O. Helmi" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="D. Lao" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="8780" />
+      </match>
+      <match status="2nd set" date="13.07.2022" time="11:13" court="Hard Ct 5" id="117084223">
+        <player name="N. Bains" serve="True" game_score="40" sets_won="1" set1="6" set2="0" set3="0" set4="0" set5="0" winner="True" id="4654" />
+        <player name="J. Belgraver" serve="False" game_score="00" sets_won="0" set1="4" set2="1" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="12:30" date="13.07.2022" time="12:30" court="Hard Ct 5" id="117084224">
+        <player name="J. Mikulskyte" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="E. Wilson" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3328" />
+      </match>
+      <match status="14:00" date="13.07.2022" time="14:00" court="Hard Ct 5" id="117084065">
+        <player name="I. Spink" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="V. Kuzmova" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="9574" />
+      </match>
+      <match status="15:30" date="13.07.2022" time="15:30" court="Hard Ct 5" id="117084226">
+        <player name="J. Mikulskyte, O. Tjandramulia" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="" id2="7131" />
+        <player name="N. Bains, M. Lumsden" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id1="4654" id2="" />
+      </match>
+    </matches>
+  </tournament>
+  <tournament name="ITF W Don Benito, Spain Carpet" surface="Carpet" id="">
+    <matches date="13.07.2022" time="08:44">
+      <match status="18:30" date="13.07.2022" time="18:30" court="David Ferrer" id="117084229">
+        <player name="L. Villanueva Morillo" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="H. Sato" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="3488" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="08:40" court="Ciudad de Don Benito" id="117084230">
+        <player name="P. Csabi" serve="False" game_score="00" sets_won="0" set1="6.3" set2="5" set3="0" set4="0" set5="0" winner="False" id="" />
+        <player name="J. Shin" serve="False" game_score="00" sets_won="2" set1="7" set2="7" set3="0" set4="0" set5="0" winner="True" id="6794" />
+      </match>
+      <match status="Fin." date="13.07.2022" time="10:49" court="Ciudad de Don Benito" id="117084231">
+        <player name="C. Gomez" serve="False" game_score="00" sets_won="2" set1="6" set2="6" set3="0" set4="0" set5="0" winner="True" id="2363" />
+        <player name="N. Ugrelidze" serve="False" game_score="00" sets_won="0" set1="1" set2="3" set3="0" set4="0" set5="0" winner="False" id="" />
+      </match>
+      <match status="18:30" date="13.07.2022" time="18:30" court="Ciudad de Don Benito" id="117084232">
+        <player name="C. Yecora" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="" />
+        <player name="M. Benito" serve="False" game_score="00" sets_won="0" set1="" set2="" set3="" set4="" set5="" winner="False" id="4453" />
+      </match>
+    </matches>
+  </tournament>
+</scores>
