@@ -99,4 +99,13 @@ add_subdirectory(src/stcpp/ml)
 # Sprint-2 W5 Wave 24: 老李 PolymarketClient v0.1 (paper mock + live stub, R-7 物理隔离)
 add_subdirectory(src/stcpp/polymarket)
 
-message(STATUS "stcpp project scaffold (Sprint-2 W5 Wave 25). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1.")
+# Sprint-3 W9 W2: Debug REST API server (老周 spec, 小卢 IC 实施)
+# ADR-018 (cpp-httplib v0.16.3) + ADR-015 (vCPU 分工) + ADR-011 (paper/live 隔离)
+# 默认 ON — paper/live/backtest 三 mode 均可启用
+# production hardened 部署可 cmake -DSTCPP_BUILD_DEBUG_API=OFF 关闭 (无 auth 的 debug 接口)
+option(STCPP_BUILD_DEBUG_API "Build debug REST API server (cpp-httplib, read-only debug)" ON)
+if(STCPP_BUILD_DEBUG_API)
+    add_subdirectory(src/stcpp/debug_api)
+endif()
+
+message(STATUS "stcpp project scaffold (Sprint-3 W9 W2). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1 + debug-api v0.1.")

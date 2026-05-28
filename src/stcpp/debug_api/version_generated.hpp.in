@@ -1,0 +1,16 @@
+// version_generated.hpp — auto-generated at CMake configure time
+// Owner: 小卢  W9 W2
+// DO NOT EDIT — generated from version_generated.hpp.in by CMake configure_file
+// 注: 此文件内容是编译期常量, 不是数据时间戳, 不违反 R-20
+
+#pragma once
+
+// Project version (from CMake project() VERSION)
+#define STCPP_VERSION_STR       "@PROJECT_VERSION@"
+
+// Git hash at configure time
+#define STCPP_GIT_HASH_STR      "@STCPP_GIT_HASH_RAW@"
+
+// Execution mode string (paper / live / backtest)
+// Also injected via STCPP_EXEC_MODE_STR compile definition; kept here for header convenience
+#define STCPP_EXEC_MODE_STATIC  "@STCPP_EXEC_MODE@"

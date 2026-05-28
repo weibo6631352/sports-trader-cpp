@@ -81,3 +81,8 @@ target_compile_definitions(stcpp_test_integration_r11_pollution PRIVATE
 gtest_discover_tests(stcpp_test_integration_r11_pollution
     DISCOVERY_TIMEOUT 60
     PROPERTIES LABELS "integration;r11;w5;m1")
+
+# W9 W2: debug REST API integration (小卢 IC 实施)
+if(STCPP_BUILD_DEBUG_API)
+    add_subdirectory(debug_api)
+endif()
