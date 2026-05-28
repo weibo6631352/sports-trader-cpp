@@ -464,12 +464,15 @@ endif()
 # 小卢 W5 Wave 25: SingleInstanceLock 7 用例 (laozhou-single-instance-spec-v1.md §3.1)
 #   T1 acquire→release→reacquire  T2 双进程 child 失败  T3 kill-9 后 reacquire
 #   T4 paper/live/backtest 物理隔离  T5 PID file 内容格式  T6 SIGTERM unlink  T7 race 1-wins
+# 小卢 W6 Wave 30: FdGuard T8 RAII lifecycle; T9 SIGTERM handler close fd (非死代码, P1-03)
+#   stcpp_process_lock_test: STCPP_TEST_BUILD=1, path_for() 用 /tmp/stcpp_test_<PID>
+#   保证 ctest -j 8 并发进程间 PID file 物理隔离 (R-7 仅约束生产 binary)
 add_executable(test_single_instance
     test_single_instance.cpp
 )
 target_link_libraries(test_single_instance PRIVATE
     GTest::gtest_main
-    stcpp_process_lock
+    stcpp_process_lock_test
 )
 target_compile_options(test_single_instance PRIVATE
     -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
@@ -487,7 +490,7 @@ target_compile_definitions(test_single_instance PRIVATE
 )
 gtest_discover_tests(test_single_instance
     DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;process;single-instance;w5"
+    PROPERTIES LABELS "unit;process;single-instance;w5;w6"
 )
 
 # 老王 W6 Wave 28: Position WAL P0 (老韩 Smell-3 升级, GM Wave 27 拍板)
@@ -505,7 +508,7 @@ add_executable(test_position_ledger
 target_link_libraries(test_position_ledger PRIVATE
     GTest::gtest_main
     stcpp_infra_wal
-    stcpp_process_lock
+    stcpp_process_lock_test
 )
 target_compile_options(test_position_ledger PRIVATE
     -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
@@ -735,3 +738,36 @@ gtest_discover_tests(test_blake3_audit
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;audit;blake3;w6;m1-a06;smell-a;smell-2"
 )
+
+# 老孙 W6 Wave 30: signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
+#   T1-T8 + Bonus_R11 + Bonus_R20: 10 test targets
+# R-7 物理隔离: paper mode only; libsodium homebrew prebuilt
+if(STCPP_EXEC_MODE STREQUAL "paper")
+    add_executable(test_signer_v52
+        test_signer_v52.cpp
+    )
+    # stcpp_signer_v52_paper PUBLIC-links stcpp_signer_v52_sodium (INTERFACE),
+    # which carries sodium include dir + lib + STCPP_SIGNER_V52_LIBSODIUM define.
+    target_link_libraries(test_signer_v52 PRIVATE
+        GTest::gtest_main
+        stcpp_signer_v52_paper
+        stcpp_infra_wal
+    )
+    target_compile_options(test_signer_v52 PRIVATE
+        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    )
+    target_include_directories(test_signer_v52 PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(test_signer_v52 PRIVATE cxx_std_20)
+    target_compile_definitions(test_signer_v52 PRIVATE
+        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    )
+    gtest_discover_tests(test_signer_v52
+        DISCOVERY_TIMEOUT 30
+        PROPERTIES LABELS "unit;signer;v52;ed25519;ipc;w6"
+    )
+endif()

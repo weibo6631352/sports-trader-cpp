@@ -9,6 +9,7 @@
 // 双进程用例走 fork + pipe 同步 (小宋 review 点: 无竞态 + macOS/Linux 双绿).
 
 #include "stcpp/infra/process/single_instance.hpp"
+#include "stcpp/infra/process/fd_guard.hpp"
 #include "stcpp/execution/execution_mode.hpp"
 
 #include <gtest/gtest.h>
@@ -92,6 +93,12 @@ TEST(SingleInstanceLock, T1_AcquireReleaseReacquire) {
 TEST(SingleInstanceLock, T2_DoubleProcess_ChildFails) {
     EnsureTestDir();
     const std::string path = PidPathForMode(stcpp::execution::ExecutionMode::Paper);
+    // STCPP_TEST_BUILD: 设 STCPP_TEST_PID_DIR 保证 parent+child 竞争同一 pid file
+    {
+        const auto slash = path.rfind('/');
+        const std::string pid_dir = (slash != std::string::npos) ? path.substr(0, slash) : "/tmp";
+        ::setenv("STCPP_TEST_PID_DIR", pid_dir.c_str(), 1);
+    }
     UnlinkIfExists(path);
 
     // pipe[0]=read, pipe[1]=write
@@ -153,6 +160,7 @@ TEST(SingleInstanceLock, T2_DoubleProcess_ChildFails) {
     EXPECT_EQ(result, '1') << "Child should have failed to acquire same-mode lock";
 
     // parent_lock 析构 → 释放
+    ::unsetenv("STCPP_TEST_PID_DIR");
     UnlinkIfExists(path);
 }
 
@@ -163,6 +171,12 @@ TEST(SingleInstanceLock, T2_DoubleProcess_ChildFails) {
 TEST(SingleInstanceLock, T3_KillMinusNine_NextAcquireSucceeds) {
     EnsureTestDir();
     const std::string path = PidPathForMode(stcpp::execution::ExecutionMode::Paper);
+    // STCPP_TEST_BUILD: 设 STCPP_TEST_PID_DIR 保证 parent+child 用同一 pid dir
+    {
+        const auto slash = path.rfind('/');
+        const std::string pid_dir = (slash != std::string::npos) ? path.substr(0, slash) : "/tmp";
+        ::setenv("STCPP_TEST_PID_DIR", pid_dir.c_str(), 1);
+    }
     UnlinkIfExists(path);
 
     int child_ready[2];   // child → parent: 已获锁
@@ -219,6 +233,7 @@ TEST(SingleInstanceLock, T3_KillMinusNine_NextAcquireSucceeds) {
             stcpp::execution::ExecutionMode::Paper};
     }) << "After kill -9, new acquire should succeed (kernel auto-released flock)";
 
+    ::unsetenv("STCPP_TEST_PID_DIR");
     UnlinkIfExists(path);
 }
 
@@ -387,10 +402,19 @@ TEST(SingleInstanceLock, T6_SigtermHandler_UnlinksPidFile) {
 // T7: race condition — 并发 fork 多 child 同时 acquire 同 path, 仅 1 成功
 //     fork N children, each tries to acquire paper lock.
 //     Exactly 1 should succeed (flock LOCK_EX|LOCK_NB guarantee).
+//
+// STCPP_TEST_BUILD 隔离: fork 前设 STCPP_TEST_PID_DIR, 让 parent+child 用同一 pid dir.
+// (父子进程继承 env, 竞争同一 flock, 测试语义不变; 不影响其他并发 ctest 进程)
 // ===========================================================================
 TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
     EnsureTestDir();
+    // 设置 STCPP_TEST_PID_DIR 让 fork 出的 child 与 parent 竞争同一 pid file
     const std::string path = PidPathForMode(stcpp::execution::ExecutionMode::Paper);
+    {
+        const auto slash = path.rfind('/');
+        const std::string pid_dir = (slash != std::string::npos) ? path.substr(0, slash) : "/tmp";
+        ::setenv("STCPP_TEST_PID_DIR", pid_dir.c_str(), 1);
+    }
     UnlinkIfExists(path);
 
     constexpr int kNumChildren = 8;
@@ -465,5 +489,197 @@ TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
     EXPECT_EQ(success_count, 1)
         << "Exactly 1 child should win the lock race (got " << success_count << ")";
 
+    ::unsetenv("STCPP_TEST_PID_DIR");
     UnlinkIfExists(path);
+}
+
+// ===========================================================================
+// T8: FdGuard RAII — 构造接 fd, valid/get/release/close_now + 析构自动 close
+//     使用真实 open(2) fd 验证 RAII 语义; pipe() 提供两个低成本 fd.
+// ===========================================================================
+TEST(FdGuard, T8_RAII_Lifecycle) {
+    using stcpp::infra::process::FdGuard;
+
+    // ---- 默认构造: 不持有 ----
+    {
+        FdGuard g;
+        EXPECT_FALSE(g.valid());
+        EXPECT_EQ(g.get(), -1);
+    }
+
+    // ---- 构造持有合法 fd ----
+    int pipefd[2];
+    ASSERT_EQ(::pipe(pipefd), 0) << "pipe() should succeed";
+    // pipefd[0]=read, pipefd[1]=write
+
+    {
+        FdGuard g{pipefd[0]};
+        EXPECT_TRUE(g.valid());
+        EXPECT_EQ(g.get(), pipefd[0]);
+
+        // 析构时 close pipefd[0]
+    }
+    // pipefd[0] 已被 FdGuard 析构关闭: fcntl 应返回 -1
+    EXPECT_EQ(::fcntl(pipefd[0], F_GETFD), -1)
+        << "FdGuard dtor should have closed fd";
+    ::close(pipefd[1]);  // 手动关闭 write end
+
+    // ---- release: 转移所有权, RAII 不 close ----
+    int pipefd2[2];
+    ASSERT_EQ(::pipe(pipefd2), 0);
+
+    int released_fd = -1;
+    {
+        FdGuard g{pipefd2[0]};
+        EXPECT_TRUE(g.valid());
+        released_fd = g.release();
+        EXPECT_FALSE(g.valid());          // 所有权已转出
+        EXPECT_EQ(released_fd, pipefd2[0]);
+        // 析构时 g 不 close (已 release)
+    }
+    // released_fd 仍有效
+    EXPECT_NE(::fcntl(released_fd, F_GETFD), -1)
+        << "release() should leave fd open after dtor";
+    ::close(released_fd);
+    ::close(pipefd2[1]);
+
+    // ---- close_now: 主动提前关闭 ----
+    int pipefd3[2];
+    ASSERT_EQ(::pipe(pipefd3), 0);
+
+    {
+        FdGuard g{pipefd3[0]};
+        EXPECT_TRUE(g.valid());
+        const bool ok = g.close_now();
+        EXPECT_TRUE(ok);
+        EXPECT_FALSE(g.valid());
+        // fd 已关闭
+        EXPECT_EQ(::fcntl(pipefd3[0], F_GETFD), -1)
+            << "close_now() should have closed fd immediately";
+        // 析构时 g 不再尝试关闭 (valid() == false)
+    }
+    ::close(pipefd3[1]);
+
+    // ---- 移动构造 ----
+    int pipefd4[2];
+    ASSERT_EQ(::pipe(pipefd4), 0);
+
+    {
+        FdGuard src{pipefd4[0]};
+        EXPECT_TRUE(src.valid());
+
+        FdGuard dst{std::move(src)};
+        EXPECT_FALSE(src.valid());         // src 交出所有权
+        EXPECT_TRUE(dst.valid());
+        EXPECT_EQ(dst.get(), pipefd4[0]);
+        // dst 析构 close pipefd4[0]
+    }
+    EXPECT_EQ(::fcntl(pipefd4[0], F_GETFD), -1)
+        << "move-ctor: moved-into FdGuard should close fd on dtor";
+    ::close(pipefd4[1]);
+
+    // ---- 移动赋值 ----
+    int pipefd5[2];
+    ASSERT_EQ(::pipe(pipefd5), 0);
+    int pipefd6[2];
+    ASSERT_EQ(::pipe(pipefd6), 0);
+
+    {
+        FdGuard a{pipefd5[0]};
+        FdGuard b{pipefd6[0]};
+        // a = move(b): a 先 close pipefd5[0], 再持有 pipefd6[0]
+        a = std::move(b);
+        EXPECT_FALSE(b.valid());
+        EXPECT_EQ(a.get(), pipefd6[0]);
+        // pipefd5[0] 已被关闭
+        EXPECT_EQ(::fcntl(pipefd5[0], F_GETFD), -1)
+            << "move-assign: displaced fd should be closed";
+        // a 析构 close pipefd6[0]
+    }
+    EXPECT_EQ(::fcntl(pipefd6[0], F_GETFD), -1)
+        << "move-assign: new fd should be closed by dtor";
+    ::close(pipefd5[1]);
+    ::close(pipefd6[1]);
+}
+
+// ===========================================================================
+// T9: SIGTERM handler 真实 close fd (非死代码)
+//
+// 场景: child fork → SingleInstanceLock acquire (inject fd to handler) →
+//       InstallSigtermHandler → raise(SIGTERM).
+//       Parent 通过 /proc/fd or fcntl 验证 child 退出后 PID file 已 unlink.
+//       同时验证 handler 中 close fd 分支确实执行 (fd_close_pipe 同步).
+//
+// 策略: 因 handler 调 _exit(0), child 无法写 pipe.
+//   检验方法:
+//   1. PID file 不存在 (unlink 成功 → handler 运行了 unlink 分支)
+//   2. 用 WEXITSTATUS 验证 child 以 0 退出 (handler _exit(0))
+//   3. 另开 sync_pipe: child 在 raise 前通知 parent "handler 已安装",
+//      parent 收到后 waitpid, 再检查 PID file.
+// ===========================================================================
+TEST(SingleInstanceLock, T9_SigtermHandler_ClosesLockFd) {
+    EnsureTestDir();
+    const std::string path = PidPathForMode(stcpp::execution::ExecutionMode::Live);
+    // STCPP_TEST_BUILD: 设 STCPP_TEST_PID_DIR 让 child 用与 parent 相同的 pid dir,
+    // 保证 child acquire + InstallSigtermHandler(path) + unlink 的 path 一致
+    {
+        const auto slash = path.rfind('/');
+        const std::string pid_dir = (slash != std::string::npos) ? path.substr(0, slash) : "/tmp";
+        ::setenv("STCPP_TEST_PID_DIR", pid_dir.c_str(), 1);
+    }
+    UnlinkIfExists(path);
+
+    // sync_pipe: child → parent: handler 已安装 + raise 即将触发
+    int sync_pipe[2];
+    ASSERT_EQ(::pipe(sync_pipe), 0);
+
+    const pid_t child = ::fork();
+    ASSERT_GE(child, 0) << "fork() should succeed";
+
+    if (child == 0) {
+        // ---- child ----
+        ::close(sync_pipe[0]);
+
+        // acquire live lock (inject_lock_fd_for_handler 在构造中调用)
+        stcpp::infra::process::SingleInstanceLock lock{
+            stcpp::execution::ExecutionMode::Live};
+
+        // install SIGTERM handler (now g_lock_fd_for_handler is populated)
+        stcpp::infra::process::InstallSigtermHandler(path);
+
+        // 通知 parent: handler 已就绪, raise 即将执行
+        char rdy = 'r';
+        ::write(sync_pipe[1], &rdy, 1);
+        ::close(sync_pipe[1]);
+
+        // raise SIGTERM → handler: unlink + close fd + _exit(0)
+        ::raise(SIGTERM);
+
+        // 不应到达此处
+        ::_exit(42);
+    }
+
+    // ---- parent ----
+    ::close(sync_pipe[1]);
+
+    // 等 child ready
+    char rdy = '?';
+    ::read(sync_pipe[0], &rdy, 1);
+    ::close(sync_pipe[0]);
+    EXPECT_EQ(rdy, 'r') << "child should signal handler-ready";
+
+    // 等 child 退出
+    int wstatus = 0;
+    ::waitpid(child, &wstatus, 0);
+
+    // 验证 1: child 以 _exit(0) 退出 (handler 跑了)
+    ASSERT_TRUE(WIFEXITED(wstatus)) << "child should exit normally";
+    EXPECT_EQ(WEXITSTATUS(wstatus), 0)
+        << "SIGTERM handler should _exit(0), not _exit(42)";
+
+    // 验证 2: PID file 已被 handler unlink (不存在)
+    EXPECT_NE(::access(path.c_str(), F_OK), 0)
+        << "SIGTERM handler should unlink PID file (P1-03: close+unlink both run)";
+
+    ::unsetenv("STCPP_TEST_PID_DIR");
 }

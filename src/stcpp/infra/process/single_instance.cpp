@@ -4,6 +4,8 @@
 //   laozhou-single-instance-spec-v1.md §2.2 (启动流程)
 //   laozhou-single-instance-spec-v1.md §2.3 (PID file 格式)
 //   laozhou-single-instance-spec-v1.md §2.4 (异常路径矩阵)
+//   老高 P1-03: 修 g_lock_fd_for_handler 死代码 (W6 Wave 30)
+//   老何 footgun v1.1: FdGuard RAII 接管裸 fd (W6 Wave 30)
 //
 // 依赖: 仅 POSIX (sys/file.h flock, unistd.h, fcntl.h, signal.h)
 // 平台: macOS + Linux (flock 语义一致, 不用 fcntl F_SETLK)
@@ -166,15 +168,24 @@ PidFileContent ReadPidFile(int fd) noexcept {
 }
 
 // ---------------------------------------------------------------------------
-// SIGTERM / SIGINT handler state — g_pid_path_for_handler は static storage,
-// signal handler は async-signal-safe のみ使用 (write / unlink / _exit)
+// SIGTERM / SIGINT handler state — static storage, async-signal-safe only
+//   g_pid_path_for_handler: written by InstallSigtermHandler before sigaction
+//   g_lock_fd_for_handler:  written by inject_lock_fd_for_handler (called from
+//                           SingleInstanceLock constructor after open+flock)
 // ---------------------------------------------------------------------------
 constexpr std::size_t kMaxPidPathLen = 256;
 static char g_pid_path_for_handler[kMaxPidPathLen];
 static int  g_lock_fd_for_handler = -1;
 
+// Inject the live fd so handler can close it (fixes dead-code bug P1-03).
+// Must be called before sigaction registration in InstallSigtermHandler.
+// This is NOT async-signal-safe — call only from normal (non-signal) context.
+void inject_lock_fd_for_handler(int fd) noexcept {
+    g_lock_fd_for_handler = fd;
+}
+
 extern "C" void SigtermHandlerImpl(int /*sig*/) {
-    // async-signal-safe ops only
+    // async-signal-safe ops only (write / unlink / close / _exit)
     if (g_pid_path_for_handler[0] != '\0') {
         ::unlink(g_pid_path_for_handler);
     }
@@ -191,7 +202,27 @@ extern "C" void SigtermHandlerImpl(int /*sig*/) {
 // SingleInstanceLock::path_for
 // ---------------------------------------------------------------------------
 std::string SingleInstanceLock::path_for(stcpp::execution::ExecutionMode mode) {
+    // Production: use compile-time STCPP_PID_DIR (R-7 compliant).
+    // Test builds (STCPP_TEST_BUILD=1): use per-process tmpdir based on PID,
+    //   so concurrent ctest processes each get an isolated PID dir and never
+    //   compete for the same flock.  This does NOT relax R-7 in production.
+#ifdef STCPP_TEST_BUILD
+    // Test isolation strategy:
+    //   1. If STCPP_TEST_PID_DIR env var is set, use it (allows deliberate
+    //      cross-process contention in T7 / PositionLedger.T7 style tests).
+    //   2. Otherwise fall back to per-process /tmp/stcpp_test_<PID> so that
+    //      concurrent ctest processes never compete unintentionally.
+    const char* env_override = ::getenv("STCPP_TEST_PID_DIR");
+    char pid_dir_buf[64];
+    if (!env_override) {
+        ::snprintf(pid_dir_buf, sizeof(pid_dir_buf),
+                   "/tmp/stcpp_test_%d", static_cast<int>(::getpid()));
+        env_override = pid_dir_buf;
+    }
+    const std::string_view base = env_override;
+#else
     constexpr std::string_view base = STCPP_PID_DIR;
+#endif
     std::string path;
     path.reserve(base.size() + 16);
     path.append(base);
@@ -214,23 +245,29 @@ std::string SingleInstanceLock::path_for(stcpp::execution::ExecutionMode mode) {
 // SingleInstanceLock constructor — acquire
 // ---------------------------------------------------------------------------
 SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
-    // 1. 解析 path
+    // 1. 解析 path (STCPP_TEST_BUILD: runtime env override 用于测试进程隔离)
     pid_path_ = path_for(mode);
 
     // 2. mkdir -p <BASE>
-    if (!MkdirP(STCPP_PID_DIR)) {
+    //    Use same base as path_for() — extract dir from pid_path_
+    const auto last_slash = pid_path_.rfind('/');
+    const std::string pid_dir = (last_slash != std::string::npos)
+        ? pid_path_.substr(0, last_slash)
+        : std::string(STCPP_PID_DIR);
+
+    if (!MkdirP(pid_dir.c_str())) {
         throw SingleInstanceLockFailure(
             std::string("[single-instance] FATAL: cannot create pid dir: ") +
-                STCPP_PID_DIR + " errno=" + std::to_string(errno),
+                pid_dir + " errno=" + std::to_string(errno),
             0, 0, std::string(stcpp::execution::ToString(mode)),
             STCPP_BUILD_COMMIT);
     }
 
     // 3. open — O_CLOEXEC 防 fork+exec fd 泄漏 (老沈 review 点)
-    fd_ = ::open(pid_path_.c_str(),
-                 O_CREAT | O_RDWR | O_CLOEXEC,   // NOLINT(hicpp-signed-bitwise)
-                 0644);
-    if (fd_ < 0) {
+    fd_guard_.reset(::open(pid_path_.c_str(),
+                           O_CREAT | O_RDWR | O_CLOEXEC,   // NOLINT(hicpp-signed-bitwise)
+                           0644));
+    if (!fd_guard_.valid()) {
         throw SingleInstanceLockFailure(
             std::string("[single-instance] FATAL: open(") + pid_path_ +
                 ") failed errno=" + std::to_string(errno),
@@ -239,12 +276,11 @@ SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
     }
 
     // 4. flock — LOCK_NB: 立即失败不阻塞
-    if (::flock(fd_, LOCK_EX | LOCK_NB) != 0) {    // NOLINT(hicpp-signed-bitwise)
+    if (::flock(fd_guard_.get(), LOCK_EX | LOCK_NB) != 0) {    // NOLINT(hicpp-signed-bitwise)
         if (errno == EWOULDBLOCK) {
             // 读旧 PID file 提供诊断 (失败不影响 flock 语义)
-            const auto c = ReadPidFile(fd_);
-            ::close(fd_);
-            fd_ = -1;
+            const auto c = ReadPidFile(fd_guard_.get());
+            fd_guard_.close_now();  // RAII close: releases flock
             throw SingleInstanceLockFailure(
                 std::string("[single-instance] FATAL: ") +
                     std::string(stcpp::execution::ToString(mode)) +
@@ -255,8 +291,7 @@ SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
         }
         // 其他 errno (ENOLCK 等)
         const int saved = errno;
-        ::close(fd_);
-        fd_ = -1;
+        fd_guard_.close_now();  // RAII close
         throw SingleInstanceLockFailure(
             std::string("[single-instance] FATAL: flock failed errno=") +
                 std::to_string(saved),
@@ -266,24 +301,23 @@ SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
 
     // 5. 写 PID file 内容
     const std::int64_t start_ts = NowRealtimeNs();
-    WritePidFile(fd_,
+    WritePidFile(fd_guard_.get(),
                  static_cast<std::int64_t>(::getpid()),
                  start_ts,
                  stcpp::execution::ToString(mode),
                  STCPP_BUILD_COMMIT);
+
+    // 6. 注入 fd 到 SIGTERM handler state (修 P1-03 死代码)
+    //    InstallSigtermHandler() 后续注册 sigaction 时, handler 已能 close 真 fd.
+    inject_lock_fd_for_handler(fd_guard_.get());
 }
 
 // ---------------------------------------------------------------------------
 // SingleInstanceLock destructor — release
+// FdGuard 析构自动 close fd → POSIX flock 自动释放 (绑 open file description)
+// 注: SIGTERM handler 负责 unlink; 析构不 unlink (避免竞态: 新进程已写入覆盖)
 // ---------------------------------------------------------------------------
-SingleInstanceLock::~SingleInstanceLock() {
-    if (fd_ >= 0) {
-        // close fd → POSIX flock 自动释放 (绑 open file description)
-        ::close(fd_);
-        fd_ = -1;
-    }
-    // 注: SIGTERM handler 负责 unlink; 析构不 unlink (避免竞态: 新进程已写入覆盖)
-}
+SingleInstanceLock::~SingleInstanceLock() = default;
 
 // ---------------------------------------------------------------------------
 // InstallSigtermHandler

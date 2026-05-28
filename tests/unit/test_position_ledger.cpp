@@ -530,9 +530,16 @@ TEST(PositionLedger, T7_SingleInstanceLock_PaperMode_CrossProcess) {
     // 确保测试目录存在
     ::mkdir("/tmp/stcpp_test", 0755);  // ignore if exists
 
+    // STCPP_TEST_BUILD 隔离: fork 前设 STCPP_TEST_PID_DIR, 让 parent+child 用同一 pid dir
+    // 保证 child 和 parent 竞争同一 flock (R-7 不受影响, 仅测试代码走此路径)
     const std::string pid_path =
         stcpp::infra::process::SingleInstanceLock::path_for(
             stcpp::execution::ExecutionMode::Paper);
+    {
+        const auto slash = pid_path.rfind('/');
+        const std::string pid_dir = (slash != std::string::npos) ? pid_path.substr(0, slash) : "/tmp";
+        ::setenv("STCPP_TEST_PID_DIR", pid_dir.c_str(), 1);
+    }
     ::unlink(pid_path.c_str());  // clean up before test
 
     // Parent acquires lock + creates PositionLedger
@@ -583,6 +590,7 @@ TEST(PositionLedger, T7_SingleInstanceLock_PaperMode_CrossProcess) {
     EXPECT_EQ(result, '1')
         << "Child should fail to acquire paper lock (防多开 T7)";
 
+    ::unsetenv("STCPP_TEST_PID_DIR");
     ::unlink(pid_path.c_str());
 }
 

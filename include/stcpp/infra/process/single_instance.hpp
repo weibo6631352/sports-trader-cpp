@@ -30,6 +30,7 @@
 #include <string_view>
 
 #include "stcpp/execution/execution_mode.hpp"
+#include "stcpp/infra/process/fd_guard.hpp"
 
 // build-time PID dir.  CMake 注入 -DSTCPP_PID_DIR=/tmp/stcpp (MVP default).
 // M5+ 生产 Linux 切换 -DSTCPP_PID_DIR=/var/run/stcpp, 仅重编, 不改代码.
@@ -75,8 +76,8 @@ class SingleInstanceLock {
     // mode 决定 PID file path (path_for(mode)) — R-7 物理隔离.
     explicit SingleInstanceLock(stcpp::execution::ExecutionMode mode);
 
-    // 析构即 release: close(fd_) — POSIX flock 绑 open file description,
-    // close 自动释放锁.  SIGTERM handler 另行 unlink PID file (优雅退出).
+    // 析构即 release: FdGuard 析构自动 close fd → POSIX flock 自动释放.
+    // SIGTERM handler 另行 unlink PID file (优雅退出).
     ~SingleInstanceLock();
 
     // 禁止拷贝 / 移动 (锁是进程级唯一资源)
@@ -95,7 +96,7 @@ class SingleInstanceLock {
     [[nodiscard]] std::string_view pid_path() const noexcept { return pid_path_; }
 
  private:
-    int         fd_{-1};
+    FdGuard     fd_guard_;
     std::string pid_path_;
 };
 

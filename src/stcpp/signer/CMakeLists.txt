@@ -30,3 +30,6 @@ endif()
 #     add_library(stcpp_signer_live STATIC live/live_signer.cpp)
 #     ...
 # endif()
+
+# Sprint-2 W6 Wave 30: 老孙 signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
+add_subdirectory(v52)
