@@ -175,13 +175,34 @@
 
 **W5 仪式**: M1 评审会 7/9 (Thu) 14:00, GM 主持; Sprint-2 retro 7/10 (Fri) 16:00.
 
-### 1.6.5 W2-W5 派单总计 (W3 末 update)
+### 1.6.4-bis W5 细化派单 (Wave 20 中期 update, 2026-05-28 老胡)
+
+> **背景**: W4 Wave 19 6 部门并行落代码 (W4-01/02/03/04/06 5 项已 Agreed 已交, 193/193 ctest pass). 原 §1.6.4 W5 9 项是 "M1 评审 + 联调" 高阶视角, 本 update 把 M1 milestone 拆到**代码 owner 层** (9 项独立 ticket, 与原 §1.6.4 平行), W5 同时跑两批: M1 评审主线 (原 §1.6.4) + M1 代码补齐主线 (本 §1.6.4-bis).
+> **依赖**: W5-05bis 依赖小蒋 W4-03 paper engine main 已 ✓ (Wave 19 1233 行 + 27 测试 E2E); W5-04bis 依赖 W5-01bis ~ W5-03bis.
+> **三态明示**: 每条标 Agreed / Compromised / Escalated.
+
+| # | Owner | 交付 | 截止 | 验收人 | 状态 | 依赖 |
+|---|---|---|---|---|---|---|
+| W5-01bis | 老李 | **polymarket-client C++ 实现** (paper engine 真 PM order layer; REST + WSS + 14 HMAC test vector + /books active 池过滤 + 4ts 标 ingestion_ts) | 7/10 (Fri) | 老孙 + 老郭 | **Agreed** | W4-05 推 W5 → 本 ticket |
+| W5-02bis | 小冯 | **PM WSS subscriber + sports channel reconnect + back-pressure** (sports-api/ws + market 双 channel, exp backoff + bounded queue + drop policy) | 7/10 (Fri) | 老李 + 小余 | **Agreed** | W5-01bis (复用 client 框架) |
+| W5-03bis | 小石 | **SPSC ring buffer 5 capacity 落地** (rigtorp SPSCQueue, lock-free, cap 65536, 接 PM WSS → SignalEngine 单写单读链路) | 7/9 (Thu) | 老周 + 老姜 | **Agreed** | 独立 (无依赖) |
+| W5-04bis | 老李 + 老吴 | **end-to-end smoke test** (`build/scripts/e2e_smoke.sh`: paper engine + Goalserve client + PM client + WSS + SPSC + audit WAL 全链路启动, 60s 跑通, fail-fast) | 7/10 (Fri) | 老周 + GM 老雷 | **Agreed** | W5-01bis ~ W5-03bis 三项全 ✓ |
+| W5-05bis | 小郑 | **Prometheus metrics v0.1** (prometheus-cpp 接入, paper engine 优先 12 指标: rg_evaluate_p99 / paper_orders_total / paper_audit_write_lag / wal_fsync_p99 / wss_reconnect_total / spsc_queue_depth / goalserve_4ts_violation_total / signal_p0_01_triggered / kelly_fraction_avg / virtual_fill_rate / mode_aclass / signer_paper_audit_path) | 7/10 (Fri) | 老吴 + 老韩 | **Agreed** | 小蒋 paper W4 ✓ (Wave 19) |
+| W5-06bis | 小苏 | **UI wireframe v0.2 + Grafana mockup** (paper engine dashboard mockup, 12 指标可视化布局; UI 整体框架 v0.2 含 P0-01 trigger feed + audit timeline) | 7/10 (Fri) | 老钱 + 小宫 | **Agreed** | Wave 20 可并 (与 W5-05bis 并行) |
+| W5-07bis | 小宋 | **integration test framework 起步** (`tests/integration/` 新建; `paper_audit.wal verify` test: 跑 stcpp_paper E2E 60s → parse paper_audit.wal → verify hash chain + 4ts 单调 + AET 12 类全到位 + R-11 build-time 分流不污染真账本) | 7/10 (Fri) | 老韩 + 老唐 + 小蒋 | **Agreed** | 小蒋 paper W4 ✓ + 老唐 audit W4 ✓ |
+| W5-08bis | 老吴 | **Docker compose dev stack** (`docker-compose.dev.yml`: paper engine + prometheus + grafana 三服务, 本地 `docker compose up` 60s 内全起, dev 环境复现性入门) | 7/10 (Fri) | 老周 + 老练 | **Agreed** | W5-05bis Prometheus metrics ✓ |
+| W5-09bis | 老高 | **PR review v1.1** (加 R-20 grep + R-11 grep + persona 边界 grep — 任何 PR 落到 `.claude/agents/<owner>.md` 范围外的代码必 review-block; 落档 `docs/RESEARCH/laogao-pr-review-v1.1.md`) | 7/8 (Tue) | 老郭 + 老练 | **Agreed** | 独立 (无依赖) |
+
+**W5 细化仪式**: 7/8 (Tue) 14:00 W5 mid-week check (老胡主持), 重点盯 W5-04bis E2E smoke test 是否可在 7/10 跑通; 7/10 (Fri) 上午 10:00 老胡 + 老雷 1:1 review 9 项交付, 下午 M1 评审会前确认无阻塞.
+
+### 1.6.5 W2-W5 派单总计 (W3 末 update, W4 Wave 20 中期再 update)
 
 - **W2**: 13 项 (Agreed 11 / Compromised 2 / Escalated 0)
 - **W3**: 13 项 (Agreed 5 / 部分 Agreed 3 / Compromised 5 / Escalated 0) — 实际 ADR-003 整改 + C++ 骨架 + WAL/SlippageModel/测试 framework 落代码超额, evaluate() 代码挪 W4
-- **W4**: 14 项 (Agreed 13 / Compromised 1 / Escalated 0) — 各部门落代码 v0.1
-- **W5**: 9 项 (Agreed 7 / Compromised 1 / Escalated 1) — M1 节点 + 端到端联调
-- **合计**: 49 项 (Agreed 36 / 部分 3 / Compromised 9 / Escalated 1)
+- **W4**: 14 项 (Agreed 13 / Compromised 1 / Escalated 0) — 各部门落代码 v0.1; W4 中期 (Wave 20) **5/14 提前完成 = 36% 中期超额**, 详见 `docs/SPRINTS/sprint-02-w4-midweek-progress.md`
+- **W5**: 9 项 (Agreed 7 / Compromised 1 / Escalated 1) — M1 节点 + 端到端联调 [§1.6.4]
+- **W5 细化** (Wave 20 中期 update): 9 项 (Agreed 9 / Compromised 0 / Escalated 0) — M1 代码补齐 + e2e smoke + Prometheus + Docker compose [§1.6.4-bis]
+- **合计**: **58 项** (Agreed 45 / 部分 3 / Compromised 9 / Escalated 1)
 - **deferred 归档**: 5 项不变 (S2-008 / S2-009 / W3-06 / Sygnum / 跨 vendor KMS)
 
 ---

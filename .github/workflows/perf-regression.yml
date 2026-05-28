@@ -1,0 +1,152 @@
+name: Perf Regression
+# 老姜 W4 Wave 21 — PR perf 回归门禁
+# 红线: PR p99 退化 > 10% → 拦; main push 后更新 baseline.
+#
+# 落: docs/RESEARCH/laojiang-latency-budget-w4-wave21-v1.md §4 §5
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  perf:
+    name: Perf bench (6 模块 vs main baseline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+              cmake ninja-build clang python3
+
+      - name: Prepare WAL paths (R-11 paper kind)
+        run: |
+          # AuditEmitter bench 用 WalKind::PaperAudit 需要 /var/lib/stcpp/paper/ 可写
+          sudo mkdir -p /var/lib/stcpp/paper /var/lib/stcpp/audit
+          sudo chmod 777 /var/lib/stcpp/paper /var/lib/stcpp/audit
+          # tmpfs 加速 + 隔离 (CI runner 默认 /var/lib 在 disk 上, 太慢不准)
+          sudo mount -t tmpfs -o size=512M,mode=0777 tmpfs /var/lib/stcpp/paper || true
+          sudo mount -t tmpfs -o size=512M,mode=0777 tmpfs /var/lib/stcpp/audit || true
+          df -h /var/lib/stcpp/paper
+
+      # ---------- 1. Build PR head ----------
+      - name: Configure (PR head, Release + BENCH=ON)
+        run: |
+          cmake -S . -B build-pr \
+              -G Ninja \
+              -DCMAKE_BUILD_TYPE=Release \
+              -DSTCPP_EXEC_MODE=paper \
+              -DSTCPP_BUILD_BENCH=ON \
+              -DBUILD_TESTING=ON
+
+      - name: Build 6 bench targets (PR head)
+        run: |
+          cmake --build build-pr --parallel 4 --target \
+              bench_slippage \
+              bench_risk_gateway \
+              bench_audit_emitter \
+              bench_paper_signer \
+              bench_virtual_matcher \
+              bench_goalserve_parse
+
+      - name: Run PR bench (JSON output)
+        run: |
+          mkdir -p build-pr/perf-results
+          for B in slippage risk_gateway audit_emitter paper_signer virtual_matcher goalserve_parse; do
+              echo "--- running bench_$B ---"
+              ./build-pr/tests/perf/bench_$B \
+                  --benchmark_format=json \
+                  --benchmark_out=build-pr/perf-results/${B}.json \
+                  --benchmark_min_time=0.5s \
+                  --benchmark_repetitions=5 \
+                  --benchmark_report_aggregates_only=true \
+                  --benchmark_enable_random_interleaving=true
+          done
+          ls -la build-pr/perf-results/
+
+      # ---------- 2. Compare vs baseline ----------
+      - name: Compare vs baseline (tests/perf/baselines/main.json)
+        id: compare
+        run: |
+          python3 scripts/perf_compare.py \
+              build-pr/perf-results \
+              tests/perf/baselines/main.json \
+              --threshold 0.10 \
+              --warn-threshold 0.05 \
+              | tee perf-report.md
+          # exit code 1 → fail; pin 到 step output
+        continue-on-error: false
+
+      - name: Upload perf report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report-${{ github.event.pull_request.number || 'main' }}
+          path: |
+            perf-report.md
+            build-pr/perf-results/*.json
+          retention-days: 30
+
+      - name: Post to PR step summary
+        if: always()
+        run: |
+          echo "## Perf Regression Report" >> $GITHUB_STEP_SUMMARY
+          cat perf-report.md >> $GITHUB_STEP_SUMMARY || echo "(no report)" >> $GITHUB_STEP_SUMMARY
+
+  # ---------- main push 后: 更新 baseline (artifact 持久) ----------
+  update-baseline:
+    name: Update main baseline (post-push)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: perf
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download main perf results
+        uses: actions/download-artifact@v4
+        with:
+          name: perf-report-main
+          path: ./artifact
+
+      - name: Merge into single baseline JSON
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+          merged = {"benchmarks": []}
+          for jf in sorted(Path("artifact/build-pr/perf-results").glob("*.json")):
+              with jf.open() as f:
+                  d = json.load(f)
+              for b in d.get("benchmarks", []):
+                  merged["benchmarks"].append(b)
+          out = Path("tests/perf/baselines/main.json")
+          out.parent.mkdir(parents=True, exist_ok=True)
+          with out.open("w") as f:
+              json.dump(merged, f, indent=2)
+          print(f"wrote {out} with {len(merged['benchmarks'])} benchmarks")
+          PY
+
+      - name: Commit baseline if changed
+        run: |
+          git config user.name  "laojiang-perf-bot"
+          git config user.email "noreply@anthropic.com"
+          if git diff --quiet tests/perf/baselines/main.json; then
+              echo "no baseline change"
+              exit 0
+          fi
+          git add tests/perf/baselines/main.json
+          git commit -m "chore(perf): 更新 main baseline (老姜 W4 Wave 21 CI)"
+          # NOTE: push 留人工 (避免无穷循环 CI). 老姜 在每周一同步 baseline.
+          # git push origin main
+          echo "baseline diff staged but NOT pushed (人工同步)"

@@ -16,7 +16,7 @@
 
 | # | name | persona | 职责一句话 |
 |---|---|---|---|
-| 1 | cpp-chief-architect | 老周 | 架构主权，模块边界 |
+| 1 | cpp-chief-architect | **老周 (主管)** | 架构主权 + A 单元统筹 (ADR-005) |
 | 2 | cpp-hot-path-engineer | 小马 | 热路径 us 级延迟 |
 | 3 | cpp-network-engineer | 老陈 | WSS / 跨洋连接 |
 | 4 | cpp-serialization-engineer | 小赵 | simdjson / glaze |
@@ -36,7 +36,7 @@
 
 | # | name | persona | 职责 |
 |---|---|---|---|
-| 9 | risk-engineer | 老韩 | RiskManager 主权 |
+| 9 | risk-engineer | **老韩 (主管)** | RiskManager 主权 + B 单元统筹 (ADR-005) |
 | 27 | security-engineer | 老沈 | 密钥 / 供应链安全 |
 | 29 | compliance-legal | 老黄 | ToS / KYC / 监管 |
 | 38 | audit-expert | 老唐 | 风控事件审计 |
@@ -45,7 +45,7 @@
 
 | # | name | persona | 职责 |
 |---|---|---|---|
-| 18 | financial-expert | 小梁 | Sharpe / VaR / Kelly |
+| 18 | financial-expert | **小梁 (主管)** | Sharpe / VaR / Kelly + C 单元统筹 (ADR-005) |
 | 19 | quant-signal-research | 小程 | α 信号挖掘 |
 | 20 | quant-backtest | 小蒋 | walk-forward 回测 |
 | 21 | quant-microstructure | 小袁 | orderbook / slippage |
@@ -55,7 +55,7 @@
 
 | # | name | persona | 职责 |
 |---|---|---|---|
-| 22 | data-etl | 小余 | ETL / outlier / 归一化 |
+| 22 | data-etl | **小余 (主管)** | ETL / outlier / 归一化 + D 单元统筹 (ADR-005) |
 | 23 | data-stats | 小董 | A/B test / Bayesian |
 | 24 | data-warehouse | 小田 | Parquet / DuckDB |
 | 37 | goalserve-api-watch | 小段 | Goalserve full feed 探索 |
@@ -65,7 +65,7 @@
 
 | # | name | persona | 职责 |
 |---|---|---|---|
-| 26 | pm-project-manager | 老胡 | milestone / risk / 周报 |
+| 26 | pm-project-manager | **老胡 (主管)** | milestone / risk / 周报 + E 单元统筹 (ADR-005) |
 | 25 | requirements-analyst | 小颖 | spec 拆解 / 验收 |
 | 36 | product-manager | 小杜 | PRD / 未来规划 |
 | 28 | test-replay-engineer | 小宋 | unit + sim + chaos |
@@ -82,7 +82,7 @@
 | 13 | rust-advisor | 老张 | Rust / FFI / crate |
 | 14 | modern-cpp-advisor | 老何 | C++20/23 best practice |
 | 15 | cpo-product-strategy | 老钱 | 北极星 / scope |
-| 16 | chief-architecture-reviewer | 老郭 | 第二意见 / 仲裁 |
+| 16 | chief-architecture-reviewer | **老郭 (F 协调人)** | 第二意见 / 仲裁 + 顾问团协调 (ADR-005) |
 | 17 | code-quality-reviewer | 老高 | PR review / 红线 |
 | 31 | ml-engineer | 小邓 | online learning v2 |
 | 32 | defi-onchain-advisor | 老叶 | Polygon / gas / bridge |

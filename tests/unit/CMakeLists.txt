@@ -239,6 +239,56 @@ gtest_discover_tests(test_p0_01_signal
     PROPERTIES LABELS "unit;signal;strategy;w4"
 )
 
+# 小董 W4 Wave 20: M4.5 7 hard gate statistical framework v1
+#   G1-G7 × pass/fail (14 核心) + boundary (50/49, 8.0/8.01%) + NaN/Inf + bootstrap 确定性 + PIT
+add_executable(test_gate_evaluator
+    test_gate_evaluator.cpp
+)
+target_link_libraries(test_gate_evaluator PRIVATE
+    GTest::gtest_main
+    stcpp_stats
+)
+target_compile_options(test_gate_evaluator PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+target_include_directories(test_gate_evaluator PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_gate_evaluator PRIVATE cxx_std_20)
+target_compile_definitions(test_gate_evaluator PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_gate_evaluator
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;stats;gate;w4"
+)
+
+# 小袁 W4 Wave 20: FillRateModel v0.1 + 8 sport profile + Microprobe 20 测试
+add_executable(test_fill_rate_model
+    test_fill_rate_model.cpp
+)
+target_link_libraries(test_fill_rate_model PRIVATE
+    GTest::gtest_main
+    stcpp_microstructure
+    stcpp_data_goalserve
+)
+target_compile_options(test_fill_rate_model PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+target_include_directories(test_fill_rate_model PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_fill_rate_model PRIVATE cxx_std_20)
+target_compile_definitions(test_fill_rate_model PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_fill_rate_model
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;microstructure;w4"
+)
+
 # 小卢 W4 Wave 19: LiveSection 5 enum 分类 (老李 GM 逆向反推)
 add_executable(test_live_section_classifier
     test_live_section_classifier.cpp
@@ -262,3 +312,37 @@ gtest_discover_tests(test_live_section_classifier
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;signal;strategy;w4"
 )
+
+# 小邓 W4 Wave 20: MLDataHook v0.1 (FeatureSnapshot + TrainingLabel + 4 stage join)
+# stcpp_ml lib R-7 guard: 仅 paper / backtest 模式编译 (含 VirtualFill)
+if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
+    add_executable(test_ml_hook
+        test_ml_hook.cpp
+    )
+    target_link_libraries(test_ml_hook PRIVATE
+        GTest::gtest_main
+        stcpp_ml
+        stcpp_infra_wal
+        stcpp_risk
+        stcpp_execution_paper
+        stcpp_strategy
+    )
+    target_include_directories(test_ml_hook PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(test_ml_hook PRIVATE cxx_std_20)
+    target_compile_definitions(test_ml_hook PRIVATE
+        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    )
+    # TU 内 #include hook.cpp 模板实例化 — 关 offsetof / cast 警告同 audit_emitter 模式
+    target_compile_options(test_ml_hook PRIVATE
+        -Wno-invalid-offsetof
+        -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+        -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+    )
+    gtest_discover_tests(test_ml_hook
+        DISCOVERY_TIMEOUT 30
+        PROPERTIES LABELS "unit;ml;w4"
+    )
+endif()

@@ -15,9 +15,9 @@
 
 ### A. 系统工程部 (Owner: 老周)
 
-| 工号 | 入职 | Persona | name (file) | 单元 | 当前状态 |
-|---|---|---|---|---|---|
-| E-001 | 2026-05-28 | 老周 | cpp-chief-architect | A | Active (Owner) |
+| 工号 | 入职 | Persona | name (file) | 单元 | **职位** | 当前状态 |
+|---|---|---|---|---|---|---|
+| E-001 | 2026-05-28 | 老周 | cpp-chief-architect | A | **Manager** | Active (主管, ADR-005) |
 | E-002 | 2026-05-28 | 小马 | cpp-hot-path-engineer | A | Active |
 | E-003 | 2026-05-28 | 老陈 | cpp-network-engineer | A | Active |
 | E-004 | 2026-05-28 | 小赵 | cpp-serialization-engineer | A | Active |
@@ -46,7 +46,7 @@
 
 | 工号 | 入职 | Persona | name (file) | 单元 | 当前状态 |
 |---|---|---|---|---|---|
-| E-009 | 2026-05-28 | 老韩 | risk-engineer | B | Active (Owner) |
+| E-009 | 2026-05-28 | 老韩 | risk-engineer | B | **Manager** | Active (主管, ADR-005) |
 | E-027 | 2026-05-28 | 老沈 | security-engineer | B | Active |
 | E-029 | 2026-05-28 | 老黄 | compliance-legal | B | Active (合规延后, 当前低载) |
 | E-038 | 2026-05-28 | 老唐 | audit-expert | B | Active |
@@ -55,7 +55,7 @@
 
 | 工号 | 入职 | Persona | name (file) | 单元 | 当前状态 |
 |---|---|---|---|---|---|
-| E-018 | 2026-05-28 | 小梁 | financial-expert | C | Active (Owner) |
+| E-018 | 2026-05-28 | 小梁 | financial-expert | C | **Manager** | Active (主管, ADR-005) |
 | E-019 | 2026-05-28 | 小程 | quant-signal-research | C | Active |
 | E-020 | 2026-05-28 | 小蒋 | quant-backtest | C | Active |
 | E-021 | 2026-05-28 | 小袁 | quant-microstructure | C | Active |
@@ -65,7 +65,7 @@
 
 | 工号 | 入职 | Persona | name (file) | 单元 | 当前状态 |
 |---|---|---|---|---|---|
-| E-022 | 2026-05-28 | 小余 | data-etl | D | Active (Owner) |
+| E-022 | 2026-05-28 | 小余 | data-etl | D | **Manager** | Active (主管, ADR-005) |
 | E-023 | 2026-05-28 | 小董 | data-stats | D | Active |
 | E-024 | 2026-05-28 | (小田, 见 E-008) | data-warehouse | D | Active (兼 A) |
 | E-037 | 2026-05-28 | 小段 | goalserve-api-watch | D | Active |
@@ -75,7 +75,7 @@
 
 | 工号 | 入职 | Persona | name (file) | 单元 | 当前状态 |
 |---|---|---|---|---|---|
-| E-026 | 2026-05-28 | 老胡 | pm-project-manager | E | Active (Owner) |
+| E-026 | 2026-05-28 | 老胡 | pm-project-manager | E | **Manager** | Active (主管, ADR-005) |
 | E-025 | 2026-05-28 | 小颖 | requirements-analyst | E | Active |
 | E-036 | 2026-05-28 | 小杜 | product-manager | E | Active |
 | E-028 | 2026-05-28 | 小宋 | test-replay-engineer | E | Active |
@@ -92,7 +92,7 @@
 | E-013 | 2026-05-28 | 老张 | rust-advisor | F | **Inactive** (撤 Rust 决议, 2026-05-28 起 Standby) |
 | E-014 | 2026-05-28 | 老何 | modern-cpp-advisor | F | Active |
 | E-015 | 2026-05-28 | 老钱 | cpo-product-strategy | F | Active (CPO 平级) |
-| E-016 | 2026-05-28 | 老郭 | chief-architecture-reviewer | F | Active (一票否决权) |
+| E-016 | 2026-05-28 | 老郭 | chief-architecture-reviewer | F | **F-Coordinator** | Active (一票否决权 + 顾问团协调, ADR-005) |
 | E-017 | 2026-05-28 | 老高 | code-quality-reviewer | F | Active |
 | E-031 | 2026-05-28 | 小邓 | ml-engineer | F | Active (ML v2 / M4.5 后激活) |
 | E-032 | 2026-05-28 | 老叶 | defi-onchain-advisor | F | Standby (上链 deferred 至 M4.5) |
@@ -114,6 +114,10 @@
 | E-049 | 老冀 | onchain-ops-engineer | A | **JD 未发布 (5/29 评委追单 P0)** | 老周 / 老韩 / 小梁 (待 ack) | 2026-06-30 | 2026-07-15 | HC-01 候选人池 0 |
 | E-050 | 小秦 | strategy-execution-engineer | C | **JD 未发布 (5/29 评委追单 P0)** | 老周 / 小梁 / 老韩 (待 ack) | 2026-06-30 | 2026-07-15 | HC-02 候选人池 0 |
 | E-051 | 小吕 | quant-engineer | C | **W4 起草 (HR 主动提前)** | 小梁 / 老韩 (待派) | 2026-08-01 (提前自 Q3) | 2026-09-01 | HC-03, M4.5 gate 倒推 |
+| E-052 | 待命名 | wal-storage-engineer | A | **W4 EOW 起草 (老周提请, 老板 5/28 ack)** | 老周 / 老王 / 老姜 | 2026-08-15 | 2026-09-15 | HC-04, 老王单点 P1 红 |
+| E-053 | 待命名 | observability-2 | A | **W4 EOW 起草 (老周+老吴提请, 老板 5/28 ack)** | 老周 / 小郑 / 老吴 | 2026-08-15 | 2026-09-15 | HC-05, 小郑单点 P1 红 |
+| E-054 | 待命名 | ml-data-engineer | D | **W4 EOW 起草 (小余+小邓提请, 老板 5/28 ack)** | 小余 / 小邓 / 小田 | 2026-08-15 | 2026-09-15 | HC-06, 跨边界 |
+| E-055 | 待命名 | qa-integration-engineer | E | **W4 EOW 起草 (老胡+老周提请, 老板 5/28 ack)** | 老胡 / 小宋 / 老周 | 2026-08-15 | 2026-09-15 | HC-07, 小宋单点 P1 红 |
 
 ---
 

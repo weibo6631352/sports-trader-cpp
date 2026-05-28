@@ -64,6 +64,8 @@ endif()
 
 if(STCPP_BUILD_BENCH)
     add_subdirectory(tests/bench)
+    # 老姜 W4 Wave 21: perf 回归 framework (6 模块 + JSON + CI gate)
+    add_subdirectory(tests/perf)
 endif()
 
 # 子模块 (Sprint-2 W3 Wave 18: WAL framework skeleton 起步)
@@ -80,5 +82,11 @@ add_subdirectory(src/stcpp/execution)
 add_subdirectory(src/stcpp/bin)
 # Sprint-2 W4 Wave 19: P0-01 Pinnacle no-vig + LiveSection (小程 spec + 小卢 IC 实施)
 add_subdirectory(src/stcpp/strategy)
+# Sprint-2 W4 Wave 20: 小董 M4.5 7 hard gate statistical framework v1
+add_subdirectory(src/stcpp/stats)
+# Sprint-2 W4 Wave 20: 小袁 microstructure C++ lib v0.1 (FillRateModel + 8 sport profile)
+add_subdirectory(src/stcpp/microstructure)
+# Sprint-2 W4 Wave 20: 小邓 ML 数据钩子 v0.1 (paper / backtest 旁路抓拍 FeatureSnapshot + TrainingLabel)
+add_subdirectory(src/stcpp/ml)
 
-message(STATUS "stcpp project scaffold (Sprint-2 W4 Wave 19). paper engine v0.1 + 3 virtual mock.")
+message(STATUS "stcpp project scaffold (Sprint-2 W4 Wave 20). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1.")
