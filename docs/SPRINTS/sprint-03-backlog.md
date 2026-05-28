@@ -121,3 +121,42 @@
 ---
 
 *其余 Sprint-3 tickets 待老胡 6/29 Planning 会议补充*
+
+---
+
+## Stage-Gate 功能检查 framework (老板 2026-05-29 verbatim 触发)
+
+**来源:** `docs/MEETINGS/2026-05-29-laohu-stage-gate-framework-and-gm-escalation.md`
+
+**老板 verbatim:** "我们每个阶段都要进行功能检查, polymarket专家、金融专家、量化交易专家、ai专家agent都要来检查 ... 直到我们前后端能真正上线盈利, 并且产品经理和用户体验专家他们都对此满意."
+
+| Ticket | 内容 | 依赖 | 目标 Week | Owner |
+|---|---|---|---|---|
+| STG-001 | GM 老雷 拍板 §3.1 Q1-Q4 4 项授权范围 | 老板 verbatim 入约束 | W8 W5 | 老雷 |
+| STG-002 | CPO 老钱 + 老雷 联决盈利量化 KR (§5.1) | STG-001 | Sprint-3 Planning W9 W1 | 老钱 + 老雷 |
+| STG-003 | ADR-027 老郭 主审通过 (核心数据结构 SSOT enforce) | 复盘会 §6 | W8 W5 | 老郭 |
+| STG-004 | Sprint-3 Planning 加 "Stage-Gate framework 落地" 议题 | STG-001/002/003 | W9 W1 | 老胡 |
+| STG-005 | 4 专家 (老李/老叶/小梁/小邓+老何) 进入 Stage-Gate 审查角色预告 | STG-001 | W9 W1 | 老胡 (通过周报 §11) |
+| STG-006 | G1 stage-gate 触发日预排 (M1 达 90% 时) | STG-004 | M1 进度跟踪 | 老胡 |
+
+**Stage-Gate 触发条件 (5 个 stage):**
+
+| Stage | 触发条件 | 目标日期 |
+|---|---|---|
+| G1 (M1 MVP) | 进度 ≥ 90% (34/38 acceptance) | T+6 月 (2026-11-30) |
+| G2 (M2 Sharpe) | OOS Sharpe ≥ 1.0, 500 场样本 ≥ 80% | T+8 月 (2026-12) |
+| G3 (M4.5 paper 7 gate) | paper runtime ≥ 14 天 + 7 gate 全过 | Sprint-3 W11+ |
+| G4 (M5 live 首笔) | G3 通过 + 风控 final ack | T+24 周 |
+| G5 (M6 盈利达标) | PnL ≥ KR 阈值 (待 STG-002 拍板) | T+36 月 |
+
+---
+
+## Risk Registry — Sprint-3 风险条目
+
+| Risk ID | 描述 | 影响 | 概率 | mitigation | Owner |
+|---|---|---|---|---|---|
+| R-STAGE-GATE-001 | GM 老雷 W8 W5 未拍板 §3.1 授权范围 → Stage-Gate framework 启动 hold → Sprint-3 Planning 议题 STG-004 推后 | M | M | 老胡 W8 W5 前再次提醒 GM, 升级路径走 CLAUDE.md §6 (P0 2h 内介入) | 老胡 |
+| R-STAGE-GATE-002 | 盈利量化 KR 未拍板 → G5 验收无 measurable 标准 → 老板"上线盈利"无 measurable | H | M | STG-002 强 enforce Sprint-3 Planning 前完成 | 老钱 + 老雷 |
+| R-ABI-022 | OrderIntent ABI 漏 token_id (GM 错 #22) → Sprint-3 W9-W10 修复, M4.5 W11 paper runtime 推后风险 P1 | H | M | ADR-027 4 项 enforce + W10 末 M4.5 风险评估 | 老胡 (评估) + 老韩 (实施) |
+| R-STAGE-GATE-003 | 4 专家 (老李/老叶/小梁/小邓+老何) 跨单元协调失败 → Stage-Gate 会议无人到 | M | L | STG-005 W9 W1 预告 + 周报 §11 跟进 | 老胡 |
+
