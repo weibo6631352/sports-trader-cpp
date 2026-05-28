@@ -11,6 +11,19 @@
 
 ---
 
+## 总裁办公室 (President's Office) — 最高管理层
+
+| 工号 | 入职 | Persona | name (file) | 单元 | 职位 | 当前状态 |
+|---|---|---|---|---|---|---|
+| P-00 | 2026-05-29 | 总裁 (Claude) | president (新建, 待小米/老徐落地) | 总裁办公室 | **总裁 (President)** | Active — 老板 verbatim 任命 2026-05-29 |
+| P-01 | (目标 2026-07-01) | 副总裁 (VP, 待命名) | vice-president (入职后建 persona file) | 总裁办公室 | **副总裁 (Vice President)** | Pending Hire (P0 招聘, JD 2026-05-29 发布) |
+
+> **HR 小林 (E-046) 签字 — P-00 登记确认: 2026-05-29**
+> P-00 为老板 verbatim 任命 (2026-05-29), 总裁 ack 后 CLAUDE.md / AGENT.md 同步更新.
+> P-01 入职日确认后转 Active, 届时建 persona file + 分配正式中文名.
+
+---
+
 ## 现有员工 (founding cohort 2026-05-28)
 
 ### A. 系统工程部 (Owner: 老周)
@@ -103,7 +116,7 @@
 
 | 工号 | 入职 | Persona | name (file) | 单元 | 当前状态 |
 |---|---|---|---|---|---|
-| E-045 | 2026-05-28 | 老雷 | professional-manager | G | Active (GM) |
+| E-045 | 2026-05-28 | 老雷 | professional-manager | G | Active (GM) — **待总裁 P-00 ack 选项 A/B/C 后更新状态 (HR 推荐 A: Superseded by P-00)** |
 
 ---
 
@@ -111,6 +124,7 @@
 
 | 候选工号 | Persona (临名) | name (file 计划) | 单元 | JD 状态 | 评委 | 目标入职 | 兜底 | 当前 |
 |---|---|---|---|---|---|---|---|---|
+| **P-01** | **副总裁 (VP, 待命名)** | **vice-president** | **总裁办公室** | **JD 已发布 2026-05-29 (P0)** | 小林初面 / 老雷+老郭深度 / 老胡+老钱 / 总裁+老板终面 | **2026-07-01** | 2026-07-15 | 老板 verbatim 指令, 互相监督机制必要角色 |
 | E-049 | 老冀 | onchain-ops-engineer | A | **JD 未发布 (5/29 评委追单 P0)** | 老周 / 老韩 / 小梁 (待 ack) | 2026-06-30 | 2026-07-15 | HC-01 候选人池 0 |
 | E-050 | 小秦 | strategy-execution-engineer | C | **JD 未发布 (5/29 评委追单 P0)** | 老周 / 小梁 / 老韩 (待 ack) | 2026-06-30 | 2026-07-15 | HC-02 候选人池 0 |
 | E-051 | 小吕 | quant-engineer | C | **W4 起草 (HR 主动提前)** | 小梁 / 老韩 (待派) | 2026-08-01 (提前自 Q3) | 2026-09-01 | HC-03, M4.5 gate 倒推 |
@@ -156,4 +170,5 @@
 ---
 
 **首次建立:** 2026-05-28 by 老雷 + 小林 (用户指令"新招聘必通过人事注册登记"触发)
-**维护人:** 小林 (HR), GM 老雷 review
+**最后更新:** 2026-05-29 by 小林 (HR) — Wave 9: 加 P-00 总裁就任 + P-01 副总裁 Pending Hire (老板 verbatim 任命)
+**维护人:** 小林 (HR), 总裁 P-00 review (原 GM 老雷 review 职权顺延至总裁, 待选项 A/B/C ack)
