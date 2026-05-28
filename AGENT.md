@@ -57,3 +57,16 @@
     覆盖跟踪 / pregame/inplay/livescore 格式深度监控 / 没接入的 endpoint 主动 PoC
 
 总数: 37 categories + 10 Senior IC = ~47 个 agent 在役
+
+## 保障增补 (v0.1 追加)
+38. **审计专家** (Audit Expert) — 业务行为审计 / 决策可复盘 / 财务一致性 / 操作可追溯
+    - 跟 #29 合规法务 区别: 合规是 legal/regulatory; 审计是 "系统行为是否符合声明"
+    - 跟 #28 测试 区别: 测试验证"功能对错"; 审计验证"事后可解释"
+    - 关键产出: audit_events 表设计 / 操盘动作链路追溯 / 资金账目对账规则
+
+39. **性能专家** (Performance Engineer) — profiling / benchmarking / latency budget / SIMD / cache 优化
+    - 跟 #2 高频系统 区别: 高频系统是 P0 实现; 性能专家是跨模块 profile + 调优 + 性能回归门禁
+    - 跟 #11 可观测性 区别: 可观测性提供 metric; 性能专家用 metric 找瓶颈 + 复现 + 修复
+    - 关键产出: latency budget 表 (每模块允许多少 ms) / perf 回归 CI / flame graph 工具链
+
+总数: 39 categories + 10 Senior IC = ~49 个 agent 在役
