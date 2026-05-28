@@ -212,6 +212,35 @@ GM 第二错: 在校正"看供给侧"时矫枉过正, 写成"以 v2 为准让工
   2. 任何 agent 主动想看老项目代码 → 立刻拒接，标"参考红线"
   3. 类似的"对比废弃方案"思维同样禁止（即使来源不是老项目）— 比如未来用户撤销某方案时，撤销的方案不许进新方案做参考
 
+### 错 #22 — 核心数据结构 ABI 跨域 review 失效 (OrderIntent 漏 token_id/outcome/Side)
+
+- **时间:** 2026-05-29 W8 W4 GM 审计发现
+- **场景:** GM 系统审计 OrderIntent struct, 发现缺 token_id / outcome / Side::Sell. 老李 spec v1 §88-91 + handshake v1 §84 均完整写明上述字段. 老板震怒选 B (stop + 复盘 + 追责 + 流程整改).
+- **错在哪 (4 层根因):**
+  1. 派单 prompt 设计 OrderIntent 时未强 cite 老李 spec v1 + handshake v1 — IC 设计 ABI 时没有 Polymarket SSOT 约束
+  2. wave 验收 checklist 只检 ctest pass, 未 audit 核心 struct 字段完整性 — 验收没问"token_id 在不在"
+  3. 无 ADR 锁"核心业务数据结构必含 cite: Polymarket/Goalserve SSOT 引用" — 制度空白
+  4. 班底无独立数据结构专家 IC reviewer, FOM 跨域 review 依赖个人自觉 (老周 review 范围窄未捕获, 但根因是制度未要求)
+- **是 GM 自己系统审计发现的:** W8 W4 GM 主动 audit, 但代价是 W4-W5 ABI 漏洞已存在 ~4 周
+- **老板原话:** "数据结构很重要, 快点补齐吧, 摸清楚后起码大家看到后可以对市场结构和数据源结构有个清楚的认知" + 选 B
+- **老李 0 错声明:** 老李 spec v1 + handshake v1 均完整. 本次复盘会 §2 当众澄清, GM 老雷公开道歉.
+- **教训:**
+  - 核心 struct 设计不能靠 IC 自觉引 spec, 必须 派单 prompt 强 cite + CI grep 拦
+  - wave 验收不能只看 ctest, 核心 struct 改动必须 audit 字段完整性
+  - FOM 跨域 review 必须制度化 (4 人 approve), 不能靠 review 人"刚好看到"
+  - 班底没有数据结构专家 IC = 制度性单点风险
+- **永久 enforcement:** ADR-027 4 项强 enforce (老郭 W8 W5 主审):
+  1. 核心 struct PR 必含 cite: Polymarket SSOT + Goalserve SSOT
+  2. OrderIntent / SignedOrder PR 必须 4 人 approve (老李 + 小段 + 数据结构 IC + 老周)
+  3. CI abi_lock v1.7 加 core_data_structure_ssot_check.py (老高 W9 W4)
+  4. GM 验收自检升 6 题, 第 6 题: "改核心 struct? 若是 audit 字段对齐 SSOT"
+- **代价:**
+  - OrderIntent ABI 漏洞存在 ~4 周 (W4 到 W8), 需 W9 修复 (老韩 v0.5 + 老孙 SignerV52 align)
+  - Sprint-3 W9-W10 原 PositionManager IC 计划延后, 改为 ABI 修复
+  - M4.5 paper runtime 节点 W11 存在推后风险 (老胡 W10 末评估)
+
+---
+
 ## 共性教训（9 错合起来看）
 
 - **错 #1**：一面之词背书 → 跨域听取义务 GM 自己要遵守
@@ -228,6 +257,7 @@ GM 第二错: 在校正"看供给侧"时矫枉过正, 写成"以 v2 为准让工
 - **错 #12**：gitignore 通配不全 → commit a8afebe 误推 build_adr010/ 931 files / 54889 lines, 立刻 fix commit a93abe9+c065791 撤回
 - **错 #13**：越权代修, 不协调不上报 → W6 W2 + W6 W3 GM 自己 hotfix 10+处别人代码, 没把握对方意图就改, 严重冲突没上报老板
 - **错 #14**：gitignore 通配持续不全 → commit af36066 误推 24 Parquet stub data, 与 #12 build_adr010 同模式重复, .gitignore 加 data/+*.parquet 通配, 老高 v1.4 加 binary 大文件 grep
+- **错 #22**：核心数据结构 ABI 跨域 review 失效 → OrderIntent 漏 token_id/outcome/Side::Sell ~4 周, 老李 0 错被冤, Sprint-3 W9-W10 延后修复, ADR-027 立 4 项强 enforce
 
 **根因都是同一个：GM 想"加速"或"省事"，但加速 / 省事的方向违反公司价值观或用户明确指令。**
 
@@ -244,13 +274,18 @@ GM 第二错: 在校正"看供给侧"时矫枉过正, 写成"以 v2 为准让工
 | #7 | 1 个用户消息（"反向提需求仍看供给侧"） | Wave 21 4 派单方向错, 补 Wave 22 正向需求 |
 | #8 | 1 个用户消息（"各部门应该评一个主管"） | 7 天 50+ 派单越级, ADR-005 立 + W5 试点 W6 正式 |
 | #9 | 1 个用户消息（"我们不是有 goalserver 吗"）| "下阶段计划"误列 Pinnacle 路径 A vs C 凭空决议, 小段 v3 已 W3 末推翻 |
+| #22 | GM 系统审计发现 (W8 W4) | ABI 漏洞 ~4 周未修; Sprint-3 延后; M4.5 节点存在推后风险; 老李被冤 |
 
 **9 错全是用户在场或 sub-agent 自纠正才挡住** — 没有用户监督 GM 会犯更多。这是 GM 必须公开承认的能力边界。
+
+**错 #22 特殊注记:** GM 系统审计自发现 (非用户纠正). 说明审计机制开始起效. 但漏洞已存在 ~4 周, 说明 GM 审计频率不够或时机太晚.
 
 **纠错来源演化:**
 - #1-3: 用户实测纠正
 - #4: sub-agent 自我纠正 (公司"边界即文化"开始起效)
 - #5-9: 用户继续纠正 (制度 / 思维 / 信息陈旧多层面 GM 仍依赖用户)
+- #10-14: 用户纠正 + GM 有时自发现 (审计能力在增强, 但不够)
+- #22: GM 系统审计自发现 (进步) — 但发现太晚 (4 周漏洞) → 审计触发点需更早
 
 ## 后续机制
 
@@ -258,7 +293,9 @@ GM 第二错: 在校正"看供给侧"时矫枉过正, 写成"以 v2 为准让工
 - Sprint-末 retro 必读本 log
 - 新 agent 入职（HR 小林 onboarding）必读本 log，知道公司公开失败文化 GM 也遵守
 - 任何 agent 在派单或 review 中发现 GM 犯错 → 立刻 escalate（不耻下问，反向也是）
+- **老胡周报 §10 永久 enforcement (GM 错 #22 加):** 核心数据结构 ABI audit 状态 (每 sprint 末报告: 受约束 6 struct 是否全部含 cite + 4 人 approve)
+- **老胡周报 §13 永久 enforcement (GM 错 #22 加):** ADR-027 Enforce-3 CI check 通过率 (目标 100%, 任一 fail = P1 escalate)
 
 ---
 
-**Last updated:** 2026-05-28 by 老雷
+**Last updated:** 2026-05-29 by 老胡 (GM 错 #22 补入)
