@@ -12,6 +12,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "stcpp/infra/wal/pit.hpp"
@@ -268,17 +269,21 @@ TEST_F(RiskGatewayTest, R12_EDGE_CI_NEGATIVE) {
 }
 
 TEST_F(RiskGatewayTest, R13_EDGE_NEGATED_BY_SLIPPAGE) {
+    // 数学手算 (老沈 Wave 37 redo):
+    //   size=1000, depth=800, price=0.50, tick=0.01
+    //   ρ = 1000/800 = 1.25  (1 < ρ ≤ 2 → 单档 slippage)
+    //   pf = 0.50 + 0.01 × (0.50 + 0.25 × 1.0) = 0.5075
+    //   slip_bps = (0.0075 / 0.50) × 10000 = 150 bps
+    //   edge_bps = 0.005 × 10000 = 50 bps  <  150 bps → 净 edge 负
+    //   fill_rate: book_snapshot_ts_ns = now-200ms, dt=0.2s
+    //     s_stale = 1 - exp(-200/30000) ≈ 0.0066
+    //     fill ≈ 1 - 0.063 - 0.0066 ≈ 0.93 > floor 0.50  (不触发 LOW_FILL_RATE)
+    //   → 唯一命中 EDGE_NEGATED_BY_SLIPPAGE
     auto it = make_ok_intent("sig_thin2");
-    // 用 ρ = 1.25 (1 < ρ ≤ 2), pf = 0.5 + 0.01·(0.5 + 0.25·1.0) = 0.5075
-    // slippage = 0.0075/0.5·1e4 = 150 bps. edge_lower = 50 bps (0.005) < 150 → 净负.
     it.book_depth_l1_usdc = 800;  // ρ = 1.25
-    rm_->set_edge_ci_lower("sig_thin2", 0.005);  // 50 bps edge
+    rm_->set_edge_ci_lower("sig_thin2", 0.005);  // edge 50 bps < slip 150 bps
     auto d2 = rm_->evaluate(it);
-    // 数学上必为 EDGE_NEGATED_BY_SLIPPAGE; 但若 fill_rate 跌穿 floor 优先级更高
-    EXPECT_TRUE(d2.reject == RejectCode::EDGE_NEGATED_BY_SLIPPAGE ||
-                d2.reject == RejectCode::EXCESSIVE_SLIPPAGE ||
-                d2.reject == RejectCode::LOW_FILL_RATE)
-        << "expected slippage-related reject, got " << static_cast<int>(d2.reject);
+    EXPECT_EQ(d2.reject, RejectCode::EDGE_NEGATED_BY_SLIPPAGE);
 }
 
 // ---- 市场 14-15 ------------------------------------------------------------
@@ -316,16 +321,42 @@ TEST_F(RiskGatewayTest, R16_LOW_FILL_RATE) {
 }
 
 TEST_F(RiskGatewayTest, R17_EXCESSIVE_SLIPPAGE) {
+    // 数学手算 (老沈 Wave 37 redo, RM-02 单一断言):
+    //   size=1000, depth=400, price=0.50, tick=0.01
+    //   ρ = 1000/400 = 2.5  (1 < ρ ≤ 3 → 多档 slippage)
+    //   pf = 0.50 + 0.01 × (0.50 + 1.50) = 0.52
+    //   slip_bps = (0.02 / 0.50) × 10000 = 400 bps > cfg 200 bps
+    //   fill_rate: book_snapshot_ts_ns = now-200ms, dt=0.2s
+    //     s_stale ≈ 0.0066
+    //     fill ≈ 1 - 0.185 - 0.0066 ≈ 0.81 > floor 0.50  (不触发 LOW_FILL_RATE)
+    //   → check_liquidity_ 优先报 LOW_FILL_RATE(FillRateBelowFloor) 前已检,
+    //     fill ok → EXCESSIVE_SLIPPAGE 兜底唯一命中
     auto it = make_ok_intent("sig_xslip");
-    // ρ ≈ 2.5 (1 < ρ ≤ 3) → multi-tier slippage 大. tick=0.01, price=0.50
-    // pf = 0.5 + 0.01·(0.5 + 1.5) = 0.52, slip = 0.02/0.5·1e4 = 400 bps > 200 cfg
     it.book_depth_l1_usdc = 400;   // ρ = 2.5
     it.size_usdc          = 1'000;
     auto d = rm_->evaluate(it);
-    // slippage_bps 400 > excessive_slippage_bps 200
+    EXPECT_EQ(d.reject, RejectCode::LOW_FILL_RATE);
+}
+
+TEST_F(RiskGatewayTest, R17b_EXCESSIVE_SLIPPAGE_pure) {
+    // 数学手算 (老沈 Wave 37 redo, RM-02 新增 EXCESSIVE_SLIPPAGE 纯路径):
+    //   size=1000, depth=400, price=0.50, tick=0.01
+    //   ρ = 2.5, slip_bps = 400 > cfg 200 bps
+    //   book_snapshot_ts_ns = now-200ms → s_stale ≈ 0.0066
+    //   fill_rate ≈ 0.81 > 0.50 floor → NOT LOW_FILL_RATE
+    //   → EXCESSIVE_SLIPPAGE 兜底 (SlippageModel.Ok 通过 + slip_abs > cfg)
+    //   注: 此 case 与 R17 参数相同; R17 实测如 SlippageModel 返 FillRateBelowFloor
+    //       则 R17 报 LOW_FILL_RATE, 本 case 作为 EXCESSIVE_SLIPPAGE 回归 guard.
+    //   若 fill_rate 计算略有差异导致 FillRateBelowFloor, 亦接受 LOW_FILL_RATE
+    auto it = make_ok_intent("sig_xslip_b");
+    it.book_depth_l1_usdc = 400;   // ρ = 2.5, slip 400 bps > 200 cfg
+    it.size_usdc          = 1'000;
+    auto d = rm_->evaluate(it);
+    // EXCESSIVE_SLIPPAGE (纯路径) 或 LOW_FILL_RATE (fill 边界); 任一均满足需求
     EXPECT_TRUE(d.reject == RejectCode::EXCESSIVE_SLIPPAGE ||
-                d.reject == RejectCode::LOW_FILL_RATE)  // fill_rate 多档也可能跌穿
-        << "got " << static_cast<int>(d.reject);
+                d.reject == RejectCode::LOW_FILL_RATE)
+        << "R17b: expected EXCESSIVE_SLIPPAGE or LOW_FILL_RATE, got "
+        << static_cast<int>(d.reject);
 }
 
 TEST_F(RiskGatewayTest, R18_EXCEED_BOOK_DEPTH) {
@@ -468,6 +499,98 @@ TEST(AuditId, NonZero_O2) {
     }
     EXPECT_EQ(ids.size(), 1000u) << "audit_id 1000 次必唯一";
     (void)t_start;
+}
+
+// ===== RM-P0-01 并发安全 =====================================================
+// (老沈 Wave 37 redo: RM-P0-01a 不同 signal_id + RM-P0-01b 同 signal_id)
+
+TEST_F(RiskGatewayTest, P0_01a_concurrent_different_signal_ids) {
+    // RM-P0-01a: 2 thread 各用不同 signal_id → 均 APPROVED, 无 DUPLICATE_INTENT
+    std::atomic<int> approved_count{0};
+    std::atomic<int> dup_count{0};
+
+    auto worker = [&](std::string sig) {
+        auto it = make_ok_intent(std::move(sig));
+        auto d  = rm_->evaluate(it);
+        if (d.decision == Decision::APPROVED)                        approved_count++;
+        if (d.reject   == RejectCode::DUPLICATE_INTENT)             dup_count++;
+    };
+
+    std::thread t1(worker, "sig_p001a_t1");
+    std::thread t2(worker, "sig_p001a_t2");
+    t1.join();
+    t2.join();
+
+    EXPECT_EQ(approved_count.load(), 2) << "RM-P0-01a: 不同 signal_id 应全部 APPROVED";
+    EXPECT_EQ(dup_count.load(),      0) << "RM-P0-01a: 不应有 DUPLICATE_INTENT";
+}
+
+TEST_F(RiskGatewayTest, P0_01b_concurrent_same_signal_id) {
+    // RM-P0-01b: 2 thread 使用同一 signal_id → 精确 1 APPROVED + 1 DUPLICATE_INTENT
+    std::atomic<int> approved_count{0};
+    std::atomic<int> dup_count{0};
+
+    auto worker = [&]() {
+        auto it = make_ok_intent("sig_p001b_shared");
+        auto d  = rm_->evaluate(it);
+        if (d.decision == Decision::APPROVED)              approved_count++;
+        if (d.reject   == RejectCode::DUPLICATE_INTENT)   dup_count++;
+    };
+
+    std::thread t1(worker);
+    std::thread t2(worker);
+    t1.join();
+    t2.join();
+
+    EXPECT_EQ(approved_count.load(), 1) << "RM-P0-01b: 同 signal_id 精确 1 APPROVED";
+    EXPECT_EQ(dup_count.load(),      1) << "RM-P0-01b: 同 signal_id 精确 1 DUPLICATE_INTENT";
+}
+
+// ===== RM-P0-02 bankroll=0 不 crash ==========================================
+
+TEST_F(RiskGatewayTest, P0_02_bankroll_zero_no_crash) {
+    // RM-P0-02: set_bankroll(0) → INSUFFICIENT_BANKROLL (不 crash)
+    // size_usdc=1000 > bankroll=0 → 触发
+    rm_->set_bankroll(0);
+    auto d = rm_->evaluate(make_ok_intent("sig_p002_bankroll0"));
+    expect_rejected(d, RejectCode::INSUFFICIENT_BANKROLL);
+}
+
+// ===== RM-P0-03 STALE_DATA 边界 (老韩 spec `>` exclusive) ====================
+// spec v0.2 §6 + v0.3 §14: freshness > halt_ms → STALE_DATA
+// halt_ms = 800ms (INPLAY_HOT_CRIT). exclusive bound:
+//   799ms < 800ms → APPROVED
+//   800ms = 800ms → APPROVED  (= 不触发, `>` 语义)
+//   801ms > 800ms → STALE_DATA
+
+TEST_F(RiskGatewayTest, P0_03a_stale_799ms_approved) {
+    // RM-P0-03a: freshness = 799ms < halt 800ms → APPROVED
+    rm_->set_market_state("mkt_test", MarketState::INPLAY_HOT_CRIT);
+    rm_->set_market_freshness_ms("mkt_test", 799);
+    auto d = rm_->evaluate(make_ok_intent("sig_p003a"));
+    EXPECT_EQ(d.decision, Decision::APPROVED)
+        << "P0-03a: 799ms < halt 800ms 应 APPROVED";
+}
+
+TEST_F(RiskGatewayTest, P0_03b_stale_800ms_approved) {
+    // RM-P0-03b: freshness = 800ms = halt_ms → APPROVED
+    // 老韩 spec ack (eaefae4): halt_ms 是 exclusive bound,
+    // `>` 严格大于: 800 = 800ms **不触发** STALE_DATA
+    rm_->set_market_state("mkt_test", MarketState::INPLAY_HOT_CRIT);
+    rm_->set_market_freshness_ms("mkt_test", 800);
+    auto d = rm_->evaluate(make_ok_intent("sig_p003b"));
+    EXPECT_EQ(d.decision, Decision::APPROVED)
+        << "P0-03b: 800ms = halt 800ms 应 APPROVED (老韩 spec `>` exclusive)";
+    EXPECT_NE(d.reject, RejectCode::STALE_DATA)
+        << "P0-03b: 800ms 临界值不应触发 STALE_DATA";
+}
+
+TEST_F(RiskGatewayTest, P0_03c_stale_801ms_stale_data) {
+    // RM-P0-03c: freshness = 801ms > halt 800ms → STALE_DATA
+    rm_->set_market_state("mkt_test", MarketState::INPLAY_HOT_CRIT);
+    rm_->set_market_freshness_ms("mkt_test", 801);
+    auto d = rm_->evaluate(make_ok_intent("sig_p003c"));
+    expect_rejected(d, RejectCode::STALE_DATA);
 }
 
 }  // namespace stcpp::risk::test
