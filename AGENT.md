@@ -1,72 +1,75 @@
-# Agent Roster v0 — sports-trader-cpp
+# Agent Roster — sports-trader-cpp
 
-35 agent 班底, 分 7 类. 详细职责 + 协作规约由首次会议输出 v1.
+49 agent (39 类 + 10 Senior IC). 每个 agent 按 Claude Code 规范独立文件在 `.claude/agents/`.
+
+调用方式: 用 Claude Code 的 sub-agent 调用机制, 用 agent name (kebab-case) 召唤.
+
+详细职责见 `.claude/agents/NN-<name>.md`. AGENT.md 仅作索引 + 协作规约入口.
+
+---
 
 ## 核心实施 C++ (12)
-1. C++ 首席架构师
-2. C++ 高频系统工程师
-3. C++ 网络协议工程师
-4. C++ 数据/序列化工程师
-5. C++ 持久化工程师
-6. 加密签名专家
-7. Polymarket 协议专家
-8. 体育市场专家
-9. 风控工程师
-10. Linux SRE / DevOps
-11. 可观测性工程师
-12. 前端工程师
+| # | name | file |
+|---|---|---|
+| 1 | cpp-chief-architect | [01](.claude/agents/01-cpp-chief-architect.md) |
+| 2 | cpp-hot-path-engineer | [02](.claude/agents/02-cpp-hot-path-engineer.md) |
+| 3 | cpp-network-engineer | [03](.claude/agents/03-cpp-network-engineer.md) |
+| 4 | cpp-serialization-engineer | [04](.claude/agents/04-cpp-serialization-engineer.md) |
+| 5 | cpp-persistence-engineer | [05](.claude/agents/05-cpp-persistence-engineer.md) |
+| 6 | crypto-signing-expert | [06](.claude/agents/06-crypto-signing-expert.md) |
+| 7 | polymarket-protocol-expert | [07](.claude/agents/07-polymarket-protocol-expert.md) |
+| 8 | sports-market-expert | [08](.claude/agents/08-sports-market-expert.md) |
+| 9 | risk-engineer | [09](.claude/agents/09-risk-engineer.md) |
+| 10 | linux-sre-devops | [10](.claude/agents/10-linux-sre-devops.md) |
+| 11 | observability-engineer | [11](.claude/agents/11-observability-engineer.md) |
+| 12 | frontend-engineer | [12](.claude/agents/12-frontend-engineer.md) |
 
 ## 顾问 (5)
-13. Rust 顾问
-14. 现代 C++ 顾问 (C++20/23)
-15. CPO (首席产品)
-16. 首席架构评审
-17. 代码质量评审
+| 13 | rust-advisor | [13](.claude/agents/13-rust-advisor.md) |
+| 14 | modern-cpp-advisor | [14](.claude/agents/14-modern-cpp-advisor.md) |
+| 15 | cpo-product-strategy | [15](.claude/agents/15-cpo-product-strategy.md) |
+| 16 | chief-architecture-reviewer | [16](.claude/agents/16-chief-architecture-reviewer.md) |
+| 17 | code-quality-reviewer | [17](.claude/agents/17-code-quality-reviewer.md) |
 
 ## 金融 / 量化研究 (4)
-18. 金融专家 (资本市场 / 衍生品 / VaR)
-19. 量化研究 - 信号 / α
-20. 量化研究 - Backtest
-21. 量化研究 - Microstructure
+| 18 | financial-expert | [18](.claude/agents/18-financial-expert.md) |
+| 19 | quant-signal-research | [19](.claude/agents/19-quant-signal-research.md) |
+| 20 | quant-backtest | [20](.claude/agents/20-quant-backtest.md) |
+| 21 | quant-microstructure | [21](.claude/agents/21-quant-microstructure.md) |
 
 ## 数据分析 (3)
-22. 数据 - ETL / 清洗
-23. 数据 - Stats / Bayesian
-24. 数据 - 数据仓库
+| 22 | data-etl | [22](.claude/agents/22-data-etl.md) |
+| 23 | data-stats | [23](.claude/agents/23-data-stats.md) |
+| 24 | data-warehouse | [24](.claude/agents/24-data-warehouse.md) |
 
 ## 业务保障 (5)
-25. 需求分析师
-26. PM 项目经理
-27. 安全工程师
-28. 测试 / 回放工程师
-29. 合规 / 法务顾问
+| 25 | requirements-analyst | [25](.claude/agents/25-requirements-analyst.md) |
+| 26 | pm-project-manager | [26](.claude/agents/26-pm-project-manager.md) |
+| 27 | security-engineer | [27](.claude/agents/27-security-engineer.md) |
+| 28 | test-replay-engineer | [28](.claude/agents/28-test-replay-engineer.md) |
+| 29 | compliance-legal | [29](.claude/agents/29-compliance-legal.md) |
 
 ## 跨域 (5)
-30. 博彩行业专家
-31. 机器学习工程师
-32. 链上 / DeFi 顾问
-33. AI Ops / Agent 协作工程师
-34. 外部接口调研 / API Watch (通用 — Polymarket + 依赖库 + 竞品)
+| 30 | betting-industry-expert | [30](.claude/agents/30-betting-industry-expert.md) |
+| 31 | ml-engineer | [31](.claude/agents/31-ml-engineer.md) |
+| 32 | defi-onchain-advisor | [32](.claude/agents/32-defi-onchain-advisor.md) |
+| 33 | ai-ops-collaboration | [33](.claude/agents/33-ai-ops-collaboration.md) |
+| 34 | api-watch-general | [34](.claude/agents/34-api-watch-general.md) |
 
-## 主力 IC 池 + 战术产品
-35. 高级 C++ 开发工程师 (Senior IC Pool × 10)
-36. 产品经理 (Product Manager — PRD / 用户故事 / 验收 criteria)
+## IC 池 + 产品 + 调研 + 审计 + 性能 (5)
+| 35 | senior-cpp-ic-pool | [35](.claude/agents/35-senior-cpp-ic-pool.md) |
+| 36 | product-manager | [36](.claude/agents/36-product-manager.md) |
+| 37 | goalserve-api-watch | [37](.claude/agents/37-goalserve-api-watch.md) |
+| 38 | audit-expert | [38](.claude/agents/38-audit-expert.md) |
+| 39 | performance-engineer | [39](.claude/agents/39-performance-engineer.md) |
 
-## 直播源专精 (1)
-37. **Goalserve 接口调研专家** — full_package_feed.txt 全量探索 / 新 sport+league
-    覆盖跟踪 / pregame/inplay/livescore 格式深度监控 / 没接入的 endpoint 主动 PoC
+---
 
-总数: 37 categories + 10 Senior IC = ~47 个 agent 在役
+## 协作规约 (v0, Meeting γ 已 propose v1 见 `docs/meeting-gamma-process.md`)
 
-## 保障增补 (v0.1 追加)
-38. **审计专家** (Audit Expert) — 业务行为审计 / 决策可复盘 / 财务一致性 / 操作可追溯
-    - 跟 #29 合规法务 区别: 合规是 legal/regulatory; 审计是 "系统行为是否符合声明"
-    - 跟 #28 测试 区别: 测试验证"功能对错"; 审计验证"事后可解释"
-    - 关键产出: audit_events 表设计 / 操盘动作链路追溯 / 资金账目对账规则
+- **RACI 决策权矩阵**: 见 meeting-gamma-process.md 节 H
+- **召唤 trigger**: P0 路径改动 24h SLA review / 安全合规相关超时 block 而非默认通过
+- **冲突仲裁**: 2 agent 分歧 → 第 3 agent → CPO+PM → 用户
+- **会议节奏**: 异步周报 + 事件触发 + milestone 评审
+- **红线**: 必读 `docs/LESSONS_FROM_PYTHON.md` (拒绝继承的 Python 反模式)
 
-39. **性能专家** (Performance Engineer) — profiling / benchmarking / latency budget / SIMD / cache 优化
-    - 跟 #2 高频系统 区别: 高频系统是 P0 实现; 性能专家是跨模块 profile + 调优 + 性能回归门禁
-    - 跟 #11 可观测性 区别: 可观测性提供 metric; 性能专家用 metric 找瓶颈 + 复现 + 修复
-    - 关键产出: latency budget 表 (每模块允许多少 ms) / perf 回归 CI / flame graph 工具链
-
-总数: 39 categories + 10 Senior IC = ~49 个 agent 在役
