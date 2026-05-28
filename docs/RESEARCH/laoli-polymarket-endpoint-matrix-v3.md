@@ -2,6 +2,7 @@
 
 - Owner: 老李 (polymarket-protocol-expert)
 - Date: 2026-05-28
+- Last measured: 2026-05-28 13:33 UTC (data: `laoli-polymarket-matrix-v2-20260528-133323.txt`, v3 沿用 v2 probe + 14 HMAC vector 补测)
 - Sprint: Sprint-2 W1 交付 (承诺 4 项中第 2 / 3 项, 第 1 项 14 vector 含在本文附录)
 - 关联:
   - `docs/RESEARCH/laoli-polymarket-endpoint-matrix-v2.md` (v2 主体)

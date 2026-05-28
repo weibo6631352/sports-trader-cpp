@@ -3,6 +3,7 @@
 - Owner: 老陈 (cpp-network-engineer)
 - 数据源贡献: 老陈 (跨洋链路 bench), 老李 (Polymarket 47 endpoint), 小段 (Goalserve 219 探针 + 官方文档), 老叶 (Polygon RPC 34 入口)
 - Date: 2026-05-28
+- Last measured: 2026-05-28 13:30 UTC (data 汇总: `laochen-network-bench-*.csv` 跨洋 bench 主时段; 上游 owner probe: 老李 13:33 / 小段 12:30 + 13:33 + 15:29 / 老叶 13:33 UTC)
 - Status: Living Document (月度 sweep 由小冯接手)
 - 验收人: GM 老雷 + 老周 (架构, 性能预算) + 老姜 (perf, latency-budget v2)
 - 关联文档 (原始数据, **本文不重述**, 仅交叉引用):

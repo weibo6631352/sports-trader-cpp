@@ -176,7 +176,8 @@
 ## 健康度
 
 - 最近季度漂移报告 v2: [`RESEARCH/xiaomi-docs-health-2026-05-28-v2.md`](RESEARCH/xiaomi-docs-health-2026-05-28-v2.md)
-- 评级: A- (从 Sprint-1 末 B+ 提升, 详见 v2 报告)
+- 评级: **A** (W3 Wave 18 R-20 12 篇 frontmatter 回灌完成后从 A- 升级; 10/12 完全合规 + 2/12 标 [需 owner confirm] 待 v2 升版补; 详见 `RESEARCH/xiaomi-r20-backfill-2026-05-28.md`)
+- R-20 维度: 12 篇不合规 → 10 篇完全合规 (10/12 = 83%) + 2 篇部分合规 ([需 owner confirm]); R-20 得分 60% (C) → ~92% (A); 总分 85.7 → 92.0
 
 ---
 

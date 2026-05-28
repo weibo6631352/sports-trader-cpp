@@ -1,6 +1,5 @@
 name: PR Checks
-
-# 老高 v1 §8 + 小宋 v0.2 §4 (R-20 PIT grep 7 项) + 老李 v3 §B (HMAC bug grep)
+# 老高 v1 §8 + 小宋 v0.2 §4 (R-20 PIT 7 项 + W3 深化) + 老李 v3 §B HMAC bug 4
 # 红线: PR ≤ 8 min, 命中即 reject
 
 on:
@@ -11,75 +10,73 @@ on:
 
 jobs:
   redline-grep:
-    name: Redline grep (R-20 PIT + 老李 HMAC bug 4)
+    name: Redline grep (R-20 + HMAC + R-11)
     runs-on: ubuntu-latest
-    timeout-minutes: 1
+    timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
-
       - name: R-20 PIT redline grep
         run: |
           set -e
           fail=0
-          # 1. now() 不带 UTC
+          # 1. now() 不带 UTC/MONOTONIC 注释
           if git grep -nE 'std::chrono::system_clock::now\(\)' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' \
-             | grep -v 'CLOCK_MONOTONIC\|UTC\|epoch_ns' ; then
-            echo "::error::R-20 §2.2: now() 必须带 UTC / CLOCK_MONOTONIC_RAW 注释"
-            fail=1
+             | grep -v 'CLOCK_MONOTONIC\|UTC\|epoch_ns'; then
+            echo "::error::R-20 §2.2: now() 必须带 UTC/CLOCK_MONOTONIC_RAW 注释"; fail=1
           fi
-          # 2. localtime / mktime 禁
-          if git grep -nE '\b(localtime|mktime)\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' ; then
-            echo "::error::R-20 §6: 禁 localtime / mktime, 统一 UTC int64 epoch_ns"
-            fail=1
+          # 2. localtime/mktime 禁
+          if git grep -nE '\b(localtime|mktime)\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp'; then
+            echo "::error::R-20 §6: 禁 localtime/mktime, 统一 UTC int64 epoch_ns"; fail=1
           fi
           # 3. 时间字段 int 而非 int64
           if git grep -nE '\bint\s+\w*_(ts|time|timestamp)\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' \
-             | grep -v int64 ; then
-            echo "::error::R-20 §6: 时间字段必须 int64, 防溢出"
-            fail=1
+             | grep -v int64; then
+            echo "::error::R-20 §6: 时间字段必须 int64"; fail=1
           fi
-          # 4. signal struct 缺 feature_snapshot_id (老韩 v0.3 INVALID_INTENT.sub_reason 联签)
-          # (CI W3 后小宋详化)
+          # 4/5/6: signal/IPC/audit struct 必须含 feature_snapshot_id + 4 ts (小宋 W3 深化)
+          for pat in 'struct\s+\w*(Signal|Intent)\b:feature_snapshot_id' \
+                     'struct\s+\w*(Intent|RmRequest|RiskRequest)\b:event_ts data_source_ts ingestion_ts as_of_ts' \
+                     'struct\s+\w*(AuditRecord|WalEntry|AuditEntry)\b:event_ts data_source_ts ingestion_ts as_of_ts'; do
+            decl="${pat%:*}"; reqs="${pat#*:}"
+            for f in $(git grep -lE "$decl" -- 'include/**/*.hpp' 'src/**/*.hpp' 2>/dev/null || true); do
+              for req in $reqs; do
+                grep -qE "${req}(_ns)?\b" "$f" || { echo "::error::R-20: $f $decl 缺 $req"; fail=1; }
+              done
+            done
+          done
           exit $fail
-
       - name: 老李 HMAC 4 bug 反模式
         run: |
-          set -e
-          fail=0
-          # bug 4: base64 strip padding
-          if git grep -nE 'urlsafe_b64encode.*rstrip\(' -- '**/*.py' '**/*.cpp' '**/*.hpp' ; then
-            echo "::error::老李 HMAC bug 4: base64 padding 必须保留, 禁 rstrip"
-            fail=1
-          fi
-          # bug 3: param_type (应 asset_type)
-          if git grep -nE '\bparam_type\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' ; then
-            echo "::error::老李 HMAC bug 3: param_type 是错的, 应 asset_type"
-            fail=1
-          fi
-          # bug 2: sigType=2 (应=1, derive-api-key 模式)
-          if git grep -nE 'sigType\s*[:=]\s*2\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' '**/*.py' ; then
-            echo "::error::老李 HMAC bug 2: sigType 应 = 1 (L1 EIP-712)"
-            fail=1
-          fi
-          # bug 1: HMAC path 含 querystring
-          # (CI W3 后小宋详化 — 静态扫 HMAC 计算时是否 strip query)
+          set -e; fail=0
+          git grep -nE 'urlsafe_b64encode.*rstrip\(' -- '**/*.py' '**/*.cpp' '**/*.hpp' \
+            && { echo "::error::HMAC bug 4: base64 padding 禁 rstrip"; fail=1; } || true
+          git grep -nE '\bparam_type\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' \
+            && { echo "::error::HMAC bug 3: param_type 应 asset_type"; fail=1; } || true
+          git grep -nE 'sigType\s*[:=]\s*2\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' '**/*.py' \
+            && { echo "::error::HMAC bug 2: sigType 应 = 1"; fail=1; } || true
           exit $fail
-
-      - name: 老项目参考红线 (INCIDENTS gm-self-mistakes-log #3)
+      - name: 老项目参考红线 (INCIDENTS #3)
         run: |
-          if git grep -nE 'sports-tail-trader' -- ':!docs/INCIDENTS/**' ':!.github/workflows/**' ; then
-            echo "::error::GM 红线: 不准参考老项目 weibo6631352/sports-tail-trader (除 INCIDENTS log)"
-            exit 1
+          if git grep -nE 'sports-tail-trader' -- ':!docs/INCIDENTS/**' ':!.github/workflows/**'; then
+            echo "::error::GM 红线: 不准参考老项目 sports-tail-trader"; exit 1
           fi
-
-      - name: paper 字段污染检查 (R-11)
+      - name: paper 字段污染 (R-11)
         run: |
-          set -e
           if git grep -nE 'paper_\w*\s+(position|pnl_ledger|nonce_ledger)' \
-             -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' ; then
-            echo "::error::R-11: paper_* 字段严禁写入 position / pnl_ledger / nonce_ledger 真账本"
-            exit 1
+             -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp'; then
+            echo "::error::R-11: paper_* 严禁写真账本"; exit 1
           fi
+
+  risk-enum-coverage:
+    name: RM 21 reject enum coverage (21/21 必过)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run risk_enum_coverage.py
+        run: python3 tests/ci_grep/risk_enum_coverage.py
 
   cpp-format:
     name: clang-format
@@ -89,28 +86,24 @@ jobs:
       - uses: actions/checkout@v4
       - name: clang-format check
         run: |
-          if find src include tests -type f \( -name '*.cpp' -o -name '*.hpp' \) 2>/dev/null | head -1 ; then
+          if find src include tests -type f \( -name '*.cpp' -o -name '*.hpp' \) 2>/dev/null | head -1; then
             clang-format --version
             find src include tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 \
               | xargs -0 clang-format --dry-run --Werror
           else
-            echo "no C++ files yet (Sprint-2 W3 骨架阶段), skip"
+            echo "no C++ files yet (W3 骨架阶段), skip"
           fi
 
   build-paper:
-    name: Build (paper mode + ASAN/UBSAN)
+    name: Build (paper + ASAN/UBSAN)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - name: Configure
         run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Debug \
-            -DSTCPP_EXEC_MODE=paper \
-            -DSTCPP_ENABLE_ASAN=ON \
-            -DSTCPP_ENABLE_UBSAN=ON \
-            -DBUILD_TESTING=ON
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DSTCPP_EXEC_MODE=paper \
+            -DSTCPP_ENABLE_ASAN=ON -DSTCPP_ENABLE_UBSAN=ON -DBUILD_TESTING=ON
       - name: Build
         run: cmake --build build --parallel 4
       - name: Test (CTest)
@@ -118,5 +111,5 @@ jobs:
           if [ -d build/tests ]; then
             ctest --test-dir build --output-on-failure
           else
-            echo "no tests yet (Sprint-2 W3), skip"
+            echo "no tests yet (W3), skip"
           fi

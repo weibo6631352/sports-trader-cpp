@@ -2,6 +2,7 @@
 
 - Owner: 小段
 - Date: 2026-05-28
+- Last measured: 2026-05-28 15:29 UTC (data: `xiaoduan-goalserve-v3-probe-20260528-152957.txt`)
 - Status: Active (Major Revision based on official docs in `docs/GOALSERVER/`)
 - 验收人: 老雷 + 小梁 (P0-01 fair value 锚源) + 小余 (ETL)
 - Superseded sections:

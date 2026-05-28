@@ -2,6 +2,7 @@
 
 - Owner: 老黄 (compliance-legal)
 - Date: 2026-05-28
+- Last measured: 2026-05-28 [需 owner confirm — Sygnum/Taurus 等托管商合规调研无对应 data/ 探针文件 timestamp; 老黄 v2 升版时补]
 - 关联: laosun-key-management-v1.md §8.3, laoshen-key-management-coreview-v1.md §4, laohuang-compliance-redline-v1.md (R1~R12)
 - 验收人: 老雷 (GM, 代行 CPO)
 - 状态: **Conditional Accept** — 老孙 §8.3 占位符 (城市 A/B/C / 法务-外部托管) 一律不通过, 必须按本文件 §5 推荐方案重写; 我自持 1 份的判断在 §4

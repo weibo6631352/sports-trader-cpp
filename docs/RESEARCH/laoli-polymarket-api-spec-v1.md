@@ -2,6 +2,7 @@
 
 - Owner: 老李 (polymarket-protocol-expert)
 - Last review: 2026-05-28
+- Last measured: 2026-05-28 13:33 UTC [需 owner confirm — v1 spec 为 Sprint-1 S1-002, 沿用 v2 probe `laoli-polymarket-matrix-v2-20260528-133323.txt` 实测; 已被 endpoint-matrix-v3 superseded]
 - 验收人: 老周
 - Ticket: Sprint-1 / S1-002
 - 实测环境: macOS 本地 (跨洋链路, 经 Cloudflare), curl 8.4 / Python 3.12 urllib + websocket-client

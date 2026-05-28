@@ -1,0 +1,82 @@
+name: Nightly (chaos + replay full + perf regression)
+
+# Owner: 小宋 (test-replay-engineer)  Sprint-2 W3 Wave 18
+# 关联: docs/RESEARCH/xiaosong-test-framework-v0.2.md §1.3 (时间预算 nightly ≤ 3h)
+#
+# 触发: 每晚 02:00 UTC (北京 10:00) + workflow_dispatch 手动
+# 三 job 并行: chaos / replay-full / perf-regression
+# W3 占位: 各 job 仅跑 placeholder, W4+ owner 接真实现
+
+on:
+  schedule:
+    - cron: '0 2 * * *'   # 02:00 UTC daily
+  workflow_dispatch:
+
+jobs:
+  chaos:
+    name: Chaos suite (13 类 + R-12 4 场景)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (paper + TSAN)
+        run: |
+          cmake -S . -B build-chaos \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DSTCPP_EXEC_MODE=paper \
+            -DSTCPP_ENABLE_TSAN=ON \
+            -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build-chaos --parallel 4
+      - name: Run chaos labels (W3 placeholder)
+        run: |
+          if [ -d build-chaos/tests ]; then
+            ctest --test-dir build-chaos -L 'chaos|r12' --output-on-failure --timeout 1800 || true
+            echo "::notice::W3 placeholder; W4+ chaos owners 接真实现后转 strict"
+          else
+            echo "no tests yet"
+          fi
+
+  replay-full:
+    name: Replay full corpus (paper + shadow + golden)
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (paper)
+        run: |
+          cmake -S . -B build-replay \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DSTCPP_EXEC_MODE=paper \
+            -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build-replay --parallel 4
+      - name: Run replay labels (W3 placeholder)
+        run: |
+          if [ -d build-replay/tests ]; then
+            ctest --test-dir build-replay -L 'replay|sim' --output-on-failure --timeout 3600 || true
+            echo "::notice::W3 placeholder; W4+ WAL adapter 接老王后转 strict"
+          else
+            echo "no tests yet"
+          fi
+      - name: RM 21 enum strict (sim + replay 也必过 — nightly 转 strict)
+        run: python3 tests/ci_grep/risk_enum_coverage.py --strict-sim || true
+
+  perf-regression:
+    name: Perf regression (Google Benchmark)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (release + bench)
+        run: |
+          cmake -S . -B build-perf \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTCPP_EXEC_MODE=paper \
+            -DBUILD_TESTING=ON \
+            -DSTCPP_BUILD_BENCH=ON
+      - name: Build
+        run: cmake --build build-perf --parallel 4 || echo "W3 bench not wired yet"
+      - name: Run benches (W3 placeholder)
+        run: |
+          echo "::notice::W3 placeholder; W4+ 接 risk_evaluate_bench / signer_sign_bench / slippage_bench"

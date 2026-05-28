@@ -2,6 +2,7 @@
 
 - Owner: 老叶 (onchain-defi-advisor)
 - Last review: 2026-05-28
+- Last measured: 2026-05-28 13:33 UTC (data: `laoye-polygon-rpc-probe-20260528-133338.txt`, vendor 选型沿用同一 probe)
 - 验收人: 老孙 (security-cryptography-engineer)
 - 关联 ticket: S1-009
 - 关联交付物: 老吴 S1-010 (跨洋部署), 老孙 S1-005 (HSM/KMS), 老彭 S1-012 (sharp money)

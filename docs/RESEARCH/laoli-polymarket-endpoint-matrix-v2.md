@@ -2,6 +2,7 @@
 
 - Owner: 老李 (polymarket-protocol-expert)
 - Date: 2026-05-28
+- Last measured: 2026-05-28 13:33 UTC (data: `laoli-polymarket-matrix-v2-20260528-133323.txt`)
 - 验收人: 老雷 (GM) + 小邓 (data-contract) + 老周 (cache 接口)
 - 关联:
   - `docs/RESEARCH/laoli-polymarket-api-spec-v1.md` (v1 wire 契约, **本文修正其中 3 处错误**, 见 §0.3)

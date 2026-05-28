@@ -3,6 +3,7 @@
 **作者**: 小段 (Goalserve 专精)
 **审阅**: GM 老雷 (战略授权), 小米 (doc-curator), 老黄 (合规 sign-off)
 **日期**: 2026-05-28
+**Last measured**: 2026-05-28 12:30 UTC (data: `xiaoduan-goalserve-samples/*-20260528-123019.json` + `latency-runs-20260528.csv`)
 **版本**: v1 (基于 2026-05-28 实测的首版, MVP 用)
 **状态**: ACTIVE
 **关联样本**: `docs/RESEARCH/data/xiaoduan-goalserve-samples/`

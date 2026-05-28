@@ -2,6 +2,7 @@
 
 - Owner: 老叶 (defi-onchain-advisor)
 - Date: 2026-05-28
+- Last measured: 2026-05-28 13:33 UTC (data: `laoye-polygon-rpc-probe-20260528-133338.txt`)
 - 验收人: 老雷 (GM) + 老孙 (signer-cryptography) + 老周 (architect)
 - 关联:
   - `docs/RESEARCH/laoye-polygon-rpc-selection-v1.md` (vendor 选型 + gas 策略)

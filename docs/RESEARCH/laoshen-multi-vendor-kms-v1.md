@@ -2,6 +2,7 @@
 
 - Owner: 老沈 (security-engineer)
 - Date: 2026-05-28
+- Last measured: 2026-05-28 [需 owner confirm — KMS vendor 实测无对应 data/ 探针文件 timestamp; 老沈 v2 升版时补]
 - 验收人: 老孙 (v3 协议) + 老黄 (合规 sign-off) + 老雷 (GM final)
 - 关联:
   - `laohuang-shamir-jurisdiction-signoff-v1.md` §8.2 (N4 跨 vendor KMS 硬约束)

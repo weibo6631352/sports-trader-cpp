@@ -2,6 +2,7 @@
 
 - Owner: 老李 (polymarket-protocol-expert) + 小段 (goalserve-api-watch)
 - Date: 2026-05-28
+- Last measured: 2026-05-28 13:13 UTC (data: `laoli-xiaoduan-reuse-probe-20260528-131341.txt`)
 - 验收人: 老雷 (GM) + 小余 (ETL) + 老周 (architect)
 - 验证假设 (GM 2026-05-28 用户原话):
   > "API 调用一定要合理, 比如有些 API 接口是某运动系列复用型的, market 下的这些比赛是共享这次数据的. 要确保数据的新鲜度, 另一方面也要避免不必要的重复调用. 我这个意思不一定对, 你需要数据验证我说的是否合理."

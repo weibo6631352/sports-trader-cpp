@@ -52,18 +52,22 @@ endif()
 # 头文件路径
 include_directories(${CMAKE_SOURCE_DIR}/include)
 
-# 测试 (Sprint-2 W3 之后逐步加)
+# 测试 (Sprint-2 W3 Wave 18 启用)
+option(STCPP_BUILD_BENCH "Build Google Benchmark perf 回归" OFF)
+
 include(CTest)
 if(BUILD_TESTING)
     enable_testing()
-    # add_subdirectory(tests/unit)
-    # add_subdirectory(tests/sim)
-    # add_subdirectory(tests/replay)
-    # add_subdirectory(tests/chaos)
+    add_subdirectory(tests)
+    # W4+: replay / chaos / fuzz / perf 逐步加
 endif()
 
-# 子模块 (Sprint-2 W3 之后逐步加)
-# add_subdirectory(src/stcpp/infra)
+if(STCPP_BUILD_BENCH)
+    add_subdirectory(tests/bench)
+endif()
+
+# 子模块 (Sprint-2 W3 Wave 18: WAL framework skeleton 起步)
+add_subdirectory(src/stcpp/infra/wal)
 # add_subdirectory(src/stcpp/risk)
 # add_subdirectory(src/stcpp/signer)
 # add_subdirectory(src/stcpp/execution)

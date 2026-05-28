@@ -2,6 +2,7 @@
 
 - Owner: 小段
 - Date: 2026-05-28
+- Last measured: 2026-05-28 13:33 UTC (data: `xiaoduan-goalserve-v2-probe-20260528-133314.txt`)
 - 测试窗口: 2026-05-28 NBA 季后赛结束次日, MLB 正赛季, 法网 (Roland Garros) 进行中, IPL 收尾, PGA 进行中, F1 间歇期
 - 验收人: 老雷 + 小邓 (ETL) + 小余 (ETL)
 - 关联: `xiaoduan-goalserve-api-spec-v1.md` (v1, 覆盖 5 sport), 长期 sweep 政策 ADR `2026-05-28-gm-policy-api-monitoring-longterm.md`
