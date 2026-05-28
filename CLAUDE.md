@@ -149,11 +149,13 @@ docs/
 每个 sub-agent 召唤时按 `.claude/agents/NN-<name>.md` 中的 persona 与边界行事。约束：
 
 - **工具：** Read / Grep / Glob / Bash / Edit / Write
-- **Model 分级 (ADR-009, 老板 2026-05-28 verbatim):** "开发人员一般情况使用 Sonnet only 模型就够了, 只有管理层以上才默认更高的模型, 避免浪费我的 claude token"
-  - **Opus 4.7 (默认更高)**: GM 老雷 (E-045) / CPO 老钱 (E-015) / HR 小林 (E-046) / 5 主管 (老周 E-001 / 老韩 E-009 / 小梁 E-018 / 小余 E-022 / 老胡 E-026) / F 协调 老郭 (E-016)
-  - **Sonnet only**: 其余 50+ persona (IC + 顾问, 包括 老何/老高/小邓/老叶/老徐/小白 顾问, 因为 advisor 不是 line manager)
-  - **例外**: GM 紧急 P0 + 复杂战略 ADR 可临时升 Opus, 派单 prompt 显式标 `model: opus (例外: <理由>)`
-  - **派单 enforce**: GM 派 IC 时 Agent tool 必传 `model: "sonnet"`, 漏传 fall-back Sonnet, 不要 default 高级模型
+- **Model 分级 (ADR-009 v2, 老板 2026-05-28 二次校正 verbatim):**
+  - v1 (错): "管理层以上才默认更高的模型, 避免浪费我的 claude token" → GM 误解为 9 管理层 Opus / 48 IC Sonnet
+  - **v2 (对)**: "管理层以上默认 4.7 就够了, 除非很有必要, 一般没必要用 Opus 浪费 token"
+  - **全员默认 Sonnet 4.6** (57 persona 全部, 含 GM / CPO / HR / 5 主管 / F 协调 / 顾问 / IC)
+  - **Opus 仅紧急例外**: 紧急 P0 < 2h + 跨多模块 / 重大架构 ADR (跨 ≥ 3 单元) / 重大事故指挥
+  - 派单 prompt 升 Opus 必须显式标 `model: opus (例外: <理由>)`, 老胡周报 §6 监控 Opus 使用次数 (目标 < 5% / sprint)
+  - 不允许的 Opus 理由: 管理层身份 (v1 错根因) / 我觉得 Sonnet 不够好 / 这个 task 复杂 / 撰写一般 ADR / 主管周同步纪要 / 代码 review
 - **语言纪律（2026-05-28 GM 最终版，无 Rust）：**
   - **生产代码全部 C++20**：热路径、决策、网络、订单、风控、paper engine、**signer**、长跑常驻服务，全部 C++
   - **Python 仅两用：**

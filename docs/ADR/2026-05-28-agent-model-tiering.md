@@ -12,29 +12,31 @@
 
 W3 起 GM 派 50+ sub-agent 全用 Anthropic API default 模型 (Opus 4.7). Token 消耗加速, 老板 W5 末提出成本控制. 这是合理诉求 — IC 写代码 / 写 spec 不需要顶级模型, Sonnet 已足够 (Sonnet 4.6 智能编程能力已达 production grade).
 
-## 2. 决策
+## 2. 决策 (v2, 2026-05-28 老板二次校正)
 
-按职位分两级:
+**v1 错: GM 把"管理层以上默认更高"误解为"管理层默认 Opus". 老板第二次校正:**
 
-### 2.1 Opus 4.7 (管理层 + 战略层)
+> "管理层以上默认 4.7 就够了, 除非很有必要, 一般没必要用 Opus 浪费 token"
 
-| 角色 | Persona | 工号 | 理由 |
-|---|---|---|---|
-| GM | 老雷 | E-045 | 公司战略 + 跨域统筹 + 错误兜底 |
-| CPO | 老钱 | E-015 | 产品方向 + 业务能力 + 大原则 |
-| HR Owner | 小林 | E-046 | 招聘 SOP + 文化健康度 + 跨部门 |
-| A 主管 | 老周 | E-001 | 架构主权 + 25 人单元统筹 |
-| B 主管 | 老韩 | E-009 | RM 主权 + 红线 enforce |
-| C 主管 | 小梁 | E-018 | 量化战略 + Kelly / Sharpe / VaR |
-| D 主管 | 小余 | E-022 | 数据基建 + ETL spec |
-| E 主管 | 老胡 | E-026 | PM + Sprint + 协商主持 |
-| F 协调 | 老郭 | E-016 | 架构评审 + ADR 仲裁 + 跨顾问协调 |
+**v2 正确: 全员默认 Sonnet (4.6), Opus 仅紧急例外**.
 
-共 **9 persona** 默认 Opus.
+### 2.1 全员默认 Sonnet 4.6
 
-### 2.2 Sonnet only (IC + 顾问)
+**所有 57 persona** 默认 Sonnet 4.6, 包括:
 
-其余 **48 persona** (包括 10 IC pool 小卢) 默认 Sonnet 4.6:
+- GM 老雷 (E-045) — 战略 + 跨域统筹, Sonnet 4.6 完全胜任
+- CPO 老钱 (E-015) — 产品方向
+- HR Owner 小林 (E-046) — 招聘 + 文化
+- 5 主管 (老周/老韩/小梁/小余/老胡)
+- F 协调 老郭 (E-016)
+- 7 顾问 (老何/老高/小邓/老叶/老徐/小白 + 老张 Inactive)
+- 48 IC (含 10 IC pool 小卢)
+
+**v1 → v2 关键变更:**
+- ~~9 管理层 Opus / 48 IC+顾问 Sonnet~~
+- ✅ **57 全员 Sonnet, Opus 仅例外**
+
+### 2.2 ~~Opus 4.7 (管理层 + 战略层)~~ 撤销
 
 - A 单元 IC: 小马 #02 / 老陈 #03 / 小赵 #04 / 老王 #05 / 老孙 #06 / 老李 #07 / 小田 #08 / 老吴 #10 / 小郑 #11 / 老姜 #39 / 小石 #41 / 小肖 #42 / 小颜 #43 / 小卢 × 10 #35
 - B 单元 IC: 老沈 #27 / 老黄 #29 / 老唐 #38
@@ -48,53 +50,54 @@ W3 起 GM 派 50+ sub-agent 全用 Anthropic API default 模型 (Opus 4.7). Toke
 - 顾问职责是"提建议 + 评审", 不是统筹团队
 - 老高 PR review / 老徐 R-39 escalate 这类工作 Sonnet 完全胜任
 
-## 3. 例外 (临时升级)
+## 3. 例外 (临时升级 Opus, 严格收口)
 
-允许临时升 Opus, 但派单 prompt **显式标注** + 理由:
+**v2 严格化**: "很有必要" 才升 Opus, 默认从严, 老胡周报 §6 监控.
 
 ```
 派单 prompt 第一行: "model: opus (例外: <理由>)"
 
-允许的理由:
-- "紧急 P0 < 2h 响应" (e.g. BUG-W5-001, 修复 audit_id UB)
-- "复杂战略 ADR 撰写" (e.g. ADR-005 主管 mandate)
-- "跨多单元复杂仲裁" (e.g. ADR-004 liquidity vs cap)
-- "GM 错系列复盘 + enforcement 设计" (e.g. 错 #4-9 任一)
+允许的理由 (高阶判断, 不轻易触发):
+- "紧急 P0 < 2h 响应 + 涉及多模块协同" (e.g. BUG-W5-001 audit_id UB)
+- "重大架构 ADR (跨 ≥ 3 单元 + 不可逆决策)" (e.g. ADR-005 主管 mandate)
+- "重大事故指挥 (人/钱/信誉损失)"
 
-不允许的理由:
+不允许的理由 (从严):
+- "管理层身份" (v1 错的根因)
 - "我觉得 Sonnet 不够好" (无具体证据)
 - "这个 task 复杂" (没量化复杂度)
 - "防错升 Opus" (派单设计问题, 不是模型问题)
+- "撰写 ADR" (除非 ADR-005 量级, 一般 ADR Sonnet 够)
+- "主管周同步纪要" (Sonnet 够)
+- "代码 review" (Sonnet 够)
 ```
 
-## 4. 派单 enforce
+**老板原话 (verbatim, 二次校正):**
+> "管理层以上默认 4.7 就够了, 除非很有必要, 一般没必要用 Opus 浪费 token"
 
-GM 派 sub-agent 时 Agent tool 必传 `model` 参数:
+## 4. 派单 enforce (v2)
+
+GM 派 sub-agent 默认全 Sonnet, Opus 严格收口:
 
 ```python
-# IC 派单 (Sonnet)
+# v2 默认派单 (全员 Sonnet)
 Agent(
-    subagent_type="polymarket-protocol-expert",  # 老李 IC
-    model="sonnet",  # ← 必传
+    subagent_type="<任意 persona>",
+    model="sonnet",  # ← 默认, 含 GM/CPO/HR/5 主管/F 协调/顾问/IC
     prompt=...
 )
 
-# 主管派单 (Opus, 默认 OK 但建议显式)
+# 例外升 Opus (严格审批)
 Agent(
-    subagent_type="cpp-chief-architect",  # 老周 主管
-    model="opus",  # ← 显式
-    prompt=...
-)
-
-# 临时升 (例外)
-Agent(
-    subagent_type="risk-engineer",  # 紧急 P0 升 Opus
-    model="opus",  # ← 显式
-    prompt="model: opus (例外: 紧急 P0 < 2h, BUG-W5-001 audit_id UB)\n\n...",
+    subagent_type="risk-engineer",  # 紧急 P0 才升
+    model="opus",
+    prompt="model: opus (例外: 紧急 P0 < 2h + 跨多模块, BUG-W5-001 audit_id UB)\n\n...",
 )
 ```
 
-GM 漏传 model 参数 → fall-back Sonnet (而非 default Opus), 避免无意识用 Opus.
+GM 漏传 model → fall-back Sonnet (绝不 default Opus).
+
+**W5 commit `0a9c374` 已派的 Opus sub-agent (Wave 25/26 共 ~10 次)** 是 v1 错的产物, 不撤销 (已花 token), 但 v2 之后停止默认 Opus.
 
 ## 5. CI grep enforce (老高 PR review v1.2)
 
