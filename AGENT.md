@@ -1,6 +1,6 @@
 # Agent Roster — sports-trader-cpp
 
-49 agent (39 类 + 10 Senior IC). 每个 agent 按 Claude Code 规范独立文件在 `.claude/agents/`.
+50 agent (40 类 + 10 Senior IC). 每个 agent 按 Claude Code 规范独立文件在 `.claude/agents/`.
 
 调用方式: 用 Claude Code 的 sub-agent 调用机制, 用 agent name (kebab-case) 召唤.
 
@@ -62,6 +62,7 @@
 | 37 | goalserve-api-watch | [37](.claude/agents/37-goalserve-api-watch.md) |
 | 38 | audit-expert | [38](.claude/agents/38-audit-expert.md) |
 | 39 | performance-engineer | [39](.claude/agents/39-performance-engineer.md) |
+| 40 | doc-curator | [40](.claude/agents/40-doc-curator.md) |
 
 ---
 
