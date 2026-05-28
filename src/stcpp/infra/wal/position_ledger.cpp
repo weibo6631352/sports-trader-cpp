@@ -52,16 +52,6 @@ namespace stcpp::infra::wal {
 // ---------------------------------------------------------------------------
 namespace {
 
-// 把 market_id string_view 对齐/截断到 32B 数组 (null-padded)
-// GM 错 #11 hotfix: 小蒋 W6 Wave 29 改用 fill.market_id 后此 helper unused,
-// 加 [[maybe_unused]] 避免 -Wunused-function (保留 utility, 未来如有需可用)
-[[maybe_unused]] [[nodiscard]] std::array<char, 32> ToMarketIdArray(std::string_view id) noexcept {
-    std::array<char, 32> arr{};
-    const std::size_t copy_len = std::min(id.size(), static_cast<std::size_t>(32));
-    std::memcpy(arr.data(), id.data(), copy_len);
-    return arr;
-}
-
 // market_id 数组 → 字符串 key (以 null 截断)
 [[nodiscard]] std::string MarketIdKey(const std::array<char, 32>& arr) {
     const std::size_t len = ::strnlen(arr.data(), 32);

@@ -210,6 +210,52 @@ add_subdirectory(src/stcpp/infra/json)
 
 ---
 
+## §X build switch 规范 (W6 W3 老郭仲裁立, 2026-06-W3)
+
+### 背景
+
+W6 W3 累积 5+1 build switch:
+- `STCPP_EXEC_MODE` (paper/live/backtest)
+- `STCPP_BUILD_BENCH`
+- `STCPP_BUILD_CLI` (老沈 W6 Wave 29)
+- `STCPP_BUILD_SIGNER_V52` (老孙 W6 Wave 30)
+- `STCPP_TEST_BUILD` (小卢 W6 Wave 30, 隐式 compile define 而非 CMake option)
+
+老周建议立 ADR-019 build switch 规范. 老高 + 老胡建议 ADR-018 §X 补条款. 老郭仲裁: ADR-018 §X 补.
+
+### 规则
+
+1. **命名规范**: 所有 CMake option 命名 `STCPP_<DOMAIN>_<NAME>` 或 `STCPP_BUILD_<MODULE>`; test-only 隐式 define 命名 `STCPP_TEST_*`
+2. **上限**: CMake `option()` ≤ 8 个 (隐式 compile define 也算 1 个, 含 `STCPP_TEST_BUILD`)
+3. **触发架构评审**:
+   - **第 5 个 CMake option 引入时**: 老郭过目 + 新 switch 须老郭 ack 后方可 merge (W7 起执行)
+   - **第 6 个 CMake option 引入时**: 必须升级立 ADR-019 正式立项 (ADR-019 当前为候选预留, 与老周提案对齐)
+4. **隐式 PRIVATE define (非 option) 文档化**: 每个隐式 define 必须在对应 CMakeLists.txt 顶部注释列出 (默认值 / 含义 / 跨平台影响)
+5. **CI 覆盖**: `EXEC_MODE(paper/live/backtest)` × default options 主要组合, paper mode 为必测; W7 老高 PR v1.4 补 CI 矩阵覆盖
+
+### W6 W3 现状审查
+
+| switch | 类型 | 默认值 | 文档化状态 |
+|---|---|---|---|
+| `STCPP_EXEC_MODE` | CMake option (string) | paper | ADR-011 §1 |
+| `STCPP_BUILD_BENCH` | CMake option (bool) | OFF | ADR-017 注 |
+| `STCPP_BUILD_CLI` | CMake option (bool) | OFF | 老沈 W6 W2 派单 prompt |
+| `STCPP_BUILD_SIGNER_V52` | CMake option (bool) | ON | **未文档化** — W7 补 |
+| `STCPP_TEST_BUILD` | 隐式 PRIVATE define | undefined | **未文档化, 老高 H-09 指出** — W7 补 |
+
+5 switch 未超 8 上限. 但 `STCPP_TEST_BUILD` 隐式 define 未在 CMake option 列表中, 难以发现. CI 当前只测 paper mode (1/8 矩阵) — 风险高.
+
+### W7 落地
+
+- 老周 + 老郭 (W7 W4): 5 switch 文档化 (本 ADR §X)
+- 老高 PR v1.4 (W7 W3): build switch grep (隐式 define 漏文档化 fail) + CI 矩阵覆盖 enforce
+- 第 6 个 CMake option 触发立 ADR-019 (前置条件, ADR-019 候选编号已预留)
+- `STCPP_BUILD_SIGNER_V52` 默认 ON 与 `STCPP_EXEC_MODE` 隐式关联 (老高 H-09) — 老周 W7 补显式 guard
+
+---
+
 **老周 (cpp-chief-architect):** ADR-018 决议锁定。老郭 架构评审 M1 前 forward 一次。
 
-**last_review:** 2026-06-W3 by 老周
+**§X 仲裁:** 老郭 (chief-architecture-reviewer), 2026-06-W3. 老周 24h 申辩窗口截止: W6 W3 EOD (6/2). 无异议视为接受.
+
+**last_review:** 2026-06-W3 by 老郭 (§X 补); 老周 (§0-§5)

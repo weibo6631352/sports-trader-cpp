@@ -204,6 +204,47 @@ spec by:
       - R-33: paper 路径无 `/ws/user`, 无旧 host `ws-subscriptions-clob`
       - HMAC: 无 `rstrip(b"=")` / `paramType` / `sigType=2` / request_path 拼 querystring
 
+### 9.2 v1.3 新增自检 (Wave 30)
+
+<!--
+  GM 错 #11 配套: build+ctest 验证条款
+  ABI lock: pm_client.hpp / live_pm_client.hpp 改动须引用 handshake 文档
+-->
+
+- [ ] **本地 build+ctest 通过**: `cmake --build build && ctest --output-on-failure` 已跑,
+      且输出摘要已贴 §5 测试验证节 (写测试不算交付, 跑通才算 — GM 错 #11)
+- [ ] **ABI lock 自检** (改 pm_client.hpp / live_pm_client.hpp 时):
+      PR description 已含 `ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>`;
+      L2/L3 已含 "三方签" 声明
+
+### 9.3 v1.4 新增自检 (Wave 33 — GM 错 #13 #14 配套)
+
+<!--
+  GM 错 #13: 越权代修别人代码 → gm_commit_author_check.py
+  GM 错 #14: binary 大文件 / ML artifact 入 git → binary_large_file_check.py
+  ADR-005 §3.4 FOM → fom_check.py (W7 W4 激活 FAIL)
+  老王 W6 Wave 32 ABI cascade → abi_cascade_check.py
+  ADR-010 §2.2 -Wno-* → adr010_wno_check.py (与小宋 W7 协作)
+-->
+
+- [ ] **ABI 变更自检**: 本 PR 是否含 ABI 变更 (struct 新增字段 / sizeof 变化)?
+      - [ ] 不含 ABI 变更
+      - [ ] 含 ABI 变更, 已在 PR description 列 "下游 audit 清单:" 章节 (或加 "ABI cascade reviewed: no downstream")
+- [ ] **binary / ML artifact 自检**: 本 PR 是否含 > 1MB 文件或 .parquet/.pkl/.pt/.onnx 等?
+      - [ ] 不含
+      - [ ] 含大文件, 已在 PR description ack 说明原因 (GM 错 #14 配套)
+- [ ] **GM commit author 自检** (仅 GM 老雷填): 本 PR 是否含 GM 直接 commit 的 src/ / include/ 文件?
+      - [ ] 不含 (正常通道, 跳过)
+      - [ ] 含, 已在 PR description 加 "GM 紧急 hotfix 理由: <至少 10 字说明>" (ADR-005 §3.2)
+- [ ] **FOM 自检** (改 CMakeLists.txt / pr.yml / .clang-tidy / .gitignore 等关键文件时):
+      PR description 含 "FOM ref: <wave>" + "lead owner ack: <name>" (W7 W4 激活前 warning-only)
+- [ ] **ADR-010 -Wno-* 自检**: 本 PR 是否新增 `-Wno-*` 抑制?
+      - [ ] 不含
+      - [ ] 含, 已确认在 ADR-010 §2.2 grandfather 白名单内或已走例外申请流程
+
+<!-- FOM ref 字段 (W7 W4 ADR-005 §3.4 立后填, 改关键基础文件时必填) -->
+FOM ref: <!-- 例: W7-F-04 或 N/A (不改 FOM 管控文件) -->
+
 ---
 
 <!--

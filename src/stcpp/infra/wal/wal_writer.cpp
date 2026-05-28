@@ -55,6 +55,7 @@ WalResult<std::unique_ptr<WalWriter<R>>> WalWriter<R>::Open(const WalConfig& cfg
     }
 
     // TODO W4: 开 segment fd / 启动 bg jthread / pin cfg.bg_cpu_core / 启 SPSC ring.
+    // [已转 Sprint-3 WAL-B01, 见 docs/SPRINTS/sprint-03-backlog.md]
     // 当前 skeleton: 构造空对象, API 闭环, 让 R-11 / R-20 / API 表面可测.
     auto w  = std::unique_ptr<WalWriter<R>>(new WalWriter<R>());
     w->cfg_ = cfg;
@@ -83,6 +84,7 @@ WalResult<std::uint64_t> WalWriter<R>::Append(const R& record) noexcept {
     // TODO W4: build_frame (header + payload + CRC32C) → ring.try_push.
     //  ring 满 → return WalError::Backpressure (老韩 v0.3 #18 AUDIT_WAL_BACKPRESSURE).
     //  PerRecord (position) 等 bg fsync 完成才返回.
+    // [已转 Sprint-3 WAL-B02, 见 docs/SPRINTS/sprint-03-backlog.md]
     // 当前 skeleton: 视作 ring 永有空, 直接进 group commit watermark.
     high_watermark_.store(seq, std::memory_order_release);
     return WalResult<std::uint64_t>{seq};
@@ -98,7 +100,8 @@ WalResult<void> WalWriter<R>::FlushUntil(
 
 template <WalRecord R>
 WalWriter<R>::~WalWriter() = default;
-// W4: drain ring + 最终 fsync + close fd, 此处 stub.
+// TODO W4: drain ring + 最终 fsync + close fd, 此处 stub.
+// [已转 Sprint-3 WAL-B03, 见 docs/SPRINTS/sprint-03-backlog.md]
 
 // -------- 4 类 record 实例化 (派单 §6) --------------------------------------
 //

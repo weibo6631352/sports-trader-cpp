@@ -54,9 +54,11 @@ if(STCPP_BUILD_CLI)
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(stcpp_cli_three_sig PUBLIC cxx_std_20)
+    # ADR-010 §4: 禁止新增 -Wno-* 抑制。已删 -Wno-sign-conversion -Wno-conversion -Wno-shadow (W7 Wave 33 小宋).
+    # 若 cli source 仍有上述 warning 请 @老沈 在独立 PR 修真 source.
+    # grandfather 保留 (ADR-010 §2.2): double-promotion / old-style-cast / cast-align
     target_compile_options(stcpp_cli_three_sig PRIVATE
-        -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-        -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+        -Wno-double-promotion -Wno-old-style-cast -Wno-cast-align
     )
     # libsodium (vcpkg provides unofficial-sodium::sodium target)
     find_package(unofficial-sodium CONFIG REQUIRED)
@@ -74,9 +76,11 @@ if(STCPP_BUILD_CLI)
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(stcpp_cli_strategy_unlock PRIVATE cxx_std_20)
+    # ADR-010 §4: 禁止新增 -Wno-* 抑制。已删 -Wno-sign-conversion -Wno-conversion -Wno-shadow (W7 Wave 33 小宋).
+    # 若 cli source 仍有上述 warning 请 @老沈 在独立 PR 修真 source.
+    # grandfather 保留 (ADR-010 §2.2): double-promotion / old-style-cast / cast-align
     target_compile_options(stcpp_cli_strategy_unlock PRIVATE
-        -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-        -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+        -Wno-double-promotion -Wno-old-style-cast -Wno-cast-align
     )
     set_target_properties(stcpp_cli_strategy_unlock PROPERTIES
         OUTPUT_NAME "stcpp-strategy-unlock"

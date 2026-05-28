@@ -1,4 +1,4 @@
-// stcpp/observability/audit_emitter.hpp — AuditEmitter v1.1 (W6 Wave 29)
+// stcpp/observability/audit_emitter.hpp — AuditEmitter v1.2 (W7 Wave 33)
 //
 // 落:
 //   laotang-audit-schema-v1.1.md §5 (emit_* API + hash chain owner)
@@ -12,6 +12,11 @@
 //   2. hash_chain_verify() — M1-A06 acceptance gate 链式完整性校验
 //   3. AuditEmitterPool — 5 上游各自独立 emitter + 共享全局 hash chain
 //   4. ABI lock: RiskDecisionInput + emit_* 接口不变 (5 上游无缝切换)
+//
+// v1.2 变更 (W7 Wave 33):
+//   5. 删 friend class AuditEmitterPool (老高 H-07 + 老周 C-06 review ack)
+//   6. 新增 emit_with_injected_chain() public API — Pool 注入 chain 参数后调用
+//      (替代 friend 访问 private build_record / write 路径)
 //
 // 红线:
 //   R-1   只一处 emit 路径 (本类), 全仓 grep audit_event 唯此一处
@@ -113,12 +118,19 @@ class AuditEmitter {
         seq_counter_.store(seq, std::memory_order_release);
     }
 
+    // Pool 专用: 注入 chain 状态后直接 build + 写 WAL (锁外调用).
+    // prev_hash / seq 由 AuditEmitterPool 在 chain_mutex_ 锁内已算好后传入.
+    // 单独 emit 不走此 API; 只有 AuditEmitterPool 调用.
+    [[nodiscard]] ResultT emit_with_injected_chain(
+        const RiskDecisionInput& in,
+        AuditEventType type_override,
+        const Hash256& prev_hash,
+        const Hash256& payload_hash,
+        const Hash256& current_hash,
+        std::uint64_t seq) noexcept;
+
     AuditEmitter(const AuditEmitter&)            = delete;
     AuditEmitter& operator=(const AuditEmitter&) = delete;
-
-    // GM 错 #11 hotfix (W6 W2 push 前): AuditEmitterPool 需访问 build_record / write / ts_chain_ok / apply_hash_chain
-    // 老唐 W6 Wave 29 漏 friend 声明导致 pool 实现编译 fail
-    friend class AuditEmitterPool;
 
  private:
     [[nodiscard]] AuditRecord build_record(const RiskDecisionInput& in,

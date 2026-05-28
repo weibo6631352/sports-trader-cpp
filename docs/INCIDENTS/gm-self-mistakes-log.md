@@ -227,6 +227,7 @@ GM 第二错: 在校正"看供给侧"时矫枉过正, 写成"以 v2 为准让工
 - **错 #11**：派单 prompt 没强制 build+ctest 验证 → sub-agent 声称测试过实际 build fail, GM 花 30min hotfix 10 处
 - **错 #12**：gitignore 通配不全 → commit a8afebe 误推 build_adr010/ 931 files / 54889 lines, 立刻 fix commit a93abe9+c065791 撤回
 - **错 #13**：越权代修, 不协调不上报 → W6 W2 + W6 W3 GM 自己 hotfix 10+处别人代码, 没把握对方意图就改, 严重冲突没上报老板
+- **错 #14**：gitignore 通配持续不全 → commit af36066 误推 24 Parquet stub data, 与 #12 build_adr010 同模式重复, .gitignore 加 data/+*.parquet 通配, 老高 v1.4 加 binary 大文件 grep
 
 **根因都是同一个：GM 想"加速"或"省事"，但加速 / 省事的方向违反公司价值观或用户明确指令。**
 

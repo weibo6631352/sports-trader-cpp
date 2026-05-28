@@ -1,9 +1,10 @@
-// stcpp/observability/audit_emitter.cpp — AuditEmitter v1.1 + AuditEmitterPool
+// stcpp/observability/audit_emitter.cpp — AuditEmitter v1.2 + AuditEmitterPool
 //
-// Owner: 老唐 (audit-expert, #38)  W6 Wave 29
+// Owner: 老唐 (audit-expert, #38)  W7 Wave 33
 // 落: laotang-audit-schema-v1.1.md §5
 //     老周 Smell #A (AuditEmitter pool 5 上游)
 //     老韩 Smell #2 (BLAKE3_REAL 替换 XOR stub)
+//     W7 Wave 33: friend 删 + emit_with_injected_chain public API (老高 H-07 / 老周 C-06)
 //
 // R-7: paper/live build 都 BLAKE3_REAL=1 (CMakeLists.txt 注入 -DBLAKE3_REAL=1)
 // 不耻下问: SPSC WALQueue 接 @小石 W7; hash chain verify WAL replay @老王 Sprint-3
@@ -27,8 +28,15 @@ inline void copy_fixed(std::span<char> dst, std::string_view src) noexcept {
 // 老韩 invariant: code != INVALID_INTENT ⟹ sub_reason == NONE
 [[nodiscard]] bool reject_invariant_ok(stcpp::risk::RejectCode c,
                                        stcpp::risk::InvalidIntentSubReason s) noexcept {
-    return c == stcpp::risk::RejectCode::INVALID_INTENT
-        || s == stcpp::risk::InvalidIntentSubReason::NONE;
+    return c == stcpp::risk::RejectCode::INVALID_INTENT ||
+           s == stcpp::risk::InvalidIntentSubReason::NONE;
+}
+
+// R-20 4 ts 单调性检查 (Pool emit 用; AuditEmitter::ts_chain_ok 等价 free 版本)
+[[nodiscard]] bool ts_chain_ok_free(const RiskDecisionInput& in) noexcept {
+    return (in.event_ts > 0) && (in.data_source_ts >= in.event_ts) &&
+           (in.ingestion_ts >= in.data_source_ts) && (in.as_of_ts >= in.ingestion_ts) &&
+           (in.decision_ts >= in.as_of_ts);
 }
 
 }  // namespace
@@ -224,6 +232,37 @@ AuditEmitter::ResultT AuditEmitter::emit_recon_drift(
     return write(r);
 }
 
+// --- Pool 专用: chain 已由 Pool 在锁内算好, 此处仅 build + 填 hash + write ---
+//
+// 语义: Pool 在 chain_mutex_ 锁内完成 seq 分配 + BLAKE3 chain compute, 然后
+//       调此方法在锁外写 WAL. 不再依赖 friend 访问 build_record / write.
+//       不走 seq_counter_.fetch_add (Pool 管 global seq).
+
+AuditEmitter::ResultT AuditEmitter::emit_with_injected_chain(
+    const RiskDecisionInput& in,
+    AuditEventType type_override,
+    const Hash256& prev_hash,
+    const Hash256& payload_hash,
+    const Hash256& current_hash,
+    std::uint64_t seq) noexcept {
+    AuditRecord rec = build_record(in, type_override);
+    rec.prev_hash    = prev_hash;
+    rec.payload_hash = payload_hash;
+    rec.current_hash = current_hash;
+    // 更新 emitter 快照 (hash_chain_verify 用)
+    const std::size_t slot = snap_count_ % kVerifySnapshotCap;
+    snapshots_[slot] = {seq, current_hash};
+    if (snap_count_ < kVerifySnapshotCap) {
+        ++snap_count_;
+    } else {
+        ++snap_count_;
+    }
+    // inject_chain_state: 保持 last_hash_ 与 Pool chain 同步
+    last_hash_ = current_hash;
+    seq_counter_.store(seq, std::memory_order_release);
+    return write(rec);
+}
+
 // ===================== AuditEmitterPool 实现 =================================
 
 AuditEmitterPool::AuditEmitterPool(
@@ -311,15 +350,10 @@ bool AuditEmitterPool::hash_chain_verify_global(
     return started;
 }
 
-// --- pool emit 辅助: 锁内算 chain, 锁外写 WAL ---
+// --- pool emit: 锁内算 chain, 锁外调 emit_with_injected_chain 写 WAL ---
 //
-// 注意: pool emit 直接操作 emitter 内部 (需 friendship). 这里采用
-//       inject_chain_state + 通过 emitter 的 emit_* 实现, 但需避免
-//       emitter 内部再次 fetch_add(global_seq). 解法: pool 调 emitter 的
-//       特殊路径, 不走 seq_counter_.fetch_add. 见下.
-//
-// 简化实现 (W6): pool 直接访问 emitter 的 writer_ + build_record (friend).
-// Sprint-3 重构为更 clean 的 chain injection API.
+// W7 Wave 33: friend 删后 Pool 不再直接访问 emitter private.
+// 改为调 emit_with_injected_chain (public API), 锁内仅 seq alloc + BLAKE3 compute.
 
 AuditEmitterPool::ResultT AuditEmitterPool::emit(
     AuditOrigin origin, const RiskDecisionInput& in) noexcept {
@@ -330,7 +364,7 @@ AuditEmitterPool::ResultT AuditEmitterPool::emit(
     if (em == nullptr) { return stcpp::infra::wal::WalError::Io; }
 
     // 预检 ts + reject invariant (锁外, 快速返回)
-    if (!em->ts_chain_ok(in)) { return stcpp::infra::wal::WalError::PitViolation; }
+    if (!ts_chain_ok_free(in)) { return stcpp::infra::wal::WalError::PitViolation; }
     if (!reject_invariant_ok(in.reject_code, in.sub_reason)) {
         return stcpp::infra::wal::WalError::Io;
     }
@@ -347,22 +381,15 @@ AuditEmitterPool::ResultT AuditEmitterPool::emit(
             return stcpp::infra::wal::WalError::Io;
     }
 
-    // chain 串联: 锁内分配全局 seq + 计算 hash
+    // 锁内: seq 分配 + chain 计算
     ChainStep step{};
     {
         const std::lock_guard<std::mutex> lock(chain_mutex_);
         step = alloc_chain_step_locked(in, origin);
-        // 将 chain state 注入 emitter — 下次此 emitter emit 时用此 prev
-        em->inject_chain_state(step.current_hash, step.seq);
     }
-
-    // 锁外: build record + 直接填 hash fields + WAL write
-    AuditRecord rec = em->build_record(in, in.event_type);
-    rec.prev_hash    = step.prev_hash;
-    rec.payload_hash = step.payload_hash;
-    rec.current_hash = step.current_hash;
-
-    return em->write(rec);
+    // 锁外: public API 写 WAL (build_record + hash 填入 内部完成)
+    return em->emit_with_injected_chain(
+        in, in.event_type, step.prev_hash, step.payload_hash, step.current_hash, step.seq);
 }
 
 AuditEmitterPool::ResultT AuditEmitterPool::emit_safe_mode_enter(
@@ -371,21 +398,19 @@ AuditEmitterPool::ResultT AuditEmitterPool::emit_safe_mode_enter(
     if (idx >= kAuditOriginCount) { return stcpp::infra::wal::WalError::Io; }
     AuditEmitter* em = emitters_[idx].get();
     if (em == nullptr) { return stcpp::infra::wal::WalError::Io; }
-    if (!em->ts_chain_ok(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    if (!ts_chain_ok_free(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    // reason → market_id 字段 (build_record 内 copy_fixed 会写入)
+    RiskDecisionInput in = ctx;
+    in.event_type = AuditEventType::SafeModeEnter;
+    in.market_id  = reason;
     ChainStep step{};
     {
         const std::lock_guard<std::mutex> lock(chain_mutex_);
-        // 为计算 payload_hash 临时改 event_type
-        RiskDecisionInput tmp = ctx;
-        tmp.event_type = AuditEventType::SafeModeEnter;
-        step = alloc_chain_step_locked(tmp, origin);
-        em->inject_chain_state(step.current_hash, step.seq);
+        step = alloc_chain_step_locked(in, origin);
     }
-    AuditRecord rec = em->build_record(ctx, AuditEventType::SafeModeEnter);
-    copy_fixed(std::span<char>{rec.market_id.data(), rec.market_id.size()}, reason);
-    rec.prev_hash = step.prev_hash; rec.payload_hash = step.payload_hash;
-    rec.current_hash = step.current_hash;
-    return em->write(rec);
+    return em->emit_with_injected_chain(
+        in, AuditEventType::SafeModeEnter,
+        step.prev_hash, step.payload_hash, step.current_hash, step.seq);
 }
 
 AuditEmitterPool::ResultT AuditEmitterPool::emit_safe_mode_exit(
@@ -394,19 +419,17 @@ AuditEmitterPool::ResultT AuditEmitterPool::emit_safe_mode_exit(
     if (idx >= kAuditOriginCount) { return stcpp::infra::wal::WalError::Io; }
     AuditEmitter* em = emitters_[idx].get();
     if (em == nullptr) { return stcpp::infra::wal::WalError::Io; }
-    if (!em->ts_chain_ok(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    if (!ts_chain_ok_free(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    RiskDecisionInput in = ctx;
+    in.event_type = AuditEventType::SafeModeExit;
     ChainStep step{};
     {
         const std::lock_guard<std::mutex> lock(chain_mutex_);
-        RiskDecisionInput tmp = ctx;
-        tmp.event_type = AuditEventType::SafeModeExit;
-        step = alloc_chain_step_locked(tmp, origin);
-        em->inject_chain_state(step.current_hash, step.seq);
+        step = alloc_chain_step_locked(in, origin);
     }
-    AuditRecord rec = em->build_record(ctx, AuditEventType::SafeModeExit);
-    rec.prev_hash = step.prev_hash; rec.payload_hash = step.payload_hash;
-    rec.current_hash = step.current_hash;
-    return em->write(rec);
+    return em->emit_with_injected_chain(
+        in, AuditEventType::SafeModeExit,
+        step.prev_hash, step.payload_hash, step.current_hash, step.seq);
 }
 
 AuditEmitterPool::ResultT AuditEmitterPool::emit_state_transition(
@@ -415,20 +438,19 @@ AuditEmitterPool::ResultT AuditEmitterPool::emit_state_transition(
     if (idx >= kAuditOriginCount) { return stcpp::infra::wal::WalError::Io; }
     AuditEmitter* em = emitters_[idx].get();
     if (em == nullptr) { return stcpp::infra::wal::WalError::Io; }
-    if (!em->ts_chain_ok(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    if (!ts_chain_ok_free(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    // from_to → market_id 字段
+    RiskDecisionInput in = ctx;
+    in.event_type = AuditEventType::StateTransition;
+    in.market_id  = from_to;
     ChainStep step{};
     {
         const std::lock_guard<std::mutex> lock(chain_mutex_);
-        RiskDecisionInput tmp = ctx;
-        tmp.event_type = AuditEventType::StateTransition;
-        step = alloc_chain_step_locked(tmp, origin);
-        em->inject_chain_state(step.current_hash, step.seq);
+        step = alloc_chain_step_locked(in, origin);
     }
-    AuditRecord rec = em->build_record(ctx, AuditEventType::StateTransition);
-    copy_fixed(std::span<char>{rec.market_id.data(), rec.market_id.size()}, from_to);
-    rec.prev_hash = step.prev_hash; rec.payload_hash = step.payload_hash;
-    rec.current_hash = step.current_hash;
-    return em->write(rec);
+    return em->emit_with_injected_chain(
+        in, AuditEventType::StateTransition,
+        step.prev_hash, step.payload_hash, step.current_hash, step.seq);
 }
 
 AuditEmitterPool::ResultT AuditEmitterPool::emit_unlock(
@@ -437,20 +459,19 @@ AuditEmitterPool::ResultT AuditEmitterPool::emit_unlock(
     if (idx >= kAuditOriginCount) { return stcpp::infra::wal::WalError::Io; }
     AuditEmitter* em = emitters_[idx].get();
     if (em == nullptr) { return stcpp::infra::wal::WalError::Io; }
-    if (!em->ts_chain_ok(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    if (!ts_chain_ok_free(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    // operator_id → strategy_id 字段
+    RiskDecisionInput in = ctx;
+    in.event_type  = AuditEventType::Unlock;
+    in.strategy_id = operator_id;
     ChainStep step{};
     {
         const std::lock_guard<std::mutex> lock(chain_mutex_);
-        RiskDecisionInput tmp = ctx;
-        tmp.event_type = AuditEventType::Unlock;
-        step = alloc_chain_step_locked(tmp, origin);
-        em->inject_chain_state(step.current_hash, step.seq);
+        step = alloc_chain_step_locked(in, origin);
     }
-    AuditRecord rec = em->build_record(ctx, AuditEventType::Unlock);
-    copy_fixed(std::span<char>{rec.strategy_id.data(), rec.strategy_id.size()}, operator_id);
-    rec.prev_hash = step.prev_hash; rec.payload_hash = step.payload_hash;
-    rec.current_hash = step.current_hash;
-    return em->write(rec);
+    return em->emit_with_injected_chain(
+        in, AuditEventType::Unlock,
+        step.prev_hash, step.payload_hash, step.current_hash, step.seq);
 }
 
 AuditEmitterPool::ResultT AuditEmitterPool::emit_strategy_decayed(
@@ -459,21 +480,20 @@ AuditEmitterPool::ResultT AuditEmitterPool::emit_strategy_decayed(
     if (idx >= kAuditOriginCount) { return stcpp::infra::wal::WalError::Io; }
     AuditEmitter* em = emitters_[idx].get();
     if (em == nullptr) { return stcpp::infra::wal::WalError::Io; }
-    if (!em->ts_chain_ok(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    if (!ts_chain_ok_free(ctx)) { return stcpp::infra::wal::WalError::PitViolation; }
+    // reject_code / sub_reason 注入 in (build_record 从 in 读)
+    RiskDecisionInput in = ctx;
+    in.event_type  = AuditEventType::StrategyDecayed;
+    in.reject_code = stcpp::risk::RejectCode::STRATEGY_DECAYED;
+    in.sub_reason  = stcpp::risk::InvalidIntentSubReason::NONE;
     ChainStep step{};
     {
         const std::lock_guard<std::mutex> lock(chain_mutex_);
-        RiskDecisionInput tmp = ctx;
-        tmp.event_type = AuditEventType::StrategyDecayed;
-        step = alloc_chain_step_locked(tmp, origin);
-        em->inject_chain_state(step.current_hash, step.seq);
+        step = alloc_chain_step_locked(in, origin);
     }
-    AuditRecord rec = em->build_record(ctx, AuditEventType::StrategyDecayed);
-    rec.reject_code = stcpp::risk::RejectCode::STRATEGY_DECAYED;
-    rec.sub_reason  = stcpp::risk::InvalidIntentSubReason::NONE;
-    rec.prev_hash = step.prev_hash; rec.payload_hash = step.payload_hash;
-    rec.current_hash = step.current_hash;
-    return em->write(rec);
+    return em->emit_with_injected_chain(
+        in, AuditEventType::StrategyDecayed,
+        step.prev_hash, step.payload_hash, step.current_hash, step.seq);
 }
 
 AuditEmitterPool::ResultT AuditEmitterPool::emit_recon_drift(
@@ -482,19 +502,18 @@ AuditEmitterPool::ResultT AuditEmitterPool::emit_recon_drift(
     if (idx >= kAuditOriginCount) { return stcpp::infra::wal::WalError::Io; }
     AuditEmitter* em = emitters_[idx].get();
     if (em == nullptr) { return stcpp::infra::wal::WalError::Io; }
+    // diag → market_id 字段 (recon_drift 不做 ts check, 与单 emitter 版一致)
+    RiskDecisionInput in = ctx;
+    in.event_type = AuditEventType::ReconDrift;
+    in.market_id  = diag;
     ChainStep step{};
     {
         const std::lock_guard<std::mutex> lock(chain_mutex_);
-        RiskDecisionInput tmp = ctx;
-        tmp.event_type = AuditEventType::ReconDrift;
-        step = alloc_chain_step_locked(tmp, origin);
-        em->inject_chain_state(step.current_hash, step.seq);
+        step = alloc_chain_step_locked(in, origin);
     }
-    AuditRecord rec = em->build_record(ctx, AuditEventType::ReconDrift);
-    copy_fixed(std::span<char>{rec.market_id.data(), rec.market_id.size()}, diag);
-    rec.prev_hash = step.prev_hash; rec.payload_hash = step.payload_hash;
-    rec.current_hash = step.current_hash;
-    return em->write(rec);
+    return em->emit_with_injected_chain(
+        in, AuditEventType::ReconDrift,
+        step.prev_hash, step.payload_hash, step.current_hash, step.seq);
 }
 
 }  // namespace stcpp::observability

@@ -155,4 +155,60 @@ W5 试点期间老胡 PM 周报必带 "主管派单覆盖率" KPI: 战斗单元 
 
 ---
 
-**最后更新:** 2026-05-28 by 老雷
+### §3.4 文件 ownership lock (W6 W3 GM 错 #13 配套, 立 2026-06-W3)
+
+#### 触发场景
+
+W6 W3 Wave 30 8 IC 并行交付, 小卢 + 老孙 同时改 single_instance.cpp, 老孙"顺手修"导致小卢 owner 版本险被 overwrite. tests/unit/CMakeLists.txt 被 4 IC + GM 共 5 方改动重叠. 派单 prompt 当时没有"文件 ownership"约束, 是制度漏洞.
+
+#### 规则
+
+1. **GM 派 wave 前必须出 File Ownership Matrix (FOM)**:
+   - 每个 sub-agent 显式列允许修改的文件清单 (允许 list)
+   - 高争用文件 (同 wave ≥ 2 sub-agent 改) 标记 "shared write" + 指定 lead owner
+   - FOM 入派单 prompt 顶部 hard 约束
+
+2. **sub-agent 派单 prompt 必含**:
+   "本任务允许修改文件: <FOM 列表>. 其他文件严禁改 (含'顺手修'). 发现需改非 owner 文件 → 立即上报 GM, 不擅自动手."
+
+3. **shared write 文件 (lead owner 制度)**:
+   - lead owner first review 后才能合并
+   - 老郭 architecture review 特别检查
+   - **永久 shared write 文件清单**:
+     - `tests/unit/CMakeLists.txt` (lead: 老周)
+     - 顶层 `CMakeLists.txt` (lead: 老周)
+     - `.gitignore` (lead: GM)
+     - `.github/workflows/pr.yml` (lead: 老高)
+     - `.clang-tidy` (lead: 老高)
+
+4. **GM 派 wave 自检 7 → 8 题**:
+   - 新增 ⑦ "wave 内是否 ≥ 2 sub-agent 改同文件? FOM 是否覆盖?"
+   - 新增 ⑧ "commit 前检查临时数据 / 大 binary 是否漏 gitignore" (GM 错 #14 配套)
+
+5. **ABI cascade audit 流程** (老王 W6 Wave 32 新发现):
+   - 任何 ABI 变更 (struct 字段加/改) owner 必须在 PR description 列 "下游 audit 清单"
+   - 下游 owner 同 sprint 内完成扫描, 删 dead code, 不允许 `[[maybe_unused]]` 掩盖
+
+#### CI enforcement (老高 PR v1.4)
+
+- PR description 必含 "FOM ref: <wave>" 引用
+- PR 改非 FOM 列出的文件 → fail
+- PR description 含 "ABI changed" 必含 "下游 audit 清单"
+- binary 大文件 (>1MB) 或 .parquet/.pkl/.pt/.ckpt/.onnx/.h5/.feather 入 git → fail
+
+#### KPI 追踪 (老胡 §9 周报)
+
+- 文件抢占次数 (期望 0)
+- 越 FOM 修改次数 (期望 0)
+- ABI cascade dead code 检出数 (W7 老王 + 老高 联动)
+
+#### W6 W3 实测案例
+
+- 文件抢占 1 次: single_instance.cpp (小卢 lead, 老孙 越权 "顺手修")
+- tests/unit/CMakeLists.txt 5 方改 (3 sub-agent + 老高 + GM 越权 OFF guard)
+- W6 W3 起 FOM 强约束, 期望 0
+- W6 W3 GM 错 #14 (Parquet 24 文件): gitignore 通配漏 → §3.4-5 binary 文件 grep enforce
+
+---
+
+**最后更新:** 2026-06-W3 by 老郭 (§3.4 正式入文档); 2026-05-28 by 老雷 (§1-§8 原文)

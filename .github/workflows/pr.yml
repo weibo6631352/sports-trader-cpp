@@ -274,46 +274,22 @@ jobs:
         run: python3 tests/ci_grep/adr009_model_tier.py
 
   # ---------------------------------------------------------------------------
-  # W6 Wave 29: ABI lock enforce (老高 W6 W2 落地提案, 本 PR 为提案占位)
-  # 实际 abi_lock.py 由老高 W6 W2 实现; 此 job 在 abi_lock.py 落地前 always-pass
+  # ABI lock enforce (abi_lock.py v1.4 — 老高 W7 Wave 33 always-pass 注释已清)
   # ---------------------------------------------------------------------------
 
   ci-grep-abi-lock:
-    name: PM client ABI lock (handshake ref enforce, W6 Wave 29)
+    name: PM client ABI lock (handshake ref enforce, v1.4)
     runs-on: ubuntu-latest
     timeout-minutes: 2
     if: github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
-      - name: Check pm_client.hpp PR must reference handshake doc
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: ABI lock enforce (abi_lock.py v1.4)
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
-          CHANGED_FILES: ${{ toJSON(github.event.pull_request.changed_files) }}
-        run: |
-          set -e
-          # 检查是否修改了 pm_client.hpp 或 live_pm_client.hpp
-          if git diff --name-only origin/${{ github.base_ref }}...HEAD \
-             | grep -qE 'include/stcpp/polymarket/(pm_client\.hpp|live/live_pm_client\.hpp)'; then
-            echo "检测到 pm_client.hpp / live_pm_client.hpp 变更"
-            # PR 描述必须引用 handshake 文档
-            if ! echo "$PR_BODY" | grep -qE 'ABI ref:.*laoli-laoSun-handshake-v1|laoli-laoSun-handshake-v1.*F-[0-9]{2}'; then
-              echo "::error::ABI lock: 修改 pm_client.hpp 或 live_pm_client.hpp 必须在 PR 描述引用"
-              echo "::error::  格式: 'ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>'"
-              echo "::error::  参见: docs/RESEARCH/laoli-laoSun-handshake-v1.md §7"
-              exit 1
-            fi
-            echo "OK: PR 已引用 ABI handshake 文档"
-          else
-            echo "OK: 本 PR 未修改 pm_client.hpp / live_pm_client.hpp, ABI lock 检查跳过"
-          fi
-      - name: ABI hash grep (abi_lock.py — 老高 W6 W2 落地前 always-pass)
-        run: |
-          # 老高 W6 W2 实现 tests/ci_grep/abi_lock.py 后激活
-          if [ -f tests/ci_grep/abi_lock.py ]; then
-            python3 tests/ci_grep/abi_lock.py
-          else
-            echo "PENDING: tests/ci_grep/abi_lock.py 尚未落地 (老高 W6 W2), 本步骤 pass"
-          fi
+        run: python3 tests/ci_grep/abi_lock.py
 
   # ---------------------------------------------------------------------------
   # v1.1 保留: risk-enum-coverage
@@ -393,3 +369,79 @@ jobs:
           else
             echo "no tests yet, skip"
           fi
+
+  # ---------------------------------------------------------------------------
+  # v1.4 新增: 5 Python grep job (Wave 33 — GM 错 #13 #14 配套 + FOM + ABI cascade + ADR-010 wno)
+  # ---------------------------------------------------------------------------
+
+  ci-grep-gm-commit-author:
+    name: GM commit author warning + audit (v1.4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run gm_commit_author_check.py
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: python3 tests/ci_grep/gm_commit_author_check.py
+
+  ci-grep-binary-large-file:
+    name: binary 大文件 + ML artifact 入 git (v1.4, GM 错 #14)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run binary_large_file_check.py
+        run: python3 tests/ci_grep/binary_large_file_check.py
+
+  ci-grep-fom:
+    # 状态: warning-only 直到 ADR-005 §3.4 W7 W4 立后设 FOM_ACTIVE=1 激活 FAIL 模式
+    name: FOM ref 检查 (ADR-005 §3.4, v1.4, W7 W4 激活)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run fom_check.py
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          # FOM_ACTIVE: 设为 "1" 后升级为 FAIL 模式 (ADR-005 §3.4 W7 W4 激活)
+          FOM_ACTIVE: "0"
+        run: python3 tests/ci_grep/fom_check.py
+
+  ci-grep-abi-cascade:
+    name: ABI cascade 下游 audit 清单 (v1.4, 老王 W6 Wave 32)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run abi_cascade_check.py
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tests/ci_grep/abi_cascade_check.py
+
+  ci-grep-adr010-wno:
+    name: ADR-010 -Wno-* 合规检查 (v1.4, 与小宋 W7 协作)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run adr010_wno_check.py
+        run: python3 tests/ci_grep/adr010_wno_check.py

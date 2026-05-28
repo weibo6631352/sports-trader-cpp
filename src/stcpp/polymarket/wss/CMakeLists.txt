@@ -18,7 +18,9 @@ target_compile_features(stcpp_polymarket_wss PUBLIC cxx_std_20)
 
 # Subscriber 不依赖第三方 transport — IWssTransport 是抽象, 真实现 (boost.beast)
 # 在另一独立 target stcpp_polymarket_wss_beast 提供 (W6 ack 后落地).
+# ADR-010 §4: 禁止新增 -Wno-* 抑制。已删 -Wno-sign-conversion -Wno-conversion -Wno-shadow (W7 Wave 33 小宋).
+# 若 wss source 仍有上述 warning 请 @小冯 在独立 PR 修真 source.
+# grandfather 保留 (ADR-010 §2.2): double-promotion / old-style-cast / cast-align
 target_compile_options(stcpp_polymarket_wss PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+    -Wno-double-promotion -Wno-old-style-cast -Wno-cast-align
 )

@@ -352,5 +352,69 @@ TEST(AuditEmitter, RiskGatewayMock_RejectFlow) {
     EXPECT_EQ(em.emitted_count(), 2u);
 }
 
+// ---------- AuditEmitterPool.PublicEmitWithInjectedChain (W7 Wave 33) --------
+//
+// 验证: emit_with_injected_chain public API 工作 — 5 emitter pool 各 emit 1 笔,
+//       全局 chain 正确串联 (seq 1..5, 每条 current_hash = Blake3(prev||payload)).
+
+TEST(AuditEmitterPool, PublicEmitWithInjectedChain) {
+    using stcpp::observability::AuditEmitterPool;
+    using stcpp::observability::AuditOrigin;
+    using stcpp::observability::Blake3Hasher;
+
+    // 开 5 个 writer (paper kind, 独立 path prefix)
+    auto open_w = [](const char* prefix) {
+        WalConfig cfg{};
+        cfg.kind        = WalKind::PaperAudit;
+        cfg.path_prefix = prefix;
+        return WalWriter<AuditRecord>::Open(cfg);
+    };
+
+    auto w0 = open_w("/var/lib/stcpp/paper/pool_test_risk");
+    auto w1 = open_w("/var/lib/stcpp/paper/pool_test_signer");
+    auto w2 = open_w("/var/lib/stcpp/paper/pool_test_ml");
+    auto w3 = open_w("/var/lib/stcpp/paper/pool_test_stats");
+    auto w4 = open_w("/var/lib/stcpp/paper/pool_test_strategy");
+    ASSERT_TRUE(w0 && w1 && w2 && w3 && w4);
+
+    AuditEmitterPool pool(
+        w0.value().get(), w1.value().get(), w2.value().get(),
+        w3.value().get(), w4.value().get());
+
+    // 全局 chain 起点 = 全 0
+    const Blake3Hasher::Hash256 zero{};
+    EXPECT_EQ(pool.global_last_hash(), zero);
+    EXPECT_EQ(pool.global_seq(), 0u);
+
+    // 5 个 origin 各 emit 1 笔 (轮流)
+    const AuditOrigin origins[5] = {
+        AuditOrigin::Risk, AuditOrigin::Signer, AuditOrigin::Ml,
+        AuditOrigin::Stats, AuditOrigin::Strategy};
+
+    Blake3Hasher::Hash256 mirror_prev{};
+    for (int i = 0; i < 5; ++i) {
+        auto ctx = make_valid_input(AuditEventType::OrderApproved);
+        const auto r = pool.emit(origins[i], ctx);
+        ASSERT_TRUE(r) << "pool.emit origin=" << i << " 失败: "
+                       << static_cast<int>(r.error());
+
+        // 验证全局 seq 递增
+        EXPECT_EQ(pool.global_seq(), static_cast<std::uint64_t>(i + 1));
+
+        // 验证 chain 串联: current = Blake3(prev || payload)
+        const auto seq     = static_cast<std::uint64_t>(i + 1);
+        const auto payload = Blake3Hasher::compute_payload_hash(
+            seq, static_cast<std::uint8_t>(AuditEventType::OrderApproved), ctx.decision_ts);
+        const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
+        EXPECT_EQ(pool.global_last_hash(), expected)
+            << "chain step " << i << " 不一致 (public API chain 注入验证)";
+        mirror_prev = expected;
+    }
+
+    // hash_chain_verify_global 验证全局 chain 连续
+    EXPECT_TRUE(pool.hash_chain_verify_global(1, 5))
+        << "M1-A06: pool 5 笔全局 chain verify 应通过";
+}
+
 }  // namespace
 }  // namespace stcpp::observability

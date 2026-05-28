@@ -184,9 +184,7 @@ TEST(AuditChainIntegration, T2_tamper_detection_via_recompute) {
     {
         constexpr std::size_t kTamperIdx = 10;
         Blake3Hasher::Hash256 prev{};
-        bool first_mismatch_at = -1;
         bool mismatch_seen = false;
-        (void)first_mismatch_at;
         std::size_t mismatch_idx = static_cast<std::size_t>(-1);
         for (std::size_t i = 0; i < static_cast<std::size_t>(kN); ++i) {
             const auto seq = static_cast<std::uint64_t>(i + 1);

@@ -251,7 +251,6 @@ TEST(PositionLedger, T3_RestoreFromWal_CircuitBreakerState) {
     const std::int64_t base_ts = NowNs() - 2'000'000'000LL;
 
     PositionRecord rec1{};
-    static_cast<void>(ToMarketIdArray("paper_market_0"));  // 仅调用以覆盖编译
     std::memcpy(rec1.market_id.data(), "paper_market_0", 14);
     rec1.outcome               = 0;
     rec1.position_delta        = 10'000'000LL;
