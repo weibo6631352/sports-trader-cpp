@@ -1,2 +1,0 @@
-/usr/bin/ar qc libstcpp_data_goalserve.a CMakeFiles/stcpp_data_goalserve.dir/goalserve_stub.cpp.o
-/usr/bin/ranlib libstcpp_data_goalserve.a

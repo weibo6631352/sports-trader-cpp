@@ -1,2 +1,0 @@
-/usr/bin/ar qc libstcpp_stats.a CMakeFiles/stcpp_stats.dir/gate_evaluator.cpp.o
-/usr/bin/ranlib libstcpp_stats.a

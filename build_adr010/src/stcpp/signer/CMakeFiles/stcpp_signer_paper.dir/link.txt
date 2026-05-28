@@ -1,2 +1,0 @@
-/usr/bin/ar qc libstcpp_signer_paper.a CMakeFiles/stcpp_signer_paper.dir/paper/paper_signer.cpp.o
-/usr/bin/ranlib libstcpp_signer_paper.a

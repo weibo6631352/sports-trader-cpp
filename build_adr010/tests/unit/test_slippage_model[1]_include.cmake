@@ -1,5 +1,0 @@
-if(EXISTS "/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_slippage_model[1]_tests.cmake")
-  include("/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_slippage_model[1]_tests.cmake")
-else()
-  add_test(test_slippage_model_NOT_BUILT test_slippage_model_NOT_BUILT)
-endif()

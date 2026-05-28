@@ -1,2 +1,0 @@
-/usr/bin/ar qc libstcpp_execution_paper.a CMakeFiles/stcpp_execution_paper.dir/virtual_matcher.cpp.o
-/usr/bin/ranlib libstcpp_execution_paper.a

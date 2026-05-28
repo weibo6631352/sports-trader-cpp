@@ -1,1 +1,0 @@
-/usr/bin/c++ -Werror -Wsign-conversion -Wshadow -Wconversion -Wno-double-promotion -Wno-cast-align -Wno-old-style-cast -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/test_goalserve_client.dir/test_goalserve_client.cpp.o -o test_goalserve_client  ../../lib/libgtest_main.a ../../src/stcpp/data/libstcpp_data_goalserve.a ../../lib/libgtest.a

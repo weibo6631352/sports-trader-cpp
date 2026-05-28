@@ -1,5 +1,0 @@
-if(EXISTS "/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_live_section_classifier[1]_tests.cmake")
-  include("/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_live_section_classifier[1]_tests.cmake")
-else()
-  add_test(test_live_section_classifier_NOT_BUILT test_live_section_classifier_NOT_BUILT)
-endif()

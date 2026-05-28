@@ -1,2 +1,0 @@
-/usr/bin/ar qc libstcpp_process_lock.a CMakeFiles/stcpp_process_lock.dir/single_instance.cpp.o
-/usr/bin/ranlib libstcpp_process_lock.a

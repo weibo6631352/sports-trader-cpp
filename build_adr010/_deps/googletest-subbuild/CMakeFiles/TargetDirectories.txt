@@ -1,3 +1,0 @@
-/Users/wangweibo/code/sports-trader-cpp/build_adr010/_deps/googletest-subbuild/CMakeFiles/googletest-populate.dir
-/Users/wangweibo/code/sports-trader-cpp/build_adr010/_deps/googletest-subbuild/CMakeFiles/edit_cache.dir
-/Users/wangweibo/code/sports-trader-cpp/build_adr010/_deps/googletest-subbuild/CMakeFiles/rebuild_cache.dir

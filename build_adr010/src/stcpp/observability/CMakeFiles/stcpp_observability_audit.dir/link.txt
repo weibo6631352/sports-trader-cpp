@@ -1,2 +1,0 @@
-/usr/bin/ar qc libstcpp_observability_audit.a CMakeFiles/stcpp_observability_audit.dir/audit_emitter.cpp.o
-/usr/bin/ranlib libstcpp_observability_audit.a

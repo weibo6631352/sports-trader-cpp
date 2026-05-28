@@ -1,5 +1,0 @@
-if(EXISTS "/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_p0_01_signal[1]_tests.cmake")
-  include("/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_p0_01_signal[1]_tests.cmake")
-else()
-  add_test(test_p0_01_signal_NOT_BUILT test_p0_01_signal_NOT_BUILT)
-endif()

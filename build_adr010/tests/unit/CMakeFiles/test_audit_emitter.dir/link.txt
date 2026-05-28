@@ -1,1 +1,0 @@
-/usr/bin/c++ -Werror -Wsign-conversion -Wshadow -Wconversion -Wno-double-promotion -Wno-cast-align -Wno-old-style-cast -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/test_audit_emitter.dir/test_audit_emitter.cpp.o -o test_audit_emitter  ../../lib/libgtest_main.a ../../lib/libgtest.a

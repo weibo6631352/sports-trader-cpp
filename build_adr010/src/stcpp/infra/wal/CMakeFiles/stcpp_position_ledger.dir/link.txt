@@ -1,2 +1,0 @@
-/usr/bin/ar qc libstcpp_position_ledger.a CMakeFiles/stcpp_position_ledger.dir/position_ledger.cpp.o
-/usr/bin/ranlib libstcpp_position_ledger.a

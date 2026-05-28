@@ -1,5 +1,0 @@
-if(EXISTS "/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_virtual_matcher[1]_tests.cmake")
-  include("/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_virtual_matcher[1]_tests.cmake")
-else()
-  add_test(test_virtual_matcher_NOT_BUILT test_virtual_matcher_NOT_BUILT)
-endif()

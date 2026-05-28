@@ -1,2 +1,0 @@
-/usr/bin/ar qc libstcpp_strategy.a CMakeFiles/stcpp_strategy.dir/live_section_classifier.cpp.o CMakeFiles/stcpp_strategy.dir/p0_01_pinnacle_no_vig.cpp.o CMakeFiles/stcpp_strategy.dir/p0_01_goalserve_devig.cpp.o
-/usr/bin/ranlib libstcpp_strategy.a
