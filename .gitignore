@@ -6,3 +6,10 @@ cmake-build-*/
 *.dylib
 *.a
 .DS_Store
+.env
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+secrets/
