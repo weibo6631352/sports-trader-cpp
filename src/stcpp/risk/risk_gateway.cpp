@@ -1,8 +1,15 @@
 // stcpp/risk/risk_gateway.cpp — RiskGateway v0.1 (老韩 Sprint-2 W4 Wave 19)
+//   + W5 Wave 24 ADR-004 patch (老沈, 2026-05-28): position_caps / liquidity 顺序互换
 //
-// 21 reject rule short-circuit 优先级:
+// 21 reject rule short-circuit 优先级 (SSOT = ADR-004, 见
+// docs/ADR/2026-05-28-r07-r08-liquidity-vs-position-cap-priority.md):
 //   state → invalid_intent (含 PIT) → duplicate → stale_data → market →
-//   liquidity (depth/fill/slippage) → position caps → signal → strategy_decayed
+//   position_caps (cap/exposure/bankroll/loss) → liquidity (depth/fill/slippage) →
+//   signal (CI / negated_by_slip) → strategy_decayed → AUDIT_WAL_BACKPRESSURE
+//
+// 注: signal.EDGE_NEGATED_BY_SLIPPAGE 读 d.slippage_bps 由 liquidity 阶段填. liquidity
+// 仍在 signal 之前, 数据流不破 (ADR-004 §4 note).
+//
 // emit 失败 → AUDIT_WAL_BACKPRESSURE; INTERNAL_ERROR 兜底.
 
 #include "stcpp/risk/risk_gateway.hpp"
@@ -105,20 +112,39 @@ void RiskGateway::clear_idempotency() noexcept {
     std::lock_guard<std::mutex> g(s_->mu); s_->seen_signal_ids.clear();
 }
 
-// ---------- audit_id 生成 (ULID stub: 6B ts ms-big-endian + 10B counter) ------
+// ---------- audit_id 生成 (ULID stub: 6B ts ms-big-endian + 6B seq + 4B rand) -
+//
+// BUG-W5-001 patch (老沈, W5 Wave 24, 2026-05-28):
+//   原实现 seq 段 `seq >> ((9 - i) * 8)` 在 i=0 时 shift = 72, 而 seq 是
+//   `uint64_t` (64 位), shift >= 64 为 UB; -O2 整段被优化成 0, 14 个
+//   RiskGatewayTest.R* 在 release 模式 audit_id 全零, R-1 invariant 破.
+//   修法 1 (小宋 W5 W3): seq 占 6 byte big-endian (shift < 48 安全, 与 ts_ms 段
+//   同语义), out[12..15] 4 byte 留 randomness (paper v0.1 占位 0, M5 接老孙
+//   ULID generator / BLAKE3 时填). precedence 括号同步加, 防 `>> n & 0xFF`
+//   按 `>> (n & 0xFF)` 误解.
+//
+// 红线复核: R-1 (audit_id 非空 invariant), 签名 ABI 不动 (static, std::int64_t →
+//          std::array<uint8_t,16>), enum 数值不动.
 
 std::array<std::uint8_t, 16> RiskGateway::next_audit_id(std::int64_t now_ns) noexcept {
-    // ULID monotonic stub. 单测用; 真上线 W5 接老孙 ULID generator + thread-local seq.
+    // ULID monotonic stub. 单测用; 真上线 M5 接老孙 ULID generator + thread-local seq.
     static std::atomic<std::uint64_t> g_seq{0};
     std::array<std::uint8_t, 16> out{};
+    // ts_ms big-endian 6 byte (shift < 48 安全)
     auto const ts_ms = static_cast<std::uint64_t>(now_ns / 1'000'000LL);
-    for (int i = 5; i >= 0; --i) {
-        out[static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(ts_ms >> ((5 - i) * 8) & 0xFF);
+    for (int i = 0; i < 6; ++i) {
+        out[static_cast<std::size_t>(i)] =
+            static_cast<std::uint8_t>((ts_ms >> ((5 - i) * 8)) & 0xFFu);
     }
+    // seq big-endian 6 byte (shift < 48 安全; 原 10 byte = shift 72 是 UB)
     auto const seq = g_seq.fetch_add(1, std::memory_order_relaxed);
-    for (int i = 0; i < 10; ++i) {
+    for (int i = 0; i < 6; ++i) {
         out[6 + static_cast<std::size_t>(i)] =
-            static_cast<std::uint8_t>(seq >> ((9 - i) * 8) & 0xFF);
+            static_cast<std::uint8_t>((seq >> ((5 - i) * 8)) & 0xFFu);
+    }
+    // out[12..15] 4 byte randomness 占位 (M5 老孙 ULID rand / BLAKE3 接)
+    for (int i = 12; i < 16; ++i) {
+        out[static_cast<std::size_t>(i)] = 0;
     }
     return out;
 }
@@ -367,8 +393,12 @@ RiskDecision RiskGateway::evaluate(OrderIntent const& intent) noexcept {
     if (check_duplicate_(intent, d))        { reject_here(); return d; }
     if (check_stale_data_(intent, d))       { reject_here(); return d; }
     if (check_market_(intent, d))           { reject_here(); return d; }
-    if (check_liquidity_(intent, d))        { reject_here(); return d; }
+    // ADR-004 (2026-05-28, 老郭): position_caps 前移到 liquidity 之前.
+    //   理由 (摘): 红线 (cap/bankroll/loss) > 客观状态 (book depth); cheap→expensive
+    //   short-circuit (cap ~30ns vs slippage 50-200ns); 多重违规时报根因 (sizer bug)
+    //   而非市场表象, audit / 调试更准.
     if (check_position_caps_(intent, d))    { reject_here(); return d; }
+    if (check_liquidity_(intent, d))        { reject_here(); return d; }
     if (check_signal_(intent, d))           { reject_here(); return d; }
     if (check_strategy_decayed_(intent, d)) { reject_here(); return d; }
 

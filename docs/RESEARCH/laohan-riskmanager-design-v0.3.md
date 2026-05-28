@@ -62,6 +62,12 @@ G8b 是 long-run monitoring, **非 M4.5 first-pass gate** (D-04 小董 §2 明�
 
 ### 1.2 §3.10 reject enum 增量 (含 4 新 + INVALID_INTENT + STRATEGY_DECAYED)
 
+> **W5 Wave 24 patch (2026-05-28, 老沈)**: 21 enum 在 `RiskGateway::evaluate()` 内部的
+> **短路顺序 SSOT = ADR-004** (`docs/ADR/2026-05-28-r07-r08-liquidity-vs-position-cap-priority.md`).
+> 本节 spec **不复刻顺序**, 仅列 enum 语义. position_caps (R-6/7/8/9/10) 先于
+> liquidity (R-15/16/17) — 红线优于客观状态. 实现见 `src/stcpp/risk/risk_gateway.cpp::evaluate()`.
+
+
 v0.2 已含 14 项. v0.3 增量:
 
 | code (v0.3 新) | 含义 | 触发规则 |

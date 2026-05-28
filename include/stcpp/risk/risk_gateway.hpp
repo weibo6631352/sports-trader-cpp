@@ -1,10 +1,26 @@
 // stcpp/risk/risk_gateway.hpp — RiskGateway v0.1 (老韩 Sprint-2 W4 Wave 19)
+//   + W5 Wave 24 ADR-004 patch (老沈, 2026-05-28): position_caps / liquidity 顺序互换
 //
 // 落: laohan-riskmanager-design-v0.3{,.1}.md / xiaoxiao-slippage-model-lib-v1.md
 //     laotang-audit-schema-v1.1.md / laowang-wal-framework-cpp-interface-v1.md
+//     ADR-004 (docs/ADR/2026-05-28-r07-r08-liquidity-vs-position-cap-priority.md)
 //
 // 红线: R-1 (必经 evaluate + emit audit) / R-7 (ExecutionMode build-time)
 //       R-11 (paper 走 PaperAudit) / R-20 (4 ts PIT chain)
+//
+// evaluate() 21 reject short-circuit 顺序 (SSOT = ADR-004, spec doc 不复刻):
+//   1. state            (HALTED / DRAIN / SAFE_MODE — DRAIN/SAFE_MODE 平仓放行)
+//   2. invalid_intent   (R-20 PIT 4 ts + 字段 + 9 sub_reason)
+//   3. duplicate_intent
+//   4. stale_data       (含 MarketState 5 档阈值 + recon 全局)
+//   5. market           (MARKET_TYPE_NOT_ENABLED / MARKET_NOT_ACTIVE)
+//   6. position_caps    [ADR-004 前移] EXCEED_PER_ORDER_CAP / EXCEED_MARKET_EXPOSURE /
+//                       INSUFFICIENT_BANKROLL / DAILY_LOSS_HALT / CONSEC_LOSS_HALT
+//   7. liquidity        [ADR-004 后移] EXCEED_BOOK_DEPTH / LOW_FILL_RATE / EXCESSIVE_SLIPPAGE
+//   8. signal           EDGE_CI_NEGATIVE / EDGE_NEGATED_BY_SLIPPAGE
+//                       (依 d.slippage_bps, liquidity 已填)
+//   9. strategy_decayed
+//  10. AUDIT_WAL_BACKPRESSURE (emit 失败兜底, 由 evaluate() 主循环改 reject)
 //
 // W5+ TODO: 真接老王 WalWriter / 老周 PositionLedger / 小肖 Kelly+CI / 小袁 MarketStateClassifier
 
@@ -213,15 +229,18 @@ class RiskGateway {
     [[nodiscard]] bool check_duplicate_(OrderIntent const& it, RiskDecision& d) noexcept;
     // 6 STALE_DATA (含 MarketState 5 档)
     [[nodiscard]] bool check_stale_data_(OrderIntent const& it, RiskDecision& d) const noexcept;
-    // 7-8 市场
+    // 5 市场 (MARKET_TYPE_NOT_ENABLED / MARKET_NOT_ACTIVE)
     [[nodiscard]] bool check_market_(OrderIntent const& it, RiskDecision& d) const noexcept;
-    // 9-11 流动性 (调 SlippageModel)
-    [[nodiscard]] bool check_liquidity_(OrderIntent const& it, RiskDecision& d) const noexcept;
-    // 12-15 仓位 / 资金
+    // 6 仓位 / 资金 (ADR-004: 前移 — 公司红线先于市场状态)
+    //   EXCEED_PER_ORDER_CAP / EXCEED_MARKET_EXPOSURE / INSUFFICIENT_BANKROLL /
+    //   DAILY_LOSS_HALT / CONSEC_LOSS_HALT
     [[nodiscard]] bool check_position_caps_(OrderIntent const& it, RiskDecision& d) const noexcept;
-    // 16-17 信号
+    // 7 流动性 (ADR-004: 后移于 caps; 仍在 signal 前以填 d.slippage_bps)
+    //   调 SlippageModel: EXCEED_BOOK_DEPTH / LOW_FILL_RATE / EXCESSIVE_SLIPPAGE
+    [[nodiscard]] bool check_liquidity_(OrderIntent const& it, RiskDecision& d) const noexcept;
+    // 8 信号 (EDGE_CI_NEGATIVE / EDGE_NEGATED_BY_SLIPPAGE)
     [[nodiscard]] bool check_signal_(OrderIntent const& it, RiskDecision& d) const noexcept;
-    // 18 STRATEGY_DECAYED
+    // 9 STRATEGY_DECAYED
     [[nodiscard]] bool check_strategy_decayed_(OrderIntent const& it, RiskDecision& d) const noexcept;
 
     // emit audit + 填 audit_id. 返 false → AUDIT_WAL_BACKPRESSURE.

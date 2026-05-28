@@ -1,6 +1,7 @@
 name: PR Checks
-# 老高 v1 §8 + 小宋 v0.2 §4 (R-20 PIT 7 项 + W3 深化) + 老李 v3 §B HMAC bug 4
-# 红线: PR ≤ 8 min, 命中即 reject
+# 老高 v1.1 (W5 Wave 24) — v1 (W3) + 5 新 grep + R-20 8 项 + R-12/R-11/R-33/persona 边界 + ADR-005
+# 红线: PR <= 8 min, 命中即 reject
+# 改本文件: 老高 + 老郭 + 老雷 三方任一签字, PR 描述带 "spec by 老郭" 走 ADR-005 派单
 
 on:
   pull_request:
@@ -9,13 +10,58 @@ on:
     branches: [main]
 
 jobs:
+  pr-meta-grep:
+    name: PR meta grep (ADR-005 spec by 主管 + persona 边界)
+    runs-on: ubuntu-latest
+    timeout-minutes: 1
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: ADR-005 "spec by 主管" 标记 (5 战斗单元 IC task 必经主管)
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -e
+          # ADR-005: PR 描述必带 "spec by <主管/协调人/GM>" 一行
+          # 5 主管 = 老周 / 老韩 / 小梁 / 小余 / 老胡
+          # F 协调人 = 老郭
+          # GM = 老雷; CPO = 老钱
+          # 例外: dependabot / 顾问团 self-spec (老高 / 老何 / 老郭 / 老徐 / 小白 / 老钱) 走 "self-spec (F 顾问)"
+          body="$PR_BODY"
+          if echo "$body" | grep -qiE 'spec by (老周|老韩|小梁|小余|老胡|老郭|老雷|老钱)'; then
+            echo "OK: ADR-005 spec by 主管标记命中"
+          elif echo "$body" | grep -qiE 'self-spec \(F 顾问\)|self-spec \(F advisor\)'; then
+            echo "OK: F 顾问 self-spec 例外"
+          else
+            echo "::error::ADR-005: PR description 必须含一行 'spec by <主管>' (老周/老韩/小梁/小余/老胡/老郭/老雷/老钱) 或 'self-spec (F 顾问)'"
+            exit 1
+          fi
+      - name: persona 边界 grep (不写代码 persona 必带 spec-only 声明)
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -e
+          body="$PR_BODY"
+          # 不写代码 persona (CLAUDE.md §10 拒接边界): 主管 + CPO + PM coord + 部分顾问
+          # 小程 (#19 strategy researcher 仅出 spec) / 老钱 (#15 CPO) / 小杜 (#28 PM coordinator) / 小苏 (#29 UX content)
+          # 若 PR 描述声称 spec by 这几位 → 必带 "spec only, 不写代码" 声明
+          for p in '小程' '老钱' '小杜' '小苏'; do
+            if echo "$body" | grep -qE "spec by $p"; then
+              if ! echo "$body" | grep -qE "spec only.*不写代码|spec only.*no code|$p.*只出.*spec"; then
+                echo "::error::persona 边界: spec by $p 必带 'spec only, 不写代码' 声明 (CLAUDE.md §10 拒绝任务)"
+                exit 1
+              fi
+            fi
+          done
+
   redline-grep:
-    name: Redline grep (R-20 + HMAC + R-11)
+    name: Redline grep (R-20 8 + HMAC 4 + R-11 + R-12 + R-33)
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
-      - name: R-20 PIT redline grep
+      - name: R-20 PIT redline grep (8 项, v1.1)
         run: |
           set -e
           fail=0
@@ -33,7 +79,7 @@ jobs:
              | grep -v int64; then
             echo "::error::R-20 §6: 时间字段必须 int64"; fail=1
           fi
-          # 4/5/6: signal/IPC/audit struct 必须含 feature_snapshot_id + 4 ts (小宋 W3 深化)
+          # 4/5/6: signal/IPC/audit struct 必须含 feature_snapshot_id + 4 ts
           for pat in 'struct\s+\w*(Signal|Intent)\b:feature_snapshot_id' \
                      'struct\s+\w*(Intent|RmRequest|RiskRequest)\b:event_ts data_source_ts ingestion_ts as_of_ts' \
                      'struct\s+\w*(AuditRecord|WalEntry|AuditEntry)\b:event_ts data_source_ts ingestion_ts as_of_ts'; do
@@ -44,28 +90,119 @@ jobs:
               done
             done
           done
+          # 7. (W5 v1.1 新增) UPSTREAM_PAYLOAD 优先: data_source_ts 严禁 = now() / clock_realtime / system_clock
+          # 上游 ts 必须从 wire payload 抽, 本地 now() 替代上游 = R-20 §2.2 红线
+          if git grep -nE 'data_source_ts\s*=\s*(std::chrono::|clock_|system_clock|monotonic_now|epoch_now\(\)|now\(\))' \
+             -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp'; then
+            echo "::error::R-20 §2.2 (v1.1 新): data_source_ts 严禁 = now() (UPSTREAM_PAYLOAD 优先, 上游 ts 不可本地伪造)"; fail=1
+          fi
+          # 8. (W5 v1.1 新增) event_ts == ingestion_ts 直接赋值反模式
+          # 4 ts 不可混 — event_ts 是事件发生时(上游标), ingestion_ts 是本地落地时, 直接 = 等价于伪造 PIT
+          if git grep -nE 'event_ts\s*=\s*ingestion_ts|ingestion_ts\s*=\s*event_ts' \
+             -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp'; then
+            echo "::error::R-20 §2.2 (v1.1 新): event_ts != ingestion_ts, 4 ts 不可混赋值"; fail=1
+          fi
           exit $fail
-      - name: 老李 HMAC 4 bug 反模式
+      - name: 老李 HMAC 4 bug 反模式 (v3 §A R1-R4, 永久 enforce)
         run: |
           set -e; fail=0
-          git grep -nE 'urlsafe_b64encode.*rstrip\(' -- '**/*.py' '**/*.cpp' '**/*.hpp' \
-            && { echo "::error::HMAC bug 4: base64 padding 禁 rstrip"; fail=1; } || true
-          git grep -nE '\bparam_type\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' \
-            && { echo "::error::HMAC bug 3: param_type 应 asset_type"; fail=1; } || true
-          git grep -nE 'sigType\s*[:=]\s*2\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' '**/*.py' \
-            && { echo "::error::HMAC bug 2: sigType 应 = 1"; fail=1; } || true
+          # bug 1: HMAC base string 严禁 querystring 拼 path
+          if git grep -nE 'request_path\s*\+\s*"?\?"?\s*\+\s*query|base_string.*\?.*query' \
+             -- 'src/exchange/polymarket/**/*.cpp' 'src/exchange/polymarket/**/*.hpp' \
+                'src/stcpp/polymarket/**/*.cpp' 'src/stcpp/polymarket/**/*.hpp' \
+                'include/stcpp/polymarket/**/*.hpp'; then
+            echo "::error::HMAC bug 1: request_path 严禁 + querystring (v3 §A R1)"; fail=1
+          fi
+          # bug 2: balance-allowance 参数名严禁 param_type (应 asset_type)
+          if git grep -nE '\bparam_type\b|\bparamType\b|\bparam-type\b' -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp'; then
+            echo "::error::HMAC bug 2: 字段必须 asset_type (而非 param_type / paramType / param-type, v3 §A R2)"; fail=1
+          fi
+          # bug 3: sigType 严禁 = 2 (Polymarket proxy 形态), 必须 = 1 (Magic 1-of-1 Safe, 我们的形态)
+          if git grep -nE '\bsigType\s*[:=]\s*2\b|\bsignatureType\s*[:=]\s*2\b|"sigType"\s*:\s*2' \
+             -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' '**/*.py'; then
+            echo "::error::HMAC bug 3: sigType 必须 = 1 (Magic 1-of-1 Safe), 严禁 = 2 (proxy 形态, v3 §A R3)"; fail=1
+          fi
+          # bug 4: HMAC sig base64 padding 严禁 rstrip / replace 去 =
+          if git grep -nE 'urlsafe_b64encode.*\.rstrip\(|b64encode.*\.replace\(\s*["\x27]=["\x27]' \
+             -- '**/*.py' '**/*.cpp' '**/*.hpp'; then
+            echo "::error::HMAC bug 4: base64 sig padding 必须保留 = (v3 §A R4)"; fail=1
+          fi
           exit $fail
       - name: 老项目参考红线 (INCIDENTS #3)
         run: |
-          if git grep -nE 'sports-tail-trader' -- ':!docs/INCIDENTS/**' ':!.github/workflows/**'; then
+          # exclude: INCIDENTS / MEETINGS / SPRINTS / 本 workflow 文件本身
+          # — 这几处合法保留历史引用 (复盘 / 会议纪要 / sprint 进展)
+          # v1.1 新增 docs/SPRINTS + docs/MEETINGS + docs/RESEARCH/laogao-pr-review-* (本 doc) exclude
+          if git grep -nE 'sports-tail-trader' \
+             -- ':!docs/INCIDENTS/**' ':!docs/MEETINGS/**' ':!docs/SPRINTS/**' \
+                ':!docs/RESEARCH/laogao-pr-review-*' \
+                ':!.github/workflows/**'; then
             echo "::error::GM 红线: 不准参考老项目 sports-tail-trader"; exit 1
           fi
-      - name: paper 字段污染 (R-11)
+      - name: R-11 paper 严禁写真账本 (v1.1 升级)
         run: |
+          set -e; fail=0
+          # 旧: paper_* 字段不能与 position/pnl_ledger/nonce_ledger 同行
           if git grep -nE 'paper_\w*\s+(position|pnl_ledger|nonce_ledger)' \
              -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp'; then
-            echo "::error::R-11: paper_* 严禁写真账本"; exit 1
+            echo "::error::R-11: paper_* 严禁写真账本"; fail=1
           fi
+          # v1.1 新: paper mode 路径严禁 write_to position.wal / pnl_ledger.wal / nonce_ledger.wal
+          # 路径上 paper/ 目录 + write_to / fsync / fwrite / fopen.*"w" 命中真账本 WAL = R-11 P0
+          if git grep -nE '(write_to|fopen|fwrite|fsync).*\b(position|pnl_ledger|nonce_ledger)\.wal\b' \
+             -- 'src/stcpp/**/paper/**/*.cpp' 'src/stcpp/**/paper/**/*.hpp' \
+                'src/**/paper_*.cpp' 'src/**/paper_*.hpp'; then
+            echo "::error::R-11 (v1.1): paper mode 严禁 write position.wal / pnl_ledger.wal / nonce_ledger.wal"; fail=1
+          fi
+          # v1.1 新: paper_*.wal path 严禁 hardcode 进 risk_audit / position / nonce_ledger 真账本模块
+          if git grep -nE '"paper_[a-z_]*\.wal"|paper_[a-z_]+\.wal' \
+             -- 'src/stcpp/risk/**/*.cpp' 'src/stcpp/risk/**/*.hpp' \
+                'src/stcpp/execution/nonce_*.cpp' 'src/stcpp/execution/nonce_*.hpp' \
+                'include/stcpp/risk/**/*.hpp' 'include/stcpp/execution/nonce_*.hpp'; then
+            echo "::error::R-11 (v1.1): paper_*.wal 严禁 hardcode 入 risk_audit/position/nonce_ledger 真账本模块"; fail=1
+          fi
+          exit $fail
+      - name: R-12 WSS event loop 同步反模式 (v1.1 新)
+        run: |
+          set -e; fail=0
+          # ADR R-12: WSS handler / event loop 严禁同步 std::lock / blocking read / sync HTTP / fsync (> 100us)
+          # 扫 wss 路径下的 cpp/hpp, 命中即 P0
+          # 注: spin_lock < 100us 允许, 但 std::lock_guard / unique_lock / mutex.lock() 默认禁
+          if git grep -nE 'std::(lock_guard|unique_lock|scoped_lock|shared_lock)\s*<' \
+             -- 'src/stcpp/polymarket/wss/**/*.cpp' 'src/**/wss/**/*.cpp' 'src/**/ws_handler*.cpp'; then
+            echo "::error::R-12: WSS event loop 严禁 std::lock_guard / unique_lock (除 spin < 100us, 加注释 // SPIN_OK 豁免)"; fail=1
+          fi
+          if git grep -nE '\.(blocking_read|blocking_write|recv\(|read_until)\(' \
+             -- 'src/stcpp/polymarket/wss/**/*.cpp' 'src/**/wss/**/*.cpp'; then
+            echo "::error::R-12: WSS event loop 严禁 blocking_read / recv()"; fail=1
+          fi
+          if git grep -nE 'synchronous_http|http_client::(Get|Post|Put|Delete)|curl_easy_perform\(' \
+             -- 'src/stcpp/polymarket/wss/**/*.cpp' 'src/**/wss/**/*.cpp'; then
+            echo "::error::R-12: WSS event loop 严禁同步 HTTP (sync REST = 阻塞 IO)"; fail=1
+          fi
+          if git grep -nE '\bfsync\(|\bfdatasync\(' \
+             -- 'src/stcpp/polymarket/wss/**/*.cpp' 'src/**/wss/**/*.cpp'; then
+            echo "::error::R-12: WSS event loop 严禁 fsync (阻塞 IO)"; fail=1
+          fi
+          exit $fail
+      - name: R-33 PM client 必须用第 5 host (sports-api)
+        run: |
+          set -e; fail=0
+          # R-33 流程红线 (v1.1 新): PM market WSS 必须用 wss://sports-api.polymarket.com/ws
+          # 严禁 paper mode 接 clob WSS (clob 是私有 user channel, paper 不下单不需要)
+          # 严禁 hard-code 旧 host ws-subscriptions-clob 当 market channel
+          if git grep -nE 'wss://ws-subscriptions-clob\.polymarket\.com/ws/market' \
+             -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' '**/*.yaml' '**/*.json' \
+             ':!docs/**' ':!**/*_test.cpp'; then
+            echo "::error::R-33: PM market WSS 严禁旧 host (ws-subscriptions-clob/ws/market), 必须用第 5 host wss://sports-api.polymarket.com/ws"; fail=1
+          fi
+          # paper mode 路径下严禁出现 /ws/user (私有 channel)
+          if git grep -nE 'wss?://[^"]*/ws/user' \
+             -- 'src/stcpp/**/paper/**/*.cpp' 'src/stcpp/**/paper/**/*.hpp' \
+                'src/**/paper_*.cpp' 'src/**/paper_*.hpp'; then
+            echo "::error::R-33 + R-11: paper mode 严禁 /ws/user (私有 HMAC channel, paper 不下单不接)"; fail=1
+          fi
+          exit $fail
 
   risk-enum-coverage:
     name: RM 21 reject enum coverage (21/21 必过)
@@ -112,4 +249,32 @@ jobs:
             ctest --test-dir build --output-on-failure
           else
             echo "no tests yet (W3), skip"
+          fi
+
+  build-release-ubsan:
+    # BUG-W5-001 (老沈 W5 Wave 24): Release (-O2) + UBSAN 单跑 RM 单测,
+    # 防 next_audit_id() 这类 UB 在 -O2 优化下回归 (debug 跑不出, release 才炸).
+    name: Build (release -O2 + UBSAN, RM 单测专跑)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (Release + UBSAN, halt_on_error)
+        env:
+          CXXFLAGS: "-O2 -fsanitize=undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer"
+          LDFLAGS:  "-fsanitize=undefined"
+        run: |
+          cmake -S . -B build-rel-ubsan -DCMAKE_BUILD_TYPE=Release \
+            -DSTCPP_EXEC_MODE=paper -DSTCPP_ENABLE_UBSAN=ON -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build-rel-ubsan --parallel 4
+      - name: Test RM 单测 (UBSAN halt_on_error=1)
+        env:
+          UBSAN_OPTIONS: "halt_on_error=1:print_stacktrace=1:abort_on_error=1"
+        run: |
+          if [ -d build-rel-ubsan/tests ]; then
+            ctest --test-dir build-rel-ubsan -R 'RiskGateway|AuditId|RejectEnum|InvalidIntentSubReason' \
+              --output-on-failure
+          else
+            echo "no tests yet, skip"
           fi

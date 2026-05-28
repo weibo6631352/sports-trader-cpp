@@ -313,6 +313,34 @@ gtest_discover_tests(test_live_section_classifier
     PROPERTIES LABELS "unit;signal;strategy;w4"
 )
 
+# 老李 W5 Wave 24: PaperPolymarketClient v0.1 (14 接口 paper mock, R-7/R-11/R-20 enforce)
+# 仅 paper mode link (R-7 物理隔离, live mode 此 target 不存在)
+if(STCPP_EXEC_MODE STREQUAL "paper")
+    add_executable(test_paper_pm_client
+        test_paper_pm_client.cpp
+    )
+    target_link_libraries(test_paper_pm_client PRIVATE
+        GTest::gtest_main
+        stcpp_polymarket_paper
+        stcpp_infra_wal
+    )
+    target_compile_options(test_paper_pm_client PRIVATE
+        -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+        -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    target_include_directories(test_paper_pm_client PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(test_paper_pm_client PRIVATE cxx_std_20)
+    target_compile_definitions(test_paper_pm_client PRIVATE
+        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    )
+    gtest_discover_tests(test_paper_pm_client
+        DISCOVERY_TIMEOUT 30
+        PROPERTIES LABELS "unit;polymarket;paper;w5"
+    )
+endif()
+
 # 小邓 W4 Wave 20: MLDataHook v0.1 (FeatureSnapshot + TrainingLabel + 4 stage join)
 # stcpp_ml lib R-7 guard: 仅 paper / backtest 模式编译 (含 VirtualFill)
 if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
@@ -346,3 +374,36 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
         PROPERTIES LABELS "unit;ml;w4"
     )
 endif()
+
+# 小冯 W5 Wave 24: PM WSS subscriber v0.1 (8 sub topic + reconnect + heartbeat + back-pressure)
+#   T1  8 sub topic × 各 1 case (parse 4 ts)
+#   T2  reconnect (transport disconnect → AsyncConnect 再调)
+#   T3  heartbeat 超时 (now - last_msg_ts > heartbeat_timeout → Close + reconnect)
+#   T4  back-pressure (SPSC 满 → drop + metrics_.frames_dropped_total)
+#   T5  R-20 4 ts 不等式 enforce (event ≤ ds ≤ ingest ≤ as_of)
+#   T6  subscribe frame 构造校验 (公开免鉴权, action subscribe)
+#   T7  by_topic counter 各 +1
+#   T8  parse error counter (非 JSON / unknown topic)
+#   +   R-33 默认 URL 第 5 host, PONG 不入队
+add_executable(test_pm_wss_subscriber
+    test_pm_wss_subscriber.cpp
+)
+target_link_libraries(test_pm_wss_subscriber PRIVATE
+    GTest::gtest_main
+    stcpp_polymarket_wss
+)
+target_compile_options(test_pm_wss_subscriber PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+target_include_directories(test_pm_wss_subscriber PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_pm_wss_subscriber PRIVATE cxx_std_20)
+target_compile_definitions(test_pm_wss_subscriber PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_pm_wss_subscriber
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;polymarket;wss;w5"
+)

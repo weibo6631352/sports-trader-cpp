@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -356,6 +357,29 @@ TEST_F(RiskGatewayTest, R21_INTERNAL_ERROR_default) {
     EXPECT_EQ(static_cast<int>(RejectCode::INTERNAL_ERROR), 20);
 }
 
+// ===== ADR-004 短路顺序: position_caps 先 liquidity ==========================
+// ADR: docs/ADR/2026-05-28-r07-r08-liquidity-vs-position-cap-priority.md (老郭仲裁选 B)
+// 构造同时违反 EXCEED_PER_ORDER_CAP (R-6) + EXCEED_BOOK_DEPTH (R-17) 的 intent,
+// 断言 evaluate() 返回 EXCEED_PER_ORDER_CAP (red-line 优先, 非 liquidity 表象).
+
+TEST_F(RiskGatewayTest, EvaluatePriority_PositionCapBeforeLiquidity) {
+    auto it = make_ok_intent("sig_adr004_priority");
+    // 同时违反:
+    //   per_order_cap_usdc = 10'000 → size 20'000 > cap (R-6 EXCEED_PER_ORDER_CAP)
+    //   book_depth = 5'000 → ρ = size / depth = 20'000 / 5'000 = 4 > RHO_MAX 3
+    //     (R-17 EXCEED_BOOK_DEPTH in SlippageModel)
+    it.size_usdc          = 20'000;
+    it.book_depth_l1_usdc = 5'000;
+
+    auto const d = rm_->evaluate(it);
+
+    // ADR-004 B: 红线先于客观状态 → 必报 EXCEED_PER_ORDER_CAP.
+    // W4 (ADR-004 前) 会报 EXCEED_BOOK_DEPTH → 此 test 是 regression guard.
+    expect_rejected(d, RejectCode::EXCEED_PER_ORDER_CAP);
+    EXPECT_NE(d.reject, RejectCode::EXCEED_BOOK_DEPTH)
+        << "ADR-004 regression: liquidity 不应抢在 position_caps 前命中";
+}
+
 // ===== 状态机 5 态转移 =======================================================
 
 TEST_F(RiskGatewayTest, StateMachine_default_safe_mode_after_ctor) {
@@ -418,6 +442,32 @@ TEST(RejectEnum, total_count_is_21) {
 
 TEST(InvalidIntentSubReason, total_count_is_9) {
     EXPECT_EQ(static_cast<int>(InvalidIntentSubReason::TS_UNKNOWN_SRC), 8);  // 0..8 = 9 个
+}
+
+// ===== BUG-W5-001 regression (老沈 W5 Wave 24, 2026-05-28) ====================
+// 原 next_audit_id() seq 段 shift = 72 (uint64 64 bit) 是 UB, -O2 被优化成 0.
+// 修后 1000 次调用必: (1) 全非零; (2) 全唯一; (3) 高 6B (ts_ms) 时序单调.
+TEST(AuditId, NonZero_O2) {
+    std::set<std::array<std::uint8_t, 16>> ids;
+    std::array<std::uint8_t, 16> const zero{};
+    std::array<std::uint8_t, 6>  prev_ts{};
+    bool prev_ts_init = false;
+    auto const t_start = ::stcpp::infra::wal::pit::NowRealtimeNs();
+    for (int i = 0; i < 1000; ++i) {
+        auto const now = ::stcpp::infra::wal::pit::NowRealtimeNs();
+        auto const id  = RiskGateway::next_audit_id(now);
+        EXPECT_NE(id, zero) << "BUG-W5-001: audit_id 全零 (UB 复发?) @ i=" << i;
+        ids.insert(id);
+        std::array<std::uint8_t, 6> ts_be{};
+        for (std::size_t k = 0; k < 6; ++k) ts_be[k] = id[k];
+        if (prev_ts_init) {
+            EXPECT_GE(ts_be, prev_ts) << "ts_ms big-endian 段必单调 @ i=" << i;
+        }
+        prev_ts = ts_be;
+        prev_ts_init = true;
+    }
+    EXPECT_EQ(ids.size(), 1000u) << "audit_id 1000 次必唯一";
+    (void)t_start;
 }
 
 }  // namespace stcpp::risk::test

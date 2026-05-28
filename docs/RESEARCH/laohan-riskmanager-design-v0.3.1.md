@@ -81,6 +81,11 @@ struct RejectDetail {
 
 ### 3.10.x.2 评估顺序 (R3 子项细化)
 
+> 注: 本节定义 **R3 (INVALID_INTENT) 内部** 9 个 sub_reason 的子级短路顺序.
+> R1..R21 21 enum 之间的**顶层短路顺序** SSOT = **ADR-004**
+> (`docs/ADR/2026-05-28-r07-r08-liquidity-vs-position-cap-priority.md`, 老郭仲裁选 B,
+> position_caps 先 liquidity), 不在本节复刻.
+
 R3 (intent 字段合法性) 内部按从廉价到昂贵顺序短路, 命中即返回 INVALID_INTENT + sub_reason:
 
 | 顺序 | 检查 | sub_reason |

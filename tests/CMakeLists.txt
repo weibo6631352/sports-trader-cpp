@@ -50,3 +50,5 @@ include(GoogleTest)
 
 add_subdirectory(unit)
 add_subdirectory(sim)
+# W5 Wave 24 (小宋): integration test framework v0.1 (paper E2E + audit chain + R-11 pollution)
+add_subdirectory(integration)

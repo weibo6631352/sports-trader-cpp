@@ -1,13 +1,39 @@
 <!--
-  sports-trader-cpp PR 模板 (老高 v1, 2026-05-28).
-  规范来源: docs/RESEARCH/laogao-code-conventions-v1.md
+  sports-trader-cpp PR 模板 (老高 v1.1, W5 Wave 24).
+  规范来源: docs/RESEARCH/laogao-code-conventions-v1.md + laogao-pr-review-v1.1.md
   改本模板需走 PR + 老高/老郭/老雷 三方任一签字.
 
   填写约定:
-  - 6 节描述全部必填, 缺一被 reject.
+  - 7 节描述全部必填, 缺一被 reject.
   - Checklist 用 [x] 勾选, 未勾即视为未做.
-  - 红线 §9 涉及 (R-1..R-10) 必须显式选 Yes/No.
+  - 红线 §9 涉及 (R-1..R-33) 必须显式选 Yes/No.
+  - ADR-005: 5 战斗单元 IC task PR 必带 "spec by <主管>".
 -->
+
+## 0. 派单链 (ADR-005, CI grep enforce)
+<!--
+  CLAUDE.md §7.8 第 5 题硬 enforce: 5 战斗单元 IC 任务必经主管.
+  本节一行声明派单来源, CI 会 grep PR description.
+  允许的 spec 源:
+    - spec by 老周  (A 系统工程部 主管)
+    - spec by 老韩  (B 风控合规部 主管)
+    - spec by 小梁  (C 量化研究部 主管)
+    - spec by 小余  (D 数据基础设施部 主管)
+    - spec by 老胡  (E 产品业务保障部 主管)
+    - spec by 老郭  (F 协调人, 顾问团 forward)
+    - spec by 老雷  (GM, 例外: 顾问团 / 紧急 P0 / 主管本人 / 跨单元统筹)
+    - spec by 老钱  (CPO, 平级 GM)
+    - self-spec (F 顾问)  ← 顾问团 self 派 (老高 / 老何 / 老郭 / 老徐 / 小白 / 老钱)
+  绕主管直接派 IC = ADR-005 越权, PR 拒绝.
+
+  例外补丁: dependabot / 文档型 PR / .github/ 元 PR 允许 self-spec.
+-->
+
+spec by:
+<!-- 例: spec by 老郭 (F 协调人 W5-F-01 forward 老高 PR review v1.1 任务) -->
+
+走主管层 ack: <!-- yes / no / N/A (顾问 self-spec / GM 例外) -->
+
 
 ## 1. What
 <!-- 一句话: 改了什么. 不要复述 diff, 说意图. -->

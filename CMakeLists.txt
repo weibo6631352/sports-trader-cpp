@@ -88,5 +88,7 @@ add_subdirectory(src/stcpp/stats)
 add_subdirectory(src/stcpp/microstructure)
 # Sprint-2 W4 Wave 20: 小邓 ML 数据钩子 v0.1 (paper / backtest 旁路抓拍 FeatureSnapshot + TrainingLabel)
 add_subdirectory(src/stcpp/ml)
+# Sprint-2 W5 Wave 24: 老李 PolymarketClient v0.1 (paper mock + live stub, R-7 物理隔离)
+add_subdirectory(src/stcpp/polymarket)
 
-message(STATUS "stcpp project scaffold (Sprint-2 W4 Wave 20). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1.")
+message(STATUS "stcpp project scaffold (Sprint-2 W5 Wave 24). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1.")

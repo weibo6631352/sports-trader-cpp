@@ -1,5 +1,14 @@
-# clang-tidy (老高 v1 §5 性能 + §6 安全 + 老何 footgun + R-20 + R-12)
+# clang-tidy (老高 v1.1 W5 Wave 24) — v1 + 4 cpp 反模式 (HMAC / R-12 / R-20 / R-11)
 # 不包含 google-* readability noise.
+#
+# v1.1 改动 (W5 Wave 24, 老高 + 老何 cross-check):
+#   - HMAC 4 bug cpp 仿写防护 (函数命名 / 字段命名 / 字面量)
+#   - R-12 WSS event loop 同步反模式 (主要在 grep 层, clang-tidy 检 misc-misplaced-const + 路径)
+#   - R-20 4 ts 结构体完整性 (走 grep 层, clang-tidy 补 struct 字段命名 enforce)
+#   - R-11 paper/live link 隔离 (走 CMake target 层 + grep 层, clang-tidy 检 include 边界)
+#
+# 多数反模式 grep 层 enforce (.github/workflows/pr.yml redline-grep job).
+# clang-tidy 层补充 cpp lifetime / type / naming / include 边界 检查.
 
 Checks: >
   -*,
@@ -41,7 +50,7 @@ WarningsAsErrors: >
   cppcoreguidelines-slicing,
   cppcoreguidelines-no-malloc
 
-# 命名规范 (老高 v1 §1)
+# 命名规范 (老高 v1 §1) + v1.1 R-20 字段名 enforce
 CheckOptions:
   - { key: readability-identifier-naming.ClassCase,             value: CamelCase }
   - { key: readability-identifier-naming.StructCase,            value: CamelCase }
@@ -55,3 +64,53 @@ CheckOptions:
   - { key: readability-identifier-naming.NamespaceCase,         value: lower_case }
   - { key: readability-identifier-naming.MacroDefinitionCase,   value: UPPER_CASE }
   - { key: readability-identifier-naming.MacroDefinitionIgnoredRegexp, value: '^[A-Z]+(_[A-Z]+)*_$' }
+
+  # v1.1: HMAC bug 2 字段名 enforce — Polymarket 字段名 snake_case (asset_type), 严禁 camelCase
+  # bugprone-easily-swappable-parameters 可以补 sigType=1 vs sigType=2 误用
+  - { key: bugprone-easily-swappable-parameters.MinimumLength, value: 2 }
+
+  # v1.1: cppcoreguidelines-init-variables 启用 — R-20 时间字段 int64_t 默认值未初始化是反模式
+  - { key: cppcoreguidelines-init-variables.IncludeStyle, value: google }
+
+  # v1.1: bugprone-suspicious-string-compare — HMAC sig 校验如果用 strcmp 反模式 (应用 timing-safe compare)
+  - { key: bugprone-suspicious-string-compare.WarnOnImplicitComparison, value: 1 }
+  - { key: bugprone-suspicious-string-compare.WarnOnLogicalNotComparison, value: 1 }
+
+  # v1.1: R-12 WSS handler 用 misc-misplaced-const 提示 const lock 错位
+  # (grep 层 enforce 主路径, clang-tidy 这里只是补充)
+
+  # v1.1: readability-identifier-naming.GlobalConstantCase = UPPER_CASE
+  # — host URL / endpoint path 等 constexpr 必须全大写, 严禁 const auto k_wss_clob = "..." 这种 camel
+  - { key: readability-identifier-naming.GlobalConstantCase,    value: UPPER_CASE }
+  - { key: readability-identifier-naming.StaticConstantCase,    value: UPPER_CASE }
+
+# v1.1 备注: 4 cpp 反模式分布
+#
+# (A) HMAC 4 bug cpp 防护
+#   bug 1 (querystring 拼 base string)     → grep 层 enforce, clang-tidy 不查
+#   bug 2 (param_type 命名)               → readability-identifier-naming.MemberCase = lower_case
+#                                            + grep 拦 paramType / param-type
+#   bug 3 (sigType = 2)                   → grep 层 enforce + bugprone-easily-swappable-parameters
+#   bug 4 (base64 padding rstrip)         → grep 层 enforce (cpp 仿 Python 反模式)
+#
+# (B) R-12 WSS event loop 同步反模式
+#   io_context::run() 内 std::lock_guard   → grep 层 enforce (路径 src/.../wss/**)
+#                                            clang-tidy concurrency-mt-unsafe 补
+#   synchronous_http_client::Get()        → grep 层 enforce
+#   fsync / blocking_read                 → grep 层 enforce
+#   spin < 100us 豁免: 注释 // SPIN_OK
+#
+# (C) R-20 4 ts 完整性
+#   struct 含 data_source_ts 必备 4 ts    → grep 层 enforce (scan struct field set)
+#   event_ts = ingestion_ts 直接赋值       → grep 层 enforce
+#   data_source_ts = now()                → grep 层 enforce (UPSTREAM_PAYLOAD 优先)
+#   int 时间字段 (非 int64)                → grep 层 + clang-tidy MemberCase
+#
+# (D) R-11 paper/live 物理隔离
+#   paper mode target 严禁 link live_*    → CMake target_link_libraries 层 (老周 CMake 拦)
+#   paper_*.wal hardcode 真账本模块        → grep 层 enforce (src/stcpp/risk + execution/nonce_*)
+#   paper write position.wal              → grep 层 enforce (src/.../paper/**)
+#   clang-tidy 这里检 include 边界:
+#     paper/*.cpp 严禁 #include "live/..."
+#     live/*.cpp 严禁 #include "paper/..."
+#   (走 misc-include-cleaner 关掉了, 这层走 CMake + grep 兜)
