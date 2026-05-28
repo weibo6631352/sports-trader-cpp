@@ -245,6 +245,29 @@ spec by:
 <!-- FOM ref 字段 (W7 W4 ADR-005 §3.4 立后填, 改关键基础文件时必填) -->
 FOM ref: <!-- 例: W7-F-04 或 N/A (不改 FOM 管控文件) -->
 
+### 9.4 v1.5 新增自检 (Wave 35 — ADR-021/023 配套)
+
+<!--
+  ADR-021 (W8 起强约束): sub-agent 派单必须带 isolation="worktree"
+    → CI job ci-grep-worktree-check FAIL W8 起
+  ADR-023 (IC 自测唯一裁判): IC 改 src/include 必须同步写测试
+    → CI job ci-grep-ic-no-self-test WARN W8-W9, FAIL W10
+  abi_lock v1.5: ed25519.hpp + stcpp_crypto_ed25519 INTERFACE target 加入 ABI lock
+-->
+
+- [ ] **ADR-021 worktree 自检**: 本 PR 涉及的 Agent tool 调用 (含派单 prompt docs/MEETINGS/*.md)
+      是否带 `isolation="worktree"`?
+      - [ ] 不含 Agent tool 调用 / 无派单 md 改动 (N/A)
+      - [ ] 含 Agent tool 调用, 所有 `subagent_type=` 均已配对 `isolation="worktree"`
+      - [ ] 含 P0 紧急例外 (< 2h), 已在派单 md 中注明 "P0 例外, 老板 ack"
+- [ ] **ADR-023 IC 自测自检**: 本 PR IC 是否改了 src/*.cpp 或 include/*.hpp?
+      - [ ] 未改 src/include (N/A)
+      - [ ] 改了, 已同步新增或更新 tests/.../<X>_test.cpp (IC 自测唯一裁判)
+      - [ ] 改了但未写测试, 原因: <!-- P0 hotfix / sanity check / ABI lock 文件 等 -->
+- [ ] **abi_lock v1.5 自检** (改 include/stcpp/crypto/ed25519.hpp 或 CMakeLists.txt 含 stcpp_crypto_ed25519):
+      PR description 已含 `ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>`;
+      crypto INTERFACE target 变更影响 signer_v52 / STRATEGY_DECAYED CLI 下游, 已列下游 audit 清单
+
 ---
 
 <!--
