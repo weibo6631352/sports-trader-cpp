@@ -1,8 +1,11 @@
 name: Perf Regression
-# 老姜 W4 Wave 21 — PR perf 回归门禁
+# 老姜 W4 Wave 21 — PR perf 回归门禁 (W6 Wave 28 v1.2 更新)
 # 红线: PR p99 退化 > 10% → 拦; main push 后更新 baseline.
+# W6 新增: e2e_latency bench + spsc_latency bench + lower guard check (Wave 26 决议 2)
 #
 # 落: docs/RESEARCH/laojiang-latency-budget-w4-wave21-v1.md §4 §5
+#     docs/ADR/2026-06-01-adr-015-vcpu-pin.md
+#     2026-06-01-code-review-summit-v1.md 决议 #2
 
 on:
   pull_request:
@@ -12,9 +15,9 @@ on:
 
 jobs:
   perf:
-    name: Perf bench (6 模块 vs main baseline)
+    name: Perf bench (8 模块 vs main baseline)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
 
     steps:
       - name: Checkout PR head
@@ -48,7 +51,7 @@ jobs:
               -DSTCPP_BUILD_BENCH=ON \
               -DBUILD_TESTING=ON
 
-      - name: Build 6 bench targets (PR head)
+      - name: Build 8 bench targets (PR head)
         run: |
           cmake --build build-pr --parallel 4 --target \
               bench_slippage \
@@ -56,12 +59,14 @@ jobs:
               bench_audit_emitter \
               bench_paper_signer \
               bench_virtual_matcher \
-              bench_goalserve_parse
+              bench_goalserve_parse \
+              bench_e2e_latency \
+              bench_spsc_latency
 
       - name: Run PR bench (JSON output)
         run: |
           mkdir -p build-pr/perf-results
-          for B in slippage risk_gateway audit_emitter paper_signer virtual_matcher goalserve_parse; do
+          for B in slippage risk_gateway audit_emitter paper_signer virtual_matcher goalserve_parse e2e_latency spsc_latency; do
               echo "--- running bench_$B ---"
               ./build-pr/tests/perf/bench_$B \
                   --benchmark_format=json \
@@ -72,6 +77,84 @@ jobs:
                   --benchmark_enable_random_interleaving=true
           done
           ls -la build-pr/perf-results/
+
+      # W6 Wave 28: lower guard check (Wave 26 决议 2)
+      # E2E bench 不能被编译器 dead-code eliminate — p99 必须 >= 100 ns
+      - name: Lower guard check (p99 >= 100 ns, Wave 26 决议 2)
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          LOWER_GUARD_NS = 100.0
+          results_dir = Path("build-pr/perf-results")
+          violations = []
+
+          for jf in sorted(results_dir.glob("*.json")):
+              try:
+                  with jf.open() as f:
+                      d = json.load(f)
+              except Exception as e:
+                  print(f"warn: {jf}: {e}", file=sys.stderr)
+                  continue
+              for b in d.get("benchmarks", []):
+                  name = b.get("name", "")
+                  if not name.endswith("_median"):
+                      continue
+                  cpu_ns = float(b.get("cpu_time", 0.0))
+                  unit   = b.get("time_unit", "ns")
+                  if unit == "ms":
+                      cpu_ns *= 1_000_000.0
+                  if cpu_ns < LOWER_GUARD_NS:
+                      violations.append((name, cpu_ns))
+                      print(f"LOWER GUARD FAIL: {name}: {cpu_ns:.1f} ns < {LOWER_GUARD_NS} ns")
+                      print("  Possible dead-code elimination! Check -O2 + DoNotOptimize usage.")
+
+          if violations:
+              print(f"\n{len(violations)} lower guard violation(s). PR BLOCKED.")
+              sys.exit(1)
+          else:
+              print("lower guard: all benchmarks >= 100 ns. OK.")
+          PY
+
+      # W6 Wave 28: E2E upper guard check
+      # E2E p99 must be <= 50 ms (M1 G1 目标)
+      - name: E2E upper guard check (p99 <= 50 ms)
+        run: |
+          python3 - <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          UPPER_GUARD_NS = 50_000_000.0  # 50 ms
+          results_dir = Path("build-pr/perf-results")
+          violations = []
+
+          jf = results_dir / "e2e_latency.json"
+          if not jf.exists():
+              print("WARN: e2e_latency.json not found, skipping upper guard check")
+              sys.exit(0)
+
+          with jf.open() as f:
+              d = json.load(f)
+          for b in d.get("benchmarks", []):
+              name = b.get("name", "")
+              if not name.endswith("_median"):
+                  continue
+              cpu_ns = float(b.get("cpu_time", 0.0))
+              unit   = b.get("time_unit", "ns")
+              if unit == "ms":
+                  cpu_ns *= 1_000_000.0
+              if cpu_ns > UPPER_GUARD_NS:
+                  violations.append((name, cpu_ns))
+                  ms = cpu_ns / 1_000_000.0
+                  print(f"UPPER GUARD FAIL: {name}: {ms:.2f} ms > 50 ms (M1 G1 target)")
+
+          if violations:
+              print(f"\n{len(violations)} upper guard violation(s). PR BLOCKED.")
+              sys.exit(1)
+          else:
+              print("E2E upper guard: all benchmarks <= 50 ms. OK.")
+          PY
 
       # ---------- 2. Compare vs baseline ----------
       - name: Compare vs baseline (tests/perf/baselines/main.json)

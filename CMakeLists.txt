@@ -70,6 +70,8 @@ endif()
 
 # 子模块 (Sprint-2 W3 Wave 18: WAL framework skeleton 起步)
 add_subdirectory(src/stcpp/infra/wal)
+# Sprint-2 W6 Wave 28: 小石 SPSC/MPMC ring framework v0.1 (rigtorp, P0 偏离 #4)
+add_subdirectory(src/stcpp/infra/spsc)
 # Sprint-2 W5 Wave 25: 小卢 SingleInstanceLock (防多开 R-7/R-11/R-12)
 add_subdirectory(src/stcpp/infra/process)
 # Sprint-2 W4 Wave 19: 老韩 RiskGateway v0.1 (paper mode 走通)

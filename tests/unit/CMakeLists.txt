@@ -239,6 +239,35 @@ gtest_discover_tests(test_p0_01_signal
     PROPERTIES LABELS "unit;signal;strategy;w4"
 )
 
+# 小卢 W6 Wave 28: P0-01 Goalserve multiplicative de-vig (ADR-008 实施)
+#   T1: 公式 paper case (3 家 mock odds)
+#   T2: 8-9 家完整 case (与 Pinnacle no-vig 结果差异 < 2%)
+#   T3: < 3 家 fallback (valid=false, 信号不触发)
+#   T4: 5 触发条件不变 (R-20 + 5 cond + size clip, 与 W4 25 测试逻辑等价)
+#   T5: feature_snapshot_id ABI 不动 (小邓 ML column index 4/5 锁死)
+add_executable(test_p0_01_goalserve_devig
+    test_p0_01_goalserve_devig.cpp
+)
+target_link_libraries(test_p0_01_goalserve_devig PRIVATE
+    GTest::gtest_main
+    stcpp_strategy
+)
+target_compile_options(test_p0_01_goalserve_devig PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+target_include_directories(test_p0_01_goalserve_devig PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_p0_01_goalserve_devig PRIVATE cxx_std_20)
+target_compile_definitions(test_p0_01_goalserve_devig PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_p0_01_goalserve_devig
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;signal;strategy;adr-008;w6"
+)
+
 # 小董 W4 Wave 20: M4.5 7 hard gate statistical framework v1
 #   G1-G7 × pass/fail (14 核心) + boundary (50/49, 8.0/8.01%) + NaN/Inf + bootstrap 确定性 + PIT
 add_executable(test_gate_evaluator
@@ -403,6 +432,44 @@ gtest_discover_tests(test_single_instance
     PROPERTIES LABELS "unit;process;single-instance;w5"
 )
 
+# 老王 W6 Wave 28: Position WAL P0 (老韩 Smell-3 升级, GM Wave 27 拍板)
+#   T1 apply_fill → query_position 单笔正确
+#   T2 多笔 fill → position_total 累加 + entry_avg_price 加权均值
+#   T3 WAL 落盘 → restore_from_wal 状态完全恢复 (老韩 #3 P0 核心: 崩溃重启)
+#   T4 R-20 4 ts 透传 + PIT chain assert + violation 拒收
+#   T5 4 wal kind 物理隔离 (paper position.wal 不出现在 live, R-11)
+#   T6 circuit_breaker_state 与 RM evaluate 联动 mock (R-1)
+#   T7 跨进程 SingleInstanceLock 防多开协同 (小卢 W5-A-09)
+#   + ABI layout 152B + WalRecord concept 满足 + serialize roundtrip
+add_executable(test_position_ledger
+    test_position_ledger.cpp
+)
+target_link_libraries(test_position_ledger PRIVATE
+    GTest::gtest_main
+    stcpp_infra_wal
+    stcpp_process_lock
+)
+target_compile_options(test_position_ledger PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+    -Wno-invalid-offsetof
+)
+target_include_directories(test_position_ledger PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_position_ledger PRIVATE cxx_std_20)
+target_compile_definitions(test_position_ledger PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    STCPP_POSITION_WAL_PREFIX="/var/lib/stcpp/paper/position"
+    STCPP_PID_DIR="/tmp/stcpp_test"
+    STCPP_BUILD_COMMIT="test-build"
+)
+gtest_discover_tests(test_position_ledger
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;wal;position;w6;p0"
+)
+
 # 小冯 W5 Wave 24: PM WSS subscriber v0.1 (8 sub topic + reconnect + heartbeat + back-pressure)
 #   T1  8 sub topic × 各 1 case (parse 4 ts)
 #   T2  reconnect (transport disconnect → AsyncConnect 再调)
@@ -434,4 +501,36 @@ target_compile_definitions(test_pm_wss_subscriber PRIVATE
 gtest_discover_tests(test_pm_wss_subscriber
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;polymarket;wss;w5"
+)
+
+# 小石 W6 Wave 28: SPSC/MPMC ring framework v0.1 (P0 偏离 #4 修复)
+#   T1: 单线程 FIFO 顺序
+#   T2: 跨线程 SPSC 1000 笔不丢
+#   T3: queue 满 try_push 返 false (R-12 back-pressure)
+#   T4: 2^n + cache-line align (static_assert + layout)
+#   T5: FillQueue 双 SPSC fanout — Position + ML 2-consumer
+#   T6: latency bench (单 push p99 < 100ns)
+#   T7 (bonus): drop_count 累加准确性
+add_executable(test_spsc_queue
+    test_spsc_queue.cpp
+)
+target_link_libraries(test_spsc_queue PRIVATE
+    GTest::gtest_main
+    stcpp_infra_spsc
+)
+target_compile_options(test_spsc_queue PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+)
+target_include_directories(test_spsc_queue PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_spsc_queue PRIVATE cxx_std_20)
+target_compile_definitions(test_spsc_queue PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_spsc_queue
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit;spsc;lock-free;w6"
 )

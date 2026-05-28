@@ -1,10 +1,12 @@
-# M4.5 7 Hard Gate 统计 Framework v1
+# M4.5 7 Hard Gate 统计 Framework v1.1
 
 - **Owner:** 小董 (stats-inference-advisor)
-- **last_review:** 2026-05-28
-- **Reviewers (会签):** 小蒋 (paper engine 数据契约) / 老韩 (RM fail 计数) / 老吴 (uptime 来源) / 小梁 (阈值)
+- **last_review:** 2026-06-01
+- **v1 → v1.1 变更:** G2 阈值 §3.2 加 4 stage 梯度表 + ADR-016 引用 (W6 Wave 28)
+- **Reviewers (会签):** 小蒋 (paper engine 数据契约) / 老韩 (RM fail 计数) / 老吴 (uptime 来源) / 小梁 (阈值, ADR-016 会签)
 - **代码:** `include/stcpp/stats/gate_evaluator.hpp` + `src/stcpp/stats/gate_evaluator.cpp`
-- **测试:** `tests/unit/test_gate_evaluator.cpp` (28 case 全过)
+- **测试:** `tests/unit/test_gate_evaluator.cpp` (28 + 5 = 33 case, 新增 T_G2_StageThresholds)
+- **ADR:** `docs/ADR/2026-06-01-adr-016-g2-ci-lower-threshold.md`
 
 ---
 
@@ -63,7 +65,20 @@ Pass 双条件: `p < 0.05` **且** `mean > 0` (方向 guard — 显著亏不算�
 Percentile bootstrap: 从 per_trade_return resample n 次 (with replacement), 重算 Sharpe,
 做 B=1000 次, 取排序后的 2.5 / 97.5 pct 为 95% CI.
 
-Pass: `CI_lower > 0.5`.
+Pass (M4.5 stage): `CI_lower > 0.5`.
+
+**4 Stage 阈值梯度 (ADR-016, 2026-06-01 正式入档)**
+
+| Stage | `GateStage` 枚举 | CI 下界阈值 | 适用场景 | 时间点 |
+|---|---|---|---|---|
+| M2 | `M2` | **0.3** | alpha 检测低门槛 (信号存在性) | W6-W8 |
+| M4.5 | `M4_5` | **0.5** | paper 2 周解锁门槛 (SSOT) | paper 14d 窗口 |
+| M5 Q1 | `M5_Q1` | **0.8** | live 第 1 季度稳态 KPI | M5+ live Q1 |
+| 北极星 | `NorthStar` | **1.5** | T+36 月北极星 KPI | CLAUDE.md §2 |
+
+代码: `kG2SharpeCILowerByStage` (array<double,4> in gate_evaluator.hpp). `kG2_SharpeCILow` = 0.5 (引用 M4_5 slot).
+
+**历史注记:** Sprint-1 retro (2026-05-28) 小梁口头提过 0.3, 但未正式会签代码. 小董 W4 代码落 0.5. 小梁 2026-06-01 W5 Smell-4 明确"以小董代码为准 (0.5)". ADR-016 正式入档确认.
 
 **B=1000 合理性:** 标准误 SE_pct(B) ≈ sqrt(p(1-p)/B) → 对 2.5% 分位 ≈ 0.0049, 在 Sharpe
 scale 上约 0.01–0.03 (单位看波动率). 升 B=10000 → SE 减半但每次 evaluator 跑批耗时 10×
@@ -73,7 +88,7 @@ vs precision 的扫尾甜区 (Efron & Tibshirani 1993, §13.4).
 **阈值 0.5 (非 1.5 北极星) 理由:** paper 解锁是 "信号 > 噪声" 的**低门槛**, 不是要求即刻
 达成最终目标. 1.5 是 36 个月后单策略稳态 KPI, 此时只有 2 周 paper, 任何 Sharpe > 0.5 的
 CI 下界都意味着 "极大概率有 alpha", 足以放进 live 继续 ramp. 这条线如果设 1.5, 14 天 paper
-几乎不可能过 (CI 宽度 ~3·SE_Sharpe ≈ 1.5 当 n=50). **建议: 触发 GM 决议确认 0.5 为 v1**.
+几乎不可能过 (CI 宽度 ~3·SE_Sharpe ≈ 1.5 当 n=50).
 
 **BCa 升级:** percentile method 对 skewed Sharpe 分布有偏 (paper PnL 长尾). BCa (bias-
 corrected accelerated, Efron 1987) 在 50 笔下偏差更小, 但实现 ~150 行 + jackknife. **本
@@ -201,7 +216,7 @@ evaluator 不重复查 "as_of ≤ now()" 避免 evaluator 跑批与 paper 收集
 
 | 议题 | 当前值 | 候选 | 建议人 |
 |---|---|---|---|
-| G2 Sharpe CI 下限阈值 | 0.5 | 0.3 / 0.5 / 0.8 / 1.0 | 小董 / 小梁 会签 |
+| G2 Sharpe CI 下限阈值 | 0.5 (M4.5 stage, **ADR-016 已决**) | 4 stage 梯度: 0.3/0.5/0.8/1.5 | 小董 / 小梁 会签 ✓ (ADR-016) |
 | G2 bootstrap B | 1000 | 1000 / 10000 | 小董, 不建议改 |
 | G5 max DD 阈值 | 8% | 6 / 8 / 10% | 老韩 + 小梁 |
 | G6 笔数下限 | 50 | 30 / 50 / 100 | 小董 + 老彭 |

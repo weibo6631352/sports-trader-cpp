@@ -4,10 +4,12 @@
 // Reviewers: 小蒋 (paper engine 数据契约) / 老韩 (RM fail 计数) / 老吴 (uptime) / 小梁 (阈值会签)
 //
 // 落:
-//   docs/RESEARCH/xiaodong-m45-gate-framework-v1.md
+//   docs/RESEARCH/xiaodong-m45-gate-framework-v1.md  (v1.1 加 4 stage 阈值表)
+//   docs/ADR/2026-06-01-adr-016-g2-ci-lower-threshold.md  (G2 4 stage 阈值 ADR)
 //   docs/MEETINGS/sprint1-retro/ (7 gate 决议)
 //
 // 红线:
+//   R-2   backtest / paper / live 共享 evaluator binary (ADR-011 A)
 //   R-7   paper / live 共享 evaluator (build-time 切换数据源, 不分叉统计逻辑)
 //   R-11  paper gate 与 live gate 同一 binary 同 evaluator; 输入数据源不同
 //   R-20  GateMetrics 携 4 ts (sample_window_start_ts_ns / end / ingestion_completed_ts_ns / as_of_ts_ns)
@@ -68,11 +70,38 @@ inline constexpr std::size_t kNumGates = 7;
 }
 
 // ---------------------------------------------------------------------------
+// Gate Stage (4 stage 阈值梯度, ADR-016 正式入档 2026-06-01)
+// 会签: 小梁 (financial-expert) / 老韩 (risk-engineer) / 老钱 (CPO)
+//       老雷 (GM) / 老彭 (betting-expert)
+// ---------------------------------------------------------------------------
+
+// M2   = alpha 检测低门槛 (W6-W8)
+// M4_5 = paper 2 周解锁门槛 (小董 W4 代码 SSOT, 小梁 W5 会签拍板)
+// M5_Q1 = live 第 1 季度稳态
+// NorthStar = 北极星 T+36 月 KPI
+enum class GateStage : std::uint8_t {
+    M2        = 0,
+    M4_5      = 1,
+    M5_Q1     = 2,
+    NorthStar = 3,
+};
+
+// G2 Sharpe bootstrap CI 下界 — 4 stage 梯度 (ADR-016)
+// 索引与 GateStage 一一对应
+inline constexpr std::array<double, 4> kG2SharpeCILowerByStage = {
+    0.3,   // M2: alpha 检测低门槛, 14d 50 笔 CI 宽 ~1.2, > 0.3 说明不是全靠运气
+    0.5,   // M4_5: paper 解锁门槛 (小梁会签 SSOT; retro 口头 0.3 以本值为准)
+    0.8,   // M5_Q1: live 第 1 季度稳态
+    1.5,   // NorthStar: T+36 月北极星 KPI (CLAUDE.md §2)
+};
+
+// ---------------------------------------------------------------------------
 // 阈值常量 (与 Sprint-1 retro + 小董 v1 research doc 一致, 任何调整须 GM 决议)
 // ---------------------------------------------------------------------------
 
 inline constexpr double kG1_PValueMax        = 0.05;   // Welch 双侧
-inline constexpr double kG2_SharpeCILow      = 0.5;    // CI 下限, 解锁低门槛 (vs 北极星 1.5)
+// G2 M4.5 paper 解锁阈值 (ADR-016 会签值; 多 stage 见 kG2SharpeCILowerByStage)
+inline constexpr double kG2_SharpeCILow      = kG2SharpeCILowerByStage[static_cast<std::size_t>(GateStage::M4_5)];
 inline constexpr std::size_t kG2_BootstrapN  = 1000;   // 平衡 SE_pct ~0.014 与 paper 跑批耗时
 inline constexpr int    kG3_RMFailMax        = 0;
 inline constexpr double kG4_UptimeMin        = 0.995;

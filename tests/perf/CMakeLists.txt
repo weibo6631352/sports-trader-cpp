@@ -1,8 +1,8 @@
-# tests/perf/CMakeLists.txt — Sprint-2 W4 Wave 21 (老姜)
+# tests/perf/CMakeLists.txt — Sprint-2 W4 Wave 21 (老姜) + W6 Wave 28 v1.2
 #
 # Google Benchmark 性能回归 framework. 与 tests/bench/ (W3 小肖 slippage) 共存:
 #   - tests/bench/   : 小肖 W3 slippage 旧版 (保持不动, 通过)
-#   - tests/perf/    : 老姜 W4 Wave 21 (6 模块 + JSON output + CI gate)
+#   - tests/perf/    : 老姜 W4 Wave 21 (6 模块) + W6 Wave 28 (e2e_latency + spsc_latency)
 #
 # 启用: cmake -S . -B build -DSTCPP_BUILD_BENCH=ON -DCMAKE_BUILD_TYPE=Release
 # 跑:   cd build && ./tests/perf/bench_<module> --benchmark_format=json \
@@ -90,4 +90,21 @@ target_link_libraries(bench_virtual_matcher  PRIVATE stcpp_execution_paper stcpp
 stcpp_add_perf_bench(bench_goalserve_parse   bench_goalserve_parse.cpp)
 target_link_libraries(bench_goalserve_parse  PRIVATE stcpp_data_goalserve)
 
-message(STATUS "stcpp perf bench: 6 target enabled (M1..M6); M7-M9 留 W5 wave 22")
+# ----- W6 Wave 28: E2E latency bench (ADR-015 配套 + Wave 26 决议 2) -----
+# 链路: WSS recv mock → RM → PaperSigner → VirtualMatcher → Position
+# guard: lower p99 >= 100 ns / upper p99 <= 50 ms
+stcpp_add_perf_bench(bench_e2e_latency       bench_e2e_latency.cpp)
+target_link_libraries(bench_e2e_latency      PRIVATE
+    stcpp_risk
+    stcpp_signer_paper
+    stcpp_execution_paper
+    stcpp_infra_wal)
+
+# ----- W6 Wave 28: SPSC queue latency bench (小石 W6 SPSC framework 联调) -----
+# 5 capacity: 64/256/1024/4096/16384; upper guard p99 < 100 ns
+# 注: 小石 W6 SPSC 就位后替换 MockSPSC → stcpp::infra::spsc::SPSCQueue<T,N>
+stcpp_add_perf_bench(bench_spsc_latency      bench_spsc_latency.cpp)
+# bench_spsc_latency: 仅依赖 stcpp_infra_wal (pit::NowRealtimeNs); 无额外 lib
+target_link_libraries(bench_spsc_latency     PRIVATE stcpp_infra_wal)
+
+message(STATUS "stcpp perf bench: 8 target enabled (M1..M6 + e2e_latency + spsc_latency)")

@@ -383,3 +383,56 @@ TEST(GateEvaluator_Full, RMOneFailFlipsAllPassToFalse) {
     EXPECT_FALSE(out.all_pass);
     EXPECT_FALSE(out.per_gate[2].pass);  // G3 idx=2
 }
+
+// ---------------------------------------------------------------------------
+// T_G2_StageThresholds — ADR-016 G2 4 stage 阈值边界测试
+// 覆盖: M2 0.3 / M4_5 0.5 / M5_Q1 0.8 / NorthStar 1.5
+// 原则: CI_lower 刚好 = threshold → pass (boundary inclusive),
+//       CI_lower = threshold - epsilon → fail.
+// 注: 本 case 直接测 kG2SharpeCILowerByStage 数组值, 不依赖 evaluator 跑 bootstrap
+//     (bootstrap 已在 G2 系列 case 覆盖), 保持 boundary 测试简洁确定.
+// ---------------------------------------------------------------------------
+
+TEST(GateEvaluator_G2_StageThresholds, M2_Threshold_Is_0_3) {
+    // ADR-016 §Stage-1: M2 alpha gate 下限 = 0.3
+    constexpr double kExpected = 0.3;
+    EXPECT_DOUBLE_EQ(kG2SharpeCILowerByStage[static_cast<std::size_t>(GateStage::M2)],
+                     kExpected)
+        << "M2 stage threshold must be 0.3 (ADR-016)";
+}
+
+TEST(GateEvaluator_G2_StageThresholds, M4_5_Threshold_Is_0_5) {
+    // ADR-016 §Stage-2 + 小梁 W5 会签 SSOT: M4.5 paper 解锁 CI 下限 = 0.5
+    // (retro 口头 0.3 已废弃, 以本值为准)
+    constexpr double kExpected = 0.5;
+    EXPECT_DOUBLE_EQ(kG2SharpeCILowerByStage[static_cast<std::size_t>(GateStage::M4_5)],
+                     kExpected)
+        << "M4.5 stage threshold must be 0.5 (ADR-016, 小梁会签 SSOT)";
+    // 同时验证 kG2_SharpeCILow 引用 M4_5 slot
+    EXPECT_DOUBLE_EQ(kG2_SharpeCILow, kExpected)
+        << "kG2_SharpeCILow must equal M4_5 slot (0.5)";
+}
+
+TEST(GateEvaluator_G2_StageThresholds, M5_Q1_Threshold_Is_0_8) {
+    // ADR-016 §Stage-3: live 第 1 季度稳态 CI 下限 = 0.8
+    constexpr double kExpected = 0.8;
+    EXPECT_DOUBLE_EQ(kG2SharpeCILowerByStage[static_cast<std::size_t>(GateStage::M5_Q1)],
+                     kExpected)
+        << "M5_Q1 stage threshold must be 0.8 (ADR-016)";
+}
+
+TEST(GateEvaluator_G2_StageThresholds, NorthStar_Threshold_Is_1_5) {
+    // ADR-016 §Stage-4 + CLAUDE.md §2 北极星: T+36 月 Sharpe ≥ 1.5
+    constexpr double kExpected = 1.5;
+    EXPECT_DOUBLE_EQ(kG2SharpeCILowerByStage[static_cast<std::size_t>(GateStage::NorthStar)],
+                     kExpected)
+        << "NorthStar stage threshold must be 1.5 (ADR-016, CLAUDE.md §2)";
+}
+
+TEST(GateEvaluator_G2_StageThresholds, StageArrayMonotonicallyIncreasing) {
+    // 4 stage 阈值必须严格单调递增 (alpha gate < paper 解锁 < live Q1 < 北极星)
+    for (std::size_t i = 1; i < kG2SharpeCILowerByStage.size(); ++i) {
+        EXPECT_GT(kG2SharpeCILowerByStage[i], kG2SharpeCILowerByStage[i - 1])
+            << "kG2SharpeCILowerByStage must be strictly increasing (ADR-016)";
+    }
+}

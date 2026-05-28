@@ -1,4 +1,4 @@
-# clang-tidy (老高 v1.1 W5 Wave 24) — v1 + 4 cpp 反模式 (HMAC / R-12 / R-20 / R-11)
+# clang-tidy (老高 v1.2 W6 Wave 28) — v1.1 + shift static_assert + test 分级 + fd RAII
 # 不包含 google-* readability noise.
 #
 # v1.1 改动 (W5 Wave 24, 老高 + 老何 cross-check):
@@ -7,8 +7,16 @@
 #   - R-20 4 ts 结构体完整性 (走 grep 层, clang-tidy 补 struct 字段命名 enforce)
 #   - R-11 paper/live link 隔离 (走 CMake target 层 + grep 层, clang-tidy 检 include 边界)
 #
-# 多数反模式 grep 层 enforce (.github/workflows/pr.yml redline-grep job).
-# clang-tidy 层补充 cpp lifetime / type / naming / include 边界 检查.
+# v1.2 新增 (W6 Wave 28, 老高 + 老何 footgun v1.1 + 小卢 P1-03 + Wave 26 决议 #7):
+#   - bugprone-misplaced-widening-cast: shift 精度防护 (BUG-W5-001 老何 footgun v1.1)
+#     配套: 生产代码应有 static_assert 防 shift UB (见备注 E)
+#   - hicpp-signed-bitwise: 有符号位运算防护 (老何 footgun v1.1 shift-signed)
+#   - bugprone-narrowing-conversions: HMAC sigType int 误传防护 (v1.2 sigType 配套)
+#   - cppcoreguidelines-owning-memory: FdGuard fd RAII (小卢 P1-03 g_lock_fd_for_handler 死代码修)
+#   - 测试代码分级 (ADR-010 候选 Wave 26 决议 #7): 见备注 F
+#
+# 多数反模式 grep 层 enforce (.github/workflows/pr.yml ci-grep-* job 7 个).
+# clang-tidy 层补充 cpp lifetime / type / naming / include 边界 / shift 精度 检查.
 
 Checks: >
   -*,
@@ -39,7 +47,9 @@ Checks: >
   -readability-magic-numbers,
   -readability-identifier-length,
   -readability-named-parameter,
-  -readability-function-cognitive-complexity
+  -readability-function-cognitive-complexity,
+  bugprone-misplaced-widening-cast,
+  bugprone-narrowing-conversions
 
 WarningsAsErrors: >
   bugprone-*,
@@ -84,33 +94,86 @@ CheckOptions:
   - { key: readability-identifier-naming.GlobalConstantCase,    value: UPPER_CASE }
   - { key: readability-identifier-naming.StaticConstantCase,    value: UPPER_CASE }
 
-# v1.1 备注: 4 cpp 反模式分布
+  # v1.2: bugprone-misplaced-widening-cast — shift 精度防护 (BUG-W5-001 老何 footgun v1.1)
+  # WHY: uint64_t x = (1 << 40) 是 UB (int 域 shift 超 31); 必须 1ULL << 40 或 uint64_t(1) << 40
+  # 配套: 生产代码 shift 宽度必须用 static_assert 限制上界 (见备注 E)
+  - { key: bugprone-misplaced-widening-cast.CheckImplicitCasts, value: 1 }
+
+  # v1.2: hicpp-signed-bitwise — 有符号类型位运算防护
+  # WHY: int8_t 有符号 shift 是实现定义行为, 统一用 uint 类型做位运算
+  # (hicpp-signed-bitwise 已在 hicpp-* 中, 此处显式 override 不抑制)
+
+  # v1.2: bugprone-narrowing-conversions — 防 HMAC sigType int 参数误传
+  # WHY: sigType=1 vs sigType=2 的误传是 narrowing 场景 (uint8_t 接 int 传参)
+  #      配合 v1.1 bugprone-easily-swappable-parameters 双层防护
+  - { key: bugprone-narrowing-conversions.WarnOnIntegerNarrowingConversion,        value: 1 }
+  - { key: bugprone-narrowing-conversions.WarnOnFPToIntegerNarrowingConversion,    value: 1 }
+  - { key: bugprone-narrowing-conversions.WarnOnEquivalentBitWidth,               value: 0 }
+
+# v1.2 备注: 4 cpp 反模式分布 (v1.1 → v1.2 更新)
 #
 # (A) HMAC 4 bug cpp 防护
-#   bug 1 (querystring 拼 base string)     → grep 层 enforce, clang-tidy 不查
+#   bug 1 (querystring 拼 base string)     → Python grep: tests/ci_grep/hmac_4bug.py
 #   bug 2 (param_type 命名)               → readability-identifier-naming.MemberCase = lower_case
-#                                            + grep 拦 paramType / param-type
-#   bug 3 (sigType = 2)                   → grep 层 enforce + bugprone-easily-swappable-parameters
-#   bug 4 (base64 padding rstrip)         → grep 层 enforce (cpp 仿 Python 反模式)
+#                                            + Python grep: hmac_4bug.py (paramType)
+#   bug 3 (sigType = 2)                   → Python grep: hmac_4bug.py
+#                                            + bugprone-easily-swappable-parameters (参数误传)
+#                                            + bugprone-narrowing-conversions (v1.2 新)
+#   bug 4 (base64 padding rstrip)         → Python grep: hmac_4bug.py
 #
 # (B) R-12 WSS event loop 同步反模式
-#   io_context::run() 内 std::lock_guard   → grep 层 enforce (路径 src/.../wss/**)
+#   io_context::run() 内 std::lock_guard   → Python grep: tests/ci_grep/r12_wss_blocking.py
 #                                            clang-tidy concurrency-mt-unsafe 补
-#   synchronous_http_client::Get()        → grep 层 enforce
-#   fsync / blocking_read                 → grep 层 enforce
+#   synchronous_http_client::Get()        → Python grep: r12_wss_blocking.py
+#   fsync / blocking_read                 → Python grep: r12_wss_blocking.py
 #   spin < 100us 豁免: 注释 // SPIN_OK
 #
 # (C) R-20 4 ts 完整性
-#   struct 含 data_source_ts 必备 4 ts    → grep 层 enforce (scan struct field set)
-#   event_ts = ingestion_ts 直接赋值       → grep 层 enforce
-#   data_source_ts = now()                → grep 层 enforce (UPSTREAM_PAYLOAD 优先)
-#   int 时间字段 (非 int64)                → grep 层 + clang-tidy MemberCase
+#   struct 含 data_source_ts 必备 4 ts    → shell grep 层 enforce (redline-grep job)
+#   event_ts = ingestion_ts 直接赋值       → Python grep: tests/ci_grep/r20_pit_chain.py (v1.2 新)
+#   data_source_ts = now()                → Python grep: r20_pit_chain.py (v1.2 精确化)
+#   int 时间字段 (非 int64)                → shell grep 层 + clang-tidy MemberCase
 #
 # (D) R-11 paper/live 物理隔离
 #   paper mode target 严禁 link live_*    → CMake target_link_libraries 层 (老周 CMake 拦)
-#   paper_*.wal hardcode 真账本模块        → grep 层 enforce (src/stcpp/risk + execution/nonce_*)
-#   paper write position.wal              → grep 层 enforce (src/.../paper/**)
+#   paper_*.wal hardcode 真账本模块        → shell grep 层 enforce (redline-grep job R-11)
+#   paper write position.wal              → shell grep 层 enforce
 #   clang-tidy 这里检 include 边界:
 #     paper/*.cpp 严禁 #include "live/..."
 #     live/*.cpp 严禁 #include "paper/..."
 #   (走 misc-include-cleaner 关掉了, 这层走 CMake + grep 兜)
+#
+# (E) shift static_assert 防护 (v1.2 新, BUG-W5-001 老何 footgun v1.1 配套)
+#   生产代码 shift 场景规范:
+#     ❌ uint64_t x = (1 << 40);           // int 域 shift 溢出, UB
+#     ✓  uint64_t x = (1ULL << 40);       // 正确
+#     ✓  uint64_t x = (uint64_t{1} << n); // 正确
+#   对可变 shift width n, 必须有: static_assert(n < 64, "shift width out of range");
+#   clang-tidy: bugprone-misplaced-widening-cast + hicpp-signed-bitwise 双层
+#   UBSAN: -fsanitize=shift 在 build-paper + build-release-ubsan job 覆盖
+#   (UBSAN shift sanitizer 由 build-release-ubsan job 的 -fsanitize=undefined 覆盖,
+#    若需单独加 -fsanitize=shift 可在 CXXFLAGS 追加, 待老何 footgun v1.1 file 给具体建议)
+#
+# (F) 测试代码分级 (ADR-010 候选, Wave 26 决议 #7, 老高 v1.2 enforce)
+#   生产代码 (src/ + include/):
+#     严格: 零 -Wno-* 抑制 (老李 pm_client.hpp 为 benchmark ✓)
+#     clang-tidy 全套 check (本文件)
+#   测试代码 (tests/):
+#     relaxed: grandfather list 允许 (见 ADR-010 §3):
+#       -Wno-double-promotion    (gtest 浮点宏触发)
+#       -Wno-cast-align          (gtest mock 转型)
+#       -Wno-old-style-cast      (gtest ASSERT_* 宏)
+#       -Wno-invalid-offsetof    (TU include .cpp 模板实例化)
+#     禁止新增:
+#       -Wno-sign-conversion     (测试代码应自己保证类型安全)
+#       -Wno-shadow              (测试代码应无变量遮蔽)
+#       -Wno-conversion          (测试代码类型安全必须)
+#     clang-tidy: 测试代码允许 modernize-use-trailing-return-type off (gtest 兼容)
+#     但 bugprone-* cert-* cppcoreguidelines-owning-memory 测试代码同等 enforce
+#   PR gate: v1.2 PR review 检查 tests/ 无新增 -Wno-sign-conversion / -Wno-shadow
+#
+# (G) fd RAII FdGuard (v1.2 新, 小卢 P1-03 配套)
+#   cppcoreguidelines-owning-memory 已在 WarningsAsErrors 列表
+#   FdGuard 模式: 所有 ::open() 返回的 fd 必须用 RAII wrapper 持有
+#   g_lock_fd_for_handler 修复: InstallSigtermHandler 加 lock_fd 参数
+#                               或删除无效 close 分支 + 更新注释 (小卢 P1-03)

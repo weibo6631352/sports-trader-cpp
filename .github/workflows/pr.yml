@@ -1,7 +1,16 @@
 name: PR Checks
-# 老高 v1.1 (W5 Wave 24) — v1 (W3) + 5 新 grep + R-20 8 项 + R-12/R-11/R-33/persona 边界 + ADR-005
+# 老高 v1.2 (W6 Wave 28) — v1.1 + 5 新 Python grep job + ADR-009 model tier + ADR-010 test grading
 # 红线: PR <= 8 min, 命中即 reject
 # 改本文件: 老高 + 老郭 + 老雷 三方任一签字, PR 描述带 "spec by 老郭" 走 ADR-005 派单
+#
+# v1.2 新增 job (Wave 28 决议 #3):
+#   ci-grep-r20-pit-chain     — R-20 第 7/8 项 Python 精确扫 (data_source_ts=now, event_ts<=>ingestion_ts)
+#   ci-grep-r12-wss-blocking  — R-12 WSS 阻塞反模式 Python 扫 (lock_guard/blocking_read/sync HTTP/fsync)
+#   ci-grep-r33-5host-paper   — R-33 paper /ws/user + 旧 clob host Python 扫
+#   ci-grep-hmac-4bug         — HMAC 4 bug Python 扫 (rstrip/paramType/sigType=2/querystring)
+#   ci-grep-adr009-model-tier — ADR-009 v2 model: opus 例外段检查
+#   (pr-meta-grep 已覆盖 ADR-005 派单 + persona 边界, v1.2 不重复)
+#   (risk-enum-coverage 保留 v1.1 不变)
 
 on:
   pull_request:
@@ -203,6 +212,70 @@ jobs:
             echo "::error::R-33 + R-11: paper mode 严禁 /ws/user (私有 HMAC channel, paper 不下单不接)"; fail=1
           fi
           exit $fail
+
+  # ---------------------------------------------------------------------------
+  # v1.2 新增: 5 Python grep job (Wave 28 真落 CI)
+  # ---------------------------------------------------------------------------
+
+  ci-grep-r20-pit-chain:
+    name: R-20 PIT chain ts 反模式 (Python, v1.2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run r20_pit_chain.py
+        run: python3 tests/ci_grep/r20_pit_chain.py
+
+  ci-grep-r12-wss-blocking:
+    name: R-12 WSS 阻塞反模式 (Python, v1.2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run r12_wss_blocking.py
+        run: python3 tests/ci_grep/r12_wss_blocking.py
+
+  ci-grep-r33-5host-paper:
+    name: R-33 paper /ws/user + 旧 clob host (Python, v1.2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run r33_5host_paper.py
+        run: python3 tests/ci_grep/r33_5host_paper.py
+
+  ci-grep-hmac-4bug:
+    name: HMAC 4 bug 反模式 (Python, v1.2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run hmac_4bug.py
+        run: python3 tests/ci_grep/hmac_4bug.py
+
+  ci-grep-adr009-model-tier:
+    name: ADR-009 v2 model tier (Python, v1.2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run adr009_model_tier.py
+        run: python3 tests/ci_grep/adr009_model_tier.py
+
+  # ---------------------------------------------------------------------------
+  # v1.1 保留: risk-enum-coverage
+  # ---------------------------------------------------------------------------
 
   risk-enum-coverage:
     name: RM 21 reject enum coverage (21/21 必过)

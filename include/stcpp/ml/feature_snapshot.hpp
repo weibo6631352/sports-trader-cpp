@@ -56,9 +56,12 @@ enum class FeatureName : std::uint8_t {
     PM_book_depth_top3_yes      = 2,    // top-3 levels yes 总 USDC
     PM_book_depth_top3_no       = 3,    // top-3 levels no 总 USDC
 
-    // --- Pinnacle no-vig (4..5) ---
-    Pinnacle_p_yes_fair         = 4,    // multiplicative no-vig fair prob
-    Pinnacle_overround          = 5,    // p_yes_raw + p_no_raw - 1
+    // --- Goalserve de-vig (4..5) — ADR-008 W6 Wave 28 (小卢) ---
+    // 字段名 cascade: Pinnacle_p_yes_fair → Goalserve_devig_p_yes_fair
+    //                 Pinnacle_overround  → Goalserve_overround_avg
+    // 列顺序 / enum 值不动 (ML 训练 column index 锁死, 小邓 ML-R5).
+    Goalserve_devig_p_yes_fair  = 4,    // ADR-008 multiplicative de-vig fair prob (8-9 家均值)
+    Goalserve_overround_avg     = 5,    // 跨 8-9 家 overround 均值
 
     // --- 信号 / 滑点 (6..9) ---
     edge_bps                    = 6,    // signal edge 单位 bps
@@ -105,8 +108,8 @@ inline constexpr std::size_t kFeatureCount = 32;
         case FeatureName::PM_mid_ask:              return "PM_mid_ask";
         case FeatureName::PM_book_depth_top3_yes:  return "PM_book_depth_top3_yes";
         case FeatureName::PM_book_depth_top3_no:   return "PM_book_depth_top3_no";
-        case FeatureName::Pinnacle_p_yes_fair:     return "Pinnacle_p_yes_fair";
-        case FeatureName::Pinnacle_overround:      return "Pinnacle_overround";
+        case FeatureName::Goalserve_devig_p_yes_fair: return "Goalserve_devig_p_yes_fair";
+        case FeatureName::Goalserve_overround_avg:    return "Goalserve_overround_avg";
         case FeatureName::edge_bps:                return "edge_bps";
         case FeatureName::kelly_full:              return "kelly_full";
         case FeatureName::expected_fill_rate:      return "expected_fill_rate";

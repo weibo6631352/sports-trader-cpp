@@ -187,6 +187,23 @@ spec by:
 - [ ] 已请 @老高 (code-quality-reviewer) review
 - [ ] 老高指出的问题已逐条处理 (不允许 "下次注意")
 
+### 9.1 v1.2 新增自检 (Wave 28)
+
+<!--
+  ADR-009 v2 = 全员 Sonnet。Opus 必须例外说明 + GM ack。
+  R-20 / R-12 / R-33 / HMAC 反模式由 CI grep 自动检查；本 checkbox 为人脑 pre-check。
+-->
+
+- [ ] **ADR-009 v2 Opus 例外自检**: 本 PR 不含 `model: opus`；
+      或含 `model: opus` 但已在文件内加 `例外:` 段 + GM ack 链接，
+      且理由不含 "管理层身份" / "我觉得 Sonnet 不够好" / "task 复杂"
+- [ ] **R-20 / R-12 / R-33 / HMAC 反模式自检**: 本 PR diff 已扫以下场景
+      (CI Python grep 会自动检查, 本 checkbox 为提交前 pre-flight):
+      - R-20: 无 `data_source_ts = now()`, 无 `event_ts = ingestion_ts`
+      - R-12: WSS 路径无 `lock_guard` / `blocking_read` / 同步 HTTP / `fsync`
+      - R-33: paper 路径无 `/ws/user`, 无旧 host `ws-subscriptions-clob`
+      - HMAC: 无 `rstrip(b"=")` / `paramType` / `sigType=2` / request_path 拼 querystring
+
 ---
 
 <!--
