@@ -198,6 +198,7 @@ GM 第二错: 在校正"看供给侧"时矫枉过正, 写成"以 v2 为准让工
 - **错 #9**：跨 wave 引用过时信息 → 做计划前必读各 owner 最新 vN, 数据源演进推翻早期结论
 - **错 #10**：ADR-009 v1 把"管理层默认更高"解读为 Opus → 全员默认 Sonnet, Opus 严格例外
 - **错 #11**：派单 prompt 没强制 build+ctest 验证 → sub-agent 声称测试过实际 build fail, GM 花 30min hotfix 10 处
+- **错 #12**：gitignore 通配不全 → commit a8afebe 误推 build_adr010/ 931 files / 54889 lines, 立刻 fix commit a93abe9+c065791 撤回
 
 **根因都是同一个：GM 想"加速"或"省事"，但加速 / 省事的方向违反公司价值观或用户明确指令。**
 
