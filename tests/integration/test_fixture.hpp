@@ -46,10 +46,16 @@
 namespace stcpp::test::integration {
 
 // ---------- WSS book update event (in-process, 不开 socket) -----------------
+// v0.5: market_id → condition_id, is_buy → side (Side::Buy/Sell), + token_id + outcome
 
 struct PmBookUpdate {
-    std::string  market_id;
-    bool         is_buy{true};
+    std::string  market_id;    // v0.4 compat alias → condition_id
+    std::string  condition_id; // v0.5 primary key (condition_id)
+    std::string  token_id{"1234567890"};  // v0.5: outcome 级标识 (mock default)
+    risk::Side   side{risk::Side::Buy};   // v0.5: was is_buy:bool
+    risk::Outcome outcome{risk::Outcome::Yes}; // v0.5: new
+    // v0.4 compat: is_buy kept for existing callers that set it directly
+    bool         is_buy{true};  // compat bridge: set side accordingly in MakeValidIntent
     double       price{0.55};
     double       book_depth_l1_usdc{20'000.0};
     std::int64_t event_ts_ns{0};
@@ -139,8 +145,10 @@ class CountingAuditEmitter final : public risk::AuditEmitter {
             : stcpp::observability::AuditEventType::OrderApproved;
         wal_rec.reject_code     = rec.reject;
         wal_rec.sub_reason      = rec.sub_reason;
-        const std::size_t mlen  = std::min(rec.market_id.size(), wal_rec.market_id.size());
-        if (mlen > 0) std::memcpy(wal_rec.market_id.data(), rec.market_id.data(), mlen);
+        // v0.5: market_id → condition_id in risk::AuditRecord
+        const std::string& cid_str = rec.condition_id;
+        const std::size_t mlen  = std::min(cid_str.size(), wal_rec.market_id.size());
+        if (mlen > 0) std::memcpy(wal_rec.market_id.data(), cid_str.data(), mlen);
 
         auto r = paper_audit_writer_->Append(wal_rec);
         if (!r) {
@@ -236,11 +244,15 @@ class PaperE2EFixture : public ::testing::Test {
         it.data_source_ts_ns   = book.data_source_ts_ns;
         it.ingestion_ts_ns     = book.ingestion_ts_ns;
         it.as_of_ts_ns         = stcpp::infra::wal::pit::NowRealtimeNs();
-        it.market_id           = book.market_id;
+        // v0.5: condition_id + token_id + outcome + side
+        it.condition_id        = book.condition_id.empty() ? book.market_id : book.condition_id;
+        it.token_id            = book.token_id;
+        it.outcome             = book.outcome;
+        // v0.5: side (compat bridge: if is_buy was set, map to Side::Buy)
+        it.side                = book.side;
         it.strategy_id         = "strat_p001_paper";
         it.signal_id           = signal_id;
         it.feature_snapshot_id = "fs_" + signal_id;
-        it.is_buy              = book.is_buy;
         it.price               = book.price;
         it.size_usdc           = 100;                    // 小单 < per_order_cap_usdc
         it.book_depth_l1_usdc  = book.book_depth_l1_usdc;
@@ -271,7 +283,7 @@ class PaperE2EFixture : public ::testing::Test {
             std::memcpy(req.audit_id.data(), out.rm_decision.audit_id.data(),
                         out.rm_decision.audit_id.size());
             req.intent_id         = static_cast<std::uint64_t>(intent.size_usdc);
-            req.market_id         = intent.market_id;
+            req.market_id         = intent.condition_id;  // v0.5: was market_id
             req.outcome           = "YES";
             req.price             = intent.price;
             req.size_usdc         = static_cast<double>(intent.size_usdc);
@@ -286,7 +298,7 @@ class PaperE2EFixture : public ::testing::Test {
             std::memcpy(vo.audit_id.data(), out.rm_decision.audit_id.data(),
                         out.rm_decision.audit_id.size());
             vo.intent_id          = req.intent_id;
-            vo.market_id          = intent.market_id;
+            vo.market_id          = intent.condition_id;  // v0.5: was market_id
             vo.outcome            = "YES";
             vo.size_usdc          = static_cast<double>(intent.size_usdc);
             vo.quote_price        = intent.price;

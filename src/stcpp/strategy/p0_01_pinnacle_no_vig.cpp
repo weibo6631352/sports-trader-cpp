@@ -217,7 +217,8 @@ std::optional<SignalOutput> PinnacleNoVigSignal::tick(SignalContext const& ctx) 
     // ----- 装配 SignalOutput -----
     SignalOutput out;
     out.signal_id           = SignalId::P0_01_PinnacleNoVig;
-    out.side                = (pm.mid < nv.p_yes_fair) ? Side::BuyYes : Side::BuyNo;
+    // v0.5: Side 解耦 outcome; Buy = 开仓方向, outcome 由 token_id 决定 (Orchestrator 层设)
+    out.side                = Side::Buy;
     out.edge_bps            = round_to_bps(edge_abs);
     out.suggested_size_usdc = size_usdc;
     out.confidence          = clamp01(edge_abs / CONFIDENCE_NORMALIZER);

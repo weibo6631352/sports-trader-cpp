@@ -168,11 +168,13 @@ TEST_F(PaperE2EFixture, T3_R20_4ts_full_chain_and_PIT_reject) {
         it.data_source_ts_ns   = now - 2'000'000;        // < event_ts → 违例
         it.ingestion_ts_ns     = now - 500'000;
         it.as_of_ts_ns         = now;
-        it.market_id           = "mkt_ts_violate";
+        it.condition_id        = "0xmkt_ts_violate";  // v0.5: was market_id
+        it.token_id            = "1234567890";          // v0.5: new
+        it.outcome             = risk::Outcome::Yes;    // v0.5: new
+        it.side                = risk::Side::Buy;        // v0.5: was is_buy=true
         it.strategy_id         = "strat_p001_paper";
         it.signal_id           = "sig_ts_violate";
         it.feature_snapshot_id = "fs_ts_violate";
-        it.is_buy              = true;
         it.price               = 0.55;
         it.size_usdc           = 100;
         it.book_depth_l1_usdc  = 20'000.0;
