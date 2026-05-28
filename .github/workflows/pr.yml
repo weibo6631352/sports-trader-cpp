@@ -1,16 +1,20 @@
 name: PR Checks
-# 老高 v1.2 (W6 Wave 28) — v1.1 + 5 新 Python grep job + ADR-009 model tier + ADR-010 test grading
+# 老高 v1.5 (W8 Wave 35) — v1.4 + 2 新 Python grep job + abi_lock v1.5 crypto + ADR-023
 # 红线: PR <= 8 min, 命中即 reject
 # 改本文件: 老高 + 老郭 + 老雷 三方任一签字, PR 描述带 "spec by 老郭" 走 ADR-005 派单
 #
-# v1.2 新增 job (Wave 28 决议 #3):
-#   ci-grep-r20-pit-chain     — R-20 第 7/8 项 Python 精确扫 (data_source_ts=now, event_ts<=>ingestion_ts)
-#   ci-grep-r12-wss-blocking  — R-12 WSS 阻塞反模式 Python 扫 (lock_guard/blocking_read/sync HTTP/fsync)
-#   ci-grep-r33-5host-paper   — R-33 paper /ws/user + 旧 clob host Python 扫
-#   ci-grep-hmac-4bug         — HMAC 4 bug Python 扫 (rstrip/paramType/sigType=2/querystring)
-#   ci-grep-adr009-model-tier — ADR-009 v2 model: opus 例外段检查
-#   (pr-meta-grep 已覆盖 ADR-005 派单 + persona 边界, v1.2 不重复)
-#   (risk-enum-coverage 保留 v1.1 不变)
+# v1.5 新增 job (Wave 35 GM 错 #21 补救, ADR-021/023 配套):
+#   ci-grep-ic-no-self-test   — IC 漏写测试 WARN W8-W9, FAIL W10 (ADR-023 IC 自测唯一裁判)
+#   ci-grep-worktree-check    — ADR-021 worktree 隔离 FAIL W8 起 (派单 md subagent_type= 必含 isolation)
+#   ci-grep-abi-lock 升 v1.5  — 加 ed25519.hpp + CMakeLists stcpp_crypto_ed25519 关键词 ABI lock
+#
+# v1.4 (W7 Wave 33) 5 新 job 保留:
+#   ci-grep-gm-commit-author / ci-grep-binary-large-file / ci-grep-fom
+#   ci-grep-abi-cascade / ci-grep-adr010-wno
+# v1.2 (W6 Wave 28) 5 新 job 保留:
+#   ci-grep-r20-pit-chain / ci-grep-r12-wss-blocking / ci-grep-r33-5host-paper
+#   ci-grep-hmac-4bug / ci-grep-adr009-model-tier
+# 总 grep job: 15 → 17
 
 on:
   pull_request:
@@ -278,7 +282,7 @@ jobs:
   # ---------------------------------------------------------------------------
 
   ci-grep-abi-lock:
-    name: PM client ABI lock (handshake ref enforce, v1.4)
+    name: ABI lock (PM client + crypto ed25519, v1.5)
     runs-on: ubuntu-latest
     timeout-minutes: 2
     if: github.event_name == 'pull_request'
@@ -286,7 +290,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: '3.11' }
-      - name: ABI lock enforce (abi_lock.py v1.4)
+      - name: ABI lock enforce (abi_lock.py v1.5 — ed25519/crypto)
         env:
           PR_BODY: ${{ github.event.pull_request.body }}
         run: python3 tests/ci_grep/abi_lock.py
@@ -445,3 +449,38 @@ jobs:
         with: { python-version: '3.11' }
       - name: Run adr010_wno_check.py
         run: python3 tests/ci_grep/adr010_wno_check.py
+
+  # ---------------------------------------------------------------------------
+  # v1.5 新增: 2 Python grep job (Wave 35 — GM 错 #21 补救 + ADR-021/023 配套)
+  # ---------------------------------------------------------------------------
+
+  ci-grep-ic-no-self-test:
+    # ADR-023: IC 自测唯一裁判 — IC 改 src/include 但漏写对应 tests/ → WARN W8-W9, FAIL W10
+    # W8-W9: warning-only (exit 0), W10 起升 FAIL (脚本内 exit 改 1 或此处加 --fail-on-warn)
+    name: IC 漏写测试 WARN (ADR-023, v1.5, W8-W9 warning / W10 FAIL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run ic_no_self_test.py (W8-W9 warning-only)
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: python3 tests/ci_grep/ic_no_self_test.py
+        # W10 起: 改为 continue-on-error: false 并脚本内 exit 1
+
+  ci-grep-worktree-check:
+    # ADR-021: worktree 隔离 W8 起强约束 — 派单 md subagent_type= 必含 isolation="worktree"
+    name: ADR-021 worktree 隔离 enforce (v1.5, FAIL W8 起)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run worktree_check.py
+        run: python3 tests/ci_grep/worktree_check.py

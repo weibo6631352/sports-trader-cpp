@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-# tests/ci_grep/abi_lock.py — ABI lock enforce (老李-老孙 handshake v1 配套)
+# tests/ci_grep/abi_lock.py — ABI lock enforce (老李-老孙 handshake v1 + crypto v1.5)
 #
-# Owner: 老高 (#17, code-quality-reviewer, F 顾问团)  v1.3 W6 Wave 30
+# Owner: 老高 (#17, code-quality-reviewer, F 顾问团)  v1.5 W8 Wave 35
 # 关联: docs/RESEARCH/laoli-laoSun-handshake-v1.md (ABI lock 规则 + 4 等级)
-#       docs/RESEARCH/laogao-pr-review-v1.3.md §2.8
+#       docs/RESEARCH/laogao-pr-review-v1.5.md §2.18
 #       .github/workflows/pr.yml job ci-grep-abi-lock
 #
-# 规则 (2 条):
+# v1.5 新增 (W8 Wave 35):
+#   - ABI_LOCKED_FILES 加 include/stcpp/crypto/ed25519.hpp
+#   - CMakeLists.txt 含 stcpp_crypto_ed25519 关键词时触发 ABI lock 检查
+#   - crypto INTERFACE target 变更 = 下游 signer_v52 / STRATEGY_DECAYED CLI ABI 破坏
 #
-#   Rule 1: PR 改 include/stcpp/polymarket/pm_client.hpp 或
-#           include/stcpp/polymarket/live/live_pm_client.hpp 时,
+# 规则 (2 条, v1.4 保留 + v1.5 扩展文件范围):
+#
+#   Rule 1: PR 改 ABI_LOCKED_FILES 中任一文件时,
 #           PR description 必须含:
 #             "ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>"
 #           格式: "ABI ref: ...handshake-v1.md F-" + 数字 + 空格 + "L" + 数字
@@ -17,6 +21,9 @@
 #   Rule 2: 改 static_assert 数值 (sizeof / offsetof / enum count) 时,
 #           若等级为 L2 或 L3 (handshake 文档中三方签要求),
 #           PR description 必须含 "三方签" 字样.
+#
+#   Rule 3 (v1.5 新): CMakeLists.txt 含 stcpp_crypto_ed25519 关键词变更时,
+#           PR description 必须含 ABI ref 行 (crypto INTERFACE target = ABI 边界).
 #
 # 扫描方式:
 #   本脚本通过 git diff --name-only origin/<base>...HEAD 探测变更文件.
@@ -47,6 +54,13 @@ from pathlib import Path
 ABI_LOCKED_FILES = {
     "include/stcpp/polymarket/pm_client.hpp",
     "include/stcpp/polymarket/live/live_pm_client.hpp",
+    # v1.5 W8: 老孙 ed25519 wrapper ABI lock (SecureBuffer + Ed25519 sign/verify 接口)
+    "include/stcpp/crypto/ed25519.hpp",
+}
+
+# v1.5: CMake target 含此关键词时触发 ABI lock 检查 (crypto INTERFACE target = ABI 边界)
+ABI_LOCKED_CMAKE_KEYWORDS = {
+    "stcpp_crypto_ed25519",
 }
 
 # Rule 1: PR description 必须含 ABI ref 行
@@ -141,11 +155,31 @@ def main() -> int:
                for abi_f in ABI_LOCKED_FILES)
     ]
 
+    # Rule 3 (v1.5): CMakeLists.txt 改动含 stcpp_crypto_ed25519 关键词
+    changed_cmake_files = [
+        f for f in changed_files
+        if Path(f).name == "CMakeLists.txt"
+    ]
+    cmake_abi_triggered = False
+    for cmake_file in changed_cmake_files:
+        cmake_path = repo_root / cmake_file
+        if cmake_path.exists():
+            try:
+                content = cmake_path.read_text(encoding="utf-8", errors="replace")
+                if any(kw in content for kw in ABI_LOCKED_CMAKE_KEYWORDS):
+                    cmake_abi_triggered = True
+                    if cmake_file not in changed_abi_files:
+                        changed_abi_files.append(cmake_file)
+            except OSError:
+                pass
+
     if not changed_abi_files:
         print("[abi_lock] PASS: 本 PR 未修改 ABI 锁定文件, 检查跳过")
         return 0
 
     print(f"[abi_lock] 检测到 ABI 锁定文件变更: {changed_abi_files}")
+    if cmake_abi_triggered:
+        print("[abi_lock] (Rule 3 v1.5) CMakeLists.txt 含 stcpp_crypto_ed25519 关键词 — crypto INTERFACE ABI 边界触发")
 
     errors: list[str] = []
 
