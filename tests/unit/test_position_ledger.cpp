@@ -74,6 +74,13 @@ MakeValidFill(double fill_price, double fill_size_usdc) {
     f.slippage_bps       = 5;
     f.bernoulli_draw     = true;
     f.audit_wal_kind     = WalKind::PaperAudit;
+    // W6 Wave 29: market_id / outcome 透传字段 (VirtualFill 加字段后 fixture 补齐)
+    // 保持 "paper_market_0" 与 T1/T2 query_position 参数一致
+    {
+        static constexpr std::string_view kMid = "paper_market_0";
+        std::memcpy(f.market_id.data(), kMid.data(), kMid.size());
+    }
+    f.outcome            = 0;  // YES
     f.fill_ts_ns         = base;
     f.event_ts_ns        = base;
     f.data_source_ts_ns  = base + 100;
@@ -219,7 +226,7 @@ TEST(PositionLedger, T2_MultiFill_PositionAccumulation) {
     // 以 micro 计: (10e6 * 600000 + 20e6 * 700000) / 30e6
     //            = (6e12 + 14e12) / 30e6 = 20e12 / 30e6 = 666666
     const std::int64_t expected_avg = 666'667LL;  // 四舍五入
-    EXPECT_NEAR(r2.record.entry_avg_price_micro, expected_avg, 2LL)
+    EXPECT_NEAR(static_cast<double>(r2.record.entry_avg_price_micro), static_cast<double>(expected_avg), 2.0)
         << "entry_avg_price_micro should be weighted average";
 
     // 第 3 笔: 5 USDC @ 0.50 (低于均价, 但 v0.1 开仓阶段 realized_pnl 不变)

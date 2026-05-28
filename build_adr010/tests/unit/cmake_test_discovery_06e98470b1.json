@@ -1,0 +1,67 @@
+{
+  "tests": 11,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "SlippageModel",
+      "tests": 11,
+      "testsuite": [
+        {
+          "name": "Case1_TwoK_Gameday_Zero",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 33
+        },
+        {
+          "name": "Case2_TenK_Gameday",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 48
+        },
+        {
+          "name": "Case3_RhoMax_Boundary",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 67
+        },
+        {
+          "name": "Case4_NumericalStability_PriceNearZero",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 88
+        },
+        {
+          "name": "Case5_PaperCase_SlippageNegatesEdge",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 108
+        },
+        {
+          "name": "Case6_FillRateBelowFloor",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 121
+        },
+        {
+          "name": "Case7a_InvalidIntent_BookTsZero",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 133
+        },
+        {
+          "name": "Case7b_InvalidIntent_BookTsStale",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 141
+        },
+        {
+          "name": "Case7c_InvalidIntent_NaN",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 148
+        },
+        {
+          "name": "Case7d_InvalidIntent_Negative",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 156
+        },
+        {
+          "name": "Case7e_InvalidIntent_IllegalTick",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_slippage_model.cpp",
+          "line": 164
+        }
+      ]
+    }
+  ]
+}

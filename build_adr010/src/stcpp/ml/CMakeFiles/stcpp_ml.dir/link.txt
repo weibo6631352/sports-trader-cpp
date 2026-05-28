@@ -1,0 +1,2 @@
+/usr/bin/ar qc libstcpp_ml.a CMakeFiles/stcpp_ml.dir/hook.cpp.o
+/usr/bin/ranlib libstcpp_ml.a

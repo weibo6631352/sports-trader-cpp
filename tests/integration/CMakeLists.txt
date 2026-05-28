@@ -34,8 +34,9 @@ target_include_directories(stcpp_test_integration_paper_e2e PRIVATE
     ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/include)
 target_compile_features(stcpp_test_integration_paper_e2e PRIVATE cxx_std_20)
 target_compile_options(stcpp_test_integration_paper_e2e PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_compile_definitions(stcpp_test_integration_paper_e2e PRIVATE
     STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1)
 gtest_discover_tests(stcpp_test_integration_paper_e2e
@@ -52,8 +53,9 @@ target_include_directories(stcpp_test_integration_audit_chain PRIVATE
     ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/include)
 target_compile_features(stcpp_test_integration_audit_chain PRIVATE cxx_std_20)
 target_compile_options(stcpp_test_integration_audit_chain PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_compile_definitions(stcpp_test_integration_audit_chain PRIVATE
     STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1)
 gtest_discover_tests(stcpp_test_integration_audit_chain
@@ -71,8 +73,9 @@ target_include_directories(stcpp_test_integration_r11_pollution PRIVATE
     ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/include)
 target_compile_features(stcpp_test_integration_r11_pollution PRIVATE cxx_std_20)
 target_compile_options(stcpp_test_integration_r11_pollution PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_compile_definitions(stcpp_test_integration_r11_pollution PRIVATE
     STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1)
 gtest_discover_tests(stcpp_test_integration_r11_pollution

@@ -1,0 +1,5 @@
+if(EXISTS "/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_fill_rate_model[1]_tests.cmake")
+  include("/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_fill_rate_model[1]_tests.cmake")
+else()
+  add_test(test_fill_rate_model_NOT_BUILT test_fill_rate_model_NOT_BUILT)
+endif()

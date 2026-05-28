@@ -2,8 +2,9 @@ cmake_minimum_required(VERSION 3.27)
 project(stcpp
     VERSION 0.1.0
     DESCRIPTION "Polymarket sports market quant trading system"
-    LANGUAGES CXX
+    LANGUAGES CXX C
 )
+# C language enable: BLAKE3 官方实现是 C (老唐 W6 Wave 29 FetchContent), 必须 enable C
 
 # C++ 版本锁 (ADR-001 W-1 + 老何 v1 选型)
 set(CMAKE_CXX_STANDARD 20)

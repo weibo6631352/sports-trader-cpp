@@ -1,0 +1,2 @@
+/usr/bin/ar qc libstcpp_microstructure.a CMakeFiles/stcpp_microstructure.dir/fill_rate_model.cpp.o
+/usr/bin/ranlib libstcpp_microstructure.a

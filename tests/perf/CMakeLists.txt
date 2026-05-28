@@ -31,9 +31,10 @@ FetchContent_MakeAvailable(benchmark)
 foreach(_bm_target benchmark benchmark_main)
     if(TARGET ${_bm_target})
         target_compile_options(${_bm_target} PRIVATE
-            -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-            -Wno-shadow -Wno-old-style-cast -Wno-cast-align
-            -Wno-format-nonliteral
+            -Wno-double-promotion   # ADR-010 grandfather: benchmark 浮点宏
+            -Wno-old-style-cast     # ADR-010 grandfather: benchmark 宏展开
+            -Wno-cast-align         # ADR-010 grandfather: benchmark 内部转型
+            -Wno-format-nonliteral  # benchmark colorprint.cc vsnprintf
             -Wno-error
         )
     endif()
@@ -49,10 +50,12 @@ function(stcpp_add_perf_bench TGT)
     )
     target_compile_features(${TGT} PRIVATE cxx_std_20)
     # -O2 与生产对齐, NDEBUG 关 assert, STCPP_PERF_BENCH 触发 noinline hint (§6 Ask 1)
+    # ADR-010 §4: 删 -Wno-sign-conversion / -Wno-shadow / -Wno-conversion; 保留 3 项 grandfather
     target_compile_options(${TGT} PRIVATE
         -O2 -DNDEBUG
-        -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-        -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+        -Wno-double-promotion   # ADR-010 grandfather: benchmark 浮点宏
+        -Wno-old-style-cast     # ADR-010 grandfather: benchmark 宏展开
+        -Wno-cast-align         # ADR-010 grandfather: benchmark mock 转型
     )
     target_compile_definitions(${TGT} PRIVATE
         STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1

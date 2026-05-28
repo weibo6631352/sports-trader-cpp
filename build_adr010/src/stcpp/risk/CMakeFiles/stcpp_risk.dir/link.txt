@@ -1,0 +1,2 @@
+/usr/bin/ar qc libstcpp_risk.a CMakeFiles/stcpp_risk.dir/risk_gateway.cpp.o
+/usr/bin/ranlib libstcpp_risk.a

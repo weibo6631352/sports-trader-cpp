@@ -1,0 +1,2 @@
+/usr/bin/ar qc libstcpp_infra_wal.a CMakeFiles/stcpp_infra_wal.dir/wal_writer.cpp.o
+/usr/bin/ranlib libstcpp_infra_wal.a

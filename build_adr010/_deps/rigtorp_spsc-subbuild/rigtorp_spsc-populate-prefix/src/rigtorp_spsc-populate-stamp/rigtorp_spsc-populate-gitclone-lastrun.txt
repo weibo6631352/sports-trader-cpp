@@ -1,0 +1,15 @@
+# This is a generated file and its contents are an internal implementation detail.
+# The download step will be re-executed if anything in this file changes.
+# No other meaning or use of this file is supported.
+
+method=git
+command=/opt/homebrew/bin/cmake;-DCMAKE_MESSAGE_LOG_LEVEL=VERBOSE;-P;/Users/wangweibo/code/sports-trader-cpp/build_adr010/_deps/rigtorp_spsc-subbuild/rigtorp_spsc-populate-prefix/tmp/rigtorp_spsc-populate-gitclone.cmake
+source_dir=/Users/wangweibo/code/sports-trader-cpp/build_adr010/_deps/rigtorp_spsc-src
+work_dir=/Users/wangweibo/code/sports-trader-cpp/build_adr010/_deps
+repository=https://github.com/rigtorp/SPSCQueue.git
+remote=origin
+init_submodules=TRUE
+recurse_submodules=--recursive
+submodules=
+CMP0097=NEW
+      

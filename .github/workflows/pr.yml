@@ -274,6 +274,48 @@ jobs:
         run: python3 tests/ci_grep/adr009_model_tier.py
 
   # ---------------------------------------------------------------------------
+  # W6 Wave 29: ABI lock enforce (老高 W6 W2 落地提案, 本 PR 为提案占位)
+  # 实际 abi_lock.py 由老高 W6 W2 实现; 此 job 在 abi_lock.py 落地前 always-pass
+  # ---------------------------------------------------------------------------
+
+  ci-grep-abi-lock:
+    name: PM client ABI lock (handshake ref enforce, W6 Wave 29)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check pm_client.hpp PR must reference handshake doc
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          CHANGED_FILES: ${{ toJSON(github.event.pull_request.changed_files) }}
+        run: |
+          set -e
+          # 检查是否修改了 pm_client.hpp 或 live_pm_client.hpp
+          if git diff --name-only origin/${{ github.base_ref }}...HEAD \
+             | grep -qE 'include/stcpp/polymarket/(pm_client\.hpp|live/live_pm_client\.hpp)'; then
+            echo "检测到 pm_client.hpp / live_pm_client.hpp 变更"
+            # PR 描述必须引用 handshake 文档
+            if ! echo "$PR_BODY" | grep -qE 'ABI ref:.*laoli-laoSun-handshake-v1|laoli-laoSun-handshake-v1.*F-[0-9]{2}'; then
+              echo "::error::ABI lock: 修改 pm_client.hpp 或 live_pm_client.hpp 必须在 PR 描述引用"
+              echo "::error::  格式: 'ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>'"
+              echo "::error::  参见: docs/RESEARCH/laoli-laoSun-handshake-v1.md §7"
+              exit 1
+            fi
+            echo "OK: PR 已引用 ABI handshake 文档"
+          else
+            echo "OK: 本 PR 未修改 pm_client.hpp / live_pm_client.hpp, ABI lock 检查跳过"
+          fi
+      - name: ABI hash grep (abi_lock.py — 老高 W6 W2 落地前 always-pass)
+        run: |
+          # 老高 W6 W2 实现 tests/ci_grep/abi_lock.py 后激活
+          if [ -f tests/ci_grep/abi_lock.py ]; then
+            python3 tests/ci_grep/abi_lock.py
+          else
+            echo "PENDING: tests/ci_grep/abi_lock.py 尚未落地 (老高 W6 W2), 本步骤 pass"
+          fi
+
+  # ---------------------------------------------------------------------------
   # v1.1 保留: risk-enum-coverage
   # ---------------------------------------------------------------------------
 

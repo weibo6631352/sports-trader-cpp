@@ -1,5 +1,19 @@
 // stcpp/polymarket/pm_client.hpp — PolymarketClient v0.1 抽象接口
 //
+// ============================================================
+// ABI LOCK v1: IPolymarketClient + 核心 struct
+// 锁定日期: 2026-06-W6
+// 签字: 老李 (#07) + 老孙 (#06)
+// handshake 文档: docs/RESEARCH/laoli-laoSun-handshake-v1.md
+//
+// L2 (改字段类型/顺序/大小): 老李 + 老孙 + GM 三方签
+// L3 (删接口/改签名/改返回类型): 老郭 + 老韩 + GM 三方签
+//
+// PR 要求: 修改本文件必须在 PR 描述引用
+//   "ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>"
+// CI enforce: tests/ci_grep/abi_lock.py (老高 W6 W2 落地) — 未引用即 fail
+// ============================================================
+//
 // Owner: 老李 (polymarket-protocol-expert, #07)
 // Sprint-2 W5 Wave 24 (W5-A-01 / 老周 manager mandate §4.1 W5-01-A)
 //
@@ -60,6 +74,12 @@ enum class DataSourceTsSource : std::uint8_t {
     InferredFromIngestion    = 3,  // 实在没源, 走本地 ingestion_ts (月度 sweep > 5% 报警)
 };
 
+// ABI LOCK: DataSourceTsSource 值 (handshake §4.3 — 老孙 signer v5.1 IPC uint8 映射, 值改动 = L3)
+static_assert(static_cast<std::uint8_t>(DataSourceTsSource::UpstreamPayload)       == 0, "ABI lock: DataSourceTsSource::UpstreamPayload");
+static_assert(static_cast<std::uint8_t>(DataSourceTsSource::UpstreamHeader)        == 1, "ABI lock: DataSourceTsSource::UpstreamHeader");
+static_assert(static_cast<std::uint8_t>(DataSourceTsSource::InferredFromDsTs)      == 2, "ABI lock: DataSourceTsSource::InferredFromDsTs");
+static_assert(static_cast<std::uint8_t>(DataSourceTsSource::InferredFromIngestion) == 3, "ABI lock: DataSourceTsSource::InferredFromIngestion");
+
 [[nodiscard]] constexpr std::string_view ToString(DataSourceTsSource s) noexcept {
     switch (s) {
         case DataSourceTsSource::UpstreamPayload:       return "UPSTREAM_PAYLOAD";
@@ -78,6 +98,16 @@ struct TimestampQuad {
     DataSourceTsSource ds_ts_source{DataSourceTsSource::UpstreamPayload};
 };
 
+// ABI LOCK: TimestampQuad layout (R-20 red line — any field change = L2)
+// handshake: docs/RESEARCH/laoli-laoSun-handshake-v1.md §3
+static_assert(sizeof(TimestampQuad) == 40,
+    "ABI lock: TimestampQuad sizeof must be 40 (4×int64 + uint8 + 7B pad)");
+static_assert(offsetof(TimestampQuad, event_ts_ns)       ==  0, "ABI lock: TimestampQuad.event_ts_ns offset");
+static_assert(offsetof(TimestampQuad, data_source_ts_ns) ==  8, "ABI lock: TimestampQuad.data_source_ts_ns offset");
+static_assert(offsetof(TimestampQuad, ingestion_ts_ns)   == 16, "ABI lock: TimestampQuad.ingestion_ts_ns offset");
+static_assert(offsetof(TimestampQuad, as_of_ts_ns)       == 24, "ABI lock: TimestampQuad.as_of_ts_ns offset");
+static_assert(offsetof(TimestampQuad, ds_ts_source)      == 32, "ABI lock: TimestampQuad.ds_ts_source offset");
+
 // ---------- OrderStatus (7 enum, v3 §B 实测 + 官方 SDK) ----------
 
 enum class OrderStatus : std::uint8_t {
@@ -91,6 +121,16 @@ enum class OrderStatus : std::uint8_t {
 };
 
 inline constexpr std::size_t kOrderStatusCount = 7;
+
+// ABI LOCK: OrderStatus enum 值 (handshake §4.1 — 值改动 = L3)
+static_assert(static_cast<std::uint8_t>(OrderStatus::Booked)          == 0, "ABI lock: OrderStatus::Booked");
+static_assert(static_cast<std::uint8_t>(OrderStatus::PartiallyFilled) == 1, "ABI lock: OrderStatus::PartiallyFilled");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Filled)          == 2, "ABI lock: OrderStatus::Filled");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Canceled)        == 3, "ABI lock: OrderStatus::Canceled");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Expired)         == 4, "ABI lock: OrderStatus::Expired");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Rejected)        == 5, "ABI lock: OrderStatus::Rejected");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Settled)         == 6, "ABI lock: OrderStatus::Settled");
+static_assert(kOrderStatusCount == 7, "ABI lock: OrderStatus count must be 7");
 
 [[nodiscard]] constexpr std::string_view ToString(OrderStatus s) noexcept {
     switch (s) {
@@ -162,6 +202,19 @@ enum class PMErrorKind : std::uint8_t {
 };
 
 inline constexpr std::size_t kPMErrorKindCount = 10;  // Ok + 9 失败
+
+// ABI LOCK: PMErrorKind enum 值 (handshake §4.2 — 值改动 = L3)
+static_assert(static_cast<std::uint8_t>(PMErrorKind::Ok)                == 0, "ABI lock: PMErrorKind::Ok");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::NotAuthenticated)  == 1, "ABI lock: PMErrorKind::NotAuthenticated");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::RateLimited)       == 2, "ABI lock: PMErrorKind::RateLimited");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::ServerError)       == 3, "ABI lock: PMErrorKind::ServerError");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::BadRequest)        == 4, "ABI lock: PMErrorKind::BadRequest");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::NotFound)          == 5, "ABI lock: PMErrorKind::NotFound");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::NetworkError)      == 6, "ABI lock: PMErrorKind::NetworkError");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::Stale)             == 7, "ABI lock: PMErrorKind::Stale");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::InvariantViolation)== 8, "ABI lock: PMErrorKind::InvariantViolation");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::Unknown)           == 9, "ABI lock: PMErrorKind::Unknown");
+static_assert(kPMErrorKindCount == 10, "ABI lock: PMErrorKind count must be 10 (Ok + 9 failure kinds)");
 
 [[nodiscard]] constexpr std::string_view ToString(PMErrorKind k) noexcept {
     switch (k) {

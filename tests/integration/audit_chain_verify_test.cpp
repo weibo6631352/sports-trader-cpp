@@ -1,20 +1,21 @@
-// tests/integration/audit_chain_verify_test.cpp — audit chain integration verify (W5 Wave 24)
+// tests/integration/audit_chain_verify_test.cpp — audit chain integration verify
 //
-// Owner: 小宋  Sprint-2 W5 Wave 24 (W5-E-03)
+// Owner: 小宋 (W5 Wave 24) / 老唐更新 (W6 Wave 29 BLAKE3_REAL 配套)
 // 关联:
-//   docs/RESEARCH/laotang-audit-schema-v1.1.md §4 (hash chain: prev || payload → current)
+//   docs/RESEARCH/laotang-audit-schema-v1.1.md §4 (hash chain)
 //   docs/RESEARCH/xiaoying-acceptance-spec-v1.md
 //     - M1-A06 audit chain hash 不可篡改 (篡改任意 record → verify 失败)
 //     - M1-E03 audit chain hash 全过 (72h 0 mismatch)
 //
-// 验证:
-//   T1: 20 笔 audit record 通过 AuditEmitter → paper_audit.wal, last_hash 链式累积
-//   T2: 篡改任意 record.payload_hash → 重算链失败定位
-//   T3: 4 ts R-20 全链路 (每条 record 含 event/ds/ingestion/as_of, PIT 内嵌)
-//   T4: chain 在 emit 后单调推进 (last_hash 与上一条 current_hash 一致)
+// W6 Wave 29 更新 (老唐):
+//   BLAKE3_REAL=1 后 RecomputeDigest/XorChain 替换为 Blake3Hasher 重算.
+//   W5 XOR stub 路径保留在 #else 分支 (向后兼容测试历史).
 //
-// 注: BLAKE3 stub (老唐 audit_emitter.cpp): current = prev XOR digest(seq, type, decision_ts)
-//   - Sprint-3 老孙切真 BLAKE3 (P0-15), 验收口径不变.
+// 验证:
+//   T1: 20 笔 audit record, last_hash 链式累积 + 本地重算一致
+//   T2: 篡改任意 record decision_ts → 重算链失败定位 (M1-A06)
+//   T3: 4 ts R-20 全链路 PIT 拦截
+//   T4: chain 在 emit 后单调推进
 
 #include <gtest/gtest.h>
 
@@ -30,6 +31,7 @@
 #include "stcpp/infra/wal/wal_writer.hpp"
 #include "stcpp/observability/audit_emitter.hpp"
 #include "stcpp/observability/audit_record.hpp"
+#include "stcpp/observability/blake3_hash.hpp"
 #include "stcpp/risk/reject_enum.hpp"
 
 namespace stcpp::test::integration {
@@ -41,6 +43,7 @@ using stcpp::infra::wal::WalWriter;
 using stcpp::observability::AuditEmitter;
 using stcpp::observability::AuditEventType;
 using stcpp::observability::AuditRecord;
+using stcpp::observability::Blake3Hasher;
 using stcpp::observability::RiskDecisionInput;
 using stcpp::observability::kHashBytes;
 
@@ -48,24 +51,34 @@ static std::int64_t NowNs() noexcept {
     return stcpp::infra::wal::pit::NowRealtimeNs();
 }
 
-// 复刻 audit_emitter.cpp 内部 stub (Sprint-3 切真 BLAKE3 时同步改这里 + emitter.cpp)
-[[nodiscard]] std::array<std::uint8_t, kHashBytes> RecomputeDigest(
+// W6 Wave 29: BLAKE3_REAL 后用真 BLAKE3 重算, W5 XOR stub 保留 #else 分支
+[[nodiscard]] Blake3Hasher::Hash256 RecomputePayload(
     std::uint64_t seq, AuditEventType type, std::int64_t decision_ts) noexcept {
-    std::array<std::uint8_t, kHashBytes> out{};
+#if defined(BLAKE3_REAL)
+    return Blake3Hasher::compute_payload_hash(
+        seq, static_cast<std::uint8_t>(type), decision_ts);
+#else
+    // W5 XOR stub 重算
+    Blake3Hasher::Hash256 out{};
     std::memcpy(out.data(),     &seq,         sizeof(seq));
     out[8] = static_cast<std::uint8_t>(type);
     std::memcpy(out.data() + 9, &decision_ts, sizeof(decision_ts));
     return out;
+#endif
 }
 
-[[nodiscard]] std::array<std::uint8_t, kHashBytes> XorChain(
-    const std::array<std::uint8_t, kHashBytes>& a,
-    const std::array<std::uint8_t, kHashBytes>& b) noexcept {
-    std::array<std::uint8_t, kHashBytes> out{};
+[[nodiscard]] Blake3Hasher::Hash256 ChainCombine(
+    const Blake3Hasher::Hash256& prev,
+    const Blake3Hasher::Hash256& payload) noexcept {
+#if defined(BLAKE3_REAL)
+    return Blake3Hasher::hash_chain(prev, payload);
+#else
+    Blake3Hasher::Hash256 out{};
     for (std::size_t i = 0; i < kHashBytes; ++i) {
-        out[i] = static_cast<std::uint8_t>(a[i] ^ b[i]);
+        out[i] = static_cast<std::uint8_t>(prev[i] ^ payload[i]);
     }
     return out;
+#endif
 }
 
 // 构造 R-20 4 ts 合法 RiskDecisionInput
@@ -109,18 +122,19 @@ TEST(AuditChainIntegration, T1_emit_20_records_chain_advances) {
     constexpr int kN = 20;
 
     // 本地 mirror chain — 与 emitter 内部一致 (验证算法可还原)
-    std::array<std::uint8_t, kHashBytes> mirror_prev{};   // chain 起点 = 全 0
+    Blake3Hasher::Hash256 mirror_prev{};   // chain 起点 = 全 0
 
     for (int i = 0; i < kN; ++i) {
         auto ctx = MakeValidCtx(i, AuditEventType::OrderApproved);
         const auto r = emitter.emit_decision(ctx);
         ASSERT_TRUE(r) << "emit_decision #" << i << " 失败: "
                        << static_cast<int>(r.error());
-        // 算 expected: digest(seq=i+1, type=OrderApproved, decision_ts) XOR mirror_prev
+        // 算 expected: ChainCombine(mirror_prev, RecomputePayload(...))
+        // W6: 真 BLAKE3 重算; W5 stub: XOR 重算 (Blake3Hasher 内 #if dispatch)
         const auto seq = static_cast<std::uint64_t>(i + 1);
-        const auto digest = RecomputeDigest(seq, AuditEventType::OrderApproved,
-                                             ctx.decision_ts);
-        const auto expected_current = XorChain(mirror_prev, digest);
+        const auto digest = RecomputePayload(seq, AuditEventType::OrderApproved,
+                                              ctx.decision_ts);
+        const auto expected_current = ChainCombine(mirror_prev, digest);
         EXPECT_EQ(emitter.last_hash(), expected_current)
             << "M1-A06 / M1-E03: chain head 第 " << i << " 笔与本地 mirror 一致";
         mirror_prev = expected_current;
@@ -140,8 +154,8 @@ TEST(AuditChainIntegration, T2_tamper_detection_via_recompute) {
 
     // 记录每笔 (ctx + post-emit chain head)
     struct Snapshot {
-        RiskDecisionInput                          ctx;
-        std::array<std::uint8_t, kHashBytes>       chain_after;
+        RiskDecisionInput  ctx;
+        Blake3Hasher::Hash256 chain_after;
     };
     std::vector<Snapshot> snaps;
     snaps.reserve(kN);
@@ -155,12 +169,12 @@ TEST(AuditChainIntegration, T2_tamper_detection_via_recompute) {
 
     // 重算 chain (mirror) 与 snaps 比对, 全过.
     {
-        std::array<std::uint8_t, kHashBytes> prev{};
-        for (int i = 0; i < kN; ++i) {
+        Blake3Hasher::Hash256 prev{};
+        for (std::size_t i = 0; i < static_cast<std::size_t>(kN); ++i) {
             const auto seq = static_cast<std::uint64_t>(i + 1);
-            const auto dig = RecomputeDigest(seq, AuditEventType::OrderApproved,
-                                              snaps[i].ctx.decision_ts);
-            prev = XorChain(prev, dig);
+            const auto dig = RecomputePayload(seq, AuditEventType::OrderApproved,
+                                               snaps[i].ctx.decision_ts);
+            prev = ChainCombine(prev, dig);
             EXPECT_EQ(prev, snaps[i].chain_after)
                 << "未篡改 mirror 必与 emitter chain 全等 i=" << i;
         }
@@ -168,20 +182,20 @@ TEST(AuditChainIntegration, T2_tamper_detection_via_recompute) {
 
     // 篡改第 10 条 decision_ts → 重算从 #10 起的 chain 必与 snaps 不一致.
     {
-        constexpr int kTamperIdx = 10;
-        std::array<std::uint8_t, kHashBytes> prev{};
+        constexpr std::size_t kTamperIdx = 10;
+        Blake3Hasher::Hash256 prev{};
         bool first_mismatch_at = -1;
         bool mismatch_seen = false;
         (void)first_mismatch_at;
-        int mismatch_idx = -1;
-        for (int i = 0; i < kN; ++i) {
+        std::size_t mismatch_idx = static_cast<std::size_t>(-1);
+        for (std::size_t i = 0; i < static_cast<std::size_t>(kN); ++i) {
             const auto seq = static_cast<std::uint64_t>(i + 1);
             // 攻击者改 snaps[10] decision_ts; chain 重算从这里之后必不一致.
             const std::int64_t ts =
                 (i == kTamperIdx) ? (snaps[i].ctx.decision_ts + 1)
                                   : snaps[i].ctx.decision_ts;
-            const auto dig = RecomputeDigest(seq, AuditEventType::OrderApproved, ts);
-            prev = XorChain(prev, dig);
+            const auto dig = RecomputePayload(seq, AuditEventType::OrderApproved, ts);
+            prev = ChainCombine(prev, dig);
             if (prev != snaps[i].chain_after) {
                 if (!mismatch_seen) {
                     mismatch_idx = i;
@@ -250,9 +264,9 @@ TEST(AuditChainIntegration, T4_chain_head_matches_last_record_current_hash) {
     auto writer = std::move(wres).value();
     AuditEmitter emitter(writer.get());
 
-    std::array<std::uint8_t, kHashBytes> prev = emitter.last_hash();
+    Blake3Hasher::Hash256 prev = emitter.last_hash();
     // 起点 chain head 应全 0 (laotang v1.1 §4)
-    std::array<std::uint8_t, kHashBytes> zero{};
+    Blake3Hasher::Hash256 zero{};
     EXPECT_EQ(prev, zero) << "chain 起点 last_hash 必全 0";
 
     for (int i = 0; i < 5; ++i) {

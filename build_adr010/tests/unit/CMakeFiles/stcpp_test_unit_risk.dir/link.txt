@@ -1,0 +1,1 @@
+/usr/bin/c++ -Werror -Wsign-conversion -Wshadow -Wconversion -Wno-double-promotion -Wno-cast-align -Wno-old-style-cast -g -arch arm64 -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/stcpp_test_unit_risk.dir/risk_enum_coverage_test.cpp.o -o stcpp_test_unit_risk  ../../lib/libgtest_main.a ../../lib/libgtest.a

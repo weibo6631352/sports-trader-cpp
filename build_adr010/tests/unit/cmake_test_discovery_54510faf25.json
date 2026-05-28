@@ -1,0 +1,117 @@
+{
+  "tests": 15,
+  "name": "AllTests",
+  "testsuites": [
+    {
+      "name": "WalWriterOpenDeathTest",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "WrongRootAborts",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 173
+        },
+        {
+          "name": "ShadowToPaperAborts",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 181
+        }
+      ]
+    },
+    {
+      "name": "WalRecordHeader",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "LayoutV2_64B",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 75
+        }
+      ]
+    },
+    {
+      "name": "WalKind",
+      "tests": 1,
+      "testsuite": [
+        {
+          "name": "PathRoots4Class",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 89
+        }
+      ]
+    },
+    {
+      "name": "PitAssert",
+      "tests": 6,
+      "testsuite": [
+        {
+          "name": "ValidChainPasses",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 98
+        },
+        {
+          "name": "EventTsZeroFails",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 109
+        },
+        {
+          "name": "DsBeforeEventFails",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 116
+        },
+        {
+          "name": "IngestionBeforeDsFails",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 127
+        },
+        {
+          "name": "AsOfBeforeIngestionFails",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 138
+        },
+        {
+          "name": "AsOfInFutureFails",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 150
+        }
+      ]
+    },
+    {
+      "name": "WalWriterOpen",
+      "tests": 2,
+      "testsuite": [
+        {
+          "name": "ValidPathPrefixOk",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 164
+        },
+        {
+          "name": "NonPow2RingRejected",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 189
+        }
+      ]
+    },
+    {
+      "name": "WalWriterAppend",
+      "tests": 3,
+      "testsuite": [
+        {
+          "name": "PitViolationReturnsError",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 200
+        },
+        {
+          "name": "ValidRecordReturnsSeq",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 214
+        },
+        {
+          "name": "SyncP99Budget",
+          "file": "\/Users\/wangweibo\/code\/sports-trader-cpp\/tests\/unit\/test_wal_writer.cpp",
+          "line": 234
+        }
+      ]
+    }
+  ]
+}

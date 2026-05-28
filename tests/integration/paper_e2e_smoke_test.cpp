@@ -80,6 +80,19 @@ TEST_F(PaperE2EFixture, T1_E2E_10_book_updates_under_50ms_p99) {
             EXPECT_GT(out.fill.as_of_ts_ns, b.ingestion_ts_ns);
             // R-11: VirtualFill.audit_wal_kind = PaperAudit (硬约束)
             EXPECT_EQ(out.fill.audit_wal_kind, WalKind::PaperAudit);
+            // W6 Wave 29: VirtualFill.market_id / outcome 透传验证
+            // market_id: "mkt_e2e_N" → array<char,32> null-padded
+            {
+                std::array<char, 32> expected_mid{};
+                const std::string& mid = b.market_id;
+                std::memcpy(expected_mid.data(), mid.data(),
+                            std::min(mid.size(), static_cast<std::size_t>(32)));
+                EXPECT_EQ(out.fill.market_id, expected_mid)
+                    << "W6: VirtualFill.market_id 透传 market=" << mid;
+            }
+            // outcome: fixture MakeValidIntent 设 "YES" (RunOneE2E req.outcome="YES")
+            EXPECT_EQ(out.fill.outcome, std::uint8_t{0})
+                << "W6: VirtualFill.outcome YES=0 透传";
         }
         // R-1: 即使 reject, audit_id 也应非全零 (老韩 R-1 invariant).
         // BUG-W5-001 fixed (老沈 W5 Wave 24, 2026-05-28): next_audit_id() shift

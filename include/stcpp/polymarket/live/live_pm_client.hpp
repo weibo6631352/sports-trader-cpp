@@ -1,5 +1,22 @@
 // stcpp/polymarket/live/live_pm_client.hpp — Live mode PolymarketClient (M5+ deferred, stub only)
 //
+// ============================================================
+// ABI LOCK: 14 接口 (F-01 ~ F-14), 字段顺序 + 大小 + 调用约定
+// 锁定日期: 2026-06-W6
+// 签字: 老李 (#07) + 老孙 (#06)
+// handshake 文档: docs/RESEARCH/laoli-laoSun-handshake-v1.md
+//
+// 改动等级:
+//   L0: 加新接口 — 自动通过, 无需会签
+//   L1: struct 末尾加字段 — 老李 单签 ack
+//   L2: 改字段类型/顺序/大小 / 改接口参数类型 — 老李 + 老孙 + GM 三方签
+//   L3: 删接口/改接口名/改返回类型 — 老郭(架构评审) + 老韩(RM) + GM 三方签
+//
+// PR 要求: 修改本文件必须在 PR 描述引用
+//   "ABI ref: docs/RESEARCH/laoli-laoSun-handshake-v1.md F-XX L<等级>"
+// CI enforce: tests/ci_grep/abi_lock.py (老高 W6 W2 落地) — 未引用即 fail
+// ============================================================
+//
 // Owner: 老李 (#07) — Sprint-2 W5 Wave 24
 //
 // 落:

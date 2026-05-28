@@ -174,3 +174,88 @@ TEST(VirtualMatcher, FillSizeUsdc_ScaledByExpectedRate) {
     const double expected = ord.size_usdc * fill.expected_fill_rate;
     EXPECT_NEAR(fill.fill_size_usdc, expected, 1e-9);
 }
+
+// ---------- T9: VirtualFill 含 market_id / outcome 字段 (W6 @小蒋 Wave 29) ----------
+//
+// 验证: VirtualFill struct 新增字段 market_id(array<char,32>) + outcome(uint8_t)
+//   - market_id 默认零 (未 Match 时)
+//   - outcome 默认 0
+
+TEST(VirtualMatcher, T9_VirtualFill_HasMarketIdAndOutcomeFields) {
+    execution::VirtualFill fill{};
+
+    // sizeof 锁定 (内部 struct, paper engine 专用)
+    static_assert(sizeof(execution::VirtualFill) == 120,
+        "T9: VirtualFill sizeof 变化须同步更新 static_assert");
+
+    // 字段类型/大小正确
+    static_assert(sizeof(fill.market_id) == 32,
+        "T9: market_id 必须 array<char,32> (32B, 与 PositionRecord 对齐)");
+    static_assert(sizeof(fill.outcome) == 1,
+        "T9: outcome 必须 uint8_t (1B)");
+
+    // 默认零值
+    std::array<char, 32> const zero_market{};
+    EXPECT_EQ(fill.market_id, zero_market) << "T9: market_id 默认零";
+    EXPECT_EQ(fill.outcome, std::uint8_t{0}) << "T9: outcome 默认 0 (YES)";
+}
+
+// ---------- T10: VirtualOrder → VirtualFill market_id/outcome 透传 (W6 @小蒋 Wave 29) ----------
+//
+// 验证: VirtualMatcher.Match() 把 VirtualOrder.market_id(string_view) / outcome(string_view)
+//   → VirtualFill.market_id(array<char,32>) / outcome(uint8_t 0=YES/1=NO)
+
+TEST(VirtualMatcher, T10_VirtualOrder_MarketIdOutcome_TransparentToFill) {
+    execution::VirtualMatcher m{0xCC10};
+
+    // case A: YES outcome
+    {
+        auto ord        = MakeOrder(/*size=*/1.0, /*price=*/0.55, /*depth=*/10'000.0);
+        ord.market_id   = "market_xyz_test_01";
+        ord.outcome     = "YES";
+        m.SetUniformOverrideForTesting(0.0);  // 强制 Bernoulli hit
+        const auto fill = m.Match(ord);
+        EXPECT_EQ(fill.reject, execution::MatchReject::Ok);
+
+        // market_id: "market_xyz_test_01" → array<char,32> null-padded
+        std::array<char, 32> expected_mid{};
+        const std::string_view mid_sv = "market_xyz_test_01";
+        std::memcpy(expected_mid.data(), mid_sv.data(), mid_sv.size());
+        EXPECT_EQ(fill.market_id, expected_mid)
+            << "T10: market_id 从 VirtualOrder 透传到 VirtualFill (null-padded 32B)";
+        EXPECT_EQ(fill.outcome, std::uint8_t{0})
+            << "T10: outcome YES → 0";
+    }
+
+    // case B: NO outcome
+    {
+        auto ord        = MakeOrder(/*size=*/1.0, /*price=*/0.45, /*depth=*/10'000.0);
+        ord.market_id   = "market_no_outcome";
+        ord.outcome     = "NO";
+        m.SetUniformOverrideForTesting(0.0);
+        const auto fill = m.Match(ord);
+        EXPECT_EQ(fill.reject, execution::MatchReject::Ok);
+        EXPECT_EQ(fill.outcome, std::uint8_t{1})
+            << "T10: outcome NO → 1";
+
+        std::array<char, 32> expected_no{};
+        const std::string_view no_sv = "market_no_outcome";
+        std::memcpy(expected_no.data(), no_sv.data(), no_sv.size());
+        EXPECT_EQ(fill.market_id, expected_no)
+            << "T10: market_id NO case 透传正确";
+    }
+
+    // case C: market_id 32B 边界 (恰好 32B, 不截断)
+    {
+        auto ord      = MakeOrder(/*size=*/1.0, /*price=*/0.55, /*depth=*/10'000.0);
+        ord.market_id = "0xABCDEF1234567890ABCDEF1234567890";  // 34B → 截断至 32B
+        ord.outcome   = "YES";
+        m.SetUniformOverrideForTesting(0.0);
+        const auto fill = m.Match(ord);
+        // 截断 = 前 32B
+        std::array<char, 32> expected_trunc{};
+        std::memcpy(expected_trunc.data(), "0xABCDEF1234567890ABCDEF12345678", 32);
+        EXPECT_EQ(fill.market_id, expected_trunc)
+            << "T10: market_id > 32B 截断至 32B";
+    }
+}

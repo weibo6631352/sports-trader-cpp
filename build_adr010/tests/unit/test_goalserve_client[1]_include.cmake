@@ -1,0 +1,5 @@
+if(EXISTS "/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_goalserve_client[1]_tests.cmake")
+  include("/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_goalserve_client[1]_tests.cmake")
+else()
+  add_test(test_goalserve_client_NOT_BUILT test_goalserve_client_NOT_BUILT)
+endif()

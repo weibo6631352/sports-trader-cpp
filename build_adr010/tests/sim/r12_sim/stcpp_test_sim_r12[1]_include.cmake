@@ -1,0 +1,5 @@
+if(EXISTS "/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/sim/r12_sim/stcpp_test_sim_r12[1]_tests.cmake")
+  include("/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/sim/r12_sim/stcpp_test_sim_r12[1]_tests.cmake")
+else()
+  add_test(stcpp_test_sim_r12_NOT_BUILT stcpp_test_sim_r12_NOT_BUILT)
+endif()

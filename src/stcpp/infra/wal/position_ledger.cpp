@@ -53,7 +53,9 @@ namespace stcpp::infra::wal {
 namespace {
 
 // 把 market_id string_view 对齐/截断到 32B 数组 (null-padded)
-[[nodiscard]] std::array<char, 32> ToMarketIdArray(std::string_view id) noexcept {
+// GM 错 #11 hotfix: 小蒋 W6 Wave 29 改用 fill.market_id 后此 helper unused,
+// 加 [[maybe_unused]] 避免 -Wunused-function (保留 utility, 未来如有需可用)
+[[maybe_unused]] [[nodiscard]] std::array<char, 32> ToMarketIdArray(std::string_view id) noexcept {
     std::array<char, 32> arr{};
     const std::size_t copy_len = std::min(id.size(), static_cast<std::size_t>(32));
     std::memcpy(arr.data(), id.data(), copy_len);
@@ -127,15 +129,15 @@ PositionLedger::_build_record(const stcpp::execution::VirtualFill& fill) noexcep
     rec.fill_ingestion_ts_ns = fill.ingestion_ts_ns;
     rec.fill_as_of_ts_ns     = fill.as_of_ts_ns;
 
-    // audit_id 从 VirtualFill 继承 (由 PaperSigner 填入)
-    // VirtualFill 没有 audit_id 字段 (见 virtual_matcher.hpp); 暂用零值
-    // @小蒋: VirtualFill.audit_id 字段确认后补齐此处透传
-    // rec.audit_id_ = fill.audit_id;  // TODO W6 小蒋接入
+    // market_id + outcome: 从 VirtualFill 透传 (W6 @小蒋 Wave 29 补齐)
+    rec.market_id = fill.market_id;
+    rec.outcome   = fill.outcome;
 
-    // market_id + outcome: VirtualFill 没有直接字段, 从调用方注入
-    // 见 apply_fill() 内部 market_id_buf / outcome 赋值注释
+    // audit_id: VirtualFill 暂无 audit_id 字段 (由 PaperSigner/VirtualOrder 持有,
+    // VirtualFill 作为撮合结果不回传 audit_id); 保留零值, 留 WAL header audit_id 校对.
+    // rec.audit_id_ = ...;  // future: PaperSigner 端到端接入后从 sign_resp 注入
 
-    // 仓位字段由 _update_state 之前的调用方填 (apply_fill 内)
+    // 仓位字段由 apply_fill 内填入 (market_id/outcome 已在上方赋值)
     return rec;
 }
 
@@ -181,22 +183,17 @@ PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill) noexcept {
         const std::int64_t fill_price_micro =
             static_cast<std::int64_t>(fill.fill_price * 1'000'000.0 + 0.5);
 
-        // 从 VirtualFill 无 market_id 字段 (见 virtual_matcher.hpp VirtualFill)
-        // @小蒋 W6: VirtualFill 须加 market_id / outcome 字段供 PositionLedger 使用
-        // 当前 v0.1: 使用 VirtualFill 中 audit_wal_kind (PaperAudit) 做 key 占位
-        // 实际应从 VirtualOrder.market_id 透传 → TODO @小蒋
-        //
-        // 临时方案: 用固定占位 market_id "paper_market_0" (单测可自行 mock)
-        // 接真实 VirtualFill 后 market_id_key 由 fill.market_id 取 (小蒋 W6 补)
-        static constexpr std::string_view kDefaultMarket = "paper_market_0";
-        const auto market_id_arr = ToMarketIdArray(kDefaultMarket);
+        // W6 @小蒋 Wave 29: market_id / outcome 直接从 VirtualFill 取 (占位已闭环)
+        // fill.market_id: array<char,32>, null-padded (来自 VirtualMatcher 透传 VirtualOrder.market_id)
+        // fill.outcome: uint8_t 0=YES / 1=NO
+        const auto& market_id_arr = fill.market_id;
         const std::string market_key = MarketIdKey(market_id_arr);
 
         auto& st = states_[market_key];
         if (st.market_id[0] == '\0') {
             // 首次初始化
-            st.market_id = market_id_arr;
-            st.outcome   = 0;  // default YES (@小蒋 透传 outcome 后更新)
+            st.market_id     = market_id_arr;
+            st.outcome       = fill.outcome;   // 0=YES 1=NO (透传 VirtualFill)
             st.bankroll_total =
                 global_bankroll_.load(std::memory_order_relaxed);
         }

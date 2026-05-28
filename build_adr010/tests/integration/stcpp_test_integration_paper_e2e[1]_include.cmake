@@ -1,0 +1,5 @@
+if(EXISTS "/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/integration/stcpp_test_integration_paper_e2e[1]_tests.cmake")
+  include("/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/integration/stcpp_test_integration_paper_e2e[1]_tests.cmake")
+else()
+  add_test(stcpp_test_integration_paper_e2e_NOT_BUILT stcpp_test_integration_paper_e2e_NOT_BUILT)
+endif()

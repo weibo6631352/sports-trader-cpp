@@ -6,14 +6,24 @@
 #
 # GoogleTest / GoogleTest FetchContent + GoogleTest module 由顶层 tests/CMakeLists.txt 提供
 # (避免子目录重复 FetchContent 拉 git)
+#
+# ADR-010 §4 W7 清理 (小宋 2026-06-01):
+#   每 target 删除: -Wno-sign-conversion / -Wno-shadow / -Wno-conversion
+#   理由: 测试代码本身经手工验证无这些 warning (见 xiaosong-grandfather-cleanup-v1.md)
+#   保留 grandfather (ADR-010 §2.2 批准):
+#     -Wno-double-promotion  — gtest ASSERT_NEAR / EXPECT_DOUBLE_EQ 浮点宏触发
+#     -Wno-old-style-cast    — gtest ASSERT_* / EXPECT_* 宏展开触发
+#     -Wno-cast-align        — gtest mock 对象转型触发
+#     -Wno-invalid-offsetof  — WAL/audit/ml/position TU #include .cpp 模板实例化触发 (仅相关 target)
 
 add_executable(test_slippage_model
     test_slippage_model.cpp
 )
 target_link_libraries(test_slippage_model PRIVATE GTest::gtest_main)
 target_compile_options(test_slippage_model PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_slippage_model PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -33,8 +43,9 @@ add_executable(stcpp_test_unit_risk
 )
 target_link_libraries(stcpp_test_unit_risk PRIVATE GTest::gtest_main)
 target_compile_options(stcpp_test_unit_risk PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(stcpp_test_unit_risk PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -67,9 +78,10 @@ target_compile_definitions(test_wal_writer PRIVATE
 )
 # 测试 TU 自带 #include wal_writer.cpp 做模板实例化 — 关 offsetof 警告 + 重复 macro 警告
 target_compile_options(test_wal_writer PRIVATE
-    -Wno-invalid-offsetof
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+    -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
 )
 gtest_discover_tests(test_wal_writer
     DISCOVERY_TIMEOUT 30
@@ -82,7 +94,8 @@ gtest_discover_tests(test_wal_writer
 add_executable(test_audit_emitter
     test_audit_emitter.cpp
 )
-target_link_libraries(test_audit_emitter PRIVATE GTest::gtest_main)
+# GM 错 #11 hotfix (W6 W2): test_audit_emitter 需链 stcpp_observability_audit 才能拿 blake3.h include 路径
+target_link_libraries(test_audit_emitter PRIVATE GTest::gtest_main stcpp_observability_audit)
 target_include_directories(test_audit_emitter PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -93,9 +106,10 @@ target_compile_definitions(test_audit_emitter PRIVATE
 )
 # TU 内 #include audit_emitter.cpp 做模板实例化 — 关 offsetof 警告
 target_compile_options(test_audit_emitter PRIVATE
-    -Wno-invalid-offsetof
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+    -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
 )
 gtest_discover_tests(test_audit_emitter
     DISCOVERY_TIMEOUT 30
@@ -116,8 +130,9 @@ target_link_libraries(test_risk_gateway PRIVATE
     stcpp_risk
 )
 target_compile_options(test_risk_gateway PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
 )
 target_include_directories(test_risk_gateway PRIVATE
     ${CMAKE_SOURCE_DIR}
@@ -154,8 +169,9 @@ target_include_directories(test_goalserve_client PRIVATE
 )
 target_compile_features(test_goalserve_client PRIVATE cxx_std_20)
 target_compile_options(test_goalserve_client PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
 )
 target_compile_definitions(test_goalserve_client PRIVATE
     STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
@@ -175,8 +191,9 @@ target_link_libraries(test_paper_signer PRIVATE
     stcpp_infra_wal
 )
 target_compile_options(test_paper_signer PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_paper_signer PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -200,8 +217,9 @@ target_link_libraries(test_virtual_matcher PRIVATE
     stcpp_infra_wal
 )
 target_compile_options(test_virtual_matcher PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_virtual_matcher PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -224,8 +242,9 @@ target_link_libraries(test_p0_01_signal PRIVATE
     stcpp_strategy
 )
 target_compile_options(test_p0_01_signal PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_p0_01_signal PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -253,8 +272,9 @@ target_link_libraries(test_p0_01_goalserve_devig PRIVATE
     stcpp_strategy
 )
 target_compile_options(test_p0_01_goalserve_devig PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_p0_01_goalserve_devig PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -278,8 +298,9 @@ target_link_libraries(test_gate_evaluator PRIVATE
     stcpp_stats
 )
 target_compile_options(test_gate_evaluator PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_gate_evaluator PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -303,8 +324,9 @@ target_link_libraries(test_fill_rate_model PRIVATE
     stcpp_data_goalserve
 )
 target_compile_options(test_fill_rate_model PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_fill_rate_model PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -327,8 +349,9 @@ target_link_libraries(test_live_section_classifier PRIVATE
     stcpp_strategy
 )
 target_compile_options(test_live_section_classifier PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_live_section_classifier PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -340,6 +363,38 @@ target_compile_definitions(test_live_section_classifier PRIVATE
 gtest_discover_tests(test_live_section_classifier
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;signal;strategy;w4"
+)
+
+# 老李 W6 Wave 29: IPolymarketClient ABI lock (Smell #C handshake)
+#   T1: 14 接口 ABI hash 表 (与 handshake 文档 §2 一致)
+#   T2: TimestampQuad sizeof=40 + 5 offsetof; SignedOrder/OrderAck 字段存在性
+#   T3: PMErrorKind 10 值 + OrderStatus 7 值不变
+#   T4: TimestampQuad 4 ts PIT chain 语义 + DataSourceTsSource 4 值锁定
+# paper + live 双 mode 都链 (ABI lock 是共享 core, R-7 不影响本测试)
+add_executable(test_pm_client_abi
+    test_pm_client_abi.cpp
+)
+target_link_libraries(test_pm_client_abi PRIVATE
+    GTest::gtest_main
+    stcpp_infra_wal
+)
+target_compile_options(test_pm_client_abi PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    -Wno-invalid-offsetof
+)
+target_include_directories(test_pm_client_abi PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_pm_client_abi PRIVATE cxx_std_20)
+target_compile_definitions(test_pm_client_abi PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_pm_client_abi
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;polymarket;abi-lock;w6"
 )
 
 # 老李 W5 Wave 24: PaperPolymarketClient v0.1 (14 接口 paper mock, R-7/R-11/R-20 enforce)
@@ -354,8 +409,9 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
         stcpp_infra_wal
     )
     target_compile_options(test_paper_pm_client PRIVATE
-        -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-        -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+        -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
     target_include_directories(test_paper_pm_client PRIVATE
         ${CMAKE_SOURCE_DIR}
         ${CMAKE_SOURCE_DIR}/include
@@ -394,9 +450,10 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
     )
     # TU 内 #include hook.cpp 模板实例化 — 关 offsetof / cast 警告同 audit_emitter 模式
     target_compile_options(test_ml_hook PRIVATE
-        -Wno-invalid-offsetof
-        -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-        -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+        -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
+        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
     )
     gtest_discover_tests(test_ml_hook
         DISCOVERY_TIMEOUT 30
@@ -415,8 +472,9 @@ target_link_libraries(test_single_instance PRIVATE
     stcpp_process_lock
 )
 target_compile_options(test_single_instance PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_single_instance PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -450,8 +508,9 @@ target_link_libraries(test_position_ledger PRIVATE
     stcpp_process_lock
 )
 target_compile_options(test_position_ledger PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
     -Wno-invalid-offsetof
 )
 target_include_directories(test_position_ledger PRIVATE
@@ -488,8 +547,9 @@ target_link_libraries(test_pm_wss_subscriber PRIVATE
     stcpp_polymarket_wss
 )
 target_compile_options(test_pm_wss_subscriber PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
 target_include_directories(test_pm_wss_subscriber PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -501,6 +561,41 @@ target_compile_definitions(test_pm_wss_subscriber PRIVATE
 gtest_discover_tests(test_pm_wss_subscriber
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;polymarket;wss;w5"
+)
+
+# 小冯 W6 Wave 29: IngestRaw WAL 第 5 WAL (DS-01 解锁)
+#   T1: PM_WSS frame 落 paper.ingest_raw.wal (Tier 1 Accepted)
+#   T2: 5 source_kind 各 1 case (PM_WSS + 4 GS_*)
+#   T3: ring 满 fallback Tier 2 (不丢 metadata, R-12 不阻塞)
+#   T4: R-20 4 ts UPSTREAM_PAYLOAD 优先 (data_source_ts=0 fallback + PIT reject)
+#   T5: paper/live build 物理隔离 (R-11 / R-7)
+#   T6: payload_blob 16KB 边界 (truncate vs reject)
+#   T7: ML 训练读 ingest_raw.wal — WalRecord concept + serialize 还原
+add_executable(test_ingest_raw
+    test_ingest_raw.cpp
+)
+target_link_libraries(test_ingest_raw PRIVATE
+    GTest::gtest_main
+    stcpp_ingest_raw_writer
+    stcpp_infra_wal
+)
+target_compile_options(test_ingest_raw PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_ingest_raw PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_ingest_raw PRIVATE cxx_std_20)
+target_compile_definitions(test_ingest_raw PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    STCPP_INGEST_RAW_WAL_PREFIX="/var/lib/stcpp/ingest/paper"
+)
+gtest_discover_tests(test_ingest_raw
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;wal;ingest-raw;ds-01;w6"
 )
 
 # 小石 W6 Wave 28: SPSC/MPMC ring framework v0.1 (P0 偏离 #4 修复)
@@ -519,8 +614,9 @@ target_link_libraries(test_spsc_queue PRIVATE
     stcpp_infra_spsc
 )
 target_compile_options(test_spsc_queue PRIVATE
-    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
 )
 target_include_directories(test_spsc_queue PRIVATE
     ${CMAKE_SOURCE_DIR}
@@ -533,4 +629,109 @@ target_compile_definitions(test_spsc_queue PRIVATE
 gtest_discover_tests(test_spsc_queue
     DISCOVERY_TIMEOUT 60
     PROPERTIES LABELS "unit;spsc;lock-free;w6"
+)
+
+# 小段 W6 Wave 29: Goalserve schema v0.1 + data-contract (D-W5-03/05 解锁)
+#   T1: URL builder 8 sport × 5 host 40 combos (BuildUrlFromSchema 路径)
+#   T2: TimeStatus 11 enum 闭合 (schema 层语义)
+#   T3: validate_payload PM_WSS 字段校验
+#   T4: validate_payload GS_OddsFeed 字段校验
+#   T5: 8-9 家 bookmaker ABI 锁 (ADR-008)
+#   T6: 4 ts 字段位置正确性 (各 payload type)
+add_executable(test_goalserve_schema
+    test_goalserve_schema.cpp
+)
+target_link_libraries(test_goalserve_schema PRIVATE
+    GTest::gtest_main
+    stcpp_data_contract
+)
+target_compile_options(test_goalserve_schema PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_goalserve_schema PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_goalserve_schema PRIVATE cxx_std_20)
+target_compile_definitions(test_goalserve_schema PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_goalserve_schema
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;goalserve;schema;data-contract;adr-008;w6"
+)
+
+# 老沈 W6 Wave 29: STRATEGY_DECAYED 三签解锁 (Smell #4 M2 前必交)
+#   T1: 正确 3 签 → OK
+#   T2: 单签 (normal mode) → LAOHAN_FAILED
+#   T3: 2 签缺 laotang → LAOTANG_FAILED
+#   T4: 错签 pubkey mismatch → BAD_SIGNATURE / LAOTANG_FAILED
+#   T5: 过期签 timestamp > 1h → EXPIRED
+#   T6: audit chain 3 audit_id 唯一性
+#   T7: 观察期 STRATEGY_DECAYED re-trigger (RM evaluate mock)
+#   T8: emergency override 单签 → OK
+# GM 错 #11 修 (2026-06-01): STCPP_BUILD_CLI guard, 默认 OFF
+# 老沈 W7 改 FetchContent libsodium source (不走 vcpkg)
+if(STCPP_BUILD_CLI)
+    add_executable(test_strategy_unlock
+        test_strategy_unlock.cpp
+    )
+    target_link_libraries(test_strategy_unlock PRIVATE
+        GTest::gtest_main
+        stcpp_risk
+        stcpp_cli_three_sig
+    )
+    target_compile_options(test_strategy_unlock PRIVATE
+        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    )
+    target_include_directories(test_strategy_unlock PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(test_strategy_unlock PRIVATE cxx_std_20)
+    target_compile_definitions(test_strategy_unlock PRIVATE
+        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    )
+    gtest_discover_tests(test_strategy_unlock
+        DISCOVERY_TIMEOUT 30
+        PROPERTIES LABELS "unit;risk;three-sig;strategy-unlock;w6;smell-4"
+    )
+endif()
+
+# 老唐 W6 Wave 29: BLAKE3 真实现 + AuditEmitter pool (老周 Smell #A + 老韩 Smell #2)
+#   T1: BLAKE3 hash 一致性 (同输入同输出, 不同输入不同输出, 非零)
+#   T2: hash_chain 串联 3 record (chain 单调推进, 本地重算验证)
+#   T3: chain verify 篡改检测 (M1-A06 必过)
+#   T4: 5 emitter pool 各自独立 ring + 全局 chain 串联 (老周 Smell #A)
+#   T5: build-time switch (BLAKE3_REAL=1 必定义; BLAKE3_STUB 禁止)
+add_executable(test_blake3_audit
+    test_blake3_audit.cpp
+)
+target_link_libraries(test_blake3_audit PRIVATE
+    GTest::gtest_main
+    stcpp_observability_audit
+)
+target_compile_options(test_blake3_audit PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    -Wno-invalid-offsetof
+)
+target_include_directories(test_blake3_audit PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_blake3_audit PRIVATE cxx_std_20)
+# R-7: paper/live build 都注入 BLAKE3_REAL=1 (M1-A06 前置条件, 老韩 Smell #2)
+target_compile_definitions(test_blake3_audit PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    BLAKE3_REAL=1
+)
+gtest_discover_tests(test_blake3_audit
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;audit;blake3;w6;m1-a06;smell-a;smell-2"
 )

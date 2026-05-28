@@ -1,0 +1,3 @@
+/Users/wangweibo/code/sports-trader-cpp/build_adr010/_deps/rigtorp_spsc-subbuild/CMakeFiles/rigtorp_spsc-populate.dir
+/Users/wangweibo/code/sports-trader-cpp/build_adr010/_deps/rigtorp_spsc-subbuild/CMakeFiles/edit_cache.dir
+/Users/wangweibo/code/sports-trader-cpp/build_adr010/_deps/rigtorp_spsc-subbuild/CMakeFiles/rebuild_cache.dir

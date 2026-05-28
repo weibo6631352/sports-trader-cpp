@@ -2,10 +2,12 @@
 //
 // 落: xiaojiang-paper-engine-skeleton-v1.md §4
 // 红线: R-7 / R-11 / R-20 (见 .hpp 头注)
+// W6: VirtualFill 加 market_id/outcome 透传 (@小蒋 Wave 29)
 
 #include "stcpp/execution/virtual_matcher.hpp"
 
 #include <algorithm>
+#include <cstring>
 
 namespace stcpp::execution {
 
@@ -28,6 +30,17 @@ VirtualFill VirtualMatcher::Match(const VirtualOrder& order) noexcept {
     out.as_of_ts_ns       = order.as_of_ts_ns;
     out.fill_ts_ns        = order.wall_now_ns;
     out.audit_wal_kind    = infra::wal::WalKind::PaperAudit;  // R-11
+
+    // W6: market_id / outcome 从 VirtualOrder 透传 (@小蒋 Wave 29)
+    // market_id: string_view → array<char,32> (null-padded, 截断至 32B)
+    {
+        const std::size_t mlen =
+            std::min(order.market_id.size(), static_cast<std::size_t>(32));
+        std::memcpy(out.market_id.data(), order.market_id.data(), mlen);
+        // remaining bytes already zero (VirtualFill default-init)
+    }
+    // outcome: string_view "YES"→0, 其他→1 (与 PositionRecord.outcome 对齐)
+    out.outcome = (order.outcome == "YES") ? std::uint8_t{0} : std::uint8_t{1};
 
     // 1) SlippageModel.compute
     numerical::SlippageInput sin;

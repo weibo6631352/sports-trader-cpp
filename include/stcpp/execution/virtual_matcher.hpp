@@ -76,6 +76,12 @@ struct VirtualFill {
     // R-11 审计目标 (硬填 PaperAudit)
     infra::wal::WalKind audit_wal_kind{infra::wal::WalKind::PaperAudit};
 
+    // market_id / outcome — 从 VirtualOrder 透传 (W6 @小蒋)
+    // market_id: 32B null-padded, 与 PolymarketClient::Position.market_id / PositionRecord 对齐
+    // outcome: 0=YES, 1=NO (与 OrderStatus 协议 + PositionRecord.outcome 对齐)
+    std::array<char, 32> market_id{};
+    std::uint8_t         outcome{0};
+
     // R-20 4 ts (透传 + fill_ts_ns 出口)
     std::int64_t event_ts_ns{0};
     std::int64_t data_source_ts_ns{0};
@@ -83,6 +89,14 @@ struct VirtualFill {
     std::int64_t as_of_ts_ns{0};
     std::int64_t fill_ts_ns{0};
 };
+
+// VirtualFill ABI 校验 (paper engine 内部 struct, 不跨 binary, 但 sizeof 要显式锁定防意外 padding)
+// 实测布局 (g++ -std=c++20 x86-64):
+//   offset  0: reject(1)  →  pad7 → fill_price@8 .. p_fill_clamped@32(+8)
+//   offset 40: slippage_bps(4), bernoulli_draw(1), audit_wal_kind(1) → pad 0 (packed by compiler)
+//   offset 46: market_id[32] → outcome(1) → pad1 → event_ts_ns@80 .. fill_ts_ns@112(+8) = 120B
+static_assert(sizeof(VirtualFill) == 120,
+    "VirtualFill sizeof 改变 — 确认后更新此断言 (paper engine 内部 struct, R-2 not affected)");
 
 class VirtualMatcher {
  public:

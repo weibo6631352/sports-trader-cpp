@@ -23,24 +23,26 @@ FetchContent_MakeAvailable(googletest)
 
 # gtest / gmock 第三方源码本身也 inherit 顶层 -Werror -Wdouble-promotion 等严格 flag,
 # 关掉这些 warning 让 gtest 能 build (生产代码 src/ + include/ 保持严格)
+# ADR-010 §2.2 grandfather list: 仅保留 4 项已验证来源 (gtest 框架触发, 非测试代码问题)
+# 已删除: -Wno-sign-conversion / -Wno-shadow / -Wno-conversion / -Wno-character-conversion
+#   (gtest 以 SYSTEM include 处理, 这些 warning 不从 system header 传播; 测试代码本身无此问题)
 foreach(_gt_target gtest gtest_main gmock gmock_main)
     if(TARGET ${_gt_target})
         target_compile_options(${_gt_target} PRIVATE
-            -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
-            -Wno-shadow -Wno-old-style-cast -Wno-cast-align
-            -Wno-character-conversion
+            -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+            -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+            -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+            -Wno-character-conversion  # GM 错 #11 配套 W6 W2 reinstate: gtest-printers.h:502 char8_t→char32_t (AppleClang 21)
         )
     endif()
 endforeach()
 
-# tests/ 子树关掉对第三方 gtest header 触发的严格 warning
-# (生产代码 src/ + include/ 保持顶层 -Werror 严格, 仅 tests/ 放宽以兼容 gtest)
+# tests/ 子树: ADR-010 §2.2 grandfather list (仅保留 gtest 框架真实触发项)
+# 已删除: -Wno-sign-conversion / -Wno-shadow / -Wno-conversion
+#   测试代码自身已无这些 warning; gtest SYSTEM include 已通过 CMake SYSTEM 关键字处理
 add_compile_options(
-    -Wno-double-promotion
-    -Wno-sign-conversion
-    -Wno-conversion
-    -Wno-shadow
-    -Wno-old-style-cast
+    -Wno-double-promotion   # ADR-010 grandfather: gtest ASSERT_NEAR / EXPECT_DOUBLE_EQ 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest ASSERT_* / EXPECT_* 宏展开
 )
 
 # include path: 让 tests 内 #include "tests/unit/..." 工作

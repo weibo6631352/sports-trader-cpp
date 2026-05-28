@@ -30,6 +30,35 @@
 - **教训:** GM 收口 ≠ GM 替全员说话；跨域听取义务 GM 自己也要遵守。让真实 agent 各自独立发言（Phase 1 → 16 份真实发言文件），GM 只整合。
 - **永久 enforcement:** ADR `gm-policy-cross-domain-listening.md` 立"听取义务三件套" + 双向收口三态明示
 
+### 错 #11 — 派单 prompt 没强制 sub-agent 本地 build + ctest 验证才回汇
+
+- **时间:** 2026-06-01 W6 Wave 29 push 前 (8 IC 并行交付后整合 build)
+- **场景:** Wave 29 8 IC 各自报"测试 X/X 全过", 但 GM 整合 build 时出 10 处编译错误:
+  - 老唐 BLAKE3 4 处 (unused-function / NEON arm64 / private friend / std::min cast)
+  - 小冯 ingest_raw_writer 3 处 nodiscard
+  - test_audit_emitter 没 link stcpp_observability_audit (blake3.h not found)
+  - 小段 odds_record audit_id 方法字段同名
+  - 小卢 + 老王 test_position_ledger EXPECT_NEAR int→double
+  - position_ledger.cpp ToMarketIdArray unused (小蒋 W6 改后 helper 没用)
+  - audit_chain_verify_test 5 处 sign-conversion (老唐 XOR→Blake3 引入)
+  - 老沈 vcpkg unofficial-sodium configure fail (小宋上报 P1 blocker)
+- **错在哪:** GM 派单 prompt 写了 "C++20 严格 lint 全过", 但**没强制 sub-agent 本地跑 `cmake --build build && ctest` 验证才回汇**. 一些 sub-agent (老唐 / 老沈 / 小冯) 看起来:
+  - 单独编译单文件验证, 没跑全 cmake configure
+  - 写了测试 case 但没真跑 ctest
+  - 改 ABI / 依赖时没 verify 下游 target 编译
+- **是 GM 自己发现的** (整合 commit 时 build fail), 但代价是 GM 花 ~30min 写 10 个 hotfix 代替 sub-agent
+- **教训:**
+  - 派单 prompt 必加 "**本地 cmake --build build && ctest 必须全过才回汇, 写测试不算交付, 跑通才算**" hard约束
+  - "测试 X/X 全过"叙述必须附 `ctest --output-on-failure` 摘要
+  - 对依赖第三方 (vcpkg / FetchContent 新源) 派单必须留 CMake guard 默认 OFF (GM 拍板 STCPP_BUILD_CLI 那种)
+  - sub-agent 跨模块 ABI 改动 (e.g. 老唐 BLAKE3 hpp 暴露 blake3.h) 必须 audit 下游 target 是否 link
+- **永久 enforcement:**
+  1. CLAUDE.md §10 加 "派单 prompt 必含 build+ctest 验证 hard约束"
+  2. 老高 PR review v1.2 加 grep "ctest --output-on-failure" 在派单 prompt 文件
+  3. 老胡周报 §7 (新) Build Verification KPI: 本周 sub-agent 回汇时声称测试过 vs 实际 GM 整合 build 时回归数 (期望 0)
+  4. GM 自检 6 题升 7 题, 加 "派单 prompt 是否写了 build+ctest 验证 hard约束"
+- **代价:** GM 30min hotfix (本来应 0), 老唐 / 小冯 / 老沈 / 小段 / 小卢 / 小蒋 W6 W3 补真本地 build + ctest 验证 + 回汇修正测试报告
+
 ### 错 #10 — ADR-009 v1 把 "管理层默认更高" 过度解读为"9 人默认 Opus"
 
 - **时间:** 2026-05-28 W5 末 (ADR-009 立后立刻被老板二次校正)
@@ -168,6 +197,7 @@ GM 第二错: 在校正"看供给侧"时矫枉过正, 写成"以 v2 为准让工
 - **错 #8**：越级派 IC 架空主管 → 5 战斗单元任务必经主管, GM 不替主管拆任务
 - **错 #9**：跨 wave 引用过时信息 → 做计划前必读各 owner 最新 vN, 数据源演进推翻早期结论
 - **错 #10**：ADR-009 v1 把"管理层默认更高"解读为 Opus → 全员默认 Sonnet, Opus 严格例外
+- **错 #11**：派单 prompt 没强制 build+ctest 验证 → sub-agent 声称测试过实际 build fail, GM 花 30min hotfix 10 处
 
 **根因都是同一个：GM 想"加速"或"省事"，但加速 / 省事的方向违反公司价值观或用户明确指令。**
 

@@ -1,0 +1,2 @@
+/usr/bin/ar qc libstcpp_polymarket_wss.a CMakeFiles/stcpp_polymarket_wss.dir/pm_wss_subscriber.cpp.o
+/usr/bin/ranlib libstcpp_polymarket_wss.a

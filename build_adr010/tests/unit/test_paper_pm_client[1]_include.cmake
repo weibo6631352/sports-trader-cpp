@@ -1,0 +1,5 @@
+if(EXISTS "/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_paper_pm_client[1]_tests.cmake")
+  include("/Users/wangweibo/code/sports-trader-cpp/build_adr010/tests/unit/test_paper_pm_client[1]_tests.cmake")
+else()
+  add_test(test_paper_pm_client_NOT_BUILT test_paper_pm_client_NOT_BUILT)
+endif()
