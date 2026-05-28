@@ -11,6 +11,9 @@ add_executable(test_slippage_model
     test_slippage_model.cpp
 )
 target_link_libraries(test_slippage_model PRIVATE GTest::gtest_main)
+target_compile_options(test_slippage_model PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
 target_include_directories(test_slippage_model PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -29,6 +32,9 @@ add_executable(stcpp_test_unit_risk
     risk_enum_coverage_test.cpp
 )
 target_link_libraries(stcpp_test_unit_risk PRIVATE GTest::gtest_main)
+target_compile_options(stcpp_test_unit_risk PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
 target_include_directories(stcpp_test_unit_risk PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -62,6 +68,8 @@ target_compile_definitions(test_wal_writer PRIVATE
 # 测试 TU 自带 #include wal_writer.cpp 做模板实例化 — 关 offsetof 警告 + 重复 macro 警告
 target_compile_options(test_wal_writer PRIVATE
     -Wno-invalid-offsetof
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align
 )
 gtest_discover_tests(test_wal_writer
     DISCOVERY_TIMEOUT 30

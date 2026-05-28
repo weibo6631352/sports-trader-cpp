@@ -9,6 +9,9 @@ add_executable(stcpp_test_sim_r12
 )
 
 target_link_libraries(stcpp_test_sim_r12 PRIVATE GTest::gtest_main)
+target_compile_options(stcpp_test_sim_r12 PRIVATE
+    -Wno-double-promotion -Wno-sign-conversion -Wno-conversion
+    -Wno-shadow -Wno-old-style-cast -Wno-cast-align)
 target_include_directories(stcpp_test_sim_r12 PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
