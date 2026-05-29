@@ -1,6 +1,13 @@
 /**
- * OpsPage.tsx — 开发者/运维观测页 (v7 Material Design)
- * owner: 小苏  last_review: 2026-05-29
+ * OpsPage.tsx — 开发者/运维观测页 (v8 Material Design)
+ * owner: 小苏  last_review: 2026-05-30
+ *
+ * v8 变更 (老板要求):
+ *  - §1.6 新增 CoverageSection: 覆盖率/匹配率 三率 widget
+ *    · 盘口识别率 (stcpp_market_type_recognized_total / _unknown_total)
+ *    · 市场覆盖   (stcpp_markets_discovered_total / _subscribed_total / stcpp_tokens_subscribed_total)
+ *    · 比分匹配率 (stcpp_score_matched_total / stcpp_markets_total)
+ *  - 各率低值/0 时附语境文案 (outright 无 inplay → 0% 正常)
  *
  * v7 变更:
  *  - SUID Card/CardHeader/CardContent: 各区块
@@ -16,6 +23,7 @@
  *   §1.3 数据质量 (Q-01~Q-03, ADR R-20 四时间戳)
  *   §1.4 业务吞吐 (B-01~B-09, Gate 门禁)
  *   §1.5 错误/拒单 (E-01 日志 + E-02 分布柱状)
+ *   §1.6 覆盖率/匹配率 (老板要求)
  *   + Prometheus 裸文本折叠
  */
 
@@ -743,6 +751,321 @@ function RejectSection() {
 }
 
 // ============================================================
+// §1.6 覆盖率 / 匹配率
+// ============================================================
+
+/**
+ * 三率 Widget
+ *
+ * 数据源 (小卢 /metrics):
+ *   盘口识别率:  stcpp_market_type_recognized_total
+ *               stcpp_market_type_unknown_total
+ *   市场覆盖:   stcpp_markets_discovered_total
+ *               stcpp_markets_subscribed_total
+ *               stcpp_tokens_subscribed_total
+ *   比分匹配率: stcpp_score_matched_total
+ *               stcpp_markets_total
+ */
+
+function CoverageSection() {
+  const m = () => state.metrics;
+
+  // ---- 盘口识别率 ----
+  const recognized = () => parseMetricVal(m(), 'stcpp_market_type_recognized_total');
+  const unknown    = () => parseMetricVal(m(), 'stcpp_market_type_unknown_total');
+  const recogTotal = () => {
+    const r = recognized(); const u = unknown();
+    if (r == null && u == null) return null;
+    return (r ?? 0) + (u ?? 0);
+  };
+  const recogPct = () => {
+    const t = recogTotal(); const r = recognized();
+    if (t == null || r == null || t === 0) return 0;
+    return Math.min((r / t) * 100, 100);
+  };
+  const recogColor = (): 'success' | 'warning' | 'error' | 'inherit' => {
+    const p = recogPct();
+    if (recogTotal() == null) return 'inherit';
+    // 当前处于发现阶段，0% 是正常状态，不标 error
+    if (p >= 80) return 'success';
+    if (p >= 40) return 'warning';
+    return 'inherit'; // 0/低值 → 灰色进度条，附语境文案
+  };
+  const recogStatColor = (): 'default' | 'green' | 'yellow' | 'red' => {
+    const p = recogPct();
+    if (recogTotal() == null) return 'default';
+    if (p >= 80) return 'green';
+    if (p >= 40) return 'yellow';
+    return 'default';
+  };
+
+  // ---- 市场覆盖 ----
+  const discovered  = () => parseMetricVal(m(), 'stcpp_markets_discovered_total');
+  const subscribed  = () => parseMetricVal(m(), 'stcpp_markets_subscribed_total');
+  const tokensSubbed = () => parseMetricVal(m(), 'stcpp_tokens_subscribed_total');
+  const coverPct = () => {
+    const d = discovered(); const s = subscribed();
+    if (d == null || s == null || d === 0) return 0;
+    return Math.min((s / d) * 100, 100);
+  };
+  const coverColor = (): 'success' | 'warning' | 'error' | 'inherit' => {
+    const p = coverPct();
+    if (discovered() == null) return 'inherit';
+    if (p >= 80) return 'success';
+    if (p >= 40) return 'warning';
+    return 'inherit';
+  };
+  const coverStatColor = (): 'default' | 'green' | 'yellow' | 'red' => {
+    const p = coverPct();
+    if (discovered() == null) return 'default';
+    if (p >= 80) return 'green';
+    if (p >= 40) return 'yellow';
+    return 'default';
+  };
+
+  // ---- 比分匹配率 ----
+  const scoreMatched  = () => parseMetricVal(m(), 'stcpp_score_matched_total');
+  const marketsTotal  = () => parseMetricVal(m(), 'stcpp_markets_total');
+  const scorePct = () => {
+    const t = marketsTotal(); const r = scoreMatched();
+    if (t == null || r == null || t === 0) return 0;
+    return Math.min((r / t) * 100, 100);
+  };
+  const scoreColor = (): 'success' | 'warning' | 'error' | 'inherit' => {
+    // outright 类型无 inplay → 0% 是正常值，不标 error
+    const p = scorePct();
+    if (marketsTotal() == null) return 'inherit';
+    if (p >= 70) return 'success';
+    if (p >= 30) return 'warning';
+    return 'inherit';
+  };
+  const scoreStatColor = (): 'default' | 'green' | 'yellow' | 'red' => {
+    const p = scorePct();
+    if (marketsTotal() == null) return 'default';
+    if (p >= 70) return 'green';
+    if (p >= 30) return 'yellow';
+    return 'default';
+  };
+
+  // 无数据时统一提示字
+  const noData = () => m() == null;
+
+  return (
+    <Card variant="outlined">
+      <CardHeader
+        title={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              覆盖率 / 匹配率
+            </Typography>
+            <span class="poll-hint">30s</span>
+          </Box>
+        }
+        sx={{ py: 1, px: 2, borderBottom: '1px solid #373737' }}
+      />
+      <CardContent sx={{ p: 2 }}>
+
+        {/* ── 无数据占位 ── */}
+        <Show when={noData()}>
+          <Alert severity="info" sx={{ mb: 2, fontSize: '12px' }}>
+            后端 /metrics 尚未加载（小卢分支合并后自动填充），当前显示占位。
+          </Alert>
+        </Show>
+
+        {/* ──────────────────────────────────────────
+            盘口识别率
+        ────────────────────────────────────────── */}
+        <Typography variant="caption" sx={{
+          color: 'text.secondary', mb: 0.75, display: 'block',
+          textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600,
+        }}>
+          盘口识别率
+        </Typography>
+        <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
+          <Grid item xs={6} sm={3}>
+            <StatCard
+              label="已识别"
+              value={recognized() != null ? String(recognized()!) : '—'}
+              color={recogStatColor()}
+              pollHint="30s"
+              title="stcpp_market_type_recognized_total"
+            />
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <StatCard
+              label="未识别"
+              value={unknown() != null ? String(unknown()!) : '—'}
+              color={(unknown() ?? 0) > 0 ? 'yellow' : 'default'}
+              pollHint="30s"
+              title="stcpp_market_type_unknown_total"
+            />
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <StatCard
+              label="识别率"
+              value={recogTotal() != null ? `${recogPct().toFixed(1)}%` : '—'}
+              color={recogStatColor()}
+              pollHint="30s"
+              title="recognized / (recognized + unknown)"
+            />
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <StatCard
+              label="盘口总数"
+              value={recogTotal() != null ? String(recogTotal()!) : '—'}
+              pollHint="30s"
+            />
+          </Grid>
+        </Grid>
+        <Box sx={{ mb: 0.5 }}>
+          <LinearProgress
+            variant="determinate"
+            value={recogPct()}
+            color={recogColor()}
+            sx={{ height: 8, borderRadius: 3 }}
+          />
+        </Box>
+        <Show when={recogTotal() != null && recogPct() < 40}>
+          <Typography variant="caption" sx={{ color: 'text.disabled', display: 'block', mb: 1.5 }}>
+            当前识别率偏低属正常 — 发现阶段盘口类型字段待后端完整覆盖；outright / prop 类型 enum 持续扩充中。
+          </Typography>
+        </Show>
+        <Show when={recogTotal() == null}>
+          <Typography variant="caption" sx={{ color: 'text.disabled', display: 'block', mb: 1.5 }}>
+            待小卢 metrics 分支合并后自动填充。
+          </Typography>
+        </Show>
+        <Show when={recogTotal() != null && recogPct() >= 40}>
+          <Box sx={{ mb: 1.5 }} />
+        </Show>
+
+        <Divider sx={{ mb: 1.5 }} />
+
+        {/* ──────────────────────────────────────────
+            市场覆盖
+        ────────────────────────────────────────── */}
+        <Typography variant="caption" sx={{
+          color: 'text.secondary', mb: 0.75, display: 'block',
+          textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600,
+        }}>
+          市场覆盖
+        </Typography>
+        <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
+          <Grid item xs={6} sm={3}>
+            <StatCard
+              label="发现市场"
+              value={discovered() != null ? String(discovered()!) : '—'}
+              pollHint="30s"
+              title="stcpp_markets_discovered_total"
+            />
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <StatCard
+              label="已订阅市场"
+              value={subscribed() != null ? String(subscribed()!) : '—'}
+              color={coverStatColor()}
+              pollHint="30s"
+              title="stcpp_markets_subscribed_total"
+            />
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <StatCard
+              label="订阅 Token 数"
+              value={tokensSubbed() != null ? String(tokensSubbed()!) : '—'}
+              pollHint="30s"
+              title="stcpp_tokens_subscribed_total"
+            />
+          </Grid>
+          <Grid item xs={6} sm={3}>
+            <StatCard
+              label="覆盖率"
+              value={discovered() != null ? `${coverPct().toFixed(1)}%` : '—'}
+              color={coverStatColor()}
+              pollHint="30s"
+              title="subscribed / discovered"
+            />
+          </Grid>
+        </Grid>
+        <Box sx={{ mb: 0.5 }}>
+          <LinearProgress
+            variant="determinate"
+            value={coverPct()}
+            color={coverColor()}
+            sx={{ height: 8, borderRadius: 3 }}
+          />
+        </Box>
+        <Show when={discovered() == null}>
+          <Typography variant="caption" sx={{ color: 'text.disabled', display: 'block', mb: 1.5 }}>
+            待小卢 metrics 分支合并后自动填充。
+          </Typography>
+        </Show>
+        <Show when={discovered() != null}>
+          <Box sx={{ mb: 1.5 }} />
+        </Show>
+
+        <Divider sx={{ mb: 1.5 }} />
+
+        {/* ──────────────────────────────────────────
+            比分匹配率
+        ────────────────────────────────────────── */}
+        <Typography variant="caption" sx={{
+          color: 'text.secondary', mb: 0.75, display: 'block',
+          textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600,
+        }}>
+          比分匹配率 (Goalserve live score)
+        </Typography>
+        <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
+          <Grid item xs={6} sm={4}>
+            <StatCard
+              label="已匹配市场"
+              value={scoreMatched() != null ? String(scoreMatched()!) : '—'}
+              color={scoreStatColor()}
+              pollHint="30s"
+              title="stcpp_score_matched_total"
+            />
+          </Grid>
+          <Grid item xs={6} sm={4}>
+            <StatCard
+              label="市场总数"
+              value={marketsTotal() != null ? String(marketsTotal()!) : '—'}
+              pollHint="30s"
+              title="stcpp_markets_total"
+            />
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <StatCard
+              label="匹配率"
+              value={marketsTotal() != null ? `${scorePct().toFixed(1)}%` : '—'}
+              color={scoreStatColor()}
+              pollHint="30s"
+              title="score_matched / markets_total"
+            />
+          </Grid>
+        </Grid>
+        <Box sx={{ mb: 0.5 }}>
+          <LinearProgress
+            variant="determinate"
+            value={scorePct()}
+            color={scoreColor()}
+            sx={{ height: 8, borderRadius: 3 }}
+          />
+        </Box>
+        <Show when={marketsTotal() == null}>
+          <Typography variant="caption" sx={{ color: 'text.disabled', display: 'block', mt: 0.5 }}>
+            待小卢 metrics 分支合并后自动填充。
+          </Typography>
+        </Show>
+        <Show when={marketsTotal() != null && scorePct() < 30}>
+          <Typography variant="caption" sx={{ color: 'text.disabled', display: 'block', mt: 0.5 }}>
+            当前无 live 比赛 / outright 类型无 inplay 比分，匹配率为 0% 属正常。Goalserve live score 映射将在赛季进行中自动上升。
+          </Typography>
+        </Show>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
 // Prometheus 裸文本折叠
 // ============================================================
 
@@ -794,6 +1117,7 @@ export function OpsPage() {
       <DataQualitySection />
       <BusinessThroughputSection />
       <RejectSection />
+      <CoverageSection />
       <MetricsRawSection />
     </div>
   );
