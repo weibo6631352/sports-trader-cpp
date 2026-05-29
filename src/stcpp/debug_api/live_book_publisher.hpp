@@ -52,11 +52,11 @@
 
 namespace stcpp::debug_api {
 
+using stcpp::microstructure::kBookDepthLevels;
+using stcpp::microstructure::OrderBookLevel;
 using stcpp::polymarket::clob_wss::OrderBookFeatures;
 using stcpp::polymarket::clob_wss::OrderBookSnapshotHub;
 using stcpp::polymarket::clob_wss::WssConnState;
-using stcpp::microstructure::kBookDepthLevels;
-using stcpp::microstructure::OrderBookLevel;
 
 // ---------------------------------------------------------------------------
 // LiveBookPublisher
@@ -71,8 +71,7 @@ using stcpp::microstructure::OrderBookLevel;
 // ---------------------------------------------------------------------------
 class LiveBookPublisher {
 public:
-    explicit LiveBookPublisher(OrderBookSnapshotHub& hub,
-                               const std::vector<std::string>& subscribed_tokens,
+    explicit LiveBookPublisher(OrderBookSnapshotHub& hub, const std::vector<std::string>& subscribed_tokens,
                                bool verbose = false)
         : hub_(hub), subscribed_tokens_(subscribed_tokens), verbose_(verbose) {}
 
@@ -91,7 +90,8 @@ public:
         while (start < payload.size() && std::isspace(static_cast<unsigned char>(payload[start]))) {
             ++start;
         }
-        if (start >= payload.size()) return;
+        if (start >= payload.size())
+            return;
 
         if (payload[start] == '[') {
             // Array of events
@@ -123,16 +123,19 @@ private:
         // Simple depth-tracking approach (no full JSON parser needed for this structure).
         std::size_t pos = 0;
         // skip '['
-        while (pos < payload.size() && payload[pos] != '[') ++pos;
+        while (pos < payload.size() && payload[pos] != '[')
+            ++pos;
         ++pos;
 
         while (pos < payload.size()) {
             // Find next '{'
             while (pos < payload.size() && payload[pos] != '{') {
-                if (payload[pos] == ']') return;  // end of array
+                if (payload[pos] == ']')
+                    return;  // end of array
                 ++pos;
             }
-            if (pos >= payload.size()) return;
+            if (pos >= payload.size())
+                return;
 
             // Find matching '}' (depth tracking)
             std::size_t obj_start = pos;
@@ -147,18 +150,28 @@ private:
                     continue;
                 }
                 if (in_string) {
-                    if (c == '\\') escape = true;
-                    else if (c == '"') in_string = false;
+                    if (c == '\\')
+                        escape = true;
+                    else if (c == '"')
+                        in_string = false;
                     continue;
                 }
-                if (c == '"') { in_string = true; continue; }
-                if (c == '{') ++depth;
+                if (c == '"') {
+                    in_string = true;
+                    continue;
+                }
+                if (c == '{')
+                    ++depth;
                 else if (c == '}') {
                     --depth;
-                    if (depth == 0) { obj_end = i; break; }
+                    if (depth == 0) {
+                        obj_end = i;
+                        break;
+                    }
                 }
             }
-            if (obj_end <= obj_start) break;
+            if (obj_end <= obj_start)
+                break;
 
             auto obj = payload.substr(obj_start, obj_end - obj_start + 1);
             ParseObject(obj, recv_ts_ns);
@@ -191,8 +204,7 @@ private:
             // timestamp absent → drop (R-20 red line: no fallback now())
             frames_dropped_.fetch_add(1, std::memory_order_relaxed);
             if (verbose_) {
-                std::fprintf(stderr, "[live_pub] DROP: token %s missing timestamp\n",
-                             token_id.c_str());
+                std::fprintf(stderr, "[live_pub] DROP: token %s missing timestamp\n", token_id.c_str());
             }
             return;
         }
@@ -248,8 +260,7 @@ private:
         books_published_.fetch_add(1, std::memory_order_relaxed);
 
         if (verbose_) {
-            std::fprintf(stderr,
-                         "[live_pub] Publish token=%.40s bid=%.4f ask=%.4f ts_ms=%lld\n",
+            std::fprintf(stderr, "[live_pub] Publish token=%.40s bid=%.4f ask=%.4f ts_ms=%lld\n",
                          token_id.c_str(), feat.bids[0].price, feat.asks[0].price,
                          static_cast<long long>(ts_ms));
         }
@@ -266,7 +277,7 @@ private:
     // sort_desc=false → asks: already ascending (best=lowest first)
     // -----------------------------------------------------------------------
     static void ParseLevels(std::string_view obj, std::string_view field_name,
-                             std::array<OrderBookLevel, kBookDepthLevels>& out, bool sort_desc) {
+                            std::array<OrderBookLevel, kBookDepthLevels>& out, bool sort_desc) {
         // Initialize to NaN
         for (auto& lvl : out) {
             lvl.price = std::numeric_limits<double>::quiet_NaN();
@@ -276,30 +287,37 @@ private:
         // Find "bids":[ or "asks":[
         // Look for "fieldname":
         char needle[32];
-        std::snprintf(needle, sizeof(needle), "\"%.*s\":",
-                      static_cast<int>(field_name.size()), field_name.data());
+        std::snprintf(needle, sizeof(needle), "\"%.*s\":", static_cast<int>(field_name.size()),
+                      field_name.data());
         std::size_t arr_start = obj.find(needle);
-        if (arr_start == std::string_view::npos) return;
+        if (arr_start == std::string_view::npos)
+            return;
         arr_start += std::strlen(needle);
         // skip whitespace
         while (arr_start < obj.size() && std::isspace(static_cast<unsigned char>(obj[arr_start]))) {
             ++arr_start;
         }
-        if (arr_start >= obj.size() || obj[arr_start] != '[') return;
+        if (arr_start >= obj.size() || obj[arr_start] != '[')
+            return;
         ++arr_start;
 
         // Parse entries: up to 256, but store only top kBookDepthLevels
         // Use simple temp storage
         static constexpr std::size_t kMaxLevels = 256;
-        struct Lvl { double price; double size; };
+        struct Lvl {
+            double price;
+            double size;
+        };
         Lvl raw[kMaxLevels];
         std::size_t raw_count = 0;
 
         std::size_t pos = arr_start;
         while (pos < obj.size() && raw_count < kMaxLevels) {
             // Skip to '{'
-            while (pos < obj.size() && obj[pos] != '{' && obj[pos] != ']') ++pos;
-            if (pos >= obj.size() || obj[pos] == ']') break;
+            while (pos < obj.size() && obj[pos] != '{' && obj[pos] != ']')
+                ++pos;
+            if (pos >= obj.size() || obj[pos] == ']')
+                break;
 
             // Find matching '}'
             std::size_t entry_start = pos;
@@ -309,17 +327,33 @@ private:
             bool esc = false;
             for (std::size_t i = pos; i < obj.size(); ++i) {
                 char c = obj[i];
-                if (esc) { esc = false; continue; }
-                if (in_str) {
-                    if (c == '\\') esc = true;
-                    else if (c == '"') in_str = false;
+                if (esc) {
+                    esc = false;
                     continue;
                 }
-                if (c == '"') { in_str = true; continue; }
-                if (c == '{') ++depth;
-                else if (c == '}') { --depth; if (depth == 0) { entry_end = i; break; } }
+                if (in_str) {
+                    if (c == '\\')
+                        esc = true;
+                    else if (c == '"')
+                        in_str = false;
+                    continue;
+                }
+                if (c == '"') {
+                    in_str = true;
+                    continue;
+                }
+                if (c == '{')
+                    ++depth;
+                else if (c == '}') {
+                    --depth;
+                    if (depth == 0) {
+                        entry_end = i;
+                        break;
+                    }
+                }
             }
-            if (entry_end <= entry_start) break;
+            if (entry_end <= entry_start)
+                break;
 
             auto entry = obj.substr(entry_start, entry_end - entry_start + 1);
             double price = ParseDoubleField(entry, "price");
@@ -330,7 +364,8 @@ private:
             pos = entry_end + 1;
         }
 
-        if (raw_count == 0) return;
+        if (raw_count == 0)
+            return;
 
         // Sort: descending for bids (best = highest), ascending for asks (best = lowest)
         // Simple insertion sort (raw_count typically small)
@@ -367,44 +402,59 @@ private:
     static std::string_view ExtractStringField(std::string_view body, std::string_view key) noexcept {
         // find "key":
         char needle[64];
-        if (key.size() + 2 >= sizeof(needle)) return {};
+        if (key.size() + 2 >= sizeof(needle))
+            return {};
         needle[0] = '"';
         std::copy(key.begin(), key.end(), needle + 1);
         needle[key.size() + 1] = '"';
         needle[key.size() + 2] = '\0';
 
         std::size_t pk = body.find(std::string_view(needle, key.size() + 2));
-        if (pk == std::string_view::npos) return {};
+        if (pk == std::string_view::npos)
+            return {};
         std::size_t pos = pk + key.size() + 2;
         // skip ":"
-        while (pos < body.size() && (body[pos] == ':' || body[pos] == ' ')) ++pos;
-        if (pos >= body.size() || body[pos] != '"') return {};
+        while (pos < body.size() && (body[pos] == ':' || body[pos] == ' '))
+            ++pos;
+        if (pos >= body.size() || body[pos] != '"')
+            return {};
         ++pos;
         std::size_t end = body.find('"', pos);
-        if (end == std::string_view::npos) return {};
+        if (end == std::string_view::npos)
+            return {};
         return body.substr(pos, end - pos);
     }
 
     // Extract int64 from quoted or unquoted value
     static bool ExtractInt64(std::string_view body, std::string_view key, std::int64_t& out) noexcept {
         char needle[64];
-        if (key.size() + 2 >= sizeof(needle)) return false;
+        if (key.size() + 2 >= sizeof(needle))
+            return false;
         needle[0] = '"';
         std::copy(key.begin(), key.end(), needle + 1);
         needle[key.size() + 1] = '"';
         needle[key.size() + 2] = '\0';
 
         std::size_t pk = body.find(std::string_view(needle, key.size() + 2));
-        if (pk == std::string_view::npos) return false;
+        if (pk == std::string_view::npos)
+            return false;
         std::size_t pos = pk + key.size() + 2;
-        while (pos < body.size() && (body[pos] == ':' || body[pos] == ' ')) ++pos;
-        if (pos >= body.size()) return false;
+        while (pos < body.size() && (body[pos] == ':' || body[pos] == ' '))
+            ++pos;
+        if (pos >= body.size())
+            return false;
         bool quoted = (body[pos] == '"');
-        if (quoted) ++pos;
-        if (pos >= body.size()) return false;
+        if (quoted)
+            ++pos;
+        if (pos >= body.size())
+            return false;
         std::int64_t sign = 1;
-        if (body[pos] == '-') { sign = -1; ++pos; }
-        if (pos >= body.size() || !std::isdigit(static_cast<unsigned char>(body[pos]))) return false;
+        if (body[pos] == '-') {
+            sign = -1;
+            ++pos;
+        }
+        if (pos >= body.size() || !std::isdigit(static_cast<unsigned char>(body[pos])))
+            return false;
         std::int64_t v = 0;
         while (pos < body.size() && std::isdigit(static_cast<unsigned char>(body[pos]))) {
             v = v * 10 + (body[pos] - '0');
@@ -419,26 +469,32 @@ private:
         std::string_view sv = ExtractStringField(entry, key);
         if (!sv.empty()) {
             char buf[32];
-            if (sv.size() >= sizeof(buf)) return std::numeric_limits<double>::quiet_NaN();
+            if (sv.size() >= sizeof(buf))
+                return std::numeric_limits<double>::quiet_NaN();
             std::copy(sv.begin(), sv.end(), buf);
             buf[sv.size()] = '\0';
             char* ep = nullptr;
             double v = std::strtod(buf, &ep);
-            if (ep == buf) return std::numeric_limits<double>::quiet_NaN();
+            if (ep == buf)
+                return std::numeric_limits<double>::quiet_NaN();
             return v;
         }
         // Try unquoted
         char needle[64];
-        if (key.size() + 2 >= sizeof(needle)) return std::numeric_limits<double>::quiet_NaN();
+        if (key.size() + 2 >= sizeof(needle))
+            return std::numeric_limits<double>::quiet_NaN();
         needle[0] = '"';
         std::copy(key.begin(), key.end(), needle + 1);
         needle[key.size() + 1] = '"';
         needle[key.size() + 2] = '\0';
         std::size_t pk = entry.find(std::string_view(needle, key.size() + 2));
-        if (pk == std::string_view::npos) return std::numeric_limits<double>::quiet_NaN();
+        if (pk == std::string_view::npos)
+            return std::numeric_limits<double>::quiet_NaN();
         std::size_t pos = pk + key.size() + 2;
-        while (pos < entry.size() && (entry[pos] == ':' || entry[pos] == ' ')) ++pos;
-        if (pos >= entry.size()) return std::numeric_limits<double>::quiet_NaN();
+        while (pos < entry.size() && (entry[pos] == ':' || entry[pos] == ' '))
+            ++pos;
+        if (pos >= entry.size())
+            return std::numeric_limits<double>::quiet_NaN();
         char buf[32];
         std::size_t n = 0;
         while (pos < entry.size() && n + 1 < sizeof(buf) &&
@@ -446,11 +502,13 @@ private:
                 entry[pos] == '-' || entry[pos] == '+')) {
             buf[n++] = entry[pos++];
         }
-        if (n == 0) return std::numeric_limits<double>::quiet_NaN();
+        if (n == 0)
+            return std::numeric_limits<double>::quiet_NaN();
         buf[n] = '\0';
         char* ep = nullptr;
         double v = std::strtod(buf, &ep);
-        if (ep == buf) return std::numeric_limits<double>::quiet_NaN();
+        if (ep == buf)
+            return std::numeric_limits<double>::quiet_NaN();
         return v;
     }
 
