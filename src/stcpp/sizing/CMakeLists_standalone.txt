@@ -1,0 +1,20 @@
+# src/stcpp/sizing/CMakeLists_standalone.txt
+# 独立构建脚本 (小袁 sizing 模块 worktree 验证用)
+# 不修改 root CMakeLists.txt; 完整构建使用 root + add_subdirectory(src/stcpp/sizing)
+#
+# 用法:
+#   cmake -S src/stcpp/sizing -B build_sizing_xy \
+#         -DCMAKE_PROJECT_NAME_OVERRIDE=stcpp_sizing_standalone \
+#         -DSTCPP_SOURCE_DIR=<worktree_root>
+# 实际 worktree 构建直接使用 build_xy (已有 root project)
+
+cmake_minimum_required(VERSION 3.27)
+project(stcpp_sizing_standalone VERSION 0.1.0 LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# 注: 独立构建需要整个 stcpp 源码树 (stcpp_risk 依赖)
+# 推荐直接用 root CMakeLists + add_subdirectory(src/stcpp/sizing)
+message(STATUS "Use root CMakeLists.txt + add_subdirectory for full build")
