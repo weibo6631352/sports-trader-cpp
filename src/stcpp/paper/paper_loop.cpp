@@ -9,6 +9,33 @@
 //   R-20: 4 ts 全链路透传 (data_source_ts_ns 来自 hub 快照, 禁 now() 替代)
 //
 // ToS: 仅 paper 虚拟成交, 不向 Polymarket CLOB 下单.
+//
+// P0 整改 (2026-05-30, 小肖, dogfood-remediation):
+//   P0-1 拒单去重: risk_gateway.cpp::evaluate() 内 reject_here() lambda 已经通过
+//         g_rm_debug_snapshot 全局指针调用 push_reject 一次。paper_loop 原来在
+//         RM 返回 REJECTED 后又手动调用 rm_snap_->push_reject 一次, 造成每个
+//         reject 被写入两次 (128 唯一 reject 各出现 2 次, 纳秒级 rejected_ts 完全
+//         相同可排除随机重复). 修法: 删除 paper_loop 侧的冗余 push_reject; RM 侧
+//         已唯一地负责写 ring, paper_loop 仅计数 orders_rejected.
+//         验证: /api/v1/risk/rejects 应返回 128 条 (不再 256 条); count() == 128.
+//
+//   P0-3 fake fair gate: 无真实 Goalserve game_row 时 (time_status==NotStarted,
+//         即 M1 stub 路径), FairValueEstimator 退化为 prior=0.5 + 固定 kappa=0.20
+//         混合 microprice, 对低价 outright (Spain mid=0.169) 强拉到 fair=0.434,
+//         凭空产生 edge_bps=1076 + suggested_notional=32 — 假阳性诱导下注.
+//         修法: PublishQuoteSnapshot 新增 bool has_real_fair 参数; M1 stub 路径
+//         (time_status==NotStarted) 时, quote 中 edge_bps/kelly_fraction/
+//         suggested_notional 强制为 0, predict_ok=false, model_calibrated=false,
+//         signal_strength=0. fair_value 字段仍输出 (供观察), 但加 predict_ok=false
+//         语义标记"不可决策". TickOne 在 sizing 完成后, 若 has_real_fair=false 则
+//         强制 suggested_notional=0 → 不进入 Step 5 构造 intent. 宁可空不可假.
+//
+//   P0-4 advisory gate: advisory=true 市场 (ML-R2: paper 期所有市场恒 advisory)
+//         过去仍走 Step 5-6 构造 intent 进 RiskGateway::evaluate, 依赖 RM 以
+//         INVALID_INTENT 兜底拒. RM 松动 / 配置变化即真下单 = 红线. 修法: Step 4
+//         (quote publish) 之后立即检查 advisory 标志, advisory=true → 直接 return,
+//         不构造 intent, 不进 RM. RM 不再作 advisory 防线; paper_loop 主动 gate.
+//         验证: /api/v1/risk/rejects 中 advisory 市场不应再出现 INVALID_INTENT.
 
 #include "stcpp/paper/paper_loop.hpp"
 
@@ -166,6 +193,14 @@ void PaperLoop::TickAll() {
 
 // ---------------------------------------------------------------------------
 // TickOne — 对单个 token 执行一次完整 paper 交易流程
+//
+// P0-3: has_real_fair 标志贯穿 Step 2→4→5:
+//   true  = 有真实 Goalserve game_row (比分/时钟驱动的先验), fair 可信, 允许产生 intent.
+//   false = 无真实 Goalserve (M1 stub: time_status==NotStarted), fair 是 stub 伪值,
+//           quote 发布时清零 edge/kelly/notional/signal, 不构造 intent.
+//
+// P0-4: advisory gate 在 Step 4 之后立即检查:
+//   advisory=true → return, 不进 RM, 不产生 intent.
 // ---------------------------------------------------------------------------
 
 void PaperLoop::TickOne(const std::string& condition_id, const std::string& token_id,
@@ -189,6 +224,12 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     game_row.data_source_ts_ns = feat.data_source_ts_ns;
     game_row.ingestion_ts_ns = feat.ingestion_ts_ns;
     game_row.as_of_ts_ns = feat.as_of_ts_ns;
+
+    // P0-3: has_real_fair = false when time_status==NotStarted (no Goalserve data).
+    // When a real Goalserve game_row is available (future M2+), set has_real_fair=true.
+    // Invariant: has_real_fair=true requires time_status != NotStarted AND a non-stub
+    // model_kind (kONNX or kLightGBM), i.e. model_calibrated=true.
+    const bool has_real_fair = (game_row.time_status != stcpp::data::goalserve::TimeStatus::NotStarted);
 
     FeatureStoreBookRow book_row{};
     // token_side = "YES" (FairValueEstimator extract_microprice_ 检查此字段)
@@ -245,8 +286,28 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
 
     // ---- Step 4: QuoteSnapshotHub::Publish ---------------------------------
     // 无论下单与否, 发布 quote 快照 (供 /api/v1/quote 端点显示真实估值)
-    PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat);
+    // P0-3: has_real_fair=false 时, 传递 suppress_edge=true → 清零伪 edge 字段.
+    PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair);
     stats_.quote_publishes.fetch_add(1, std::memory_order_relaxed);
+
+    // ---- P0-4: advisory gate -----------------------------------------------
+    // advisory=true (ML-R2: paper 期所有市场) → 不产生 intent, 不进 RM.
+    // RM 不再作 advisory 防线; paper_loop 在此处主动 gate.
+    // 注意: advisory 检查在 quote publish 之后, quote 本身仍发布 (供观察); 但
+    //        quote.edge/kelly/notional=0 (has_real_fair=false) 已保证无假信号.
+    if (cfg_.advisory_markets_no_intent) {
+        // 所有 paper 期市场均为 advisory; 不构造 intent.
+        return;
+    }
+
+    // ---- P0-3: fake fair gate (second gate) --------------------------------
+    // 即使 advisory gate 被 override (未来真实 M2+ 场景), 若无真实 fair 依据,
+    // 仍不允许 suggested_notional > 0 进入 intent 构造.
+    if (!has_real_fair) {
+        // stub fair 路径: sizing_out.suggested_notional 可能非零 (因 CI gating 数值),
+        // 但我们直接拦截, 不产生 intent. 数值安全已由 PublishQuoteSnapshot 中清零保证.
+        return;
+    }
 
     // CI gating: sizing_out.valid=false 或 net_ci_edge <= 0 → 不下单 (fail-closed)
     if (!sizing_out.valid || sizing_out.suggested_notional <= 0.0) {
@@ -312,12 +373,10 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
 
     if (rd.is_rejected()) {
         stats_.orders_rejected.fetch_add(1, std::memory_order_relaxed);
-
-        // push_reject 到 rm_snap (可选)
-        if (rm_snap_ != nullptr) {
-            risk::RejectRow rr = risk::build_reject_row(rd, intent);
-            rm_snap_->push_reject(rr);
-        }
+        // P0-1 去重修复: risk_gateway.cpp::evaluate() 内部的 reject_here() lambda 已经
+        // 通过 g_rm_debug_snapshot 全局指针调用 push_reject 一次.
+        // paper_loop 不再重复调用 rm_snap_->push_reject, 防止双写.
+        // rm_snap_ 字段保留 (供 snapshot() 读取), 但写操作交由 RM 单独负责.
         return;
     }
 
@@ -494,13 +553,21 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
 // PublishQuoteSnapshot — SizingCalculator 完成后更新 QuoteSnapshotHub
 //
 // R-20: 4 ts 来自 feat (上游链路)
+//
+// P0-3 修复: has_real_fair=false 时 (M1 stub, 无 Goalserve game_row):
+//   - edge_bps / kelly_fraction / suggested_notional / signal_strength 全部清零
+//   - predict_ok = false (明确标记"不可决策")
+//   - model_calibrated = false (已有; 与 predict_ok 双保险)
+//   - fair_value 字段仍输出 stub 值 (供观察, 但消费方须检查 predict_ok)
+//   宁可空不可假: 消费方 (前端/API) 见 predict_ok=false 应灰显数值, 不渲染 edge/notional.
 // ---------------------------------------------------------------------------
 
 void PaperLoop::PublishQuoteSnapshot(const std::string& condition_id,
                                      const pricing::FairValueResult& fv_result,
                                      const sizing::SizingOutput& sizing_out, double mark_price,
                                      double edge_ci_lower,
-                                     const polymarket::clob_wss::OrderBookFeatures& feat) noexcept {
+                                     const polymarket::clob_wss::OrderBookFeatures& feat,
+                                     bool has_real_fair) noexcept {
     sizing::QuoteFeatures qf{};
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
@@ -508,13 +575,27 @@ void PaperLoop::PublishQuoteSnapshot(const std::string& condition_id,
     qf.ingestion_ts_ns = feat.ingestion_ts_ns;
     qf.as_of_ts_ns = NowNs();  // 快照发布时刻 (R-20 allowed)
 
-    // 核心量化字段
+    // fair_value: 始终输出 (fv_result.p_yes()), 但 predict_ok=false 时消费方不可据此决策.
     qf.fair_value = fv_result.p_yes();
     qf.market_mid = mark_price;
-    qf.edge_bps = sizing_out.valid ? sizing_out.net_ci_edge * 10'000.0 : 0.0;
-    qf.kelly_fraction = sizing_out.valid ? sizing_out.kelly_fractional : 0.0;
-    qf.suggested_notional = sizing_out.valid ? sizing_out.suggested_notional : 0.0;
-    qf.signal_strength = edge_ci_lower > 0.0 ? std::min(edge_ci_lower * 10.0, 1.0) : 0.0;
+
+    if (has_real_fair) {
+        // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.
+        qf.edge_bps = sizing_out.valid ? sizing_out.net_ci_edge * 10'000.0 : 0.0;
+        qf.kelly_fraction = sizing_out.valid ? sizing_out.kelly_fractional : 0.0;
+        qf.suggested_notional = sizing_out.valid ? sizing_out.suggested_notional : 0.0;
+        qf.signal_strength = edge_ci_lower > 0.0 ? std::min(edge_ci_lower * 10.0, 1.0) : 0.0;
+        qf.predict_ok = fv_result.valid;
+    } else {
+        // P0-3: stub fair 路径 — 无真实 Goalserve 先验, fair 是 microprice 收缩伪值.
+        // 清零所有决策字段: 消费方见到这些零值 + predict_ok=false + model_calibrated=false
+        // 应拒绝据此下单. 宁可空不可假.
+        qf.edge_bps = 0.0;
+        qf.kelly_fraction = 0.0;
+        qf.suggested_notional = 0.0;
+        qf.signal_strength = 0.0;
+        qf.predict_ok = false;  // 显式标记不可决策 (P0-3 关键字段)
+    }
 
     // ML provenance (M1 stub 标记; 非真实 ML 模型)
     qf.model_kind = sizing::ModelKindTag::kStub;
@@ -527,9 +608,8 @@ void PaperLoop::PublishQuoteSnapshot(const std::string& condition_id,
     qf.model_confidence = 0.0;                    // M1 stub: 无置信度
     qf.fair_ci_lower = fv_result.p_yes() - 0.05;  // ±5% 近似 (M1)
     qf.fair_ci_upper = fv_result.p_yes() + 0.05;
-    qf.predict_ok = fv_result.valid;
-    qf.advisory = true;  // ML-R2: paper 期恒 true
-    qf.model_calibrated = false;
+    qf.advisory = true;           // ML-R2: paper 期恒 true
+    qf.model_calibrated = false;  // M1 stub: 未校准
     qf.model_as_of_ts_ns = feat.ingestion_ts_ns;
 
     qf.valid = fv_result.valid;

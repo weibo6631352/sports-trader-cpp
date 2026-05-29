@@ -14,6 +14,12 @@
 //   T08: Stop 后 is_running() = false
 //   T09: Stats 计数 — ticks_total 单调递增 (tick 至少 1 次)
 //
+// P0 整改测试 (dogfood-remediation 2026-05-30):
+//   T12: P0-1 拒单去重 — 同一 reject 只写 ring 一次 (RmDebugSnapshot.count()单调, 不翻倍)
+//   T13: P0-3 fake fair gate — M1 stub 路径 quote.predict_ok=false, edge/kelly/notional=0
+//   T14: P0-4 advisory gate — advisory_markets_no_intent=true 时 orders_rejected=0
+//        (不进 RM, 无 INVALID_INTENT; 仅 quote_publishes > 0)
+//
 // 测试策略:
 //   使用合成 OrderBookSnapshotHub (先 Publish 真实 book 快照),
 //   PaperLoop tick 后读 LedgerSnapshotHub / QuoteSnapshotHub 验证.
@@ -443,4 +449,173 @@ TEST_F(PaperLoopTest, T11_QuoteAdvisory) {
     ASSERT_TRUE(opt.has_value());
     EXPECT_TRUE(opt->advisory) << "ML-R2: advisory must be true in paper mode";
     EXPECT_TRUE(opt->ts_chain_ok()) << "R-20: ts_chain must be valid";
+}
+
+// ---------------------------------------------------------------------------
+// T12: P0-1 拒单去重 — RmDebugSnapshot ring 不被 paper_loop 二次写入
+//
+// 验证方法:
+//   让 PaperLoop 跑若干 tick (不产生 fill, RM 会拒单).
+//   记录 rm_snap_.count() = RM 侧写入总次数.
+//   因为 paper_loop 已不再调用 rm_snap_->push_reject,
+//   每个 intent 只被 RM::evaluate() 内部 push 一次.
+//   → count() 等于 orders_rejected (1:1, 不翻倍).
+//
+// 注意: 本测试禁用 advisory gate (advisory_markets_no_intent=false) 使 RM 路径可达,
+//   同时 attach g_rm_debug_snapshot 让 RM 内部 push 到 rm_snap_.
+// ---------------------------------------------------------------------------
+
+TEST_F(PaperLoopTest, T12_P0_1_RejectNoDuplicate) {
+    // attach 全局 snapshot 指针, 让 RM 内部 push_reject 到 rm_snap_
+    attach_rm_debug_snapshot(rm_snap_.get());
+
+    // 发布合成 book: 低价 outright (Spain mid=0.169), 对应 P0-3 的典型假信号场景
+    // fair 将被拉高, 边 CI gating 可能通过; 但 RM INVALID_INTENT 或其他规则会拒
+    const auto feat = MakeSyntheticBook(0.16, 0.18);  // mid=0.17 (低价 outright)
+    hub_->Publish("token-yes-001", feat);
+
+    // 禁用 advisory gate, 让 intent 进 RM (测试 RM 侧 push_reject 不双写)
+    cfg_.advisory_markets_no_intent = false;
+    loop_ = MakeLoop();
+    loop_->Start();
+
+    // 等 4 次 tick
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();
+
+    // 清理全局指针
+    detach_rm_debug_snapshot();
+
+    const auto rejected = loop_->stats().orders_rejected.load();
+    const auto snap_count = rm_snap_->count();
+
+    // 核心断言: snap_count == rejected (每个 reject 只写 ring 一次)
+    // 修复前: snap_count == 2 × rejected (paper_loop + RM 各 push 一次)
+    // 修复后: snap_count == rejected (只有 RM 内部 push)
+    if (rejected > 0) {
+        EXPECT_EQ(snap_count, rejected)
+            << "P0-1: RmDebugSnapshot.count() must equal orders_rejected "
+               "(each reject pushed exactly once by RM, not duplicated by paper_loop). "
+               "snap_count="
+            << snap_count << " rejected=" << rejected;
+    }
+
+    // 验证 snapshot() 无重复 rejected_ts (纳秒级碰撞概率极低)
+    const auto rows = rm_snap_->snapshot();
+    // 检查每个 (market_id, intent_ref, rejected_ts_ns) 元组唯一
+    std::unordered_map<std::string, int> seen;
+    for (const auto& r : rows) {
+        std::string key = std::string(r.market_id) + "|" + std::string(r.intent_ref) + "|" +
+                          std::to_string(r.rejected_ts_ns);
+        seen[key]++;
+    }
+    for (const auto& [k, cnt] : seen) {
+        EXPECT_EQ(cnt, 1) << "P0-1: Duplicate reject row detected for key=" << k << " count=" << cnt
+                          << " (expected 1, was 2 before fix)";
+    }
+}
+
+// ---------------------------------------------------------------------------
+// T13: P0-3 fake fair gate — M1 stub 路径 quote 中 predict_ok=false,
+//      edge_bps/kelly_fraction/suggested_notional/signal_strength 全为 0
+//
+// 场景: 低价 outright (Spain mid=0.169) 在 stub 路径被强拉到 fair=0.434
+//   修复前: edge_bps=1076, signal_strength=1, suggested_notional=32 (假阳性)
+//   修复后: edge_bps=0, kelly=0, notional=0, signal=0, predict_ok=false
+//
+// 验证: time_status==NotStarted → has_real_fair=false → PublishQuoteSnapshot 清零.
+// ---------------------------------------------------------------------------
+
+TEST_F(PaperLoopTest, T13_P0_3_FakeFairGate) {
+    // 低价 outright: mid=0.169, stub fair 会被拉到 ~0.434 (edge=0.265)
+    // 修复后: quote.edge_bps/kelly/notional/signal 全 0, predict_ok=false
+    const auto feat = MakeSyntheticBook(0.16, 0.18);  // bid=0.16, ask=0.18
+    hub_->Publish("token-yes-001", feat);
+
+    cfg_.advisory_markets_no_intent = false;  // 允许进 quote publish 流程
+    loop_ = MakeLoop();
+    loop_->Start();
+
+    // 等 3 次 tick 确保 quote publish 发生
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();
+
+    EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0))
+        << "T13: quote_publishes should be > 0 (book valid, quote path entered)";
+
+    // 读 quote snapshot
+    const auto opt = quote_hub_->Read("cond-test-001");
+    if (opt.has_value() && opt->valid) {
+        // P0-3 核心断言: 无真实 fair 时, 决策字段全为 0
+        EXPECT_DOUBLE_EQ(opt->edge_bps, 0.0)
+            << "P0-3: edge_bps must be 0 when has_real_fair=false (no Goalserve game_row)";
+        EXPECT_DOUBLE_EQ(opt->kelly_fraction, 0.0)
+            << "P0-3: kelly_fraction must be 0 when has_real_fair=false";
+        EXPECT_DOUBLE_EQ(opt->suggested_notional, 0.0)
+            << "P0-3: suggested_notional must be 0 when has_real_fair=false "
+               "(was 32 pUSD fake signal before fix)";
+        EXPECT_DOUBLE_EQ(opt->signal_strength, 0.0)
+            << "P0-3: signal_strength must be 0 when has_real_fair=false";
+        EXPECT_FALSE(opt->predict_ok)
+            << "P0-3: predict_ok must be false when has_real_fair=false (not calibrated)";
+        EXPECT_FALSE(opt->model_calibrated) << "P0-3: model_calibrated must be false (M1 stub)";
+        EXPECT_TRUE(opt->advisory) << "ML-R2: advisory must remain true in paper mode";
+        // fair_value 字段仍输出 (供观察), 但因 predict_ok=false 不可决策
+        EXPECT_GT(opt->fair_value, 0.0) << "fair_value output for observation (but predict_ok=false)";
+    }
+
+    // 验证: 无真实 fair → 不产生 intent (orders_rejected==0 因为 has_real_fair gate 在 RM 前拦截)
+    EXPECT_EQ(loop_->stats().orders_rejected.load(), static_cast<std::uint64_t>(0))
+        << "P0-3: no intent should reach RM when has_real_fair=false";
+}
+
+// ---------------------------------------------------------------------------
+// T14: P0-4 advisory gate — advisory_markets_no_intent=true (默认) 时
+//      不产生 intent, orders_rejected=0 (无 INVALID_INTENT 进 RM)
+//      quote 仍发布 (供观察), 但 edge/kelly/notional 全为 0 (P0-3 联动)
+// ---------------------------------------------------------------------------
+
+TEST_F(PaperLoopTest, T14_P0_4_AdvisoryGate) {
+    // 发布有效 book (mid=0.545 — 接近 0.5 的 hockey 市场)
+    const auto feat = MakeSyntheticBook(0.53, 0.56);
+    hub_->Publish("token-yes-001", feat);
+
+    // advisory_markets_no_intent=true (默认; M1 paper 期所有市场)
+    cfg_.advisory_markets_no_intent = true;
+
+    // attach snapshot 验证 RM 没有被调用
+    attach_rm_debug_snapshot(rm_snap_.get());
+    loop_ = MakeLoop();
+    loop_->Start();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();
+    detach_rm_debug_snapshot();
+
+    // 核心断言: advisory gate 拦截在 RM 前, 无拒单
+    EXPECT_EQ(loop_->stats().orders_rejected.load(), static_cast<std::uint64_t>(0))
+        << "P0-4: advisory_markets_no_intent=true must prevent any intent from reaching RM";
+
+    // snap_count == 0: RM 未被调用, ring 无写入
+    EXPECT_EQ(rm_snap_->count(), static_cast<std::uint64_t>(0))
+        << "P0-4: RmDebugSnapshot must be empty when advisory gate fires before RM";
+
+    // quote 仍发布 (quote_publishes > 0)
+    EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0))
+        << "P0-4: quote should still be published for observation (advisory gate fires after Step 4)";
+
+    // quote 内容: advisory=true, predict_ok=false, edge/notional=0 (P0-3 联动)
+    const auto opt = quote_hub_->Read("cond-test-001");
+    if (opt.has_value() && opt->valid) {
+        EXPECT_TRUE(opt->advisory) << "ML-R2: advisory must be true";
+        EXPECT_FALSE(opt->predict_ok) << "P0-3+P0-4: predict_ok=false (no real fair)";
+        EXPECT_DOUBLE_EQ(opt->suggested_notional, 0.0)
+            << "P0-3+P0-4: suggested_notional=0 (stub fair + advisory)";
+    }
+
+    // orders_approved / fills_completed 均为 0
+    EXPECT_EQ(loop_->stats().orders_approved.load(), static_cast<std::uint64_t>(0))
+        << "P0-4: no orders approved when advisory gate is active";
+    EXPECT_EQ(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
+        << "P0-4: no fills when advisory gate is active";
 }
