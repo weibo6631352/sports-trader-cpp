@@ -40,14 +40,38 @@ http://127.0.0.1:3000/?stub=1
 
 ---
 
-## 生产构建
+## 生产构建 / C++ 同源托管
 
 ```bash
-npm run build        # 产物输出到 dist/
-npm run preview      # 预览 dist/ (vite preview)
+# 1. 构建产物 (输出到 frontend/dist/, 资源为相对路径)
+npm run build
+
+# 2. C++ 静态托管 (小卢 debug server 挂载 dist/)
+stcpp_debug_server --frontend frontend/dist
+# 浏览器打开 http://127.0.0.1:8080/
+# 前端从同源 (8080) 自动拉 API, 无跨域, 无需额外配置
 ```
 
-产物规模 (2026-05-29 实测): JS 约 52 kB / gzip 18 kB, CSS 约 16 kB / gzip 3 kB.
+**API base 优先级 (api.ts):**
+
+| 场景 | API base 来源 |
+|------|-------------|
+| localStorage `stcpp_api_base` 有值 | 用 localStorage (设置面板覆盖) |
+| C++ 从 8080 托管 dist — origin=http://127.0.0.1:8080 | 同源 → `http://127.0.0.1:8080` |
+| vite dev (port 3000) — origin=http://127.0.0.1:3000 | 回退 → `http://127.0.0.1:8080` |
+| file:// (本地双击) | 回退 → `http://127.0.0.1:8080` |
+
+**vite dev 开发模式 (3000 → 8080 API, HMR):**
+
+```bash
+npm run dev          # http://127.0.0.1:3000, HMR, 自动连后端 8080
+```
+
+```bash
+npm run preview      # vite preview (本地预览 dist/, 端口 4173)
+```
+
+产物规模 (2026-05-29 实测): JS 约 53 kB / gzip 19 kB, CSS 约 16 kB / gzip 3 kB.
 
 ---
 

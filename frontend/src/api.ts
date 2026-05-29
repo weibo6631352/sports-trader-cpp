@@ -4,7 +4,10 @@
  * last_review: 2026-05-29
  *
  * 设计要点:
- *  - 全部 endpoint 默认连 127.0.0.1:8080 (ADR-037 本地优先)
+ *  - API base 优先级: localStorage > 同源 origin > 回退 127.0.0.1:8080
+ *    · 同源托管 (C++ 从 8080 serve dist): window.location.origin → http://127.0.0.1:8080
+ *    · vite dev (3000): origin=http://127.0.0.1:3000 → 不是 8080 → 回退 http://127.0.0.1:8080
+ *    · localStorage 有值: 用它 (设置面板覆盖)
  *  - 4 时间戳字段 epoch_ns
  *  - 404 / found:false → null
  *  - fetchErrorMap: 全局错误追踪 (P0-03)
@@ -17,12 +20,30 @@ import type {
 
 // ---------- API base ----------
 
+/** DEV_PORTS: vite dev server 端口列表; 这些端口不代表后端, 须回退到后端地址 */
+const DEV_PORTS = new Set(['3000', '3001', '3002', '4173']);
+/** 后端默认地址, 用于 vite dev / file:// 回退 */
+const FALLBACK_API = 'http://127.0.0.1:8080';
+
+function resolveOriginBase(): string {
+  const proto = window.location.protocol;
+  // file:// — 本地双击打开 HTML, 没有 server, 直接回退
+  if (proto === 'file:') return FALLBACK_API;
+  const port = window.location.port;
+  // vite dev 端口 → 回退到后端地址
+  if (DEV_PORTS.has(port)) return FALLBACK_API;
+  // 其他: 从当前 host:port 托管 (C++ 8080 / 任意生产端口) → 同源
+  return window.location.origin;
+}
+
 function loadBaseUrl(): string {
   try {
-    return localStorage.getItem('stcpp_api_base') || 'http://127.0.0.1:8080';
+    const stored = localStorage.getItem('stcpp_api_base');
+    if (stored) return stored;
   } catch {
-    return 'http://127.0.0.1:8080';
+    // localStorage 不可用 (e.g. 隐私模式限制)
   }
+  return resolveOriginBase();
 }
 
 let _baseUrl = loadBaseUrl();
