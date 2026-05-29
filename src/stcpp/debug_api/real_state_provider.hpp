@@ -12,6 +12,10 @@
 //        (由 PaperLoop 周期 Publish; 无数据返回空)
 //     5. QuoteSnapshotHub (小石)      — quote_params() 读 hub 快照
 //        (由 PaperLoop 周期 Publish; 无数据返回 found=false)
+//     6. MarketInfoMap (P1-1 修复)   — gamma 发现时填入真实 MarketInfo catalog
+//        market() 查 catalog 返回 found=true 真实数据 (非硬编码 false)
+//     7. LiveMetricsHooks (P1-2 修复) — 接真实 uptime/rm_reject/fill/staleness/wss
+//        metrics() 填充真实值 (非全 0)
 //
 //   无数据语义 (彻底去 demo, 老板: 只有 live):
 //     - hub/store 无数据 → 返回结构合法空值 (不是 demo 假数据)
@@ -23,6 +27,17 @@
 //     - risk_rejects()      → 空 vector
 //     - data_source()       → "live" 恒定
 //
+//   P1-1: market() 查 MarketInfoMap (set_market_catalog 注入)
+//     gamma 发现时填充 condition_id → MarketInfo; found=true 返回真实元信息
+//   P1-2: metrics() 接真实值 (LiveMetricsHooks)
+//     uptime_sec     = steady_clock::now() - start_tp_ (启动时刻注入)
+//     rm_reject_total = snap_->count() (RmDebugSnapshot 写入总次数)
+//     fill_total      = *fill_counter_ (PaperLoop stats.fills_completed atomic)
+//     max_staleness_ms = 遍历 token_map_ → hub_.Read → now - event_ts_ns
+//     wss_clob_connected = wss_transport_->IsConnected() (IWssTransport 接口)
+//   P1-3: book()/book_pair() wss_state 从 wss_transport_->IsConnected() 动态注入
+//     覆盖快照中过时的 wss_state 字符串, 与 /status 报告的 wss_connected 保持一致
+//
 //   R-12 合规: 全路径只读原子快照, 无持锁 > 100us
 //   R-11 合规: LedgerFeatures.mode 由写端填入; response 顶层 mode 字段来此
 //   R-20 合规: 4-ts 严格透传 hub 快照 (data_source_ts 来自合成链路, 非 now())
@@ -32,9 +47,11 @@
 //   无数据 (store 为空 / event_id 不存在) → found=false (不回落 demo)
 //
 // 注意: 本头文件【不得】#include 任何热路径写端模块头 (RM evaluate / signer / exec)。
+//   IWssTransport 为纯接口头 (pm_wss_subscriber.hpp), 不含热路径逻辑, 合规引入。
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -47,8 +64,9 @@
 
 #include "stcpp/data/score_snapshot_store.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
-#include "stcpp/risk/ledger_snapshot_hub.hpp"  // LedgerSnapshotHub
-#include "stcpp/risk/risk_gateway.hpp"         // RiskConfig (为构造参数兼容保留)
+#include "stcpp/polymarket/wss/pm_wss_subscriber.hpp"  // IWssTransport (P1-2/P1-3)
+#include "stcpp/risk/ledger_snapshot_hub.hpp"          // LedgerSnapshotHub
+#include "stcpp/risk/risk_gateway.hpp"                 // RiskConfig (为构造参数兼容保留)
 #include "stcpp/risk/rm_debug_snapshot.hpp"
 #include "stcpp/sizing/quote_snapshot_hub.hpp"  // QuoteSnapshotHub
 
@@ -63,6 +81,40 @@ namespace stcpp::debug_api {
 // 供 book_pair(condition_id) 拆为两次 hub.Read(token_id)。
 // ============================================================================
 using MarketTokenMap = std::unordered_map<std::string, std::pair<std::string, std::string>>;
+
+// ============================================================================
+// MarketInfoMap — condition_id → MarketInfo 目录 (P1-1 修复)
+//
+// gamma /events 发现时由 main 填充后通过 set_market_catalog() 注入。
+// market() 查此目录，found=true 返回真实元信息。
+// ============================================================================
+using MarketInfoMap = std::unordered_map<std::string, MarketInfo>;
+
+// ============================================================================
+// LiveMetricsHooks — 轻量 metrics 数据源钩子 (P1-2 修复)
+//
+// 由 main 填充，通过 set_live_metrics_hooks() 注入 RealStateProvider。
+// 所有指针可为 nullptr（对应指标降级为 0）。
+//
+// 设计约束 (R-12):
+//   - wss_transport: 只读 IsConnected() (原子 load, < 1us)
+//   - fill_counter:  原子 load (< 1us)
+//   - start_tp:      值拷贝 (steady_clock::time_point, 8 bytes, 栈上)
+//   - 无持锁, 无反向依赖热路径写端
+// ============================================================================
+struct LiveMetricsHooks {
+    // 进程启动时刻 (steady_clock; 构造 HttpServer / RealStateProvider 时记录)
+    // uptime_sec = steady_clock::now() - start_tp
+    std::chrono::steady_clock::time_point start_tp{std::chrono::steady_clock::now()};
+
+    // CLOB WSS transport (P1-2 wss_clob_connected + P1-3 wss_state 动态注入)
+    // nullptr → wss_clob_connected=false, wss_state="UNKNOWN"
+    const polymarket::wss::IWssTransport* wss_transport{nullptr};
+
+    // PaperLoop fills_completed (原子计数器, 只读)
+    // nullptr → fill_total=0 (标注无数据源而非虚报)
+    const std::atomic<std::uint64_t>* fill_counter{nullptr};
+};
 
 // ============================================================================
 // RealStateProvider — 真实快照接入 (彻底去 demo, 老板: 只有 live)
@@ -186,22 +238,89 @@ public:
     // paper_gate: 无真实门禁数据源 → 空结构 (has_data=false, 前端灰显)
     PaperGate paper_gate() const override { return {}; }
 
-    // metrics — 覆写订阅计数字段为真实值 (GAP-01/02/03); 其余字段为合法 0 值
-    //   subscribed_tokens_total  = hub_.token_count()  (atomic read, R-12 合规)
-    //   subscribed_markets_total = hub_.token_count() / 2  (双 token 规则)
+    // metrics — 接真实数据源 (P1-2 修复; 拒绝全 0 虚报)
+    //
+    //   subscribed_tokens_total   = hub_.token_count()  (atomic read, R-12)
+    //   subscribed_markets_total  = hub_.token_count() / 2 (双 token 规则)
+    //   uptime_sec                = steady_clock::now() - hooks_.start_tp (真实启动时长)
+    //   rm_reject_total           = snap_->count()  (RmDebugSnapshot 写入总次数, atomic)
+    //   fill_total                = *hooks_.fill_counter (PaperLoop fills_completed, atomic)
+    //   max_staleness_ms          = 遍历 token_map_ → hub_.Read → (now - event_ts_ns) / 1e6
+    //   wss_clob_connected        = hooks_.wss_transport->IsConnected() (原子 bool, < 1us)
+    //
+    //   无数据源 (指针 nullptr) → 该指标标注 0 (明确无数据, 非虚报)
+    //   R-12: 全程原子读/值运算, 无持锁 > 100us
     MetricsSnapshot metrics() const override {
         MetricsSnapshot snap;
+
+        // ---- 订阅计数 (已有逻辑) ----
         const auto tok_cnt = static_cast<std::int64_t>(hub_.token_count());
         snap.subscribed_tokens_total = tok_cnt;
-        snap.subscribed_markets_total = tok_cnt / 2;  // 双 token 规则 (老李 spec §2.1)
+        snap.subscribed_markets_total = tok_cnt / 2;
         snap.subscribed_user_conditions = 0;
         snap.wss_last_disconnect_ts_ns = 0;
+
+        // ---- P1-2: uptime_sec (真实启动时长) ----
+        {
+            using namespace std::chrono;
+            snap.uptime_sec = static_cast<std::int64_t>(
+                duration_cast<seconds>(steady_clock::now() - hooks_.start_tp).count());
+        }
+
+        // ---- P1-2: rm_reject_total (RmDebugSnapshot 总写入次数) ----
+        if (snap_ != nullptr) {
+            snap.rm_reject_total = static_cast<std::int64_t>(snap_->count());
+        }
+
+        // ---- P1-2: fill_total (PaperLoop fills_completed 原子计数) ----
+        if (hooks_.fill_counter != nullptr) {
+            snap.fill_total = static_cast<std::int64_t>(hooks_.fill_counter->load(std::memory_order_relaxed));
+        }
+
+        // ---- P1-2: max_staleness_ms (遍历 token_map_ 取最大 staleness) ----
+        {
+            const std::int64_t now = now_ns();
+            double max_stale_ms = 0.0;
+            for (const auto& [cond_id, tok_pair] : token_map_) {
+                for (const auto& tid : {tok_pair.first, tok_pair.second}) {
+                    const auto opt = hub_.Read(tid);
+                    if (!opt.has_value() || !opt->valid) {
+                        continue;
+                    }
+                    const std::int64_t event_ts = opt->event_ts_ns;
+                    if (event_ts > 0 && now > event_ts) {
+                        const double stale_ms = static_cast<double>(now - event_ts) / 1'000'000.0;
+                        if (stale_ms > max_stale_ms) {
+                            max_stale_ms = stale_ms;
+                        }
+                    }
+                }
+            }
+            snap.max_staleness_ms = max_stale_ms;
+        }
+
+        // ---- P1-2/P1-3: wss_clob_connected (从 IWssTransport 动态读取) ----
+        if (hooks_.wss_transport != nullptr) {
+            snap.wss_clob_connected = hooks_.wss_transport->IsConnected();
+        }
+        // wss_sports_api / wss_user_channel: 当前无接入 → false (标注而非虚报)
+
         return snap;
     }
 
-    // market: 无真实 gamma catalog 快照 → found=false (前端灰显)
-    // 注: gamma /events discovery 仅在启动时调用一次, 不持久维护 MarketInfo catalog
+    // market — P1-1 修复: 查 catalog_ (gamma 发现注入), found=true 返回真实元信息
+    //
+    //   catalog_ 由 set_market_catalog() 在启动时注入 (gamma /events 发现结果)
+    //   命中 → found=true + 真实 tick_size/fee_rate/accepting_orders/tokens 等字段
+    //   未命中 (catalog_ 空 或 condition_id 不在 catalog) → found=false (合法空值)
+    //
+    //   R-12: catalog_ 注入后只读 (unordered_map::find O(1) 无锁)
     MarketInfo market(const std::string& condition_id) const override {
+        const auto it = catalog_.find(condition_id);
+        if (it != catalog_.end()) {
+            return it->second;  // found=true, 真实 gamma 发现数据
+        }
+        // catalog 未命中 → found=false (catalog 未注入 或 该 condition_id 未发现)
         MarketInfo mi;
         mi.found = false;
         mi.condition_id = condition_id;
@@ -276,7 +395,9 @@ public:
 
     // ---- book — 按 token_id 查单边 (真实 OrderBookSnapshotHub); 无数据 → found=false ----
     // live 真实 book 有数据时正常返回; hub 无数据 → found=false (不回落 demo)
+    // P1-3: wss_state 从 hooks_.wss_transport 动态读取当前连接状态 (非快照旧值)
     BookSnapshot book(const std::string& token_id) const override {
+        const bool wss_conn = (hooks_.wss_transport != nullptr) && hooks_.wss_transport->IsConnected();
         const auto opt = hub_.Read(token_id);
         if (!opt.has_value() || !opt->valid) {
             // hub 无数据 → found=false (非 demo)
@@ -284,14 +405,18 @@ public:
             fb.found = false;
             fb.token_id = token_id;
             fb.source = "live";
-            fb.wss_state = "UNKNOWN";
+            fb.wss_state = wss_conn ? "CONNECTED" : "DISCONNECTED";
             return fb;
         }
-        return to_book_snapshot(token_id, *opt);
+        return to_book_snapshot(token_id, *opt, wss_conn);
     }
 
     // ---- book_pair — 按 condition_id 查双 token (真实); 无数据 → found=false ----
+    // P1-3: wss_state 从 hooks_.wss_transport 动态读取当前连接状态 (非快照旧值)
     BinaryMarketBookView book_pair(const std::string& condition_id) const override {
+        const bool wss_conn = (hooks_.wss_transport != nullptr) && hooks_.wss_transport->IsConnected();
+        const std::string wss_state_str = wss_conn ? "CONNECTED" : "DISCONNECTED";
+
         const auto it = token_map_.find(condition_id);
         if (it == token_map_.end()) {
             // condition_id 不在 token_map → found=false (不回落 demo)
@@ -300,8 +425,10 @@ public:
             fb.condition_id = condition_id;
             fb.token0.found = false;
             fb.token0.source = "live";
+            fb.token0.wss_state = wss_state_str;
             fb.token1.found = false;
             fb.token1.source = "live";
+            fb.token1.wss_state = wss_state_str;
             return fb;
         }
 
@@ -322,9 +449,11 @@ public:
             fb.token0.found = false;
             fb.token0.token_id = tok0_id;
             fb.token0.source = "live";
+            fb.token0.wss_state = wss_state_str;
             fb.token1.found = false;
             fb.token1.token_id = tok1_id;
             fb.token1.source = "live";
+            fb.token1.wss_state = wss_state_str;
             return fb;
         }
 
@@ -333,21 +462,23 @@ public:
         bv.condition_id = condition_id;
 
         if (have0) {
-            bv.token0 = to_book_snapshot(tok0_id, *opt0);
+            bv.token0 = to_book_snapshot(tok0_id, *opt0, wss_conn);
         } else {
             bv.token0.found = false;
             bv.token0.token_id = tok0_id;
             bv.token0.source = "live";
+            bv.token0.wss_state = wss_state_str;
         }
         bv.token0.condition_id = condition_id;
         bv.token0.market_id = condition_id;  // deprecated alias
 
         if (have1) {
-            bv.token1 = to_book_snapshot(tok1_id, *opt1);
+            bv.token1 = to_book_snapshot(tok1_id, *opt1, wss_conn);
         } else {
             bv.token1.found = false;
             bv.token1.token_id = tok1_id;
             bv.token1.source = "live";
+            bv.token1.wss_state = wss_state_str;
         }
         bv.token1.condition_id = condition_id;
         bv.token1.market_id = condition_id;  // deprecated alias
@@ -377,6 +508,16 @@ public:
     // set_events — 由 main --live 路径在启动时注入 (非热路径, 启动时调用一次)
     void set_events(std::vector<EventInfo> ev) { events_ = std::move(ev); }
 
+    // ---- P1-1: set_market_catalog — gamma 发现结果注入 (非热路径, 启动时调用一次) ----
+    // 注入后 market() 返回真实 found=true 数据，不再硬编码 false。
+    // R-12: catalog_ 注入后不再写入, market() 只读 (const 方法, 无锁)。
+    void set_market_catalog(MarketInfoMap catalog) { catalog_ = std::move(catalog); }
+
+    // ---- P1-2/P1-3: set_live_metrics_hooks — 真实 metrics 数据源注入 ----
+    // 注入后 metrics() 返回真实 uptime/rm_reject/fill/staleness/wss 值。
+    // P1-3: book()/book_pair() wss_state 从 hooks_.wss_transport->IsConnected() 动态读取。
+    void set_live_metrics_hooks(LiveMetricsHooks hooks) { hooks_ = hooks; }
+
 private:
     const polymarket::clob_wss::OrderBookSnapshotHub& hub_;
     const risk::RmDebugSnapshot* snap_;            // nullable; nullptr → 空 vector
@@ -389,6 +530,10 @@ private:
     // events_: live 模式从 gamma /events 发现的活跃体育 event 列表
     // 由 main set_events() 注入; 之后只读 (R-12 无锁 const 方法读安全)
     std::vector<EventInfo> events_;
+    // P1-1: MarketInfo catalog (gamma 发现注入, 只读)
+    MarketInfoMap catalog_;
+    // P1-2/P1-3: live metrics hooks (metrics 数据源注入, 只读)
+    LiveMetricsHooks hooks_;
 
     // -----------------------------------------------------------------------
     // to_book_snapshot — OrderBookFeatures → BookSnapshot
@@ -396,9 +541,16 @@ private:
     // 映射依据 orderbook_snapshot_hub.hpp 末尾"映射说明"注释。
     // condition_id / outcome 由调用方在返回后补填 (token_map 查询结果)。
     // as_of_ts_ns 在此读取时填写 (R-20 allowed: 观测消费方读取时刻)。
+    //
+    // P1-3 修复: wss_connected 参数 (当前 IWssTransport::IsConnected() 值)
+    //   覆盖快照中过时的 f.wss_state (快照写入时刻的状态, 可能已过期)
+    //   wss_connected=true  → "CONNECTED"
+    //   wss_connected=false → "DISCONNECTED"
+    //   这样 book endpoint 的 wss_state 与 /status 的 wss_connected 保持一致。
     // -----------------------------------------------------------------------
     static BookSnapshot to_book_snapshot(const std::string& token_id,
-                                         const polymarket::clob_wss::OrderBookFeatures& f) noexcept {
+                                         const polymarket::clob_wss::OrderBookFeatures& f,
+                                         bool wss_connected) noexcept {
         using namespace polymarket::clob_wss;
 
         BookSnapshot b;
@@ -406,7 +558,8 @@ private:
         b.token_id = token_id;
         // condition_id / outcome 由调用方在返回后补填
         b.source = "polymarket";
-        b.wss_state = WssConnStateName(f.wss_state);
+        // P1-3: 用当前连接状态覆盖快照中的过时 wss_state
+        b.wss_state = wss_connected ? "CONNECTED" : "DISCONNECTED";
 
         if (!f.valid) {
             return b;

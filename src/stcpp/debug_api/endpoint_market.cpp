@@ -118,6 +118,11 @@ static std::string serialize_book_snapshot(const BookSnapshot& b) {
     // DEPRECATED alias
     s += ",\"market_id\":";
     s += json::str(b.market_id);
+    // wss_state / source: 连接状态元数据, 无论 found 均输出 (P1-3: 前端判断依据)
+    s += ",\"wss_state\":";
+    s += json::str(b.wss_state);
+    s += ",\"source\":";
+    s += json::str(b.source);
     if (b.found) {
         s += ",\"best_bid\":";
         s += json::num(b.best_bid);
@@ -133,10 +138,6 @@ static std::string serialize_book_snapshot(const BookSnapshot& b) {
         s += json::i64(b.sequence_no);
         s += ",\"gap_count\":";
         s += json::i64(b.gap_count);
-        s += ",\"wss_state\":";
-        s += json::str(b.wss_state);
-        s += ",\"source\":";
-        s += json::str(b.source);
         // 4 时间戳 (R-20)
         s += ",\"event_ts\":";
         s += json::i64(b.ts.event_ts_ns);
@@ -209,6 +210,13 @@ static void register_book(httplib::Server& svr, const HttpServer& hs) {
             body += json::i64(bv.ts.ingestion_ts_ns);
             body += ",\"as_of_ts_ns\":";
             body += json::i64(bv.ts.as_of_ts_ns);
+            body += ",\"token0\":";
+            body += serialize_book_snapshot(bv.token0);
+            body += ",\"token1\":";
+            body += serialize_book_snapshot(bv.token1);
+        } else {
+            // P1-3: found=false 时仍输出 token0/token1 的 wss_state (前端判断连接状态)
+            // 前端可据此在"数据未就绪"时仍显示正确的 WSS 连接指示
             body += ",\"token0\":";
             body += serialize_book_snapshot(bv.token0);
             body += ",\"token1\":";

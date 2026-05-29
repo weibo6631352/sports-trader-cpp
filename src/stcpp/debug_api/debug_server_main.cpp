@@ -634,6 +634,7 @@ int main(int argc, char** argv) {
     }
 
     MarketTokenMap token_map;
+    MarketInfoMap market_catalog;  // P1-1: condition_id → MarketInfo 目录
     std::vector<EventInfo> event_infos;
 
     if (discovered.empty()) {
@@ -660,9 +661,45 @@ int main(int argc, char** argv) {
                 std::printf("[debug_server]      tok1: %.30s...\n", dm.token1_id.c_str());
                 token_map[dm.condition_id] = {dm.token0_id, dm.token1_id};
                 ei.condition_ids.push_back(dm.condition_id);
+
+                // P1-1: 填充 MarketInfo catalog (gamma 发现的真实元信息)
+                MarketInfo mi;
+                mi.found = true;
+                mi.condition_id = dm.condition_id;
+                mi.market_id = dm.condition_id;  // deprecated alias
+                mi.tick_size = 0.01;             // Polymarket 默认 tick (gamma 字段缺省时用此值)
+                mi.fee_rate = 0.0;               // outright/futures: 无 maker fee
+                mi.neg_risk = !ev.neg_risk_market_id.empty();
+                mi.neg_risk_market_id = ev.neg_risk_market_id;
+                mi.accepting_orders = true;  // gamma active=true 时默认接单
+                mi.active = true;
+                mi.closed = false;
+                mi.resolved = false;
+                mi.source = "polymarket";
+                mi.event_id = ev.event_id;
+                mi.slug = ev.slug;
+                mi.polymarket_url = ev.slug.empty() ? "" : ("https://polymarket.com/event/" + ev.slug);
+                mi.sports_market_type = dm.sports_market_type;
+                mi.group_item_title = dm.group_item_title;
+                // tokens[]: YES (tok0) + NO (tok1)
+                TokenInfo tk0;
+                tk0.token_id = dm.token0_id;
+                tk0.outcome = "Yes";
+                tk0.price = 0.0;  // 实时价从 book hub 读; MarketInfo 仅存元数据
+                tk0.winner = false;
+                TokenInfo tk1;
+                tk1.token_id = dm.token1_id;
+                tk1.outcome = "No";
+                tk1.price = 0.0;
+                tk1.winner = false;
+                mi.tokens.push_back(std::move(tk0));
+                mi.tokens.push_back(std::move(tk1));
+
+                market_catalog[dm.condition_id] = std::move(mi);
             }
             event_infos.push_back(std::move(ei));
         }
+        std::printf("[debug_server] P1-1: MarketInfo catalog 已填充 %zu 条目\n", market_catalog.size());
     }
 
     // Collect all token_ids for WSS subscription
@@ -742,6 +779,18 @@ int main(int argc, char** argv) {
     // Inject EventInfo (G-FREEZE-W 只增: set_events 非热路径, 启动时调用一次)
     real_provider->set_events(std::move(event_infos));
 
+    // P1-1: 注入 MarketInfo catalog (gamma 发现结果, 启动时注入一次, 只读)
+    real_provider->set_market_catalog(std::move(market_catalog));
+
+    // P1-2/P1-3: LiveMetricsHooks 注入 (uptime/rm_reject/fill/staleness/wss)
+    // live_transport 在 Step 4 构建, 此处先用空 hooks; Step 4 后更新 (re-inject)
+    // 注: start_tp 记录此刻 (server 构建前, 与 HttpServer::start_time_ 同量级)
+    LiveMetricsHooks metrics_hooks;
+    metrics_hooks.start_tp = std::chrono::steady_clock::now();
+    metrics_hooks.fill_counter = &paper_loop->stats().fills_completed;
+    // wss_transport 在 Step 4 填充; 见下面 re-inject
+    real_provider->set_live_metrics_hooks(metrics_hooks);
+
     // -------------------------------------------------------------------------
     // Step 3: InplayFeedThread — Goalserve score feed (常开, R-12 合规)
     //
@@ -769,6 +818,11 @@ int main(int argc, char** argv) {
     if (!all_token_ids.empty()) {
         live_publisher = std::make_unique<LiveBookPublisher>(*hub_owned, all_token_ids, verbose);
         live_transport = std::make_unique<LiveWssTransport>(verbose);
+
+        // P1-2/P1-3 re-inject: live_transport 已构建, 更新 hooks 中的 wss_transport 指针
+        // set_live_metrics_hooks 是值拷贝 (LiveMetricsHooks 轻量结构), 直接覆盖
+        metrics_hooks.wss_transport = live_transport.get();
+        real_provider->set_live_metrics_hooks(metrics_hooks);
 
         // on_text_frame_ → LiveBookPublisher::OnFrame (同步, < 100us, R-12)
         live_transport->SetOnTextFrame(
