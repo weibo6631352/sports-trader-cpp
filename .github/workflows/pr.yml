@@ -563,6 +563,22 @@ jobs:
       - name: Run worktree_commit_check.py
         run: python3 tests/ci_grep/worktree_commit_check.py
 
+  ci-grep-secret-blacklist:
+    # 小白 live-external-data 审计 §5: secret / 凭证 / TLS insecure 反模式闸 (5 条 G1-G5)
+    # G1 secret 字段进 debug_api 观测层 / G2 secret 进日志-异常串 / G3 credentialed payload-URL 进日志
+    # G4 TLS insecure (verify_none/--insecure/verify=false) / G5 secret 明文值硬编码进 git
+    # 缺口: 现有 17+ grep job 无一条查 secret. 真接 PM WSS (user auth) + Goalserve (URL key) +
+    #       boost.beast TLS 前补齐. 任一命中 FAIL block (CLAUDE.md §8 红线: 私钥进日志→权限暂停).
+    name: secret/凭证/TLS insecure 反模式 (5 条, 小白审计 §5, FAIL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - name: Run secret_blacklist.py
+        run: python3 tests/ci_grep/secret_blacklist.py
+
   ci-grep-gm-merge-audit:
     # ADR-024 §6 GM merge commit message 格式 WARN (老郭 spec)
     # GM 老雷 merge 时 commit message 建议含 "merge: <persona> <Wave NN>"
