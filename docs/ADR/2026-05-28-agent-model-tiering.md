@@ -3,7 +3,7 @@
 - **ID:** ADR-009
 - **Date:** 2026-05-28 (W5 末)
 - **Owner:** 老雷 (GM) 拍板
-- **Status:** Accepted
+- **Status:** ⚠️ Superseded by [ADR-009 v3](2026-05-29-agent-model-tiering-v3.md) (2026-05-29 老板推翻省 token 立场, 改管理层+顾问 Opus 4.8 / IC Sonnet 4.6)
 - **触发:** 老板 verbatim "开发人员一般情况使用 Sonnet only 模型就够了, 只有管理层以上才默认更高的模型, 避免浪费我的 claude token"
 
 ---

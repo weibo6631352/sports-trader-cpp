@@ -149,13 +149,16 @@ docs/
 每个 sub-agent 召唤时按 `.claude/agents/NN-<name>.md` 中的 persona 与边界行事。约束：
 
 - **工具：** Read / Grep / Glob / Bash / Edit / Write
-- **Model 分级 (ADR-009 v2, 老板 2026-05-28 二次校正 verbatim):**
-  - v1 (错): "管理层以上才默认更高的模型, 避免浪费我的 claude token" → GM 误解为 9 管理层 Opus / 48 IC Sonnet
-  - **v2 (对)**: "管理层以上默认 4.7 就够了, 除非很有必要, 一般没必要用 Opus 浪费 token"
-  - **全员默认 Sonnet 4.6** (57 persona 全部, 含 GM / CPO / HR / 5 主管 / F 协调 / 顾问 / IC)
-  - **Opus 仅紧急例外**: 紧急 P0 < 2h + 跨多模块 / 重大架构 ADR (跨 ≥ 3 单元) / 重大事故指挥
-  - 派单 prompt 升 Opus 必须显式标 `model: opus (例外: <理由>)`, 老胡周报 §6 监控 Opus 使用次数 (目标 < 5% / sprint)
-  - 不允许的 Opus 理由: 管理层身份 (v1 错根因) / 我觉得 Sonnet 不够好 / 这个 task 复杂 / 撰写一般 ADR / 主管周同步纪要 / 代码 review
+- **Model 分级 (ADR-009 v3, 老板 2026-05-29 verbatim — 推翻 v2):**
+  - **老板原话 (2026-05-29):** "所有管理层以上员工用 claude 4.8 模型, 以下员工用 claude 4.7。"（IC 档老板随即口头校正 4.7 → "还是 4.6 吧"；顾问层老板定为算管理层档 4.8）
+  - v1/v2 演进史 (已废): v1 误解为 9 管理层 Opus / 48 IC Sonnet → v2 "全员默认 Sonnet 4.6, Opus 仅例外"（省 token）。**v3 推翻 v2 省 token 立场, 改回分档。**
+  - **管理层档 → Opus 4.8 (`model: opus`)**, 共 16 persona:
+    - 9 管理层: GM 老雷 / CPO 老钱 / HR 小林 / 5 主管 (老周·老韩·小梁·小余·老胡) / F 协调 老郭
+    - 7 顾问: 老张 / 老何 / 老高 / 小邓 / 老叶 / 老徐 / 小白（老板 2026-05-29 定: 顾问算管理层档）
+  - **IC 档 → Sonnet 4.6 (`model: sonnet`)**, 共 32 persona（其余全部 IC, 含 10 IC pool 小卢）
+  - **落地: 每个 persona file frontmatter 已写死 `model:` 字段** (16 opus / 32 sonnet), GM 召唤 sub-agent 默认随 frontmatter, 无需每次显式传 model
+  - **临时升降档例外**: 派单时显式传 `model:` 覆盖 frontmatter, prompt 第一行标理由 (e.g. 紧急 P0 IC 临时升 opus / 管理层做琐碎活临时降 sonnet), 老胡周报 §6 监控
+  - **IC 复杂工作酌情升 4.8 (老板 2026-05-29 三次补充, verbatim "如果非管理人员接收到的是复杂工作, 可看情况给他使用 claude4.8 模型")**: IC 默认 Sonnet 4.6, 但**派单方 (GM/主管) 判断该 task 确属复杂** (跨模块设计 / 数值算法 / 深度 audit / 架构敏感实现) 时, 可酌情临时升 Opus 4.8。**此条推翻 v2 "task 复杂不许升 Opus" 的禁令** — v2 是省 token 立场, 已废。判断权在派单的 GM/主管, prompt 第一行标 `model: opus (例外: IC 复杂工作 — <具体复杂点>)`
 - **语言纪律（2026-05-28 GM 最终版，无 Rust）：**
   - **生产代码全部 C++20**：热路径、决策、网络、订单、风控、paper engine、**signer**、长跑常驻服务，全部 C++
   - **Python 仅两用：**
@@ -233,4 +236,4 @@ docs/
 
 ---
 
-**最后更新：** 2026-05-28 by 老雷 (12 节由老吴 2026-05-28 补)
+**最后更新：** 2026-05-29 by 老雷 (§10 Model 分级 v3 — 管理层+顾问 Opus 4.8 / IC Sonnet 4.6, 老板 2026-05-29 verbatim)
