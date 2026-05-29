@@ -1118,6 +1118,46 @@ gtest_discover_tests(test_goalserve_adapter
     PROPERTIES LABELS "unit;goalserve;adapter;vendor-agnostic;adr-037"
 )
 
+# 小肖 ADR-037 配套: FairValueEstimator v0.1 — 自估 fair-value 定价模型单测
+#   T01: 归一性 — sum(probs) = 1.0 (± 1e-12)
+#   T02: 边界 clamp — 极端比分差 probs ∈ (kProbEps, kProbMax)
+#   T03: 单调性 — home leads → p_yes > 0.5, 时钟越靠后领先优势越大
+#   T04: NaN 防护 — elapsed_sec=-1 → valid=true, probs finite
+#   T05: 赛前先验 — NotStarted 0:0 → p_yes ≈ 0.5
+#   T06: 时钟效应单调性 — 同领先, 越晚时钟 p_yes 越高
+#   T07: 订单簿混合 — microprice 有效时 book_blend=0.20, 拉扯先验
+#   T08: nullptr book_row → book_blend=0, 纯先验
+#   T09: NaN/Inf/0/1 microprice → 退化纯先验
+#   T10: safe_sigmoid 精度 (sigmoid(0)=0.5, sigmoid(ln3)=0.75)
+#   T11: normalize2 极端输入 (NaN/Inf/very small)
+#   T12: clamp_prob 边界 (0.0/1.0/NaN/Inf)
+#   T13: FairValueEstimator facade 正常运行
+#   T14: IFairValueModel 多态替换
+#   T15: total_game_seconds 运动映射
+add_executable(test_fair_value_estimator
+    test_fair_value_estimator.cpp
+)
+target_link_libraries(test_fair_value_estimator PRIVATE
+    GTest::gtest_main
+    stcpp_pricing
+)
+target_compile_options(test_fair_value_estimator PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
+target_include_directories(test_fair_value_estimator PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_fair_value_estimator PRIVATE cxx_std_20)
+target_compile_definitions(test_fair_value_estimator PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_fair_value_estimator
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;pricing;fair-value;numerical;adr-037"
+)
+
 # 小田 ADR-037: Feature Store Consumer Contract v1.0
 #   T1:  FeatureStoreGameRow R-20 4 ts chain ok + 4 violations
 #   T2:  FeatureStoreGameRow PIT ok / violation (as_of_ts <= now_ns)
