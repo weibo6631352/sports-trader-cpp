@@ -5,6 +5,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstring>  // std::memcpy (Wave 81: explicit after clang-format include reorder)
 
 #include <gtest/gtest.h>
 

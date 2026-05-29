@@ -15,6 +15,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstring>  // std::memcpy (Wave 81: explicit after clang-format include reorder)
 #include <string>
 #include <vector>
 
