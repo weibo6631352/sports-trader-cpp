@@ -1,0 +1,71 @@
+name: Close ci-fail Issue on green main
+
+# Wave 101 Task #6 — ADR-033 候选: workflow_run cleanup link
+# 触发: 老板 5/29 verbatim "本地远端 worktree workflow 分支 联动 反馈 自动化"
+#
+# 策略:
+#   - main 上 PR CI / Linux CI / Perf 全 pass → 自动关闭对应 ci-fail Issue
+#   - 同名 workflow 的 open ci-fail Issue (commit SHA 匹配 or 最近 open) → close + comment
+#   - 防止 notify-on-main-failure.yml 开的 Issue 永久挂账 (无人关闭 = 噪音)
+#
+# 关联:
+#   - notify-on-main-failure.yml (开 Issue)
+#   - docs/ADR/2026-06-W4-adr-032-local-first-ci-strategy.md §3 策略 3
+#   - ADR-033 候选 (老高 W10 W3 主审, 老郭 ACCEPTED)
+#
+# KPI (ADR-033 §4):
+#   - ci-fail Issue 自动关闭率 >= 90%
+#   - MTTR (ci-fail Issue 存活时间) <= 30 min (正常 main CI 绿)
+#
+# 维护人: 老高
+
+on:
+  workflow_run:
+    workflows: ["PR Checks", "PR Linux Checks (ADR-032 v2)", "Perf Regression"]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  issues: write
+  actions: read
+
+jobs:
+  close-on-green:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close open ci-fail Issues for this workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO=${{ github.repository }}
+          RUN_NAME="${{ github.event.workflow_run.name }}"
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          RUN_URL="https://github.com/$REPO/actions/runs/${{ github.event.workflow_run.id }}"
+
+          echo "Green run: $RUN_NAME @ ${HEAD_SHA:0:7}"
+
+          # 查找 open ci-fail Issues 标题含同名 workflow
+          ISSUES=$(gh issue list \
+            --repo "$REPO" \
+            --label ci-fail \
+            --state open \
+            --search "$RUN_NAME in:title" \
+            --json number,title \
+            --jq '.[] | "\(.number) \(.title)"')
+
+          if [ -z "$ISSUES" ]; then
+            echo "No open ci-fail Issues for '$RUN_NAME', nothing to close"
+            exit 0
+          fi
+
+          echo "$ISSUES" | while IFS=' ' read -r issue_num issue_title; do
+            echo "Closing Issue #$issue_num: $issue_title"
+            gh issue close "$issue_num" \
+              --repo "$REPO" \
+              --comment "main CI green (${HEAD_SHA:0:7}): $RUN_URL
+
+自动关闭 — $RUN_NAME 已通过, ci-fail 消除.
+ADR-032 §3 策略 3 + ADR-033 workflow_run cleanup link." \
+              || echo "WARN: failed to close Issue #$issue_num, skip"
+          done
