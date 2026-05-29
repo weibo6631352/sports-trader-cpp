@@ -87,7 +87,9 @@ protected:
         rm_->set_state(RmState::RUNNING);
     }
 
-    // v0.5 make_ok_intent: condition_id + token_id + outcome + side
+    // v0.6 make_ok_intent: condition_id + token_id + outcome + side + timestamp_ms (V2)
+    // Wave 3: 加 timestamp_ms (V2 CLOB 必须非零, ∈ [now_ms-60s, now_ms+5s])
+    //         metadata / builder 有 OrderIntent 默认值 (bytes32(0) hex, 合法格式)
     OrderIntent make_ok_intent(std::string sig = "sig_default") {
         auto const now = ::stcpp::infra::wal::pit::NowRealtimeNs();
         OrderIntent it;
@@ -108,6 +110,9 @@ protected:
         it.book_snapshot_ts_ns = now - 200 * NS_PER_MS;
         it.tick_size = 0.01;
         it.is_close = false;
+        // v0.6 Wave 3: timestamp_ms = 当前 ms (V2 CLOB 非零, 在 [now_ms-60s, now_ms+5s] 窗口内)
+        it.timestamp_ms = now / NS_PER_MS;  // ns → ms, 正好在窗口内
+        // metadata / builder 使用 OrderIntent 默认值 (bytes32(0) = 合法 ^0x[0-9a-f]{64}$ 格式)
         return it;
     }
 

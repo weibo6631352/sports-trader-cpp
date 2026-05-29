@@ -256,9 +256,12 @@ static_assert(threshold_of(MarketState::SETTLED).halt_ms <= 30'000);
 
 // ---------- AuditEmitter 抽象 (RM-internal port; W5 接 obs::AuditEmitter) ----
 
-// AuditRecord v0.5 (老沈 W9 Wave 57, 老唐 WAL schema v1.3 联动 stub)
-// WAL schema v1.3: market_id → condition_id, + token_id + outcome + side
-// ABI lock v1.7 stub: sizeof(AuditRecord) static_assert 在老唐 WAL schema v1.3 完成后添加
+// AuditRecord v0.6 (老沈 Wave 3, 老唐 WAL schema v1.4 对齐)
+// v0.5: market_id → condition_id, + token_id + outcome + side
+// v0.6 Wave 3: + timestamp_ms + metadata + builder (V2 CLOB 字段透传, spec §2.3.6)
+// cite: laoshen-rm-v0.5-field-freeze-spec-v1.md §2.3.6 必填字段表
+// cite: laohan-rm-v0.5-integration-spec-v1.md §4 T-v06 audit 要求
+// ABI lock v1.8 stub: sizeof(AuditRecord) static_assert 在老唐 WAL schema v1.4 完成后添加
 struct AuditRecord {
     std::array<std::uint8_t, 16> audit_id{};
     std::int64_t event_ts_ns{0};
@@ -275,6 +278,10 @@ struct AuditRecord {
     std::uint8_t outcome{0};   // Outcome enum 底层值 (← v0.5 新增)
     std::uint8_t side_val{0};  // Side enum 底层值 (← v0.5 新增)
     std::string signal_id;
+    // v0.6 Wave 3: V2 CLOB 字段透传 (AuditRecord v1.4 对齐, spec §2.3.6 必填)
+    std::int64_t timestamp_ms{0};   // ← v0.6 Wave 3 新增 (V2 EIP-712 Order.timestamp, ms)
+    std::string metadata;           // ← v0.6 Wave 3 新增 (bytes32 hex, V2 Order.metadata)
+    std::string builder;            // ← v0.6 Wave 3 新增 (bytes32 hex, V2 Order.builder)
 };
 
 class AuditEmitter {
@@ -292,7 +299,13 @@ struct RiskConfig {
     std::int64_t market_exposure_cap_usdc = 50'000;  // v0.5: per-condition cap
     std::int64_t per_outcome_cap_usdc = 25'000;      // v0.5 新增: per-token cap (R6.2b)
     std::int64_t bankroll_usdc = 100'000;
-    std::int64_t daily_loss_halt_usdc = 5'000;
+    // DD 软 / 硬熔断阈值 (GM §9 裁决 #1: -3% 软 / -5% 硬)
+    // daily_loss_soft_pct: 跌破后拒新开仓 (is_close=false), 放平仓 (is_close=true)
+    // daily_loss_hard_pct: 跌破后 → HALTED, 全拒含平仓, 人工解除
+    // daily_loss_halt_usdc: 保留向后兼容 (旧测试); 若 >0 则覆盖 hard_pct 绝对值
+    double daily_loss_soft_pct = 0.03;              // v0.6 Wave 3 新增: -3% 软熔断
+    double daily_loss_hard_pct = 0.05;              // v0.6 Wave 3 新增: -5% 硬 kill
+    std::int64_t daily_loss_halt_usdc = 5'000;      // 旧字段保留兼容 (绝对值, 覆盖 hard_pct)
     std::int32_t consec_loss_halt_count = 5;
     std::int32_t excessive_slippage_bps = 200;  // 小肖 v1 默认
     double edge_ci_lower_floor = 0.0;           // CI 下界 > 0 才放行

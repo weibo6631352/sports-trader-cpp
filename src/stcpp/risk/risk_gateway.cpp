@@ -1,5 +1,12 @@
-// stcpp/risk/risk_gateway.cpp — RiskGateway v0.5 (老沈 W9 Wave 57 P0)
-//   + v0.4 origin: W5 Wave 24 ADR-004 patch (老沈, 2026-05-28)
+// stcpp/risk/risk_gateway.cpp — RiskGateway v0.6 (老沈 Wave 3 P0)
+//   + v0.5 origin: W9 Wave 57 (老沈, 2026-05-28)
+//
+// Wave 3 实施 (2026-05-29, 老沈):
+//   D1: DD -3% 软熔断 / -5% 硬 kill 分层 (GM §9 裁决 #1)
+//   D2: check_invalid_intent_ TS_V2_MISSING/STALE/FUTURE 窗口校验 (laohan spec R3.6-R3.8)
+//   D3: check_invalid_intent_ INVALID_BYTES32_FORMAT 格式校验 (laohan spec R3.9-R3.10)
+//   D4: check_signal_ fee estimate net_edge 校验 (R-fee-2, kSportsTakerFeeRate=0.03)
+//   D5: emit_audit_ 透传 timestamp_ms/metadata/builder → AuditRecord v1.4
 //
 // v0.5 变更:
 //   OrderIntent: market_id → condition_id, +token_id, +outcome, is_buy → side
@@ -94,6 +101,25 @@ namespace {
     }
     return true;
 }
+
+// v0.6 Wave 3: bytes32 hex 格式校验 (spec R3.9/R3.10)
+// 合法: ^0x[0-9a-f]{64}$ (66 chars, 小写 hex, 0x 前缀)
+// cite: laohan-rm-v0.5-integration-spec-v1.md §7.2 R3.9/R3.10
+[[nodiscard]] bool is_valid_bytes32_hex(std::string const& s) noexcept {
+    if (s.size() != 66u) return false;
+    if (s[0] != '0' || s[1] != 'x') return false;
+    for (std::size_t i = 2; i < 66u; ++i) {
+        char c = s[i];
+        bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+        if (!ok) return false;
+    }
+    return true;
+}
+
+// v0.6 Wave 3 (R-fee-2): sports taker fee rate
+// 硬编码常量, 不入 RiskConfig (防配置注入 — spec §5.3)
+// cite: laohan-rm-v0.5-integration-spec-v1.md §2.3.2 + §5.3
+inline constexpr double kSportsTakerFeeRate = 0.03;
 
 }  // namespace
 
@@ -274,6 +300,29 @@ bool RiskGateway::check_invalid_intent_(OrderIntent const& it, RiskDecision& d) 
     if (!is_valid_token_id(it.token_id))
         return fail(InvalidIntentSubReason::INVALID_TOKEN_ID_FORMAT);
 
+    // (i) v0.6 Wave 3: timestamp_ms V2 校验 (laohan spec R3.6/R3.7/R3.8)
+    // RM 内部禁止 now() 替代 timestamp_ms — 仅用于 PIT 校验基准 (spec §5.2)
+    {
+        auto const now_ms = now / 1'000'000LL;  // ns → ms
+        // R3.6: timestamp_ms == 0 → TS_V2_MISSING
+        if (it.timestamp_ms == 0)
+            return fail(InvalidIntentSubReason::TS_V2_MISSING);
+        // R3.7: timestamp_ms < now_ms - 60_000 → TS_V2_STALE
+        if (it.timestamp_ms < now_ms - 60'000LL)
+            return fail(InvalidIntentSubReason::TS_V2_STALE);
+        // R3.8: timestamp_ms > now_ms + 5_000 → TS_V2_FUTURE
+        if (it.timestamp_ms > now_ms + 5'000LL)
+            return fail(InvalidIntentSubReason::TS_V2_FUTURE);
+    }
+
+    // (j) v0.6 Wave 3: metadata bytes32 格式校验 (laohan spec R3.9)
+    if (!is_valid_bytes32_hex(it.metadata))
+        return fail(InvalidIntentSubReason::INVALID_BYTES32_FORMAT);
+
+    // (k) v0.6 Wave 3: builder bytes32 格式校验 (laohan spec R3.10)
+    if (!is_valid_bytes32_hex(it.builder))
+        return fail(InvalidIntentSubReason::INVALID_BYTES32_FORMAT);
+
     return false;
 }
 
@@ -401,12 +450,44 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
         d.reject = RejectCode::INSUFFICIENT_BANKROLL;
         return true;
     }
-    // DAILY_LOSS_HALT
+
+    // DD 软 / 硬熔断 (GM §9 裁决 #1: -3% 软 / -5% 硬)
+    // cite: laohan-rm-v0.5-integration-spec-v1.md §2.3.3 + laoshen-rm-v0.5-field-freeze-spec-v1.md §2.2
+    // 硬 kill 的 set_state(HALTED) 在 evaluate() 主路径中执行 (check_position_caps_ 是 const)
+    // 此处返回 DAILY_LOSS_HALT; evaluate() 检测后触发状态迁移
     auto const pnl = daily_pnl_usdc_.load(std::memory_order_acquire);
-    if (pnl < 0 && -pnl >= cfg_.daily_loss_halt_usdc) {
-        d.reject = RejectCode::DAILY_LOSS_HALT;
-        return true;
+    if (pnl < 0) {
+        auto const loss = -pnl;  // loss > 0
+
+        // 硬阈值: daily_loss_halt_usdc 旧字段绝对值 (>0 时覆盖 hard_pct)
+        // 若旧字段为 0, 则用 hard_pct × bankroll
+        std::int64_t hard_threshold = 0;
+        if (cfg_.daily_loss_halt_usdc > 0) {
+            hard_threshold = cfg_.daily_loss_halt_usdc;
+        } else {
+            hard_threshold = static_cast<std::int64_t>(
+                static_cast<double>(br) * cfg_.daily_loss_hard_pct);
+        }
+
+        // 软阈值: daily_loss_soft_pct × bankroll
+        std::int64_t const soft_threshold = static_cast<std::int64_t>(
+            static_cast<double>(br) * cfg_.daily_loss_soft_pct);
+
+        if (loss >= hard_threshold) {
+            // -5% 硬 kill: 返回 DAILY_LOSS_HALT; evaluate() 主路径负责 set_state(HALTED)
+            d.reject = RejectCode::DAILY_LOSS_HALT;
+            return true;
+        }
+        if (loss >= soft_threshold) {
+            // -3% 软熔断: 拒新开仓 (is_close=false), 放行平仓 (is_close=true)
+            if (!it.is_close) {
+                d.reject = RejectCode::DAILY_LOSS_HALT;
+                return true;
+            }
+            // is_close=true → 放行 (继续后续检查)
+        }
     }
+
     // CONSEC_LOSS_HALT
     auto const cl = consec_loss_.load(std::memory_order_acquire);
     if (cl >= cfg_.consec_loss_halt_count) {
@@ -452,19 +533,41 @@ bool RiskGateway::check_liquidity_(OrderIntent const& it, RiskDecision& d) const
     return false;
 }
 
-// 8. signal
+// 8. signal (含 fee estimate R-fee-2)
+// cite: laohan-rm-v0.5-integration-spec-v1.md §2.3.2 KELLY_OVERSIZE
+// fee estimate: 局部变量, 不写 OrderIntent / SignedOrder / EIP-712 (spec §5.3)
 bool RiskGateway::check_signal_(OrderIntent const& it, RiskDecision& d) const noexcept {
     std::lock_guard<std::mutex> g(s_->mu);
     auto ci_it = s_->signal_edge_ci_lower.find(it.signal_id);
     if (ci_it != s_->signal_edge_ci_lower.end()) {
-        if (ci_it->second <= cfg_.edge_ci_lower_floor) {
+        double const edge_ci_lower = ci_it->second;
+
+        if (edge_ci_lower <= cfg_.edge_ci_lower_floor) {
             d.reject = RejectCode::EDGE_CI_NEGATIVE;
             return true;
         }
-        auto const edge_bps = static_cast<std::int32_t>(ci_it->second * 10'000.0);
+
+        // Slippage check (existing)
+        auto const edge_bps = static_cast<std::int32_t>(edge_ci_lower * 10'000.0);
         if (edge_bps < d.slippage_bps) {
             d.reject = RejectCode::EDGE_NEGATED_BY_SLIPPAGE;
             return true;
+        }
+
+        // R-fee-2: fee estimate net_edge 校验 (Wave 3 新增)
+        // sports_taker_fee = size × kSportsTakerFeeRate × p × (1-p)
+        // net_edge_after_fee = edge_ci_lower - fee / size
+        //   = edge_ci_lower - kSportsTakerFeeRate × p × (1-p)
+        // 注: fee 是局部变量, 不写出 intent/signedorder/eip712 (spec §5.3 安全隔离)
+        // kSportsTakerFeeRate 硬编码常量, 不入 RiskConfig (防配置注入)
+        {
+            double const p = it.price;
+            double const fee_per_unit = kSportsTakerFeeRate * p * (1.0 - p);
+            double const net_edge_after_fee = edge_ci_lower - fee_per_unit;
+            if (net_edge_after_fee <= cfg_.edge_ci_lower_floor) {
+                d.reject = RejectCode::EDGE_NEGATED_BY_SLIPPAGE;  // 复用 (spec §2.3.2)
+                return true;
+            }
         }
     }
     return false;
@@ -483,7 +586,9 @@ bool RiskGateway::check_strategy_decayed_(OrderIntent const& it, RiskDecision& d
     return false;
 }
 
-// emit_audit_ (v0.5: market_id → condition_id + token_id + outcome + side)
+// emit_audit_ (v0.6 Wave 3: + timestamp_ms + metadata + builder 透传)
+// cite: laoshen-rm-v0.5-field-freeze-spec-v1.md §2.3.6 必填字段 + 可追溯红线
+// APPROVED 和 REJECTED 均必须记录 timestamp_ms/metadata/builder (spec §2.3.6 末注)
 bool RiskGateway::emit_audit_(OrderIntent const& it, RiskDecision& d) noexcept {
     AuditRecord rec{};
     rec.audit_id = d.audit_id;
@@ -494,11 +599,15 @@ bool RiskGateway::emit_audit_(OrderIntent const& it, RiskDecision& d) noexcept {
     rec.reject = d.reject;
     rec.sub_reason = d.sub_reason;
     rec.decision = d.decision;
-    rec.condition_id = it.condition_id;                   // v0.5: renamed from market_id
-    rec.token_id = it.token_id;                           // v0.5: new
-    rec.outcome = static_cast<std::uint8_t>(it.outcome);  // v0.5: new
-    rec.side_val = static_cast<std::uint8_t>(it.side);    // v0.5: new
+    rec.condition_id = it.condition_id;                    // v0.5: renamed from market_id
+    rec.token_id = it.token_id;                            // v0.5: new
+    rec.outcome = static_cast<std::uint8_t>(it.outcome);   // v0.5: new
+    rec.side_val = static_cast<std::uint8_t>(it.side);     // v0.5: new
     rec.signal_id = it.signal_id;
+    // v0.6 Wave 3: V2 CLOB 字段透传 (AuditRecord v1.4 §2.3.6 必填)
+    rec.timestamp_ms = it.timestamp_ms;    // V2 EIP-712 Order.timestamp
+    rec.metadata = it.metadata;            // bytes32 hex (V2 Order.metadata)
+    rec.builder = it.builder;             // bytes32 hex (V2 Order.builder, optional)
     if (!emitter_)
         return true;
     return emitter_->emit(rec);
@@ -546,6 +655,20 @@ RiskDecision RiskGateway::evaluate(OrderIntent const& intent) noexcept {
     }
     // ADR-004: position_caps 前移 (红线先于市场客观状态)
     if (check_position_caps_(intent, d)) {
+        // DD 硬 kill 升级: DAILY_LOSS_HALT + 损失超 hard_threshold → HALTED
+        // check_position_caps_ 是 const, 状态迁移在此处执行
+        if (d.reject == RejectCode::DAILY_LOSS_HALT) {
+            auto const br = bankroll_usdc_.load(std::memory_order_acquire);
+            auto const pnl = daily_pnl_usdc_.load(std::memory_order_acquire);
+            if (pnl < 0) {
+                std::int64_t hard_threshold = (cfg_.daily_loss_halt_usdc > 0)
+                    ? cfg_.daily_loss_halt_usdc
+                    : static_cast<std::int64_t>(static_cast<double>(br) * cfg_.daily_loss_hard_pct);
+                if (-pnl >= hard_threshold) {
+                    state_.store(RmState::HALTED, std::memory_order_release);
+                }
+            }
+        }
         reject_here();
         return d;
     }

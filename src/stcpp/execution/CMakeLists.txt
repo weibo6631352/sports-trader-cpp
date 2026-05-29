@@ -16,5 +16,13 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     target_compile_definitions(stcpp_execution_paper PRIVATE
         STCPP_EXEC_MODE_paper=1
     )
-    target_link_libraries(stcpp_execution_paper PUBLIC stcpp_infra_wal)
+    # Wave 3: MatchWithBook() 依赖 stcpp_microstructure (FillRateModel::compute_from_clob_book)
+    target_link_libraries(stcpp_execution_paper PUBLIC
+        stcpp_infra_wal
+        stcpp_microstructure
+    )
+    # Wave 3: compute_from_clob_book 内含 std::exp (-cmath), 关闭 double-promotion 同 microstructure
+    target_compile_options(stcpp_execution_paper PRIVATE
+        -Wno-double-promotion
+    )
 endif()

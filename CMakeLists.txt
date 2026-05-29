@@ -107,6 +107,10 @@ add_subdirectory(src/stcpp/ml)
 # Sprint-2 W5 Wave 24: 老李 PolymarketClient v0.1 (paper mock + live stub, R-7 物理隔离)
 add_subdirectory(src/stcpp/polymarket)
 
+# A-NET-01 (老陈 Wave 3): 出站序列化 + 背压队列 (OutboundBuffer / OutboundSerializer / OutboundSubmitQueue)
+# 红线: zero-alloc, R-12 (不进 vCPU0 event loop), 不依赖 glaze / nghttp2 (Sprint-4+)
+add_subdirectory(src/stcpp/net)
+
 # Sprint-3 W9 W2: Debug REST API server (老周 spec, 小卢 IC 实施)
 # ADR-018 (cpp-httplib v0.16.3) + ADR-015 (vCPU 分工) + ADR-011 (paper/live 隔离)
 # 默认 ON — paper/live/backtest 三 mode 均可启用
