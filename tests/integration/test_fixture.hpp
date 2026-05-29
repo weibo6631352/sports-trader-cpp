@@ -263,6 +263,11 @@ protected:
         it.book_snapshot_ts_ns = book.data_source_ts_ns;
         it.tick_size = 0.01;
         it.is_close = false;
+        // v0.6 (Wave 3): V2 CLOB 必填字段 — 上游 Orchestrator/策略层填入, fixture 代填.
+        //   timestamp_ms: EIP-712 Order.timestamp (ms). 取 as_of_ts (R3.6/R3.7/R3.8 in-window).
+        //   metadata/builder: 用 OrderIntent 默认 bytes32(0) (合法 ^0x[0-9a-f]{64}$ 66chars).
+        // RM v0.6 check_invalid_intent_ 步骤 (i)(j)(k) 对这三字段硬校验; 不填 → TS_V2_MISSING.
+        it.timestamp_ms = it.as_of_ts_ns / 1'000'000LL;
         return it;
     }
 
