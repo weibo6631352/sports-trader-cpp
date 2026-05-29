@@ -529,6 +529,33 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
     )
 endif()
 
+# 小邓 ADR-037: FairValueModel 推理骨架 + feature 抽取契约
+# stcpp_ml_inference 三 mode 均编译 (不含 VirtualFill), 故本 target 无 EXEC_MODE guard.
+add_executable(test_fair_value_model
+    test_fair_value_model.cpp
+)
+target_link_libraries(test_fair_value_model PRIVATE
+    GTest::gtest_main
+    stcpp_ml_inference
+)
+target_include_directories(test_fair_value_model PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_fair_value_model PRIVATE cxx_std_20)
+target_compile_definitions(test_fair_value_model PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+target_compile_options(test_fair_value_model PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+gtest_discover_tests(test_fair_value_model
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;ml;adr037"
+)
+
 # 小卢 W5 Wave 25: SingleInstanceLock 7 用例 (laozhou-single-instance-spec-v1.md §3.1)
 #   T1 acquire→release→reacquire  T2 双进程 child 失败  T3 kill-9 后 reacquire
 #   T4 paper/live/backtest 物理隔离  T5 PID file 内容格式  T6 SIGTERM unlink  T7 race 1-wins
@@ -1118,6 +1145,180 @@ gtest_discover_tests(test_goalserve_adapter
     PROPERTIES LABELS "unit;goalserve;adapter;vendor-agnostic;adr-037"
 )
 
+# 小肖 ADR-037 配套: FairValueEstimator v0.1 — 自估 fair-value 定价模型单测
+#   T01: 归一性 — sum(probs) = 1.0 (± 1e-12)
+#   T02: 边界 clamp — 极端比分差 probs ∈ (kProbEps, kProbMax)
+#   T03: 单调性 — home leads → p_yes > 0.5, 时钟越靠后领先优势越大
+#   T04: NaN 防护 — elapsed_sec=-1 → valid=true, probs finite
+#   T05: 赛前先验 — NotStarted 0:0 → p_yes ≈ 0.5
+#   T06: 时钟效应单调性 — 同领先, 越晚时钟 p_yes 越高
+#   T07: 订单簿混合 — microprice 有效时 book_blend=0.20, 拉扯先验
+#   T08: nullptr book_row → book_blend=0, 纯先验
+#   T09: NaN/Inf/0/1 microprice → 退化纯先验
+#   T10: safe_sigmoid 精度 (sigmoid(0)=0.5, sigmoid(ln3)=0.75)
+#   T11: normalize2 极端输入 (NaN/Inf/very small)
+#   T12: clamp_prob 边界 (0.0/1.0/NaN/Inf)
+#   T13: FairValueEstimator facade 正常运行
+#   T14: IFairValueModel 多态替换
+#   T15: total_game_seconds 运动映射
+add_executable(test_fair_value_estimator
+    test_fair_value_estimator.cpp
+)
+target_link_libraries(test_fair_value_estimator PRIVATE
+    GTest::gtest_main
+    stcpp_pricing
+)
+target_compile_options(test_fair_value_estimator PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
+target_include_directories(test_fair_value_estimator PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_fair_value_estimator PRIVATE cxx_std_20)
+target_compile_definitions(test_fair_value_estimator PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_fair_value_estimator
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;pricing;fair-value;numerical;adr-037"
+)
+
+# ============================================================================
+# 小蒋 backtest framework v0.2 — 4 unit test targets
+#   test_backtest_types:          R-20 4 ts / net_edge 公式 / realized_pnl (10 case)
+#   test_backtest_walk_forward:   WalkForwardSplitter / DataAccessGuard / PurgedKFold (10 case)
+#   test_backtest_metrics:        MetricsComputer + StationaryBootstrap (14 case)
+#   test_backtest_stats:          Bonferroni + DSR + 过拟合检测 (10 case)
+#   test_backtest_event_replayer: EventReplayer + BacktestLedger (10 case)
+# BR-1 红线: link stcpp_backtest (链入 stcpp_microstructure via PUBLIC propagation)
+# BR-5 红线: stcpp_backtest 链 stcpp_microstructure (FillRateModel 复用)
+# ADR-010 grandfather: -Wno-double-promotion / -Wno-old-style-cast / -Wno-cast-align
+#                      -Wno-conversion (size_t → double 统计计算)
+# ============================================================================
+
+add_executable(test_backtest_types
+    test_backtest_types.cpp
+)
+target_link_libraries(test_backtest_types PRIVATE GTest::gtest_main stcpp_backtest)
+target_compile_options(test_backtest_types PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_types PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_types PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_types PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_types
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;backtest;types;r20;pit;backtest-v0.2"
+)
+
+add_executable(test_backtest_walk_forward
+    test_backtest_walk_forward.cpp
+)
+target_link_libraries(test_backtest_walk_forward PRIVATE GTest::gtest_main stcpp_backtest)
+target_compile_options(test_backtest_walk_forward PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_walk_forward PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_walk_forward PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_walk_forward PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_walk_forward
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;backtest;walk-forward;guard;purged-kfold;backtest-v0.2"
+)
+
+add_executable(test_backtest_metrics
+    test_backtest_metrics.cpp
+)
+target_link_libraries(test_backtest_metrics PRIVATE GTest::gtest_main stcpp_backtest)
+target_compile_options(test_backtest_metrics PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_metrics PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_metrics PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_metrics PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_metrics
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit;backtest;metrics;sharpe;mdd;bootstrap;backtest-v0.2"
+)
+
+add_executable(test_backtest_stats
+    test_backtest_stats.cpp
+)
+target_link_libraries(test_backtest_stats PRIVATE GTest::gtest_main stcpp_backtest)
+target_compile_options(test_backtest_stats PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_stats PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_stats PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_stats PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_stats
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;backtest;stats;bonferroni;dsr;overfitting;backtest-v0.2"
+)
+
+add_executable(test_backtest_event_replayer
+    test_backtest_event_replayer.cpp
+)
+target_link_libraries(test_backtest_event_replayer PRIVATE
+    GTest::gtest_main
+    stcpp_backtest
+    stcpp_microstructure
+)
+target_compile_options(test_backtest_event_replayer PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_event_replayer PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_event_replayer PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_event_replayer PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_event_replayer
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;backtest;event-replayer;ledger;fill-rate;br1;br5;backtest-v0.2"
+)
+
+# ============================================================================
+
 # 小田 ADR-037: Feature Store Consumer Contract v1.0
 #   T1:  FeatureStoreGameRow R-20 4 ts chain ok + 4 violations
 #   T2:  FeatureStoreGameRow PIT ok / violation (as_of_ts <= now_ns)
@@ -1153,4 +1354,39 @@ target_compile_definitions(test_feature_store_contract PRIVATE
 gtest_discover_tests(test_feature_store_contract
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;feature-store;data-contract;adr-037;vendor-agnostic;pit"
+)
+
+# 小冯 OrderBookAdapter v0.1 — snapshot/delta 状态机 + R-20 4-ts + FeatureStoreBookRow
+#   v0.1: 单档合成; 完整 L2 多档待 W10 simdjson (@老李)
+#   T1: snapshot 4-ts chain (R-20) + state transition
+#   T2: delta rejected before snapshot (P-05)
+#   T3: delta accepted after snapshot
+#   T4: R-20 ts violation rejected + counter
+#   T5: ResetToken clears state
+#   T6: InjectMetadata consumer fields
+#   T7: kBookDepthLevels SSOT == kOrderBookLevels == 5
+#   T8: FeatureStoreBookRow ts_chain_ok() after adapter fill
+add_executable(test_orderbook_adapter
+    test_orderbook_adapter.cpp
+)
+target_link_libraries(test_orderbook_adapter PRIVATE
+    GTest::gtest_main
+    stcpp_polymarket_clob_wss
+)
+target_compile_options(test_orderbook_adapter PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_orderbook_adapter PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_orderbook_adapter PRIVATE cxx_std_20)
+target_compile_definitions(test_orderbook_adapter PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_orderbook_adapter
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;polymarket;clob-wss;orderbook-adapter;r-20;r-12;v0.1"
 )

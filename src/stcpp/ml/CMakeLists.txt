@@ -41,3 +41,25 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
             stcpp_strategy
     )
 endif()
+
+# ---------------------------------------------------------------------------
+# stcpp_ml_inference — FairValueModel 推理骨架 (ADR-037, 小邓 #31)
+#
+# 与 stcpp_ml (hook, R-7 paper-only) 解耦:
+#   推理接口 + feature 抽取仅依赖 feature_store_contract.hpp (header-only 中间表示),
+#   不含 VirtualFill, 三 mode (live/paper/backtest) 均可编译.
+#   ONNXRuntime 当前未链 (W11+ 接); make_onnx_fair_value_model() 返回 nullptr.
+# ---------------------------------------------------------------------------
+add_library(stcpp_ml_inference STATIC
+    fair_value_model.cpp
+)
+
+target_include_directories(stcpp_ml_inference
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_features(stcpp_ml_inference PUBLIC cxx_std_20)
+
+target_compile_definitions(stcpp_ml_inference PUBLIC
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)

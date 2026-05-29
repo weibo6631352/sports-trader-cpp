@@ -107,6 +107,11 @@ add_subdirectory(src/stcpp/ml)
 # Sprint-2 W5 Wave 24: 老李 PolymarketClient v0.1 (paper mock + live stub, R-7 物理隔离)
 add_subdirectory(src/stcpp/polymarket)
 
+# 小肖 ADR-037 配套: FairValueEstimator v0.1 — 自估 fair-value 定价模型
+# 消费 feature_store_contract.hpp FeatureStoreGameRow/BookRow
+# 接口留给小邓 ML 模型替换 (IFairValueModel)
+add_subdirectory(src/stcpp/pricing)
+
 # A-NET-01 (老陈 Wave 3): 出站序列化 + 背压队列 (OutboundBuffer / OutboundSerializer / OutboundSubmitQueue)
 # 红线: zero-alloc, R-12 (不进 vCPU0 event loop), 不依赖 glaze / nghttp2 (Sprint-4+)
 add_subdirectory(src/stcpp/net)
@@ -120,4 +125,10 @@ if(STCPP_BUILD_DEBUG_API)
     add_subdirectory(src/stcpp/debug_api)
 endif()
 
-message(STATUS "stcpp project scaffold (Sprint-3 W9 W2). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1 + debug-api v0.1.")
+# Sprint backtest framework v0.2 (小蒋 quant-backtest, W10+ skeleton)
+# BR-1: 复用 stcpp_microstructure (FillRateModel::compute_from_clob_book)
+# BR-5: 复用小肖 slippage model v1 (header-only, 无额外 link)
+# R-7:  paper / backtest 共用 (mode-agnostic)
+add_subdirectory(src/stcpp/backtest)
+
+message(STATUS "stcpp project scaffold (Sprint-3 W9 W2 + backtest v0.2). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1 + debug-api v0.1 + fair-value-estimator v0.1 + backtest framework v0.2.")
