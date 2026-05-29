@@ -1,0 +1,26 @@
+# .dockerignore — paper-runtime
+# owner: 老吴 (SRE, A-unit, #10)
+# 排除 build artifacts + secrets + CI debris
+
+build/
+build_*/
+.git/
+.github/
+.claude/
+.venv/
+*.pyc
+__pycache__/
+data/
+docs/
+experiments/
+Testing/
+*.env
+*.env.*
+.env.local
+.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+scripts/research/
+scripts/*.py

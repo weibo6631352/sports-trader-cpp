@@ -1,0 +1,76 @@
+# stcpp-paper.service — systemd unit for paper runtime (Frankfurt eu-central-1)
+# owner: 老吴 (linux-sre-devops, A-unit, #10)
+# last_review: 2026-05-29
+# deploy path: /etc/systemd/system/stcpp-paper.service
+# manage: systemctl {start|stop|restart|status} stcpp-paper
+#
+# ADR-011 cite: paper binary 与 live binary 同一 cmake target; PAPER_MODE=1 env 区分.
+# ADR-013 v2 cite: Frankfurt eu-central-1 (Draft; W10 W2 实测后 GM ack 转 Accepted).
+# CLAUDE.md R-11 red-line: PAPER_MODE=1 强制, 禁写 position/pnl_ledger/nonce_ledger.
+# CLAUDE.md R-12 red-line: WebSocket event loop 禁 sync REST / 阻塞 IO > 100us.
+#
+# 凭证: .env 走 EnvironmentFile (明文禁落磁盘, 见 §secret mgmt runbook).
+#       实际生产: 用 systemd-creds + AWS SSM Parameter Store 替代 EnvironmentFile.
+
+[Unit]
+Description=sports-trader-cpp paper runtime (PAPER_MODE=1)
+Documentation=https://github.com/wangweibo/sports-trader-cpp
+After=network-online.target
+Wants=network-online.target
+# Prometheus node-exporter 如果在同机则可选依赖
+Wants=node-exporter.service
+
+[Service]
+Type=simple
+User=stcpp
+Group=stcpp
+
+# Working directory (data + logs 落这里)
+WorkingDirectory=/opt/stcpp
+
+# Credentials file — 由 secret manager 在启动前写入 (不入 git, chmod 600)
+# 格式: KEY=value, 与 CLAUDE.md §10 .env schema 一致
+EnvironmentFile=-/etc/stcpp/paper.env
+
+# PAPER_MODE=1 强制 override (即使 .env 漏写也保险)
+Environment=PAPER_MODE=1
+Environment=LOG_DIR=/var/log/stcpp
+Environment=DATA_DIR=/opt/stcpp/data
+
+# Binary 路径 (由 provision.sh 安装到此)
+ExecStart=/opt/stcpp/bin/paper_runtime --config /etc/stcpp/paper.toml
+
+# 优雅 reload: SIGHUP (reload config, 不断链路)
+ExecReload=/bin/kill -HUP $MAINPID
+
+# 崩溃重启策略
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# 文件描述符 (WSS + CLOB + Goalserve 链路 + debug REST + prometheus /metrics)
+LimitNOFILE=65536
+
+# 日志重定向 to journal (journald → promtail → Loki)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stcpp-paper
+
+# Security hardening (非 root)
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/stcpp/data /var/log/stcpp
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# CPU affinity (ADR-015 cite: vCPU pin; t3.medium 2 vCPU → pin to CPU 0)
+# 小梁/老姜 会在 live runtime 时收紧; paper runtime 先 pin 单核稳定即可
+CPUAffinity=0
+
+[Install]
+WantedBy=multi-user.target
