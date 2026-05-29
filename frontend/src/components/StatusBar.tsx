@@ -1,25 +1,32 @@
 /**
- * StatusBar.tsx — 跨页常驻状态条 (v6)
- * 替换 v5 GlobalBar, 精简为顶部一行关键健康信息
+ * StatusBar.tsx — 跨页常驻 Material AppBar 状态条 (v7)
  * owner: 小苏  last_review: 2026-05-29
  *
- * 内容: mode badge / 系统状态 / 净PnL / 运行时间 / WSS 状态点 /
- *        Gate 初/确认审 / API 异常 chip / 设置按钮
+ * v7 变更: AppBar + Toolbar + Chip + IconButton (SUID Material)
+ * 内容: mode chip / 系统状态 / 净PnL / 运行时间 / WSS dot /
+ *        Gate chip / 拒单/60s / API 异常 chip / 设置按钮
  */
 
 import { createSignal, For, Show } from 'solid-js';
+import AppBar from '@suid/material/AppBar';
+import Toolbar from '@suid/material/Toolbar';
+import Chip from '@suid/material/Chip';
+import IconButton from '@suid/material/IconButton';
+import Alert from '@suid/material/Alert';
+import Typography from '@suid/material/Typography';
+import Divider from '@suid/material/Divider';
+import TextField from '@suid/material/TextField';
+import Button from '@suid/material/Button';
+import Box from '@suid/material/Box';
 import { state } from '../store';
 import {
-  fmtUsdc, fmtUptime, isEndpointFailing, failingEndpointsSummary,
+  fmtUsdc, fmtUptime, isEndpointFailing, failingEndpointsSummary, setBaseUrl, getBaseUrl,
 } from '../api';
-import { Badge, modeVariant, modeText } from './ui/Badge';
 import { StatusDot, boolToDot } from './ui/StatusDot';
 
 export function StatusBar() {
   const [settingsOpen, setSettingsOpen] = createSignal(false);
-  const [apiBaseInput, setApiBaseInput] = createSignal(
-    localStorage.getItem('stcpp_api_base') ?? 'http://127.0.0.1:8080',
-  );
+  const [apiBaseInput, setApiBaseInput] = createSignal(getBaseUrl());
 
   const s = () => state.status ?? ({} as NonNullable<typeof state.status>);
   const h = () => state.healthz ?? ({} as NonNullable<typeof state.healthz>);
@@ -57,121 +64,170 @@ export function StatusBar() {
   const hasApiErr = () =>
     isEndpointFailing('/status') || isEndpointFailing('/api/v1/positions');
 
-  const apiErrTooltip = () => {
-    const summary = failingEndpointsSummary(3);
-    return summary ? `失败端点:\n${summary}` : 'API 异常';
-  };
+  const apiErrTooltip = () => failingEndpointsSummary(3) || 'API 异常';
+
+  const modeColor = () =>
+    mode() === 'live' ? 'error' : mode() === 'paper' ? 'default' : 'info';
 
   function saveApiBase() {
     const v = apiBaseInput().trim();
-    if (v) {
-      localStorage.setItem('stcpp_api_base', v);
-      location.reload();
-    }
+    if (v) setBaseUrl(v);
   }
 
   return (
     <>
-      {/* DEMO 横幅 */}
+      {/* DEMO 横幅 — Material Alert (P0-02 红线: 非实盘必须显示) */}
       <Show when={isDemo()}>
-        <div id="demo-banner">
+        <Alert
+          severity="warning"
+          class="demo-alert-banner"
+          sx={{ borderRadius: 0, py: 0.5, px: 2, fontSize: '12px', fontWeight: 700 }}
+        >
           演示数据 · 非实盘 — 所有量化参数仅供参考, 不触发下单
-        </div>
+        </Alert>
       </Show>
 
-      {/* 常驻状态条 */}
-      <div class="status-bar">
-        {/* 模式 badge */}
-        <Badge variant={modeVariant(mode())}>{modeText(mode())}</Badge>
+      {/* Material AppBar */}
+      <AppBar position="sticky" color="default" elevation={1}
+        sx={{ zIndex: 100, bgcolor: 'background.paper', borderBottom: '1px solid #373737' }}>
+        <Toolbar variant="dense" sx={{ gap: 1, flexWrap: 'wrap', minHeight: '44px', py: 0.5 }}>
+          {/* Logo */}
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, mr: 1, color: 'primary.main', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>
+            STCPP
+          </Typography>
 
-        {/* 系统状态 */}
-        <span class={`state-label ${stateClass()}`}
-          title={!state.status && isEndpointFailing('/status')
-            ? '后端未连接 · 请检查 8080 或点 ⚙ 改 API Base'
-            : undefined}
-        >
-          {stateText()}
-        </span>
+          {/* Mode chip */}
+          <Chip
+            label={mode().toUpperCase()}
+            color={modeColor()}
+            size="small"
+            variant={mode() === 'live' ? 'filled' : 'outlined'}
+            sx={{ fontWeight: 700, fontSize: '10px', height: '20px' }}
+          />
 
-        <span class="top-sep">|</span>
-
-        {/* 净PnL */}
-        <span class="top-label">净PnL</span>
-        <span class={`top-pnl ${netPnl() != null ? (netPnl()! >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`}>
-          {netPnl() != null ? fmtUsdc(netPnl()) : '—'}
-        </span>
-
-        <span class="top-sep">|</span>
-
-        {/* 运行时间 */}
-        <span class="top-dim">运行 {fmtUptime(uptimeSec())}</span>
-
-        <span class="top-sep">|</span>
-
-        {/* WSS 状态 */}
-        <span class="top-label">WSS</span>
-        <For each={wssEntries()}>
-          {([k, v]) => (
-            <StatusDot
-              state={boolToDot(v)}
-              size="sm"
-              title={k}
-            />
-          )}
-        </For>
-
-        <span class="top-sep">|</span>
-
-        {/* Gate */}
-        <Show when={g().has_data} fallback={<span class="ph">—</span>}>
-          <span class={`gate-chip ${g().prelim_pass ? 'gate-ok' : 'gate-fail'}`}>
-            初审{g().prelim_pass ? '✓' : '✗'}
-          </span>
-          {' '}
-          <span class={`gate-chip ${g().confirm_pass ? 'gate-ok' : 'gate-fail'}`}>
-            确认{g().confirm_pass ? '✓' : '✗'}
-          </span>
-        </Show>
-
-        <span class="top-sep">|</span>
-
-        {/* 拒单/60s */}
-        <span class="top-label">拒单/60s</span>
-        <span class={`mono-dim ${rmRejects() != null && rmRejects()! > 0 ? 'pnl-neg' : ''}`}>
-          {rmRejects() != null ? String(rmRejects()) : '—'}
-        </span>
-
-        {/* API 异常 */}
-        <Show when={hasApiErr()}>
-          <span class="api-err-chip" title={apiErrTooltip()}>API 异常</span>
-        </Show>
-
-        {/* 设置按钮 */}
-        <div class="top-right">
-          <button
-            class="icon-btn"
-            title="API 配置"
-            onClick={() => setSettingsOpen((v) => !v)}
+          {/* 系统状态 */}
+          <Typography
+            variant="caption"
+            class={stateClass()}
+            title={!state.status && isEndpointFailing('/status') ? '后端未连接 · 请检查 8080 或点 ⚙ 改 API Base' : undefined}
+            sx={{ fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap' }}
           >
-            &#9881;
-          </button>
-        </div>
-      </div>
+            {stateText()}
+          </Typography>
+
+          <span class="appbar-sep">|</span>
+
+          {/* 净PnL */}
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '11px' }}>净PnL</Typography>
+          <Show when={netPnl() != null}>
+            <Typography
+              variant="caption"
+              class={`mono-main ${netPnl()! >= 0 ? 'pnl-pos' : 'pnl-neg'}`}
+              sx={{ fontSize: '13px' }}
+            >
+              {fmtUsdc(netPnl()!)}
+            </Typography>
+          </Show>
+          <Show when={netPnl() == null}>
+            <Typography variant="caption" sx={{ color: 'text.disabled', fontFamily: 'monospace' }}>—</Typography>
+          </Show>
+
+          <span class="appbar-sep">|</span>
+
+          {/* 运行时间 */}
+          <Typography variant="caption" class="appbar-dim">运行 {fmtUptime(uptimeSec())}</Typography>
+
+          <span class="appbar-sep">|</span>
+
+          {/* WSS 状态 */}
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '11px' }}>WSS</Typography>
+          <For each={wssEntries()}>
+            {([k, v]) => (
+              <StatusDot state={boolToDot(v)} size="sm" title={k} />
+            )}
+          </For>
+
+          <span class="appbar-sep">|</span>
+
+          {/* Gate */}
+          <Show when={g().has_data}>
+            <Chip
+              label={g().prelim_pass ? '初审✓' : '初审✗'}
+              color={g().prelim_pass ? 'success' : 'error'}
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: '10px', height: '20px' }}
+            />
+            <Chip
+              label={g().confirm_pass ? '确认✓' : '确认✗'}
+              color={g().confirm_pass ? 'success' : 'error'}
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: '10px', height: '20px' }}
+            />
+          </Show>
+          <Show when={!g().has_data}>
+            <Typography variant="caption" sx={{ color: 'text.disabled' }}>—</Typography>
+          </Show>
+
+          <span class="appbar-sep">|</span>
+
+          {/* 拒单/60s */}
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '11px' }}>拒单/60s</Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              fontFamily: 'monospace',
+              fontSize: '12px',
+              color: (rmRejects() ?? 0) > 0 ? 'error.main' : 'text.secondary',
+            }}
+          >
+            {rmRejects() != null ? String(rmRejects()) : '—'}
+          </Typography>
+
+          {/* API 异常 Chip */}
+          <Show when={hasApiErr()}>
+            <Chip
+              label="API 异常"
+              color="error"
+              size="small"
+              title={apiErrTooltip()}
+              sx={{ fontSize: '10px', height: '20px', animation: 'blink 1.6s step-end infinite' }}
+            />
+          </Show>
+
+          {/* 右侧: 设置按钮 */}
+          <Box sx={{ ml: 'auto' }}>
+            <IconButton
+              size="small"
+              title="API 配置"
+              onClick={() => setSettingsOpen((v) => !v)}
+              color={settingsOpen() ? 'primary' : 'default'}
+            >
+              <span style={{ 'font-size': '16px' }}>&#9881;</span>
+            </IconButton>
+          </Box>
+        </Toolbar>
+      </AppBar>
 
       {/* 设置面板 */}
       <Show when={settingsOpen()}>
-        <div id="settings-panel">
-          <div class="settings-row">
-            <label>API Base</label>
-            <input
-              type="text"
-              placeholder="http://127.0.0.1:8080"
-              value={apiBaseInput()}
-              onInput={(e) => setApiBaseInput(e.currentTarget.value)}
-            />
-            <button class="btn-primary" onClick={saveApiBase}>保存并刷新</button>
-          </div>
-          <div class="settings-hint">默认 127.0.0.1:8080. 加 ?stub=1 使用 mock 数据.</div>
+        <div class="settings-panel-wrap">
+          <Typography variant="caption" sx={{ color: 'text.secondary', mr: 1 }}>API Base</Typography>
+          <TextField
+            size="small"
+            variant="outlined"
+            placeholder="http://127.0.0.1:8080"
+            value={apiBaseInput()}
+            onInput={(e) => setApiBaseInput((e.currentTarget as HTMLInputElement).value)}
+            sx={{ width: 280, '& input': { fontFamily: 'monospace', fontSize: '12px', py: '4px' } }}
+          />
+          <Button variant="contained" size="small" onClick={saveApiBase}>
+            保存并刷新
+          </Button>
+          <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1 }}>
+            默认 127.0.0.1:8080 · 加 ?stub=1 使用 mock 数据
+          </Typography>
         </div>
       </Show>
     </>

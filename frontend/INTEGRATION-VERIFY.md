@@ -1,35 +1,40 @@
-# INTEGRATION-VERIFY.md — v6 solid-ui + Tailwind + 多页
+# INTEGRATION-VERIFY.md — v7 SUID/Material Design Google 风格
 
 owner: 小苏 (#12, E单元)
 last_review: 2026-05-29
-关联: ADR-038/040/041, 小尤 v6 设计方案, 小郑观测页规格
+关联: ADR-038/040/041, 老板 v7 定 (Google风格+经典组件+数据细化+4页铺满)
 
 ---
 
-## v6.0 主变更清单
+## v7.0 主变更清单
 
 | 变更 | 内容 |
 |------|------|
-| 组件库 | `@kobalte/core` + Tailwind v4 (`@tailwindcss/vite`) copy-paste 模式 |
-| 多页导航 | 顶部 TabNav (盯盘 / Ops观测 / PnL分析 / 市场详情 占位) |
-| 常驻 StatusBar | 替换 GlobalBar, 跨页不变 |
-| 盯盘增强 | 5档订单簿 + DepthBar + ConfBar + CI主显示行 + 筛选栏 + per-event staleness |
-| Ops观测页 | 按小郑规范: 系统健康/订阅状态/WSS/数据质量/业务吞吐/拒单/裸文本折叠 |
-| PnL分析页 | 升格 v5 SecondaryFooter: 净值曲线大图 + 瀑布图 + Gate仪表 |
-| URL hash 路由 | `#trading / #ops / #analytics / #market` 刷新后还原 |
-| 公共组件 8 个 | StatusDot / Badge / StatCard / DepthBar / ConfBar / TabNav / StalenessHeatCell / PipelineHealth |
+| 组件库 | `@suid/material` v0.19.0 (Material UI for SolidJS, Google Material Design) |
+| 移除 | Kobalte / Tailwind / 自写 TabNav / Badge / ConfBar / StatCard (旧版) |
+| 主题 | Material dark + quant 量化语义色 (green #4caf50 / red #f44336 / amber #ff9800 / blue #2196f3) |
+| ThemeProvider | `createTheme({palette:{mode:'dark'}})` 包裹全局 |
+| 经典 SUID 组件 | AppBar / Toolbar / Card / CardHeader / CardContent / Chip / LinearProgress / Table* / Grid / Alert / Button / ToggleButtonGroup / TextField / Divider / Paper / Box / Typography / IconButton |
+| Tab 导航 | AppBar + Toolbar + 自定义 `quant-tab-btn` (SUID 无 Tabs 组件, 用 border-bottom 下划线风格) |
+| StatCard | 换用 SUID Card + CardContent + Typography |
+| ConfBar | 换用 SUID LinearProgress (置信度条) |
+| 拒单日志 | 换用 SUID Table / TableHead / TableRow / TableCell |
+| 分市场PnL | 换用 SUID Table |
+| 筛选栏 | 换用 SUID ToggleButtonGroup |
+| 4 页铺满 | 盯盘/Ops观测/PnL分析(时间窗+归因+分市场表)/市场详情(单盘口深钻完整) |
+| 数据更全 | microprice/tick/fee/source/gap/seq/4ts/CI区间/Gate全指标/拒单分布 |
 
 ---
 
 ## 构建验证 (2026-05-29)
 
 ```
-npm install  → added 37 packages (Kobalte + Tailwind v4)  PASS
-tsc --noEmit → 0 errors (strict mode)                       PASS
-vite build   → 25 modules transformed
-               dist/assets/*.css  35.02 kB (gzip 6.88 kB)
-               dist/assets/*.js   80.57 kB (gzip 26.74 kB)
-               built in 275ms                               PASS
+npm install @suid/material → PASS (已安装 v0.19.0)
+tsc --noEmit               → 0 errors (strict mode)        PASS
+vite build                 → 306 modules transformed
+                              dist/assets/*.css   18.08 kB  (gzip 3.67 kB)
+                              dist/assets/*.js   253.72 kB  (gzip 70.43 kB)
+                              built in 566ms               PASS
 ```
 
 ---
@@ -38,68 +43,82 @@ vite build   → 25 modules transformed
 
 ### 盯盘页 (Trading)
 
-- [x] v5 认可的 Event→Condition→DualBook 结构完整保留 (TradingPage.tsx)
-- [x] 订单簿 5 档 (stub 数据 bids[0..4] + asks[0..4])
-- [x] DepthBar 可视深度条 (买绿/卖红, 相对最大量归一化)
-- [x] ConfBar 置信度条形图 (替换数字, 绿/黄/红)
-- [x] CI 区间主显示行 (v6 升格为独立 cond-ci-row)
-- [x] imbalance 数值标注 (v6 新增 mini-imb-val)
-- [x] 筛选栏: 全部/进行中/有持仓 + 搜索框 (本地 filter)
-- [x] per-event staleness 展示 (EventHeader_v6 evt-staleness)
-- [x] LIVE 角标 (inplay 状态)
-- [x] DEMO 横幅 + demo-chip 角标 (ADR-041 §5)
-- [x] advisory 角标 (XD-3)
+- [x] Material Card 赛事卡片 (Card variant="outlined")
+- [x] Material Chip: sport 标签 / 状态 / DEMO / NR / advisory / 拒单数
+- [x] Material LinearProgress: 置信度 (confBar) + edge 优势条
+- [x] Material ToggleButtonGroup: 全部/进行中/有持仓 筛选
+- [x] Material TextField: 搜索框
+- [x] Material Alert: advisory 横幅 (XD-3) + predict_ok=false 异常提示
+- [x] 数据补全: microprice / tick_size / fee_rate / source / gap_count / seq
+- [x] v5 认可的 Event→Condition→DualBook 三层结构完整保留
+- [x] 订单簿 5 档 + DepthBar 深度条 (买绿/卖红)
+- [x] CI 区间主显示行
+- [x] imbalance 数值 + 渐变条
+- [x] LIVE 角标 (inplay)
+- [x] DEMO 横幅 (Material Alert warning) + Chip
+- [x] advisory 横幅 (XD-3)
 - [x] XD-1/3/4/5 全部保留
+- [x] per-event staleness 展示
+- [x] vig badge (Chip color="success/warning/error")
 
 ### Ops 观测页
 
-- [x] 系统健康 StatCard 2x4 网格 (H-01~H-07)
-- [x] 线程心跳 status-grid 5 行 + stub 标注
-- [x] 市场订阅数 (GAP-01/02 兜底: conditionCache 推算 + 标注)
-- [x] WSS 三通道 status-grid + reconnect 计数 (S-04~S-07)
-- [x] Condition 级 WSS 状态热力格
-- [x] 数据质量 StatCard: staleness/gap/drift (Q-01~Q-03)
-- [x] staleness 可视化 latency bar
-- [x] 4 时间戳瀑布 PipelineHealth (R-20, 采样首个市场)
-- [x] 各市场 staleness 热力表 StalenessHeatCell
-- [x] 业务吞吐 StatCard: decision/reject/fill/pnl/edge (B-01~B-05)
-- [x] PnL 迷你曲线 SVG (B-06)
-- [x] Gate 门禁仪表 (B-09)
-- [x] 拒单列表表格 (E-01, 最多50条)
-- [x] reason_code 分布柱状图 (E-02, 前端本地聚合)
-- [x] Prometheus 裸文本折叠 (兜底展开)
+- [x] Material Card 各区块 (CardHeader + CardContent)
+- [x] Material Grid 自适应布局
+- [x] Material Table: 拒单日志 (stickyHeader + maxHeight 滚动)
+- [x] Material LinearProgress: loop p99 延迟 + staleness 可视化
+- [x] Material Chip: 状态/拒单类型/Gate/线程
+- [x] 系统健康 8 卡片 (H-01~H-07 + loop p99)
+- [x] 线程心跳 grid
+- [x] 市场订阅数 GAP-01/02 兜底 + 标注
+- [x] WSS 三通道 + reconnect 计数 (Chip color)
+- [x] Condition 级 WSS 热力格
+- [x] 数据质量 3 卡片: staleness/gap/drift
+- [x] staleness LinearProgress
+- [x] 4 时间戳瀑布 PipelineHealth (R-20)
+- [x] 各市场 staleness 热力表
+- [x] 业务吞吐 Grid (decision/reject/fill/pnl/edge + Sharpe/Gate)
+- [x] PnL 迷你 SVG 曲线
+- [x] 拒单表 (SUID Table, 最多50条)
+- [x] reason_code 分布柱状图
+- [x] Prometheus 裸文本折叠 (CardHeader action Button)
 - [x] 私钥/签名字段不出现 (ADR-038 §5)
+
+### PnL 分析页 (Analytics)
+
+- [x] 时间窗选择 1h/6h/24h (Material ToggleButtonGroup)
+- [x] 汇总统计 4 卡片 (净PnL/手续费/成交笔/时间窗)
+- [x] 大图 SVG 净值曲线 (含面积填充 + 零线)
+- [x] 归因瀑布 Material LinearProgress (毛收益/手续费/Gas/滑点/价差/净收益)
+- [x] 分市场 PnL Material Table (stickyHeader, 按净PnL排)
+- [x] Gate 仪表 7 卡片 (Sharpe/命中率/回撤/正收益日/笔数/初审/确认审)
+- [x] Material Alert (无数据提示)
+
+### 市场详情页 (Market Detail)
+
+- [x] 第4页正式实现 (不再是 P2 占位)
+- [x] condition_id 搜索 + Chip 列表选择
+- [x] Market 全字段 Table (condition_id/market_id/event_id/slug/tick/fee/neg_risk/accepting/active/closed/resolved/source/mode/ts/url)
+- [x] Tokens Chip 列表 (含价格 + winner 状态)
+- [x] Score 实时比分 5 卡片 (sport/状态/节-时/主客队得分)
+- [x] Quote 量化详情 (fair/mid/edge/kelly/notional/signal + CI + 置信度 LinearProgress + AI provenance 字段表)
+- [x] 双边全档订单簿 Table (全部档位 + LinearProgress 深度)
+- [x] 4 时间戳 PipelineHealth
+- [x] 该市场拒单明细 Table
 
 ### 导航
 
-- [x] TabNav 4个标签, 高亮当前
+- [x] Material AppBar 常驻 (系统状态 + mode Chip + 净PnL + WSS dots + Gate Chip + 拒单/60s + API异常 Chip)
+- [x] DEMO Material Alert 横幅
+- [x] Tab 导航 Material 风格 (下划线 active)
 - [x] URL hash 同步 (#trading/#ops/#analytics/#market)
-- [x] StatusBar 跨页不变
 - [x] Store 轮询跨 tab 切换不重置
-
-### 兼容性
-
-- [x] PnlSparkline 保留 (盯盘页 + 分析页各用一次)
-- [x] v5 GlobalBar / SecondaryFooter / EventGrid 文件保留 (未删除, 防引用遗漏)
-- [x] stub 模式 (?stub=1) 正常工作
-
----
-
-## 后端数据缺口提示 (须告知小冯+小卢)
-
-| 缺口 | 影响 | 临时兜底 | 严重度 |
-|------|------|---------|--------|
-| GAP-01: `stcpp_subscribed_tokens_total` 未在 /metrics 输出 | Ops订阅数显示不准 | conditionCache×2 估算 + "(前端估算)" 标注 | P0 |
-| GAP-02: `stcpp_subscribed_markets_total` 同上 | 同上 | conditionCache.keys().length | P0 |
-| H-02: healthz threads 全是 stub "alive" | 线程心跳不真实 | 已标 "(stub)" 角标 | P1 W10+ |
-| Q-05: `/api/v1/data/latency/{id}` 未实现 | 4ts 瀑布无精确分段 | 直接读 book 字段前端算 | P2 |
 
 ---
 
 ## 启动命令
 
 ```bash
-# 安装 (首次或新依赖)
 cd frontend/
 npm install
 
@@ -112,30 +131,26 @@ open "http://127.0.0.1:3000/?stub=1"
 # 生产构建
 npm run build   # 产物 dist/
 
-# 后端 (独立进程, 不托管前端)
+# 后端 (独立进程)
 stcpp_debug_server --real --replay --port 8080
 ```
 
 ---
 
-## v5.x 遗留验证记录
+## 后端数据缺口
 
-以下 v5 验收项在 v6 中全部继承:
-
-- XD-1/3/4/5 AI provenance 红线: PASS (TradingPage.tsx CondQuote_v6)
-- 赛事分组 Event→Condition 三层: PASS
-- R1~R6 小尤去乱规则: PASS (style.css 完整保留)
-- 错误态 fail-chip / api-err-chip: PASS
-- staleness 状态点: PASS (升级为 StatusDot 组件)
-- 轮询分层 5s/15s/30s/60s: PASS (store.ts 不变)
-- v6 新增: metrics 无条件 30s 轮询 (v5 只在 secondaryOpen 时才拉)
+| 缺口 | 影响 | 临时兜底 | 严重度 |
+|------|------|---------|--------|
+| GAP-01: `stcpp_subscribed_tokens_total` 未在 /metrics 输出 | Ops订阅数不准 | conditionCache×2 估算 | P0 |
+| GAP-02: `stcpp_subscribed_markets_total` 同上 | 同上 | conditionCache.keys().length | P0 |
+| H-02: healthz threads 全是 stub "alive" | 线程心跳不真实 | "(stub)" Chip 标注 | P1 |
 
 ---
 
-## 未做事项 (后续)
+## v6.x 遗留验证记录 (继承)
 
-- P2: 市场详情页 `/market/:conditionId` (依赖 ADR-038 trace 端点)
-- P1 扩展: Analytics 时间窗选择器 (1h/6h/24h/7d)
-- 小宫 #48 dogfood: 浏览器截图验证
-- 小郑 Sprint-3: Grafana 接入 (Prometheus scrape 观测历史)
-- 后端补齐 GAP-01/02 后删前端兜底估算
+- XD-1/3/4/5 AI provenance 红线: PASS
+- 赛事分组 Event→Condition 三层: PASS
+- 错误态: fail Chip / api-err Chip: PASS
+- 轮询分层 5s/15s/30s/60s: PASS (store.ts 不变)
+- metrics 无条件 30s 轮询: PASS

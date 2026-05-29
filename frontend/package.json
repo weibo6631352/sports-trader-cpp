@@ -1,7 +1,7 @@
 {
   "name": "sports-trader-cpp-frontend",
-  "version": "6.0.0",
-  "description": "sports-trader-cpp 操盘终端 v6 — SolidJS + TypeScript + Tailwind + Kobalte",
+  "version": "7.0.0",
+  "description": "sports-trader-cpp 操盘终端 v7 — SolidJS + SUID/Material Design (Google 风格)",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,10 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@kobalte/core": "^0.13.11",
-    "@tailwindcss/vite": "^4.3.0",
-    "solid-js": "^1.8.17",
-    "tailwindcss": "^4.3.0"
+    "@suid/material": "^0.19.0",
+    "solid-js": "^1.8.17"
   },
   "devDependencies": {
     "typescript": "^5.4.5",
