@@ -163,6 +163,15 @@ struct MetricsSnapshot {
     double max_staleness_ms{0.0};
     std::int64_t feed_gap_total{0};
     double price_drift_bps{0.0};
+    // 订阅计数 (GAP-01/02/03/04, 小冯 ADR-038 append; G-FREEZE-W 只增不改名)
+    // subscribed_tokens_total   — hub_.token_count() (已注册 per-token slot 数)
+    // subscribed_markets_total  — subscribed_tokens_total / 2 (老李 spec §2.1: 双 token 规则)
+    // subscribed_user_conditions — user_condition_ids_.size() (user channel 订阅数)
+    // wss_last_disconnect_ts_ns — 最后断连 epoch_ns (0 = 从未断连); GAP-04
+    std::int64_t subscribed_tokens_total{0};
+    std::int64_t subscribed_markets_total{0};
+    std::int64_t subscribed_user_conditions{0};
+    std::int64_t wss_last_disconnect_ts_ns{0};
 };
 
 // ============================================================

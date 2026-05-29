@@ -144,7 +144,24 @@ public:
 
     PaperGate paper_gate() const override { return demo_.paper_gate(); }
 
-    MetricsSnapshot metrics() const override { return demo_.metrics(); }
+    // metrics — 委托 Demo 基础, 覆写订阅计数字段为真实值 (GAP-01/02/03)
+    //   subscribed_tokens_total  = hub_.token_count()  (atomic read, R-12 合规)
+    //   subscribed_markets_total = hub_.token_count() / 2  (老李 spec §2.1 双 token 规则)
+    //   subscribed_user_conditions: 依赖 PolymarketCLOBSubscriber.user_condition_count()
+    //     RealStateProvider 当前不持 subscriber 引用 (subscriber 是热路径写端, R-12 零反向依赖)
+    //     此版本先以 hub_.token_count() / 2 作为 condition 数近似 (等同 markets 数);
+    //     待 subscriber 注入接口 (v0.2) 后改读 user_condition_count() getter。
+    //   wss_last_disconnect_ts_ns: 同上, 待 v0.2 subscriber 注入后填真实值; 现填 0。
+    MetricsSnapshot metrics() const override {
+        MetricsSnapshot snap = demo_.metrics();
+        const auto tok_cnt = static_cast<std::int64_t>(hub_.token_count());
+        snap.subscribed_tokens_total = tok_cnt;
+        snap.subscribed_markets_total = tok_cnt / 2;  // 双 token 规则 (老李 spec §2.1)
+        // subscribed_user_conditions: hub_ 无此信息; v0.2 subscriber 注入后补真实值
+        snap.subscribed_user_conditions = 0;
+        snap.wss_last_disconnect_ts_ns = 0;  // v0.2 subscriber 注入后填真实断连 ts
+        return snap;
+    }
 
     MarketInfo market(const std::string& condition_id) const override { return demo_.market(condition_id); }
 
