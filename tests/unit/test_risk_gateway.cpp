@@ -30,6 +30,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <thread>
@@ -44,9 +45,13 @@ namespace stcpp::risk::test {
 
 // ---------- in-memory emitter ------------------------------------------------
 
+// InMemoryEmitter — 测试用 thread-safe emitter
+// 并发测试 (P0_01a/b) 需要多线程同时调 emit(), 必须持锁保护 records_ 和 fail_next_.
+// 生产 AuditEmitter 实现 (WalWriter) 同样须线程安全; 本类是测试内 contract 示范.
 class InMemoryEmitter : public AuditEmitter {
 public:
     [[nodiscard]] bool emit(AuditRecord const& r) noexcept override {
+        std::lock_guard<std::mutex> g(mu_);
         if (fail_next_) {
             fail_next_ = false;
             return false;
@@ -54,11 +59,21 @@ public:
         records_.push_back(r);
         return true;
     }
-    void trigger_backpressure_next() noexcept { fail_next_ = true; }
-    [[nodiscard]] std::size_t size() const noexcept { return records_.size(); }
-    [[nodiscard]] AuditRecord const& back() const { return records_.back(); }
+    void trigger_backpressure_next() noexcept {
+        std::lock_guard<std::mutex> g(mu_);
+        fail_next_ = true;
+    }
+    [[nodiscard]] std::size_t size() const noexcept {
+        std::lock_guard<std::mutex> g(mu_);
+        return records_.size();
+    }
+    [[nodiscard]] AuditRecord const& back() const {
+        std::lock_guard<std::mutex> g(mu_);
+        return records_.back();
+    }
 
 private:
+    mutable std::mutex mu_;
     std::vector<AuditRecord> records_;
     bool fail_next_{false};
 };
