@@ -165,6 +165,7 @@ worktree(ADR-029, isolation=worktree)
   - **集成 PR #38 → 双评审 approve**(老高质量 8/8 PASS 零红线 / 老郭架构无否决无不可逆)→ merge
   - 全程 **全量 ctest 绿**: 671 unit + 22 integration + 19 replay + 4 sim
 - **结论**: 同一 snapshot + 本地 fan-in 比"每 worktree 各自 push+PR rebase 竞速"显著更干净(7/8 自动合并)。工作流可推广到后续所有批次。
+- **澄清(老板 2026-05-29 终定)**: #38 用了集成 PR 是中间短暂"走 PR"阶段的**一次性产物**;**标准流程是 §9 直推 main、不走 PR**(评审前置)。后续遗留 #34(观测 API)即按直推整合进 main(commit 89c011e),不走 PR。**任何批次一律直推,§9 为准。**
 
 **§9.5 新增铁律(老板 2026-05-29):merge 成功 → 立即 `git worktree remove + 删分支`**,不堆积、不遗忘(本批已贯彻)。
 
