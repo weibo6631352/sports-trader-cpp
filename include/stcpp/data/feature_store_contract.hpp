@@ -38,8 +38,8 @@
 #include <string>
 #include <string_view>
 
-#include "stcpp/data/goalserve_record.hpp"   // FourTs, GoalserveSport, TimeStatus, ScorePair
-#include "stcpp/data/data_contract.hpp"       // kNumBookmakers, kBookmakerAbiVersion
+#include "stcpp/data/data_contract.hpp"     // kNumBookmakers, kBookmakerAbiVersion
+#include "stcpp/data/goalserve_record.hpp"  // FourTs, GoalserveSport, TimeStatus, ScorePair
 
 namespace stcpp::data::feature_store {
 
@@ -60,8 +60,8 @@ inline constexpr std::size_t kNumPartitionKeys = 3;
 // ---------------------------------------------------------------------------
 struct BookmakerOddsOptional {
     double odds_yes = std::numeric_limits<double>::quiet_NaN();
-    double odds_no  = std::numeric_limits<double>::quiet_NaN();
-    bool   valid    = false;
+    double odds_no = std::numeric_limits<double>::quiet_NaN();
+    bool valid = false;
 
     [[nodiscard]] bool is_present() const noexcept {
         return valid && (odds_yes == odds_yes) && (odds_no == odds_no);  // NaN != NaN
@@ -85,21 +85,21 @@ struct BookmakerOddsOptional {
 // ---------------------------------------------------------------------------
 struct FeatureStoreGameRow {
     // ---- R-20 4 ts (ns) ----
-    std::int64_t event_ts_ns       = 0;  // 比赛事件 ts (scores@ts 或 last_update parse)
+    std::int64_t event_ts_ns = 0;        // 比赛事件 ts (scores@ts 或 last_update parse)
     std::int64_t data_source_ts_ns = 0;  // 数据源生成 ts (UPSTREAM_PAYLOAD 优先)
-    std::int64_t ingestion_ts_ns   = 0;  // 本地收到 payload 时刻
-    std::int64_t as_of_ts_ns       = 0;  // PIT 锚 = ingestion_ts_ns (决策前不可更新)
+    std::int64_t ingestion_ts_ns = 0;    // 本地收到 payload 时刻
+    std::int64_t as_of_ts_ns = 0;        // PIT 锚 = ingestion_ts_ns (决策前不可更新)
     goalserve::DataSourceTsOrigin ds_origin = goalserve::DataSourceTsOrigin::PayloadScoresTs;
 
     // ---- 分区键 ----
     // sport: GoalserveSport enum 对应的可读名称 (adapter 负责转换, 不硬编码字符串)
-    std::string sport;          // "Soccer" / "Basketball" / "AmFootball" / ...
+    std::string sport;                       // "Soccer" / "Basketball" / "AmFootball" / ...
     std::int32_t event_date_epoch_days = 0;  // days since 1970-01-01 (DATE32)
-    std::string market_type;    // "Moneyline" / "Totals" / "Spreads"
+    std::string market_type;                 // "Moneyline" / "Totals" / "Spreads"
 
     // ---- 业务键 ----
-    std::string match_id;       // Goalserve match id (去 vendor 前缀)
-    std::string league_id;      // gid / static_id
+    std::string match_id;   // Goalserve match id (去 vendor 前缀)
+    std::string league_id;  // gid / static_id
 
     // ---- 团队 ----
     std::string home_team;
@@ -112,14 +112,14 @@ struct FeatureStoreGameRow {
     // -1 = 未开始/无效
     std::array<std::int32_t, 12> score_home_periods{{}};
     std::array<std::int32_t, 12> score_away_periods{{}};
-    std::uint8_t used_periods          = 0;
+    std::uint8_t used_periods = 0;
     std::uint8_t last_completed_period = 0;
 
     // ---- 比赛状态 ----
     goalserve::TimeStatus time_status = goalserve::TimeStatus::NotStarted;
-    std::uint8_t  period      = 0;           // 当前节 (1-based), 0=无
-    std::int32_t  elapsed_sec = -1;          // 当前节已用秒, -1=无
-    std::int64_t  scheduled_ts_ns = 0;       // 排定开赛 ts, 0=无
+    std::uint8_t period = 0;           // 当前节 (1-based), 0=无
+    std::int32_t elapsed_sec = -1;     // 当前节已用秒, -1=无
+    std::int64_t scheduled_ts_ns = 0;  // 排定开赛 ts, 0=无
 
     // ---- Bookmaker 赔率 (可选, 来自同 match OddsRecord) ----
     // ABI 锁: slots[i] <-> kBookmakerIds[i] (data_contract.hpp)
@@ -133,10 +133,8 @@ struct FeatureStoreGameRow {
 
     // ---- R-20 4 ts 自检 ----
     [[nodiscard]] bool ts_chain_ok() const noexcept {
-        return (event_ts_ns        >  0)
-            && (data_source_ts_ns >= event_ts_ns)
-            && (ingestion_ts_ns   >= data_source_ts_ns)
-            && (as_of_ts_ns       >= ingestion_ts_ns);
+        return (event_ts_ns > 0) && (data_source_ts_ns >= event_ts_ns) &&
+               (ingestion_ts_ns >= data_source_ts_ns) && (as_of_ts_ns >= ingestion_ts_ns);
     }
 
     // ---- PIT: as_of_ts 是否严格 <= now_ns (调用方传入) ----
@@ -147,42 +145,39 @@ struct FeatureStoreGameRow {
     // ---- valid_bm_count (for kMinValidBookmakers = 3 check) ----
     [[nodiscard]] std::size_t valid_bm_count() const noexcept {
         std::size_t n = 0;
-        for (const auto& sl : bm_slots) if (sl.is_present()) ++n;
+        for (const auto& sl : bm_slots)
+            if (sl.is_present())
+                ++n;
         return n;
     }
 
     // ---- 从 GameRecord + 可选 FourTs 填 4 ts (adapter 使用) ----
-    static FeatureStoreGameRow from_game_record(
-        const goalserve::GameRecord& gr,
-        std::string_view             market_type_sv,
-        std::int64_t                 as_of_ts_ns_override = 0) noexcept
-    {
+    static FeatureStoreGameRow from_game_record(const goalserve::GameRecord& gr,
+                                                std::string_view market_type_sv,
+                                                std::int64_t as_of_ts_ns_override = 0) noexcept {
         FeatureStoreGameRow r;
         // 4 ts
-        r.event_ts_ns       = gr.ts.event_ts_ns;
+        r.event_ts_ns = gr.ts.event_ts_ns;
         r.data_source_ts_ns = gr.ts.data_source_ts_ns;
-        r.ingestion_ts_ns   = gr.ts.ingestion_ts_ns;
+        r.ingestion_ts_ns = gr.ts.ingestion_ts_ns;
         // as_of_ts: 若 override 传入则用 override, 否则用 GameRecord.as_of_ts
-        r.as_of_ts_ns = (as_of_ts_ns_override > 0)
-                       ? as_of_ts_ns_override
-                       : gr.ts.as_of_ts_ns;
+        r.as_of_ts_ns = (as_of_ts_ns_override > 0) ? as_of_ts_ns_override : gr.ts.as_of_ts_ns;
         r.ds_origin = gr.ts.ds_origin;
 
         // 分区键 sport 来自 enum (避免硬编码字符串)
-        r.sport       = std::string(goalserve::SportInplaySlug(gr.sport));
+        r.sport = std::string(goalserve::SportInplaySlug(gr.sport));
         r.market_type = std::string(market_type_sv);
 
         // event_date: 优先 scheduled_ts_ns, fallback event_ts_ns
-        const std::int64_t date_ts_ns =
-            (gr.scheduled_ts_ns.has_value() && *gr.scheduled_ts_ns > 0)
-            ? *gr.scheduled_ts_ns
-            : gr.ts.event_ts_ns;
+        const std::int64_t date_ts_ns = (gr.scheduled_ts_ns.has_value() && *gr.scheduled_ts_ns > 0)
+                                            ? *gr.scheduled_ts_ns
+                                            : gr.ts.event_ts_ns;
         // days since epoch = ns / (86400 * 1e9)
-        r.event_date_epoch_days = static_cast<std::int32_t>(
-            date_ts_ns / static_cast<std::int64_t>(86400LL * 1'000'000'000LL));
+        r.event_date_epoch_days =
+            static_cast<std::int32_t>(date_ts_ns / static_cast<std::int64_t>(86400LL * 1'000'000'000LL));
 
         // 业务键
-        r.match_id  = gr.match_id;
+        r.match_id = gr.match_id;
         r.league_id = gr.league_id;
         r.home_team = gr.home_team;
         r.away_team = gr.away_team;
@@ -192,14 +187,17 @@ struct FeatureStoreGameRow {
         r.score_away_total = gr.score.away_total;
         r.score_home_periods = gr.score.home_periods;
         r.score_away_periods = gr.score.away_periods;
-        r.used_periods          = gr.score.used_periods;
+        r.used_periods = gr.score.used_periods;
         r.last_completed_period = gr.score.last_completed_period;
 
         // 状态
         r.time_status = gr.status;
-        if (gr.period.has_value())      r.period      = *gr.period;
-        if (gr.elapsed_sec.has_value()) r.elapsed_sec = *gr.elapsed_sec;
-        if (gr.scheduled_ts_ns.has_value()) r.scheduled_ts_ns = *gr.scheduled_ts_ns;
+        if (gr.period.has_value())
+            r.period = *gr.period;
+        if (gr.elapsed_sec.has_value())
+            r.elapsed_sec = *gr.elapsed_sec;
+        if (gr.scheduled_ts_ns.has_value())
+            r.scheduled_ts_ns = *gr.scheduled_ts_ns;
 
         // bm_slots: 默认全 NaN/false (adapter 后续填充 OddsRecord)
         return r;
@@ -224,10 +222,10 @@ inline constexpr std::size_t kOrderBookLevels = 5;  // 与 orderbook.hpp kBookDe
 
 struct FeatureStoreBookRow {
     // ---- R-20 4 ts (ns) ----
-    std::int64_t event_ts_ns       = 0;
+    std::int64_t event_ts_ns = 0;
     std::int64_t data_source_ts_ns = 0;  // WSS @ts (ms → ns), UPSTREAM_PAYLOAD 优先
-    std::int64_t ingestion_ts_ns   = 0;  // 本地收字节流时刻
-    std::int64_t as_of_ts_ns       = 0;  // strategy evaluate 时刻 (strategy 层填写)
+    std::int64_t ingestion_ts_ns = 0;    // 本地收字节流时刻
+    std::int64_t as_of_ts_ns = 0;        // strategy evaluate 时刻 (strategy 层填写)
 
     // ---- 分区键 (由 market_metadata 注入, 小冯不自行推断) ----
     std::string sport;
@@ -235,8 +233,8 @@ struct FeatureStoreBookRow {
     std::string market_type;
 
     // ---- 业务键 ----
-    std::string market_id;    // Polymarket condition_id / asset_id
-    std::string token_side;   // "YES" or "NO" (大写)
+    std::string market_id;   // Polymarket condition_id / asset_id
+    std::string token_side;  // "YES" or "NO" (大写)
 
     // ---- 5 档 bid (0 = best), NaN = level 无深度 ----
     std::array<double, kOrderBookLevels> bid_price{};
@@ -247,12 +245,12 @@ struct FeatureStoreBookRow {
     std::array<double, kOrderBookLevels> ask_size_usdc{};
 
     // ---- 微观结构派生 (由 compute_l1_probe 填充) ----
-    double mid            = std::numeric_limits<double>::quiet_NaN();
-    double spread_bps_f   = std::numeric_limits<double>::quiet_NaN();  // (ask0-bid0)/mid*10000
+    double mid = std::numeric_limits<double>::quiet_NaN();
+    double spread_bps_f = std::numeric_limits<double>::quiet_NaN();  // (ask0-bid0)/mid*10000
     double top3_depth_usdc = 0.0;
-    double tick_size      = 0.01;
-    double microprice     = std::numeric_limits<double>::quiet_NaN();
-    double imbalance      = std::numeric_limits<double>::quiet_NaN();
+    double tick_size = 0.01;
+    double microprice = std::numeric_limits<double>::quiet_NaN();
+    double imbalance = std::numeric_limits<double>::quiet_NaN();
     std::int64_t last_trade_ts_ns = 0;
 
     // ---- ABI ----
@@ -260,10 +258,8 @@ struct FeatureStoreBookRow {
 
     // ---- R-20 自检 ----
     [[nodiscard]] bool ts_chain_ok() const noexcept {
-        return (event_ts_ns        >  0)
-            && (data_source_ts_ns >= event_ts_ns)
-            && (ingestion_ts_ns   >= data_source_ts_ns)
-            && (as_of_ts_ns       >= ingestion_ts_ns);
+        return (event_ts_ns > 0) && (data_source_ts_ns >= event_ts_ns) &&
+               (ingestion_ts_ns >= data_source_ts_ns) && (as_of_ts_ns >= ingestion_ts_ns);
     }
 
     // ---- PIT ----
@@ -277,12 +273,14 @@ struct FeatureStoreBookRow {
 
     // ---- level valid check (NaN = 空 level) ----
     [[nodiscard]] bool bid_level_valid(std::size_t i) const noexcept {
-        if (i >= kOrderBookLevels) return false;
+        if (i >= kOrderBookLevels)
+            return false;
         const double p = bid_price[i], s = bid_size_usdc[i];
         return (p == p) && (s == s) && (p > 0.0) && (s > 0.0);
     }
     [[nodiscard]] bool ask_level_valid(std::size_t i) const noexcept {
-        if (i >= kOrderBookLevels) return false;
+        if (i >= kOrderBookLevels)
+            return false;
         const double p = ask_price[i], s = ask_size_usdc[i];
         return (p == p) && (s == s) && (p > 0.0) && (s > 0.0);
     }
@@ -292,17 +290,15 @@ struct FeatureStoreBookRow {
 // 4. FeatureStoreValidationResult — adapter 调用 validate() 后的诊断
 // ---------------------------------------------------------------------------
 struct FeatureStoreValidationResult {
-    bool    valid                  = false;
-    bool    ts_chain_ok            = false;
-    bool    pit_ok                 = false;
-    bool    ds_origin_upstream     = false;  // true = PayloadScoresTs / PayloadLastUpdate
-    std::string_view error_msg     = "";
+    bool valid = false;
+    bool ts_chain_ok = false;
+    bool pit_ok = false;
+    bool ds_origin_upstream = false;  // true = PayloadScoresTs / PayloadLastUpdate
+    std::string_view error_msg = "";
 };
 
-[[nodiscard]] inline FeatureStoreValidationResult validate_game_row(
-    const FeatureStoreGameRow& row,
-    std::int64_t               now_ns) noexcept
-{
+[[nodiscard]] inline FeatureStoreValidationResult validate_game_row(const FeatureStoreGameRow& row,
+                                                                    std::int64_t now_ns) noexcept {
     FeatureStoreValidationResult r{};
     if (!row.ts_chain_ok()) {
         r.error_msg = "4 ts chain violation (R-20)";
@@ -322,16 +318,13 @@ struct FeatureStoreValidationResult {
         r.error_msg = "sport must not be empty";
         return r;
     }
-    r.ds_origin_upstream =
-        (row.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback);
+    r.ds_origin_upstream = (row.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback);
     r.valid = true;
     return r;
 }
 
-[[nodiscard]] inline FeatureStoreValidationResult validate_book_row(
-    const FeatureStoreBookRow& row,
-    std::int64_t               now_ns) noexcept
-{
+[[nodiscard]] inline FeatureStoreValidationResult validate_book_row(const FeatureStoreBookRow& row,
+                                                                    std::int64_t now_ns) noexcept {
     FeatureStoreValidationResult r{};
     if (!row.ts_chain_ok()) {
         r.error_msg = "4 ts chain violation (R-20)";
@@ -363,9 +356,7 @@ struct FeatureStoreValidationResult {
 // ---------------------------------------------------------------------------
 static_assert(kFeatureStoreSchemaVersion == "fs-schema-v1.0",
               "feature store schema version ABI must be fs-schema-v1.0");
-static_assert(kOrderBookLevels == 5,
-              "orderbook levels must match orderbook.hpp kBookDepthLevels = 5");
-static_assert(goalserve::kNumBookmakers == 8,
-              "kNumBookmakers must be 8 (data_contract.hpp ABI)");
+static_assert(kOrderBookLevels == 5, "orderbook levels must match orderbook.hpp kBookDepthLevels = 5");
+static_assert(goalserve::kNumBookmakers == 8, "kNumBookmakers must be 8 (data_contract.hpp ABI)");
 
 }  // namespace stcpp::data::feature_store

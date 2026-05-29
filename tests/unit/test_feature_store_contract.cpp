@@ -20,14 +20,15 @@
 //
 // ADR-010 §2.2: grandfather warnings 与其他 unit test 统一风格
 
-#include <gtest/gtest.h>
 #include <cmath>
 #include <limits>
 #include <string>
 
+#include <gtest/gtest.h>
+
+#include "stcpp/data/data_contract.hpp"
 #include "stcpp/data/feature_store_contract.hpp"
 #include "stcpp/data/goalserve_record.hpp"
-#include "stcpp/data/data_contract.hpp"
 
 using namespace stcpp::data::feature_store;
 using namespace stcpp::data::goalserve;
@@ -35,57 +36,57 @@ using namespace stcpp::data::goalserve;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-static constexpr std::int64_t kBaseEventTs      = 1'700'000'000'000'000'000LL;  // ns
-static constexpr std::int64_t kBaseDataSourceTs = kBaseEventTs  + 1'000'000'000LL;  // +1s
-static constexpr std::int64_t kBaseIngestionTs  = kBaseDataSourceTs + 50'000'000LL;  // +50ms
-static constexpr std::int64_t kBaseAsOfTs       = kBaseIngestionTs   + 5'000'000LL;  // +5ms
-static constexpr std::int64_t kNowNs            = kBaseAsOfTs + 1'000'000LL;         // slightly after
+static constexpr std::int64_t kBaseEventTs = 1'700'000'000'000'000'000LL;           // ns
+static constexpr std::int64_t kBaseDataSourceTs = kBaseEventTs + 1'000'000'000LL;   // +1s
+static constexpr std::int64_t kBaseIngestionTs = kBaseDataSourceTs + 50'000'000LL;  // +50ms
+static constexpr std::int64_t kBaseAsOfTs = kBaseIngestionTs + 5'000'000LL;         // +5ms
+static constexpr std::int64_t kNowNs = kBaseAsOfTs + 1'000'000LL;                   // slightly after
 
 static FeatureStoreGameRow make_valid_game_row() {
     FeatureStoreGameRow row;
-    row.event_ts_ns       = kBaseEventTs;
+    row.event_ts_ns = kBaseEventTs;
     row.data_source_ts_ns = kBaseDataSourceTs;
-    row.ingestion_ts_ns   = kBaseIngestionTs;
-    row.as_of_ts_ns       = kBaseAsOfTs;
-    row.ds_origin         = DataSourceTsOrigin::PayloadScoresTs;
-    row.sport             = "Soccer";
+    row.ingestion_ts_ns = kBaseIngestionTs;
+    row.as_of_ts_ns = kBaseAsOfTs;
+    row.ds_origin = DataSourceTsOrigin::PayloadScoresTs;
+    row.sport = "Soccer";
     row.event_date_epoch_days = 19681;  // 2023-11-15 approx
-    row.market_type       = "Moneyline";
-    row.match_id          = "match_001";
-    row.league_id         = "league_42";
-    row.home_team         = "TeamA";
-    row.away_team         = "TeamB";
-    row.score_home_total  = 1;
-    row.score_away_total  = 0;
-    row.time_status       = TimeStatus::InPlay;
-    row.period            = 2;
-    row.elapsed_sec       = 1500;
+    row.market_type = "Moneyline";
+    row.match_id = "match_001";
+    row.league_id = "league_42";
+    row.home_team = "TeamA";
+    row.away_team = "TeamB";
+    row.score_home_total = 1;
+    row.score_away_total = 0;
+    row.time_status = TimeStatus::InPlay;
+    row.period = 2;
+    row.elapsed_sec = 1500;
     return row;
 }
 
 static FeatureStoreBookRow make_valid_book_row() {
     FeatureStoreBookRow row;
-    row.event_ts_ns       = kBaseEventTs;
+    row.event_ts_ns = kBaseEventTs;
     row.data_source_ts_ns = kBaseDataSourceTs;
-    row.ingestion_ts_ns   = kBaseIngestionTs;
-    row.as_of_ts_ns       = kBaseAsOfTs;
-    row.sport             = "Soccer";
+    row.ingestion_ts_ns = kBaseIngestionTs;
+    row.as_of_ts_ns = kBaseAsOfTs;
+    row.sport = "Soccer";
     row.event_date_epoch_days = 19681;
-    row.market_type       = "Moneyline";
-    row.market_id         = "0xdeadbeef";
-    row.token_side        = "YES";
+    row.market_type = "Moneyline";
+    row.market_id = "0xdeadbeef";
+    row.token_side = "YES";
     // 5 levels bid
-    row.bid_price     = {0.52, 0.51, 0.50, 0.49, 0.48};
+    row.bid_price = {0.52, 0.51, 0.50, 0.49, 0.48};
     row.bid_size_usdc = {1000.0, 500.0, 300.0, 200.0, 100.0};
     // 5 levels ask
-    row.ask_price     = {0.54, 0.55, 0.56, 0.57, 0.58};
+    row.ask_price = {0.54, 0.55, 0.56, 0.57, 0.58};
     row.ask_size_usdc = {800.0, 400.0, 250.0, 150.0, 80.0};
-    row.mid            = 0.53;
-    row.spread_bps_f   = 377.4;
+    row.mid = 0.53;
+    row.spread_bps_f = 377.4;
     row.top3_depth_usdc = 3050.0;
-    row.tick_size      = 0.01;
-    row.microprice     = 0.529;
-    row.imbalance      = 0.11;
+    row.tick_size = 0.01;
+    row.microprice = 0.529;
+    row.imbalance = 0.11;
     row.last_trade_ts_ns = kBaseEventTs - 500'000'000LL;
     return row;
 }
@@ -139,20 +140,20 @@ TEST(FeatureStoreContract, T2_GameRow_PIT_OkAndViolation) {
 // ---------------------------------------------------------------------------
 TEST(FeatureStoreContract, T3_GameRow_FromGameRecord_TsPassthrough) {
     GameRecord gr;
-    gr.ts.event_ts_ns       = kBaseEventTs;
+    gr.ts.event_ts_ns = kBaseEventTs;
     gr.ts.data_source_ts_ns = kBaseDataSourceTs;
-    gr.ts.ingestion_ts_ns   = kBaseIngestionTs;
-    gr.ts.as_of_ts_ns       = kBaseAsOfTs;
-    gr.ts.ds_origin         = DataSourceTsOrigin::PayloadScoresTs;
-    gr.sport    = GoalserveSport::Soccer;
+    gr.ts.ingestion_ts_ns = kBaseIngestionTs;
+    gr.ts.as_of_ts_ns = kBaseAsOfTs;
+    gr.ts.ds_origin = DataSourceTsOrigin::PayloadScoresTs;
+    gr.sport = GoalserveSport::Soccer;
     gr.match_id = "gs_001";
     gr.league_id = "la_liga";
     gr.home_team = "Real";
     gr.away_team = "Barca";
     gr.score.home_total = 2;
     gr.score.away_total = 1;
-    gr.status   = TimeStatus::InPlay;
-    gr.period   = std::uint8_t{2};
+    gr.status = TimeStatus::InPlay;
+    gr.period = std::uint8_t{2};
     gr.elapsed_sec = std::int32_t{3600};
     // scheduled_ts_ns: 2024-11-15 00:00:00 UTC ≈ 1731628800 * 1e9
     gr.scheduled_ts_ns = std::int64_t{1'731'628'800'000'000'000LL};
@@ -160,10 +161,10 @@ TEST(FeatureStoreContract, T3_GameRow_FromGameRecord_TsPassthrough) {
     auto row = FeatureStoreGameRow::from_game_record(gr, "Moneyline");
 
     // 4 ts 透传
-    EXPECT_EQ(row.event_ts_ns,       kBaseEventTs);
+    EXPECT_EQ(row.event_ts_ns, kBaseEventTs);
     EXPECT_EQ(row.data_source_ts_ns, kBaseDataSourceTs);
-    EXPECT_EQ(row.ingestion_ts_ns,   kBaseIngestionTs);
-    EXPECT_EQ(row.as_of_ts_ns,       kBaseAsOfTs);
+    EXPECT_EQ(row.ingestion_ts_ns, kBaseIngestionTs);
+    EXPECT_EQ(row.as_of_ts_ns, kBaseAsOfTs);
     EXPECT_EQ(row.ds_origin, DataSourceTsOrigin::PayloadScoresTs);
 
     // event_date: 1731628800e9 / (86400 * 1e9) = 20051 (days)
@@ -171,14 +172,14 @@ TEST(FeatureStoreContract, T3_GameRow_FromGameRecord_TsPassthrough) {
               static_cast<std::int32_t>(1'731'628'800'000'000'000LL / (86400LL * 1'000'000'000LL)));
 
     // 业务字段
-    EXPECT_EQ(row.match_id,  "gs_001");
+    EXPECT_EQ(row.match_id, "gs_001");
     EXPECT_EQ(row.home_team, "Real");
     EXPECT_EQ(row.away_team, "Barca");
     EXPECT_EQ(row.score_home_total, 2);
     EXPECT_EQ(row.score_away_total, 1);
     EXPECT_EQ(row.time_status, TimeStatus::InPlay);
-    EXPECT_EQ(row.period,       static_cast<std::uint8_t>(2));
-    EXPECT_EQ(row.elapsed_sec,  3600);
+    EXPECT_EQ(row.period, static_cast<std::uint8_t>(2));
+    EXPECT_EQ(row.elapsed_sec, 3600);
 
     // market_type
     EXPECT_EQ(row.market_type, "Moneyline");
@@ -249,7 +250,7 @@ TEST(FeatureStoreContract, T6_BookRow_LevelValid_NaNSemantics) {
 
     // Make level 2 invalid via NaN
     const double nan_val = std::numeric_limits<double>::quiet_NaN();
-    row.bid_price[2]     = nan_val;
+    row.bid_price[2] = nan_val;
     row.bid_size_usdc[2] = nan_val;
     EXPECT_FALSE(row.bid_level_valid(2));
     EXPECT_TRUE(row.bid_level_valid(1));  // level 1 still valid
@@ -268,7 +269,7 @@ TEST(FeatureStoreContract, T7_ValidateGameRow_FullPaths) {
     // happy path
     {
         auto row = make_valid_game_row();
-        auto r   = validate_game_row(row, now);
+        auto r = validate_game_row(row, now);
         EXPECT_TRUE(r.valid);
         EXPECT_TRUE(r.ts_chain_ok);
         EXPECT_TRUE(r.pit_ok);
@@ -332,7 +333,7 @@ TEST(FeatureStoreContract, T8_ValidateBookRow_FullPaths) {
     // happy path YES
     {
         auto row = make_valid_book_row();
-        auto r   = validate_book_row(row, now);
+        auto r = validate_book_row(row, now);
         EXPECT_TRUE(r.valid);
         EXPECT_TRUE(r.ts_chain_ok);
         EXPECT_TRUE(r.pit_ok);
@@ -419,8 +420,8 @@ TEST(FeatureStoreContract, T10_CompileTime_ABI_Constants) {
 
     // BookRow bid/ask level 大小
     auto br = make_valid_book_row();
-    EXPECT_EQ(br.bid_price.size(),     kOrderBookLevels);
+    EXPECT_EQ(br.bid_price.size(), kOrderBookLevels);
     EXPECT_EQ(br.bid_size_usdc.size(), kOrderBookLevels);
-    EXPECT_EQ(br.ask_price.size(),     kOrderBookLevels);
+    EXPECT_EQ(br.ask_price.size(), kOrderBookLevels);
     EXPECT_EQ(br.ask_size_usdc.size(), kOrderBookLevels);
 }
