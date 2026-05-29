@@ -41,8 +41,5 @@ target_link_libraries(stcpp_backtest
     PUBLIC stcpp_microstructure
 )
 
-# ADR-010 grandfather: 统计计算浮点 / size_t 转换
-target_compile_options(stcpp_backtest PRIVATE
-    -Wno-double-promotion
-    -Wno-conversion
-)
+# ADR-010 §2.1: 生产代码 (src/+include/) 严禁 -Wno-* 抑制。
+# 数值转换 (size_t→double / float→double) 一律在源码用显式 static_cast 表达, 不靠 -Wno 蒙混。
