@@ -33,3 +33,6 @@ endif()
 
 # Sprint-2 W6 Wave 30: 老孙 signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
 add_subdirectory(v52)
+
+# Wave 104 P0: 老孙 signer v6.2 cpp (V2 ABI, ADR-018 build switch)
+add_subdirectory(v62)
