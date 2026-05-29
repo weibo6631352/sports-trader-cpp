@@ -52,3 +52,35 @@ gtest_discover_tests(stcpp_test_integration_debug_api
     DISCOVERY_TIMEOUT 120
     PROPERTIES LABELS "integration;debug-api;w9"
 )
+
+# ---------- ADR-038 MVP observability endpoints (小卢) ----------
+add_executable(stcpp_test_observability_endpoints
+    test_observability_endpoints.cpp
+)
+
+target_link_libraries(stcpp_test_observability_endpoints PRIVATE
+    GTest::gtest_main
+    stcpp_debug_api
+)
+
+target_compile_features(stcpp_test_observability_endpoints PRIVATE cxx_std_20)
+
+target_compile_options(stcpp_test_observability_endpoints PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+
+target_include_directories(stcpp_test_observability_endpoints PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_definitions(stcpp_test_observability_endpoints PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+
+gtest_discover_tests(stcpp_test_observability_endpoints
+    DISCOVERY_TIMEOUT 120
+    PROPERTIES LABELS "integration;debug-api;adr-038"
+)
