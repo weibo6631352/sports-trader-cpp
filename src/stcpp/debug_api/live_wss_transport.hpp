@@ -1,11 +1,11 @@
 // src/stcpp/debug_api/live_wss_transport.hpp — 真实 WSS transport (POSIX + OpenSSL)
 //
 // Owner: 小冯 (#34)  -- live WSS 接入 debug_server --live 模式
-// last_review: 2026-05-29
+// last_review: 2026-05-30
 //
 // 用途:
 //   --live 模式专用 IWssTransport 实现.
-//   通过 POSIX socket + OpenSSL TLS 1.3 + HTTP CONNECT proxy 连接
+//   通过 POSIX socket + OpenSSL TLS 1.2+ + HTTP CONNECT proxy 连接
 //   wss://ws-subscriptions-clob.polymarket.com/ws/market.
 //   代理自动读取环境变量 HTTPS_PROXY / HTTP_PROXY / ALL_PROXY.
 //
@@ -19,18 +19,33 @@
 //   RFC 6455. 客户端必须 masking (mask bit = 1, 4-byte random mask key).
 //   只实现 text frame (opcode=0x1) 收发.
 //   收: 自动处理分片 (continuation frame), ping/pong.
+//   max_frame_bytes = 256KB (market channel); 超限 drop + metric, 不进 parser (小白 audit §1.3-B).
 //
 // 代理支持:
 //   HTTP CONNECT tunnel → TLS wrap → WS upgrade.
 //   环境变量: HTTPS_PROXY / HTTP_PROXY / ALL_PROXY (优先级按此顺序).
 //   格式: http://host:port 或 host:port.
 //
+// TLS 安全加固 (小白 audit §4.1 P0):
+//   verify_peer + SSL_set1_host hostname verification (X.509 CN/SAN).
+//   SNI via SSL_set_tlsext_host_name.
+//   CA bundle via SSL_CTX_set_default_verify_paths.
+//   TLS 最低版本 TLS 1.2 (SSL_CTX_set_min_proto_version).
+//   严禁 verify_none / insecure.
+//
+// Host 白名单 (小白 audit §4.1 item 5 — 硬编码, 运行时不可改):
+//   ws-subscriptions-clob.polymarket.com  (market + user channel)
+//   sports-api.polymarket.com             (sports inplay, 第 5 host)
+//   连接前 AssertHostAllowed() 检查; 不在白名单 → 拒绝连接, 不进 TCP.
+//
 // 红线:
 //   R-12: on_text_frame_ callback 在 io_thread_ 中同步调用; 调用方不得 block > 100us.
-//   P-09: user channel auth 严禁落日志 (本类不处理 user channel).
+//   P-09: AsyncSendText payload 严禁 log (user channel auth frame 含凭证).
+//         verbose_ 模式只打 byte-length, 不打 payload 内容.
 
 #pragma once
 
+#include <array>
 #include <atomic>
 #include <condition_variable>
 #include <cstddef>
@@ -60,6 +75,28 @@
 #include "stcpp/polymarket/wss/pm_wss_subscriber.hpp"  // IWssTransport
 
 namespace stcpp::debug_api {
+
+// ---------------------------------------------------------------------------
+// kWssHostWhitelist — 硬编码 host 白名单 (小白 audit §4.1 item 5)
+//
+// 仅允许连接此列表内的 host. 运行时 config 可覆盖 URL, 但 transport 层
+// AssertHostAllowed() 在 TCP 发起前强制校验, 防配置错误 / 注入指向钓鱼 host.
+// 新增合法 host 需修改此处 + code review.
+// ---------------------------------------------------------------------------
+inline constexpr std::array<std::string_view, 2> kWssHostWhitelist = {
+    "ws-subscriptions-clob.polymarket.com",  // market + user channel (CLOB)
+    "sports-api.polymarket.com",             // sports inplay 第 5 host (PMWssSubscriber)
+};
+
+// Returns true iff host is in the whitelist (case-sensitive exact match).
+// constexpr so callers can use in static_assert.
+constexpr bool IsWssHostAllowed(std::string_view host) noexcept {
+    for (const auto& allowed : kWssHostWhitelist) {
+        if (host == allowed)
+            return true;
+    }
+    return false;
+}
 
 // ---------------------------------------------------------------------------
 // ProxySpec — HTTP CONNECT 代理配置
@@ -128,7 +165,7 @@ public:
     LiveWssTransport& operator=(LiveWssTransport&&) = delete;
 
     // -----------------------------------------------------------------------
-    // AsyncConnect — 解析 URL, 启动 io_thread_
+    // AsyncConnect — 解析 URL, host 白名单检查, 启动 io_thread_
     // -----------------------------------------------------------------------
     bool AsyncConnect(std::string_view url) override {
         if (stop_.load(std::memory_order_acquire)) {
@@ -148,6 +185,15 @@ public:
             return false;
         }
 
+        // Security: host whitelist check (小白 audit §4.1 item 5).
+        // Hard-coded allowed hosts; reject any URL that resolves to an unknown host.
+        // This prevents misconfiguration and config-injection pointing to phishing hosts.
+        if (!IsWssHostAllowed(wss_host_)) {
+            std::fprintf(stderr, "[live_wss] SECURITY: host '%s' not in whitelist — connection refused\n",
+                         wss_host_.c_str());
+            return false;
+        }
+
         proxy_ = ProxyFromEnv();
         if (verbose_) {
             if (proxy_.enabled) {
@@ -164,8 +210,13 @@ public:
 
     // -----------------------------------------------------------------------
     // AsyncSendText — enqueue WS text frame for send_thread
+    // P-09: payload 严禁打 log — user channel subscribe frame 含 api_key/secret/passphrase.
+    //       verbose_ 模式只记 byte-length, 永不记 payload 内容.
     // -----------------------------------------------------------------------
     bool AsyncSendText(std::string_view payload) override {
+        if (verbose_) {
+            std::fprintf(stderr, "[live_wss] send_enqueue: %zu bytes (payload not logged)\n", payload.size());
+        }
         {
             std::lock_guard<std::mutex> lk(send_mu_);
             send_queue_.push(std::string(payload));
@@ -260,7 +311,13 @@ private:
             }
         }
 
-        // 3. TLS wrap
+        // 3. TLS wrap — 小白 audit §4.1 P0 加固:
+        //    a) TLS_client_method() (negotiates highest mutual version, floor set below)
+        //    b) SSL_CTX_set_min_proto_version(TLS1_2_VERSION) — 禁 SSLv3/TLS1.0/TLS1.1
+        //    c) SSL_VERIFY_PEER — 严禁 verify_none / insecure
+        //    d) SSL_CTX_set_default_verify_paths — 系统 CA bundle, 不信任空 CA store
+        //    e) SSL_set_tlsext_host_name — SNI (多租户 CDN 后必须)
+        //    f) SSL_set1_host — X.509 CN/SAN hostname verification (RFC 6125)
         SSL_CTX* ctx = SSL_CTX_new(TLS_client_method());
         if (!ctx) {
             std::fprintf(stderr, "[live_wss] SSL_CTX_new failed\n");
@@ -269,7 +326,14 @@ private:
                 on_disconnected_("ssl_ctx_failed");
             return;
         }
+        // Enforce TLS >= 1.2 (小白 audit §4.1 item 4)
+        if (SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION) != 1) {
+            std::fprintf(stderr, "[live_wss] WARNING: SSL_CTX_set_min_proto_version(TLS1.2) failed\n");
+            // Non-fatal: TLS_client_method already prefers TLS1.2+, but log the warning.
+        }
+        // Peer certificate verification — MUST be VERIFY_PEER, never VERIFY_NONE (§4.1 item 1)
         SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, nullptr);
+        // Load system CA bundle (§4.1 item 3)
         SSL_CTX_set_default_verify_paths(ctx);
 
         SSL* ssl = SSL_new(ctx);
@@ -281,7 +345,11 @@ private:
             return;
         }
         SSL_set_fd(ssl, sockfd);
+        // SNI — required for CDN-hosted endpoints (§4.1 item 2)
         SSL_set_tlsext_host_name(ssl, wss_host_.c_str());
+        // X.509 hostname verification against CN/SAN (§4.1 item 1, RFC 6125)
+        // SSL_set1_host performs automatic CN/SAN matching after SSL_connect.
+        SSL_set1_host(ssl, wss_host_.c_str());
 
         if (SSL_connect(ssl) != 1) {
             char errbuf[256];
@@ -294,8 +362,24 @@ private:
                 on_disconnected_("ssl_connect_failed");
             return;
         }
+
+        // Post-connect: verify certificate was presented and chain validated.
+        // With SSL_VERIFY_PEER this should always hold, but be explicit.
+        X509* peer_cert = SSL_get_peer_certificate(ssl);
+        if (!peer_cert) {
+            std::fprintf(stderr, "[live_wss] TLS: no peer certificate — aborting\n");
+            SSL_free(ssl);
+            SSL_CTX_free(ctx);
+            ::close(sockfd);
+            if (on_disconnected_)
+                on_disconnected_("ssl_no_peer_cert");
+            return;
+        }
+        X509_free(peer_cert);  // We only needed to confirm presence; OpenSSL holds ref
+
         if (verbose_) {
-            std::fprintf(stderr, "[live_wss] TLS established: %s\n", SSL_get_version(ssl));
+            std::fprintf(stderr, "[live_wss] TLS established: %s (peer cert verified, host=%s)\n",
+                         SSL_get_version(ssl), wss_host_.c_str());
         }
 
         ssl_ = ssl;
@@ -486,12 +570,29 @@ private:
                     break;
             }
 
-            // Payload
-            static constexpr std::size_t kMaxPayload = 4 * 1024 * 1024;  // 4 MB guard
+            // Payload — frame size guard (小白 audit §1.3-B).
+            // Market channel: ≤ 256KB per frame. Larger frames are dropped (not connection-killed)
+            // so transient oversized frames from upstream don't break the entire session.
+            // oversized_frames_dropped_ is exposed via metric for alerting.
+            static constexpr std::size_t kMaxPayload = 256 * 1024;  // 256 KB
             if (payload_len > kMaxPayload) {
-                std::fprintf(stderr, "[live_wss] oversized frame: %llu bytes\n",
-                             static_cast<unsigned long long>(payload_len));
-                break;
+                std::fprintf(stderr, "[live_wss] oversized frame: %llu bytes > %zu limit — dropped\n",
+                             static_cast<unsigned long long>(payload_len), kMaxPayload);
+                oversized_frames_dropped_.fetch_add(1, std::memory_order_relaxed);
+                // Drain the oversized payload bytes to keep framing in sync, then skip.
+                // We read in chunks to avoid a massive single allocation.
+                std::uint64_t remaining = payload_len;
+                std::array<std::uint8_t, 4096> drain_buf{};
+                bool drain_ok = true;
+                while (remaining > 0 && drain_ok) {
+                    std::size_t chunk = (remaining > drain_buf.size()) ? drain_buf.size()
+                                                                       : static_cast<std::size_t>(remaining);
+                    drain_ok = SslReadExact(ssl, drain_buf.data(), chunk);
+                    remaining -= chunk;
+                }
+                if (!drain_ok)
+                    break;  // Connection broken during drain — exit recv loop
+                continue;
             }
 
             std::vector<std::uint8_t> payload(payload_len);
@@ -686,6 +787,17 @@ private:
     std::atomic<bool> stop_{false};
     std::atomic<bool> connected_{false};
 
+    // Security metrics (小白 audit §1.3-B, §4.1)
+    // oversized_frames_dropped_: frames exceeding kMaxPayload (256KB) — alert if non-zero
+    std::atomic<std::uint64_t> oversized_frames_dropped_{0};
+
+public:
+    // Read-only access for monitoring / alerting
+    [[nodiscard]] std::uint64_t oversized_frames_dropped() const noexcept {
+        return oversized_frames_dropped_.load(std::memory_order_relaxed);
+    }
+
+private:
     // io_thread_: recv loop
     std::thread io_thread_;
 
