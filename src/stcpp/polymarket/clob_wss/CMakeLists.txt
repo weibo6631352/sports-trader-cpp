@@ -22,9 +22,10 @@ target_compile_features(stcpp_polymarket_clob_wss PUBLIC cxx_std_20)
 # Depends on stcpp_polymarket_wss for IWssTransport / ISpscEventSink / WssEvent
 target_link_libraries(stcpp_polymarket_clob_wss PUBLIC stcpp_polymarket_wss)
 
-# ADR-010 grandfather list only
+# 三方库豁免: Boost.Beast / simdjson (cpp-httplib 头文件引入的三方代码触发)
+# ADR-010 §2.1 豁免标注 — 非业务代码, 三方库 include 引起, 清理跟踪: xiaosong-wno-cleanup-extension-w7-plan.md
 target_compile_options(stcpp_polymarket_clob_wss PRIVATE
-    -Wno-double-promotion
-    -Wno-old-style-cast
-    -Wno-cast-align
+    -Wno-double-promotion   # 三方库豁免: Boost.Beast
+    -Wno-old-style-cast     # 三方库豁免: Boost.Beast
+    -Wno-cast-align         # 三方库豁免: Boost.Beast
 )
