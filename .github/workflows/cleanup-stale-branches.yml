@@ -1,0 +1,44 @@
+name: Auto cleanup stale worktree branches
+
+# 老板 2026-05-29 verbatim "worktree和分支是如何自动清理的" 触发
+# 自动删 stale worktree-agent-* branches (3 个 trigger):
+#   - merged 进 main 的 → 立刻删 (delete_branch_on_merge=true 兜底)
+#   - 无 open PR & 24h+ 无 commit → 删 (admin merge 后遗留)
+#   - 7 天 + 无活动 → 强删
+
+on:
+  schedule:
+    - cron: '0 4 * * *'  # 每日 04:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup-stale-worktree-branches:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete stale worktree-agent-* branches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          REPO=${{ github.repository }}
+          # 拉所有 worktree-agent-* branches
+          gh api -X GET repos/$REPO/branches --paginate \
+            --jq '.[] | select(.name | startswith("worktree-agent-")) | .name' | \
+          while read branch; do
+            # 跳过有 open PR 的 branch
+            HAS_PR=$(gh pr list --repo $REPO --head "$branch" --state open --json number --jq 'length')
+            if [ "$HAS_PR" != "0" ]; then
+              echo "SKIP (open PR): $branch"
+              continue
+            fi
+            # 拉 last commit 时间
+            LAST_COMMIT=$(gh api repos/$REPO/branches/$branch --jq '.commit.commit.committer.date')
+            ONE_DAY_AGO=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)
+            if [[ "$LAST_COMMIT" < "$ONE_DAY_AGO" ]]; then
+              echo "DELETE (stale > 1d, no PR): $branch (last: $LAST_COMMIT)"
+              gh api -X DELETE "repos/$REPO/git/refs/heads/$branch" || true
+            fi
+          done
