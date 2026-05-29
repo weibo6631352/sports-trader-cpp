@@ -21,13 +21,13 @@
 //   - 旧 audit log (v1.2/v1.3) apply migration 后不破 chain
 //   - 文件 ≤ 400 行
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cstdint>
 #include <cstring>
 #include <string_view>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/infra/wal/wal_error.hpp"
@@ -51,13 +51,13 @@ using stcpp::observability::AuditEmitter;
 using stcpp::observability::AuditEventType;
 using stcpp::observability::AuditRecord;
 using stcpp::observability::Blake3Hasher;
-using stcpp::observability::RiskDecisionInput;
 using stcpp::observability::kAuditSchemaV12;
 using stcpp::observability::kAuditSchemaV13;
 using stcpp::observability::kAuditSchemaV14;
-using stcpp::observability::kTokenIdMax;
-using stcpp::observability::kMarketIdMax;
 using stcpp::observability::kBytes32HexMax;
+using stcpp::observability::kMarketIdMax;
+using stcpp::observability::kTokenIdMax;
+using stcpp::observability::RiskDecisionInput;
 using stcpp::risk::InvalidIntentSubReason;
 using stcpp::risk::RejectCode;
 
@@ -71,45 +71,43 @@ static constexpr std::string_view kBytes32Zero =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 // 构造合法 v1.4 RiskDecisionInput (含全部 V2 字段)
-static RiskDecisionInput make_v14_input(
-    std::string_view token_id       = "79394987953468328984958213450943553510",
-    std::uint8_t     outcome        = 0,           // Yes
-    std::uint8_t     side           = 0,           // Buy
-    std::int64_t     timestamp_ms   = 1748476800000LL,
-    std::string_view metadata       = kBytes32Zero,
-    std::string_view builder        = kBytes32Zero,
-    std::int64_t     size_pUSD_micro = 10'000'000LL,  // 10 pUSD
-    AuditEventType   event_type     = AuditEventType::OrderApproved)
-{
+static RiskDecisionInput make_v14_input(std::string_view token_id = "79394987953468328984958213450943553510",
+                                        std::uint8_t outcome = 0,  // Yes
+                                        std::uint8_t side = 0,     // Buy
+                                        std::int64_t timestamp_ms = 1748476800000LL,
+                                        std::string_view metadata = kBytes32Zero,
+                                        std::string_view builder = kBytes32Zero,
+                                        std::int64_t size_pUSD_micro = 10'000'000LL,  // 10 pUSD
+                                        AuditEventType event_type = AuditEventType::OrderApproved) {
     const std::int64_t base = NowNs() - 1'000'000'000LL;
     RiskDecisionInput in{};
-    in.event_ts        = base;
-    in.data_source_ts  = base + 1'000;
-    in.ingestion_ts    = base + 2'000;
-    in.as_of_ts        = base + 3'000;
-    in.decision_ts     = base + 4'000;
-    in.audit_id_bytes  = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-    in.condition_id    = "0xa9db6005902eb43a19d7b1e";  // 25 chars < kMarketIdMax
-    in.market_id       = in.condition_id;
-    in.token_id        = token_id;
-    in.outcome         = outcome;
-    in.side            = side;
-    in.is_buy          = (side == 0);
-    in.strategy_id     = "strat_v14_test";
+    in.event_ts = base;
+    in.data_source_ts = base + 1'000;
+    in.ingestion_ts = base + 2'000;
+    in.as_of_ts = base + 3'000;
+    in.decision_ts = base + 4'000;
+    in.audit_id_bytes = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+    in.condition_id = "0xa9db6005902eb43a19d7b1e";  // 25 chars < kMarketIdMax
+    in.market_id = in.condition_id;
+    in.token_id = token_id;
+    in.outcome = outcome;
+    in.side = side;
+    in.is_buy = (side == 0);
+    in.strategy_id = "strat_v14_test";
     in.size_pUSD_micro = size_pUSD_micro;
-    in.price           = 0.60;
-    in.timestamp_ms    = timestamp_ms;
-    in.metadata        = metadata;
-    in.builder         = builder;
-    in.event_type      = event_type;
-    in.reject_code     = RejectCode::INTERNAL_ERROR;
-    in.sub_reason      = InvalidIntentSubReason::NONE;
+    in.price = 0.60;
+    in.timestamp_ms = timestamp_ms;
+    in.metadata = metadata;
+    in.builder = builder;
+    in.event_type = event_type;
+    in.reject_code = RejectCode::INTERNAL_ERROR;
+    in.sub_reason = InvalidIntentSubReason::NONE;
     return in;
 }
 
 static auto open_writer(const char* prefix) {
     WalConfig cfg{};
-    cfg.kind        = WalKind::PaperAudit;
+    cfg.kind = WalKind::PaperAudit;
     cfg.path_prefix = std::string("/var/lib/stcpp/paper/") + prefix;
     return WalWriter<AuditRecord>::Open(cfg);
 }
@@ -131,24 +129,21 @@ TEST(AuditSchemaV14, T1_TimestampMs_SizePUSD_RoundTrip) {
     ASSERT_TRUE(wr.has_value()) << "T1: writer open failed";
     AuditEmitter em{wr.value().get()};
 
-    constexpr std::int64_t kTimestampMs   = 1748476800000LL;  // 2026-05-28 00:00:00 UTC ms
-    constexpr std::int64_t kSizePUSD      = 25'000'000LL;     // 25 pUSD micro
+    constexpr std::int64_t kTimestampMs = 1748476800000LL;  // 2026-05-28 00:00:00 UTC ms
+    constexpr std::int64_t kSizePUSD = 25'000'000LL;        // 25 pUSD micro
 
-    const auto in = make_v14_input(
-        "79394987953468328984",   // token_id
-        0, 0,                     // outcome=Yes, side=Buy
-        kTimestampMs,
-        kBytes32Zero, kBytes32Zero,
-        kSizePUSD);
+    const auto in = make_v14_input("79394987953468328984",  // token_id
+                                   0, 0,                    // outcome=Yes, side=Buy
+                                   kTimestampMs, kBytes32Zero, kBytes32Zero, kSizePUSD);
 
     // 直接构造 AuditRecord 验证字段映射
     AuditRecord rec{};
-    rec.schema_version  = kAuditSchemaV14;
-    rec.timestamp_ms    = kTimestampMs;
+    rec.schema_version = kAuditSchemaV14;
+    rec.timestamp_ms = kTimestampMs;
     rec.size_pUSD_micro = kSizePUSD;
     rec.outcome = 0;
-    rec.side    = 0;
-    rec.is_buy  = true;
+    rec.side = 0;
+    rec.is_buy = true;
 
     // serialize round-trip
     std::vector<std::byte> buf(AuditRecord::max_serialized_size());
@@ -157,11 +152,11 @@ TEST(AuditSchemaV14, T1_TimestampMs_SizePUSD_RoundTrip) {
 
     AuditRecord rec2{};
     std::memcpy(&rec2, buf.data(), sizeof(AuditRecord));
-    EXPECT_EQ(rec2.schema_version,  kAuditSchemaV14)  << "T1: schema_version round-trip";
-    EXPECT_EQ(rec2.timestamp_ms,    kTimestampMs)      << "T1: timestamp_ms round-trip";
-    EXPECT_EQ(rec2.size_pUSD_micro, kSizePUSD)         << "T1: size_pUSD_micro round-trip";
-    EXPECT_EQ(rec2.outcome,         static_cast<std::uint8_t>(0)) << "T1: outcome round-trip";
-    EXPECT_EQ(rec2.side,            static_cast<std::uint8_t>(0)) << "T1: side round-trip";
+    EXPECT_EQ(rec2.schema_version, kAuditSchemaV14) << "T1: schema_version round-trip";
+    EXPECT_EQ(rec2.timestamp_ms, kTimestampMs) << "T1: timestamp_ms round-trip";
+    EXPECT_EQ(rec2.size_pUSD_micro, kSizePUSD) << "T1: size_pUSD_micro round-trip";
+    EXPECT_EQ(rec2.outcome, static_cast<std::uint8_t>(0)) << "T1: outcome round-trip";
+    EXPECT_EQ(rec2.side, static_cast<std::uint8_t>(0)) << "T1: side round-trip";
 
     // emit_decision 端到端
     const auto r = em.emit_decision(in);
@@ -192,20 +187,18 @@ TEST(AuditSchemaV14, T2_Metadata_Builder_Bytes32Hex_RoundTrip) {
         "0x0000000000000000000000000000000000000000000000000000000000000001";
 
     static_assert(kMetadata.size() == 66, "metadata 应为 66 printable chars (0x + 64 hex)");
-    static_assert(kBuilder.size()  == 66, "builder 应为 66 printable chars (0x + 64 hex)");
+    static_assert(kBuilder.size() == 66, "builder 应为 66 printable chars (0x + 64 hex)");
     static_assert(kMetadata.size() < kBytes32HexMax, "metadata 不超 buffer");
-    static_assert(kBuilder.size()  < kBytes32HexMax, "builder 不超 buffer");
+    static_assert(kBuilder.size() < kBytes32HexMax, "builder 不超 buffer");
 
     auto wr = open_writer("v14_t2_meta_builder");
     ASSERT_TRUE(wr.has_value()) << "T2: writer open failed";
     AuditEmitter em{wr.value().get()};
 
-    const auto in = make_v14_input(
-        "40471836929808124571",   // token_id
-        1, 1,                     // outcome=No, side=Sell
-        1748476800000LL + 9999LL,
-        kMetadata, kBuilder,
-        5'000'000LL);             // 5 pUSD
+    const auto in = make_v14_input("40471836929808124571",  // token_id
+                                   1, 1,                    // outcome=No, side=Sell
+                                   1748476800000LL + 9999LL, kMetadata, kBuilder,
+                                   5'000'000LL);  // 5 pUSD
 
     // 构造 AuditRecord 手动写入
     AuditRecord rec{};
@@ -227,10 +220,8 @@ TEST(AuditSchemaV14, T2_Metadata_Builder_Bytes32Hex_RoundTrip) {
 
     AuditRecord rec2{};
     std::memcpy(&rec2, buf.data(), sizeof(AuditRecord));
-    EXPECT_STREQ(rec2.metadata.data(), kMetadata.data())
-        << "T2: metadata bytes32 hex round-trip failed";
-    EXPECT_STREQ(rec2.builder.data(), kBuilder.data())
-        << "T2: builder bytes32 hex round-trip failed";
+    EXPECT_STREQ(rec2.metadata.data(), kMetadata.data()) << "T2: metadata bytes32 hex round-trip failed";
+    EXPECT_STREQ(rec2.builder.data(), kBuilder.data()) << "T2: builder bytes32 hex round-trip failed";
     EXPECT_EQ(rec2.schema_version, kAuditSchemaV14) << "T2: schema_version round-trip";
 
     // bytes32(0) default round-trip
@@ -238,7 +229,7 @@ TEST(AuditSchemaV14, T2_Metadata_Builder_Bytes32Hex_RoundTrip) {
     rec_zero.schema_version = kAuditSchemaV14;
     // metadata/builder zero-init = empty string (array 已 value-init)
     EXPECT_EQ(rec_zero.metadata[0], '\0') << "T2: zero-init metadata[0] == 0";
-    EXPECT_EQ(rec_zero.builder[0],  '\0') << "T2: zero-init builder[0] == 0";
+    EXPECT_EQ(rec_zero.builder[0], '\0') << "T2: zero-init builder[0] == 0";
 
     // emit_decision 端到端
     const auto r = em.emit_decision(in);
@@ -269,15 +260,12 @@ TEST(AuditSchemaV14, T3_BLAKE3_Chain_V2Fields_NotBreak) {
     Blake3Hasher::Hash256 mirror_prev{};
 
     // Record 0: seq=1, timestamp_ms 设 V2 值, metadata=非零
-    constexpr std::string_view kMeta1 =
-        "0xdeadbeef00000001deadbeef00000001deadbeef00000001deadbeef00000001";
-    const auto ctx0 = make_v14_input(
-        "1111111111111111111", 0, 0,
-        1748476800001LL, kMeta1, kBytes32Zero, 10'000'000LL,
-        AuditEventType::OrderApproved);
+    constexpr std::string_view kMeta1 = "0xdeadbeef00000001deadbeef00000001deadbeef00000001deadbeef00000001";
+    const auto ctx0 = make_v14_input("1111111111111111111", 0, 0, 1748476800001LL, kMeta1, kBytes32Zero,
+                                     10'000'000LL, AuditEventType::OrderApproved);
     ASSERT_TRUE(em.emit_decision(ctx0).has_value()) << "T3: emit seq=1 failed";
     {
-        const auto seq     = static_cast<std::uint64_t>(1);
+        const auto seq = static_cast<std::uint64_t>(1);
         const auto payload = Blake3Hasher::compute_payload_hash(
             seq, static_cast<std::uint8_t>(AuditEventType::OrderApproved), ctx0.decision_ts);
         const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
@@ -289,13 +277,11 @@ TEST(AuditSchemaV14, T3_BLAKE3_Chain_V2Fields_NotBreak) {
     // Record 1: seq=2, metadata=bytes32(0), builder=非零
     constexpr std::string_view kBuilder2 =
         "0x0000000000000000000000000000000000000000000000000000000000000002";
-    const auto ctx1 = make_v14_input(
-        "2222222222222222222", 1, 1,
-        1748476800002LL, kBytes32Zero, kBuilder2, 5'000'000LL,
-        AuditEventType::OrderApproved);
+    const auto ctx1 = make_v14_input("2222222222222222222", 1, 1, 1748476800002LL, kBytes32Zero, kBuilder2,
+                                     5'000'000LL, AuditEventType::OrderApproved);
     ASSERT_TRUE(em.emit_decision(ctx1).has_value()) << "T3: emit seq=2 failed";
     {
-        const auto seq     = static_cast<std::uint64_t>(2);
+        const auto seq = static_cast<std::uint64_t>(2);
         const auto payload = Blake3Hasher::compute_payload_hash(
             seq, static_cast<std::uint8_t>(AuditEventType::OrderApproved), ctx1.decision_ts);
         const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
@@ -304,13 +290,11 @@ TEST(AuditSchemaV14, T3_BLAKE3_Chain_V2Fields_NotBreak) {
     }
 
     // Record 2: seq=3, OrderFilled, size_pUSD_micro=25M
-    const auto ctx2 = make_v14_input(
-        "3333333333333333333", 5, 0,
-        1748476800003LL, kBytes32Zero, kBytes32Zero, 25'000'000LL,
-        AuditEventType::OrderFilled);
+    const auto ctx2 = make_v14_input("3333333333333333333", 5, 0, 1748476800003LL, kBytes32Zero, kBytes32Zero,
+                                     25'000'000LL, AuditEventType::OrderFilled);
     ASSERT_TRUE(em.emit_decision(ctx2).has_value()) << "T3: emit seq=3 failed";
     {
-        const auto seq     = static_cast<std::uint64_t>(3);
+        const auto seq = static_cast<std::uint64_t>(3);
         const auto payload = Blake3Hasher::compute_payload_hash(
             seq, static_cast<std::uint8_t>(AuditEventType::OrderFilled), ctx2.decision_ts);
         const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
@@ -318,8 +302,7 @@ TEST(AuditSchemaV14, T3_BLAKE3_Chain_V2Fields_NotBreak) {
     }
 
     EXPECT_EQ(em.emitted_count(), 3u) << "T3: 3 emit 完成";
-    EXPECT_TRUE(em.hash_chain_verify(1, 3))
-        << "T3: hash_chain_verify(1,3) PASS (V2 字段不破 chain)";
+    EXPECT_TRUE(em.hash_chain_verify(1, 3)) << "T3: hash_chain_verify(1,3) PASS (V2 字段不破 chain)";
 }
 
 // =============================================================================
@@ -341,9 +324,9 @@ TEST(AuditSchemaV14, T4_V13_To_V14_Migration) {
     // Case A: v1.3 record — timestamp_ms/metadata/builder 全零 (v1.3 无此字段)
     {
         AuditRecord rec_v13{};
-        rec_v13.schema_version  = kAuditSchemaV13;
-        rec_v13.outcome         = 2;   // Over
-        rec_v13.side            = 0;   // Buy
+        rec_v13.schema_version = kAuditSchemaV13;
+        rec_v13.outcome = 2;                     // Over
+        rec_v13.side = 0;                        // Buy
         rec_v13.size_pUSD_micro = 12'000'000LL;  // 12 pUSD (原 size_usdc 位置 = 同 offset)
 
         // 写入 token_id (v1.3 已有字段)
@@ -360,26 +343,25 @@ TEST(AuditSchemaV14, T4_V13_To_V14_Migration) {
 
         // pre-migration 状态
         EXPECT_EQ(rec_v13.schema_version, kAuditSchemaV13) << "T4-A: pre-migration version";
-        EXPECT_EQ(rec_v13.timestamp_ms,   static_cast<std::int64_t>(0))
+        EXPECT_EQ(rec_v13.timestamp_ms, static_cast<std::int64_t>(0))
             << "T4-A: pre-migration timestamp_ms 全零 (v1.3 无此字段)";
-        EXPECT_EQ(rec_v13.metadata[0],    '\0') << "T4-A: pre-migration metadata zero-init";
-        EXPECT_EQ(rec_v13.builder[0],     '\0') << "T4-A: pre-migration builder zero-init";
+        EXPECT_EQ(rec_v13.metadata[0], '\0') << "T4-A: pre-migration metadata zero-init";
+        EXPECT_EQ(rec_v13.builder[0], '\0') << "T4-A: pre-migration builder zero-init";
 
         // migration
         rec_v13.apply_v13_migration();
 
-        EXPECT_EQ(rec_v13.schema_version, kAuditSchemaV14)
-            << "T4-A: 迁移后 schema_version 应为 v1.4";
+        EXPECT_EQ(rec_v13.schema_version, kAuditSchemaV14) << "T4-A: 迁移后 schema_version 应为 v1.4";
         EXPECT_EQ(rec_v13.timestamp_ms, static_cast<std::int64_t>(0))
             << "T4-A: migration timestamp_ms = 0 (V1 无此字段默认)";
         EXPECT_EQ(rec_v13.metadata[0], '\0')
             << "T4-A: migration metadata 仍为空 (bytes32(0) migration default)";
-        EXPECT_EQ(rec_v13.builder[0],  '\0')
+        EXPECT_EQ(rec_v13.builder[0], '\0')
             << "T4-A: migration builder 仍为空 (bytes32(0) migration default)";
 
         // 原有字段不被 apply_v13_migration 修改
-        EXPECT_EQ(rec_v13.outcome,         static_cast<std::uint8_t>(2)) << "T4-A: outcome 不变";
-        EXPECT_EQ(rec_v13.side,            static_cast<std::uint8_t>(0)) << "T4-A: side 不变";
+        EXPECT_EQ(rec_v13.outcome, static_cast<std::uint8_t>(2)) << "T4-A: outcome 不变";
+        EXPECT_EQ(rec_v13.side, static_cast<std::uint8_t>(0)) << "T4-A: side 不变";
         EXPECT_EQ(rec_v13.size_pUSD_micro, static_cast<std::int64_t>(12'000'000LL))
             << "T4-A: size_pUSD_micro 数值不变 (仅 rename)";
         EXPECT_STREQ(rec_v13.token_id.data(), tok) << "T4-A: token_id 不变";
@@ -389,16 +371,16 @@ TEST(AuditSchemaV14, T4_V13_To_V14_Migration) {
     // Case B: v1.3 record, is_buy=false — apply_v13_migration 不操作 side/outcome
     {
         AuditRecord rec_v13b{};
-        rec_v13b.schema_version  = kAuditSchemaV13;
-        rec_v13b.side            = 1;   // Sell (v1.3 已有字段)
-        rec_v13b.outcome         = 1;   // No
-        rec_v13b.is_buy          = false;
+        rec_v13b.schema_version = kAuditSchemaV13;
+        rec_v13b.side = 1;     // Sell (v1.3 已有字段)
+        rec_v13b.outcome = 1;  // No
+        rec_v13b.is_buy = false;
         rec_v13b.size_pUSD_micro = 3'000'000LL;
 
         rec_v13b.apply_v13_migration();
 
         EXPECT_EQ(rec_v13b.schema_version, kAuditSchemaV14) << "T4-B: schema_version";
-        EXPECT_EQ(rec_v13b.side,    static_cast<std::uint8_t>(1)) << "T4-B: side=Sell 不变";
+        EXPECT_EQ(rec_v13b.side, static_cast<std::uint8_t>(1)) << "T4-B: side=Sell 不变";
         EXPECT_EQ(rec_v13b.outcome, static_cast<std::uint8_t>(1)) << "T4-B: outcome=No 不变";
         EXPECT_EQ(rec_v13b.timestamp_ms, static_cast<std::int64_t>(0)) << "T4-B: timestamp_ms=0";
         EXPECT_EQ(rec_v13b.size_pUSD_micro, static_cast<std::int64_t>(3'000'000LL))
@@ -429,62 +411,55 @@ TEST(AuditSchemaV14, T5_V12_To_V14_FullMigration) {
     // Case A: v1.2 record, is_buy=true → side=Buy(0)
     {
         AuditRecord rec_v12{};
-        rec_v12.schema_version  = kAuditSchemaV12;
-        const char* cond_id = "0xdeadbeef0000v12a";   // < kMarketIdMax
+        rec_v12.schema_version = kAuditSchemaV12;
+        const char* cond_id = "0xdeadbeef0000v12a";  // < kMarketIdMax
         const std::size_t cn = std::strlen(cond_id);
         std::memcpy(rec_v12.condition_id.data(), cond_id, cn);
         rec_v12.condition_id[cn] = '\0';
-        rec_v12.is_buy           = true;
+        rec_v12.is_buy = true;
         // v1.2 에서 token_id/metadata/builder 는 zero-init (없는 필드)
         // size_pUSD_micro 도 zero-init 유지
 
         EXPECT_EQ(rec_v12.schema_version, kAuditSchemaV12) << "T5-A: pre-migration version";
-        EXPECT_EQ(rec_v12.token_id[0],    '\0') << "T5-A: pre-migration token_id zero";
-        EXPECT_EQ(rec_v12.metadata[0],    '\0') << "T5-A: pre-migration metadata zero";
-        EXPECT_EQ(rec_v12.builder[0],     '\0') << "T5-A: pre-migration builder zero";
-        EXPECT_EQ(rec_v12.timestamp_ms,   static_cast<std::int64_t>(0))
+        EXPECT_EQ(rec_v12.token_id[0], '\0') << "T5-A: pre-migration token_id zero";
+        EXPECT_EQ(rec_v12.metadata[0], '\0') << "T5-A: pre-migration metadata zero";
+        EXPECT_EQ(rec_v12.builder[0], '\0') << "T5-A: pre-migration builder zero";
+        EXPECT_EQ(rec_v12.timestamp_ms, static_cast<std::int64_t>(0))
             << "T5-A: pre-migration timestamp_ms zero";
 
         rec_v12.apply_v12_migration();
 
-        EXPECT_EQ(rec_v12.schema_version, kAuditSchemaV14)
-            << "T5-A: 迁移后 schema_version 应为 v1.4";
-        EXPECT_EQ(rec_v12.side,    static_cast<std::uint8_t>(0))
-            << "T5-A: is_buy=true → side=Buy(0)";
-        EXPECT_EQ(rec_v12.outcome, static_cast<std::uint8_t>(0))
-            << "T5-A: migration default outcome=Yes(0)";
-        EXPECT_EQ(rec_v12.token_id[0],  '\0')
-            << "T5-A: migration 后 token_id 仍空 (v1.2 无此字段)";
+        EXPECT_EQ(rec_v12.schema_version, kAuditSchemaV14) << "T5-A: 迁移后 schema_version 应为 v1.4";
+        EXPECT_EQ(rec_v12.side, static_cast<std::uint8_t>(0)) << "T5-A: is_buy=true → side=Buy(0)";
+        EXPECT_EQ(rec_v12.outcome, static_cast<std::uint8_t>(0)) << "T5-A: migration default outcome=Yes(0)";
+        EXPECT_EQ(rec_v12.token_id[0], '\0') << "T5-A: migration 后 token_id 仍空 (v1.2 无此字段)";
         EXPECT_EQ(rec_v12.timestamp_ms, static_cast<std::int64_t>(0))
             << "T5-A: migration timestamp_ms=0 (V1 无此字段)";
-        EXPECT_EQ(rec_v12.metadata[0],  '\0')
-            << "T5-A: migration metadata 空 (bytes32(0) default)";
-        EXPECT_EQ(rec_v12.builder[0],   '\0')
-            << "T5-A: migration builder 空 (bytes32(0) default)";
+        EXPECT_EQ(rec_v12.metadata[0], '\0') << "T5-A: migration metadata 空 (bytes32(0) default)";
+        EXPECT_EQ(rec_v12.builder[0], '\0') << "T5-A: migration builder 空 (bytes32(0) default)";
     }
 
     // Case B: v1.2 record, is_buy=false → side=Sell(1)
     {
         AuditRecord rec_v12{};
         rec_v12.schema_version = kAuditSchemaV12;
-        rec_v12.is_buy         = false;
+        rec_v12.is_buy = false;
 
         rec_v12.apply_v12_migration();
 
         EXPECT_EQ(rec_v12.schema_version, kAuditSchemaV14) << "T5-B: schema_version";
-        EXPECT_EQ(rec_v12.side,    static_cast<std::uint8_t>(1)) << "T5-B: is_buy=false → side=Sell(1)";
+        EXPECT_EQ(rec_v12.side, static_cast<std::uint8_t>(1)) << "T5-B: is_buy=false → side=Sell(1)";
         EXPECT_EQ(rec_v12.outcome, static_cast<std::uint8_t>(0)) << "T5-B: outcome=Yes default";
-        EXPECT_EQ(rec_v12.timestamp_ms, static_cast<std::int64_t>(0))
-            << "T5-B: timestamp_ms=0 (V1 无此字段)";
+        EXPECT_EQ(rec_v12.timestamp_ms, static_cast<std::int64_t>(0)) << "T5-B: timestamp_ms=0 (V1 无此字段)";
         EXPECT_EQ(rec_v12.metadata[0], '\0') << "T5-B: metadata 空";
-        EXPECT_EQ(rec_v12.builder[0],  '\0') << "T5-B: builder 空";
+        EXPECT_EQ(rec_v12.builder[0], '\0') << "T5-B: builder 空";
     }
 
     // Case C: v1.4 record serialize → deserialize + static_assert 常量
     {
         AuditRecord rec_v14{};
-        rec_v14.schema_version  = kAuditSchemaV14;
-        rec_v14.timestamp_ms    = 1748476800999LL;
+        rec_v14.schema_version = kAuditSchemaV14;
+        rec_v14.timestamp_ms = 1748476800999LL;
         rec_v14.size_pUSD_micro = 7'500'000LL;
         const char* meta = "0xabcdef0000000000000000000000000000000000000000000000000000000000";
         std::memcpy(rec_v14.metadata.data(), meta, std::strlen(meta));
@@ -493,8 +468,8 @@ TEST(AuditSchemaV14, T5_V12_To_V14_FullMigration) {
         ASSERT_EQ(rec_v14.serialize_into({buf.data(), buf.size()}), sizeof(AuditRecord));
         AuditRecord rec2{};
         std::memcpy(&rec2, buf.data(), sizeof(AuditRecord));
-        EXPECT_EQ(rec2.schema_version,  kAuditSchemaV14)    << "T5-C: schema_version round-trip";
-        EXPECT_EQ(rec2.timestamp_ms,    rec_v14.timestamp_ms) << "T5-C: timestamp_ms round-trip";
+        EXPECT_EQ(rec2.schema_version, kAuditSchemaV14) << "T5-C: schema_version round-trip";
+        EXPECT_EQ(rec2.timestamp_ms, rec_v14.timestamp_ms) << "T5-C: timestamp_ms round-trip";
         EXPECT_EQ(rec2.size_pUSD_micro, rec_v14.size_pUSD_micro) << "T5-C: size_pUSD_micro round-trip";
         EXPECT_STREQ(rec2.metadata.data(), meta) << "T5-C: metadata round-trip";
     }
@@ -509,10 +484,9 @@ static_assert(kAuditSchemaV13 == 0x13, "kAuditSchemaV13 应为 0x13");
 static_assert(kAuditSchemaV14 == 0x14, "kAuditSchemaV14 应为 0x14");
 static_assert(kAuditSchemaV14 > kAuditSchemaV13, "v1.4 > v1.3 版本号单调递增");
 static_assert(kAuditSchemaV13 > kAuditSchemaV12, "v1.3 > v1.2 版本号单调递增");
-static_assert(kTokenIdMax == 80,   "kTokenIdMax 应为 80 (uint256 77 位 + null + 对齐)");
+static_assert(kTokenIdMax == 80, "kTokenIdMax 应为 80 (uint256 77 位 + null + 对齐)");
 static_assert(kBytes32HexMax == 68, "kBytes32HexMax 应为 68 (66 printable + 1 null + 1 pad)");
-static_assert(sizeof(AuditRecord) <= 65535,
-              "AuditRecord v1.4 单条 ≤ u16 LEN (framework 约束)");
+static_assert(sizeof(AuditRecord) <= 65535, "AuditRecord v1.4 单条 ≤ u16 LEN (framework 约束)");
 
 }  // namespace
 }  // namespace stcpp::test::audit_v14
