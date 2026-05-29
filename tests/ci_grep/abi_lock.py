@@ -225,23 +225,34 @@ def main() -> int:
                for abi_f in ABI_LOCKED_FILES)
     ]
 
-    # Rule 3 (v1.5): CMakeLists.txt 改动含 stcpp_crypto_ed25519 关键词
+    # Rule 3 (v1.5 fix v1.8): CMakeLists.txt 改动中新增行含 stcpp_crypto_ed25519 关键词
+    # v1.8 修正: 原实现扫文件全内容, 导致改 CMakeLists.txt 任意位置都触发 (false positive).
+    # 正确行为: 仅扫 diff 新增行 (+ 开头), 已有行不触发.
+    # 例: 加新 test_signer target 才触发; 仅加 test_orderbook_adapter (无 crypto) 不触发.
     changed_cmake_files = [
         f for f in changed_files
         if Path(f).name == "CMakeLists.txt"
     ]
     cmake_abi_triggered = False
     for cmake_file in changed_cmake_files:
-        cmake_path = repo_root / cmake_file
-        if cmake_path.exists():
-            try:
-                content = cmake_path.read_text(encoding="utf-8", errors="replace")
-                if any(kw in content for kw in ABI_LOCKED_CMAKE_KEYWORDS):
-                    cmake_abi_triggered = True
-                    if cmake_file not in changed_abi_files:
-                        changed_abi_files.append(cmake_file)
-            except OSError:
-                pass
+        try:
+            result = subprocess.run(
+                ["git", "diff", "HEAD~1...HEAD", "--", cmake_file],
+                capture_output=True,
+                text=True,
+                cwd=repo_root,
+                timeout=10,
+            )
+            diff_text = result.stdout
+            for line in diff_text.splitlines():
+                if line.startswith("+") and not line.startswith("+++"):
+                    if any(kw in line for kw in ABI_LOCKED_CMAKE_KEYWORDS):
+                        cmake_abi_triggered = True
+                        if cmake_file not in changed_abi_files:
+                            changed_abi_files.append(cmake_file)
+                        break
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
 
     # Rule 4 (v1.7): struct/enum 关键词出现在 diff 新增行
     struct_kw_triggered = check_struct_keyword_changes(repo_root, changed_files)
