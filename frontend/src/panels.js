@@ -1,23 +1,24 @@
 /**
- * panels.js — v4 单屏盯盘终端 渲染逻辑
+ * panels.js — v5 赛事分组卡布局 渲染逻辑
  * owner: 小苏
  * last_review: 2026-05-29
  *
- * v4 变更:
- *  - 双边订单簿卡片 (老板核心: token0/token1 并排, cross_spread/vig 显著标)
- *  - Polymarket 超链接 (market.polymarket_url)
- *  - 中文化 (专有名词保留, 集中映射表)
- *  - 信息扩展 (盘口元信息全量/tokens两边/book健康/signal_strength/model_conf/score全量)
- *  - 小尤 P0-01: 配色纪律 (删语义蓝/橙, PAPER改灰, DEMO改黄系, score-pre改灰, wf-net改黄)
- *  - 小尤 P0-02: demo fail-safe (data_source !== 'live' 为 demo)
- *  - 小尤 P0-03: 错误态可读 (区分"未接入"vs"拉取失败", 顶部失败 indicator)
- *  - 小宫 P2-03: sparkline 时间范围标注
+ * v5 变更 (方向 A: 赛事分组卡, 老板选定 + 小尤设计):
+ *  - renderEventGrid / renderEventGroup: 按 event_id 分组, 一赛事一区块
+ *  - renderEventHeader: 比分/赛况只在赛事头渲染一次 (去乱 R1)
+ *  - renderConditionColumn: 每盘口一列 (盘口名 + 量化 + 双边簿 + 持仓)
+ *  - 小尤 6 条去乱规则全部落地:
+ *    R1: 比分条挪赛事头, 列内不重复渲染
+ *    R2: 颜色语义收敛 — green=bid/正PnL/正Kelly; wss-ok/stale-ok → 灰点
+ *    R3: 字号三档 — 14px主数值 / 11px次要 / 10px标签
+ *    R4: 区块分隔用背景色块 (bg/bg2/bg3) 代替 border-bottom 横线
+ *    R5: 拒单/gap → 右上角小红点 + tooltip (不内联主路径)
+ *    R6: chip 禁 flex-wrap, overflow 截断
  *
  * 约定:
  *  - 每个 render* 函数接收 data (可为 null), 返回 HTML string
  *  - null/空数据: 区分"正常未接入 (—)"vs"拉取失败 (拉取失败)"
  *  - 金额字段全部 Number() 解析
- *  - 4 时间戳字段 epoch_ns number
  *  - DEMO 标记: demo 数字旁显示 [demo] 角标 (老钱红线 P0)
  */
 
@@ -44,6 +45,21 @@ const SPORT_ZH = {
   baseball:   '棒球',
   tennis:     '网球',
   hockey:     '冰球',
+};
+
+// 盘口类型中文 — 从 market_id 尾缀推断
+const MARKET_TYPE_ZH = {
+  ml:     '胜负盘',
+  total:  '大小盘',
+  spread: '让分盘',
+  h1:     '上半场',
+  h2:     '下半场',
+  q1:     '第一节',
+  q2:     '第二节',
+  q3:     '第三节',
+  q4:     '第四节',
+  series: '系列赛',
+  prop:   '特殊盘',
 };
 
 const WSS_STATE_ZH = {
@@ -73,18 +89,6 @@ function ph(v, fmt) {
   return fmt ? fmt(v) : String(v);
 }
 
-/**
- * 区分 "正常未接入" (data==null, 非失败) vs "拉取失败" (endpoint 报错)
- * endpointPath: '/api/v1/book/xxx' 等，用于查 fetchErrorMap
- */
-function dataStatus(data, label, endpointPath) {
-  if (data != null) return null; // 有数据，不需要占位
-  if (endpointPath && isEndpointFailing(endpointPath)) {
-    return `<div class="data-fail"><span class="fail-chip">拉取失败</span> ${label}</div>`;
-  }
-  return `<div class="no-data">${label} <span class="ph">未接入</span></div>`;
-}
-
 function demoBadge(isDemoData) {
   if (!isDemoData) return '';
   return '<span class="demo-chip" title="演示数据·非实盘">demo</span>';
@@ -94,11 +98,54 @@ function advisoryBadge() {
   return '<span class="advisory-chip" title="paper期模型旁路·不下单">仅供参考</span>';
 }
 
-// staleness chip: ms → green/yellow/red
-function staleChip(ms) {
+/**
+ * 推断盘口类型中文名 — 从 condition_id 最后一段取
+ * e.g. 'nba-lal-bos-ml' → 'ml' → '胜负盘'
+ */
+function inferMarketTypeZh(conditionId) {
+  if (!conditionId) return '—';
+  const parts = conditionId.split('-');
+  const last = parts[parts.length - 1];
+  return MARKET_TYPE_ZH[last] || last.toUpperCase();
+}
+
+/**
+ * 从 market.tokens 推断盘口标题参数 (用于大小盘/让分盘显示线值)
+ * e.g. 大小盘 → "大小盘 215.5" (从 outcome 名提取数字)
+ */
+function inferMarketLabel(conditionId, market) {
+  const typeZh = inferMarketTypeZh(conditionId);
+  if (!market || !market.tokens || market.tokens.length === 0) return typeZh;
+
+  // 大小盘: 从 outcome 名取数字 e.g. "大 215.5" → 215.5
+  const totalMatch = market.tokens[0] && market.tokens[0].outcome
+    ? market.tokens[0].outcome.match(/[\d.]+/)
+    : null;
+  if (conditionId.includes('-total') && totalMatch) {
+    return `${typeZh} ${totalMatch[0]}`;
+  }
+  // 让分盘: 从 outcome 取让分数
+  const spreadMatch = market.tokens[0] && market.tokens[0].outcome
+    ? market.tokens[0].outcome.match(/[+-][\d.]+/)
+    : null;
+  if (conditionId.includes('-spread') && spreadMatch) {
+    return `${typeZh} ${spreadMatch[0]}`;
+  }
+  return typeZh;
+}
+
+// R2: wss-ok → 灰色小圆点 (降级, 不再绿色竞争注意力)
+function wssStatusDot(wssState) {
+  const ok = wssState === 'CONNECTED';
+  return `<span class="wss-dot-sm ${ok ? 'wss-dot-ok' : 'wss-dot-off'}" title="WSS: ${wssState || 'unknown'}"></span>`;
+}
+
+// staleness 小点 (R2: stale-ok 降为灰点)
+function staleIndicator(ms) {
   if (ms == null) return '';
-  const cls = ms < 2000 ? 'stale-ok' : ms < 10000 ? 'stale-warn' : 'stale-err';
-  return `<span class="stale-chip ${cls}" title="${Math.round(ms)}ms ago">${ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`}</span>`;
+  const cls = ms < 2000 ? 'stale-dot-ok' : ms < 10000 ? 'stale-dot-warn' : 'stale-dot-err';
+  const label = ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+  return `<span class="stale-dot ${cls}" title="数据延迟 ${label}"></span>`;
 }
 
 // ============================================================
@@ -110,41 +157,34 @@ export function renderTopBar(healthz, status, attribution, metrics, gate) {
   const h = healthz || {};
   const g = gate || {};
 
-  // P0-02: fail-safe — 非 live 均视为 demo (status 失败时默认 demo)
+  // P0-02: fail-safe
   const isDemo = s.data_source !== 'live';
 
-  // mode badge
   const mode = s.mode || 'paper';
   const mb = modeBadge(mode);
   const modeBadgeHtml = `<span class="badge ${mb.cls}">${mb.text}</span>`;
 
-  // state — P0-03: status 失败时显示 API OFFLINE
+  // state
   let stateHtml;
   if (!status) {
-    // status 拉取失败
-    const failPath = '/status';
-    if (isEndpointFailing(failPath)) {
-      stateHtml = `<span class="state-label state-halted">API OFFLINE</span>`;
-    } else {
-      stateHtml = `<span class="state-label state-drain">连接中...</span>`;
-    }
+    stateHtml = isEndpointFailing('/status')
+      ? `<span class="state-label state-halted">API OFFLINE</span>`
+      : `<span class="state-label state-drain">连接中...</span>`;
   } else {
     const stateClass = s.state === 'RUNNING' ? 'state-running'
       : s.state === 'HALTED' ? 'state-halted' : 'state-drain';
     stateHtml = `<span class="state-label ${stateClass}">${s.state || '—'}</span>`;
   }
 
-  // uptime
   const uptimeSec = Number(h.uptime_sec || s.uptime_sec || 0);
   const uptimeHtml = `运行 ${fmtUptime(uptimeSec)}`;
 
-  // wss dots
+  // R2: wss 连接状态 → 灰色小点 (不再亮绿竞争注意力)
   const wss = s.wss_connected || {};
   const wssHtml = Object.entries(wss)
-    .map(([k, v]) => `<span class="wss-dot ${v ? 'wss-ok' : 'wss-off'}" title="${k}"></span>`)
+    .map(([k, v]) => `<span class="wss-dot-sm ${v ? 'wss-dot-ok' : 'wss-dot-off'}" title="${k}"></span>`)
     .join('');
 
-  // net PnL (最重要, 紧跟 state)
   let netPnl = null;
   if (attribution && attribution.waterfall) {
     netPnl = Number(attribution.waterfall.net);
@@ -154,7 +194,6 @@ export function renderTopBar(healthz, status, attribution, metrics, gate) {
     ? `<span class="${pnlClass} mono-strong">${fmtUsdc(netPnl)}</span>`
     : '<span class="ph">—</span>';
 
-  // paper-gate
   let gateHtml = '<span class="ph">—</span>';
   if (g.has_data) {
     const prelim = g.prelim_pass;
@@ -162,31 +201,27 @@ export function renderTopBar(healthz, status, attribution, metrics, gate) {
     gateHtml = `<span class="gate-chip ${prelim ? 'gate-ok' : 'gate-fail'}">初审${prelim ? '✓' : '✗'}</span> <span class="gate-chip ${confirm ? 'gate-ok' : 'gate-fail'}">确认${confirm ? '✓' : '✗'}</span>`;
   }
 
-  // p99 from metrics text parse
   let p99Html = '<span class="ph">—</span>';
   if (metrics) {
     const m = metrics.match(/stcpp_loop_latency_p99_us[^\n]*\s+([\d.]+)/);
     if (m) p99Html = `<span class="mono-dim">${Number(m[1]).toFixed(0)} us</span>`;
   }
 
-  // staleness from metrics text
   let stalenessHtml = '<span class="ph">—</span>';
   if (metrics) {
     const m = metrics.match(/stcpp_data_staleness_ms_max[^\n]*\s+([\d.]+)/);
     if (m) {
       const ms = Number(m[1]);
-      const cls = ms < 100 ? 'stale-ok' : ms < 1000 ? 'stale-warn' : 'stale-err';
+      const cls = ms < 100 ? 'stale-dim' : ms < 1000 ? 'stale-warn-text' : 'stale-err-text';
       stalenessHtml = `<span class="${cls} mono-dim">${ms.toFixed(0)} ms</span>`;
     }
   }
 
-  // rm rejects last 60s
   const rmRejects = s.rm_rejects_last_60s;
   const rejectsHtml = rmRejects != null
     ? `<span class="${rmRejects > 0 ? 'pnl-neg mono-dim' : 'mono-dim'}">${rmRejects}</span>`
     : '<span class="ph">—</span>';
 
-  // P0-03: 全局 API 失败指示
   const apiErrHtml = isEndpointFailing('/status') || isEndpointFailing('/api/v1/positions')
     ? `<span class="api-err-chip">API 异常</span>`
     : '';
@@ -242,7 +277,7 @@ export function renderPnlSparkline(data) {
   const latestPnl = vals[vals.length - 1];
   const color = latestPnl >= 0 ? '#22c55e' : '#ef4444';
 
-  // P2-03 小宫: 时间范围标注
+  // P2-03: 时间范围标注
   const windowSec = Number(data.window_sec || 3600);
   const windowLabel = windowSec >= 3600
     ? `近 ${Math.round(windowSec / 3600)}h`
@@ -272,451 +307,409 @@ export function renderPnlSparkline(data) {
 }
 
 // ============================================================
-// Market 卡片
+// v5: Event Grid (赛事分组网格)
 // ============================================================
 
 /**
- * renderMarketCard — 单个 market 卡片渲染
- * @param {string}  marketId
- * @param {Array}   posRows     — positions 中属于此 marketId 的行
- * @param {object}  market      — /api/v1/market/{id} 响应 (含 tokens[]/polymarket_url)
- * @param {object}  book        — /api/v1/book/{id} BinaryMarketBookView 双边
- * @param {object}  score       — /api/v1/score/{event_id} 响应 (可 null)
- * @param {object}  quote       — /api/v1/quote/{condition_id} 响应 (可 null)
- * @param {Array}   rejectRows  — rejects 中属于此 marketId 的行
- * @param {number}  perMarketPnl — attribution.per_market 中此 market 的 net_pnl
- * @param {boolean} isDemoData  — data_source !== 'live'
+ * renderEventGrid — 顶层渲染入口
+ * eventGroups: [{ eventId, score, conditions: [...] }]
  */
-export function renderMarketCard({
-  marketId,
-  posRows,
-  market,
-  book,
-  score,
-  quote,
-  rejectRows,
-  perMarketPnl,
-  isDemoData,
-}) {
-  const conditionId = (market && market.condition_id) || marketId;
+export function renderEventGrid(eventGroups) {
+  if (!eventGroups || eventGroups.length === 0) {
+    return `<div class="no-data grid-placeholder">无市场数据</div>`;
+  }
+  return eventGroups.map((eg) => renderEventGroup(eg)).join('');
+}
 
-  // ① 比分/赛况条
-  const scoreBlock = renderScoreBlock(score, marketId);
+/**
+ * renderEventGroup — 单个赛事区块
+ * 包含: 赛事头(比分/赛况, 只渲染一次) + 盘口并列区(多列)
+ */
+function renderEventGroup({ eventId, score, conditions }) {
+  // R1: 比分条只在赛事头渲染一次
+  const headerHtml = renderEventHeader(score, conditions);
 
-  // ② 盘口元信息 (全量)
-  const marketInfoBlock = renderMarketInfoBlock(market, isDemoData);
+  // 盘口列 (横向并列)
+  const colsHtml = conditions.map((c) => renderConditionColumn(c)).join('');
 
-  // ③ 双边订单簿 (老板核心)
-  const dualBookBlock = renderDualBookBlock(book, quote, isDemoData, conditionId);
-
-  // ④ 持仓 + 净PnL
-  const posBlock = renderPosBlock(posRows, perMarketPnl, book);
-
-  // ⑤ 拒单角标
-  const rejectBadge = renderRejectBadge(rejectRows);
-
-  // ⑥ 数据源/stale 标记
-  const staleBlock = renderStaleBlock(market, book, score, isDemoData);
-
-  // market 状态指示
-  const mActive = market ? (market.accepting_orders ? '' : ' card-inactive') : '';
-
-  // 超链接 (P0, 老板要求)
-  const url = market && market.polymarket_url;
-  const titleEl = url
-    ? `<a class="mkt-id mkt-link" href="${url}" target="_blank" rel="noopener noreferrer">${conditionId}</a>`
-    : `<span class="mkt-id">${conditionId}</span>`;
+  // 赛事区块激活状态 (所有盘口都不接单则整体降调)
+  const allInactive = conditions.every((c) => c.market && !c.market.accepting_orders);
+  const inactiveCls = allInactive ? ' event-group-inactive' : '';
 
   return `
-    <div class="mkt-card${mActive}" data-market="${marketId}">
-      <div class="mkt-header">
-        ${titleEl}
-        ${rejectBadge}
-        ${staleBlock}
+    <div class="event-group${inactiveCls}" data-event="${eventId || ''}">
+      ${headerHtml}
+      <div class="event-columns">
+        ${colsHtml}
       </div>
-
-      ${scoreBlock}
-      ${marketInfoBlock}
-      ${dualBookBlock}
-      ${posBlock}
     </div>`;
 }
 
-// ============================================================
-// ① 比分/赛况条
-// ============================================================
+/**
+ * renderEventHeader — 赛事头 (比分/赛况/运动/超链接/DEMO/stale)
+ * R1: 此处渲染比分, renderConditionColumn 内不再重复
+ */
+function renderEventHeader(score, conditions) {
+  // 从 conditions 中取第一个有 market 的
+  const firstMkt = conditions.find((c) => c.market) ? conditions.find((c) => c.market).market : null;
+  const isDemoData = conditions.some((c) => c.isDemoData);
 
-function renderScoreBlock(score, marketId) {
+  // 运动类型
+  const sport = (score && score.sport) || (firstMkt && firstMkt.sport) || null;
+  const sportZh = sport ? (SPORT_ZH[sport] || sport) : '';
+  const sportTag = sportZh ? `<span class="evt-sport-tag">${sportZh}</span>` : '';
+
+  // 超链接 (Polymarket event URL, 取第一个)
+  const eventUrl = firstMkt && firstMkt.polymarket_url;
+  const eventIdStr = (score && score.event_id) || (firstMkt && firstMkt.event_id) || '—';
+
+  // DEMO badge
+  const demoHtml = isDemoData
+    ? `<span class="demo-chip" title="演示数据·非实盘">DEMO</span>`
+    : '';
+
+  // stale dots (book stale from conditions, score stale)
+  const bookStaleDots = conditions.map((c) => {
+    if (!c.book) return '';
+    const ms = stalenessMs(c.book.as_of_ts_ns || (c.book.token0 && c.book.token0.book_as_of_ts));
+    return staleIndicator(ms);
+  }).join('');
+
+  let scoreStaleDot = '';
+  if (score) {
+    const ms = stalenessMs(score.score_as_of_ts);
+    scoreStaleDot = staleIndicator(ms);
+  }
+
+  // 比分/赛况主体
+  let scoreBody;
   if (!score) {
-    const ep = `/api/v1/score/${marketId}`;
-    if (isEndpointFailing(ep)) {
-      return `<div class="score-bar score-bar-empty"><span class="fail-chip">比分拉取失败</span></div>`;
-    }
-    return `<div class="score-bar score-bar-empty"><span class="ph">比分未接入</span></div>`;
+    scoreBody = `<span class="evt-teams-placeholder ph">—</span>`;
+  } else {
+    const statusZh = STATUS_ZH[score.status] || score.status || '?';
+    const statusCls = score.status === 'inplay' ? 'score-live'
+      : score.status === 'halftime' ? 'score-ht'
+      : score.status === 'final' ? 'score-ft'
+      : 'score-pre';
+
+    const home = score.home || '—';
+    const away = score.away || '—';
+    const homeScore = score.home_score != null ? score.home_score : '—';
+    const awayScore = score.away_score != null ? score.away_score : '—';
+    const period = score.period || '—';
+    const clock = score.clock_sec != null ? fmtClock(score.clock_sec) : '';
+
+    scoreBody = `
+      <span class="evt-team">${home}</span>
+      <span class="evt-score">${homeScore}</span>
+      <span class="evt-dash">—</span>
+      <span class="evt-score">${awayScore}</span>
+      <span class="evt-team">${away}</span>
+      <span class="evt-sep">|</span>
+      <span class="evt-period">${period}</span>
+      ${clock ? `<span class="evt-clock">${clock}</span>` : ''}
+      <span class="evt-status ${statusCls}">${statusZh}</span>`;
   }
 
-  const statusZh = STATUS_ZH[score.status] || score.status || '?';
-  const statusCls = score.status === 'inplay' ? 'score-live'
-    : score.status === 'halftime' ? 'score-ht'
-    : score.status === 'final' ? 'score-ft'
-    : 'score-pre'; // pregame → 灰
+  const linkEl = eventUrl
+    ? `<a class="evt-link" href="${eventUrl}" target="_blank" rel="noopener noreferrer" title="${eventIdStr}">Polymarket</a>`
+    : '';
 
-  const sportZh = SPORT_ZH[score.sport] || score.sport || '';
-  const homeStr = score.home || '—';
-  const awayStr = score.away || '—';
-  const homeScore = score.home_score != null ? score.home_score : '—';
-  const awayScore = score.away_score != null ? score.away_score : '—';
-  const period = score.period || '—';
-  const clock = score.clock_sec != null ? fmtClock(score.clock_sec) : '—';
-
-  // 赛况栏: 主队 分 – 分 客队 | 节 时钟 状态 运动
   return `
-    <div class="score-bar">
-      <span class="score-team">${homeStr}</span>
-      <span class="score-num">${homeScore}</span>
-      <span class="score-dash">–</span>
-      <span class="score-num">${awayScore}</span>
-      <span class="score-team">${awayStr}</span>
-      <span class="score-sep">|</span>
-      <span class="score-period">${period}</span>
-      <span class="score-clock">${clock}</span>
-      <span class="score-status ${statusCls}">${statusZh}</span>
-      <span class="score-sport">${sportZh}</span>
+    <div class="event-header">
+      <div class="event-header-main">
+        ${sportTag}
+        ${scoreBody}
+        ${linkEl}
+        ${demoHtml}
+        <span class="evt-stale-group">${bookStaleDots}${scoreStaleDot}</span>
+      </div>
     </div>`;
 }
 
 // ============================================================
-// ② 盘口元信息 (全量)
+// v5: 单盘口列 (条件/condition column)
 // ============================================================
 
-function renderMarketInfoBlock(market, isDemoData) {
-  if (!market) {
-    return `<div class="market-info-block"><span class="ph">盘口信息未接入</span></div>`;
-  }
+/**
+ * renderConditionColumn — 单个盘口列
+ * 包含: 盘口标题 + 量化决策行 + 双边迷你订单簿 + 持仓行
+ * R1: 不再渲染比分 (移到赛事头)
+ */
+function renderConditionColumn({ conditionId, posRows, market, book, quote, rejectRows, perMarketPnl, isDemoData }) {
+  const condId = (market && market.condition_id) || conditionId;
+  const marketLabel = inferMarketLabel(condId, market);
 
-  const demo = demoBadge(isDemoData);
+  // R5: 拒单/gap → 右上角小红点 + tooltip
+  const rejectDot = renderRejectDot(rejectRows, book);
 
-  // 状态三态
-  const stateStr = market.resolved ? '已结算'
-    : market.closed ? '已关闭'
-    : market.active ? '活跃'
-    : '未知';
-  const stateCls = market.resolved ? 'state-ft'
-    : market.closed ? 'state-ft'
-    : market.active ? 'state-active'
+  // 盘口激活状态
+  const inactive = market && !market.accepting_orders;
+  const inactiveCls = inactive ? ' col-inactive' : '';
+
+  // 接单状态 → 灰色小点 (R2: acc-yes 不再绿色)
+  const accDot = market
+    ? `<span class="acc-dot ${market.accepting_orders ? 'acc-dot-ok' : 'acc-dot-off'}"
+             title="${market.accepting_orders ? '接单中' : '不接单'}"></span>`
     : '';
 
-  const accepting = market.accepting_orders
-    ? '<span class="acc-yes">接单中</span>'
-    : '<span class="acc-no">不接单</span>';
-
-  const negRisk = market.neg_risk
-    ? `<span class="meta-tag neg-risk">neg_risk</span>${market.neg_risk_market_id ? ` <span class="mono-dim" title="neg_risk_market_id" style="font-size:9px">${market.neg_risk_market_id}</span>` : ''}`
+  // neg_risk tag (保留, 但降调)
+  const negRiskTag = (market && market.neg_risk)
+    ? `<span class="neg-risk-tag" title="neg_risk">NR</span>`
     : '';
-
-  // tokens 两边价格
-  const tokens = market.tokens || [];
-  const tokensHtml = tokens.map((t) => {
-    const winnerMark = t.winner ? ' <span class="winner-chip">胜</span>' : '';
-    return `<span class="token-chip"><span class="token-outcome">${t.outcome}</span> <span class="token-price">${Number(t.price).toFixed(3)}</span>${winnerMark}</span>`;
-  }).join(' ');
 
   return `
-    <div class="market-info-block">
-      <div class="market-info-row">
-        <span class="meta-label">状态</span>
-        <span class="meta-val ${stateCls}">${stateStr}</span>
-        ${accepting}
-        ${negRisk}
-        ${demo}
+    <div class="cond-col${inactiveCls}" data-condition="${condId}">
+      <div class="cond-col-pos-anchor">
+        ${rejectDot}
       </div>
-      <div class="market-info-row">
-        <span class="meta-label">tick</span>
-        <span class="meta-val mono-dim">${market.tick_size ?? '—'}</span>
-        <span class="meta-label">手续费</span>
-        <span class="meta-val mono-dim">${market.fee_rate != null ? fmtPct(market.fee_rate) : '—'}</span>
-        <span class="meta-label">来源</span>
-        <span class="meta-val mono-dim">${market.source || '—'}</span>
+
+      <!-- 盘口标题行 -->
+      <div class="cond-header">
+        <span class="cond-type-label">${marketLabel}</span>
+        ${accDot}
+        ${negRiskTag}
       </div>
-      ${tokensHtml ? `<div class="market-info-row tokens-row">${tokensHtml}</div>` : ''}
+
+      <!-- 量化决策行 (R4: bg3 背景色块) -->
+      <div class="cond-quote-section">
+        ${renderCondQuote(quote, isDemoData)}
+      </div>
+
+      <!-- 双边迷你订单簿 (R4: bg 最深色块) -->
+      <div class="cond-book-section">
+        ${renderCondDualBook(book, condId)}
+      </div>
+
+      <!-- 持仓行 (R4: bg2 色块) -->
+      <div class="cond-pos-section">
+        ${renderCondPos(posRows, perMarketPnl)}
+      </div>
     </div>`;
 }
 
 // ============================================================
-// ③ 双边订单簿 + 量化决策区 (老板核心)
+// 量化决策行 (简洁版, 适配盘口列宽度)
 // ============================================================
 
-function renderDualBookBlock(book, quote, isDemoData, conditionId) {
-  const demo = demoBadge(isDemoData);
+function renderCondQuote(quote, isDemoData) {
   const advisory = advisoryBadge();
+  const demo = demoBadge(isDemoData);
 
-  // cross_spread / vig 显著标
-  let vigHtml = '';
-  if (book) {
-    const cs = Number(book.cross_spread);
-    if (Number.isFinite(cs)) {
-      const vigCls = cs < 0.02 ? 'vig-low' : cs < 0.04 ? 'vig-mid' : 'vig-high';
-      vigHtml = `<span class="vig-badge ${vigCls}" title="ask0+ask1-1 = 等效vig">vig ${(cs * 100).toFixed(2)}%</span>`;
-    }
+  if (!quote) {
+    return `<div class="cond-quote-empty"><span class="ph">量化未接入</span> ${demo}</div>`;
   }
 
-  // 量化参数区 (fair/edge/Kelly + signal/conf)
-  const quoteHtml = renderQuoteSection(quote, isDemoData);
+  const fairValue  = Number(quote.fair_value);
+  const marketMid  = Number(quote.market_mid);
+  const edgeBps    = Number(quote.edge_bps);
+  const kelly      = Number(quote.kelly_fraction);
+  const notional   = Number(quote.suggested_notional);
 
-  // 双边 book
-  let halfBooksHtml;
+  const edgePositive = fairValue >= marketMid;
+  const edgeCls = edgePositive ? 'edge-pos' : 'edge-neg';
+  const edgeBarPct = Math.min(Math.abs(edgeBps) / 100, 1) * 100;
+
+  // Kelly: 正数绿色 (R2: Kelly正 → 绿)
+  const kellyPositive = Number.isFinite(kelly) && kelly > 0;
+  const kellyCls = kellyPositive ? 'kelly-pos' : 'kelly-zero';
+
+  return `
+    <div class="cond-quote-row">
+      <span class="q-lbl">公允</span>
+      <span class="q-fair mono-main">${Number.isFinite(fairValue) ? fairValue.toFixed(4) : '—'}</span>
+      <span class="q-lbl">中间</span>
+      <span class="q-mid mono-sub">${Number.isFinite(marketMid) ? marketMid.toFixed(4) : '—'}</span>
+      ${demo}
+    </div>
+    <div class="cond-edge-row">
+      <span class="q-lbl">优势</span>
+      <div class="edge-track-sm">
+        <div class="edge-fill-sm ${edgeCls}" style="width:${edgeBarPct.toFixed(1)}%"></div>
+      </div>
+      <span class="q-edge ${edgeCls}">${fmtBps(edgeBps)}</span>
+    </div>
+    <div class="cond-kelly-row">
+      <span class="q-lbl">Kelly</span>
+      <span class="q-kelly ${kellyCls} mono-main">${Number.isFinite(kelly) ? (kelly * 100).toFixed(1) : '—'}%</span>
+      <span class="q-lbl">额</span>
+      <span class="q-notional mono-sub">$${Number.isFinite(notional) ? notional.toLocaleString() : '—'}</span>
+      ${advisory}
+    </div>`;
+}
+
+// ============================================================
+// 双边迷你订单簿 (token0 左 / token1 右, 列内并排)
+// ============================================================
+
+function renderCondDualBook(book, conditionId) {
   if (!book) {
     const ep = `/api/v1/book/${conditionId}`;
     if (isEndpointFailing(ep)) {
-      halfBooksHtml = `<div class="data-fail"><span class="fail-chip">订单簿拉取失败</span></div>`;
-    } else {
-      halfBooksHtml = `<div class="no-data"><span class="ph">订单簿未接入</span></div>`;
+      return `<div class="cond-book-fail"><span class="fail-chip">订单簿拉取失败</span></div>`;
     }
-  } else {
-    const t0 = book.token0 || {};
-    const t1 = book.token1 || {};
-    halfBooksHtml = `
-      <div class="dual-book-grid">
-        ${renderHalfBook(t0, 'token0')}
-        ${renderHalfBook(t1, 'token1')}
-      </div>`;
+    return `<div class="cond-book-empty"><span class="ph">订单簿未接入</span></div>`;
+  }
+
+  const t0 = book.token0 || {};
+  const t1 = book.token1 || {};
+
+  // vig badge (R2: 颜色语义保留 green/yellow/red for vig level)
+  let vigHtml = '';
+  const cs = Number(book.cross_spread);
+  if (Number.isFinite(cs)) {
+    const vigCls = cs < 0.02 ? 'vig-low' : cs < 0.04 ? 'vig-mid' : 'vig-high';
+    vigHtml = `<span class="vig-badge-sm ${vigCls}" title="vig (ask0+ask1-1)">${(cs * 100).toFixed(2)}%</span>`;
   }
 
   return `
-    <div class="dual-book-block">
-      <div class="block-label">
-        双边订单簿 ${vigHtml} ${demo} ${advisory}
-      </div>
-      ${quoteHtml}
-      ${halfBooksHtml}
+    <div class="cond-book-header">
+      <span class="cond-book-label">双边订单簿</span>
+      ${vigHtml}
+    </div>
+    <div class="cond-dual-grid">
+      ${renderMiniHalfBook(t0)}
+      ${renderMiniHalfBook(t1)}
     </div>`;
 }
 
 /**
- * 单边 book 渲染 (token0 或 token1)
+ * 单边迷你 book (在盘口列宽度内)
+ * R3: 字号三档 — 14px主数值(bid/ask) / 11px次要 / 10px标签
+ * R2: wss-ok → 灰点; bid → 绿; ask → 红
  */
-function renderHalfBook(half, side) {
-  const outcome = half.outcome || side;
-  const bid = Number(half.best_bid);
-  const ask = Number(half.best_ask);
-  const spread = Number(half.spread);
-  const microprice = Number(half.microprice);
+function renderMiniHalfBook(half) {
+  const outcome  = half.outcome || '—';
+  const bid      = Number(half.best_bid);
+  const ask      = Number(half.best_ask);
+  const spread   = Number(half.spread);
   const imbalance = Number(half.imbalance);
-  const seqNo = half.sequence_no != null ? half.sequence_no : '—';
-  const gapCount = half.gap_count != null ? half.gap_count : '—';
-  const wssRaw = half.wss_state || 'unknown';
-  const wssZh = WSS_STATE_ZH[wssRaw] || wssRaw;
-  const wssOk = wssRaw === 'CONNECTED';
-  const wssCls = wssOk ? 'wss-ok-text' : 'wss-off-text';
+  const seqNo    = half.sequence_no != null ? half.sequence_no : '—';
+  const gapCount = half.gap_count != null ? Number(half.gap_count) : 0;
+  const wssState = half.wss_state || 'unknown';
 
-  // imbalance bar (-1..1 → 0..100%)
-  const imbPct = Number.isFinite(imbalance) ? ((imbalance + 1) / 2 * 100).toFixed(1) : '50';
-
-  // 深度档 (最多展示前3档)
+  // 深度档 3 档
   const bids = (half.bids || []).slice(0, 3);
   const asks = (half.asks || []).slice(0, 3);
+  const maxLen = Math.max(bids.length, asks.length);
 
   const depthRows = [];
-  const maxLen = Math.max(bids.length, asks.length);
   for (let i = 0; i < maxLen; i++) {
     const b = bids[i];
     const a = asks[i];
     depthRows.push(`
-      <div class="depth-row">
-        <span class="depth-bid-size">${b ? b.size.toLocaleString() : ''}</span>
-        <span class="depth-bid-price">${b ? Number(b.price).toFixed(4) : ''}</span>
-        <span class="depth-mid"></span>
-        <span class="depth-ask-price">${a ? Number(a.price).toFixed(4) : ''}</span>
-        <span class="depth-ask-size">${a ? a.size.toLocaleString() : ''}</span>
+      <div class="mini-depth-row">
+        <span class="mini-bid-size">${b ? b.size.toLocaleString() : ''}</span>
+        <span class="mini-bid-px">${b ? Number(b.price).toFixed(4) : ''}</span>
+        <span class="mini-ask-px">${a ? Number(a.price).toFixed(4) : ''}</span>
+        <span class="mini-ask-size">${a ? a.size.toLocaleString() : ''}</span>
       </div>`);
   }
 
+  // R5: gap > 0 → 右上角小红点 (不内联主路径)
+  const gapDot = gapCount > 0
+    ? `<span class="gap-dot" title="gap ${gapCount}"></span>`
+    : '';
+
+  // imbalance bar
+  const imbPct = Number.isFinite(imbalance) ? ((imbalance + 1) / 2 * 100).toFixed(1) : '50';
+
   return `
-    <div class="half-book">
-      <div class="half-book-header">
-        <span class="half-outcome">${outcome}</span>
-        <span class="${wssCls} half-wss" title="WSS: ${wssRaw}">${wssZh}</span>
+    <div class="mini-half">
+      <div class="mini-half-header">
+        <span class="mini-outcome">${outcome}</span>
+        ${wssStatusDot(wssState)}
+        ${gapDot}
       </div>
-      <div class="half-ba-row">
-        <span class="bid-price">${Number.isFinite(bid) ? bid.toFixed(4) : '—'}</span>
-        <span class="book-sep">买</span>
-        <span class="book-spread" title="价差">${Number.isFinite(spread) ? (spread * 100).toFixed(2) + '%' : '—'}</span>
-        <span class="book-sep">卖</span>
-        <span class="ask-price">${Number.isFinite(ask) ? ask.toFixed(4) : '—'}</span>
+      <div class="mini-ba-row">
+        <span class="mini-bid mono-main">${Number.isFinite(bid) ? bid.toFixed(4) : '—'}</span>
+        <span class="mini-ba-sep">|</span>
+        <span class="mini-ask mono-main">${Number.isFinite(ask) ? ask.toFixed(4) : '—'}</span>
       </div>
-      <div class="half-meta-row">
-        <span class="book-meta-label">微观价</span>
-        <span class="book-meta-val mono-dim">${Number.isFinite(microprice) ? microprice.toFixed(4) : '—'}</span>
-        <span class="book-meta-label">失衡</span>
-        <div class="imb-track" title="失衡 ${Number.isFinite(imbalance) ? imbalance.toFixed(3) : '—'}">
-          <div class="imb-fill" style="width:${imbPct}%"></div>
+      <div class="mini-spread-row">
+        <span class="q-lbl">价差</span>
+        <span class="mono-sub">${Number.isFinite(spread) ? (spread * 100).toFixed(2) + '%' : '—'}</span>
+        <div class="mini-imb-track" title="失衡 ${Number.isFinite(imbalance) ? imbalance.toFixed(3) : '—'}">
+          <div class="mini-imb-fill" style="width:${imbPct}%"></div>
         </div>
-        <span class="book-meta-val mono-dim">${Number.isFinite(imbalance) ? imbalance.toFixed(3) : '—'}</span>
       </div>
-      <div class="depth-section">
-        <div class="depth-header">
-          <span class="depth-col-label">量 (买)</span>
-          <span class="depth-col-label">价</span>
-          <span class="depth-col-mid"></span>
-          <span class="depth-col-label">价</span>
-          <span class="depth-col-label">量 (卖)</span>
+      <div class="mini-depth">
+        <div class="mini-depth-header">
+          <span class="mini-col-lbl">量↑</span>
+          <span class="mini-col-lbl">买</span>
+          <span class="mini-col-lbl">卖</span>
+          <span class="mini-col-lbl">量↑</span>
         </div>
         ${depthRows.join('')}
       </div>
-      <div class="half-health-row">
-        <span class="book-meta-label">seq</span>
-        <span class="book-meta-val mono-dim">${seqNo}</span>
-        <span class="book-meta-label">gap</span>
-        <span class="book-meta-val ${Number(gapCount) > 0 ? 'pnl-neg' : 'mono-dim'}">${gapCount}</span>
-      </div>
-    </div>`;
-}
-
-/**
- * 量化决策区: fair/edge/Kelly/signal/conf (老板:"做决策也需要另一边的数据")
- */
-function renderQuoteSection(quote, isDemoData) {
-  const demo = demoBadge(isDemoData);
-  if (!quote) {
-    return `<div class="quote-section"><span class="ph">量化参数未接入</span> ${demo}</div>`;
-  }
-
-  const fairValue = Number(quote.fair_value);
-  const marketMid = Number(quote.market_mid);
-  const edgeBps = Number(quote.edge_bps);
-  const kelly = Number(quote.kelly_fraction);
-  const notional = Number(quote.suggested_notional);
-  const signalStr = Number(quote.signal_strength);
-  const modelConf = Number(quote.model_conf);
-
-  const edgePositive = fairValue >= marketMid;
-  const edgeBarPct = Math.min(Math.abs(edgeBps) / 100, 1) * 100;
-  const edgeCls = edgePositive ? 'edge-pos' : 'edge-neg';
-
-  return `
-    <div class="quote-section">
-      <div class="quote-row-main">
-        <span class="q-label">公允价</span>
-        <span class="fair-val mono-strong">${Number.isFinite(fairValue) ? fairValue.toFixed(4) : '—'}</span>
-        <span class="q-label">中间价</span>
-        <span class="mid-val mono-dim">${Number.isFinite(marketMid) ? marketMid.toFixed(4) : '—'}</span>
-        ${demo}
-      </div>
-      <div class="edge-bar-row">
-        <span class="edge-label">优势</span>
-        <div class="edge-track">
-          <div class="edge-fill ${edgeCls}" style="width:${edgeBarPct.toFixed(1)}%"></div>
-        </div>
-        <span class="edge-val ${edgeCls}">${fmtBps(edgeBps)}</span>
-      </div>
-      <div class="kelly-row">
-        <span class="q-label">Kelly 建议仓位</span>
-        <span class="kelly-val mono-strong">${Number.isFinite(kelly) ? (kelly * 100).toFixed(2) : '—'}%</span>
-        <span class="q-label">建议额</span>
-        <span class="notional-val mono-dim">$${Number.isFinite(notional) ? notional.toLocaleString() : '—'}</span>
-      </div>
-      <div class="model-row">
-        <span class="q-label">信号强度</span>
-        <span class="model-val mono-dim">${Number.isFinite(signalStr) ? signalStr.toFixed(3) : '—'}</span>
-        <span class="q-label">模型置信</span>
-        <span class="model-val mono-dim">${Number.isFinite(modelConf) ? modelConf.toFixed(3) : '—'}</span>
+      <div class="mini-seq-row">
+        <span class="q-lbl">seq</span>
+        <span class="mono-sub">${seqNo}</span>
       </div>
     </div>`;
 }
 
 // ============================================================
-// ④ 持仓块 (按 outcome 分行, 补 per_market PnL)
+// 持仓行 (每盘口列内)
 // ============================================================
 
-function renderPosBlock(posRows, perMarketPnl, book) {
+function renderCondPos(posRows, perMarketPnl) {
   const pmPnlStr = perMarketPnl != null
-    ? `<span class="${perMarketPnl >= 0 ? 'pnl-pos' : 'pnl-neg'} mono-strong">${fmtUsdc(perMarketPnl)}</span>`
+    ? `<span class="${perMarketPnl >= 0 ? 'pnl-pos' : 'pnl-neg'} mono-main">${fmtUsdc(perMarketPnl)}</span>`
     : '<span class="ph">—</span>';
 
   if (!posRows || posRows.length === 0) {
     return `
-      <div class="pos-block">
-        <div class="block-label">持仓 / 盘口净PnL ${pmPnlStr}</div>
-        <div class="ph">无持仓</div>
+      <div class="cond-pos-header">
+        <span class="q-lbl">持仓</span>
+        <span class="ph">—</span>
+        <span class="q-lbl">PnL</span>
+        ${pmPnlStr}
       </div>`;
   }
 
   const rows = posRows.map((p) => {
     const netQty = Number(p.net_qty);
-    const avg = Number(p.avg_entry_price);
-    const mark = Number(p.mark_price);
-    const pnlR = Number(p.pnl_realized);
-    const pnlU = Number(p.pnl_unrealized);
+    const avg    = Number(p.avg_entry_price);
+    const mark   = Number(p.mark_price);
+    const pnlR   = Number(p.pnl_realized);
+    const pnlU   = Number(p.pnl_unrealized);
     const pnlTotal = pnlR + pnlU;
-    const pnlCls = pnlTotal >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const qtySign = netQty >= 0 ? '+' : '';
+    const pnlCls   = pnlTotal >= 0 ? 'pnl-pos' : 'pnl-neg';
+    const qtySign  = netQty >= 0 ? '+' : '';
 
     return `
-      <div class="pos-row">
-        <span class="pos-outcome">${p.outcome || '—'}</span>
-        <span class="pos-qty mono-dim">${qtySign}${netQty.toLocaleString()}u</span>
-        <span class="pos-avg-mark mono-dim">${Number.isFinite(avg) ? avg.toFixed(4) : '—'} → ${Number.isFinite(mark) ? mark.toFixed(4) : '—'}</span>
-        <span class="pos-pnl ${pnlCls} mono-strong">${fmtUsdc(pnlTotal)}</span>
+      <div class="cond-pos-row">
+        <span class="cond-pos-outcome">${p.outcome || '—'}</span>
+        <span class="cond-pos-qty mono-sub">${qtySign}${netQty.toLocaleString()}u</span>
+        <span class="cond-pos-mark mono-sub">${Number.isFinite(mark) ? mark.toFixed(4) : '—'}</span>
+        <span class="cond-pos-pnl ${pnlCls} mono-main">${fmtUsdc(pnlTotal)}</span>
       </div>`;
   }).join('');
 
   return `
-    <div class="pos-block">
-      <div class="block-label">持仓 / 盘口净PnL ${pmPnlStr}</div>
-      ${rows}
-    </div>`;
+    <div class="cond-pos-header">
+      <span class="q-lbl">持仓/PnL</span>
+      ${pmPnlStr}
+    </div>
+    ${rows}`;
 }
 
 // ============================================================
-// ⑤ 拒单角标
+// R5: 拒单 → 右上角小红点 + tooltip
 // ============================================================
 
-function renderRejectBadge(rejectRows) {
-  if (!rejectRows || rejectRows.length === 0) return '';
-  const latest = rejectRows[0];
-  const reasonZh = REJECT_REASON_ZH[latest.reason_code] || latest.reason_code;
+function renderRejectDot(rejectRows, book) {
+  const hasRejects = rejectRows && rejectRows.length > 0;
+  if (!hasRejects) return '';
+
   const allReasons = rejectRows.map((r) => {
     const rz = REJECT_REASON_ZH[r.reason_code] || r.reason_code;
     const sideZh = SIDE_ZH[r.side] || r.side;
     return `${rz} · ${sideZh} ${r.size} @${r.price}`;
   }).join('\n');
-  return `<span class="reject-badge" title="${allReasons}">拒单×${rejectRows.length} <span class="reject-reason">${reasonZh}</span></span>`;
-}
 
-// ============================================================
-// ⑥ 数据源/stale 标记
-// ============================================================
-
-function renderStaleBlock(market, book, score, isDemoData) {
-  const parts = [];
-
-  if (isDemoData) {
-    parts.push('<span class="demo-chip-sm">DEMO</span>');
-  }
-
-  if (book) {
-    const ms = stalenessMs(book.as_of_ts_ns || book.book_as_of_ts || (book.token0 && book.token0.book_as_of_ts));
-    parts.push(staleChip(ms));
-  }
-
-  if (score) {
-    const ms = stalenessMs(score.score_as_of_ts);
-    parts.push(staleChip(ms));
-  }
-
-  if (parts.length === 0) return '';
-  return `<span class="stale-group">${parts.join('')}</span>`;
-}
-
-// ============================================================
-// Market Grid (组装所有卡片)
-// ============================================================
-
-export function renderMarketGrid(marketData) {
-  if (!marketData || marketData.length === 0) {
-    return `<div class="no-data grid-placeholder">无市场数据</div>`;
-  }
-  return marketData.map((d) => renderMarketCard(d)).join('');
+  return `<span class="reject-dot" title="${allReasons}">×${rejectRows.length}</span>`;
 }
 
 // ============================================================
