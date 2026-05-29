@@ -37,12 +37,13 @@ using namespace stcpp;
 // ---- NoopEmitter: 防 bench 被 audit WAL IO 干扰 ----------------------------
 
 class NoopEmitter : public risk::AuditEmitter {
- public:
+public:
     [[nodiscard]] bool emit(risk::AuditRecord const& r) noexcept override {
         last_sig_ = r.signal_id.size();  // 防 DCE
         return true;
     }
- private:
+
+private:
     std::size_t last_sig_{0};
 };
 
@@ -59,7 +60,9 @@ struct MockPosition {
 
 // ---- MakeFreshTs: R-20 4 ts (Wave 21 §7.5 约定) ----------------------------
 
-struct FreshTs { std::int64_t ev, ds, ig, ao; };
+struct FreshTs {
+    std::int64_t ev, ds, ig, ao;
+};
 [[nodiscard]] inline FreshTs MakeFreshTs() noexcept {
     const std::int64_t t = infra::wal::pit::NowRealtimeNs();
     return {t - 10'000'000LL, t - 8'000'000LL, t - 4'000'000LL, t};
@@ -68,25 +71,25 @@ struct FreshTs { std::int64_t ev, ds, ig, ao; };
 // ---- Fixture: shared setup (避免每个 BM 函数重复 ctor) ----------------------
 
 struct E2EFixture {
-    std::shared_ptr<NoopEmitter>                 emitter;
-    std::unique_ptr<risk::RiskGateway>           rm;
-    signer::paper::VirtualNonceProvider          nonce{0};
-    signer::paper::VirtualGasEstimator           gas;
-    signer::paper::VirtualConfirmWatcher         confirm{0xCAFE'BEEF_ULL};
-    signer::paper::PaperSigner                   signer{nullptr, nullptr, nullptr};
-    execution::VirtualMatcher                    matcher{0xE2E_SEED_ULL};
-    MockPosition                                 pos;
+    std::shared_ptr<NoopEmitter> emitter;
+    std::unique_ptr<risk::RiskGateway> rm;
+    signer::paper::VirtualNonceProvider nonce{0};
+    signer::paper::VirtualGasEstimator gas;
+    signer::paper::VirtualConfirmWatcher confirm{0xCAFE'BEEF_ULL};
+    signer::paper::PaperSigner signer{nullptr, nullptr, nullptr};
+    execution::VirtualMatcher matcher{0xE2E_SEED_ULL};
+    MockPosition pos;
 
     E2EFixture() {
         emitter = std::make_shared<NoopEmitter>();
         risk::RiskConfig cfg;
-        cfg.per_order_cap_usdc       = 10'000;
+        cfg.per_order_cap_usdc = 10'000;
         cfg.market_exposure_cap_usdc = 500'000;
-        cfg.bankroll_usdc            = 1'000'000;
-        cfg.daily_loss_halt_usdc     = 50'000;
-        cfg.consec_loss_halt_count   = 50;
-        cfg.excessive_slippage_bps   = 300;
-        cfg.enable_moneyline         = true;
+        cfg.bankroll_usdc = 1'000'000;
+        cfg.daily_loss_halt_usdc = 50'000;
+        cfg.consec_loss_halt_count = 50;
+        cfg.excessive_slippage_bps = 300;
+        cfg.enable_moneyline = true;
         rm = std::make_unique<risk::RiskGateway>(cfg, emitter);
         rm->set_state(risk::RmState::RUNNING);
         rm->set_market_active("mkt_e2e", true);
@@ -106,55 +109,57 @@ struct E2EFixture {
 
         // [1] WSS recv mock → intent 构造
         risk::OrderIntent intent;
-        intent.event_ts_ns         = ts.ev;
-        intent.data_source_ts_ns   = ts.ds;
-        intent.ingestion_ts_ns     = ts.ig;
-        intent.as_of_ts_ns         = ts.ao;
-        intent.market_id           = "mkt_e2e";
-        intent.strategy_id         = "strat_e2e";
-        intent.signal_id           = "e2e_" + std::to_string(seq);
+        intent.event_ts_ns = ts.ev;
+        intent.data_source_ts_ns = ts.ds;
+        intent.ingestion_ts_ns = ts.ig;
+        intent.as_of_ts_ns = ts.ao;
+        intent.market_id = "mkt_e2e";
+        intent.strategy_id = "strat_e2e";
+        intent.signal_id = "e2e_" + std::to_string(seq);
         intent.feature_snapshot_id = "fs_e2e";
-        intent.is_buy              = true;
-        intent.price               = 0.55;
-        intent.size_usdc           = 500;
-        intent.book_depth_l1_usdc  = 5'000.0;
+        intent.is_buy = true;
+        intent.price = 0.55;
+        intent.size_usdc = 500;
+        intent.book_depth_l1_usdc = 5'000.0;
         intent.book_snapshot_ts_ns = ts.ds;
-        intent.tick_size           = 0.01;
+        intent.tick_size = 0.01;
 
         // [2] RM evaluate
         auto dec = rm->evaluate(intent);
         benchmark::DoNotOptimize(dec);
-        if (!dec.is_approved()) return;
+        if (!dec.is_approved())
+            return;
 
         // [3] PaperSigner.Sign
         signer::SignRequest sreq;
-        sreq.intent_id         = static_cast<std::uint64_t>(seq);
-        sreq.market_id         = "mkt_e2e";
-        sreq.outcome           = "YES";
-        sreq.price             = 0.55;
-        sreq.size_usdc         = 500.0;
-        sreq.event_ts_ns       = ts.ev;
+        sreq.intent_id = static_cast<std::uint64_t>(seq);
+        sreq.market_id = "mkt_e2e";
+        sreq.outcome = "YES";
+        sreq.price = 0.55;
+        sreq.size_usdc = 500.0;
+        sreq.event_ts_ns = ts.ev;
         sreq.data_source_ts_ns = ts.ds;
-        sreq.ingestion_ts_ns   = ts.ig;
-        sreq.as_of_ts_ns       = ts.ao;
+        sreq.ingestion_ts_ns = ts.ig;
+        sreq.as_of_ts_ns = ts.ao;
         auto sresp = signer.Sign(sreq);
         benchmark::DoNotOptimize(sresp);
-        if (sresp.error != signer::SignerError::Ok) return;
+        if (sresp.error != signer::SignerError::Ok)
+            return;
 
         // [4] VirtualMatcher.Match
         execution::VirtualOrder vord;
-        vord.intent_id          = static_cast<std::uint64_t>(seq);
-        vord.market_id          = "mkt_e2e";
-        vord.outcome            = "YES";
-        vord.size_usdc          = 500.0;
-        vord.quote_price        = 0.55;
+        vord.intent_id = static_cast<std::uint64_t>(seq);
+        vord.market_id = "mkt_e2e";
+        vord.outcome = "YES";
+        vord.size_usdc = 500.0;
+        vord.quote_price = 0.55;
         vord.book_depth_l1_usdc = 5'000.0;
-        vord.tick_size          = 0.01;
-        vord.event_ts_ns        = ts.ev;
-        vord.data_source_ts_ns  = ts.ds;
-        vord.ingestion_ts_ns    = ts.ig;
-        vord.as_of_ts_ns        = ts.ao;
-        vord.wall_now_ns        = ts.ao;
+        vord.tick_size = 0.01;
+        vord.event_ts_ns = ts.ev;
+        vord.data_source_ts_ns = ts.ds;
+        vord.ingestion_ts_ns = ts.ig;
+        vord.as_of_ts_ns = ts.ao;
+        vord.wall_now_ns = ts.ao;
         auto fill = matcher.Match(vord);
         benchmark::DoNotOptimize(fill);
 
@@ -175,8 +180,7 @@ void BM_E2E_SingleThread(benchmark::State& state) {
         fx.run_one(state, ++seq);
     }
     state.counters["fill_count"] =
-        benchmark::Counter(static_cast<double>(fx.pos.fill_count.load()),
-                           benchmark::Counter::kAvgIterations);
+        benchmark::Counter(static_cast<double>(fx.pos.fill_count.load()), benchmark::Counter::kAvgIterations);
 }
 BENCHMARK(BM_E2E_SingleThread)
     ->MinTime(2.0)
@@ -191,9 +195,9 @@ void BM_E2E_LowerGuard(benchmark::State& state) {
     // 只跑 RM (整条链中最轻的可观测步骤)
     auto emitter = std::make_shared<NoopEmitter>();
     risk::RiskConfig cfg;
-    cfg.per_order_cap_usdc     = 10'000;
-    cfg.bankroll_usdc          = 1'000'000;
-    cfg.enable_moneyline       = true;
+    cfg.per_order_cap_usdc = 10'000;
+    cfg.bankroll_usdc = 1'000'000;
+    cfg.enable_moneyline = true;
     auto rm = std::make_unique<risk::RiskGateway>(cfg, emitter);
     rm->set_state(risk::RmState::RUNNING);
     rm->set_market_active("mkt_lg", true);
@@ -208,13 +212,19 @@ void BM_E2E_LowerGuard(benchmark::State& state) {
     for (auto _ : state) {
         const auto ts = MakeFreshTs();
         risk::OrderIntent it;
-        it.event_ts_ns = ts.ev; it.data_source_ts_ns = ts.ds;
-        it.ingestion_ts_ns = ts.ig; it.as_of_ts_ns = ts.ao;
-        it.market_id = "mkt_lg"; it.strategy_id = "s"; it.is_buy = true;
+        it.event_ts_ns = ts.ev;
+        it.data_source_ts_ns = ts.ds;
+        it.ingestion_ts_ns = ts.ig;
+        it.as_of_ts_ns = ts.ao;
+        it.market_id = "mkt_lg";
+        it.strategy_id = "s";
+        it.is_buy = true;
         it.signal_id = "lg_" + std::to_string(++seq);
         it.feature_snapshot_id = "fs";
-        it.price = 0.55; it.size_usdc = 500;
-        it.book_depth_l1_usdc = 5'000.0; it.book_snapshot_ts_ns = ts.ds;
+        it.price = 0.55;
+        it.size_usdc = 500;
+        it.book_depth_l1_usdc = 5'000.0;
+        it.book_snapshot_ts_ns = ts.ds;
         it.tick_size = 0.01;
         auto d = rm->evaluate(it);
         benchmark::DoNotOptimize(d);

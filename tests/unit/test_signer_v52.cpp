@@ -34,13 +34,13 @@
 //   R-20 4 ts chain (含 event_ts ≤ now — SIGNER-01 修)
 //   BUG-W5-001 audit_id 非零
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cstdint>
 #include <cstring>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/infra/wal/wal_kind.hpp"
@@ -56,31 +56,31 @@ namespace {
 SignV52Request MakeValidRequest() {
     SignV52Request req;
     const std::int64_t base = infra::wal::pit::NowRealtimeNs() - 1'000'000'000LL;  // 1s ago
-    req.event_ts_ns        = base;
-    req.data_source_ts_ns  = base + 1'000'000LL;      // +1ms
-    req.ingestion_ts_ns    = base + 2'000'000LL;       // +2ms
-    req.as_of_ts_ns        = base + 3'000'000LL;       // +3ms (still ≤ now since base = now-1s)
-    req.data_source_ts_source = 0U;  // UpstreamPayload
-    req.market_id          = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+    req.event_ts_ns = base;
+    req.data_source_ts_ns = base + 1'000'000LL;  // +1ms
+    req.ingestion_ts_ns = base + 2'000'000LL;    // +2ms
+    req.as_of_ts_ns = base + 3'000'000LL;        // +3ms (still ≤ now since base = now-1s)
+    req.data_source_ts_source = 0U;              // UpstreamPayload
+    req.market_id = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
     // v5.3 新增字段: token_id + side (valid defaults for migration)
-    req.token_id           = "1677202003548168512111076196662317438975560192301735320827449539424843146463";
-    req.side               = 0U;    // Buy (valid)
-    req.outcome            = 0U;    // YES
+    req.token_id = "1677202003548168512111076196662317438975560192301735320827449539424843146463";
+    req.side = 0U;     // Buy (valid)
+    req.outcome = 0U;  // YES
     // v5.3 修正: signature_type = 1 (Magic Safe EOA, HMAC bug #2 修正)
     // v5.1 曾填 2 (错误值); v5.3 修正为 1 (SSOT §5 T-10, handshake §84)
-    req.signature_type     = 1U;    // 1 = Magic Safe EOA (CORRECT in v5.3)
-    req.intent_id          = 42ULL;
+    req.signature_type = 1U;  // 1 = Magic Safe EOA (CORRECT in v5.3)
+    req.intent_id = 42ULL;
     // audit_id 非零 (BUG-W5-001)
-    req.audit_id[0]  = 0xDE;
-    req.audit_id[1]  = 0xAD;
-    req.audit_id[2]  = 0xBE;
-    req.audit_id[3]  = 0xEF;
-    req.audit_id[4]  = 0x01;
-    req.audit_id[5]  = 0x02;
-    req.audit_id[6]  = 0x03;
-    req.audit_id[7]  = 0x04;
-    req.audit_id[8]  = 0x05;
-    req.audit_id[9]  = 0x06;
+    req.audit_id[0] = 0xDE;
+    req.audit_id[1] = 0xAD;
+    req.audit_id[2] = 0xBE;
+    req.audit_id[3] = 0xEF;
+    req.audit_id[4] = 0x01;
+    req.audit_id[5] = 0x02;
+    req.audit_id[6] = 0x03;
+    req.audit_id[7] = 0x04;
+    req.audit_id[8] = 0x05;
+    req.audit_id[9] = 0x06;
     req.audit_id[10] = 0x07;
     req.audit_id[11] = 0x08;
     req.audit_id[12] = 0x09;
@@ -99,7 +99,7 @@ TEST(SignerV52, T1_PaperModeEd25519MockSignature64B) {
     SignerV52 signer{execution::ExecutionMode::Paper};
     EXPECT_EQ(signer.Mode(), execution::ExecutionMode::Paper);
 
-    const auto req  = MakeValidRequest();
+    const auto req = MakeValidRequest();
     const auto resp = signer.Sign(req);
 
     EXPECT_EQ(resp.error, SignV52Error::Ok) << "Expected Ok, got: " << ToString(resp.error);
@@ -108,7 +108,10 @@ TEST(SignerV52, T1_PaperModeEd25519MockSignature64B) {
     // 签名必须非全零 (有效签名; paper mock 或 libsodium 真签均不应全零)
     bool any_nonzero = false;
     for (const auto b : resp.signature) {
-        if (b != 0U) { any_nonzero = true; break; }
+        if (b != 0U) {
+            any_nonzero = true;
+            break;
+        }
     }
     EXPECT_TRUE(any_nonzero) << "Signature must not be all-zero";
 
@@ -122,16 +125,16 @@ TEST(SignerV52, T1_PaperModeEd25519MockSignature64B) {
 // ============================================================
 TEST(SignerV52, T2_IpcRequestResponseRoundTrip) {
     SignerV52 signer{execution::ExecutionMode::Paper};
-    const auto req  = MakeValidRequest();
+    const auto req = MakeValidRequest();
     const auto resp = signer.Sign(req);
 
     ASSERT_EQ(resp.error, SignV52Error::Ok);
 
     // R-20 4 ts 透传
-    EXPECT_EQ(resp.event_ts_ns,       req.event_ts_ns);
+    EXPECT_EQ(resp.event_ts_ns, req.event_ts_ns);
     EXPECT_EQ(resp.data_source_ts_ns, req.data_source_ts_ns);
-    EXPECT_EQ(resp.ingestion_ts_ns,   req.ingestion_ts_ns);
-    EXPECT_EQ(resp.as_of_ts_ns,       req.as_of_ts_ns);
+    EXPECT_EQ(resp.ingestion_ts_ns, req.ingestion_ts_ns);
+    EXPECT_EQ(resp.as_of_ts_ns, req.as_of_ts_ns);
 
     // audit_id echo-back (BUG-W5-001)
     EXPECT_EQ(resp.audit_id, req.audit_id);
@@ -150,28 +153,27 @@ TEST(SignerV52, T3_FourTsR20Passthrough) {
     // 使用近期有效 base 时间但故意让 ds < event
     auto req = MakeValidRequest();
     const std::int64_t base = infra::wal::pit::NowRealtimeNs() - 2'000'000'000LL;
-    req.event_ts_ns        = base + 2'000'000LL;   // event 靠后
-    req.data_source_ts_ns  = base + 1'000'000LL;   // ds < event → PitViolation!
-    req.ingestion_ts_ns    = base + 3'000'000LL;
-    req.as_of_ts_ns        = base + 4'000'000LL;
+    req.event_ts_ns = base + 2'000'000LL;        // event 靠后
+    req.data_source_ts_ns = base + 1'000'000LL;  // ds < event → PitViolation!
+    req.ingestion_ts_ns = base + 3'000'000LL;
+    req.as_of_ts_ns = base + 4'000'000LL;
 
     const auto resp = signer.Sign(req);
     // ds < event → PitViolation; 4 ts 仍然透传
-    EXPECT_EQ(resp.error, SignV52Error::PitViolation)
-        << "T3: data_source < event must trigger PitViolation";
-    EXPECT_EQ(resp.event_ts_ns,       req.event_ts_ns);
+    EXPECT_EQ(resp.error, SignV52Error::PitViolation) << "T3: data_source < event must trigger PitViolation";
+    EXPECT_EQ(resp.event_ts_ns, req.event_ts_ns);
     EXPECT_EQ(resp.data_source_ts_ns, req.data_source_ts_ns);
-    EXPECT_EQ(resp.ingestion_ts_ns,   req.ingestion_ts_ns);
-    EXPECT_EQ(resp.as_of_ts_ns,       req.as_of_ts_ns);
+    EXPECT_EQ(resp.ingestion_ts_ns, req.ingestion_ts_ns);
+    EXPECT_EQ(resp.as_of_ts_ns, req.as_of_ts_ns);
 
     // 合法 ts (近期)
     auto req2 = MakeValidRequest();
     const auto resp2 = signer.Sign(req2);
     EXPECT_EQ(resp2.error, SignV52Error::Ok);
-    EXPECT_EQ(resp2.event_ts_ns,       req2.event_ts_ns);
+    EXPECT_EQ(resp2.event_ts_ns, req2.event_ts_ns);
     EXPECT_EQ(resp2.data_source_ts_ns, req2.data_source_ts_ns);
-    EXPECT_EQ(resp2.ingestion_ts_ns,   req2.ingestion_ts_ns);
-    EXPECT_EQ(resp2.as_of_ts_ns,       req2.as_of_ts_ns);
+    EXPECT_EQ(resp2.ingestion_ts_ns, req2.ingestion_ts_ns);
+    EXPECT_EQ(resp2.as_of_ts_ns, req2.as_of_ts_ns);
 }
 
 // ============================================================
@@ -182,9 +184,9 @@ TEST(SignerV52, T4_DataSourceTsSourceEnumAbiLock) {
     using DST = polymarket::DataSourceTsSource;
 
     // ABI lock: 值 0-3 与 signer IPC uint8_t 对应
-    EXPECT_EQ(static_cast<std::uint8_t>(DST::UpstreamPayload),       0U);
-    EXPECT_EQ(static_cast<std::uint8_t>(DST::UpstreamHeader),        1U);
-    EXPECT_EQ(static_cast<std::uint8_t>(DST::InferredFromDsTs),      2U);
+    EXPECT_EQ(static_cast<std::uint8_t>(DST::UpstreamPayload), 0U);
+    EXPECT_EQ(static_cast<std::uint8_t>(DST::UpstreamHeader), 1U);
+    EXPECT_EQ(static_cast<std::uint8_t>(DST::InferredFromDsTs), 2U);
     EXPECT_EQ(static_cast<std::uint8_t>(DST::InferredFromIngestion), 3U);
 
     // SignV52Request.data_source_ts_source 接受 0-3
@@ -229,8 +231,7 @@ TEST(SignerV52, T5_SignatureTypeMustBeOne) {
         auto req = MakeValidRequest();
         req.signature_type = 0U;
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::InternalError)
-            << "sigType=0 must be rejected";
+        EXPECT_EQ(resp.error, SignV52Error::InternalError) << "sigType=0 must be rejected";
     }
 
     // sigType=3 → InternalError
@@ -238,8 +239,7 @@ TEST(SignerV52, T5_SignatureTypeMustBeOne) {
         auto req = MakeValidRequest();
         req.signature_type = 3U;
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::InternalError)
-            << "sigType=3 must be rejected";
+        EXPECT_EQ(resp.error, SignV52Error::InternalError) << "sigType=3 must be rejected";
     }
 }
 
@@ -264,8 +264,7 @@ TEST(SignerV52, T6_AuditIdNonZero) {
         req.audit_id.fill(0U);
         req.audit_id[15] = 0x01U;
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::Ok)
-            << "Single non-zero byte in audit_id should be accepted";
+        EXPECT_EQ(resp.error, SignV52Error::Ok) << "Single non-zero byte in audit_id should be accepted";
         EXPECT_EQ(resp.signature.size(), 64U);
     }
 
@@ -307,8 +306,7 @@ TEST(SignerV52, T7_HmacBug4AntiPatternEnforced) {
         auto req = MakeValidRequest();
         req.signature_type = 2U;  // FORBIDDEN in v5.3 (HMAC bug #2 error value)
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::InternalError)
-            << "BUG#2 修正 (v5.3): sigType=2 must be rejected";
+        EXPECT_EQ(resp.error, SignV52Error::InternalError) << "BUG#2 修正 (v5.3): sigType=2 must be rejected";
     }
 
     // BUG#4 教训: market_id 含 '?' (querystring 混入) — signer 不崩溃
@@ -325,8 +323,7 @@ TEST(SignerV52, T7_HmacBug4AntiPatternEnforced) {
         auto req = MakeValidRequest();
         req.signature_type = 1U;  // CORRECT in v5.3: Magic Safe EOA
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::Ok)
-            << "sigType=1 (Magic Safe EOA) must be accepted in v5.3";
+        EXPECT_EQ(resp.error, SignV52Error::Ok) << "sigType=1 (Magic Safe EOA) must be accepted in v5.3";
         EXPECT_EQ(resp.signature.size(), 64U);
     }
 }
@@ -339,7 +336,7 @@ TEST(SignerV52, T7_HmacBug4AntiPatternEnforced) {
 // ============================================================
 
 #ifdef STCPP_SIGNER_V52_LIBSODIUM
-#  include <sodium.h>  // for T8 crypto_sign_ed25519_verify_detached
+#    include <sodium.h>  // for T8 crypto_sign_ed25519_verify_detached
 #endif
 
 TEST(SignerV52, T8_Ed25519PublicKeyMismatchFail) {
@@ -353,8 +350,7 @@ TEST(SignerV52, T8_Ed25519PublicKeyMismatchFail) {
     // 两个 signer 的公钥必须不同 (各自随机 keypair)
     ASSERT_EQ(pk_a.size(), 32U) << "signer_a pubkey must be 32B";
     ASSERT_EQ(pk_b.size(), 32U) << "signer_b pubkey must be 32B";
-    EXPECT_NE(pk_a, pk_b)
-        << "T8: two independently created signers must have different keypairs";
+    EXPECT_NE(pk_a, pk_b) << "T8: two independently created signers must have different keypairs";
 
     // signer_a 签名
     auto req = MakeValidRequest();
@@ -370,8 +366,8 @@ TEST(SignerV52, T8_Ed25519PublicKeyMismatchFail) {
     std::vector<std::uint8_t> msg;
     msg.reserve(8U + req.market_id.size() + req.token_id.size() + 1U + 1U + 16U);
     for (std::size_t i = 0; i < 8U; ++i) {
-        msg.push_back(static_cast<std::uint8_t>(
-            (static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
+        msg.push_back(
+            static_cast<std::uint8_t>((static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
     }
     for (const char c : req.market_id) {
         msg.push_back(static_cast<std::uint8_t>(c));
@@ -387,21 +383,17 @@ TEST(SignerV52, T8_Ed25519PublicKeyMismatchFail) {
 
     // 用 signer_b pubkey 验证 → 必须失败 (返回 -1)
     const int verify_result = crypto_sign_ed25519_verify_detached(
-        resp_a.signature.data(),
-        msg.data(),
+        resp_a.signature.data(), msg.data(),
         static_cast<unsigned long long>(msg.size()),  // NOLINT(google-runtime-int)
         pk_b.data());
-    EXPECT_EQ(verify_result, -1)
-        << "T8: verifying signer_a signature with signer_b pubkey must fail";
+    EXPECT_EQ(verify_result, -1) << "T8: verifying signer_a signature with signer_b pubkey must fail";
 
     // 用 signer_a pubkey 验证 → 必须成功 (返回 0)
     const int verify_ok = crypto_sign_ed25519_verify_detached(
-        resp_a.signature.data(),
-        msg.data(),
+        resp_a.signature.data(), msg.data(),
         static_cast<unsigned long long>(msg.size()),  // NOLINT(google-runtime-int)
         pk_a.data());
-    EXPECT_EQ(verify_ok, 0)
-        << "T8: verifying signer_a signature with signer_a pubkey must succeed";
+    EXPECT_EQ(verify_ok, 0) << "T8: verifying signer_a signature with signer_a pubkey must succeed";
 #else
     // 无 libsodium: 仅验证两个 signer 公钥不同 (证明 keypair 独立)
     EXPECT_NE(pk_a, pk_b) << "T8: signers must have different pubkeys (no libsodium verify)";
@@ -409,7 +401,10 @@ TEST(SignerV52, T8_Ed25519PublicKeyMismatchFail) {
     // 验证 resp_a.signature 非零 (mock 路径也不应全零)
     bool nonzero = false;
     for (const auto b : resp_a.signature) {
-        if (b != 0U) { nonzero = true; break; }
+        if (b != 0U) {
+            nonzero = true;
+            break;
+        }
     }
     EXPECT_TRUE(nonzero) << "T8: signature must not be all-zero even in mock path";
 #endif
@@ -420,7 +415,7 @@ TEST(SignerV52, T8_Ed25519PublicKeyMismatchFail) {
 // ============================================================
 TEST(SignerV52, Bonus_R11AuditWalKindPaperAudit) {
     SignerV52 signer{execution::ExecutionMode::Paper};
-    const auto req  = MakeValidRequest();
+    const auto req = MakeValidRequest();
     const auto resp = signer.Sign(req);
 
     ASSERT_EQ(resp.error, SignV52Error::Ok);
@@ -497,8 +492,8 @@ TEST(SignerV52, NewT1_Ed25519TrueSignVerifyRoundTrip) {
     std::vector<std::uint8_t> msg;
     msg.reserve(8U + req.market_id.size() + req.token_id.size() + 1U + 1U + 16U);
     for (std::size_t i = 0U; i < 8U; ++i) {
-        msg.push_back(static_cast<std::uint8_t>(
-            (static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
+        msg.push_back(
+            static_cast<std::uint8_t>((static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
     }
     for (const char c : req.market_id) {
         msg.push_back(static_cast<std::uint8_t>(c));
@@ -516,12 +511,10 @@ TEST(SignerV52, NewT1_Ed25519TrueSignVerifyRoundTrip) {
 
     // libsodium 原生验签: pk.data() + msg + sig → 0 表示成功
     const int vr = crypto_sign_ed25519_verify_detached(
-        resp.signature.data(),
-        msg.data(),
+        resp.signature.data(), msg.data(),
         static_cast<unsigned long long>(msg.size()),  // NOLINT(google-runtime-int)
         pk.data());
-    EXPECT_EQ(vr, 0)
-        << "NewT1: libsodium verify_detached of own signature must return 0 (valid)";
+    EXPECT_EQ(vr, 0) << "NewT1: libsodium verify_detached of own signature must return 0 (valid)";
 }
 
 // ============================================================
@@ -534,28 +527,27 @@ TEST(SignerV52, NewT2_SignV52RequestAllFieldsRoundTrip) {
     auto req = MakeValidRequest();
     // 覆盖所有字段 (IPC 协议 v5.3 完整性)
     const std::int64_t base = infra::wal::pit::NowRealtimeNs() - 2'000'000'000LL;
-    req.event_ts_ns        = base;
-    req.data_source_ts_ns  = base + 1'000'000LL;
-    req.ingestion_ts_ns    = base + 2'000'000LL;
-    req.as_of_ts_ns        = base + 3'000'000LL;
+    req.event_ts_ns = base;
+    req.data_source_ts_ns = base + 1'000'000LL;
+    req.ingestion_ts_ns = base + 2'000'000LL;
+    req.as_of_ts_ns = base + 3'000'000LL;
     req.data_source_ts_source = 1U;  // UpstreamHeader
-    req.market_id          = "0xdeadbeefcafebabe0000111122223333";
-    req.token_id           = "9876543210987654321098765432109876543210987654321098765432109876543";
-    req.side               = 1U;   // Sell
-    req.outcome            = 1U;   // NO
-    req.signature_type     = 1U;   // v5.3: Magic Safe EOA (HMAC bug #2 修正)
-    req.intent_id          = 9999ULL;
+    req.market_id = "0xdeadbeefcafebabe0000111122223333";
+    req.token_id = "9876543210987654321098765432109876543210987654321098765432109876543";
+    req.side = 1U;            // Sell
+    req.outcome = 1U;         // NO
+    req.signature_type = 1U;  // v5.3: Magic Safe EOA (HMAC bug #2 修正)
+    req.intent_id = 9999ULL;
     req.audit_id.fill(0xABU);
 
     const auto resp = signer.Sign(req);
-    ASSERT_EQ(resp.error, SignV52Error::Ok)
-        << "NewT2: valid request with all fields must succeed";
+    ASSERT_EQ(resp.error, SignV52Error::Ok) << "NewT2: valid request with all fields must succeed";
 
     // 4 ts 透传
-    EXPECT_EQ(resp.event_ts_ns,       req.event_ts_ns);
+    EXPECT_EQ(resp.event_ts_ns, req.event_ts_ns);
     EXPECT_EQ(resp.data_source_ts_ns, req.data_source_ts_ns);
-    EXPECT_EQ(resp.ingestion_ts_ns,   req.ingestion_ts_ns);
-    EXPECT_EQ(resp.as_of_ts_ns,       req.as_of_ts_ns);
+    EXPECT_EQ(resp.ingestion_ts_ns, req.ingestion_ts_ns);
+    EXPECT_EQ(resp.as_of_ts_ns, req.as_of_ts_ns);
 
     // audit_id echo-back
     EXPECT_EQ(resp.audit_id, req.audit_id);
@@ -564,7 +556,10 @@ TEST(SignerV52, NewT2_SignV52RequestAllFieldsRoundTrip) {
     EXPECT_EQ(resp.signature.size(), 64U);
     bool nonzero = false;
     for (const auto b : resp.signature) {
-        if (b != 0U) { nonzero = true; break; }
+        if (b != 0U) {
+            nonzero = true;
+            break;
+        }
     }
     EXPECT_TRUE(nonzero) << "NewT2: signature must not be all-zero";
 
@@ -582,11 +577,11 @@ TEST(SignerV52, NewT3_HmacBug1RstripNocrash) {
     // BUG#1 教训: url_path 末尾 '/' 必须在 caller 层去掉
     // signer 不过滤 market_id, 但不应崩溃 (no abort / no exception / no crash)
     const std::vector<std::string> dangerous_market_ids = {
-        "0xabcd/",                       // 尾斜杠
-        "0xabcd//",                      // 双斜杠
-        "0xabcd?foo=bar",                // querystring 混入 (BUG#4)
-        "0xabcd?foo=bar&baz=1/",         // querystring + 尾斜杠 (BUG#1 + BUG#4)
-        "",                              // 空字符串 (caller bug; signer 不 abort)
+        "0xabcd/",                // 尾斜杠
+        "0xabcd//",               // 双斜杠
+        "0xabcd?foo=bar",         // querystring 混入 (BUG#4)
+        "0xabcd?foo=bar&baz=1/",  // querystring + 尾斜杠 (BUG#1 + BUG#4)
+        "",                       // 空字符串 (caller bug; signer 不 abort)
     };
 
     for (const auto& mid : dangerous_market_ids) {
@@ -636,8 +631,7 @@ TEST(SignerV52, NewT4_SecureBufferSodiumMemzeroOnDestruct) {
         // Sign 一次确认有效
         auto req = MakeValidRequest();
         const auto resp = s->Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::Ok)
-            << "NewT4: SignerV52 should sign ok before destruct";
+        EXPECT_EQ(resp.error, SignV52Error::Ok) << "NewT4: SignerV52 should sign ok before destruct";
         // delete 触发析构 → SecureBuffer<64> sodium_memzero
         delete s;  // NOLINT(cppcoreguidelines-owning-memory)
         // 无 crash = SecureBuffer 析构路径正确
@@ -656,15 +650,16 @@ TEST(SignerV52, NewT5_GeneratePaperKeypairMultipleUnique) {
     for (int i = 0; i < kN; ++i) {
         SignerV52 s{execution::ExecutionMode::Paper};
         const auto pk = s.PublicKeyBytes();
-        ASSERT_EQ(pk.size(), 32U)
-            << "NewT5: keypair " << i << " pubkey must be 32B";
+        ASSERT_EQ(pk.size(), 32U) << "NewT5: keypair " << i << " pubkey must be 32B";
         // 非全零
         bool nonzero = false;
         for (const auto b : pk) {
-            if (b != 0U) { nonzero = true; break; }
+            if (b != 0U) {
+                nonzero = true;
+                break;
+            }
         }
-        EXPECT_TRUE(nonzero)
-            << "NewT5: keypair " << i << " pubkey must not be all-zero";
+        EXPECT_TRUE(nonzero) << "NewT5: keypair " << i << " pubkey must not be all-zero";
         pks.push_back(pk);
     }
 
@@ -697,8 +692,8 @@ TEST(SignerV52, NewT6_SignVerifyRoundTripConsistentViaCryptoApi) {
     std::vector<std::uint8_t> msg;
     msg.reserve(8U + req.market_id.size() + req.token_id.size() + 1U + 1U + 16U);
     for (std::size_t i = 0U; i < 8U; ++i) {
-        msg.push_back(static_cast<std::uint8_t>(
-            (static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
+        msg.push_back(
+            static_cast<std::uint8_t>((static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
     }
     for (const char c : req.market_id) {
         msg.push_back(static_cast<std::uint8_t>(c));
@@ -722,25 +717,21 @@ TEST(SignerV52, NewT6_SignVerifyRoundTripConsistentViaCryptoApi) {
     std::array<std::uint8_t, crypto::kEd25519SignatureBytes> sig_arr{};
     std::copy(resp.signature.begin(), resp.signature.end(), sig_arr.begin());
 
-    const bool ok = crypto::Ed25519::verify(
-        std::span<const std::uint8_t, crypto::kEd25519PublicKeyBytes>{pk_arr},
-        std::span<const std::uint8_t>{msg.data(), msg.size()},
-        std::span<const std::uint8_t, crypto::kEd25519SignatureBytes>{sig_arr}
-    );
-    EXPECT_TRUE(ok)
-        << "NewT6: Ed25519::verify of own signature must return true";
+    const bool ok =
+        crypto::Ed25519::verify(std::span<const std::uint8_t, crypto::kEd25519PublicKeyBytes>{pk_arr},
+                                std::span<const std::uint8_t>{msg.data(), msg.size()},
+                                std::span<const std::uint8_t, crypto::kEd25519SignatureBytes>{sig_arr});
+    EXPECT_TRUE(ok) << "NewT6: Ed25519::verify of own signature must return true";
 
     // 篡改消息: verify 应返回 false
     if (!msg.empty()) {
         std::vector<std::uint8_t> tampered = msg;
         tampered[0] ^= 0xFFU;
-        const bool bad = crypto::Ed25519::verify(
-            std::span<const std::uint8_t, crypto::kEd25519PublicKeyBytes>{pk_arr},
-            std::span<const std::uint8_t>{tampered.data(), tampered.size()},
-            std::span<const std::uint8_t, crypto::kEd25519SignatureBytes>{sig_arr}
-        );
-        EXPECT_FALSE(bad)
-            << "NewT6: Ed25519::verify of tampered message must return false";
+        const bool bad =
+            crypto::Ed25519::verify(std::span<const std::uint8_t, crypto::kEd25519PublicKeyBytes>{pk_arr},
+                                    std::span<const std::uint8_t>{tampered.data(), tampered.size()},
+                                    std::span<const std::uint8_t, crypto::kEd25519SignatureBytes>{sig_arr});
+        EXPECT_FALSE(bad) << "NewT6: Ed25519::verify of tampered message must return false";
     }
 }
 
@@ -752,7 +743,7 @@ TEST(SignerV52, NewT6_SignVerifyRoundTripConsistentViaCryptoApi) {
 TEST(SignerV52, NewT7_CryptoEd25519LinkerCheck) {
     // 直接调 Ed25519::generate_keypair (stcpp_crypto_ed25519 公共 API)
     std::array<std::uint8_t, crypto::kEd25519PublicKeyBytes> pk{};
-    crypto::SecureBuffer<crypto::kEd25519SecretKeyBytes>     sk{};
+    crypto::SecureBuffer<crypto::kEd25519SecretKeyBytes> sk{};
 
     // 需要先 sodium_init (幂等)
     const int init_rc = sodium_init();
@@ -764,14 +755,20 @@ TEST(SignerV52, NewT7_CryptoEd25519LinkerCheck) {
     // pubkey 非全零
     bool pk_nonzero = false;
     for (const auto b : pk) {
-        if (b != 0U) { pk_nonzero = true; break; }
+        if (b != 0U) {
+            pk_nonzero = true;
+            break;
+        }
     }
     EXPECT_TRUE(pk_nonzero) << "NewT7: generated pubkey must not be all-zero";
 
     // sk 非全零 (私钥 64B = seed || pubkey)
     bool sk_nonzero = false;
     for (std::size_t i = 0U; i < sk.size(); ++i) {
-        if (sk[i] != 0U) { sk_nonzero = true; break; }
+        if (sk[i] != 0U) {
+            sk_nonzero = true;
+            break;
+        }
     }
     EXPECT_TRUE(sk_nonzero) << "NewT7: generated secret key must not be all-zero";
 }
@@ -796,10 +793,10 @@ TEST(SignerV52, NewT8_SIGNER01_EventTsFutureIsPitViolation) {
 
     // event_ts = now + 10s (整条链在未来, 最严格的 future-ts case)
     auto req = MakeValidRequest();
-    req.event_ts_ns        = now + 10'000'000'000LL;   // +10s
-    req.data_source_ts_ns  = req.event_ts_ns + 1'000LL;
-    req.ingestion_ts_ns    = req.data_source_ts_ns + 1'000LL;
-    req.as_of_ts_ns        = req.ingestion_ts_ns  + 1'000LL;
+    req.event_ts_ns = now + 10'000'000'000LL;  // +10s
+    req.data_source_ts_ns = req.event_ts_ns + 1'000LL;
+    req.ingestion_ts_ns = req.data_source_ts_ns + 1'000LL;
+    req.as_of_ts_ns = req.ingestion_ts_ns + 1'000LL;
 
     const auto resp = signer.Sign(req);
 
@@ -808,20 +805,20 @@ TEST(SignerV52, NewT8_SIGNER01_EventTsFutureIsPitViolation) {
         << "SIGNER-01: event_ts > now must trigger PitViolation";
 
     // R-20: 4 ts 仍透传 (不因 error 丢弃)
-    EXPECT_EQ(resp.event_ts_ns,       req.event_ts_ns)
+    EXPECT_EQ(resp.event_ts_ns, req.event_ts_ns)
         << "SIGNER-01: event_ts must be passed through even on PitViolation";
     EXPECT_EQ(resp.data_source_ts_ns, req.data_source_ts_ns);
-    EXPECT_EQ(resp.ingestion_ts_ns,   req.ingestion_ts_ns);
-    EXPECT_EQ(resp.as_of_ts_ns,       req.as_of_ts_ns);
+    EXPECT_EQ(resp.ingestion_ts_ns, req.ingestion_ts_ns);
+    EXPECT_EQ(resp.as_of_ts_ns, req.as_of_ts_ns);
 
     // edge case: event_ts = now + 100ms (稳定未来, 远大于 Sign() 执行时间)
     // 注: +1ns 不可靠 — Sign() 内部再次调 NowRealtimeNs() 时执行时间已超过 1ns
     //     SIGNER-01 揭示: 检测"足够远的未来"才是可测边界 (生产 event_ts 不会 +100ms)
     auto req2 = MakeValidRequest();
-    req2.event_ts_ns        = now + 100'000'000LL;   // +100ms
-    req2.data_source_ts_ns  = req2.event_ts_ns + 1'000LL;
-    req2.ingestion_ts_ns    = req2.data_source_ts_ns + 1'000LL;
-    req2.as_of_ts_ns        = req2.ingestion_ts_ns + 1'000LL;
+    req2.event_ts_ns = now + 100'000'000LL;  // +100ms
+    req2.data_source_ts_ns = req2.event_ts_ns + 1'000LL;
+    req2.ingestion_ts_ns = req2.data_source_ts_ns + 1'000LL;
+    req2.as_of_ts_ns = req2.ingestion_ts_ns + 1'000LL;
     const auto resp2 = signer.Sign(req2);
     EXPECT_EQ(resp2.error, SignV52Error::PitViolation)
         << "SIGNER-01: +100ms in future for event_ts must trigger PitViolation";

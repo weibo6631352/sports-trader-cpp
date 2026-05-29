@@ -32,46 +32,56 @@ namespace stcpp::cli {
 // Ed25519 公钥 32B
 inline constexpr std::size_t kEd25519PubKeyBytes = 32;
 // Ed25519 签名 64B
-inline constexpr std::size_t kEd25519SigBytes     = 64;
+inline constexpr std::size_t kEd25519SigBytes = 64;
 // 最大时间漂移: 1h (防重放)
 inline constexpr std::int64_t kMaxDriftNs = 3'600'000'000'000LL;
 
 // 单签验证结果
 enum class SigVerifyResult : std::uint8_t {
-    OK            = 0,
-    BAD_SIGNATURE = 1,   // Ed25519 验签失败
-    EXPIRED       = 2,   // |sig_ts - now_ts| > kMaxDriftNs
-    BAD_PAYLOAD   = 3,   // payload 字段与预期不一致
-    MISSING_KEY   = 4,   // 公钥为全零 (未配置)
+    OK = 0,
+    BAD_SIGNATURE = 1,  // Ed25519 验签失败
+    EXPIRED = 2,        // |sig_ts - now_ts| > kMaxDriftNs
+    BAD_PAYLOAD = 3,    // payload 字段与预期不一致
+    MISSING_KEY = 4,    // 公钥为全零 (未配置)
 };
 
 [[nodiscard]] constexpr std::string_view ToString(SigVerifyResult r) noexcept {
     switch (r) {
-        case SigVerifyResult::OK:            return "OK";
-        case SigVerifyResult::BAD_SIGNATURE: return "BAD_SIGNATURE";
-        case SigVerifyResult::EXPIRED:       return "EXPIRED";
-        case SigVerifyResult::BAD_PAYLOAD:   return "BAD_PAYLOAD";
-        case SigVerifyResult::MISSING_KEY:   return "MISSING_KEY";
+        case SigVerifyResult::OK:
+            return "OK";
+        case SigVerifyResult::BAD_SIGNATURE:
+            return "BAD_SIGNATURE";
+        case SigVerifyResult::EXPIRED:
+            return "EXPIRED";
+        case SigVerifyResult::BAD_PAYLOAD:
+            return "BAD_PAYLOAD";
+        case SigVerifyResult::MISSING_KEY:
+            return "MISSING_KEY";
     }
     return "UNKNOWN";
 }
 
 // 三签集成结果
 enum class ThreeSigResult : std::uint8_t {
-    OK             = 0,
-    LAOHAN_FAILED  = 1,
+    OK = 0,
+    LAOHAN_FAILED = 1,
     LAOTANG_FAILED = 2,
-    LAOLEI_FAILED  = 3,
-    INSUFFICIENT   = 4,  // 非 3 签输入 (emergency_override=false 时强制要求 3 签)
+    LAOLEI_FAILED = 3,
+    INSUFFICIENT = 4,  // 非 3 签输入 (emergency_override=false 时强制要求 3 签)
 };
 
 [[nodiscard]] constexpr std::string_view ToString(ThreeSigResult r) noexcept {
     switch (r) {
-        case ThreeSigResult::OK:             return "OK";
-        case ThreeSigResult::LAOHAN_FAILED:  return "LAOHAN_FAILED";
-        case ThreeSigResult::LAOTANG_FAILED: return "LAOTANG_FAILED";
-        case ThreeSigResult::LAOLEI_FAILED:  return "LAOLEI_FAILED";
-        case ThreeSigResult::INSUFFICIENT:   return "INSUFFICIENT";
+        case ThreeSigResult::OK:
+            return "OK";
+        case ThreeSigResult::LAOHAN_FAILED:
+            return "LAOHAN_FAILED";
+        case ThreeSigResult::LAOTANG_FAILED:
+            return "LAOTANG_FAILED";
+        case ThreeSigResult::LAOLEI_FAILED:
+            return "LAOLEI_FAILED";
+        case ThreeSigResult::INSUFFICIENT:
+            return "INSUFFICIENT";
     }
     return "UNKNOWN";
 }
@@ -81,7 +91,7 @@ struct SignerInput {
     // Ed25519 公钥 (32B, 从 .env RM_UNLOCK_PUBKEY_* 读取, base64 解码后填入)
     std::array<std::uint8_t, kEd25519PubKeyBytes> pubkey{};
     // Ed25519 签名 (64B, base64 解码后填入)
-    std::array<std::uint8_t, kEd25519SigBytes>    signature{};
+    std::array<std::uint8_t, kEd25519SigBytes> signature{};
     // 签名时的 Unix timestamp (ns) — 来自签名 payload 解析
     std::int64_t sig_timestamp_ns{0};
 };
@@ -107,7 +117,7 @@ struct ThreeSignatureInput {
 //
 // libsodium 依赖: 调用方须在进程启动时调用 sodium_init() (CLI main 负责)
 class ThreeSignatureVerifier {
- public:
+public:
     ThreeSignatureVerifier() = default;
     ~ThreeSignatureVerifier() = default;
     ThreeSignatureVerifier(ThreeSignatureVerifier const&) = delete;
@@ -116,12 +126,10 @@ class ThreeSignatureVerifier {
     // 主入口: 三签集成验证
     // now_ns: 当前单调时钟 ns (CLI main 传入, 不在本类调 now() — 遵 R-20 精神)
     // emergency_override=true 时只验 laolei 签, 允许单签
-    [[nodiscard]] ThreeSigResult verify(ThreeSignatureInput const& in,
-                                        std::int64_t now_ns) const noexcept;
+    [[nodiscard]] ThreeSigResult verify(ThreeSignatureInput const& in, std::int64_t now_ns) const noexcept;
 
     // 单签验证 (测试 + 内部调用)
-    [[nodiscard]] SigVerifyResult verify_one(SignerInput const& signer,
-                                             std::string_view payload,
+    [[nodiscard]] SigVerifyResult verify_one(SignerInput const& signer, std::string_view payload,
                                              std::int64_t now_ns) const noexcept;
 
     // Payload 构造 helper (CLI 生成待签内容时使用)
@@ -132,13 +140,11 @@ class ThreeSignatureVerifier {
 
     // Base64 decode helper (CLI 读取 --*-sig= 参数用)
     // 返回 false 表示输入不是合法 base64 或长度不匹配
-    [[nodiscard]] static bool decode_base64_sig(
-        std::string_view b64,
-        std::array<std::uint8_t, kEd25519SigBytes>& out) noexcept;
+    [[nodiscard]] static bool decode_base64_sig(std::string_view b64,
+                                                std::array<std::uint8_t, kEd25519SigBytes>& out) noexcept;
 
     [[nodiscard]] static bool decode_base64_pubkey(
-        std::string_view b64,
-        std::array<std::uint8_t, kEd25519PubKeyBytes>& out) noexcept;
+        std::string_view b64, std::array<std::uint8_t, kEd25519PubKeyBytes>& out) noexcept;
 };
 
 }  // namespace stcpp::cli

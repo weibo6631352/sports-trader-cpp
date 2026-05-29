@@ -40,7 +40,7 @@
 
 // 模板实例化 (让 PositionLedger.cpp TU 持有 WalWriter<PositionRecord> 实例化)
 // 单测也可独立实例化, 此处是生产 TU 唯一实例化点
-#include "wal_writer.cpp"   // NOLINT(bugprone-suspicious-include)
+#include "wal_writer.cpp"  // NOLINT(bugprone-suspicious-include)
 namespace stcpp::infra::wal {
 template class WalWriter<PositionRecord>;
 }  // namespace stcpp::infra::wal
@@ -59,13 +59,15 @@ namespace {
 }
 
 // 汇总 exposure_pct (basis points): sum(|pos_total|) / bankroll (clamp [0, 10000])
-[[nodiscard]] std::int32_t
-ComputeExposurePct(std::int64_t abs_position_usdc, std::int64_t bankroll) noexcept {
-    if (bankroll <= 0) return 0;
-    const std::int64_t bps =
-        (abs_position_usdc * 10'000LL) / bankroll;
-    if (bps > 10'000) return static_cast<std::int32_t>(10'000);
-    if (bps < 0)      return 0;
+[[nodiscard]] std::int32_t ComputeExposurePct(std::int64_t abs_position_usdc,
+                                              std::int64_t bankroll) noexcept {
+    if (bankroll <= 0)
+        return 0;
+    const std::int64_t bps = (abs_position_usdc * 10'000LL) / bankroll;
+    if (bps > 10'000)
+        return static_cast<std::int32_t>(10'000);
+    if (bps < 0)
+        return 0;
     return static_cast<std::int32_t>(bps);
 }
 
@@ -74,23 +76,21 @@ ComputeExposurePct(std::int64_t abs_position_usdc, std::int64_t bankroll) noexce
 // ---------------------------------------------------------------------------
 // 构造 (生产路径)
 // ---------------------------------------------------------------------------
-PositionLedger::PositionLedger(std::string_view path_prefix,
-                               std::int64_t     init_bankroll) {
+PositionLedger::PositionLedger(std::string_view path_prefix, std::int64_t init_bankroll) {
     global_bankroll_.store(init_bankroll, std::memory_order_relaxed);
 
     // Open WalWriter<PositionRecord>
     // R-7 paper/live 物理隔离: path_prefix 由 CMake 注入, 内部 Open() 做 R-11 硬校验
     WalConfig cfg{};
-    cfg.kind       = WalKind::Position;
+    cfg.kind = WalKind::Position;
     cfg.path_prefix = std::string{path_prefix};
-    cfg.fsync_mode  = FsyncMode::PerRecord;  // position WAL RPO=0
-    cfg.ring_capacity = 16384;               // 2 的幂
+    cfg.fsync_mode = FsyncMode::PerRecord;  // position WAL RPO=0
+    cfg.ring_capacity = 16384;              // 2 的幂
 
     auto w_or = WalWriter<PositionRecord>::Open(cfg);
     if (!w_or.has_value()) {
-        throw std::runtime_error(
-            std::string("PositionLedger: WalWriter::Open failed: ") +
-            std::string(ToString(w_or.error())));
+        throw std::runtime_error(std::string("PositionLedger: WalWriter::Open failed: ") +
+                                 std::string(ToString(w_or.error())));
     }
     writer_ = std::make_unique<RealWalWriter>(std::move(w_or).value());
 }
@@ -98,8 +98,7 @@ PositionLedger::PositionLedger(std::string_view path_prefix,
 // ---------------------------------------------------------------------------
 // 构造 (测试专用: 注入 mock WAL writer)
 // ---------------------------------------------------------------------------
-PositionLedger::PositionLedger(std::unique_ptr<IWalWriterForPosition> mock_writer,
-                               std::int64_t                           init_bankroll)
+PositionLedger::PositionLedger(std::unique_ptr<IWalWriterForPosition> mock_writer, std::int64_t init_bankroll)
     : writer_(std::move(mock_writer)) {
     global_bankroll_.store(init_bankroll, std::memory_order_relaxed);
 }
@@ -108,20 +107,19 @@ PositionLedger::PositionLedger(std::unique_ptr<IWalWriterForPosition> mock_write
 // _build_record: VirtualFill → PositionRecord
 // 调用方持有 state_mutex_ write lock.
 // ---------------------------------------------------------------------------
-PositionRecord
-PositionLedger::_build_record(const stcpp::execution::VirtualFill& fill) noexcept {
+PositionRecord PositionLedger::_build_record(const stcpp::execution::VirtualFill& fill) noexcept {
     PositionRecord rec{};
 
     // R-20: 4 ts 直接从 VirtualFill 透传, 不本地 now()
     // event_ts = fill_ts_ns (fill 发生时刻, 最接近事件)
-    rec.fill_event_ts_ns     = fill.fill_ts_ns;
-    rec.fill_ds_ts_ns        = fill.data_source_ts_ns;
+    rec.fill_event_ts_ns = fill.fill_ts_ns;
+    rec.fill_ds_ts_ns = fill.data_source_ts_ns;
     rec.fill_ingestion_ts_ns = fill.ingestion_ts_ns;
-    rec.fill_as_of_ts_ns     = fill.as_of_ts_ns;
+    rec.fill_as_of_ts_ns = fill.as_of_ts_ns;
 
     // market_id + outcome: 从 VirtualFill 透传 (W6 @小蒋 Wave 29 补齐)
     rec.market_id = fill.market_id;
-    rec.outcome   = fill.outcome;
+    rec.outcome = fill.outcome;
 
     // audit_id: VirtualFill 暂无 audit_id 字段 (由 PaperSigner/VirtualOrder 持有,
     // VirtualFill 作为撮合结果不回传 audit_id); 保留零值, 留 WAL header audit_id 校对.
@@ -134,8 +132,7 @@ PositionLedger::_build_record(const stcpp::execution::VirtualFill& fill) noexcep
 // ---------------------------------------------------------------------------
 // apply_fill: 热路径, noexcept, vCPU3 单写
 // ---------------------------------------------------------------------------
-ApplyResult
-PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill) noexcept {
+ApplyResult PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill) noexcept {
     // 快速失败: WAL writer 已失败
     if (writer_->IsFailed()) {
         return ApplyResult{ApplyStatus::WalFailed, {}, 0};
@@ -144,19 +141,16 @@ PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill) noexcept {
     // BernoulliMissed / reject fill: 不记账 (fill_size_usdc == 0 但 reject != Ok)
     // apply_fill 仅处理成功 fill (MatchReject::Ok + fill_size_usdc > 0)
     // 注: rejected fill 由 PaperAudit WAL 记录 (小蒋负责), 不进 position ledger
-    if (fill.reject != stcpp::execution::MatchReject::Ok ||
-        fill.fill_size_usdc <= 0.0) {
+    if (fill.reject != stcpp::execution::MatchReject::Ok || fill.fill_size_usdc <= 0.0) {
         return ApplyResult{ApplyStatus::InvalidFill, {}, 0};
     }
 
     // R-20 PIT 前置检查 (不构造 WalRecordHeader, 直接检查 4 ts 关系)
     // PIT 顺序: fill_event_ts ≤ fill_ds_ts ≤ fill_ingestion_ts ≤ fill_as_of_ts
-    const bool pit_ok =
-        (fill.fill_ts_ns > 0) &&
-        (fill.data_source_ts_ns >= fill.fill_ts_ns) &&
-        (fill.ingestion_ts_ns   >= fill.data_source_ts_ns) &&
-        (fill.as_of_ts_ns       >= fill.ingestion_ts_ns) &&
-        (fill.as_of_ts_ns       <= pit::NowRealtimeNs());
+    const bool pit_ok = (fill.fill_ts_ns > 0) && (fill.data_source_ts_ns >= fill.fill_ts_ns) &&
+                        (fill.ingestion_ts_ns >= fill.data_source_ts_ns) &&
+                        (fill.as_of_ts_ns >= fill.ingestion_ts_ns) &&
+                        (fill.as_of_ts_ns <= pit::NowRealtimeNs());
     if (!pit_ok) {
         return ApplyResult{ApplyStatus::PitViolation, {}, 0};
     }
@@ -170,8 +164,7 @@ PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill) noexcept {
         const std::int64_t fill_size_micro =
             static_cast<std::int64_t>(fill.fill_size_usdc * 1'000'000.0 + 0.5);
         // fill_price → micro (int64)
-        const std::int64_t fill_price_micro =
-            static_cast<std::int64_t>(fill.fill_price * 1'000'000.0 + 0.5);
+        const std::int64_t fill_price_micro = static_cast<std::int64_t>(fill.fill_price * 1'000'000.0 + 0.5);
 
         // W6 @小蒋 Wave 29: market_id / outcome 直接从 VirtualFill 取 (占位已闭环)
         // fill.market_id: array<char,32>, null-padded (来自 VirtualMatcher 透传 VirtualOrder.market_id)
@@ -182,10 +175,9 @@ PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill) noexcept {
         auto& st = states_[market_key];
         if (st.market_id[0] == '\0') {
             // 首次初始化
-            st.market_id     = market_id_arr;
-            st.outcome       = fill.outcome;   // 0=YES 1=NO (透传 VirtualFill)
-            st.bankroll_total =
-                global_bankroll_.load(std::memory_order_relaxed);
+            st.market_id = market_id_arr;
+            st.outcome = fill.outcome;  // 0=YES 1=NO (透传 VirtualFill)
+            st.bankroll_total = global_bankroll_.load(std::memory_order_relaxed);
         }
 
         // 更新仓位 (多头: position_delta > 0; 空头暂不支持)
@@ -196,9 +188,7 @@ PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill) noexcept {
         // 更新平均买入价 (加权平均)
         if (new_total > 0 && fill_size_micro > 0) {
             st.entry_avg_price_micro =
-                (old_total * st.entry_avg_price_micro +
-                 fill_size_micro * fill_price_micro) /
-                new_total;
+                (old_total * st.entry_avg_price_micro + fill_size_micro * fill_price_micro) / new_total;
         }
 
         // realized_pnl (仅减仓时结算; 当前 v0.1 仅开仓, realized_pnl 不变)
@@ -208,8 +198,7 @@ PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill) noexcept {
         // 真实 settle 时由 realized_pnl < 0 递增, > 0 重置 (@小蒋 settle 接入)
 
         // exposure_pct
-        const std::int64_t abs_pos =
-            (new_total >= 0) ? new_total : -new_total;
+        const std::int64_t abs_pos = (new_total >= 0) ? new_total : -new_total;
         st.exposure_pct = ComputeExposurePct(abs_pos, st.bankroll_total);
 
         // position_delta = 本次增量
@@ -218,30 +207,29 @@ PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill) noexcept {
         // 全局 circuit breaker 聚合更新
         // consec_loss: max across markets
         const std::int32_t new_global_loss =
-            std::max(global_consec_loss_.load(std::memory_order_relaxed),
-                     st.consec_loss_count);
+            std::max(global_consec_loss_.load(std::memory_order_relaxed), st.consec_loss_count);
         global_consec_loss_.store(new_global_loss, std::memory_order_relaxed);
 
         // exposure_pct: 累加 (多 market 时求和, 单 market 时等于单值)
         global_exposure_pct_.store(st.exposure_pct, std::memory_order_relaxed);
 
         // --- 构造 PositionRecord -------------------------------------------
-        rec.market_id              = market_id_arr;
-        rec.outcome                = st.outcome;
-        rec.position_delta         = delta;
-        rec.position_total         = new_total;
-        rec.realized_pnl           = st.realized_pnl;
-        rec.unrealized_pnl         = st.unrealized_pnl;
-        rec.entry_avg_price_micro  = st.entry_avg_price_micro;
-        rec.bankroll_total         = st.bankroll_total;
-        rec.consec_loss_count      = st.consec_loss_count;
-        rec.exposure_pct           = st.exposure_pct;
+        rec.market_id = market_id_arr;
+        rec.outcome = st.outcome;
+        rec.position_delta = delta;
+        rec.position_total = new_total;
+        rec.realized_pnl = st.realized_pnl;
+        rec.unrealized_pnl = st.unrealized_pnl;
+        rec.entry_avg_price_micro = st.entry_avg_price_micro;
+        rec.bankroll_total = st.bankroll_total;
+        rec.consec_loss_count = st.consec_loss_count;
+        rec.exposure_pct = st.exposure_pct;
 
         // R-20: 4 ts 透传
-        rec.fill_event_ts_ns      = fill.fill_ts_ns;
-        rec.fill_ds_ts_ns         = fill.data_source_ts_ns;
-        rec.fill_ingestion_ts_ns  = fill.ingestion_ts_ns;
-        rec.fill_as_of_ts_ns      = fill.as_of_ts_ns;
+        rec.fill_event_ts_ns = fill.fill_ts_ns;
+        rec.fill_ds_ts_ns = fill.data_source_ts_ns;
+        rec.fill_ingestion_ts_ns = fill.ingestion_ts_ns;
+        rec.fill_as_of_ts_ns = fill.as_of_ts_ns;
 
         // crc32c: framework 算 (WalWriter::Append 内), 这里置 0
         rec.crc32c = 0;
@@ -278,23 +266,22 @@ void PositionLedger::_update_state(const PositionRecord& rec) {
     const std::string key = MarketIdKey(rec.market_id);
     auto& st = states_[key];
 
-    st.market_id             = rec.market_id;
-    st.outcome               = rec.outcome;
-    st.position_total        = rec.position_total;
-    st.realized_pnl          = rec.realized_pnl;
-    st.unrealized_pnl        = rec.unrealized_pnl;
+    st.market_id = rec.market_id;
+    st.outcome = rec.outcome;
+    st.position_total = rec.position_total;
+    st.realized_pnl = rec.realized_pnl;
+    st.unrealized_pnl = rec.unrealized_pnl;
     st.entry_avg_price_micro = rec.entry_avg_price_micro;
-    st.bankroll_total        = rec.bankroll_total;
-    st.consec_loss_count     = rec.consec_loss_count;
-    st.exposure_pct          = rec.exposure_pct;
-    st.last_event_ts_ns      = rec.fill_event_ts_ns;
-    st.last_as_of_ts_ns      = rec.fill_as_of_ts_ns;
-    st.last_audit_id         = rec.audit_id_;
+    st.bankroll_total = rec.bankroll_total;
+    st.consec_loss_count = rec.consec_loss_count;
+    st.exposure_pct = rec.exposure_pct;
+    st.last_event_ts_ns = rec.fill_event_ts_ns;
+    st.last_as_of_ts_ns = rec.fill_as_of_ts_ns;
+    st.last_audit_id = rec.audit_id_;
 
     // 更新全局聚合
     global_bankroll_.store(rec.bankroll_total, std::memory_order_relaxed);
-    const std::int32_t cur_loss =
-        global_consec_loss_.load(std::memory_order_relaxed);
+    const std::int32_t cur_loss = global_consec_loss_.load(std::memory_order_relaxed);
     if (rec.consec_loss_count > cur_loss) {
         global_consec_loss_.store(rec.consec_loss_count, std::memory_order_relaxed);
     }
@@ -312,8 +299,7 @@ void PositionLedger::_update_state(const PositionRecord& rec) {
 //   为生产+测试 T3 设计的完整路径. 单测 T3 用 InMemoryPositionWal + 直接序列化
 //   PositionRecord 到文件来模拟 WAL replay.
 // ---------------------------------------------------------------------------
-std::size_t
-PositionLedger::restore_from_wal(const std::filesystem::path& wal_dir) {
+std::size_t PositionLedger::restore_from_wal(const std::filesystem::path& wal_dir) {
     namespace fs = std::filesystem;
 
     if (!fs::exists(wal_dir) || !fs::is_directory(wal_dir)) {
@@ -324,37 +310,34 @@ PositionLedger::restore_from_wal(const std::filesystem::path& wal_dir) {
     // 收集 position*.wal 文件, 按文件名排序 (segment 序号有序)
     std::vector<fs::path> wal_files;
     for (const auto& entry : fs::directory_iterator(wal_dir)) {
-        if (!entry.is_regular_file()) continue;
+        if (!entry.is_regular_file())
+            continue;
         const std::string fname = entry.path().filename().string();
-        if (fname.rfind("position", 0) == 0 &&
-            fname.size() > 4 &&
-            fname.substr(fname.size() - 4) == ".wal") {
+        if (fname.rfind("position", 0) == 0 && fname.size() > 4 && fname.substr(fname.size() - 4) == ".wal") {
             wal_files.push_back(entry.path());
         }
     }
     std::sort(wal_files.begin(), wal_files.end());
 
     std::size_t replay_count = 0;
-    constexpr std::size_t kHeaderSz  = sizeof(WalRecordHeader);
-    constexpr std::size_t kRecordSz  = sizeof(PositionRecord);
+    constexpr std::size_t kHeaderSz = sizeof(WalRecordHeader);
+    constexpr std::size_t kRecordSz = sizeof(PositionRecord);
     // kFrameSz = kHeaderSz + kRecordSz + 4 (4B CRC32C footer); 用于文档说明, 不参与逻辑
 
     for (const auto& fpath : wal_files) {
         // 用 C stdio 顺序读 (启动冷路径, 不需要 POSIX AIO)
         FILE* fp = std::fopen(fpath.c_str(), "rb");  // NOLINT(cppcoreguidelines-owning-memory)
         if (!fp) {
-            throw std::runtime_error(
-                "PositionLedger::restore_from_wal: fopen failed: " +
-                fpath.string());
+            throw std::runtime_error("PositionLedger::restore_from_wal: fopen failed: " + fpath.string());
         }
 
         // 按帧读取
         for (;;) {
             WalRecordHeader hdr{};
-            const std::size_t hdr_read =
-                std::fread(&hdr, 1, kHeaderSz, fp);
+            const std::size_t hdr_read = std::fread(&hdr, 1, kHeaderSz, fp);
 
-            if (hdr_read == 0) break;  // EOF
+            if (hdr_read == 0)
+                break;  // EOF
 
             if (hdr_read < kHeaderSz) {
                 // tail truncation (spec: warn, 可继续)
@@ -365,17 +348,15 @@ PositionLedger::restore_from_wal(const std::filesystem::path& wal_dir) {
             // 校验 magic + version
             if (!HasValidMagic(hdr)) {
                 std::fclose(fp);  // NOLINT(cppcoreguidelines-owning-memory)
-                throw std::runtime_error(
-                    "PositionLedger::restore_from_wal: invalid WAL magic in " +
-                    fpath.string());
+                throw std::runtime_error("PositionLedger::restore_from_wal: invalid WAL magic in " +
+                                         fpath.string());
             }
 
             // 校验 wal_kind = Position
             if (static_cast<WalKind>(hdr.wal_kind) != WalKind::Position) {
                 std::fclose(fp);  // NOLINT(cppcoreguidelines-owning-memory)
-                throw std::runtime_error(
-                    "PositionLedger::restore_from_wal: WAL kind mismatch in " +
-                    fpath.string());
+                throw std::runtime_error("PositionLedger::restore_from_wal: WAL kind mismatch in " +
+                                         fpath.string());
             }
 
             // 读 payload (len_payload 决定; 期望 = sizeof(PositionRecord))
@@ -383,31 +364,31 @@ PositionLedger::restore_from_wal(const std::filesystem::path& wal_dir) {
             if (payload_len < static_cast<std::uint16_t>(kRecordSz)) {
                 // payload 太短, 跳过 + 尝试继续 (TailTruncated 容忍)
                 if (payload_len > 0) {
-                    if (std::fseek(fp, static_cast<long>(payload_len), SEEK_CUR) != 0) break;
+                    if (std::fseek(fp, static_cast<long>(payload_len), SEEK_CUR) != 0)
+                        break;
                 }
                 // skip CRC32C footer
-                if (std::fseek(fp, 4L, SEEK_CUR) != 0) break;
+                if (std::fseek(fp, 4L, SEEK_CUR) != 0)
+                    break;
                 continue;
             }
 
             PositionRecord rec{};
-            const std::size_t rec_read =
-                std::fread(&rec, 1, kRecordSz, fp);
-            if (rec_read < kRecordSz) break;
+            const std::size_t rec_read = std::fread(&rec, 1, kRecordSz, fp);
+            if (rec_read < kRecordSz)
+                break;
 
             // 跳过 payload 剩余 + CRC32C footer (framework 验 CRC, 这里信任 WAL)
-            const long skip =
-                static_cast<long>(payload_len) -
-                static_cast<long>(kRecordSz) + 4L;
+            const long skip = static_cast<long>(payload_len) - static_cast<long>(kRecordSz) + 4L;
             if (skip > 0) {
-                if (std::fseek(fp, skip, SEEK_CUR) != 0) break;
+                if (std::fseek(fp, skip, SEEK_CUR) != 0)
+                    break;
             }
 
             // R-20 PIT 校验 (replay 时也要检查, 防止持久化了脏数据)
-            if (rec.fill_event_ts_ns <= 0 ||
-                rec.fill_ds_ts_ns     < rec.fill_event_ts_ns ||
+            if (rec.fill_event_ts_ns <= 0 || rec.fill_ds_ts_ns < rec.fill_event_ts_ns ||
                 rec.fill_ingestion_ts_ns < rec.fill_ds_ts_ns ||
-                rec.fill_as_of_ts_ns     < rec.fill_ingestion_ts_ns) {
+                rec.fill_as_of_ts_ns < rec.fill_ingestion_ts_ns) {
                 // 跳过非法记录 (warn, 不 throw)
                 continue;
             }
@@ -419,21 +400,19 @@ PositionLedger::restore_from_wal(const std::filesystem::path& wal_dir) {
         std::fclose(fp);  // NOLINT(cppcoreguidelines-owning-memory)
     }
 
-    record_count_.fetch_add(static_cast<std::uint64_t>(replay_count),
-                             std::memory_order_acq_rel);
+    record_count_.fetch_add(static_cast<std::uint64_t>(replay_count), std::memory_order_acq_rel);
     return replay_count;
 }
 
 // ---------------------------------------------------------------------------
 // query_position
 // ---------------------------------------------------------------------------
-PositionState
-PositionLedger::query_position(std::string_view market_id) const {
-    const std::string key{market_id.data(),
-                          std::min(market_id.size(), static_cast<std::size_t>(32))};
+PositionState PositionLedger::query_position(std::string_view market_id) const {
+    const std::string key{market_id.data(), std::min(market_id.size(), static_cast<std::size_t>(32))};
     std::lock_guard<std::mutex> lk(state_mutex_);
     const auto it = states_.find(key);
-    if (it == states_.end()) return PositionState{};
+    if (it == states_.end())
+        return PositionState{};
     return it->second;
 }
 
@@ -442,9 +421,9 @@ PositionLedger::query_position(std::string_view market_id) const {
 // ---------------------------------------------------------------------------
 CircuitBreakerState PositionLedger::circuit_breaker_state() const noexcept {
     CircuitBreakerState cbs{};
-    cbs.bankroll_total     = global_bankroll_.load(std::memory_order_acquire);
-    cbs.consec_loss_count  = global_consec_loss_.load(std::memory_order_acquire);
-    cbs.exposure_pct       = global_exposure_pct_.load(std::memory_order_acquire);
+    cbs.bankroll_total = global_bankroll_.load(std::memory_order_acquire);
+    cbs.consec_loss_count = global_consec_loss_.load(std::memory_order_acquire);
+    cbs.exposure_pct = global_exposure_pct_.load(std::memory_order_acquire);
     return cbs;
 }
 

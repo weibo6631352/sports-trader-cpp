@@ -17,14 +17,14 @@
 //   T3: 4 ts R-20 全链路 PIT 拦截
 //   T4: chain 在 emit 后单调推进
 
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstring>
 #include <ctime>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/infra/wal/wal_kind.hpp"
@@ -44,32 +44,30 @@ using stcpp::observability::AuditEmitter;
 using stcpp::observability::AuditEventType;
 using stcpp::observability::AuditRecord;
 using stcpp::observability::Blake3Hasher;
-using stcpp::observability::RiskDecisionInput;
 using stcpp::observability::kHashBytes;
+using stcpp::observability::RiskDecisionInput;
 
 static std::int64_t NowNs() noexcept {
     return stcpp::infra::wal::pit::NowRealtimeNs();
 }
 
 // W6 Wave 29: BLAKE3_REAL 后用真 BLAKE3 重算, W5 XOR stub 保留 #else 分支
-[[nodiscard]] Blake3Hasher::Hash256 RecomputePayload(
-    std::uint64_t seq, AuditEventType type, std::int64_t decision_ts) noexcept {
+[[nodiscard]] Blake3Hasher::Hash256 RecomputePayload(std::uint64_t seq, AuditEventType type,
+                                                     std::int64_t decision_ts) noexcept {
 #if defined(BLAKE3_REAL)
-    return Blake3Hasher::compute_payload_hash(
-        seq, static_cast<std::uint8_t>(type), decision_ts);
+    return Blake3Hasher::compute_payload_hash(seq, static_cast<std::uint8_t>(type), decision_ts);
 #else
     // W5 XOR stub 重算
     Blake3Hasher::Hash256 out{};
-    std::memcpy(out.data(),     &seq,         sizeof(seq));
+    std::memcpy(out.data(), &seq, sizeof(seq));
     out[8] = static_cast<std::uint8_t>(type);
     std::memcpy(out.data() + 9, &decision_ts, sizeof(decision_ts));
     return out;
 #endif
 }
 
-[[nodiscard]] Blake3Hasher::Hash256 ChainCombine(
-    const Blake3Hasher::Hash256& prev,
-    const Blake3Hasher::Hash256& payload) noexcept {
+[[nodiscard]] Blake3Hasher::Hash256 ChainCombine(const Blake3Hasher::Hash256& prev,
+                                                 const Blake3Hasher::Hash256& payload) noexcept {
 #if defined(BLAKE3_REAL)
     return Blake3Hasher::hash_chain(prev, payload);
 #else
@@ -83,31 +81,29 @@ static std::int64_t NowNs() noexcept {
 
 // 构造 R-20 4 ts 合法 RiskDecisionInput
 RiskDecisionInput MakeValidCtx(int i, AuditEventType type) {
-    const std::int64_t now  = NowNs();
-    const std::int64_t base = now - 1'000'000'000LL;   // 1s ago 容差
+    const std::int64_t now = NowNs();
+    const std::int64_t base = now - 1'000'000'000LL;  // 1s ago 容差
     RiskDecisionInput in{};
-    in.event_ts        = base;
-    in.data_source_ts  = base + 100;
-    in.ingestion_ts    = base + 200;
-    in.as_of_ts        = base + 300;
-    in.decision_ts     = base + 400;
-    in.audit_id_bytes  = {
-        static_cast<std::uint8_t>(i),  1, 2, 3, 4, 5, 6, 7,
-        8, 9, 10, 11, 12, 13, 14, 15};
-    in.market_id       = "mkt_chain_verify";
-    in.strategy_id     = "strat_chain";
-    in.size_usdc       = 100 + i;
-    in.price           = 0.5 + 0.001 * i;
-    in.is_buy          = (i % 2) == 0;
-    in.event_type      = type;
-    in.reject_code     = stcpp::risk::RejectCode::INTERNAL_ERROR;
-    in.sub_reason      = stcpp::risk::InvalidIntentSubReason::NONE;
+    in.event_ts = base;
+    in.data_source_ts = base + 100;
+    in.ingestion_ts = base + 200;
+    in.as_of_ts = base + 300;
+    in.decision_ts = base + 400;
+    in.audit_id_bytes = {static_cast<std::uint8_t>(i), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    in.market_id = "mkt_chain_verify";
+    in.strategy_id = "strat_chain";
+    in.size_usdc = 100 + i;
+    in.price = 0.5 + 0.001 * i;
+    in.is_buy = (i % 2) == 0;
+    in.event_type = type;
+    in.reject_code = stcpp::risk::RejectCode::INTERNAL_ERROR;
+    in.sub_reason = stcpp::risk::InvalidIntentSubReason::NONE;
     return in;
 }
 
 auto OpenPaperWriter() {
     WalConfig cfg{};
-    cfg.kind        = WalKind::PaperAudit;
+    cfg.kind = WalKind::PaperAudit;
     cfg.path_prefix = "/var/lib/stcpp/paper/audit_chain_verify";
     return WalWriter<AuditRecord>::Open(cfg);
 }
@@ -122,18 +118,16 @@ TEST(AuditChainIntegration, T1_emit_20_records_chain_advances) {
     constexpr int kN = 20;
 
     // 本地 mirror chain — 与 emitter 内部一致 (验证算法可还原)
-    Blake3Hasher::Hash256 mirror_prev{};   // chain 起点 = 全 0
+    Blake3Hasher::Hash256 mirror_prev{};  // chain 起点 = 全 0
 
     for (int i = 0; i < kN; ++i) {
         auto ctx = MakeValidCtx(i, AuditEventType::OrderApproved);
         const auto r = emitter.emit_decision(ctx);
-        ASSERT_TRUE(r) << "emit_decision #" << i << " 失败: "
-                       << static_cast<int>(r.error());
+        ASSERT_TRUE(r) << "emit_decision #" << i << " 失败: " << static_cast<int>(r.error());
         // 算 expected: ChainCombine(mirror_prev, RecomputePayload(...))
         // W6: 真 BLAKE3 重算; W5 stub: XOR 重算 (Blake3Hasher 内 #if dispatch)
         const auto seq = static_cast<std::uint64_t>(i + 1);
-        const auto digest = RecomputePayload(seq, AuditEventType::OrderApproved,
-                                              ctx.decision_ts);
+        const auto digest = RecomputePayload(seq, AuditEventType::OrderApproved, ctx.decision_ts);
         const auto expected_current = ChainCombine(mirror_prev, digest);
         EXPECT_EQ(emitter.last_hash(), expected_current)
             << "M1-A06 / M1-E03: chain head 第 " << i << " 笔与本地 mirror 一致";
@@ -154,7 +148,7 @@ TEST(AuditChainIntegration, T2_tamper_detection_via_recompute) {
 
     // 记录每笔 (ctx + post-emit chain head)
     struct Snapshot {
-        RiskDecisionInput  ctx;
+        RiskDecisionInput ctx;
         Blake3Hasher::Hash256 chain_after;
     };
     std::vector<Snapshot> snaps;
@@ -172,11 +166,9 @@ TEST(AuditChainIntegration, T2_tamper_detection_via_recompute) {
         Blake3Hasher::Hash256 prev{};
         for (std::size_t i = 0; i < static_cast<std::size_t>(kN); ++i) {
             const auto seq = static_cast<std::uint64_t>(i + 1);
-            const auto dig = RecomputePayload(seq, AuditEventType::OrderApproved,
-                                               snaps[i].ctx.decision_ts);
+            const auto dig = RecomputePayload(seq, AuditEventType::OrderApproved, snaps[i].ctx.decision_ts);
             prev = ChainCombine(prev, dig);
-            EXPECT_EQ(prev, snaps[i].chain_after)
-                << "未篡改 mirror 必与 emitter chain 全等 i=" << i;
+            EXPECT_EQ(prev, snaps[i].chain_after) << "未篡改 mirror 必与 emitter chain 全等 i=" << i;
         }
     }
 
@@ -190,8 +182,7 @@ TEST(AuditChainIntegration, T2_tamper_detection_via_recompute) {
             const auto seq = static_cast<std::uint64_t>(i + 1);
             // 攻击者改 snaps[10] decision_ts; chain 重算从这里之后必不一致.
             const std::int64_t ts =
-                (i == kTamperIdx) ? (snaps[i].ctx.decision_ts + 1)
-                                  : snaps[i].ctx.decision_ts;
+                (i == kTamperIdx) ? (snaps[i].ctx.decision_ts + 1) : snaps[i].ctx.decision_ts;
             const auto dig = RecomputePayload(seq, AuditEventType::OrderApproved, ts);
             prev = ChainCombine(prev, dig);
             if (prev != snaps[i].chain_after) {
@@ -201,10 +192,8 @@ TEST(AuditChainIntegration, T2_tamper_detection_via_recompute) {
                 }
             }
         }
-        EXPECT_TRUE(mismatch_seen)
-            << "M1-A06: 篡改任意 record 必被 chain verify 检出";
-        EXPECT_EQ(mismatch_idx, kTamperIdx)
-            << "M1-A06: chain 首次不一致定位到被篡改 record (定位准确)";
+        EXPECT_TRUE(mismatch_seen) << "M1-A06: 篡改任意 record 必被 chain verify 检出";
+        EXPECT_EQ(mismatch_idx, kTamperIdx) << "M1-A06: chain 首次不一致定位到被篡改 record (定位准确)";
     }
 }
 

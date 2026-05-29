@@ -13,8 +13,5 @@ target_include_directories(stcpp_microstructure
 
 target_compile_features(stcpp_microstructure PUBLIC cxx_std_20)
 
-# fill_rate_model.cpp 内部使用 OrderBookLevel 等 POD 算数; 关闭 double-promotion 警告.
-# 主仓 -Werror 保留, 仅本模块的旧式 cast / 隐式转换 (depth_ratio division) 放宽.
-target_compile_options(stcpp_microstructure PRIVATE
-    -Wno-double-promotion
-)
+# ADR-010 §2.1: 生产代码严禁 -Wno-* 抑制 (Wave 74 fix)
+# fill_rate_model.cpp 使用 double 算数无 double-promotion; 已确认 -Wno-double-promotion 多余, 移除.

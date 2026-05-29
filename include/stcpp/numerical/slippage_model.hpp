@@ -22,65 +22,65 @@ namespace stcpp::numerical {
 
 enum class SlippageMode : std::uint8_t {
     Linear = 0,  // MVP, 小袁 microstructure v1 校准 KAPPA_DEPTH_GAMEDAY=1.0
-    Sqrt   = 1,  // M5 后, Almgren-Chriss; 触发阈 RMSE(B)/RMSE(A) < 0.85
-    Clob   = 2,  // M5 后, 真实 CLOB 微观仿真 (atomic batch / lattice)
+    Sqrt = 1,    // M5 后, Almgren-Chriss; 触发阈 RMSE(B)/RMSE(A) < 0.85
+    Clob = 2,    // M5 后, 真实 CLOB 微观仿真 (atomic batch / lattice)
 };
 
 enum class Confidence : std::uint8_t {
-    High   = 0,  // Δt ≤ 1s, ρ ≤ 1
+    High = 0,    // Δt ≤ 1s, ρ ≤ 1
     Medium = 1,  // 1s < Δt ≤ 5s, ρ ≤ 2
-    Low    = 2,  // Δt > 5s 或 ρ > 2
+    Low = 2,     // Δt > 5s 或 ρ > 2
 };
 
 // lib-local RejectCode (与老韩 v0.3.1 risk::RejectCode 子集映射, RM 端再扩 21 enum)
 enum class RejectCode : std::uint8_t {
-    Ok                  = 0,
-    InvalidIntent       = 1,  // 子原因见 InvalidIntentSubReason
-    ExceedBookDepth     = 2,  // ρ > RHO_MAX
-    FillRateBelowFloor  = 3,  // expected_fill_rate < FILL_RATE_FLOOR
+    Ok = 0,
+    InvalidIntent = 1,       // 子原因见 InvalidIntentSubReason
+    ExceedBookDepth = 2,     // ρ > RHO_MAX
+    FillRateBelowFloor = 3,  // expected_fill_rate < FILL_RATE_FLOOR
 };
 
 // INVALID_INTENT 子原因 (与 risk::InvalidIntentSubReason 一致, 复制避免 lib 反向依赖)
 enum class InvalidIntentSubReason : std::uint8_t {
-    None            = 0,
-    BookTsZero      = 1,  // book_snapshot_ts_ns == 0
-    BookTsStale     = 2,  // wall_now - book_snapshot > 60s
-    NanOrInf        = 3,
-    Negative        = 4,
-    IllegalTick     = 5,
+    None = 0,
+    BookTsZero = 1,   // book_snapshot_ts_ns == 0
+    BookTsStale = 2,  // wall_now - book_snapshot > 60s
+    NanOrInf = 3,
+    Negative = 4,
+    IllegalTick = 5,
 };
 
 struct SlippageInput {
-    double       order_size_usdc;      // > 0
-    double       quote_price;          // ∈ (EPS, 1-EPS)
-    double       book_depth_l1_usdc;   // > 0
+    double order_size_usdc;            // > 0
+    double quote_price;                // ∈ (EPS, 1-EPS)
+    double book_depth_l1_usdc;         // > 0
     std::int64_t book_snapshot_ts_ns;  // > 0
     std::int64_t wall_now_ns;          // > 0, 调用方注入 (单测 deterministic)
-    double       tick_size;            // ∈ {0.001, 0.01}
+    double tick_size;                  // ∈ {0.001, 0.01}
 };
 
 struct SlippageOutput {
-    double                 expected_fill_price{0.0};   // VWAP
-    double                 expected_fill_rate{0.0};    // [0, 1]
-    std::int32_t           slippage_bps{0};            // (pf - pq) / pq · 10000
-    Confidence             confidence{Confidence::Low};
-    RejectCode             reject{RejectCode::Ok};
+    double expected_fill_price{0.0};  // VWAP
+    double expected_fill_rate{0.0};   // [0, 1]
+    std::int32_t slippage_bps{0};     // (pf - pq) / pq · 10000
+    Confidence confidence{Confidence::Low};
+    RejectCode reject{RejectCode::Ok};
     InvalidIntentSubReason sub_reason{InvalidIntentSubReason::None};
 };
 
 // === 常量 (lib spec v1 §1) ===
-inline constexpr double       FILL_RATE_FLOOR         = 0.50;
-inline constexpr double       RHO_MAX                 = 3.0;
-inline constexpr std::int32_t MAX_SLIPPAGE_TICKS      = 3;
-inline constexpr double       KAPPA_DEPTH_GAMEDAY     = 1.0;     // 小袁 microstructure v1
-inline constexpr std::int64_t T_HALFLIFE_QUOTE_MS     = 30'000;  // gameday 30s
-inline constexpr std::int64_t T_HALFLIFE_QUOTE_HOT_MS = 500;     // 关键事件 0.5s
-inline constexpr double       BETA_WITHDRAW           = 0.3;
-inline constexpr std::int64_t STALE_MAX_NS            = 60'000'000'000LL;  // 60s
-inline constexpr double       EPS                     = 1e-6;
-inline constexpr double       TICK_001                = 0.001;
-inline constexpr double       TICK_01                 = 0.01;
-inline constexpr double       TICK_TOL                = 1e-9;  // tick-equality epsilon
+inline constexpr double FILL_RATE_FLOOR = 0.50;
+inline constexpr double RHO_MAX = 3.0;
+inline constexpr std::int32_t MAX_SLIPPAGE_TICKS = 3;
+inline constexpr double KAPPA_DEPTH_GAMEDAY = 1.0;            // 小袁 microstructure v1
+inline constexpr std::int64_t T_HALFLIFE_QUOTE_MS = 30'000;   // gameday 30s
+inline constexpr std::int64_t T_HALFLIFE_QUOTE_HOT_MS = 500;  // 关键事件 0.5s
+inline constexpr double BETA_WITHDRAW = 0.3;
+inline constexpr std::int64_t STALE_MAX_NS = 60'000'000'000LL;  // 60s
+inline constexpr double EPS = 1e-6;
+inline constexpr double TICK_001 = 0.001;
+inline constexpr double TICK_01 = 0.01;
+inline constexpr double TICK_TOL = 1e-9;  // tick-equality epsilon
 
 namespace detail {
 
@@ -103,8 +103,7 @@ namespace detail {
     return a1 < TICK_TOL || a2 < TICK_TOL;
 }
 
-[[nodiscard]] inline SlippageOutput make_reject(RejectCode code,
-                                                InvalidIntentSubReason sub) noexcept {
+[[nodiscard]] inline SlippageOutput make_reject(RejectCode code, InvalidIntentSubReason sub) noexcept {
     SlippageOutput out;
     out.reject = code;
     out.sub_reason = sub;
@@ -121,13 +120,13 @@ namespace detail {
         return make_reject(RejectCode::InvalidIntent, InvalidIntentSubReason::BookTsStale);
     }
     // NaN / Inf
-    if (!is_finite(in.order_size_usdc) || !is_finite(in.quote_price) ||
-        !is_finite(in.book_depth_l1_usdc) || !is_finite(in.tick_size)) {
+    if (!is_finite(in.order_size_usdc) || !is_finite(in.quote_price) || !is_finite(in.book_depth_l1_usdc) ||
+        !is_finite(in.tick_size)) {
         return make_reject(RejectCode::InvalidIntent, InvalidIntentSubReason::NanOrInf);
     }
     // 负值 / 零 (size / L1 / quote / tick 必须严格 > 0)
-    if (in.order_size_usdc <= 0.0 || in.book_depth_l1_usdc <= 0.0 ||
-        in.quote_price <= EPS || in.quote_price >= 1.0 - EPS || in.tick_size <= 0.0) {
+    if (in.order_size_usdc <= 0.0 || in.book_depth_l1_usdc <= 0.0 || in.quote_price <= EPS ||
+        in.quote_price >= 1.0 - EPS || in.tick_size <= 0.0) {
         return make_reject(RejectCode::InvalidIntent, InvalidIntentSubReason::Negative);
     }
     // 非法 tick
@@ -215,7 +214,7 @@ namespace detail {
 }  // namespace detail
 
 class SlippageModel {
- public:
+public:
     [[nodiscard]] static SlippageOutput compute(SlippageInput const& in,
                                                 SlippageMode mode = SlippageMode::Linear) noexcept {
         // INVALID_INTENT 闸门 (fail-closed)

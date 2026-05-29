@@ -19,9 +19,9 @@
 #pragma once
 
 #ifndef __linux__
-#  ifndef __APPLE__
-#    error "SingleInstanceLock only supports Linux and macOS (POSIX flock)"
-#  endif
+#    ifndef __APPLE__
+#        error "SingleInstanceLock only supports Linux and macOS (POSIX flock)"
+#    endif
 #endif
 
 #include <cstdint>
@@ -35,7 +35,7 @@
 // build-time PID dir.  CMake 注入 -DSTCPP_PID_DIR=/tmp/stcpp (MVP default).
 // M5+ 生产 Linux 切换 -DSTCPP_PID_DIR=/var/run/stcpp, 仅重编, 不改代码.
 #ifndef STCPP_PID_DIR
-#  define STCPP_PID_DIR "/tmp/stcpp"
+#    define STCPP_PID_DIR "/tmp/stcpp"
 #endif
 
 namespace stcpp::infra::process {
@@ -44,23 +44,18 @@ namespace stcpp::infra::process {
 // SingleInstanceLockFailure — acquire() 失败时抛出 (含已运行进程诊断信息)
 // ---------------------------------------------------------------------------
 struct SingleInstanceLockFailure : std::runtime_error {
-    std::int64_t    existing_pid{0};       // 已运行进程的 PID (读自 PID file)
-    std::int64_t    start_ts_ns{0};        // 已运行进程起始时间 (ns, CLOCK_REALTIME)
-    std::string     exec_mode_str;         // "paper" / "live" / "backtest"
-    std::string     build_commit_hash;     // git commit hash (从 PID file 读)
+    std::int64_t existing_pid{0};   // 已运行进程的 PID (读自 PID file)
+    std::int64_t start_ts_ns{0};    // 已运行进程起始时间 (ns, CLOCK_REALTIME)
+    std::string exec_mode_str;      // "paper" / "live" / "backtest"
+    std::string build_commit_hash;  // git commit hash (从 PID file 读)
 
-    explicit SingleInstanceLockFailure(
-        std::string         msg,
-        std::int64_t        pid,
-        std::int64_t        ts_ns,
-        std::string         mode_str,
-        std::string         commit)
-        : std::runtime_error(std::move(msg))
-        , existing_pid(pid)
-        , start_ts_ns(ts_ns)
-        , exec_mode_str(std::move(mode_str))
-        , build_commit_hash(std::move(commit))
-    {}
+    explicit SingleInstanceLockFailure(std::string msg, std::int64_t pid, std::int64_t ts_ns,
+                                       std::string mode_str, std::string commit)
+        : std::runtime_error(std::move(msg)),
+          existing_pid(pid),
+          start_ts_ns(ts_ns),
+          exec_mode_str(std::move(mode_str)),
+          build_commit_hash(std::move(commit)) {}
 };
 
 // ---------------------------------------------------------------------------
@@ -71,7 +66,7 @@ struct SingleInstanceLockFailure : std::runtime_error {
 //   // throws SingleInstanceLockFailure if another instance is running
 // ---------------------------------------------------------------------------
 class SingleInstanceLock {
- public:
+public:
     // 构造即 acquire.  失败抛 SingleInstanceLockFailure.
     // mode 决定 PID file path (path_for(mode)) — R-7 物理隔离.
     explicit SingleInstanceLock(stcpp::execution::ExecutionMode mode);
@@ -81,10 +76,10 @@ class SingleInstanceLock {
     ~SingleInstanceLock();
 
     // 禁止拷贝 / 移动 (锁是进程级唯一资源)
-    SingleInstanceLock(const SingleInstanceLock&)            = delete;
+    SingleInstanceLock(const SingleInstanceLock&) = delete;
     SingleInstanceLock& operator=(const SingleInstanceLock&) = delete;
-    SingleInstanceLock(SingleInstanceLock&&)                 = delete;
-    SingleInstanceLock& operator=(SingleInstanceLock&&)      = delete;
+    SingleInstanceLock(SingleInstanceLock&&) = delete;
+    SingleInstanceLock& operator=(SingleInstanceLock&&) = delete;
 
     // static helper: 按 ExecutionMode 返回 PID file 绝对路径
     // paper    → STCPP_PID_DIR/paper.pid
@@ -95,8 +90,8 @@ class SingleInstanceLock {
     // 已持锁的 PID file path (构造成功后有效)
     [[nodiscard]] std::string_view pid_path() const noexcept { return pid_path_; }
 
- private:
-    FdGuard     fd_guard_;
+private:
+    FdGuard fd_guard_;
     std::string pid_path_;
 };
 

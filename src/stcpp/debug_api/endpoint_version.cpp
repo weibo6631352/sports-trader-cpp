@@ -34,12 +34,9 @@
 
 namespace stcpp::debug_api {
 
-static int64_t now_epoch_ns_ver() noexcept
-{
+static int64_t now_epoch_ns_ver() noexcept {
     using namespace std::chrono;
-    return static_cast<int64_t>(
-        duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count()
-    );
+    return static_cast<int64_t>(duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count());
 }
 
 // build_time: __DATE__ + " " + __TIME__
@@ -47,8 +44,7 @@ static int64_t now_epoch_ns_ver() noexcept
 // 这是编译器注入的常量, 不是运行时 now(), 不违反 R-20
 static constexpr const char* k_build_time = __DATE__ " " __TIME__;
 
-void register_version(httplib::Server& svr)
-{
+void register_version(httplib::Server& svr) {
     svr.Get("/version", [](const httplib::Request& /*req*/, httplib::Response& res) {
         const int64_t ts = now_epoch_ns_ver();
 
@@ -60,7 +56,7 @@ void register_version(httplib::Server& svr)
         body += R"(","git_hash":")";
         body += STCPP_GIT_HASH_STR;
         body += R"(","build_mode":")";
-        body += STCPP_EXEC_MODE_STR;          // compile definition
+        body += STCPP_EXEC_MODE_STR;  // compile definition
         body += R"(","build_time":")";
         body += k_build_time;
         body += R"(","cpp_standard":"C++20","as_of_ts":)";
@@ -72,4 +68,4 @@ void register_version(httplib::Server& svr)
     });
 }
 
-} // namespace stcpp::debug_api
+}  // namespace stcpp::debug_api

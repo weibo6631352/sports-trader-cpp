@@ -56,11 +56,13 @@ if(STCPP_BUILD_CLI)
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(stcpp_cli_three_sig PUBLIC cxx_std_20)
-    # ADR-010 §4: 禁止新增 -Wno-* 抑制。已删 -Wno-sign-conversion -Wno-conversion -Wno-shadow (W7 Wave 33 小宋).
+    # 三方库豁免: libsodium (sodium.h 头文件引入 cast / promotion warning) — ADR-010 §3.2
+    # ADR-010 §4: 已删 -Wno-sign-conversion -Wno-conversion -Wno-shadow (W7 Wave 33 小宋).
     # 若 cli source 仍有上述 warning 请 @老沈 在独立 PR 修真 source.
-    # grandfather 保留 (ADR-010 §2.2): double-promotion / old-style-cast / cast-align
     target_compile_options(stcpp_cli_three_sig PRIVATE
-        -Wno-double-promotion -Wno-old-style-cast -Wno-cast-align
+        -Wno-double-promotion  # 三方库豁免: libsodium
+        -Wno-old-style-cast    # 三方库豁免: libsodium
+        -Wno-cast-align        # 三方库豁免: libsodium
     )
     # libsodium (W8: 改链 stcpp_crypto_ed25519; 撤 unofficial-sodium::sodium vcpkg)
     # stcpp_crypto_ed25519 由 src/stcpp/crypto/CMakeLists.txt 定义
@@ -79,11 +81,13 @@ if(STCPP_BUILD_CLI)
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(stcpp_cli_strategy_unlock PRIVATE cxx_std_20)
-    # ADR-010 §4: 禁止新增 -Wno-* 抑制。已删 -Wno-sign-conversion -Wno-conversion -Wno-shadow (W7 Wave 33 小宋).
+    # 三方库豁免: libsodium (sodium.h 头文件引入 cast / promotion warning) — ADR-010 §3.2
+    # ADR-010 §4: 已删 -Wno-sign-conversion -Wno-conversion -Wno-shadow (W7 Wave 33 小宋).
     # 若 cli source 仍有上述 warning 请 @老沈 在独立 PR 修真 source.
-    # grandfather 保留 (ADR-010 §2.2): double-promotion / old-style-cast / cast-align
     target_compile_options(stcpp_cli_strategy_unlock PRIVATE
-        -Wno-double-promotion -Wno-old-style-cast -Wno-cast-align
+        -Wno-double-promotion  # 三方库豁免: libsodium
+        -Wno-old-style-cast    # 三方库豁免: libsodium
+        -Wno-cast-align        # 三方库豁免: libsodium
     )
     set_target_properties(stcpp_cli_strategy_unlock PROPERTIES
         OUTPUT_NAME "stcpp-strategy-unlock"

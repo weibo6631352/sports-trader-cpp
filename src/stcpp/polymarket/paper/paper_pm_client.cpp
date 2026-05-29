@@ -19,19 +19,17 @@ namespace {
 // 单测 grep enforce: src/stcpp/polymarket/ 下严禁 `now()` / `clock_gettime` 直调
 // (PM payload data_source_ts 必须 UPSTREAM_PAYLOAD).
 [[nodiscard]] bool AssertChainTs(const TimestampQuad& ts) noexcept {
-    return ts.event_ts_ns       >  0
-        && ts.data_source_ts_ns >= ts.event_ts_ns
-        && ts.ingestion_ts_ns   >= ts.data_source_ts_ns
-        && ts.as_of_ts_ns       >= ts.ingestion_ts_ns
-        && ts.as_of_ts_ns       <= infra::wal::pit::NowRealtimeNs();
+    return ts.event_ts_ns > 0 && ts.data_source_ts_ns >= ts.event_ts_ns &&
+           ts.ingestion_ts_ns >= ts.data_source_ts_ns && ts.as_of_ts_ns >= ts.ingestion_ts_ns &&
+           ts.as_of_ts_ns <= infra::wal::pit::NowRealtimeNs();
 }
 
 PMError MakeError(PMErrorKind k, int http, std::string body) noexcept {
     PMError e;
-    e.kind            = k;
-    e.http_status     = http;
-    e.body            = std::move(body);
-    e.observed_ts_ns  = infra::wal::pit::NowRealtimeNs();
+    e.kind = k;
+    e.http_status = http;
+    e.body = std::move(body);
+    e.observed_ts_ns = infra::wal::pit::NowRealtimeNs();
     return e;
 }
 
@@ -40,8 +38,7 @@ PMError MakeError(PMErrorKind k, int http, std::string body) noexcept {
 std::string PaperPolymarketClient::MakeOrderId() noexcept {
     // paper-<10 digit zero-padded seq> — 一眼区分真 PM order_id (UUID), audit / log 不会混
     char buf[32]{};
-    std::snprintf(buf, sizeof(buf), "paper-%010llu",
-                  static_cast<unsigned long long>(++next_order_seq_));
+    std::snprintf(buf, sizeof(buf), "paper-%010llu", static_cast<unsigned long long>(++next_order_seq_));
     return std::string{buf};
 }
 
@@ -73,43 +70,43 @@ Result<OrderAck> PaperPolymarketClient::SubmitOrder(const SignedOrder& order) no
     // HMAC bug #3 enforce: paper 也防 caller 误传 sigType=2 (live 用 sigType=1)
     if (order.signature_type != 1u) {
         OrderAck ack;
-        ack.ts              = order.ts;
+        ack.ts = order.ts;
         ack.client_order_id = order.client_order_id;
-        ack.status          = OrderStatus::Rejected;
-        ack.reject_reason   = "signature_type must be 1 (Magic 1-of-1 Safe) — HMAC bug #3";
-        ack.error           = MakeError(PMErrorKind::BadRequest, 400, ack.reject_reason);
-        ack.audit_wal_kind  = infra::wal::WalKind::PaperAudit;  // R-11
-        r.value             = ack;
-        r.error             = ack.error;
+        ack.status = OrderStatus::Rejected;
+        ack.reject_reason = "signature_type must be 1 (Magic 1-of-1 Safe) — HMAC bug #3";
+        ack.error = MakeError(PMErrorKind::BadRequest, 400, ack.reject_reason);
+        ack.audit_wal_kind = infra::wal::WalKind::PaperAudit;  // R-11
+        r.value = ack;
+        r.error = ack.error;
         return r;
     }
 
     // 业务前置: tick_size / size > 0 / outcome 合理 (paper v0.1 简化)
     if (order.size_usdc_micro == 0 || order.limit_price_bps == 0 || order.limit_price_bps > 10000u) {
         OrderAck ack;
-        ack.ts              = order.ts;
+        ack.ts = order.ts;
         ack.client_order_id = order.client_order_id;
-        ack.status          = OrderStatus::Rejected;
-        ack.reject_reason   = "size or price out of range (0 < price ≤ 10000 bps, size > 0)";
-        ack.error           = MakeError(PMErrorKind::BadRequest, 400, ack.reject_reason);
-        ack.audit_wal_kind  = infra::wal::WalKind::PaperAudit;
-        r.value             = ack;
-        r.error             = ack.error;
+        ack.status = OrderStatus::Rejected;
+        ack.reject_reason = "size or price out of range (0 < price ≤ 10000 bps, size > 0)";
+        ack.error = MakeError(PMErrorKind::BadRequest, 400, ack.reject_reason);
+        ack.audit_wal_kind = infra::wal::WalKind::PaperAudit;
+        r.value = ack;
+        r.error = ack.error;
         return r;
     }
 
     std::lock_guard<std::mutex> lk(mu_);
     OrderAck ack;
-    ack.ts                = order.ts;
-    ack.order_id          = MakeOrderId();
-    ack.client_order_id   = order.client_order_id;
-    ack.status            = OrderStatus::Booked;       // paper v0.1: 立即 Booked (W5 VirtualMatcher 接入)
-    ack.nonce             = next_order_seq_;           // mock nonce = order seq
-    ack.audit_wal_kind    = infra::wal::WalKind::PaperAudit;  // R-11 硬绑
+    ack.ts = order.ts;
+    ack.order_id = MakeOrderId();
+    ack.client_order_id = order.client_order_id;
+    ack.status = OrderStatus::Booked;                      // paper v0.1: 立即 Booked (W5 VirtualMatcher 接入)
+    ack.nonce = next_order_seq_;                           // mock nonce = order seq
+    ack.audit_wal_kind = infra::wal::WalKind::PaperAudit;  // R-11 硬绑
 
     PaperOrderEntry entry;
-    entry.ack         = ack;
-    entry.original    = order;
+    entry.ack = ack;
+    entry.original = order;
     orders_.emplace(ack.order_id, std::move(entry));
 
     r.value = ack;
@@ -136,9 +133,9 @@ Result<OrderAck> PaperPolymarketClient::CancelOrder(std::string_view order_id) n
         r.error = MakeError(PMErrorKind::InvariantViolation, 0, "illegal transition to CANCELED");
         return r;
     }
-    ack.status         = OrderStatus::Canceled;
+    ack.status = OrderStatus::Canceled;
     ack.audit_wal_kind = infra::wal::WalKind::PaperAudit;
-    r.value            = ack;
+    r.value = ack;
     return r;
 }
 
@@ -194,13 +191,13 @@ Result<Balance> PaperPolymarketClient::GetBalance() noexcept {
         // paper mock infinite: 1e15 USDC (= $1B × 1e6)
         Balance b;
         b.balance_usdc_micro = 1'000'000'000'000'000ULL;  // 1e15
-        b.ts.ds_ts_source    = DataSourceTsSource::InferredFromIngestion;
+        b.ts.ds_ts_source = DataSourceTsSource::InferredFromIngestion;
         // R-20 兜底: paper mock 没有 upstream payload, 显式标 INFERRED_FROM_INGESTION
         const std::int64_t now = infra::wal::pit::NowRealtimeNs();
-        b.ts.event_ts_ns        = now;
-        b.ts.data_source_ts_ns  = now;
-        b.ts.ingestion_ts_ns    = now;
-        b.ts.as_of_ts_ns        = now;
+        b.ts.event_ts_ns = now;
+        b.ts.data_source_ts_ns = now;
+        b.ts.ingestion_ts_ns = now;
+        b.ts.as_of_ts_ns = now;
         r.value = b;
     }
     return r;
@@ -255,24 +252,20 @@ Result<std::vector<Trade>> PaperPolymarketClient::GetMyTrades(std::uint32_t limi
 
 Result<std::string> PaperPolymarketClient::DeriveApiKey() noexcept {
     Result<std::string> r;
-    r.error = MakeError(PMErrorKind::BadRequest, 0,
-                        "paper mode does not derive api keys (live only, F-11)");
+    r.error = MakeError(PMErrorKind::BadRequest, 0, "paper mode does not derive api keys (live only, F-11)");
     return r;
 }
 
 Result<std::vector<std::string>> PaperPolymarketClient::ListApiKeys() noexcept {
     Result<std::vector<std::string>> r;
-    r.error = MakeError(PMErrorKind::BadRequest, 0,
-                        "paper mode does not list api keys (live only, F-12)");
+    r.error = MakeError(PMErrorKind::BadRequest, 0, "paper mode does not list api keys (live only, F-12)");
     return r;
 }
 
 // ---------- F-13 GetPricesHistory ----------
 
 Result<std::vector<PriceHistoryPoint>> PaperPolymarketClient::GetPricesHistory(
-    std::string_view /*token_id*/,
-    std::int64_t     /*start_unix_s*/,
-    std::int64_t     /*end_unix_s*/) noexcept {
+    std::string_view /*token_id*/, std::int64_t /*start_unix_s*/, std::int64_t /*end_unix_s*/) noexcept {
     // paper v0.1: 返空 (W5 联调期接 PM 公开 GET /clob/prices-history; both real)
     Result<std::vector<PriceHistoryPoint>> r;
     r.value = std::vector<PriceHistoryPoint>{};
@@ -281,10 +274,9 @@ Result<std::vector<PriceHistoryPoint>> PaperPolymarketClient::GetPricesHistory(
 
 // ---------- F-14 SubscribeSportsWss ----------
 
-Result<std::uint32_t> PaperPolymarketClient::SubscribeSportsWss(
-    const std::vector<std::string>& condition_ids,
-    OrderBookCallback                cb,
-    void*                            user_data) noexcept {
+Result<std::uint32_t> PaperPolymarketClient::SubscribeSportsWss(const std::vector<std::string>& condition_ids,
+                                                                OrderBookCallback cb,
+                                                                void* user_data) noexcept {
     Result<std::uint32_t> r;
     if (cb == nullptr) {
         r.error = MakeError(PMErrorKind::BadRequest, 0, "callback is null");
@@ -344,7 +336,7 @@ void PaperPolymarketClient::TestInjectTrade(const Trade& t) noexcept {
 
 void PaperPolymarketClient::TestSetBalance(const Balance& b) noexcept {
     std::lock_guard<std::mutex> lk(mu_);
-    balance_     = b;
+    balance_ = b;
     balance_set_ = true;
 }
 

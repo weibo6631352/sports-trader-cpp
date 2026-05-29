@@ -88,6 +88,14 @@ sub-agent worktree 完成时 (ADR-029 新流程, W9 W4 起):
      # sub-agent 自己解 conflict (见 §5)
      # --no-edit: conflict 已解时跳过 commit message 编辑
 
+  Step 5.1 [可选] 本地 ctest (优先跑, 不阻断)
+     # GM 错 #11 调整 (2026-05-29 老板 verbatim "让他们用 github action ci 跑测试"):
+     # - 本地 ctest 优先跑 (有环境时做, 能早发现问题)
+     # - 不阻断 push — CI 是 source of truth (GitHub Actions 是最终裁判)
+     # - 若本地 ctest 全过 → 回汇写 "ctest: NN/MM PASS (local)"
+     # - 若本地环境不支持 → 回汇写 "ctest: CI pending" + push 后等 CI
+     ctest --test-dir build --output-on-failure  # 可选, 不强制
+
   Step 6. git push origin worktree-agent-<id>
      git push origin worktree-agent-<id>
      # push 到远端 worktree branch
@@ -303,6 +311,7 @@ v2 (ADR-029 §9.2):
 - [x] ADR-029 立项 (本文件, 老高 W9 W4)
 - [x] 派单 prompt 模板 v2 (`docs/META/laogao-w9-w4-dispatch-prompt-template-v2.md`)
 - [x] 本 wave dogfood: 老高自己执行 ADR-029 新流程 (push + gh pr create)
+- [x] §3 Step 5 升级: 本地 ctest 可选 + CI source-of-truth (Wave 74, GM 错 #11 调整)
 - [ ] GM (老雷) ADR-029 ack + W9 W4 Tue 起派单用新模板
 - [ ] `worktree_pr_check.py` Rule P1/P2 落地 (老高 W9 W5)
 - [ ] `gm_merge_audit.py` v2 PR merge audit 落地 (老高 W9 W5)
@@ -310,4 +319,4 @@ v2 (ADR-029 §9.2):
 
 ---
 
-**最后更新:** 2026-05-29 by 老高 (#17, code-quality-reviewer, F 顾问团, Wave 73)
+**最后更新:** 2026-05-29 by 老高 (#17, code-quality-reviewer, F 顾问团, Wave 74) — §3 Step 5 升级: 本地 ctest 可选 + CI source-of-truth

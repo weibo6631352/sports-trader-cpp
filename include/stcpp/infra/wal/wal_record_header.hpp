@@ -14,29 +14,29 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <type_traits>
 
 namespace stcpp::infra::wal {
 
 inline constexpr std::array<char, 4> kMagicV2{{'W', 'A', 'L', '2'}};
 inline constexpr std::uint8_t kHeaderVersionV2 = 2;
-inline constexpr std::size_t kHeaderSizeV2     = 64;
-inline constexpr std::size_t kMaxPayloadBytes  = 65535;  // u16 LEN
+inline constexpr std::size_t kHeaderSizeV2 = 64;
+inline constexpr std::size_t kMaxPayloadBytes = 65535;  // u16 LEN
 
 #pragma pack(push, 1)
 struct WalRecordHeader {
-    std::array<char, 4>          magic;              //  0..4   "WAL2"
-    std::uint8_t                 ver;                //  4..5   = 2
-    std::uint8_t                 wal_kind;           //  5..6   WalKind (0..3)
-    std::uint16_t                len_payload;        //  6..8   ≤ 64 KiB
-    std::uint64_t                seq;                //  8..16  framework 管, monotonic per-WAL
-    std::int64_t                 event_ts_ns;        // 16..24  R-20
-    std::int64_t                 data_source_ts_ns;  // 24..32  R-20
-    std::int64_t                 ingestion_ts_ns;    // 32..40  R-20 (MONOTONIC_RAW)
-    std::int64_t                 as_of_ts_ns;        // 40..48  R-20 (REALTIME)
-    std::array<std::uint8_t, 16> audit_id;           // 48..64  ULID (caller 填)
+    std::array<char, 4> magic;              //  0..4   "WAL2"
+    std::uint8_t ver;                       //  4..5   = 2
+    std::uint8_t wal_kind;                  //  5..6   WalKind (0..3)
+    std::uint16_t len_payload;              //  6..8   ≤ 64 KiB
+    std::uint64_t seq;                      //  8..16  framework 管, monotonic per-WAL
+    std::int64_t event_ts_ns;               // 16..24  R-20
+    std::int64_t data_source_ts_ns;         // 24..32  R-20
+    std::int64_t ingestion_ts_ns;           // 32..40  R-20 (MONOTONIC_RAW)
+    std::int64_t as_of_ts_ns;               // 40..48  R-20 (REALTIME)
+    std::array<std::uint8_t, 16> audit_id;  // 48..64  ULID (caller 填)
     // 64+N PAYLOAD (老唐 schema, 含 BLAKE3 prev_hash / payload_hash / current_hash, framework 不解析)
     // 64+N+4 CRC32C (over MAGIC..PAYLOAD, framework 算)
 };
@@ -49,16 +49,16 @@ static_assert(std::is_trivially_copyable_v<WalRecordHeader>,
 static_assert(std::is_standard_layout_v<WalRecordHeader>);
 
 // 字段偏移硬校验 (与老唐 v1.1 §2.x 表对齐)
-static_assert(offsetof(WalRecordHeader, magic)             ==  0);
-static_assert(offsetof(WalRecordHeader, ver)               ==  4);
-static_assert(offsetof(WalRecordHeader, wal_kind)          ==  5);
-static_assert(offsetof(WalRecordHeader, len_payload)       ==  6);
-static_assert(offsetof(WalRecordHeader, seq)               ==  8);
-static_assert(offsetof(WalRecordHeader, event_ts_ns)       == 16);
+static_assert(offsetof(WalRecordHeader, magic) == 0);
+static_assert(offsetof(WalRecordHeader, ver) == 4);
+static_assert(offsetof(WalRecordHeader, wal_kind) == 5);
+static_assert(offsetof(WalRecordHeader, len_payload) == 6);
+static_assert(offsetof(WalRecordHeader, seq) == 8);
+static_assert(offsetof(WalRecordHeader, event_ts_ns) == 16);
 static_assert(offsetof(WalRecordHeader, data_source_ts_ns) == 24);
-static_assert(offsetof(WalRecordHeader, ingestion_ts_ns)   == 32);
-static_assert(offsetof(WalRecordHeader, as_of_ts_ns)       == 40);
-static_assert(offsetof(WalRecordHeader, audit_id)          == 48);
+static_assert(offsetof(WalRecordHeader, ingestion_ts_ns) == 32);
+static_assert(offsetof(WalRecordHeader, as_of_ts_ns) == 40);
+static_assert(offsetof(WalRecordHeader, audit_id) == 48);
 
 [[nodiscard]] inline bool HasValidMagic(const WalRecordHeader& h) noexcept {
     return h.magic == kMagicV2 && h.ver == kHeaderVersionV2;

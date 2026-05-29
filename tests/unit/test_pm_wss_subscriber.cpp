@@ -12,12 +12,14 @@
 //   T8   parse error counter (unknown topic / PONG 不入队)
 //   R-33 校验: 默认 URL 第 5 host
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
+
 #include "stcpp/polymarket/wss/pm_wss_subscriber.hpp"
 
 using namespace stcpp::polymarket::wss;
@@ -31,7 +33,8 @@ public:
         last_connect_url_ = std::string(url);
         ++connect_calls_;
         connected_ = true;
-        if (on_connected_) on_connected_();
+        if (on_connected_)
+            on_connected_();
         return true;
     }
     bool AsyncSendText(std::string_view payload) override {
@@ -41,25 +44,27 @@ public:
     void Close() override {
         if (connected_) {
             connected_ = false;
-            if (on_disconnected_) on_disconnected_("close called");
+            if (on_disconnected_)
+                on_disconnected_("close called");
         }
     }
-    void SetOnTextFrame(OnTextFrame cb)       override { on_text_frame_  = std::move(cb); }
-    void SetOnConnected(OnConnected cb)       override { on_connected_   = std::move(cb); }
-    void SetOnDisconnected(OnDisconnected cb) override { on_disconnected_= std::move(cb); }
+    void SetOnTextFrame(OnTextFrame cb) override { on_text_frame_ = std::move(cb); }
+    void SetOnConnected(OnConnected cb) override { on_connected_ = std::move(cb); }
+    void SetOnDisconnected(OnDisconnected cb) override { on_disconnected_ = std::move(cb); }
     [[nodiscard]] bool IsConnected() const noexcept override { return connected_; }
 
     void Inject(std::string_view p, std::int64_t recv_ts_ns) {
-        if (on_text_frame_) on_text_frame_(p, recv_ts_ns);
+        if (on_text_frame_)
+            on_text_frame_(p, recv_ts_ns);
     }
 
-    std::string              last_connect_url_;
+    std::string last_connect_url_;
     std::vector<std::string> sent_frames_;
-    int                      connect_calls_ = 0;
-    bool                     connected_     = false;
-    OnTextFrame              on_text_frame_;
-    OnConnected              on_connected_;
-    OnDisconnected           on_disconnected_;
+    int connect_calls_ = 0;
+    bool connected_ = false;
+    OnTextFrame on_text_frame_;
+    OnConnected on_connected_;
+    OnDisconnected on_disconnected_;
 };
 
 // CapturingSink — SPSC sink mock (可配 cap 模拟满)
@@ -67,14 +72,15 @@ class CapturingSink : public ISpscEventSink {
 public:
     explicit CapturingSink(std::size_t cap) : cap_(cap) {}
     bool TryPush(const WssEvent& ev) noexcept override {
-        if (events_.size() >= cap_) return false;
+        if (events_.size() >= cap_)
+            return false;
         events_.push_back(ev);
         return true;
     }
     std::size_t Capacity() const noexcept override { return cap_; }
 
     std::vector<WssEvent> events_;
-    std::size_t           cap_;
+    std::size_t cap_;
 };
 
 PMWssSubscriberConfig MakeCfg() {
@@ -96,26 +102,33 @@ TEST(PMWssSubscriber, ParseAllEightSubTopics) {
     ASSERT_TRUE(sub.Start());
 
     // 1. market
-    tp->Inject(R"({"topic":"market","condition_id":"0x123","timestamp":1700000000000,"mid":0.55,"spread":0.02,"last_trade_price":0.54,"tick_size":0.01,"neg_risk":0,"yes_bids":[],"yes_asks":[]})",
-               1'700'000'000'050'000'000LL);
+    tp->Inject(
+        R"({"topic":"market","condition_id":"0x123","timestamp":1700000000000,"mid":0.55,"spread":0.02,"last_trade_price":0.54,"tick_size":0.01,"neg_risk":0,"yes_bids":[],"yes_asks":[]})",
+        1'700'000'000'050'000'000LL);
     // 2. game
-    tp->Inject(R"({"topic":"game","event_id":"0xdead","timestamp":1700000001000,"last_update":1700000000500,"sport":4,"period":2,"time_remaining_s":420,"score_home":14,"score_away":7,"game_state":"live"})",
-               1'700'000'001'100'000'000LL);
+    tp->Inject(
+        R"({"topic":"game","event_id":"0xdead","timestamp":1700000001000,"last_update":1700000000500,"sport":4,"period":2,"time_remaining_s":420,"score_home":14,"score_away":7,"game_state":"live"})",
+        1'700'000'001'100'000'000LL);
     // 3. outcomes
-    tp->Inject(R"({"topic":"outcomes","condition_id":"0xabc","timestamp":1700000002000,"resolution_status":"resolved"})",
-               1'700'000'002'100'000'000LL);
+    tp->Inject(
+        R"({"topic":"outcomes","condition_id":"0xabc","timestamp":1700000002000,"resolution_status":"resolved"})",
+        1'700'000'002'100'000'000LL);
     // 4. book
-    tp->Inject(R"({"topic":"book","asset_id":"0xtok","market":"0xmkt","timestamp":1700000003000,"hash":"abc","bids":[],"asks":[]})",
-               1'700'000'003'100'000'000LL);
+    tp->Inject(
+        R"({"topic":"book","asset_id":"0xtok","market":"0xmkt","timestamp":1700000003000,"hash":"abc","bids":[],"asks":[]})",
+        1'700'000'003'100'000'000LL);
     // 5. price_change
-    tp->Inject(R"({"topic":"price_change","asset_id":"0xt","market":"0xm","timestamp":1700000004000,"changes":[{"price":0.6,"side":"BUY","size":100}]})",
-               1'700'000'004'100'000'000LL);
+    tp->Inject(
+        R"({"topic":"price_change","asset_id":"0xt","market":"0xm","timestamp":1700000004000,"changes":[{"price":0.6,"side":"BUY","size":100}]})",
+        1'700'000'004'100'000'000LL);
     // 6. last_trade_price
-    tp->Inject(R"({"topic":"last_trade_price","asset_id":"0xtok","market":"0xmkt","timestamp":1700000005000,"price":0.63,"side":"BUY","size":250})",
-               1'700'000'005'100'000'000LL);
+    tp->Inject(
+        R"({"topic":"last_trade_price","asset_id":"0xtok","market":"0xmkt","timestamp":1700000005000,"price":0.63,"side":"BUY","size":250})",
+        1'700'000'005'100'000'000LL);
     // 7. tick_size_change
-    tp->Inject(R"({"topic":"tick_size_change","asset_id":"0xt","market":"0xm","timestamp":1700000006000,"old_tick":0.01,"new_tick":0.001})",
-               1'700'000'006'100'000'000LL);
+    tp->Inject(
+        R"({"topic":"tick_size_change","asset_id":"0xt","market":"0xm","timestamp":1700000006000,"old_tick":0.01,"new_tick":0.001})",
+        1'700'000'006'100'000'000LL);
     // 8. system
     tp->Inject(R"({"topic":"system","status":"degraded","timestamp":1700000007000,"message":"slow"})",
                1'700'000'007'100'000'000LL);
@@ -147,7 +160,8 @@ TEST(PMWssSubscriber, ParseAllEightSubTopics) {
     EXPECT_EQ(sink->events_[7].payload.system.health, SystemHealth::kDegraded);
 
     // 4 ts monotonic 全部成立
-    for (const auto& e : sink->events_) EXPECT_TRUE(e.ts().IsMonotonic());
+    for (const auto& e : sink->events_)
+        EXPECT_TRUE(e.ts().IsMonotonic());
 }
 
 // ============================================================================
@@ -161,7 +175,7 @@ TEST(PMWssSubscriber, ReconnectOnDisconnect) {
     sub.Start();
     EXPECT_EQ(tp->connect_calls_, 1);
     EXPECT_EQ(sub.state(), WssTransportState::kConnected);
-    tp->Close();   // server 断
+    tp->Close();  // server 断
     EXPECT_GE(tp->connect_calls_, 2);
     EXPECT_GE(sub.metrics().reconnect_attempts_total.load(), 1u);
 }
@@ -185,7 +199,7 @@ TEST(PMWssSubscriber, HeartbeatTimeoutTriggersReconnect) {
     tp->Inject(R"({"topic":"market","condition_id":"0xa","timestamp":1700000000000,"mid":0.5})",
                now_ns.load());
 
-    now_ns.fetch_add(35'000'000'000LL);   // +35s
+    now_ns.fetch_add(35'000'000'000LL);  // +35s
     sub.CheckHeartbeatTimeoutNow();
 
     EXPECT_GE(sub.metrics().heartbeat_timeouts_total.load(), 1u);
@@ -211,13 +225,13 @@ TEST(PMWssSubscriber, HeartbeatPingSent) {
 TEST(PMWssSubscriber, BackPressureDropsFrameWhenSinkFull) {
     auto t = std::make_unique<MockWssTransport>();
     auto* tp = t.get();
-    auto sink = std::make_shared<CapturingSink>(2);   // 故意小
+    auto sink = std::make_shared<CapturingSink>(2);  // 故意小
     PMWssSubscriber sub(std::move(t), sink, MakeCfg());
     sub.Start();
     const auto frame = R"({"topic":"market","condition_id":"0xa","timestamp":1700000000000,"mid":0.5})";
     tp->Inject(frame, 1'700'000'000'100'000'000LL);
     tp->Inject(frame, 1'700'000'000'200'000'000LL);
-    tp->Inject(frame, 1'700'000'000'300'000'000LL);   // 第 3 帧 drop
+    tp->Inject(frame, 1'700'000'000'300'000'000LL);  // 第 3 帧 drop
     EXPECT_EQ(sink->events_.size(), 2u);
     EXPECT_EQ(sub.metrics().frames_dropped_total.load(), 1u);
     EXPECT_EQ(sub.metrics().frames_received_total.load(), 3u);
@@ -276,7 +290,7 @@ TEST(PMWssSubscriber, SubscribeFrameFormat) {
 // ============================================================================
 TEST(PMWssSubscriber, CountersAndPongAndDefaultUrl) {
     PMWssSubscriberConfig c0;
-    EXPECT_EQ(c0.url, "wss://sports-api.polymarket.com/ws");   // R-33
+    EXPECT_EQ(c0.url, "wss://sports-api.polymarket.com/ws");  // R-33
 
     auto t = std::make_unique<MockWssTransport>();
     auto* tp = t.get();
@@ -293,6 +307,6 @@ TEST(PMWssSubscriber, CountersAndPongAndDefaultUrl) {
     tp->Inject(R"({"topic":"unknown_garbage","x":1})", 1'700'000'000'300'000'000LL);
     EXPECT_EQ(sub.metrics().frames_parse_error_total.load(), 1u);
 
-    tp->Inject("PONG", 1'700'000'000'400'000'000LL);            // PONG 不入队, 不算 parse error
+    tp->Inject("PONG", 1'700'000'000'400'000'000LL);  // PONG 不入队, 不算 parse error
     EXPECT_EQ(sub.metrics().frames_parse_error_total.load(), 1u);
 }

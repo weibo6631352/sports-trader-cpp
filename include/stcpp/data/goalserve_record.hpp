@@ -44,24 +44,22 @@ namespace stcpp::data::goalserve {
 //   IngestionFallback   : payload 无 ts, 本地 now (告警, 算违反 R-20 但允许带 flag)
 // ---------------------------------------------------------------------------
 enum class DataSourceTsOrigin : std::uint8_t {
-    PayloadScoresTs    = 0,   // 优先, R-20 合规
-    PayloadLastUpdate  = 1,   // 次优, R-20 合规
-    IngestionFallback  = 2,   // R-20 违规 (告警), 仅当 payload 完全无 ts
+    PayloadScoresTs = 0,    // 优先, R-20 合规
+    PayloadLastUpdate = 1,  // 次优, R-20 合规
+    IngestionFallback = 2,  // R-20 违规 (告警), 仅当 payload 完全无 ts
 };
 
 struct FourTs {
-    std::int64_t       event_ts_ns       = 0;
-    std::int64_t       data_source_ts_ns = 0;
-    std::int64_t       ingestion_ts_ns   = 0;
-    std::int64_t       as_of_ts_ns       = 0;
-    DataSourceTsOrigin ds_origin         = DataSourceTsOrigin::PayloadScoresTs;
+    std::int64_t event_ts_ns = 0;
+    std::int64_t data_source_ts_ns = 0;
+    std::int64_t ingestion_ts_ns = 0;
+    std::int64_t as_of_ts_ns = 0;
+    DataSourceTsOrigin ds_origin = DataSourceTsOrigin::PayloadScoresTs;
 
     // PIT chain (与 wal::pit::AssertChain 等价, 内联无分支)
     [[nodiscard]] constexpr bool IsMonotonic() const noexcept {
-        return (event_ts_ns       >  0)
-            && (data_source_ts_ns >= event_ts_ns)
-            && (ingestion_ts_ns   >= data_source_ts_ns)
-            && (as_of_ts_ns       >= ingestion_ts_ns);
+        return (event_ts_ns > 0) && (data_source_ts_ns >= event_ts_ns) &&
+               (ingestion_ts_ns >= data_source_ts_ns) && (as_of_ts_ns >= ingestion_ts_ns);
     }
 };
 
@@ -76,8 +74,8 @@ struct ScorePair {
     std::array<std::int32_t, 12> away_periods{{}};
     std::int32_t home_total = 0;
     std::int32_t away_total = 0;
-    std::uint8_t used_periods = 0;            // 已写入的节数
-    std::uint8_t last_completed_period = 0;   // 已结束节 (用于分节盘口结算)
+    std::uint8_t used_periods = 0;           // 已写入的节数
+    std::uint8_t last_completed_period = 0;  // 已结束节 (用于分节盘口结算)
 };
 
 // ---------------------------------------------------------------------------
@@ -86,30 +84,27 @@ struct ScorePair {
 // W5 解析时: parse → 填 FourTs (data_source_ts 优先 scores@ts) → 传 strategy 层.
 // ---------------------------------------------------------------------------
 struct GameRecord {
-    FourTs              ts{};                  // R-20 4 ts
-    GoalserveSport      sport = GoalserveSport::Soccer;
-    std::string         match_id;              // Goalserve match id (string, 跨 sport)
-    std::string         league_id;             // gid / static_id
-    std::string         home_team;
-    std::string         away_team;
-    ScorePair           score{};
-    TimeStatus          status = TimeStatus::NotStarted;
+    FourTs ts{};  // R-20 4 ts
+    GoalserveSport sport = GoalserveSport::Soccer;
+    std::string match_id;   // Goalserve match id (string, 跨 sport)
+    std::string league_id;  // gid / static_id
+    std::string home_team;
+    std::string away_team;
+    ScorePair score{};
+    TimeStatus status = TimeStatus::NotStarted;
 
     // 时刻属性 (inplay 才有)
-    std::optional<std::uint8_t>  period;       // 当前节 (1-based)
-    std::optional<std::int32_t>  elapsed_sec;  // 当前节已用秒
-    std::optional<std::int64_t>  scheduled_ts_ns; // 比赛排定开始 (来自 fixture)
+    std::optional<std::uint8_t> period;           // 当前节 (1-based)
+    std::optional<std::int32_t> elapsed_sec;      // 当前节已用秒
+    std::optional<std::int64_t> scheduled_ts_ns;  // 比赛排定开始 (来自 fixture)
 
     // R-20 origin diagnostic
     [[nodiscard]] bool RespectsR20() const noexcept {
-        return ts.IsMonotonic()
-            && ts.ds_origin != DataSourceTsOrigin::IngestionFallback;
+        return ts.IsMonotonic() && ts.ds_origin != DataSourceTsOrigin::IngestionFallback;
     }
 
     // 终态判定 (与 IsTerminal(TimeStatus) 等价, 便利包装)
-    [[nodiscard]] bool IsTerminal() const noexcept {
-        return ::stcpp::data::goalserve::IsTerminal(status);
-    }
+    [[nodiscard]] bool IsTerminal() const noexcept { return ::stcpp::data::goalserve::IsTerminal(status); }
 };
 
 // ---------------------------------------------------------------------------
@@ -118,19 +113,18 @@ struct GameRecord {
 // 用于 inplay-{sport}.gz / getodds/soccer?cat=*_10 解析后落 strategy / WAL.
 // ---------------------------------------------------------------------------
 struct OddsRecord {
-    FourTs        ts{};                       // R-20 4 ts (与 GameRecord 同一 ts 源)
+    FourTs ts{};  // R-20 4 ts (与 GameRecord 同一 ts 源)
     GoalserveSport sport = GoalserveSport::Soccer;
-    std::string   match_id;
-    std::int32_t  bookmaker_id = 0;
-    std::string   market_id;                  // 1x2 / OU_2.5 / AH_-0.5 / etc.
-    std::string   outcome;                    // home / draw / away / over / under / line
-    double        value      = 0.0;           // 十进制赔率 (decimal odds)
-    std::optional<double> handicap;           // 让分 / 大小盘的盘口数值
-    bool          active = true;              // bm 标记 closed/suspended 时 false
+    std::string match_id;
+    std::int32_t bookmaker_id = 0;
+    std::string market_id;           // 1x2 / OU_2.5 / AH_-0.5 / etc.
+    std::string outcome;             // home / draw / away / over / under / line
+    double value = 0.0;              // 十进制赔率 (decimal odds)
+    std::optional<double> handicap;  // 让分 / 大小盘的盘口数值
+    bool active = true;              // bm 标记 closed/suspended 时 false
 
     [[nodiscard]] bool RespectsR20() const noexcept {
-        return ts.IsMonotonic()
-            && ts.ds_origin != DataSourceTsOrigin::IngestionFallback;
+        return ts.IsMonotonic() && ts.ds_origin != DataSourceTsOrigin::IngestionFallback;
     }
 };
 
@@ -138,17 +132,16 @@ struct OddsRecord {
 // 5. ParseBatch — 一次 fetch 解析后的批量 record
 // ---------------------------------------------------------------------------
 struct ParseBatch {
-    std::int64_t             scores_ts_ms = 0;  // <scores ts="..."> 直采
-    std::int64_t             next_ts_ms   = 0;  // 下一次增量传入
-    std::vector<GameRecord>  games;
-    std::vector<OddsRecord>  odds;
+    std::int64_t scores_ts_ms = 0;  // <scores ts="..."> 直采
+    std::int64_t next_ts_ms = 0;    // 下一次增量传入
+    std::vector<GameRecord> games;
+    std::vector<OddsRecord> odds;
 };
 
 // ---------------------------------------------------------------------------
 // 6. compile-time invariants (与老唐 audit schema 对齐)
 // ---------------------------------------------------------------------------
-static_assert(sizeof(FourTs) <= 64,
-              "FourTs 应紧凑 (8*4 + 1 + pad), 避免 record 膨胀");
+static_assert(sizeof(FourTs) <= 64, "FourTs 应紧凑 (8*4 + 1 + pad), 避免 record 膨胀");
 static_assert(static_cast<std::uint8_t>(TimeStatus::Removed) == 99,
               "TimeStatus::Removed 必须 = 99 (docs/GOALSERVER/inplay-feed-new.txt L26)");
 

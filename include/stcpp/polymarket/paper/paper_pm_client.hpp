@@ -45,12 +45,12 @@ namespace stcpp::polymarket::paper {
 
 // In-memory order table (paper, R-11 不污染真 ledger).
 struct PaperOrderEntry {
-    OrderAck      ack;
-    SignedOrder   original;     // 留底, 撤单时 echo
+    OrderAck ack;
+    SignedOrder original;  // 留底, 撤单时 echo
 };
 
 class PaperPolymarketClient final : public IPolymarketClient {
- public:
+public:
     explicit PaperPolymarketClient(std::uint64_t order_id_seed = 0) noexcept
         : next_order_seq_(order_id_seed) {}
 
@@ -74,7 +74,8 @@ class PaperPolymarketClient final : public IPolymarketClient {
     [[nodiscard]] Result<MarketInfo> GetMarketInfo(std::string_view condition_id) noexcept override;
 
     // --- F-06 ---
-    [[nodiscard]] Result<std::vector<Position>> GetUserPositions(std::string_view funder_addr) noexcept override;
+    [[nodiscard]] Result<std::vector<Position>> GetUserPositions(
+        std::string_view funder_addr) noexcept override;
 
     // --- F-07 ---
     [[nodiscard]] Result<Balance> GetBalance() noexcept override;
@@ -94,15 +95,12 @@ class PaperPolymarketClient final : public IPolymarketClient {
 
     // --- F-13 ---
     [[nodiscard]] Result<std::vector<PriceHistoryPoint>> GetPricesHistory(
-        std::string_view token_id,
-        std::int64_t     start_unix_s,
-        std::int64_t     end_unix_s) noexcept override;
+        std::string_view token_id, std::int64_t start_unix_s, std::int64_t end_unix_s) noexcept override;
 
     // --- F-14 ---
-    [[nodiscard]] Result<std::uint32_t> SubscribeSportsWss(
-        const std::vector<std::string>& condition_ids,
-        OrderBookCallback                cb,
-        void*                            user_data) noexcept override;
+    [[nodiscard]] Result<std::uint32_t> SubscribeSportsWss(const std::vector<std::string>& condition_ids,
+                                                           OrderBookCallback cb,
+                                                           void* user_data) noexcept override;
 
     // ---------- 单测辅助 (生产代码勿调) ----------
     //
@@ -119,18 +117,18 @@ class PaperPolymarketClient final : public IPolymarketClient {
     // 注入余额 (单测 F-07 用)
     void TestSetBalance(const Balance& b) noexcept;
 
- private:
+private:
     [[nodiscard]] std::string MakeOrderId() noexcept;
 
-    mutable std::mutex                                       mu_;
-    std::uint64_t                                            next_order_seq_;
-    std::unordered_map<std::string, OrderBookSnapshot>       books_;        // condition_id → snap
-    std::unordered_map<std::string, MarketInfo>              markets_;      // condition_id → info
-    std::unordered_map<std::string, PaperOrderEntry>         orders_;       // order_id → entry
-    std::vector<Position>                                    positions_;    // PaperLedger 桩
-    std::vector<Trade>                                       trades_;       // VirtualMatcher 桩
-    Balance                                                  balance_;      // F-07 mock infinite
-    bool                                                     balance_set_{false};
+    mutable std::mutex mu_;
+    std::uint64_t next_order_seq_;
+    std::unordered_map<std::string, OrderBookSnapshot> books_;  // condition_id → snap
+    std::unordered_map<std::string, MarketInfo> markets_;       // condition_id → info
+    std::unordered_map<std::string, PaperOrderEntry> orders_;   // order_id → entry
+    std::vector<Position> positions_;                           // PaperLedger 桩
+    std::vector<Trade> trades_;                                 // VirtualMatcher 桩
+    Balance balance_;                                           // F-07 mock infinite
+    bool balance_set_{false};
 };
 
 }  // namespace stcpp::polymarket::paper

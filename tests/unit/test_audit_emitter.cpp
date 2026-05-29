@@ -13,8 +13,6 @@
 // 注: 不引入 mock framework, 直接复用 stcpp::infra::wal::WalWriter<AuditRecord>
 //     skeleton (path prefix + PIT + watermark 闭环, hash chain stub 走 emitter 内部).
 
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -22,6 +20,8 @@
 #include <ctime>
 #include <string_view>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/infra/wal/wal_error.hpp"
@@ -55,35 +55,34 @@ RiskDecisionInput make_valid_input(AuditEventType type = AuditEventType::OrderAp
     const std::int64_t now = NowNs();
     const std::int64_t base = now - 1'000'000'000LL;  // 1s ago, 给 4 ts + decision_ts 容差
     RiskDecisionInput in{};
-    in.event_ts       = base;
+    in.event_ts = base;
     in.data_source_ts = base + 1'000;
-    in.ingestion_ts   = base + 2'000;
-    in.as_of_ts       = base + 3'000;
-    in.decision_ts    = base + 4'000;
+    in.ingestion_ts = base + 2'000;
+    in.as_of_ts = base + 3'000;
+    in.decision_ts = base + 4'000;
     in.audit_id_bytes = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
-    in.market_id      = "mkt_test_001";
-    in.strategy_id    = "strat_alpha";
-    in.size_usdc      = 1000;
-    in.price          = 0.55;
-    in.is_buy         = true;
-    in.event_type     = type;
-    in.reject_code    = RejectCode::INTERNAL_ERROR;
-    in.sub_reason     = InvalidIntentSubReason::NONE;
+    in.market_id = "mkt_test_001";
+    in.strategy_id = "strat_alpha";
+    in.size_usdc = 1000;
+    in.price = 0.55;
+    in.is_buy = true;
+    in.event_type = type;
+    in.reject_code = RejectCode::INTERNAL_ERROR;
+    in.sub_reason = InvalidIntentSubReason::NONE;
     return in;
 }
 
 // helper: 起 paper kind writer (skeleton path prefix R-11 + PIT R-20 闭环)
 static auto OpenWriter() {
     WalConfig cfg{};
-    cfg.kind        = WalKind::PaperAudit;
+    cfg.kind = WalKind::PaperAudit;
     cfg.path_prefix = "/var/lib/stcpp/paper/audit_emitter_test";
     return WalWriter<AuditRecord>::Open(cfg);
 }
 
 // ---------- A5 concept + 实例化 (编译期) -------------------------------
 
-static_assert(stcpp::infra::wal::WalRecord<AuditRecord>,
-              "A5: AuditRecord 必须满足 WalRecord concept");
+static_assert(stcpp::infra::wal::WalRecord<AuditRecord>, "A5: AuditRecord 必须满足 WalRecord concept");
 
 TEST(AuditRecord, ConceptAndLayout) {
     EXPECT_EQ(kAuditEventTypeCount, 12u);
@@ -119,7 +118,7 @@ TEST(AuditEmitter, Emit_OrderRejected_With_SubReason) {
     AuditEmitter em{w_or.value().get()};
     auto in = make_valid_input(AuditEventType::OrderRejected);
     in.reject_code = RejectCode::INVALID_INTENT;
-    in.sub_reason  = InvalidIntentSubReason::BOOK_TS_STALE;
+    in.sub_reason = InvalidIntentSubReason::BOOK_TS_STALE;
     auto r = em.emit_decision(in);
     ASSERT_TRUE(r.has_value());
 }
@@ -247,7 +246,7 @@ TEST(AuditEmitter, PitChain_EventTsZero_Rejected) {
     ASSERT_TRUE(w_or.has_value());
     AuditEmitter em{w_or.value().get()};
     auto in = make_valid_input();
-    in.event_ts = 0;     // 触发 BOOK_TS_ZERO
+    in.event_ts = 0;  // 触发 BOOK_TS_ZERO
     auto r = em.emit_decision(in);
     EXPECT_FALSE(r.has_value());
     EXPECT_EQ(r.error(), WalError::PitViolation);
@@ -308,7 +307,7 @@ TEST(AuditEmitter, RejectInvariant_NonInvalidIntentMustNoneSub) {
     AuditEmitter em{w_or.value().get()};
     auto in = make_valid_input(AuditEventType::OrderRejected);
     in.reject_code = RejectCode::EXCEED_PER_ORDER_CAP;
-    in.sub_reason  = InvalidIntentSubReason::BOOK_TS_STALE;  // 违反 invariant
+    in.sub_reason = InvalidIntentSubReason::BOOK_TS_STALE;  // 违反 invariant
     auto r = em.emit_decision(in);
     EXPECT_FALSE(r.has_value());
 }
@@ -319,7 +318,7 @@ TEST(AuditEmitter, RejectInvariant_InvalidIntentWithSubOk) {
     AuditEmitter em{w_or.value().get()};
     auto in = make_valid_input(AuditEventType::OrderRejected);
     in.reject_code = RejectCode::INVALID_INTENT;
-    in.sub_reason  = InvalidIntentSubReason::TS_ORDER_VIOLATED;
+    in.sub_reason = InvalidIntentSubReason::TS_ORDER_VIOLATED;
     auto r = em.emit_decision(in);
     EXPECT_TRUE(r.has_value());
 }
@@ -346,7 +345,7 @@ TEST(AuditEmitter, RiskGatewayMock_RejectFlow) {
     // 模拟 RM 决策 reject(EDGE_CI_NEGATIVE)
     auto in = make_valid_input(AuditEventType::OrderRejected);
     in.reject_code = RejectCode::EDGE_CI_NEGATIVE;
-    in.sub_reason  = InvalidIntentSubReason::NONE;
+    in.sub_reason = InvalidIntentSubReason::NONE;
     auto r = em.emit_decision(in);
     ASSERT_TRUE(r.has_value());
 
@@ -370,7 +369,7 @@ TEST(AuditEmitterPool, PublicEmitWithInjectedChain) {
     // 开 5 个 writer (paper kind, 独立 path prefix)
     auto open_w = [](const char* prefix) {
         WalConfig cfg{};
-        cfg.kind        = WalKind::PaperAudit;
+        cfg.kind = WalKind::PaperAudit;
         cfg.path_prefix = prefix;
         return WalWriter<AuditRecord>::Open(cfg);
     };
@@ -382,9 +381,8 @@ TEST(AuditEmitterPool, PublicEmitWithInjectedChain) {
     auto w4 = open_w("/var/lib/stcpp/paper/pool_test_strategy");
     ASSERT_TRUE(w0 && w1 && w2 && w3 && w4);
 
-    AuditEmitterPool pool(
-        w0.value().get(), w1.value().get(), w2.value().get(),
-        w3.value().get(), w4.value().get());
+    AuditEmitterPool pool(w0.value().get(), w1.value().get(), w2.value().get(), w3.value().get(),
+                          w4.value().get());
 
     // 全局 chain 起点 = 全 0
     const Blake3Hasher::Hash256 zero{};
@@ -392,22 +390,20 @@ TEST(AuditEmitterPool, PublicEmitWithInjectedChain) {
     EXPECT_EQ(pool.global_seq(), 0u);
 
     // 5 个 origin 各 emit 1 笔 (轮流)
-    const AuditOrigin origins[5] = {
-        AuditOrigin::Risk, AuditOrigin::Signer, AuditOrigin::Ml,
-        AuditOrigin::Stats, AuditOrigin::Strategy};
+    const AuditOrigin origins[5] = {AuditOrigin::Risk, AuditOrigin::Signer, AuditOrigin::Ml,
+                                    AuditOrigin::Stats, AuditOrigin::Strategy};
 
     Blake3Hasher::Hash256 mirror_prev{};
     for (int i = 0; i < 5; ++i) {
         auto ctx = make_valid_input(AuditEventType::OrderApproved);
         const auto r = pool.emit(origins[i], ctx);
-        ASSERT_TRUE(r) << "pool.emit origin=" << i << " 失败: "
-                       << static_cast<int>(r.error());
+        ASSERT_TRUE(r) << "pool.emit origin=" << i << " 失败: " << static_cast<int>(r.error());
 
         // 验证全局 seq 递增
         EXPECT_EQ(pool.global_seq(), static_cast<std::uint64_t>(i + 1));
 
         // 验证 chain 串联: current = Blake3(prev || payload)
-        const auto seq     = static_cast<std::uint64_t>(i + 1);
+        const auto seq = static_cast<std::uint64_t>(i + 1);
         const auto payload = Blake3Hasher::compute_payload_hash(
             seq, static_cast<std::uint8_t>(AuditEventType::OrderApproved), ctx.decision_ts);
         const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
@@ -417,8 +413,7 @@ TEST(AuditEmitterPool, PublicEmitWithInjectedChain) {
     }
 
     // hash_chain_verify_global 验证全局 chain 连续
-    EXPECT_TRUE(pool.hash_chain_verify_global(1, 5))
-        << "M1-A06: pool 5 笔全局 chain verify 应通过";
+    EXPECT_TRUE(pool.hash_chain_verify_global(1, 5)) << "M1-A06: pool 5 笔全局 chain verify 应通过";
 }
 
 // ---------- A2-Strong: AUDIT-01 W8 Wave 36 强断言 (老唐 IC 自测, ADR-023) ------
@@ -446,14 +441,11 @@ TEST(AuditEmitter, HashChain_3Record_LinkedStrong) {
     const auto ctx0 = make_valid_input(AuditEventType::OrderApproved);
     ASSERT_TRUE(em.emit_decision(ctx0).has_value());
     {
-        const auto seq     = static_cast<std::uint64_t>(1);
+        const auto seq = static_cast<std::uint64_t>(1);
         const auto payload = Blake3Hasher::compute_payload_hash(
-            seq,
-            static_cast<std::uint8_t>(AuditEventType::OrderApproved),
-            ctx0.decision_ts);
+            seq, static_cast<std::uint8_t>(AuditEventType::OrderApproved), ctx0.decision_ts);
         const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
-        EXPECT_EQ(em.last_hash(), expected)
-            << "A2-Strong seq=1: emitter hash != local recompute";
+        EXPECT_EQ(em.last_hash(), expected) << "A2-Strong seq=1: emitter hash != local recompute";
         mirror_prev = expected;
     }
 
@@ -461,14 +453,11 @@ TEST(AuditEmitter, HashChain_3Record_LinkedStrong) {
     const auto ctx1 = make_valid_input(AuditEventType::OrderApproved);
     ASSERT_TRUE(em.emit_decision(ctx1).has_value());
     {
-        const auto seq     = static_cast<std::uint64_t>(2);
+        const auto seq = static_cast<std::uint64_t>(2);
         const auto payload = Blake3Hasher::compute_payload_hash(
-            seq,
-            static_cast<std::uint8_t>(AuditEventType::OrderApproved),
-            ctx1.decision_ts);
+            seq, static_cast<std::uint8_t>(AuditEventType::OrderApproved), ctx1.decision_ts);
         const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
-        EXPECT_EQ(em.last_hash(), expected)
-            << "A2-Strong seq=2: emitter hash != local recompute";
+        EXPECT_EQ(em.last_hash(), expected) << "A2-Strong seq=2: emitter hash != local recompute";
         mirror_prev = expected;
     }
 
@@ -476,14 +465,11 @@ TEST(AuditEmitter, HashChain_3Record_LinkedStrong) {
     const auto ctx2 = make_valid_input(AuditEventType::OrderFilled);
     ASSERT_TRUE(em.emit_decision(ctx2).has_value());
     {
-        const auto seq     = static_cast<std::uint64_t>(3);
+        const auto seq = static_cast<std::uint64_t>(3);
         const auto payload = Blake3Hasher::compute_payload_hash(
-            seq,
-            static_cast<std::uint8_t>(AuditEventType::OrderFilled),
-            ctx2.decision_ts);
+            seq, static_cast<std::uint8_t>(AuditEventType::OrderFilled), ctx2.decision_ts);
         const auto expected = Blake3Hasher::hash_chain(mirror_prev, payload);
-        EXPECT_EQ(em.last_hash(), expected)
-            << "A2-Strong seq=3: emitter hash != local recompute";
+        EXPECT_EQ(em.last_hash(), expected) << "A2-Strong seq=3: emitter hash != local recompute";
         // mirror_prev = expected;  // 循环结束, 不再需要更新
     }
 

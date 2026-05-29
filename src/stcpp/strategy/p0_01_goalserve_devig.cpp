@@ -24,8 +24,10 @@ namespace {
 }
 
 [[nodiscard]] double clamp01(double x) noexcept {
-    if (x < 0.0) return 0.0;
-    if (x > 1.0) return 1.0;
+    if (x < 0.0)
+        return 0.0;
+    if (x > 1.0)
+        return 1.0;
     return x;
 }
 
@@ -47,26 +49,24 @@ namespace {
 //   - 累加 sum(p_yes_fair_i) + sum(overround_i) → 等权均值
 //   - count < 3 → fallback valid=false, p_yes_fair_avg=0
 // ---------------------------------------------------------------------------
-DevigResult compute_multiplicative_devig(
-    std::span<const BookmakerOdds> bookmakers) noexcept {
-
+DevigResult compute_multiplicative_devig(std::span<const BookmakerOdds> bookmakers) noexcept {
     DevigResult r;
-    double sum_fair     = 0.0;
+    double sum_fair = 0.0;
     double sum_overround = 0.0;
-    std::size_t count   = 0;
+    std::size_t count = 0;
 
     for (auto const& bm : bookmakers) {
         if (!is_finite_pos(bm.odds_yes) || !is_finite_pos(bm.odds_no)) {
             continue;
         }
-        double const p_yes_raw  = 1.0 / bm.odds_yes;
-        double const p_no_raw   = 1.0 / bm.odds_no;
-        double const overround  = p_yes_raw + p_no_raw;
+        double const p_yes_raw = 1.0 / bm.odds_yes;
+        double const p_no_raw = 1.0 / bm.odds_no;
+        double const overround = p_yes_raw + p_no_raw;
         if (!is_finite_pos(overround)) {
             continue;
         }
         double const p_yes_fair = p_yes_raw / overround;
-        sum_fair      += p_yes_fair;
+        sum_fair += p_yes_fair;
         sum_overround += overround;
         ++count;
     }
@@ -77,10 +77,10 @@ DevigResult compute_multiplicative_devig(
         return r;
     }
 
-    double const n         = static_cast<double>(count);
-    r.p_yes_fair_avg = sum_fair     / n;
-    r.overround_avg  = sum_overround / n;
-    r.valid          = (r.p_yes_fair_avg > 0.0 && r.p_yes_fair_avg < 1.0);
+    double const n = static_cast<double>(count);
+    r.p_yes_fair_avg = sum_fair / n;
+    r.overround_avg = sum_overround / n;
+    r.valid = (r.p_yes_fair_avg > 0.0 && r.p_yes_fair_avg < 1.0);
     return r;
 }
 
@@ -106,23 +106,18 @@ bool MockGoalserveOddsSource::lookup(std::string const& market_id,
 // GoalserveDevigSignal
 // ---------------------------------------------------------------------------
 
-GoalserveDevigSignal::GoalserveDevigSignal(IGoalserveOddsSource const& goalserve,
-                                           IPmSnapshotSource const& pm,
-                                           IGameStateSource const& games,
-                                           std::int64_t bankroll_usdc) noexcept
+GoalserveDevigSignal::GoalserveDevigSignal(IGoalserveOddsSource const& goalserve, IPmSnapshotSource const& pm,
+                                           IGameStateSource const& games, std::int64_t bankroll_usdc) noexcept
     : goalserve_(goalserve), pm_(pm), games_(games), bankroll_usdc_(bankroll_usdc) {}
 
 bool GoalserveDevigSignal::validate_context_(SignalContext const& ctx) const noexcept {
     // R-20: 4 ts 全 > 0 且单调非降, feature_snapshot_id 非空, market_id 非空.
-    if (ctx.event_ts_ns       <= 0 ||
-        ctx.data_source_ts_ns <= 0 ||
-        ctx.ingestion_ts_ns   <= 0 ||
-        ctx.as_of_ts_ns       <= 0) {
+    if (ctx.event_ts_ns <= 0 || ctx.data_source_ts_ns <= 0 || ctx.ingestion_ts_ns <= 0 ||
+        ctx.as_of_ts_ns <= 0) {
         return false;
     }
-    if (ctx.event_ts_ns       > ctx.data_source_ts_ns ||
-        ctx.data_source_ts_ns > ctx.ingestion_ts_ns   ||
-        ctx.ingestion_ts_ns   > ctx.as_of_ts_ns) {
+    if (ctx.event_ts_ns > ctx.data_source_ts_ns || ctx.data_source_ts_ns > ctx.ingestion_ts_ns ||
+        ctx.ingestion_ts_ns > ctx.as_of_ts_ns) {
         return false;
     }
     if (ctx.market_id.empty() || ctx.feature_snapshot_id.empty()) {
@@ -169,7 +164,7 @@ std::optional<SignalOutput> GoalserveDevigSignal::tick(SignalContext const& ctx)
 
     // edge
     double const edge_signed = pm.mid - dv.p_yes_fair_avg;
-    double const edge_abs    = edge_signed < 0.0 ? -edge_signed : edge_signed;
+    double const edge_abs = edge_signed < 0.0 ? -edge_signed : edge_signed;
 
     // 触发条件 1: |edge| > 0.05 (严格大于)
     if (!(edge_abs > EDGE_THRESHOLD)) {
@@ -212,11 +207,13 @@ std::optional<SignalOutput> GoalserveDevigSignal::tick(SignalContext const& ctx)
         return std::nullopt;
     }
 
-    double raw_size = KELLY_FRACTION * kelly_full * pm.expected_fill_rate *
-                      static_cast<double>(bankroll_usdc_);
-    if (raw_size < 0.0) raw_size = 0.0;
+    double raw_size =
+        KELLY_FRACTION * kelly_full * pm.expected_fill_rate * static_cast<double>(bankroll_usdc_);
+    if (raw_size < 0.0)
+        raw_size = 0.0;
     auto const max_d = static_cast<double>(MAX_SIZE_USDC);
-    if (raw_size > max_d) raw_size = max_d;
+    if (raw_size > max_d)
+        raw_size = max_d;
     auto const size_usdc = static_cast<std::int64_t>(raw_size + 0.5);
     if (size_usdc <= 0) {
         return std::nullopt;
@@ -224,12 +221,12 @@ std::optional<SignalOutput> GoalserveDevigSignal::tick(SignalContext const& ctx)
 
     // ----- 装配 SignalOutput (ABI 不动) -----
     SignalOutput out;
-    out.signal_id           = SignalId::P0_01_PinnacleNoVig;  // ABI lock (老周)
+    out.signal_id = SignalId::P0_01_PinnacleNoVig;  // ABI lock (老周)
     // v0.5: Side 解耦 outcome; Buy = 开仓方向 (outcome 由 Orchestrator 层根据 price 比较设 token_id)
-    out.side                = Side::Buy;
-    out.edge_bps            = round_to_bps(edge_abs);
+    out.side = Side::Buy;
+    out.edge_bps = round_to_bps(edge_abs);
     out.suggested_size_usdc = size_usdc;
-    out.confidence          = clamp01(edge_abs / CONFIDENCE_NORMALIZER);
+    out.confidence = clamp01(edge_abs / CONFIDENCE_NORMALIZER);
     return out;
 }
 

@@ -16,10 +16,10 @@ constexpr const char* kUnimplemented = "live mode not implemented (M5+ deferred,
 
 PMError MakeUnimplemented() noexcept {
     PMError e;
-    e.kind            = PMErrorKind::Unknown;
-    e.http_status     = 0;
-    e.body            = kUnimplemented;
-    e.observed_ts_ns  = infra::wal::pit::NowRealtimeNs();
+    e.kind = PMErrorKind::Unknown;
+    e.http_status = 0;
+    e.body = kUnimplemented;
+    e.observed_ts_ns = infra::wal::pit::NowRealtimeNs();
     return e;
 }
 
@@ -97,15 +97,15 @@ Result<std::vector<std::string>> LivePolymarketClient::ListApiKeys() noexcept {
     return r;
 }
 
-Result<std::vector<PriceHistoryPoint>> LivePolymarketClient::GetPricesHistory(
-    std::string_view, std::int64_t, std::int64_t) noexcept {
+Result<std::vector<PriceHistoryPoint>> LivePolymarketClient::GetPricesHistory(std::string_view, std::int64_t,
+                                                                              std::int64_t) noexcept {
     Result<std::vector<PriceHistoryPoint>> r;
     r.error = MakeUnimplemented();
     return r;
 }
 
-Result<std::uint32_t> LivePolymarketClient::SubscribeSportsWss(
-    const std::vector<std::string>&, OrderBookCallback, void*) noexcept {
+Result<std::uint32_t> LivePolymarketClient::SubscribeSportsWss(const std::vector<std::string>&,
+                                                               OrderBookCallback, void*) noexcept {
     Result<std::uint32_t> r;
     r.error = MakeUnimplemented();
     return r;

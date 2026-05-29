@@ -35,8 +35,8 @@
 #pragma once
 
 #include <array>
-#include <cstdint>
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <span>
 #include <string_view>
@@ -55,38 +55,51 @@ namespace stcpp::observability {
 // 12    PIT 链失败 (R-20 慢路径诊断, 框架 PitViolation → audit)
 
 enum class AuditEventType : std::uint8_t {
-    Unknown            = 0,
-    OrderApproved      = 1,
-    OrderRejected      = 2,
-    OrderDeferred      = 3,
-    OrderFilled        = 4,
-    OrderCancelled     = 5,
-    OrderTimedOut      = 6,
-    SafeModeEnter      = 7,
-    SafeModeExit       = 8,
-    StateTransition    = 9,    // HALT / DRAIN / 等 — payload.note 记 from→to
-    StrategyDecayed    = 10,   // 老韩 #19
-    Unlock             = 11,   // 人工解除 HALT/SAFE_MODE
-    ReconDrift         = 12,   // 对账漂移 / PIT 违规 / framework 错误兜底
+    Unknown = 0,
+    OrderApproved = 1,
+    OrderRejected = 2,
+    OrderDeferred = 3,
+    OrderFilled = 4,
+    OrderCancelled = 5,
+    OrderTimedOut = 6,
+    SafeModeEnter = 7,
+    SafeModeExit = 8,
+    StateTransition = 9,   // HALT / DRAIN / 等 — payload.note 记 from→to
+    StrategyDecayed = 10,  // 老韩 #19
+    Unlock = 11,           // 人工解除 HALT/SAFE_MODE
+    ReconDrift = 12,       // 对账漂移 / PIT 违规 / framework 错误兜底
 };
 
 inline constexpr std::size_t kAuditEventTypeCount = 12;
 
 [[nodiscard]] constexpr std::string_view ToString(AuditEventType t) noexcept {
     switch (t) {
-        case AuditEventType::Unknown:         return "UNKNOWN";
-        case AuditEventType::OrderApproved:   return "ORDER_APPROVED";
-        case AuditEventType::OrderRejected:   return "ORDER_REJECTED";
-        case AuditEventType::OrderDeferred:   return "ORDER_DEFERRED";
-        case AuditEventType::OrderFilled:     return "ORDER_FILLED";
-        case AuditEventType::OrderCancelled:  return "ORDER_CANCELLED";
-        case AuditEventType::OrderTimedOut:   return "ORDER_TIMED_OUT";
-        case AuditEventType::SafeModeEnter:   return "SAFE_MODE_ENTER";
-        case AuditEventType::SafeModeExit:    return "SAFE_MODE_EXIT";
-        case AuditEventType::StateTransition: return "STATE_TRANSITION";
-        case AuditEventType::StrategyDecayed: return "STRATEGY_DECAYED";
-        case AuditEventType::Unlock:          return "UNLOCK";
-        case AuditEventType::ReconDrift:      return "RECON_DRIFT";
+        case AuditEventType::Unknown:
+            return "UNKNOWN";
+        case AuditEventType::OrderApproved:
+            return "ORDER_APPROVED";
+        case AuditEventType::OrderRejected:
+            return "ORDER_REJECTED";
+        case AuditEventType::OrderDeferred:
+            return "ORDER_DEFERRED";
+        case AuditEventType::OrderFilled:
+            return "ORDER_FILLED";
+        case AuditEventType::OrderCancelled:
+            return "ORDER_CANCELLED";
+        case AuditEventType::OrderTimedOut:
+            return "ORDER_TIMED_OUT";
+        case AuditEventType::SafeModeEnter:
+            return "SAFE_MODE_ENTER";
+        case AuditEventType::SafeModeExit:
+            return "SAFE_MODE_EXIT";
+        case AuditEventType::StateTransition:
+            return "STATE_TRANSITION";
+        case AuditEventType::StrategyDecayed:
+            return "STRATEGY_DECAYED";
+        case AuditEventType::Unlock:
+            return "UNLOCK";
+        case AuditEventType::ReconDrift:
+            return "RECON_DRIFT";
     }
     return "unknown";
 }
@@ -102,12 +115,12 @@ inline constexpr std::size_t kAuditEventTypeCount = 12;
 //   - prev_hash / payload_hash / current_hash (BLAKE3 32B, Sprint-3 真算, 此处 stub)
 //   - crc32c (4B, framework 写帧时算; 这里仅 payload 内嵌 — framework 帧尾 CRC 独立)
 
-inline constexpr std::size_t kHashBytes      = 32;   // BLAKE3-256
-inline constexpr std::size_t kMarketIdMax    = 32;
-inline constexpr std::size_t kStrategyIdMax  = 32;
+inline constexpr std::size_t kHashBytes = 32;  // BLAKE3-256
+inline constexpr std::size_t kMarketIdMax = 32;
+inline constexpr std::size_t kStrategyIdMax = 32;
 // v1.3: token_id buffer (uint256 string, max 77 chars + null term, 80B 对齐)
 // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 §3.3
-inline constexpr std::size_t kTokenIdMax     = 80;
+inline constexpr std::size_t kTokenIdMax = 80;
 // v1.3 schema version magic byte
 inline constexpr std::uint8_t kAuditSchemaV12 = 0x12;
 inline constexpr std::uint8_t kAuditSchemaV13 = 0x13;
@@ -118,13 +131,13 @@ struct AuditRecord {
     std::uint8_t schema_version = kAuditSchemaV13;
 
     // ---- R-20 4 ts (与 framework header v2 offset 16/24/32/40 一致) ----
-    std::int64_t event_ts        = 0;
-    std::int64_t data_source_ts  = 0;
-    std::int64_t ingestion_ts    = 0;
-    std::int64_t as_of_ts        = 0;
+    std::int64_t event_ts = 0;
+    std::int64_t data_source_ts = 0;
+    std::int64_t ingestion_ts = 0;
+    std::int64_t as_of_ts = 0;
 
     // 本地 RM 决策时刻 — > as_of_ts. 单独存, 不进 PIT 链 (R-20 只管 4 ts).
-    std::int64_t decision_ts     = 0;
+    std::int64_t decision_ts = 0;
 
     // ULID — framework header.audit_id 同源 (caller emit_*() 填)
     std::array<std::uint8_t, 16> audit_id_bytes{};
@@ -135,38 +148,38 @@ struct AuditRecord {
     // 21 reject + 8 sub_reason (老韩 v0.3.1)
     // event_type != OrderRejected ⟹ reject_code 视作 INTERNAL_ERROR (兜底 enum 默认)
     // reject_code != INVALID_INTENT ⟹ sub_reason == NONE  (老韩 invariant)
-    stcpp::risk::RejectCode             reject_code{stcpp::risk::RejectCode::INTERNAL_ERROR};
+    stcpp::risk::RejectCode reject_code{stcpp::risk::RejectCode::INTERNAL_ERROR};
     stcpp::risk::InvalidIntentSubReason sub_reason{stcpp::risk::InvalidIntentSubReason::NONE};
 
     // ---- 市场标识 (v1.3: condition_id + token_id 双主键) -----------------
     // condition_id: bytes32 hex (0x 前缀, 66 char), market 级
     //   alias: market_id 兼容 v1.2 call sites (指向同一 array)
     // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 §3.2
-    std::array<char, kMarketIdMax>   condition_id{};    // v1.3 正名 (原 market_id)
+    std::array<char, kMarketIdMax> condition_id{};  // v1.3 正名 (原 market_id)
 
     // token_id: uint256 string (无 0x 前缀, 十进制, 最多 77 位)
     // 新增 v1.3 — CLOB 下单 EIP-712 Order.tokenId 一等公民
     // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 §3.3
     // handshake: laoli-laoSun-handshake-v1.md §3 SignedOrder.token_id
-    std::array<char, kTokenIdMax>    token_id{};         // v1.3 新增
+    std::array<char, kTokenIdMax> token_id{};  // v1.3 新增
 
     std::array<char, kStrategyIdMax> strategy_id{};
 
     std::int64_t size_usdc = 0;
-    double       price     = 0.0;
+    double price = 0.0;
 
     // v1.3: outcome + side (替换原 is_buy: bool)
     // outcome: Outcome enum 底层 uint8 (0=Yes, 1=No, 2=Home, 3=Draw, 4=Away, 5=Over, 6=Under)
     // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §3.3 tokens[i].outcome
-    std::uint8_t outcome = 0;   // v1.3 新增, default=Yes(0)
+    std::uint8_t outcome = 0;  // v1.3 新增, default=Yes(0)
 
     // side: Side enum 底层 uint8 (0=Buy, 1=Sell)
     // SSOT: laoli-laoSun-handshake-v1.md §3 SignedOrder.side (BUY=0/SELL=1)
-    std::uint8_t side    = 0;   // v1.3 新增, default=Buy(0)
+    std::uint8_t side = 0;  // v1.3 新增, default=Buy(0)
 
     // is_buy: 保留 v1.2 兼容 (v1.2 replay migration 读, v1.3 写路径从 side 推断)
     // migration: is_buy=true → side=Buy(0); is_buy=false → side=Sell(1)
-    bool         is_buy  = true;  // v1.2 兼容字段, v1.3 写路径由 side 决定
+    bool is_buy = true;  // v1.2 兼容字段, v1.3 写路径由 side 决定
 
     // ---- BLAKE3 hash chain (老唐 v1.1 §4) ------------------------------
     // prev_hash         = 上一条 current_hash (chain 起点 = 全 0)
@@ -191,7 +204,7 @@ struct AuditRecord {
         // condition_id 已是 market_id 内容 (同 array), 无需再拷贝
         // token_id 全零 = 空字符串 (array 已 zero-init)
         outcome = 0;                       // default: Yes
-        side    = is_buy ? 0u : 1u;        // Buy=0 / Sell=1
+        side = is_buy ? 0u : 1u;           // Buy=0 / Sell=1
         schema_version = kAuditSchemaV13;  // 升版本标记 (replay 后不再触发)
     }
 
@@ -200,32 +213,28 @@ struct AuditRecord {
     // 注: 直接访问 condition_id array 成员与 market_id() 读取等价
     [[nodiscard]] std::string_view market_id_sv() const noexcept {
         return std::string_view{condition_id.data(),
-                                std::min(condition_id.size(),
-                                         std::strlen(condition_id.data()))};
+                                std::min(condition_id.size(), std::strlen(condition_id.data()))};
     }
     [[nodiscard]] std::string_view token_id_sv() const noexcept {
-        return std::string_view{token_id.data(),
-                                std::min(token_id.size(),
-                                         std::strlen(token_id.data()))};
+        return std::string_view{token_id.data(), std::min(token_id.size(), std::strlen(token_id.data()))};
     }
 
     // ---- WalRecord concept 适配 (4 ts getters + ulid + serialize) ----
-    [[nodiscard]] std::int64_t event_ts_ns()       const noexcept { return event_ts; }
+    [[nodiscard]] std::int64_t event_ts_ns() const noexcept { return event_ts; }
     [[nodiscard]] std::int64_t data_source_ts_ns() const noexcept { return data_source_ts; }
-    [[nodiscard]] std::int64_t ingestion_ts_ns()   const noexcept { return ingestion_ts; }
-    [[nodiscard]] std::int64_t as_of_ts_ns()       const noexcept { return as_of_ts; }
+    [[nodiscard]] std::int64_t ingestion_ts_ns() const noexcept { return ingestion_ts; }
+    [[nodiscard]] std::int64_t as_of_ts_ns() const noexcept { return as_of_ts; }
     [[nodiscard]] std::array<std::uint8_t, 16> audit_id() const noexcept { return audit_id_bytes; }
 
     // serialize_into: POD memcpy. W4 stub — 不做 endian / pack, 留 Sprint-3 切真编码.
     [[nodiscard]] std::size_t serialize_into(std::span<std::byte> out) const noexcept {
         const std::size_t n = sizeof(AuditRecord);
-        if (out.size() < n) return 0;
+        if (out.size() < n)
+            return 0;
         std::memcpy(out.data(), this, n);
         return n;
     }
-    static constexpr std::size_t max_serialized_size() noexcept {
-        return sizeof(AuditRecord);
-    }
+    static constexpr std::size_t max_serialized_size() noexcept { return sizeof(AuditRecord); }
 };
 
 static_assert(sizeof(AuditRecord) <= 65535, "AuditRecord 单条 ≤ u16 LEN (framework 约束)");

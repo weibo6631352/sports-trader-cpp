@@ -31,7 +31,9 @@
 
 namespace {
 
+using stcpp::ml::FeatureName;
 using stcpp::strategy::BookmakerOdds;
+using stcpp::strategy::compute_multiplicative_devig;
 using stcpp::strategy::DevigResult;
 using stcpp::strategy::GameState;
 using stcpp::strategy::GoalserveDevigSignal;
@@ -45,25 +47,23 @@ using stcpp::strategy::SignalContext;
 using stcpp::strategy::SignalId;
 using stcpp::strategy::SignalOutput;
 using stcpp::strategy::SIX_HOURS_NS;
-using stcpp::strategy::compute_multiplicative_devig;
-using stcpp::ml::FeatureName;
 
-constexpr std::int64_t NOW           = 1'700'000'000'000'000'000LL;
-constexpr std::int64_t SEC_NS        = 1'000'000'000LL;
-constexpr std::int64_t MIN_NS        = 60LL * SEC_NS;
+constexpr std::int64_t NOW = 1'700'000'000'000'000'000LL;
+constexpr std::int64_t SEC_NS = 1'000'000'000LL;
+constexpr std::int64_t MIN_NS = 60LL * SEC_NS;
 constexpr std::int64_t BANKROLL_USDC = 100'000;
-constexpr char const*  MID           = "0xMARKET01";
+constexpr char const* MID = "0xMARKET01";
 
 // ---------------------------------------------------------------------------
 // 标准 valid ctx — R-20 4 ts 单调非降, market_id + feature_snapshot_id 非空
 // ---------------------------------------------------------------------------
 SignalContext make_ctx() {
     SignalContext c;
-    c.event_ts_ns         = NOW - 100'000'000;
-    c.data_source_ts_ns   = NOW - 50'000'000;
-    c.ingestion_ts_ns     = NOW - 10'000'000;
-    c.as_of_ts_ns         = NOW;
-    c.market_id           = MID;
+    c.event_ts_ns = NOW - 100'000'000;
+    c.data_source_ts_ns = NOW - 50'000'000;
+    c.ingestion_ts_ns = NOW - 10'000'000;
+    c.as_of_ts_ns = NOW;
+    c.market_id = MID;
     c.feature_snapshot_id = "snap-devig-001";  // 小邓 ML hook ABI key
     return c;
 }
@@ -80,37 +80,37 @@ std::vector<BookmakerOdds> make_9_books(std::int64_t snap_ts = NOW - SEC_NS) {
     // 各家轻微扰动 (±1 tick) 模拟真实多家报价
     return {
         // id  odds_yes  odds_no  snap_ts
-        {14,   2.10,     1.80,    snap_ts},   // 10Bet
-        {15,   2.11,     1.79,    snap_ts},   // WilliamHill
-        {16,   2.09,     1.81,    snap_ts},   // bet365
-        {17,   2.10,     1.80,    snap_ts},   // Marathon
-        {18,   2.12,     1.78,    snap_ts},   // Unibet
-        {65,   2.08,     1.82,    snap_ts},   // BetVictor
-        {105,  2.10,     1.80,    snap_ts},   // 1xBet
-        {144,  2.11,     1.79,    snap_ts},   // Betano
-        {999,  2.10,     1.80,    snap_ts},   // TBD (老彭 W6 EOW 补 id)
+        {14, 2.10, 1.80, snap_ts},   // 10Bet
+        {15, 2.11, 1.79, snap_ts},   // WilliamHill
+        {16, 2.09, 1.81, snap_ts},   // bet365
+        {17, 2.10, 1.80, snap_ts},   // Marathon
+        {18, 2.12, 1.78, snap_ts},   // Unibet
+        {65, 2.08, 1.82, snap_ts},   // BetVictor
+        {105, 2.10, 1.80, snap_ts},  // 1xBet
+        {144, 2.11, 1.79, snap_ts},  // Betano
+        {999, 2.10, 1.80, snap_ts},  // TBD (老彭 W6 EOW 补 id)
     };
 }
 
 struct HappyFixture {
     MockGoalserveOddsSource goalserve;
-    MockPmSnapshotSource    pm;
-    MockGameStateSource     games;
+    MockPmSnapshotSource pm;
+    MockGameStateSource games;
 
     HappyFixture() {
         goalserve.put(MID, make_9_books());
 
         PmSnapshot ps;
-        ps.mid                 = 0.40;
+        ps.mid = 0.40;
         ps.top3_liquidity_usdc = 5'000.0;
-        ps.expected_fill_rate  = 0.70;
-        ps.valid               = true;
+        ps.expected_fill_rate = 0.70;
+        ps.valid = true;
         pm.put(MID, ps);
 
         GameState g;
-        g.live          = true;
-        g.ended         = false;
-        g.delayed       = false;
+        g.live = true;
+        g.ended = false;
+        g.delayed = false;
         g.kickoff_ts_ns = NOW - 60 * MIN_NS;
         games.put(MID, g);
     }
@@ -133,8 +133,8 @@ TEST(GoalserveDevig_T1, Formula_3Books_Symmetric) {
     DevigResult const r = compute_multiplicative_devig(books);
     ASSERT_TRUE(r.valid);
     EXPECT_EQ(r.books_used, 3u);
-    EXPECT_NEAR(r.p_yes_fair_avg, 0.5,      1e-9);
-    EXPECT_NEAR(r.overround_avg,  1.041666, 1e-4);
+    EXPECT_NEAR(r.p_yes_fair_avg, 0.5, 1e-9);
+    EXPECT_NEAR(r.overround_avg, 1.041666, 1e-4);
 }
 
 TEST(GoalserveDevig_T1, Formula_3Books_Asymmetric) {
@@ -151,17 +151,15 @@ TEST(GoalserveDevig_T1, Formula_3Books_Asymmetric) {
     // p_yes_raw = 1/2.10 = 0.476190, p_no_raw = 1/1.80 = 0.555556
     // overround = 1.031746, p_yes_fair = 0.476190/1.031746 = 0.461538
     EXPECT_NEAR(r.p_yes_fair_avg, 0.461538, 1e-5);
-    EXPECT_NEAR(r.overround_avg,  1.031746, 1e-5);
+    EXPECT_NEAR(r.overround_avg, 1.031746, 1e-5);
 }
 
 TEST(GoalserveDevig_T1, Formula_SkipsInvalidOdds) {
     // 5 行, 其中 2 行 odds=0 应被跳过 → 3 有效行, valid=true
     std::vector<BookmakerOdds> books = {
-        {14,  2.10, 1.80, NOW},
-        {15,  0.0,  1.80, NOW},   // odds_yes=0 → skip
-        {16,  2.10, 0.0,  NOW},   // odds_no=0  → skip
-        {17,  2.10, 1.80, NOW},
-        {18,  2.10, 1.80, NOW},
+        {14, 2.10, 1.80, NOW}, {15, 0.0, 1.80, NOW},  // odds_yes=0 → skip
+        {16, 2.10, 0.0, NOW},                         // odds_no=0  → skip
+        {17, 2.10, 1.80, NOW}, {18, 2.10, 1.80, NOW},
     };
     DevigResult const r = compute_multiplicative_devig(books);
     ASSERT_TRUE(r.valid);
@@ -173,11 +171,9 @@ TEST(GoalserveDevig_T1, Formula_NaNInf_Skipped) {
     double const inf = std::numeric_limits<double>::infinity();
     double const nan = std::numeric_limits<double>::quiet_NaN();
     std::vector<BookmakerOdds> books = {
-        {14, inf,  1.80, NOW},   // skip
-        {15, nan,  1.80, NOW},   // skip
-        {16, 2.10, 1.80, NOW},
-        {17, 2.10, 1.80, NOW},
-        {18, 2.10, 1.80, NOW},
+        {14, inf, 1.80, NOW},  // skip
+        {15, nan, 1.80, NOW},  // skip
+        {16, 2.10, 1.80, NOW}, {17, 2.10, 1.80, NOW}, {18, 2.10, 1.80, NOW},
     };
     DevigResult const r = compute_multiplicative_devig(books);
     ASSERT_TRUE(r.valid);
@@ -192,27 +188,26 @@ TEST(GoalserveDevig_T1, Formula_NaNInf_Skipped) {
 // ===========================================================================
 
 TEST(GoalserveDevig_T2, NineBooks_FairValueNearPinnacle) {
-    auto const books     = make_9_books();
+    auto const books = make_9_books();
     DevigResult const dv = compute_multiplicative_devig(books);
     ASSERT_TRUE(dv.valid);
     EXPECT_EQ(dv.books_used, 9u);
 
     // 参照: Pinnacle single-source no-vig (W4 公式)
-    double const pinnacle_p_yes_raw  = 1.0 / 2.10;
-    double const pinnacle_p_no_raw   = 1.0 / 1.80;
-    double const pinnacle_overround  = pinnacle_p_yes_raw + pinnacle_p_no_raw;
+    double const pinnacle_p_yes_raw = 1.0 / 2.10;
+    double const pinnacle_p_no_raw = 1.0 / 1.80;
+    double const pinnacle_overround = pinnacle_p_yes_raw + pinnacle_p_no_raw;
     double const pinnacle_p_yes_fair = pinnacle_p_yes_raw / pinnacle_overround;
 
     // |deviation| < 2% (200 bps)
     double const deviation = std::abs(dv.p_yes_fair_avg - pinnacle_p_yes_fair);
-    EXPECT_LT(deviation, 0.02) << "deviation=" << deviation
-                               << " pinFair=" << pinnacle_p_yes_fair
+    EXPECT_LT(deviation, 0.02) << "deviation=" << deviation << " pinFair=" << pinnacle_p_yes_fair
                                << " devigFair=" << dv.p_yes_fair_avg;
 }
 
 TEST(GoalserveDevig_T2, NineBooks_OverroundSanity) {
     // overround_avg ∈ [1.01, 1.10] (健康范围, 典型 retail book 1.03-1.06)
-    auto const books     = make_9_books();
+    auto const books = make_9_books();
     DevigResult const dv = compute_multiplicative_devig(books);
     ASSERT_TRUE(dv.valid);
     EXPECT_GT(dv.overround_avg, 1.01);
@@ -262,7 +257,7 @@ TEST(GoalserveDevig_T3, TwoValid_OneInvalid_Fallback) {
     std::vector<BookmakerOdds> books = {
         {14, 2.10, 1.80, NOW},
         {15, 2.10, 1.80, NOW},
-        {16, 0.0,  1.80, NOW},  // skip
+        {16, 0.0, 1.80, NOW},  // skip
     };
     DevigResult const r = compute_multiplicative_devig(books);
     EXPECT_FALSE(r.valid);
@@ -277,13 +272,17 @@ TEST(GoalserveDevig_T3, SignalNullopt_WhenFallback) {
 
     MockPmSnapshotSource pm;
     PmSnapshot ps;
-    ps.mid = 0.40; ps.top3_liquidity_usdc = 5'000.0;
-    ps.expected_fill_rate = 0.70; ps.valid = true;
+    ps.mid = 0.40;
+    ps.top3_liquidity_usdc = 5'000.0;
+    ps.expected_fill_rate = 0.70;
+    ps.valid = true;
     pm.put(MID, ps);
 
     MockGameStateSource games;
     GameState g;
-    g.live = true; g.ended = false; g.delayed = false;
+    g.live = true;
+    g.ended = false;
+    g.delayed = false;
     g.kickoff_ts_ns = NOW - 60 * MIN_NS;
     games.put(MID, g);
 
@@ -314,8 +313,10 @@ TEST(GoalserveDevig_T4, HappyPath_BuyNo) {
     // PM_mid=0.55 > p_yes_fair~0.461 → BUY_NO
     HappyFixture f;
     PmSnapshot ps;
-    ps.mid = 0.55; ps.top3_liquidity_usdc = 5'000.0;
-    ps.expected_fill_rate = 0.70; ps.valid = true;
+    ps.mid = 0.55;
+    ps.top3_liquidity_usdc = 5'000.0;
+    ps.expected_fill_rate = 0.70;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     GoalserveDevigSignal sig(f.goalserve, f.pm, f.games, BANKROLL_USDC);
@@ -330,8 +331,10 @@ TEST(GoalserveDevig_T4, Cond1_Fail_EdgeBelowThreshold) {
     HappyFixture f;
     // p_yes_fair_avg ≈ 0.461, pm.mid=0.45 → |0.45 - 0.461| ≈ 0.011 < 0.05
     PmSnapshot ps;
-    ps.mid = 0.45; ps.top3_liquidity_usdc = 5'000.0;
-    ps.expected_fill_rate = 0.70; ps.valid = true;
+    ps.mid = 0.45;
+    ps.top3_liquidity_usdc = 5'000.0;
+    ps.expected_fill_rate = 0.70;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     GoalserveDevigSignal sig(f.goalserve, f.pm, f.games, BANKROLL_USDC);
@@ -342,8 +345,10 @@ TEST(GoalserveDevig_T4, Cond1_Fail_EdgeBelowThreshold) {
 TEST(GoalserveDevig_T4, Cond2_Fail_LowLiquidity) {
     HappyFixture f;
     PmSnapshot ps;
-    ps.mid = 0.40; ps.top3_liquidity_usdc = 1'500.0;
-    ps.expected_fill_rate = 0.70; ps.valid = true;
+    ps.mid = 0.40;
+    ps.top3_liquidity_usdc = 1'500.0;
+    ps.expected_fill_rate = 0.70;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     GoalserveDevigSignal sig(f.goalserve, f.pm, f.games, BANKROLL_USDC);
@@ -354,7 +359,9 @@ TEST(GoalserveDevig_T4, Cond2_Fail_LowLiquidity) {
 TEST(GoalserveDevig_T4, Cond3_Fail_FarKickoffNotLive) {
     HappyFixture f;
     GameState g;
-    g.live = false; g.ended = false; g.delayed = false;
+    g.live = false;
+    g.ended = false;
+    g.delayed = false;
     g.kickoff_ts_ns = NOW + 12 * 60 * MIN_NS;  // 12h 后
     f.games.put(MID, g);
 
@@ -366,7 +373,9 @@ TEST(GoalserveDevig_T4, Cond3_Fail_FarKickoffNotLive) {
 TEST(GoalserveDevig_T4, Cond3_Pass_LiveOverride) {
     HappyFixture f;
     GameState g;
-    g.live = true; g.ended = false; g.delayed = false;
+    g.live = true;
+    g.ended = false;
+    g.delayed = false;
     g.kickoff_ts_ns = NOW + 24 * 60 * MIN_NS;
     f.games.put(MID, g);
 
@@ -378,8 +387,10 @@ TEST(GoalserveDevig_T4, Cond3_Pass_LiveOverride) {
 TEST(GoalserveDevig_T4, Cond4_Fail_LowFillRate) {
     HappyFixture f;
     PmSnapshot ps;
-    ps.mid = 0.40; ps.top3_liquidity_usdc = 5'000.0;
-    ps.expected_fill_rate = 0.30; ps.valid = true;
+    ps.mid = 0.40;
+    ps.top3_liquidity_usdc = 5'000.0;
+    ps.expected_fill_rate = 0.30;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     GoalserveDevigSignal sig(f.goalserve, f.pm, f.games, BANKROLL_USDC);
@@ -390,7 +401,9 @@ TEST(GoalserveDevig_T4, Cond4_Fail_LowFillRate) {
 TEST(GoalserveDevig_T4, Cond5_Fail_Delayed) {
     HappyFixture f;
     GameState g;
-    g.delayed = true; g.live = false; g.ended = false;
+    g.delayed = true;
+    g.live = false;
+    g.ended = false;
     g.kickoff_ts_ns = NOW + 2 * 60 * MIN_NS;
     f.games.put(MID, g);
 
@@ -402,7 +415,9 @@ TEST(GoalserveDevig_T4, Cond5_Fail_Delayed) {
 TEST(GoalserveDevig_T4, Cond5_Fail_Closed) {
     HappyFixture f;
     GameState g;
-    g.ended = true; g.live = false; g.delayed = false;
+    g.ended = true;
+    g.live = false;
+    g.delayed = false;
     g.kickoff_ts_ns = NOW - 4 * 60 * MIN_NS;
     f.games.put(MID, g);
 
@@ -417,10 +432,14 @@ TEST(GoalserveDevig_T4, R20_ZeroTs) {
 
     for (int i = 0; i < 4; ++i) {
         auto ctx = make_ctx();
-        if (i == 0) ctx.event_ts_ns        = 0;
-        if (i == 1) ctx.data_source_ts_ns  = 0;
-        if (i == 2) ctx.ingestion_ts_ns    = 0;
-        if (i == 3) ctx.as_of_ts_ns        = 0;
+        if (i == 0)
+            ctx.event_ts_ns = 0;
+        if (i == 1)
+            ctx.data_source_ts_ns = 0;
+        if (i == 2)
+            ctx.ingestion_ts_ns = 0;
+        if (i == 3)
+            ctx.as_of_ts_ns = 0;
         EXPECT_FALSE(sig.tick(ctx).has_value()) << "i=" << i;
     }
 }
@@ -432,7 +451,7 @@ TEST(GoalserveDevig_T4, R20_TsOrderViolation) {
 
     // event > data_source
     auto ctx = make_ctx();
-    ctx.event_ts_ns       = NOW;
+    ctx.event_ts_ns = NOW;
     ctx.data_source_ts_ns = NOW - SEC_NS;
     EXPECT_FALSE(sig.tick(ctx).has_value());
 
@@ -461,8 +480,10 @@ TEST(GoalserveDevig_T4, SizeClipAt5K) {
     HappyFixture f;
     // 极大 edge: PM_mid=0.05 → edge ~ 0.41
     PmSnapshot ps;
-    ps.mid = 0.05; ps.top3_liquidity_usdc = 5'000.0;
-    ps.expected_fill_rate = 0.95; ps.valid = true;
+    ps.mid = 0.05;
+    ps.top3_liquidity_usdc = 5'000.0;
+    ps.expected_fill_rate = 0.95;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     GoalserveDevigSignal sig(f.goalserve, f.pm, f.games, 1'000'000);
@@ -480,25 +501,23 @@ TEST(GoalserveDevig_T5, FeatureName_Enum_Values_ABI_Lock) {
     // 列 index = enum 值 — 锁死 (小邓 ML pipeline column index)
     // ADR-008 字段名改了, 但 index 4/5 不变
     EXPECT_EQ(static_cast<int>(FeatureName::Goalserve_devig_p_yes_fair), 4);
-    EXPECT_EQ(static_cast<int>(FeatureName::Goalserve_overround_avg),    5);
+    EXPECT_EQ(static_cast<int>(FeatureName::Goalserve_overround_avg), 5);
 }
 
 TEST(GoalserveDevig_T5, FeatureName_ToStr_NewNames) {
     // 字段名 cascade: to_string 必须返回新名 (小邓 Parquet schema 列名)
-    EXPECT_EQ(stcpp::ml::to_string(FeatureName::Goalserve_devig_p_yes_fair),
-              "Goalserve_devig_p_yes_fair");
-    EXPECT_EQ(stcpp::ml::to_string(FeatureName::Goalserve_overround_avg),
-              "Goalserve_overround_avg");
+    EXPECT_EQ(stcpp::ml::to_string(FeatureName::Goalserve_devig_p_yes_fair), "Goalserve_devig_p_yes_fair");
+    EXPECT_EQ(stcpp::ml::to_string(FeatureName::Goalserve_overround_avg), "Goalserve_overround_avg");
 }
 
 TEST(GoalserveDevig_T5, FeatureSnapshot_SetGet_Devig_Fields) {
     // FeatureSnapshot set/get 用新 enum 正常工作
     stcpp::ml::FeatureSnapshot snap;
     snap.set(FeatureName::Goalserve_devig_p_yes_fair, 0.4615f);
-    snap.set(FeatureName::Goalserve_overround_avg,    1.0317f);
+    snap.set(FeatureName::Goalserve_overround_avg, 1.0317f);
 
     EXPECT_NEAR(snap.get(FeatureName::Goalserve_devig_p_yes_fair), 0.4615f, 1e-4f);
-    EXPECT_NEAR(snap.get(FeatureName::Goalserve_overround_avg),    1.0317f, 1e-4f);
+    EXPECT_NEAR(snap.get(FeatureName::Goalserve_overround_avg), 1.0317f, 1e-4f);
 }
 
 TEST(GoalserveDevig_T5, SignalContext_FieldsUnchanged_ABI) {
@@ -508,8 +527,8 @@ TEST(GoalserveDevig_T5, SignalContext_FieldsUnchanged_ABI) {
     EXPECT_FALSE(ctx.market_id.empty());
     EXPECT_GT(ctx.event_ts_ns, 0);
     EXPECT_GE(ctx.data_source_ts_ns, ctx.event_ts_ns);
-    EXPECT_GE(ctx.ingestion_ts_ns,   ctx.data_source_ts_ns);
-    EXPECT_GE(ctx.as_of_ts_ns,       ctx.ingestion_ts_ns);
+    EXPECT_GE(ctx.ingestion_ts_ns, ctx.data_source_ts_ns);
+    EXPECT_GE(ctx.as_of_ts_ns, ctx.ingestion_ts_ns);
 }
 
 TEST(GoalserveDevig_T5, SignalOutput_SignalId_ABI_Lock) {

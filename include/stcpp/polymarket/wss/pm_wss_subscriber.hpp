@@ -35,15 +35,22 @@ namespace stcpp::polymarket::wss {
 
 // 1. WssTransportState — 4 状态 (subscriber 内部 + metric)
 enum class WssTransportState : std::uint8_t {
-    kDisconnected = 0, kConnecting = 1, kConnected = 2, kReconnecting = 3,
+    kDisconnected = 0,
+    kConnecting = 1,
+    kConnected = 2,
+    kReconnecting = 3,
 };
 
 [[nodiscard]] constexpr std::string_view StateName(WssTransportState s) noexcept {
     switch (s) {
-        case WssTransportState::kDisconnected: return "DISCONNECTED";
-        case WssTransportState::kConnecting:   return "CONNECTING";
-        case WssTransportState::kConnected:    return "CONNECTED";
-        case WssTransportState::kReconnecting: return "RECONNECTING";
+        case WssTransportState::kDisconnected:
+            return "DISCONNECTED";
+        case WssTransportState::kConnecting:
+            return "CONNECTING";
+        case WssTransportState::kConnected:
+            return "CONNECTED";
+        case WssTransportState::kReconnecting:
+            return "RECONNECTING";
     }
     return "";
 }
@@ -54,15 +61,15 @@ enum class WssTransportState : std::uint8_t {
 //   callback 由 transport io_context 线程回调, 内严禁 block (R-12)
 class IWssTransport {
 public:
-    using OnTextFrame    = std::function<void(std::string_view payload, std::int64_t recv_ts_ns)>;
-    using OnConnected    = std::function<void()>;
+    using OnTextFrame = std::function<void(std::string_view payload, std::int64_t recv_ts_ns)>;
+    using OnConnected = std::function<void()>;
     using OnDisconnected = std::function<void(std::string_view reason)>;
 
     virtual ~IWssTransport() = default;
 
-    virtual bool AsyncConnect(std::string_view url) = 0;        // 异步连, 不阻塞 (R-12)
-    virtual bool AsyncSendText(std::string_view payload) = 0;   // 入 io_context queue, 不阻塞
-    virtual void Close() = 0;                                   // 强重连用
+    virtual bool AsyncConnect(std::string_view url) = 0;       // 异步连, 不阻塞 (R-12)
+    virtual bool AsyncSendText(std::string_view payload) = 0;  // 入 io_context queue, 不阻塞
+    virtual void Close() = 0;                                  // 强重连用
 
     virtual void SetOnTextFrame(OnTextFrame cb) = 0;
     virtual void SetOnConnected(OnConnected cb) = 0;
@@ -82,20 +89,20 @@ public:
 
 // 4. PMWssSubscriberConfig — 完整配置 (老李 v1 §8)
 struct PMWssSubscriberConfig {
-    std::string url = "wss://sports-api.polymarket.com/ws";        // R-33 第 5 host
+    std::string url = "wss://sports-api.polymarket.com/ws";  // R-33 第 5 host
 
     // reconnect — exp backoff (老李 v1 §8.1)
-    std::chrono::milliseconds reconnect_initial    = std::chrono::milliseconds(1000);
-    std::chrono::milliseconds reconnect_cap        = std::chrono::milliseconds(30000);
-    double                    reconnect_multiplier = 2.0;
+    std::chrono::milliseconds reconnect_initial = std::chrono::milliseconds(1000);
+    std::chrono::milliseconds reconnect_cap = std::chrono::milliseconds(30000);
+    double reconnect_multiplier = 2.0;
 
     // heartbeat (老李 v1 §8.2): 10s PING / 30s 无 pong → 强重连
-    std::chrono::milliseconds heartbeat_interval   = std::chrono::milliseconds(10000);
-    std::chrono::milliseconds heartbeat_timeout    = std::chrono::milliseconds(30000);
-    std::string               heartbeat_ping_text  = "PING";
+    std::chrono::milliseconds heartbeat_interval = std::chrono::milliseconds(10000);
+    std::chrono::milliseconds heartbeat_timeout = std::chrono::milliseconds(30000);
+    std::string heartbeat_ping_text = "PING";
 
     // back-pressure (老周 v0.6 §4.2: wss_dropped_frames_total drop oldest)
-    std::size_t spsc_capacity = 65536;   // 与 MarketDataBus capacity 一致
+    std::size_t spsc_capacity = 65536;  // 与 MarketDataBus capacity 一致
 
     // 启动后自动订阅
     std::vector<std::string> initial_condition_ids;
@@ -105,17 +112,20 @@ struct PMWssSubscriberConfig {
 // 5. SubscriberMetrics — 给小郑 prom exporter
 struct SubscriberMetrics {
     std::atomic<std::uint64_t> frames_received_total{0};
-    std::atomic<std::uint64_t> frames_dropped_total{0};            // SPSC 满
+    std::atomic<std::uint64_t> frames_dropped_total{0};  // SPSC 满
     std::atomic<std::uint64_t> frames_parse_error_total{0};
     std::atomic<std::uint64_t> reconnect_attempts_total{0};
     std::atomic<std::uint64_t> heartbeat_pings_sent_total{0};
     std::atomic<std::uint64_t> heartbeat_timeouts_total{0};
-    std::atomic<std::int64_t>  last_msg_ts_ns{0};                  // RM STALE getter
-    std::atomic<std::uint8_t>  state{static_cast<std::uint8_t>(WssTransportState::kDisconnected)};
+    std::atomic<std::int64_t> last_msg_ts_ns{0};  // RM STALE getter
+    std::atomic<std::uint8_t> state{static_cast<std::uint8_t>(WssTransportState::kDisconnected)};
 
     std::array<std::atomic<std::uint64_t>, kNumSubTopics> by_topic_frames{};
 
-    SubscriberMetrics() noexcept { for (auto& c : by_topic_frames) c.store(0); }
+    SubscriberMetrics() noexcept {
+        for (auto& c : by_topic_frames)
+            c.store(0);
+    }
 };
 
 // 6. PMWssSubscriber — 主类
@@ -136,27 +146,26 @@ struct SubscriberMetrics {
 //     - 心跳 / reconnect 走 transport io_context 异步, 不开自己线程
 class PMWssSubscriber {
 public:
-    PMWssSubscriber(std::unique_ptr<IWssTransport> transport,
-                    std::shared_ptr<ISpscEventSink>  sink,
-                    PMWssSubscriberConfig            cfg);
+    PMWssSubscriber(std::unique_ptr<IWssTransport> transport, std::shared_ptr<ISpscEventSink> sink,
+                    PMWssSubscriberConfig cfg);
 
-    PMWssSubscriber(const PMWssSubscriber&)            = delete;
+    PMWssSubscriber(const PMWssSubscriber&) = delete;
     PMWssSubscriber& operator=(const PMWssSubscriber&) = delete;
-    PMWssSubscriber(PMWssSubscriber&&)                 = delete;
-    PMWssSubscriber& operator=(PMWssSubscriber&&)      = delete;
+    PMWssSubscriber(PMWssSubscriber&&) = delete;
+    PMWssSubscriber& operator=(PMWssSubscriber&&) = delete;
 
     ~PMWssSubscriber();
 
-    bool Start();                                                  // 异步连接 + 自动订阅
-    void Stop() noexcept;                                          // joinable cleanup
-    bool Subscribe(SubTopic topic, std::string_view target_id);    // 增量订阅
+    bool Start();                                                // 异步连接 + 自动订阅
+    void Stop() noexcept;                                        // joinable cleanup
+    bool Subscribe(SubTopic topic, std::string_view target_id);  // 增量订阅
 
-    void TickHeartbeatNow();                                       // 单测 / 真 timer 调
-    void CheckHeartbeatTimeoutNow();                               // 单测 / 真 timer 调
+    void TickHeartbeatNow();          // 单测 / 真 timer 调
+    void CheckHeartbeatTimeoutNow();  // 单测 / 真 timer 调
 
     [[nodiscard]] const SubscriberMetrics& metrics() const noexcept { return metrics_; }
-    [[nodiscard]] WssTransportState        state()   const noexcept { return state_.load(); }
-    [[nodiscard]] std::int64_t             last_msg_ts_ns() const noexcept {
+    [[nodiscard]] WssTransportState state() const noexcept { return state_.load(); }
+    [[nodiscard]] std::int64_t last_msg_ts_ns() const noexcept {
         return last_msg_ts_ns_.load(std::memory_order_relaxed);
     }
 
@@ -170,30 +179,30 @@ private:
     bool ParseAndDispatch(std::string_view payload, std::int64_t recv_ts_ns);
 
     // 8 sub topic parsers
-    bool ParseMarket(std::string_view body,        std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParseGame(std::string_view body,          std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParseOutcomes(std::string_view body,      std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParseBook(std::string_view body,          std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParsePriceChange(std::string_view body,   std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParseLastTrade(std::string_view body,     std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParseTickSize(std::string_view body,      std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParseSystemStatus(std::string_view body,  std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseMarket(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseGame(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseOutcomes(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseBook(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParsePriceChange(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseLastTrade(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseTickSize(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseSystemStatus(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
 
     [[nodiscard]] std::string MakeSubscribeFrame(SubTopic topic, std::string_view target_id) const;
     void ScheduleReconnect();
     [[nodiscard]] std::int64_t NowNs() const noexcept { return now_fn_ ? now_fn_() : 0; }
 
-    std::unique_ptr<IWssTransport>  transport_;
+    std::unique_ptr<IWssTransport> transport_;
     std::shared_ptr<ISpscEventSink> sink_;
-    PMWssSubscriberConfig           cfg_;
-    SubscriberMetrics               metrics_;
+    PMWssSubscriberConfig cfg_;
+    SubscriberMetrics metrics_;
 
-    std::atomic<WssTransportState>  state_{WssTransportState::kDisconnected};
-    std::atomic<std::int64_t>       last_msg_ts_ns_{0};
-    std::atomic<std::int64_t>       last_ping_sent_ts_ns_{0};
-    std::atomic<std::uint32_t>      reconnect_attempt_{0};
+    std::atomic<WssTransportState> state_{WssTransportState::kDisconnected};
+    std::atomic<std::int64_t> last_msg_ts_ns_{0};
+    std::atomic<std::int64_t> last_ping_sent_ts_ns_{0};
+    std::atomic<std::uint32_t> reconnect_attempt_{0};
 
-    NowFn now_fn_;                                                 // 测试可注入 (default = system_clock)
+    NowFn now_fn_;  // 测试可注入 (default = system_clock)
 };
 
 }  // namespace stcpp::polymarket::wss

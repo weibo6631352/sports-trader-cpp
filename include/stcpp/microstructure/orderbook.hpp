@@ -54,7 +54,7 @@ inline constexpr std::int32_t TICK_WINDOW = 2;
 
 // Polymarket mainline tick = 1¢, longtail tick = 0.1¢ (§6.1)
 inline constexpr double TICK_001 = 0.001;
-inline constexpr double TICK_01  = 0.01;
+inline constexpr double TICK_01 = 0.01;
 
 // L1 + L2 + L3 累计深度 = "top3_depth_usdc" 取 ±2 tick 窗口 (§1.2 表头)
 inline constexpr std::size_t kBookDepthLevels = 5;  // bid/ask 各 5 档
@@ -64,8 +64,8 @@ inline constexpr std::size_t kBookDepthLevels = 5;  // bid/ask 各 5 档
 // ---------------------------------------------------------------------------
 
 struct OrderBookLevel {
-    double price{0.0};         // ∈ (0, 1), 离散到 tick 整倍数
-    double size_usdc{0.0};     // L_i = price * qty (notional USD)
+    double price{0.0};      // ∈ (0, 1), 离散到 tick 整倍数
+    double size_usdc{0.0};  // L_i = price * qty (notional USD)
 };
 
 // 4 ts (R-20). 命名与 老唐 audit-schema v1.1 / 老韩 RM v0.3.1 对齐.
@@ -78,32 +78,28 @@ struct OrderBookTs {
 
 [[nodiscard]] constexpr bool ts_order_ok(OrderBookTs const& t) noexcept {
     // event ≤ data_source ≤ ingestion ≤ as_of  (4 ts 严格不递减, R-20 PIT)
-    return t.event_ts_ns       <= t.data_source_ts_ns
-        && t.data_source_ts_ns <= t.ingestion_ts_ns
-        && t.ingestion_ts_ns   <= t.as_of_ts_ns;
+    return t.event_ts_ns <= t.data_source_ts_ns && t.data_source_ts_ns <= t.ingestion_ts_ns &&
+           t.ingestion_ts_ns <= t.as_of_ts_ns;
 }
 
 [[nodiscard]] constexpr bool ts_all_positive(OrderBookTs const& t) noexcept {
-    return t.event_ts_ns       > 0
-        && t.data_source_ts_ns > 0
-        && t.ingestion_ts_ns   > 0
-        && t.as_of_ts_ns       > 0;
+    return t.event_ts_ns > 0 && t.data_source_ts_ns > 0 && t.ingestion_ts_ns > 0 && t.as_of_ts_ns > 0;
 }
 
 struct OrderBookSnapshot {
     // R-20 4 ts (上游优先, 禁本地 now() 替代 data_source_ts)
-    OrderBookTs                                  ts{};
+    OrderBookTs ts{};
     // Polymarket condition_id / asset_id (token_id)
-    std::string_view                             market_id{};
+    std::string_view market_id{};
     // 5 档 bid / ask, 0 = best
     std::array<OrderBookLevel, kBookDepthLevels> bid{};
     std::array<OrderBookLevel, kBookDepthLevels> ask{};
     // tick lattice (0.01 / 0.001)
-    double                                       tick_size{TICK_01};
+    double tick_size{TICK_01};
     // 派单 §1 OrderBookSnapshot 字段
-    double                                       top3_depth_usdc{0.0};  // ±2 tick 累计 (实测 §1.2 主参考)
-    std::int32_t                                 spread_bps{0};         // (ask[0] - bid[0]) / mid * 10000
-    std::int64_t                                 last_trade_ts_ns{0};   // 用于 staleness 判断
+    double top3_depth_usdc{0.0};       // ±2 tick 累计 (实测 §1.2 主参考)
+    std::int32_t spread_bps{0};        // (ask[0] - bid[0]) / mid * 10000
+    std::int64_t last_trade_ts_ns{0};  // 用于 staleness 判断
 };
 
 // ---------------------------------------------------------------------------
@@ -117,12 +113,12 @@ struct OrderBookSnapshot {
 //   |microprice - mid| ≤ 2 * tick, 超出则 fallback 用 mid (outright 极偏 case)
 //
 struct Microprobe {
-    double       microprice{0.0};               // capped microprice (≤ 2 tick from mid)
-    double       mid{0.0};
-    double       imbalance{0.0};                // ∈ [-1, 1]
-    std::int64_t quote_half_life_ms{30'000};    // §3.5 实测 (gameday cold 30s, hot 500ms)
-    double       adverse_selection_score{0.0};  // ∈ [0, 1], 1 = quote 移向 against us 强烈
-    bool         is_hot_token{false};           // λ > 1/s (§5.3) 或临场 ± 10min
+    double microprice{0.0};  // capped microprice (≤ 2 tick from mid)
+    double mid{0.0};
+    double imbalance{0.0};                    // ∈ [-1, 1]
+    std::int64_t quote_half_life_ms{30'000};  // §3.5 实测 (gameday cold 30s, hot 500ms)
+    double adverse_selection_score{0.0};      // ∈ [0, 1], 1 = quote 移向 against us 强烈
+    bool is_hot_token{false};                 // λ > 1/s (§5.3) 或临场 ± 10min
 };
 
 // ---------------------------------------------------------------------------
@@ -146,16 +142,15 @@ struct L1Probe {
     double mid{0.0};
     double microprice{0.0};
     double imbalance{0.0};
-    bool   valid{false};
+    bool valid{false};
 };
 
-[[nodiscard]] inline L1Probe compute_l1_probe(OrderBookLevel const& best_bid,
-                                              OrderBookLevel const& best_ask,
-                                              double                tick) noexcept {
+[[nodiscard]] inline L1Probe compute_l1_probe(OrderBookLevel const& best_bid, OrderBookLevel const& best_ask,
+                                              double tick) noexcept {
     L1Probe out;
-    if (!detail::finite_pos(best_bid.price) || !detail::finite_pos(best_ask.price)
-        || !detail::finite_pos(best_bid.size_usdc) || !detail::finite_pos(best_ask.size_usdc)
-        || !detail::finite_pos(tick)) {
+    if (!detail::finite_pos(best_bid.price) || !detail::finite_pos(best_ask.price) ||
+        !detail::finite_pos(best_bid.size_usdc) || !detail::finite_pos(best_ask.size_usdc) ||
+        !detail::finite_pos(tick)) {
         return out;
     }
     if (best_ask.price <= best_bid.price) {
@@ -168,32 +163,28 @@ struct L1Probe {
     out.imbalance = (best_bid.size_usdc - best_ask.size_usdc) / sum_qty;
 
     // microprice = (bid_qty * best_ask + ask_qty * best_bid) / sum
-    double const micro_raw = (best_bid.size_usdc * best_ask.price
-                            + best_ask.size_usdc * best_bid.price) / sum_qty;
+    double const micro_raw =
+        (best_bid.size_usdc * best_ask.price + best_ask.size_usdc * best_bid.price) / sum_qty;
     // §2.3 cap: |micro - mid| ≤ 2 ticks; 超出 fallback mid
-    double const cap   = 2.0 * tick;
+    double const cap = 2.0 * tick;
     double const delta = micro_raw - out.mid;
-    double const clamped_delta = (delta >  cap) ?  cap
-                                : (delta < -cap) ? -cap
-                                : delta;
+    double const clamped_delta = (delta > cap) ? cap : (delta < -cap) ? -cap : delta;
     out.microprice = out.mid + clamped_delta;
     out.valid = true;
     return out;
 }
 
 // 取 ±N tick 累计 ask / bid 深度 (USD)
-[[nodiscard]] inline double depth_within_ticks(
-    std::array<OrderBookLevel, kBookDepthLevels> const& side,
-    double                                              ref_price,
-    double                                              tick,
-    std::int32_t                                        n_ticks) noexcept {
+[[nodiscard]] inline double depth_within_ticks(std::array<OrderBookLevel, kBookDepthLevels> const& side,
+                                               double ref_price, double tick, std::int32_t n_ticks) noexcept {
     if (!detail::finite_pos(ref_price) || !detail::finite_pos(tick) || n_ticks <= 0) {
         return 0.0;
     }
     double const band = tick * static_cast<double>(n_ticks);
     double sum = 0.0;
     for (auto const& lvl : side) {
-        if (!detail::finite_pos(lvl.price) || !detail::finite_pos(lvl.size_usdc)) continue;
+        if (!detail::finite_pos(lvl.price) || !detail::finite_pos(lvl.size_usdc))
+            continue;
         double const d = lvl.price - ref_price;
         double const ad = d < 0 ? -d : d;
         if (ad <= band + 1e-9) {

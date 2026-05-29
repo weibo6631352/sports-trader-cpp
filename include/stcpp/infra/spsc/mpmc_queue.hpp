@@ -40,9 +40,10 @@
 #include <type_traits>
 #include <utility>
 
-#include "rigtorp/MPMCQueue.h"                    // rigtorp/MPMCQueue (FetchContent)
 #include "stcpp/infra/spsc/queue_capacities.hpp"
 #include "stcpp/infra/spsc/spsc_queue.hpp"
+
+#include "rigtorp/MPMCQueue.h"  // rigtorp/MPMCQueue (FetchContent)
 
 namespace stcpp::infra::spsc {
 
@@ -75,16 +76,14 @@ public:
     };
 
     FillQueue() = default;
-    FillQueue(const FillQueue&)            = delete;
+    FillQueue(const FillQueue&) = delete;
     FillQueue& operator=(const FillQueue&) = delete;
 
     // Producer: fanout to both queues atomically (best-effort, no rollback)
     // Position 满时 position_ok=false; ML 满时 ml_ok=false + ml_drop_count++
-    [[nodiscard]] PushResult try_push(const T& val)
-        noexcept(std::is_nothrow_copy_constructible_v<T>)
-    {
+    [[nodiscard]] PushResult try_push(const T& val) noexcept(std::is_nothrow_copy_constructible_v<T>) {
         bool pos_ok = position_queue_.try_push(val);
-        bool ml_ok  = ml_queue_.try_push(val);
+        bool ml_ok = ml_queue_.try_push(val);
         if (!ml_ok) {
             ml_drop_count_.fetch_add(1, std::memory_order_relaxed);
         }
@@ -98,9 +97,7 @@ public:
     [[nodiscard]] bool try_pop_ml(T& out) noexcept { return ml_queue_.try_pop(out); }
 
     // observability
-    [[nodiscard]] std::uint64_t position_drop_count() const noexcept {
-        return position_queue_.drop_count();
-    }
+    [[nodiscard]] std::uint64_t position_drop_count() const noexcept { return position_queue_.drop_count(); }
     [[nodiscard]] std::uint64_t ml_drop_count() const noexcept {
         return ml_drop_count_.load(std::memory_order_relaxed);
     }
@@ -126,13 +123,12 @@ private:
 
 template <typename T, std::size_t Capacity>
 class RigtorpMpmcQueue {
-    static_assert(IS_POWER_OF_TWO<Capacity>,
-                  "RigtorpMpmcQueue Capacity must be power of two");
+    static_assert(IS_POWER_OF_TWO<Capacity>, "RigtorpMpmcQueue Capacity must be power of two");
 
 public:
     RigtorpMpmcQueue() : queue_(Capacity) {}
 
-    RigtorpMpmcQueue(const RigtorpMpmcQueue&)            = delete;
+    RigtorpMpmcQueue(const RigtorpMpmcQueue&) = delete;
     RigtorpMpmcQueue& operator=(const RigtorpMpmcQueue&) = delete;
 
     [[nodiscard]] bool try_push(const T& val) noexcept(std::is_nothrow_copy_constructible_v<T>) {

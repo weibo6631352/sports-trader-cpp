@@ -69,17 +69,16 @@ namespace stcpp::signer {
 // noexcept: 所有操作为值语义 (string copy + uint8_t static_cast), 不抛
 // inline: 轻量变换, 无需链接独立 .cpp
 
-[[nodiscard]] inline v52::SignV52Request
-to_sign_request(const risk::OrderIntent& intent,
-                const std::array<std::uint8_t, 16>& audit_id) noexcept {
+[[nodiscard]] inline v52::SignV52Request to_sign_request(
+    const risk::OrderIntent& intent, const std::array<std::uint8_t, 16>& audit_id) noexcept {
     v52::SignV52Request req;
 
     // spec-3: 4-ts 原样 copy, 禁 now() 替代 (R-20 红线)
     // cite: ADR R-20 event_ts ≤ data_source_ts ≤ ingestion_ts ≤ as_of_ts
-    req.event_ts_ns        = intent.event_ts_ns;
-    req.data_source_ts_ns  = intent.data_source_ts_ns;
-    req.ingestion_ts_ns    = intent.ingestion_ts_ns;
-    req.as_of_ts_ns        = intent.as_of_ts_ns;
+    req.event_ts_ns = intent.event_ts_ns;
+    req.data_source_ts_ns = intent.data_source_ts_ns;
+    req.ingestion_ts_ns = intent.ingestion_ts_ns;
+    req.as_of_ts_ns = intent.as_of_ts_ns;
 
     // spec-7: data_source_ts_source = 0 (UpstreamPayload), 禁默认 3
     // cite: handshake §4.3 DataSourceTsSource ABI lock (0=UpstreamPayload)

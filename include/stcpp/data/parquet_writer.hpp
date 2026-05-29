@@ -44,9 +44,9 @@
 // #include <arrow/table.h>          // W7+
 // #include <parquet/arrow/writer.h> // W7+
 
+#include "stcpp/data/odds_record.hpp"
 #include "stcpp/ml/feature_snapshot.hpp"
 #include "stcpp/ml/training_label.hpp"
-#include "stcpp/data/odds_record.hpp"
 
 namespace stcpp::data {
 
@@ -54,20 +54,25 @@ namespace stcpp::data {
 // FlushResult — flush_to_file 返回码
 // ---------------------------------------------------------------------------
 enum class FlushResult : std::uint8_t {
-    Ok                  = 0,   // W7+ 真实现成功
-    StubNotImplemented  = 1,   // W6 stub: 未实现, 正常占位
-    TsChainViolation    = 2,   // R-20: 某条 record ts 链不等式不满足
-    BufferEmpty         = 3,   // buffer 为空, 无需 flush
-    IoError             = 4,   // W7+: 文件写入失败
+    Ok = 0,                  // W7+ 真实现成功
+    StubNotImplemented = 1,  // W6 stub: 未实现, 正常占位
+    TsChainViolation = 2,    // R-20: 某条 record ts 链不等式不满足
+    BufferEmpty = 3,         // buffer 为空, 无需 flush
+    IoError = 4,             // W7+: 文件写入失败
 };
 
 [[nodiscard]] constexpr std::string_view to_string(FlushResult r) noexcept {
     switch (r) {
-        case FlushResult::Ok:                 return "Ok";
-        case FlushResult::StubNotImplemented: return "StubNotImplemented";
-        case FlushResult::TsChainViolation:   return "TsChainViolation";
-        case FlushResult::BufferEmpty:        return "BufferEmpty";
-        case FlushResult::IoError:            return "IoError";
+        case FlushResult::Ok:
+            return "Ok";
+        case FlushResult::StubNotImplemented:
+            return "StubNotImplemented";
+        case FlushResult::TsChainViolation:
+            return "TsChainViolation";
+        case FlushResult::BufferEmpty:
+            return "BufferEmpty";
+        case FlushResult::IoError:
+            return "IoError";
     }
     return "Unknown";
 }
@@ -76,17 +81,15 @@ enum class FlushResult : std::uint8_t {
 // PartitionKey — Hive-style 分区路径计算辅助
 // ---------------------------------------------------------------------------
 struct PartitionKey {
-    std::string sport;         // e.g. "Soccer"
-    std::string market_type;   // e.g. "Moneyline"
-    std::int32_t year  = 0;    // e.g. 2024
-    std::int32_t week  = 0;    // ISO week 1-52
+    std::string sport;        // e.g. "Soccer"
+    std::string market_type;  // e.g. "Moneyline"
+    std::int32_t year = 0;    // e.g. 2024
+    std::int32_t week = 0;    // ISO week 1-52
 
     // 生成路径 fragment: sport=Soccer/market_type=Moneyline/year=2024/week=20
     [[nodiscard]] std::string to_path_fragment() const {
-        return "sport=" + sport
-             + "/market_type=" + market_type
-             + "/year=" + std::to_string(year)
-             + "/week=" + std::to_string(week);
+        return "sport=" + sport + "/market_type=" + market_type + "/year=" + std::to_string(year) +
+               "/week=" + std::to_string(week);
     }
 };
 
@@ -98,80 +101,73 @@ struct PartitionKey {
 // ---------------------------------------------------------------------------
 struct FeatureSnapshotRecord {
     // R-20 4 ts (ns)
-    std::int64_t  event_ts        = 0;
-    std::int64_t  data_source_ts  = 0;
-    std::int64_t  ingestion_ts    = 0;
-    std::int64_t  as_of_ts        = 0;
+    std::int64_t event_ts = 0;
+    std::int64_t data_source_ts = 0;
+    std::int64_t ingestion_ts = 0;
+    std::int64_t as_of_ts = 0;
 
     // business keys
     std::uint64_t feature_snapshot_id = 0;
-    std::uint8_t  signal_id_u8        = 0;
-    std::string   market_id;
+    std::uint8_t signal_id_u8 = 0;
+    std::string market_id;
 
     // partition keys
-    std::string   sport;
-    std::string   market_type;
-    std::int32_t  year  = 0;
-    std::int32_t  week  = 0;
+    std::string sport;
+    std::string market_type;
+    std::int32_t year = 0;
+    std::int32_t week = 0;
 
     // 32 features (float32, NaN = missing, ADR-008: [4]=Goalserve_devig_p_yes_fair)
     float feat[32]{};
 
     // TrainingLabel fields (joined at Parquet write time)
-    std::int64_t  label_event_ts       = 0;
-    std::int64_t  label_data_source_ts = 0;
-    std::int64_t  label_ingestion_ts   = 0;
-    std::int64_t  label_as_of_ts       = 0;
-    bool          decision_taken       = false;
-    bool          executed             = false;
-    double        filled_price         = 0.0;
-    double        filled_size_usdc     = 0.0;
-    std::uint8_t  settlement_outcome   = 0;   // SettlementOutcome cast
-    double        realized_pnl_usdc    = 0.0;
+    std::int64_t label_event_ts = 0;
+    std::int64_t label_data_source_ts = 0;
+    std::int64_t label_ingestion_ts = 0;
+    std::int64_t label_as_of_ts = 0;
+    bool decision_taken = false;
+    bool executed = false;
+    double filled_price = 0.0;
+    double filled_size_usdc = 0.0;
+    std::uint8_t settlement_outcome = 0;  // SettlementOutcome cast
+    double realized_pnl_usdc = 0.0;
 
     // --- 4 ts chain check (R-20) ---
     [[nodiscard]] bool ts_chain_ok() const noexcept {
-        return (event_ts > 0)
-            && (data_source_ts >= event_ts)
-            && (ingestion_ts   >= data_source_ts)
-            && (as_of_ts       >= ingestion_ts);
+        return (event_ts > 0) && (data_source_ts >= event_ts) && (ingestion_ts >= data_source_ts) &&
+               (as_of_ts >= ingestion_ts);
     }
 
     // --- Construct from FeatureSnapshot + TrainingLabel (用于 WAL replay → Parquet) ---
-    static FeatureSnapshotRecord from_snapshots(
-        const ml::FeatureSnapshot& fs,
-        const ml::TrainingLabel&   tl,
-        std::string_view           sport_sv,
-        std::string_view           market_type_sv,
-        std::int32_t               year_val,
-        std::int32_t               week_val) noexcept
-    {
+    static FeatureSnapshotRecord from_snapshots(const ml::FeatureSnapshot& fs, const ml::TrainingLabel& tl,
+                                                std::string_view sport_sv, std::string_view market_type_sv,
+                                                std::int32_t year_val, std::int32_t week_val) noexcept {
         FeatureSnapshotRecord r;
-        r.event_ts       = fs.event_ts;
+        r.event_ts = fs.event_ts;
         r.data_source_ts = fs.data_source_ts;
-        r.ingestion_ts   = fs.ingestion_ts;
-        r.as_of_ts       = fs.as_of_ts;
+        r.ingestion_ts = fs.ingestion_ts;
+        r.as_of_ts = fs.as_of_ts;
         r.feature_snapshot_id = fs.feature_snapshot_id;
-        r.signal_id_u8   = fs.signal_id_u8;
-        r.market_id      = std::string(fs.market_id.data(),
-                               strnlen(fs.market_id.data(), fs.market_id.size()));
-        r.sport          = std::string(sport_sv);
-        r.market_type    = std::string(market_type_sv);
-        r.year           = year_val;
-        r.week           = week_val;
+        r.signal_id_u8 = fs.signal_id_u8;
+        r.market_id = std::string(fs.market_id.data(), strnlen(fs.market_id.data(), fs.market_id.size()));
+        r.sport = std::string(sport_sv);
+        r.market_type = std::string(market_type_sv);
+        r.year = year_val;
+        r.week = week_val;
 
-        for (std::size_t i = 0; i < 32; ++i) r.feat[i] = fs.features[i];
+        for (std::size_t i = 0; i < 32; ++i)
+            r.feat[i] = fs.features[i];
 
-        r.label_event_ts       = tl.event_ts;
+        r.label_event_ts = tl.event_ts;
         r.label_data_source_ts = tl.data_source_ts;
-        r.label_ingestion_ts   = tl.ingestion_ts;
-        r.label_as_of_ts       = tl.as_of_ts;
-        r.decision_taken       = tl.decision_taken;
-        r.executed             = tl.executed;
-        r.filled_price         = tl.filled_price;
-        r.filled_size_usdc     = tl.filled_size_usdc;
-        r.settlement_outcome   = static_cast<std::uint8_t>(tl.settlement_outcome);
-        r.realized_pnl_usdc    = tl.realized_pnl_usdc;
+        r.label_ingestion_ts = tl.ingestion_ts;
+        r.label_as_of_ts = tl.as_of_ts;
+        r.decision_taken = tl.decision_taken;
+        r.executed = tl.executed;
+        r.filled_price = tl.filled_price;
+        r.filled_size_usdc = tl.filled_size_usdc;
+        r.settlement_outcome = static_cast<std::uint8_t>(tl.settlement_outcome);
+        r.realized_pnl_usdc = tl.realized_pnl_usdc;
         return r;
     }
 };
@@ -182,19 +178,19 @@ struct FeatureSnapshotRecord {
 // ---------------------------------------------------------------------------
 struct MultiBookOddsParquetRecord {
     // R-20 4 ts
-    std::int64_t  event_ts        = 0;
-    std::int64_t  data_source_ts  = 0;
-    std::int64_t  ingestion_ts    = 0;
-    std::int64_t  as_of_ts        = 0;
-    std::uint8_t  ds_origin       = 0;
+    std::int64_t event_ts = 0;
+    std::int64_t data_source_ts = 0;
+    std::int64_t ingestion_ts = 0;
+    std::int64_t as_of_ts = 0;
+    std::uint8_t ds_origin = 0;
 
     // partition keys
-    std::string   sport;
-    std::string   market_type;
-    std::int32_t  year = 0;
-    std::int32_t  week = 0;
-    std::string   match_id;
-    std::string   market_id_str;
+    std::string sport;
+    std::string market_type;
+    std::int32_t year = 0;
+    std::int32_t week = 0;
+    std::string match_id;
+    std::string market_id_str;
 
     std::uint32_t crc32c = 0;
 
@@ -203,18 +199,18 @@ struct MultiBookOddsParquetRecord {
     //                                    unibet, betvictor, 1xbet, betano]
     double yes_odds[8]{};
     double no_odds[8]{};
-    bool   valid_bm[8]{};
+    bool valid_bm[8]{};
 
     [[nodiscard]] bool ts_chain_ok() const noexcept {
-        return (event_ts > 0)
-            && (data_source_ts >= event_ts)
-            && (ingestion_ts   >= data_source_ts)
-            && (as_of_ts       >= ingestion_ts);
+        return (event_ts > 0) && (data_source_ts >= event_ts) && (ingestion_ts >= data_source_ts) &&
+               (as_of_ts >= ingestion_ts);
     }
 
     [[nodiscard]] std::size_t valid_bookmaker_count() const noexcept {
         std::size_t n = 0;
-        for (bool v : valid_bm) if (v) ++n;
+        for (bool v : valid_bm)
+            if (v)
+                ++n;
         return n;
     }
 };
@@ -232,39 +228,28 @@ struct MultiBookOddsParquetRecord {
 // ---------------------------------------------------------------------------
 class ParquetBatchWriter {
 public:
-    explicit ParquetBatchWriter(std::string root_path,
-                                std::size_t buffer_capacity = 4096)
-        : root_path_(std::move(root_path))
-        , buffer_capacity_(buffer_capacity)
-    {
+    explicit ParquetBatchWriter(std::string root_path, std::size_t buffer_capacity = 4096)
+        : root_path_(std::move(root_path)), buffer_capacity_(buffer_capacity) {
         feature_buf_.reserve(buffer_capacity_);
         odds_buf_.reserve(buffer_capacity_);
     }
 
     // non-copyable (buffer owns records)
-    ParquetBatchWriter(const ParquetBatchWriter&)            = delete;
+    ParquetBatchWriter(const ParquetBatchWriter&) = delete;
     ParquetBatchWriter& operator=(const ParquetBatchWriter&) = delete;
-    ParquetBatchWriter(ParquetBatchWriter&&)                 = default;
-    ParquetBatchWriter& operator=(ParquetBatchWriter&&)      = default;
+    ParquetBatchWriter(ParquetBatchWriter&&) = default;
+    ParquetBatchWriter& operator=(ParquetBatchWriter&&) = default;
 
     ~ParquetBatchWriter() = default;
 
     // ---- FeatureSnapshot + TrainingLabel append ----
-    [[nodiscard]] FlushResult append(
-        const ml::FeatureSnapshot& fs,
-        const ml::TrainingLabel&   tl,
-        std::string_view           sport,
-        std::string_view           market_type,
-        std::int32_t               year,
-        std::int32_t               week);
+    [[nodiscard]] FlushResult append(const ml::FeatureSnapshot& fs, const ml::TrainingLabel& tl,
+                                     std::string_view sport, std::string_view market_type, std::int32_t year,
+                                     std::int32_t week);
 
     // ---- MultiBookOddsRecord append (历史回填) ----
-    [[nodiscard]] FlushResult append(
-        const data::goalserve::MultiBookOddsRecord& rec,
-        std::string_view                            sport,
-        std::string_view                            market_type,
-        std::int32_t                                year,
-        std::int32_t                                week);
+    [[nodiscard]] FlushResult append(const data::goalserve::MultiBookOddsRecord& rec, std::string_view sport,
+                                     std::string_view market_type, std::int32_t year, std::int32_t week);
 
     // ---- Flush buffer → Parquet file ----
     // W6 stub: 返回 StubNotImplemented (不写文件)
@@ -273,7 +258,7 @@ public:
 
     // ---- Query buffer state ----
     [[nodiscard]] std::size_t feature_buffer_size() const noexcept { return feature_buf_.size(); }
-    [[nodiscard]] std::size_t odds_buffer_size()    const noexcept { return odds_buf_.size(); }
+    [[nodiscard]] std::size_t odds_buffer_size() const noexcept { return odds_buf_.size(); }
     [[nodiscard]] std::size_t total_ts_violations() const noexcept { return ts_violations_; }
     [[nodiscard]] const std::string& root_path() const noexcept { return root_path_; }
 
@@ -284,12 +269,12 @@ public:
     }
 
 private:
-    std::string                           root_path_;
-    std::size_t                           buffer_capacity_;
-    std::vector<FeatureSnapshotRecord>    feature_buf_;
+    std::string root_path_;
+    std::size_t buffer_capacity_;
+    std::vector<FeatureSnapshotRecord> feature_buf_;
     std::vector<MultiBookOddsParquetRecord> odds_buf_;
-    std::size_t                           ts_violations_ = 0;
-    std::size_t                           flush_counter_ = 0;   // for part-NNN filename
+    std::size_t ts_violations_ = 0;
+    std::size_t flush_counter_ = 0;  // for part-NNN filename
 };
 
 }  // namespace stcpp::data

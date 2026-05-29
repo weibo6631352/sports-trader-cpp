@@ -17,8 +17,7 @@ namespace stcpp::ml {
 namespace {
 
 // 把 16B audit_id 转成 std::string 当 unordered_map key (W6 切定长 array hash).
-[[nodiscard]] inline std::string key_from_audit_id(
-    std::array<std::uint8_t, 16> const& id) noexcept {
+[[nodiscard]] inline std::string key_from_audit_id(std::array<std::uint8_t, 16> const& id) noexcept {
     return std::string(reinterpret_cast<const char*>(id.data()), id.size());
 }
 
@@ -64,9 +63,8 @@ void MLDataHook::emit_label_(TrainingLabel const& label) noexcept {
 
 // ---------- 4 钩子入口 ------------------------------------------------------
 
-void MLDataHook::on_signal_compute(
-    stcpp::strategy::SignalContext const& ctx,
-    FeatureSnapshot const&                snap) noexcept {
+void MLDataHook::on_signal_compute(stcpp::strategy::SignalContext const& ctx,
+                                   FeatureSnapshot const& snap) noexcept {
     // ML-R8: feature_snapshot_id 必带
     if (snap.feature_snapshot_id == 0) {
         stats_.dropped_id_zero.fetch_add(1, std::memory_order_relaxed);
@@ -86,9 +84,8 @@ void MLDataHook::on_signal_compute(
     stats_.signals_recorded.fetch_add(1, std::memory_order_relaxed);
 }
 
-void MLDataHook::on_risk_decision(
-    stcpp::risk::RiskDecision const&       decision,
-    FeatureSnapshot const&                 snap) noexcept {
+void MLDataHook::on_risk_decision(stcpp::risk::RiskDecision const& decision,
+                                  FeatureSnapshot const& snap) noexcept {
     if (snap.feature_snapshot_id == 0) {
         stats_.dropped_id_zero.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -105,9 +102,7 @@ void MLDataHook::on_risk_decision(
     stats_.decisions_recorded.fetch_add(1, std::memory_order_relaxed);
 }
 
-void MLDataHook::on_fill(
-    stcpp::execution::VirtualFill const& fill,
-    FeatureSnapshot const&               snap) noexcept {
+void MLDataHook::on_fill(stcpp::execution::VirtualFill const& fill, FeatureSnapshot const& snap) noexcept {
     if (snap.feature_snapshot_id == 0) {
         stats_.dropped_id_zero.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -127,18 +122,18 @@ void MLDataHook::on_fill(
 
     // 顺手写一条 partial TrainingLabel (decision_taken + executed + fill 字段, outcome 未知)
     TrainingLabel partial{};
-    partial.event_ts            = snap.event_ts;
-    partial.data_source_ts      = snap.data_source_ts;
-    partial.ingestion_ts        = snap.ingestion_ts;
-    partial.as_of_ts            = snap.as_of_ts;   // 注: 真 label_ts 在 on_settle, 此处先用 fill 的 as_of
+    partial.event_ts = snap.event_ts;
+    partial.data_source_ts = snap.data_source_ts;
+    partial.ingestion_ts = snap.ingestion_ts;
+    partial.as_of_ts = snap.as_of_ts;  // 注: 真 label_ts 在 on_settle, 此处先用 fill 的 as_of
     partial.feature_snapshot_id = snap.feature_snapshot_id;
-    partial.audit_id_bytes      = snap.audit_id_bytes;
-    partial.decision_taken      = true;
-    partial.executed            = (fill.reject == stcpp::execution::MatchReject::Ok);
-    partial.filled_price        = fill.fill_price;
-    partial.filled_size_usdc    = fill.fill_size_usdc;
-    partial.settlement_outcome  = SettlementOutcome::Pending;
-    partial.realized_pnl_usdc   = 0.0;
+    partial.audit_id_bytes = snap.audit_id_bytes;
+    partial.decision_taken = true;
+    partial.executed = (fill.reject == stcpp::execution::MatchReject::Ok);
+    partial.filled_price = fill.fill_price;
+    partial.filled_size_usdc = fill.fill_size_usdc;
+    partial.settlement_outcome = SettlementOutcome::Pending;
+    partial.realized_pnl_usdc = 0.0;
     emit_label_(partial);
 
     stats_.fills_recorded.fetch_add(1, std::memory_order_relaxed);
@@ -151,19 +146,19 @@ void MLDataHook::on_settle(SettlementEvent const& settle) noexcept {
     }
     // 找 cache 中的原 snapshot (join key = audit_id_bytes)
     const auto key = key_from_audit_id(settle.audit_id_bytes);
-    const auto it  = join_cache_.find(key);
+    const auto it = join_cache_.find(key);
 
     TrainingLabel lbl{};
-    lbl.event_ts            = settle.event_ts;
-    lbl.data_source_ts      = settle.data_source_ts;
-    lbl.ingestion_ts        = settle.ingestion_ts;
-    lbl.as_of_ts            = settle.as_of_ts;
+    lbl.event_ts = settle.event_ts;
+    lbl.data_source_ts = settle.data_source_ts;
+    lbl.ingestion_ts = settle.ingestion_ts;
+    lbl.as_of_ts = settle.as_of_ts;
     lbl.feature_snapshot_id = settle.feature_snapshot_id;
-    lbl.audit_id_bytes      = settle.audit_id_bytes;
-    lbl.decision_taken      = (it != join_cache_.end());   // 有 cache 表示曾产生信号
+    lbl.audit_id_bytes = settle.audit_id_bytes;
+    lbl.decision_taken = (it != join_cache_.end());  // 有 cache 表示曾产生信号
     // executed / fill_price / fill_size 由 on_fill 那条 partial label 给; 这里不重复.
-    lbl.settlement_outcome  = settle.outcome;
-    lbl.realized_pnl_usdc   = settle.realized_pnl_usdc;
+    lbl.settlement_outcome = settle.outcome;
+    lbl.realized_pnl_usdc = settle.realized_pnl_usdc;
 
     if (!lbl.ts_chain_ok()) {
         // 注: on_settle 入口 *允许* settle ts 不满足 R-20 (例如 match_end_ts 早于 PM event_ts),

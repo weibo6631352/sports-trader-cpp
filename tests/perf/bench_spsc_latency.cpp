@@ -37,8 +37,10 @@ template <std::size_t N>
 class MockSPSC {
     static_assert(N > 0 && (N & (N - 1)) == 0, "capacity must be 2^n");
 
- public:
-    struct alignas(64) Slot { std::int64_t value{0}; };
+public:
+    struct alignas(64) Slot {
+        std::int64_t value{0};
+    };
 
     // 入队: 成功返 true; 队满返 false
     [[nodiscard]] bool push(std::int64_t v) noexcept {
@@ -64,11 +66,10 @@ class MockSPSC {
     }
 
     [[nodiscard]] bool empty() const noexcept {
-        return tail_.load(std::memory_order_acquire) ==
-               head_.load(std::memory_order_acquire);
+        return tail_.load(std::memory_order_acquire) == head_.load(std::memory_order_acquire);
     }
 
- private:
+private:
     alignas(64) std::atomic<std::size_t> head_{0};
     alignas(64) std::atomic<std::size_t> tail_{0};
     std::array<Slot, N> slots_{};
@@ -79,7 +80,7 @@ class MockSPSC {
 template <std::size_t N>
 void BM_SPSC_PushPop_SameThread(benchmark::State& state) {
     MockSPSC<N> q;
-    std::int64_t v  = 0;
+    std::int64_t v = 0;
     std::int64_t in = 1;
 
     for (auto _ : state) {
@@ -149,7 +150,7 @@ void BM_SPSC_CrossThread_RTT(benchmark::State& state) {
     });
 
     std::int64_t consumed = 0;
-    std::int64_t v        = 0;
+    std::int64_t v = 0;
 
     for (auto _ : state) {
         // consumer: pop one item (spin until available)
@@ -164,8 +165,7 @@ void BM_SPSC_CrossThread_RTT(benchmark::State& state) {
     producer.join();
 
     state.counters["consumed"] =
-        benchmark::Counter(static_cast<double>(consumed),
-                           benchmark::Counter::kAvgIterations);
+        benchmark::Counter(static_cast<double>(consumed), benchmark::Counter::kAvgIterations);
 }
 
 BENCHMARK_TEMPLATE(BM_SPSC_CrossThread_RTT, 256)

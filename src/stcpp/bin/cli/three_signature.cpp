@@ -30,27 +30,26 @@ namespace stcpp::cli {
 namespace {
 
 // 标准 Base64 alphabet (RFC 4648)
-constexpr char kB64Chars[] =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+constexpr char kB64Chars[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 bool base64_decode(std::string_view input, std::uint8_t* out, std::size_t expected_len) noexcept {
-    if (input.empty()) return false;
+    if (input.empty())
+        return false;
     // libsodium sodium_base642bin is the most robust option
     std::size_t decoded_len = 0;
-    int rc = sodium_base642bin(
-        out, expected_len,
-        input.data(), input.size(),
-        nullptr,          // ignore whitespace: none
-        &decoded_len,
-        nullptr,          // end ptr
-        sodium_base64_VARIANT_ORIGINAL);
+    int rc = sodium_base642bin(out, expected_len, input.data(), input.size(),
+                               nullptr,  // ignore whitespace: none
+                               &decoded_len,
+                               nullptr,  // end ptr
+                               sodium_base64_VARIANT_ORIGINAL);
     return (rc == 0 && decoded_len == expected_len);
 }
 
 // all-zero pubkey → MISSING_KEY
 bool pubkey_is_zero(std::array<std::uint8_t, kEd25519PubKeyBytes> const& k) noexcept {
     for (auto b : k) {
-        if (b != 0) return false;
+        if (b != 0)
+            return false;
     }
     return true;
 }
@@ -61,8 +60,7 @@ bool pubkey_is_zero(std::array<std::uint8_t, kEd25519PubKeyBytes> const& k) noex
 // ThreeSignatureVerifier::verify_one
 // ---------------------------------------------------------------------------
 
-SigVerifyResult ThreeSignatureVerifier::verify_one(SignerInput const& signer,
-                                                   std::string_view payload,
+SigVerifyResult ThreeSignatureVerifier::verify_one(SignerInput const& signer, std::string_view payload,
                                                    std::int64_t now_ns) const noexcept {
     // C1: 公钥已配置
     if (pubkey_is_zero(signer.pubkey)) {
@@ -71,7 +69,8 @@ SigVerifyResult ThreeSignatureVerifier::verify_one(SignerInput const& signer,
 
     // C2: timestamp drift <= 1h
     std::int64_t drift = signer.sig_timestamp_ns - now_ns;
-    if (drift < 0) drift = -drift;
+    if (drift < 0)
+        drift = -drift;
     if (drift > kMaxDriftNs) {
         return SigVerifyResult::EXPIRED;
     }
@@ -83,10 +82,8 @@ SigVerifyResult ThreeSignatureVerifier::verify_one(SignerInput const& signer,
 
     // C4: Ed25519 验签 (libsodium)
     int rc = crypto_sign_ed25519_verify_detached(
-        signer.signature.data(),
-        reinterpret_cast<const unsigned char*>(payload.data()),
-        static_cast<unsigned long long>(payload.size()),
-        signer.pubkey.data());
+        signer.signature.data(), reinterpret_cast<const unsigned char*>(payload.data()),
+        static_cast<unsigned long long>(payload.size()), signer.pubkey.data());
 
     if (rc != 0) {
         return SigVerifyResult::BAD_SIGNATURE;
@@ -99,23 +96,27 @@ SigVerifyResult ThreeSignatureVerifier::verify_one(SignerInput const& signer,
 // ---------------------------------------------------------------------------
 
 ThreeSigResult ThreeSignatureVerifier::verify(ThreeSignatureInput const& in,
-                                               std::int64_t now_ns) const noexcept {
+                                              std::int64_t now_ns) const noexcept {
     if (in.emergency_override) {
         // 紧急 override: 只验 laolei (GM), SOP §7
         auto r = verify_one(in.laolei, in.payload, now_ns);
-        if (r != SigVerifyResult::OK) return ThreeSigResult::LAOLEI_FAILED;
+        if (r != SigVerifyResult::OK)
+            return ThreeSigResult::LAOLEI_FAILED;
         return ThreeSigResult::OK;
     }
 
     // 正常三签: 顺序不可跳 (老韩 → 老唐 → 老雷), 但 CLI 端全部独立验证
     auto r1 = verify_one(in.laohan, in.payload, now_ns);
-    if (r1 != SigVerifyResult::OK) return ThreeSigResult::LAOHAN_FAILED;
+    if (r1 != SigVerifyResult::OK)
+        return ThreeSigResult::LAOHAN_FAILED;
 
     auto r2 = verify_one(in.laotang, in.payload, now_ns);
-    if (r2 != SigVerifyResult::OK) return ThreeSigResult::LAOTANG_FAILED;
+    if (r2 != SigVerifyResult::OK)
+        return ThreeSigResult::LAOTANG_FAILED;
 
     auto r3 = verify_one(in.laolei, in.payload, now_ns);
-    if (r3 != SigVerifyResult::OK) return ThreeSigResult::LAOLEI_FAILED;
+    if (r3 != SigVerifyResult::OK)
+        return ThreeSigResult::LAOLEI_FAILED;
 
     return ThreeSigResult::OK;
 }
@@ -125,14 +126,10 @@ ThreeSigResult ThreeSignatureVerifier::verify(ThreeSignatureInput const& in,
 // ---------------------------------------------------------------------------
 
 std::string ThreeSignatureVerifier::build_payload(std::string_view strategy_id,
-                                                   std::string_view trigger_audit_id_hex,
-                                                   std::int64_t timestamp_ns) noexcept {
+                                                  std::string_view trigger_audit_id_hex,
+                                                  std::int64_t timestamp_ns) noexcept {
     std::ostringstream ss;
-    ss << strategy_id
-       << "|STRATEGY_DECAYED_UNLOCK|"
-       << trigger_audit_id_hex
-       << "|"
-       << timestamp_ns;
+    ss << strategy_id << "|STRATEGY_DECAYED_UNLOCK|" << trigger_audit_id_hex << "|" << timestamp_ns;
     return ss.str();
 }
 
@@ -140,15 +137,13 @@ std::string ThreeSignatureVerifier::build_payload(std::string_view strategy_id,
 // Base64 decode helpers
 // ---------------------------------------------------------------------------
 
-bool ThreeSignatureVerifier::decode_base64_sig(
-    std::string_view b64,
-    std::array<std::uint8_t, kEd25519SigBytes>& out) noexcept {
+bool ThreeSignatureVerifier::decode_base64_sig(std::string_view b64,
+                                               std::array<std::uint8_t, kEd25519SigBytes>& out) noexcept {
     return base64_decode(b64, out.data(), kEd25519SigBytes);
 }
 
 bool ThreeSignatureVerifier::decode_base64_pubkey(
-    std::string_view b64,
-    std::array<std::uint8_t, kEd25519PubKeyBytes>& out) noexcept {
+    std::string_view b64, std::array<std::uint8_t, kEd25519PubKeyBytes>& out) noexcept {
     return base64_decode(b64, out.data(), kEd25519PubKeyBytes);
 }
 

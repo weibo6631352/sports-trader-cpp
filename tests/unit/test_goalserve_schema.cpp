@@ -11,11 +11,11 @@
 //   T5: 8-9 家 bookmaker ABI 锁 (ADR-008, kBookmakerIds)
 //   T6: 4 ts 字段位置正确性 (GetTsFieldSpec 各 PayloadType 不同)
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cstdint>
 #include <string>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/data/data_contract.hpp"
 #include "stcpp/data/goalserve_schema.hpp"
@@ -25,20 +25,19 @@ using namespace stcpp::data::goalserve;
 
 namespace {
 
-constexpr std::int64_t kEvt  = 1'700'000'000'000'000'000LL;
-constexpr std::int64_t kDs   = 1'700'000'000'001'000'000LL;
-constexpr std::int64_t kIng  = 1'700'000'000'002'000'000LL;
+constexpr std::int64_t kEvt = 1'700'000'000'000'000'000LL;
+constexpr std::int64_t kDs = 1'700'000'000'001'000'000LL;
+constexpr std::int64_t kIng = 1'700'000'000'002'000'000LL;
 constexpr std::int64_t kAsOf = 1'700'000'000'003'000'000LL;
 
 constexpr std::array<GoalserveHost, kNumHosts> kAllHosts{
-    GoalserveHost::Www, GoalserveHost::Inplay, GoalserveHost::OddsFeed,
+    GoalserveHost::Www,       GoalserveHost::Inplay,        GoalserveHost::OddsFeed,
     GoalserveHost::LiveScore, GoalserveHost::InplayMapping,
 };
 constexpr std::array<GoalserveSport, kNumSports> kAllSports{
-    GoalserveSport::Soccer,           GoalserveSport::Basketball,
-    GoalserveSport::Tennis,           GoalserveSport::Volleyball,
-    GoalserveSport::AmericanFootball, GoalserveSport::Esports,
-    GoalserveSport::Hockey,           GoalserveSport::Baseball,
+    GoalserveSport::Soccer,     GoalserveSport::Basketball,       GoalserveSport::Tennis,
+    GoalserveSport::Volleyball, GoalserveSport::AmericanFootball, GoalserveSport::Esports,
+    GoalserveSport::Hockey,     GoalserveSport::Baseball,
 };
 
 }  // namespace
@@ -50,13 +49,12 @@ TEST(GoalserveSchemaT1, FortyCombosBuildUrlFromSchema) {
     std::size_t combos = 0;
     for (auto h : kAllHosts) {
         for (auto s : kAllSports) {
-            GoalserveEndpoint ep =
-                (h == GoalserveHost::Inplay)        ? GoalserveEndpoint::InplayOdds :
-                (h == GoalserveHost::InplayMapping) ? GoalserveEndpoint::InplayMapping
-                                                    : GoalserveEndpoint::PregameLiveScore;
+            GoalserveEndpoint ep = (h == GoalserveHost::Inplay) ? GoalserveEndpoint::InplayOdds
+                                   : (h == GoalserveHost::InplayMapping)
+                                       ? GoalserveEndpoint::InplayMapping
+                                       : GoalserveEndpoint::PregameLiveScore;
             const std::string url = BuildUrlFromSchema(h, s, ep, "TESTKEY");
-            EXPECT_FALSE(url.empty())
-                << "host=" << static_cast<int>(h) << " sport=" << static_cast<int>(s);
+            EXPECT_FALSE(url.empty()) << "host=" << static_cast<int>(h) << " sport=" << static_cast<int>(s);
             const std::string_view base = HostBaseUrl(h);
             EXPECT_NE(url.find(base), std::string::npos) << "missing base: " << base;
             ++combos;
@@ -66,16 +64,18 @@ TEST(GoalserveSchemaT1, FortyCombosBuildUrlFromSchema) {
 }
 
 TEST(GoalserveSchemaT1, InplaySlugsCorrect) {
-    struct { GoalserveSport sport; std::string_view slug; } cases[]{
-        {GoalserveSport::Basketball,      "basket"},
-        {GoalserveSport::AmericanFootball,"amfootball"},
-        {GoalserveSport::Soccer,          "soccer"},
+    struct {
+        GoalserveSport sport;
+        std::string_view slug;
+    } cases[]{
+        {GoalserveSport::Basketball, "basket"},
+        {GoalserveSport::AmericanFootball, "amfootball"},
+        {GoalserveSport::Soccer, "soccer"},
     };
     for (const auto& [s, slug] : cases) {
-        const std::string url = BuildUrlFromSchema(
-            GoalserveHost::Inplay, s, GoalserveEndpoint::InplayOdds);
-        EXPECT_NE(url.find(std::string("inplay-") + std::string(slug) + ".gz"),
-                  std::string::npos) << "slug wrong: " << slug;
+        const std::string url = BuildUrlFromSchema(GoalserveHost::Inplay, s, GoalserveEndpoint::InplayOdds);
+        EXPECT_NE(url.find(std::string("inplay-") + std::string(slug) + ".gz"), std::string::npos)
+            << "slug wrong: " << slug;
     }
 }
 
@@ -85,14 +85,13 @@ TEST(GoalserveSchemaT1, InplaySlugsCorrect) {
 TEST(GoalserveSchemaT2, ElevenStatusAllNamed) {
     EXPECT_EQ(kAllTimeStatus.size(), 11U);
     for (auto t : kAllTimeStatus) {
-        EXPECT_NE(TimeStatusName(t), "Unknown")
-            << "TimeStatus " << static_cast<int>(t) << " unnamed";
+        EXPECT_NE(TimeStatusName(t), "Unknown") << "TimeStatus " << static_cast<int>(t) << " unnamed";
         EXPECT_FALSE(TimeStatusName(t).empty());
     }
 }
 
 TEST(GoalserveSchemaT2, ElevenValuesExact) {
-    const std::array<std::uint8_t, 11> expected{0,1,2,3,4,5,6,7,8,9,99};
+    const std::array<std::uint8_t, 11> expected{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 99};
     std::array<std::uint8_t, 11> actual{};
     for (std::size_t i = 0; i < kAllTimeStatus.size(); ++i) {
         actual[i] = static_cast<std::uint8_t>(kAllTimeStatus[i]);
@@ -104,27 +103,27 @@ TEST(GoalserveSchemaT2, ElevenValuesExact) {
 // T3: validate_payload PM_WSS (R-20 PIT chain)
 // ============================================================
 TEST(GoalserveSchemaT3, PmWssValidPasses) {
-    auto r = validate_payload(kEvt, kDs, kIng, kAsOf,
-                              DataSourceTsOrigin::PayloadScoresTs, PayloadType::PM_WSS);
+    auto r =
+        validate_payload(kEvt, kDs, kIng, kAsOf, DataSourceTsOrigin::PayloadScoresTs, PayloadType::PM_WSS);
     EXPECT_TRUE(r.valid);
     EXPECT_TRUE(r.is_upstream_payload);
 }
 
 TEST(GoalserveSchemaT3, PmWssZeroEventTsRejected) {
-    auto r = validate_payload(0LL, kDs, kIng, kAsOf,
-                              DataSourceTsOrigin::PayloadScoresTs, PayloadType::PM_WSS);
+    auto r =
+        validate_payload(0LL, kDs, kIng, kAsOf, DataSourceTsOrigin::PayloadScoresTs, PayloadType::PM_WSS);
     EXPECT_FALSE(r.valid);
 }
 
 TEST(GoalserveSchemaT3, PmWssPitViolationIngestionBeforeDataSource) {
-    auto r = validate_payload(kEvt, kDs, kDs - 1, kAsOf,
-                              DataSourceTsOrigin::PayloadScoresTs, PayloadType::PM_WSS);
+    auto r =
+        validate_payload(kEvt, kDs, kDs - 1, kAsOf, DataSourceTsOrigin::PayloadScoresTs, PayloadType::PM_WSS);
     EXPECT_FALSE(r.valid);
 }
 
 TEST(GoalserveSchemaT3, PmWssIngestionFallbackNotUpstream) {
-    auto r = validate_payload(kEvt, kDs, kIng, kAsOf,
-                              DataSourceTsOrigin::IngestionFallback, PayloadType::PM_WSS);
+    auto r =
+        validate_payload(kEvt, kDs, kIng, kAsOf, DataSourceTsOrigin::IngestionFallback, PayloadType::PM_WSS);
     EXPECT_TRUE(r.valid);
     EXPECT_FALSE(r.is_upstream_payload) << "IngestionFallback 应标记非 upstream";
 }
@@ -133,27 +132,27 @@ TEST(GoalserveSchemaT3, PmWssIngestionFallbackNotUpstream) {
 // T4: validate_payload GS_OddsFeed
 // ============================================================
 TEST(GoalserveSchemaT4, GsOddsFeedValidPasses) {
-    auto r = validate_payload(kEvt, kDs, kIng, kAsOf,
-                              DataSourceTsOrigin::PayloadScoresTs, PayloadType::GS_OddsFeed);
+    auto r = validate_payload(kEvt, kDs, kIng, kAsOf, DataSourceTsOrigin::PayloadScoresTs,
+                              PayloadType::GS_OddsFeed);
     EXPECT_TRUE(r.valid);
 }
 
 TEST(GoalserveSchemaT4, GsOddsFeedLastUpdateFallbackValid) {
-    auto r = validate_payload(kEvt, kDs, kIng, kAsOf,
-                              DataSourceTsOrigin::PayloadLastUpdate, PayloadType::GS_OddsFeed);
+    auto r = validate_payload(kEvt, kDs, kIng, kAsOf, DataSourceTsOrigin::PayloadLastUpdate,
+                              PayloadType::GS_OddsFeed);
     EXPECT_TRUE(r.valid);
     EXPECT_TRUE(r.is_upstream_payload);
 }
 
 TEST(GoalserveSchemaT4, GsOddsFeedAsOfBeforeIngestionRejected) {
-    auto r = validate_payload(kEvt, kDs, kIng, kIng - 1,
-                              DataSourceTsOrigin::PayloadScoresTs, PayloadType::GS_OddsFeed);
+    auto r = validate_payload(kEvt, kDs, kIng, kIng - 1, DataSourceTsOrigin::PayloadScoresTs,
+                              PayloadType::GS_OddsFeed);
     EXPECT_FALSE(r.valid);
 }
 
 TEST(GoalserveSchemaT4, GsOddsFeedDataSourceBeforeEventRejected) {
-    auto r = validate_payload(kDs + 1, kDs, kIng, kAsOf,
-                              DataSourceTsOrigin::PayloadScoresTs, PayloadType::GS_OddsFeed);
+    auto r = validate_payload(kDs + 1, kDs, kIng, kAsOf, DataSourceTsOrigin::PayloadScoresTs,
+                              PayloadType::GS_OddsFeed);
     EXPECT_FALSE(r.valid);
 }
 
@@ -161,19 +160,19 @@ TEST(GoalserveSchemaT4, GsOddsFeedDataSourceBeforeEventRejected) {
 // T5: bookmaker ABI 锁 (ADR-008, kBookmakerIds)
 // ============================================================
 TEST(GoalserveSchemaT5, AbiLockedEightBookmakers) {
-    EXPECT_EQ(kNumBookmakers,         8U);
-    EXPECT_EQ(kBookmakerIds.size(),   8U);
+    EXPECT_EQ(kNumBookmakers, 8U);
+    EXPECT_EQ(kBookmakerIds.size(), 8U);
     EXPECT_EQ(kBookmakerNames.size(), 8U);
-    EXPECT_EQ(kMinValidBookmakers,    3U);
+    EXPECT_EQ(kMinValidBookmakers, 3U);
 }
 
 TEST(GoalserveSchemaT5, AbiLockedIdValues) {
-    EXPECT_EQ(kBookmakerIds[0],  14);
-    EXPECT_EQ(kBookmakerIds[1],  15);
-    EXPECT_EQ(kBookmakerIds[2],  16);
-    EXPECT_EQ(kBookmakerIds[3],  17);
-    EXPECT_EQ(kBookmakerIds[4],  18);
-    EXPECT_EQ(kBookmakerIds[5],  65);
+    EXPECT_EQ(kBookmakerIds[0], 14);
+    EXPECT_EQ(kBookmakerIds[1], 15);
+    EXPECT_EQ(kBookmakerIds[2], 16);
+    EXPECT_EQ(kBookmakerIds[3], 17);
+    EXPECT_EQ(kBookmakerIds[4], 18);
+    EXPECT_EQ(kBookmakerIds[5], 65);
     EXPECT_EQ(kBookmakerIds[6], 105);
     EXPECT_EQ(kBookmakerIds[7], 144);
 }
@@ -184,7 +183,11 @@ TEST(GoalserveSchemaT5, MultiBookOddsRecordSlotsAndR20) {
     EXPECT_EQ(rec.ValidBookmakerCount(), 0U);
 
     // 填满所有 slot
-    for (auto& sl : rec.slots) { sl.odds_yes = 2.0; sl.odds_no = 1.9; sl.valid = true; }
+    for (auto& sl : rec.slots) {
+        sl.odds_yes = 2.0;
+        sl.odds_no = 1.9;
+        sl.valid = true;
+    }
     EXPECT_EQ(rec.ValidBookmakerCount(), kNumBookmakers);
 }
 
@@ -200,19 +203,19 @@ TEST(GoalserveSchemaT5, MultiBookOddsRecordSerializeSize) {
 // ============================================================
 TEST(GoalserveSchemaT6, PmWssPrimaryIsTsField) {
     const auto spec = GetTsFieldSpec(PayloadType::PM_WSS);
-    EXPECT_EQ(spec.primary_field,   "ts");
+    EXPECT_EQ(spec.primary_field, "ts");
     EXPECT_EQ(spec.secondary_field, "timestamp");
 }
 
 TEST(GoalserveSchemaT6, GsOddsFeedPrimaryIsScoresTs) {
     const auto spec = GetTsFieldSpec(PayloadType::GS_OddsFeed);
-    EXPECT_EQ(spec.primary_field,   "scores@ts");
+    EXPECT_EQ(spec.primary_field, "scores@ts");
     EXPECT_EQ(spec.secondary_field, "match@last_update");
 }
 
 TEST(GoalserveSchemaT6, GsLiveScorePrimaryIsLastUpdate) {
     const auto spec = GetTsFieldSpec(PayloadType::GS_LiveScore);
-    EXPECT_EQ(spec.primary_field,   "match@last_update");
+    EXPECT_EQ(spec.primary_field, "match@last_update");
     EXPECT_EQ(spec.secondary_field, "http_date_header");
 }
 
@@ -229,11 +232,11 @@ TEST(GoalserveSchemaT6, PmWssAndLiveScorePrimaryFieldsDiffer) {
 
 TEST(GoalserveSchemaT6, MultiBookOddsRecordR20Monotonic) {
     MultiBookOddsRecord rec;
-    rec.ts.event_ts_ns       = kEvt;
+    rec.ts.event_ts_ns = kEvt;
     rec.ts.data_source_ts_ns = kDs;
-    rec.ts.ingestion_ts_ns   = kIng;
-    rec.ts.as_of_ts_ns       = kAsOf;
-    rec.ts.ds_origin         = DataSourceTsOrigin::PayloadScoresTs;
+    rec.ts.ingestion_ts_ns = kIng;
+    rec.ts.as_of_ts_ns = kAsOf;
+    rec.ts.ds_origin = DataSourceTsOrigin::PayloadScoresTs;
     EXPECT_TRUE(rec.IsFourTsMonotonic());
     EXPECT_TRUE(rec.RespectsR20());
 

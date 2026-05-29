@@ -10,13 +10,13 @@
 //
 // 测试覆盖在 tests/unit/test_goalserve_client.cpp.
 
-#include "stcpp/data/goalserve_client.hpp"
-
 #include <chrono>
 #include <cstdio>
 #include <ctime>
 #include <sstream>
 #include <string>
+
+#include "stcpp/data/goalserve_client.hpp"
 
 namespace stcpp::data::goalserve {
 
@@ -44,9 +44,9 @@ std::string GoalserveClient::BuildUrl(const UrlSpec& spec) const {
     std::ostringstream oss;
     oss << HostBase(spec.host);
 
-    const auto inplay_slug   = SportInplaySlug(spec.sport);
-    const auto pregame_slug  = SportPregameSlug(spec.sport);
-    const auto odds_cat      = SportOddsCat(spec.sport);
+    const auto inplay_slug = SportInplaySlug(spec.sport);
+    const auto pregame_slug = SportPregameSlug(spec.sport);
+    const auto odds_cat = SportOddsCat(spec.sport);
 
     switch (spec.endpoint) {
         case GoalserveEndpoint::InplayOdds:
@@ -54,9 +54,8 @@ std::string GoalserveClient::BuildUrl(const UrlSpec& spec) const {
             break;
 
         case GoalserveEndpoint::InplayResults:
-            oss << "/results/"
-                << spec.yyyymm.value_or("000000") << "/"
-                << spec.match_id.value_or("0") << ".json";
+            oss << "/results/" << spec.yyyymm.value_or("000000") << "/" << spec.match_id.value_or("0")
+                << ".json";
             break;
 
         case GoalserveEndpoint::InplayDict:
@@ -64,8 +63,7 @@ std::string GoalserveClient::BuildUrl(const UrlSpec& spec) const {
             break;
 
         case GoalserveEndpoint::PregameOdds:
-            oss << "/getfeed/" << cfg_.key
-                << "/getodds/soccer?cat=" << odds_cat << "_10";
+            oss << "/getfeed/" << cfg_.key << "/getodds/soccer?cat=" << odds_cat << "_10";
             break;
 
         case GoalserveEndpoint::PregameLiveScore:
@@ -101,8 +99,7 @@ std::string GoalserveClient::BuildUrl(const UrlSpec& spec) const {
     if (spec.bookmaker.has_value()) {
         add_param("bm", *spec.bookmaker);
     }
-    if (spec.match_id.has_value()
-        && spec.endpoint != GoalserveEndpoint::InplayResults) {
+    if (spec.match_id.has_value() && spec.endpoint != GoalserveEndpoint::InplayResults) {
         add_param("match", *spec.match_id);
     }
 
@@ -119,8 +116,7 @@ std::int64_t GoalserveClient::NowIngestionNs() noexcept {
 #else
     ::clock_gettime(CLOCK_MONOTONIC, &ts);
 #endif
-    return static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000LL
-         + static_cast<std::int64_t>(ts.tv_nsec);
+    return static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000LL + static_cast<std::int64_t>(ts.tv_nsec);
 }
 
 // ---------------------------------------------------------------------------
@@ -128,34 +124,34 @@ std::int64_t GoalserveClient::NowIngestionNs() noexcept {
 // 与 ISO 8601 "yyyy-mm-ddTHH:MM:SSZ" (部分 fixture). 返回 0 = 失败.
 // ---------------------------------------------------------------------------
 std::int64_t GoalserveClient::ParseLastUpdateNs(std::string_view s) noexcept {
-    if (s.size() < 10) return 0;
+    if (s.size() < 10)
+        return 0;
     std::tm tm{};
     // 复制到 0 结尾缓冲 (sscanf 需要)
     char buf[40];
     auto n = (s.size() < sizeof(buf) - 1) ? s.size() : sizeof(buf) - 1;
-    for (std::size_t i = 0; i < n; ++i) buf[i] = s[i];
+    for (std::size_t i = 0; i < n; ++i)
+        buf[i] = s[i];
     buf[n] = '\0';
 
     int yyyy = 0, mon = 0, dd = 0, hh = 0, mm = 0, ss = 0;
 
     // "dd.MM.yyyy HH:mm"  (Goalserve 实证主路径)
-    if (std::sscanf(buf, "%2d.%2d.%4d %2d:%2d",
-                    &dd, &mon, &yyyy, &hh, &mm) == 5) {
+    if (std::sscanf(buf, "%2d.%2d.%4d %2d:%2d", &dd, &mon, &yyyy, &hh, &mm) == 5) {
         tm.tm_mday = dd;
-        tm.tm_mon  = mon - 1;
+        tm.tm_mon = mon - 1;
         tm.tm_year = yyyy - 1900;
         tm.tm_hour = hh;
-        tm.tm_min  = mm;
-        tm.tm_sec  = 0;
-    } else if (std::sscanf(buf, "%4d-%2d-%2dT%2d:%2d:%2d",
-                           &yyyy, &mon, &dd, &hh, &mm, &ss) == 6) {
+        tm.tm_min = mm;
+        tm.tm_sec = 0;
+    } else if (std::sscanf(buf, "%4d-%2d-%2dT%2d:%2d:%2d", &yyyy, &mon, &dd, &hh, &mm, &ss) == 6) {
         // ISO 8601 (UTC, 末尾可有 Z)
         tm.tm_mday = dd;
-        tm.tm_mon  = mon - 1;
+        tm.tm_mon = mon - 1;
         tm.tm_year = yyyy - 1900;
         tm.tm_hour = hh;
-        tm.tm_min  = mm;
-        tm.tm_sec  = ss;
+        tm.tm_min = mm;
+        tm.tm_sec = ss;
     } else {
         return 0;
     }
@@ -167,7 +163,8 @@ std::int64_t GoalserveClient::ParseLastUpdateNs(std::string_view s) noexcept {
 #else
     time_t t = ::_mkgmtime(&tm);
 #endif
-    if (t == static_cast<time_t>(-1)) return 0;
+    if (t == static_cast<time_t>(-1))
+        return 0;
     return static_cast<std::int64_t>(t) * 1'000'000'000LL;
 }
 
@@ -188,20 +185,15 @@ constexpr std::int64_t kMockScoresTsMs = 1'732'000'000'000LL;  // 2024-11-19 04:
 inline std::int64_t NowRealtimeNs() noexcept {
     timespec ts{};
     ::clock_gettime(CLOCK_REALTIME, &ts);
-    return static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000LL
-         + static_cast<std::int64_t>(ts.tv_nsec);
+    return static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000LL + static_cast<std::int64_t>(ts.tv_nsec);
 }
 
 // 8 sport 各一份最小 fixture body. 真接接 W5 后替换.
-[[nodiscard]] std::string MockBody(GoalserveSport s,
-                                   GoalserveEndpoint ep,
-                                   std::int64_t scores_ts_ms) {
+[[nodiscard]] std::string MockBody(GoalserveSport s, GoalserveEndpoint ep, std::int64_t scores_ts_ms) {
     std::ostringstream oss;
-    oss << "<scores sport=\"" << SportInplaySlug(s)
-        << "\" ts=\"" << scores_ts_ms << "\""
+    oss << "<scores sport=\"" << SportInplaySlug(s) << "\" ts=\"" << scores_ts_ms << "\""
         << " endpoint=\"" << static_cast<int>(ep) << "\""
-        << "><match id=\"mock-" << SportInplaySlug(s)
-        << "-1\" last_update=\"19.11.2024 04:26\"/></scores>";
+        << "><match id=\"mock-" << SportInplaySlug(s) << "-1\" last_update=\"19.11.2024 04:26\"/></scores>";
     return oss.str();
 }
 
@@ -215,25 +207,23 @@ GoalserveResponse GoalserveClient::Fetch(const UrlSpec& spec) {
     const bool delta = spec.ts_ms.has_value() && *spec.ts_ms > 0;
     const std::int64_t scores_ts_ms = kMockScoresTsMs + (delta ? 5000 : 0);
 
-    r.body                 = MockBody(spec.sport, spec.endpoint, scores_ts_ms);
-    r.is_delta             = delta;
-    r.bytes_uncompressed   = delta ? (r.body.size() / 1) : (r.body.size() * 83);
-    r.next_ts_ms           = scores_ts_ms;
-    r.data_source_ts_ns    = TsMsToNs(scores_ts_ms);
-    r.ingestion_ts_ns      = NowIngestionNs();
-    r.as_of_ts_ns          = NowRealtimeNs();
+    r.body = MockBody(spec.sport, spec.endpoint, scores_ts_ms);
+    r.is_delta = delta;
+    r.bytes_uncompressed = delta ? (r.body.size() / 1) : (r.body.size() * 83);
+    r.next_ts_ms = scores_ts_ms;
+    r.data_source_ts_ns = TsMsToNs(scores_ts_ms);
+    r.ingestion_ts_ns = NowIngestionNs();
+    r.as_of_ts_ns = NowRealtimeNs();
 
     return r;
 }
 
-GoalserveResponse GoalserveClient::FetchWithTsDelta(GoalserveHost     host,
-                                                    GoalserveEndpoint endpoint,
-                                                    GoalserveSport    sport,
-                                                    std::int64_t      last_ts_ms) {
+GoalserveResponse GoalserveClient::FetchWithTsDelta(GoalserveHost host, GoalserveEndpoint endpoint,
+                                                    GoalserveSport sport, std::int64_t last_ts_ms) {
     UrlSpec spec;
-    spec.host     = host;
+    spec.host = host;
     spec.endpoint = endpoint;
-    spec.sport    = sport;
+    spec.sport = sport;
     if (last_ts_ms > 0) {
         spec.ts_ms = last_ts_ms;
     }

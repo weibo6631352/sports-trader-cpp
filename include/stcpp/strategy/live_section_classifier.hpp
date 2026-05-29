@@ -21,20 +21,25 @@
 namespace stcpp::strategy {
 
 enum class LiveSection : std::uint8_t {
-    Live    = 0,
-    Soon    = 1,
+    Live = 0,
+    Soon = 1,
     Delayed = 2,
-    Closed  = 3,
-    Future  = 4,
+    Closed = 3,
+    Future = 4,
 };
 
 [[nodiscard]] constexpr std::string_view to_string(LiveSection s) noexcept {
     switch (s) {
-        case LiveSection::Live:    return "Live";
-        case LiveSection::Soon:    return "Soon";
-        case LiveSection::Delayed: return "Delayed";
-        case LiveSection::Closed:  return "Closed";
-        case LiveSection::Future:  return "Future";
+        case LiveSection::Live:
+            return "Live";
+        case LiveSection::Soon:
+            return "Soon";
+        case LiveSection::Delayed:
+            return "Delayed";
+        case LiveSection::Closed:
+            return "Closed";
+        case LiveSection::Future:
+            return "Future";
     }
     return "unknown";
 }
@@ -43,12 +48,12 @@ enum class LiveSection : std::uint8_t {
 // W5 接老彭 Goalserve client → 真 model; 当前 POD 给单测 + signal layer.
 struct GameState {
     std::int64_t kickoff_ts_ns{0};
-    bool         live{false};
-    bool         ended{false};
-    bool         delayed{false};
+    bool live{false};
+    bool ended{false};
+    bool delayed{false};
 };
 
-inline constexpr std::int64_t NS_PER_S    = 1'000'000'000LL;
+inline constexpr std::int64_t NS_PER_S = 1'000'000'000LL;
 inline constexpr std::int64_t SIX_HOURS_S = 6 * 60 * 60;
 inline constexpr std::int64_t SIX_HOURS_NS = SIX_HOURS_S * NS_PER_S;
 

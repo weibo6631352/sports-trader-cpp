@@ -304,7 +304,7 @@ jobs:
   # ---------------------------------------------------------------------------
 
   risk-enum-coverage:
-    name: RM 21 reject enum coverage (21/21 必过)
+    name: RM 22 reject enum coverage (22/22 必过, v0.5 EXCEED_PER_OUTCOME_CAP)
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:

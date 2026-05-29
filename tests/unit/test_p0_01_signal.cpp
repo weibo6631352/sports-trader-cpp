@@ -17,6 +17,7 @@
 
 namespace {
 
+using stcpp::strategy::compute_no_vig;
 using stcpp::strategy::GameState;
 using stcpp::strategy::MockGameStateSource;
 using stcpp::strategy::MockPinnacleSource;
@@ -30,22 +31,21 @@ using stcpp::strategy::SignalContext;
 using stcpp::strategy::SignalId;
 using stcpp::strategy::SignalOutput;
 using stcpp::strategy::SIX_HOURS_NS;
-using stcpp::strategy::compute_no_vig;
 
-constexpr std::int64_t NOW            = 1'700'000'000'000'000'000LL;
-constexpr std::int64_t SEC_NS         = 1'000'000'000LL;
-constexpr std::int64_t MIN_NS         = 60LL * SEC_NS;
-constexpr std::int64_t BANKROLL_USDC  = 100'000;
-constexpr char const*  MID            = "0xMARKET01";
+constexpr std::int64_t NOW = 1'700'000'000'000'000'000LL;
+constexpr std::int64_t SEC_NS = 1'000'000'000LL;
+constexpr std::int64_t MIN_NS = 60LL * SEC_NS;
+constexpr std::int64_t BANKROLL_USDC = 100'000;
+constexpr char const* MID = "0xMARKET01";
 
 // 标准 valid ctx (4 ts 单调非降, market_id + feature_snapshot_id 非空)
 SignalContext make_ctx() {
     SignalContext c;
-    c.event_ts_ns        = NOW - 100'000'000;
-    c.data_source_ts_ns  = NOW - 50'000'000;
-    c.ingestion_ts_ns    = NOW - 10'000'000;
-    c.as_of_ts_ns        = NOW;
-    c.market_id          = MID;
+    c.event_ts_ns = NOW - 100'000'000;
+    c.data_source_ts_ns = NOW - 50'000'000;
+    c.ingestion_ts_ns = NOW - 10'000'000;
+    c.as_of_ts_ns = NOW;
+    c.market_id = MID;
     c.feature_snapshot_id = "snap-001";
     return c;
 }
@@ -66,7 +66,7 @@ TEST(P0_01_NoVig, Paper_Overround_104_Symmetric) {
     NoVigResult const r = compute_no_vig(1.92, 1.92);
     ASSERT_TRUE(r.valid);
     EXPECT_NEAR(r.p_yes_raw, 0.520833333, 1e-6);
-    EXPECT_NEAR(r.p_no_raw,  0.520833333, 1e-6);
+    EXPECT_NEAR(r.p_no_raw, 0.520833333, 1e-6);
     EXPECT_NEAR(r.overround, 1.041666666, 1e-6);
     EXPECT_NEAR(r.p_yes_fair, 0.5, 1e-9);
     // raw vs fair 对比: raw > fair (因 vig 抬两边)
@@ -78,9 +78,9 @@ TEST(P0_01_NoVig, Asymmetric_YesFavored) {
     NoVigResult const r = compute_no_vig(2.10, 1.80);
     ASSERT_TRUE(r.valid);
     EXPECT_NEAR(r.p_yes_raw, 1.0 / 2.10, 1e-9);
-    EXPECT_NEAR(r.p_no_raw,  1.0 / 1.80, 1e-9);
-    EXPECT_NEAR(r.overround, 1.0/2.10 + 1.0/1.80, 1e-9);
-    EXPECT_NEAR(r.p_yes_fair, (1.0/2.10) / (1.0/2.10 + 1.0/1.80), 1e-9);
+    EXPECT_NEAR(r.p_no_raw, 1.0 / 1.80, 1e-9);
+    EXPECT_NEAR(r.overround, 1.0 / 2.10 + 1.0 / 1.80, 1e-9);
+    EXPECT_NEAR(r.p_yes_fair, (1.0 / 2.10) / (1.0 / 2.10 + 1.0 / 1.80), 1e-9);
     // 0.461538 ≈
     EXPECT_NEAR(r.p_yes_fair, 0.4615384615, 1e-6);
 }
@@ -98,9 +98,9 @@ TEST(P0_01_NoVig, RejectInvalidOdds) {
 
 // helper: 标准 happy-path setup → signal 必出
 struct HappyFixture {
-    MockPinnacleSource  pinnacle;
+    MockPinnacleSource pinnacle;
     MockPmSnapshotSource pm;
-    MockGameStateSource  games;
+    MockGameStateSource games;
 
     HappyFixture() {
         // Pinnacle: p_yes_fair = 0.461538 (asymmetric 2.10 / 1.80)
@@ -108,10 +108,10 @@ struct HappyFixture {
 
         // PM mid = 0.40 → edge = |0.40 - 0.461538| = 0.061538 > 0.05 ✓
         PmSnapshot ps;
-        ps.mid                  = 0.40;
-        ps.top3_liquidity_usdc  = 5'000.0;  // ≥ 2K ✓
-        ps.expected_fill_rate   = 0.70;     // ≥ 0.50 ✓
-        ps.valid                = true;
+        ps.mid = 0.40;
+        ps.top3_liquidity_usdc = 5'000.0;  // ≥ 2K ✓
+        ps.expected_fill_rate = 0.70;      // ≥ 0.50 ✓
+        ps.valid = true;
         pm.put(MID, ps);
 
         // GameState: Live (live=true, ended=false, delayed=false)
@@ -148,10 +148,10 @@ TEST(P0_01_Signal, HappyPath_BuyNo_PmAbove) {
     // PM_mid=0.55 > p_yes_fair=0.461538 → BUY_NO; edge=0.0885 > 0.05
     HappyFixture f;
     PmSnapshot ps;
-    ps.mid                 = 0.55;
+    ps.mid = 0.55;
     ps.top3_liquidity_usdc = 5'000.0;
-    ps.expected_fill_rate  = 0.70;
-    ps.valid               = true;
+    ps.expected_fill_rate = 0.70;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     PinnacleNoVigSignal sig(f.pinnacle, f.pm, f.games, BANKROLL_USDC);
@@ -167,8 +167,8 @@ TEST(P0_01_Signal, Cond1_Fail_EdgeBelow5Cent) {
     PmSnapshot ps;
     ps.mid = 0.45;  // |0.45 - 0.461538| = 0.0115 < 0.05
     ps.top3_liquidity_usdc = 5'000.0;
-    ps.expected_fill_rate  = 0.70;
-    ps.valid               = true;
+    ps.expected_fill_rate = 0.70;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     PinnacleNoVigSignal sig(f.pinnacle, f.pm, f.games, BANKROLL_USDC);
@@ -179,10 +179,10 @@ TEST(P0_01_Signal, Cond1_Fail_EdgeBelow5Cent) {
 TEST(P0_01_Signal, Cond2_Fail_LowLiquidity) {
     HappyFixture f;
     PmSnapshot ps;
-    ps.mid                 = 0.40;
+    ps.mid = 0.40;
     ps.top3_liquidity_usdc = 1'500.0;  // < 2K
-    ps.expected_fill_rate  = 0.70;
-    ps.valid               = true;
+    ps.expected_fill_rate = 0.70;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     PinnacleNoVigSignal sig(f.pinnacle, f.pm, f.games, BANKROLL_USDC);
@@ -222,10 +222,10 @@ TEST(P0_01_Signal, Cond3_Pass_LiveOverride) {
 TEST(P0_01_Signal, Cond4_Fail_LowFillRate) {
     HappyFixture f;
     PmSnapshot ps;
-    ps.mid                 = 0.40;
+    ps.mid = 0.40;
     ps.top3_liquidity_usdc = 5'000.0;
-    ps.expected_fill_rate  = 0.30;
-    ps.valid               = true;
+    ps.expected_fill_rate = 0.30;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     PinnacleNoVigSignal sig(f.pinnacle, f.pm, f.games, BANKROLL_USDC);
@@ -237,8 +237,8 @@ TEST(P0_01_Signal, Cond5_Fail_DelayedSection) {
     HappyFixture f;
     GameState g;
     g.delayed = true;
-    g.live    = false;
-    g.ended   = false;
+    g.live = false;
+    g.ended = false;
     g.kickoff_ts_ns = NOW + 2 * 60 * MIN_NS;
     f.games.put(MID, g);
 
@@ -251,7 +251,7 @@ TEST(P0_01_Signal, Cond5_Fail_ClosedSection) {
     HappyFixture f;
     GameState g;
     g.ended = true;
-    g.live  = false;
+    g.live = false;
     g.delayed = false;
     g.kickoff_ts_ns = NOW - 4 * 60 * MIN_NS;
     f.games.put(MID, g);
@@ -326,10 +326,10 @@ TEST(P0_01_Size, ClipAt5K) {
     HappyFixture f;
     // edge 极大: PM_mid=0.05 < p_yes_fair=0.461538 → edge ~ 0.41
     PmSnapshot ps;
-    ps.mid                 = 0.05;
+    ps.mid = 0.05;
     ps.top3_liquidity_usdc = 5'000.0;
-    ps.expected_fill_rate  = 0.95;
-    ps.valid               = true;
+    ps.expected_fill_rate = 0.95;
+    ps.valid = true;
     f.pm.put(MID, ps);
 
     // bankroll 1M → kelly·0.25·fill·1M 必远超 5K

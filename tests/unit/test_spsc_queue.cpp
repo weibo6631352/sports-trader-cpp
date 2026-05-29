@@ -13,8 +13,7 @@
 //   R-12: try_push 非阻塞, 满了 drop + counter, 不阻塞 vCPU0 event loop
 //   老姜 hard ask: Capacity 2^n
 
-#include <gtest/gtest.h>
-
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -23,7 +22,8 @@
 #include <thread>
 #include <tuple>
 #include <vector>
-#include <algorithm>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/infra/spsc/mpmc_queue.hpp"
 #include "stcpp/infra/spsc/queue_capacities.hpp"
@@ -37,9 +37,7 @@ struct alignas(8) Msg {
     std::uint64_t seq{0};
     std::uint32_t data{0};
     std::uint32_t pad{0};
-    constexpr bool operator==(const Msg& o) const noexcept {
-        return seq == o.seq && data == o.data;
-    }
+    constexpr bool operator==(const Msg& o) const noexcept { return seq == o.seq && data == o.data; }
 };
 
 static_assert(std::is_trivially_copyable_v<Msg>);
@@ -124,7 +122,8 @@ TEST(SpscQueueT3, BackpressureOnFull) {
     // 填到满
     while (q.try_push(fill_count)) {
         ++fill_count;
-        if (fill_count > 10) break;  // 安全上限
+        if (fill_count > 10)
+            break;  // 安全上限
     }
 
     // 此刻再 push 应返 false + drop_count++
@@ -156,10 +155,10 @@ TEST(SpscQueueT4, PowerOfTwoAndAlignment) {
 
     // 具体值校验
     static_assert(MARKET_DATA_BUS_CAPACITY == 65536u);
-    static_assert(SIGNAL_QUEUE_CAPACITY    == 8192u);
-    static_assert(RISK_QUEUE_CAPACITY      == 4096u);
-    static_assert(FILL_QUEUE_CAPACITY      == 8192u);
-    static_assert(WAL_QUEUE_CAPACITY       == 65536u);
+    static_assert(SIGNAL_QUEUE_CAPACITY == 8192u);
+    static_assert(RISK_QUEUE_CAPACITY == 4096u);
+    static_assert(FILL_QUEUE_CAPACITY == 8192u);
+    static_assert(WAL_QUEUE_CAPACITY == 65536u);
 
     // capacity() 运行时读取
     SpscQueue<std::uint64_t, 128> q;
@@ -229,10 +228,12 @@ TEST(FillQueueT5, TwoConsumerFanout) {
             if (fill_q.try_pop_ml(v)) {
                 ml_received.push_back(v);
             }
-            if (ml_received.size() >= N) break;
+            if (ml_received.size() >= N)
+                break;
             auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - start);
-            if (elapsed.count() > static_cast<long long>(timeout_ms)) break;
+            if (elapsed.count() > static_cast<long long>(timeout_ms))
+                break;
         }
     });
 
@@ -250,7 +251,7 @@ TEST(FillQueueT5, TwoConsumerFanout) {
 
     // ML 接到 ≤ N 条 (允许 drop), 但数量 > 0
     EXPECT_GT(ml_received.size(), 0u) << "ML consumer should receive some fills";
-    EXPECT_LE(ml_received.size(), N)  << "ML consumer cannot receive more than N fills";
+    EXPECT_LE(ml_received.size(), N) << "ML consumer cannot receive more than N fills";
 
     // FillQueue 语义: position_drop_count == 0 (位置端永不丢)
     EXPECT_EQ(fill_q.position_drop_count(), 0u) << "Position ring must have 0 drops";
@@ -264,9 +265,9 @@ TEST(FillQueueT5, TwoConsumerFanout) {
 // 参考: 老姜 latency budget §1 入队 p99 500ns; 此测试比生产要求更宽松
 
 TEST(SpscQueueT6, LatencyBenchSinglePushP99) {
-    constexpr std::size_t WARMUP    = 1000;
-    constexpr std::size_t SAMPLES   = 10000;
-    constexpr std::int64_t P99_NS   = 100LL;  // dev 机 10x 放宽
+    constexpr std::size_t WARMUP = 1000;
+    constexpr std::size_t SAMPLES = 10000;
+    constexpr std::int64_t P99_NS = 100LL;  // dev 机 10x 放宽
 
     SpscQueue<std::uint64_t, 65536> q;
 
@@ -324,7 +325,8 @@ TEST(SpscQueueBonus, DropCountAccuracy) {
     std::uint32_t pushed = 0;
     while (q.try_push(pushed)) {
         ++pushed;
-        if (pushed > 20) break;
+        if (pushed > 20)
+            break;
     }
     // while 退出时已有 1 drop (最后一次 try_push 失败), reset 后重新统计
     q.reset_drop_count();
@@ -336,5 +338,5 @@ TEST(SpscQueueBonus, DropCountAccuracy) {
 
     EXPECT_EQ(q.drop_count(), 10u) << "exactly 10 drops expected after reset";
     q.reset_drop_count();
-    EXPECT_EQ(q.drop_count(), 0u)  << "reset_drop_count must clear counter";
+    EXPECT_EQ(q.drop_count(), 0u) << "reset_drop_count must clear counter";
 }

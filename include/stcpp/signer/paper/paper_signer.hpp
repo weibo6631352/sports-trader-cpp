@@ -27,26 +27,23 @@ namespace stcpp::signer::paper {
 
 // ---------- VirtualNonceProvider ----------
 class VirtualNonceProvider final : public INonceProvider {
- public:
-    explicit VirtualNonceProvider(std::uint64_t initial = 0) noexcept
-        : counter_(initial) {}
+public:
+    explicit VirtualNonceProvider(std::uint64_t initial = 0) noexcept : counter_(initial) {}
 
     [[nodiscard]] std::uint64_t Next() noexcept override {
         return counter_.fetch_add(1, std::memory_order_acq_rel) + 1;
     }
 
-    [[nodiscard]] std::uint64_t Peek() const noexcept {
-        return counter_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] std::uint64_t Peek() const noexcept { return counter_.load(std::memory_order_acquire); }
 
- private:
+private:
     std::atomic<std::uint64_t> counter_;
 };
 
 // ---------- VirtualGasEstimator ----------
 // Polygon meta-tx Polymarket order: 经验 ~ 80k gas. 固定值 paper 不动态估.
 class VirtualGasEstimator final : public IGasEstimator {
- public:
+public:
     static constexpr std::uint64_t kFixedGasEstimate = 80'000;
 
     [[nodiscard]] std::uint64_t Estimate(const SignRequest& /*req*/) noexcept override {
@@ -57,20 +54,19 @@ class VirtualGasEstimator final : public IGasEstimator {
 // ---------- VirtualConfirmWatcher ----------
 // 模拟 Polygon 出块 ~2s + ±300ms jitter. Deterministic seed (单测可复现).
 class VirtualConfirmWatcher final : public IConfirmWatcher {
- public:
-    static constexpr std::int64_t kBlockTimeNs     = 2'000'000'000LL;   // 2s
-    static constexpr std::int64_t kJitterMaxNs     = 300'000'000LL;     // ±300ms
-    static constexpr std::uint64_t kStartBlockNum  = 50'000'000ULL;     // 当前 Polygon block 量级
+public:
+    static constexpr std::int64_t kBlockTimeNs = 2'000'000'000LL;   // 2s
+    static constexpr std::int64_t kJitterMaxNs = 300'000'000LL;     // ±300ms
+    static constexpr std::uint64_t kStartBlockNum = 50'000'000ULL;  // 当前 Polygon block 量级
 
     explicit VirtualConfirmWatcher(std::uint64_t seed = 0xC0FFEE'D00DULL) noexcept
         : rng_(seed), block_counter_(kStartBlockNum) {}
 
-    [[nodiscard]] ConfirmResult Wait(std::uint64_t /*nonce*/,
-                                     std::int64_t  submit_ts_ns) noexcept override;
+    [[nodiscard]] ConfirmResult Wait(std::uint64_t /*nonce*/, std::int64_t submit_ts_ns) noexcept override;
 
- private:
-    std::mt19937_64                 rng_;
-    std::atomic<std::uint64_t>      block_counter_;
+private:
+    std::mt19937_64 rng_;
+    std::atomic<std::uint64_t> block_counter_;
 };
 
 // ---------- PaperSigner ----------
@@ -78,10 +74,9 @@ class VirtualConfirmWatcher final : public IConfirmWatcher {
 // 同步 Sign(req) → mock signature + virtual confirm. 不真上链.
 // 入口 R-20 AssertChain, 出口 audit_wal_kind = PaperAudit (R-11).
 class PaperSigner final : public IPaperSigner {
- public:
-    PaperSigner(VirtualNonceProvider*    nonce,
-                VirtualGasEstimator*     gas,
-                VirtualConfirmWatcher*   confirm) noexcept
+public:
+    PaperSigner(VirtualNonceProvider* nonce, VirtualGasEstimator* gas,
+                VirtualConfirmWatcher* confirm) noexcept
         : nonce_(nonce), gas_(gas), confirm_(confirm) {}
 
     [[nodiscard]] execution::ExecutionMode Mode() const noexcept override {
@@ -90,10 +85,10 @@ class PaperSigner final : public IPaperSigner {
 
     [[nodiscard]] SignResponse Sign(const SignRequest& req) noexcept override;
 
- private:
-    VirtualNonceProvider*    nonce_;
-    VirtualGasEstimator*     gas_;
-    VirtualConfirmWatcher*   confirm_;
+private:
+    VirtualNonceProvider* nonce_;
+    VirtualGasEstimator* gas_;
+    VirtualConfirmWatcher* confirm_;
 };
 
 }  // namespace stcpp::signer::paper

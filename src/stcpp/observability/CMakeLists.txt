@@ -50,13 +50,18 @@ target_include_directories(stcpp_blake3
     PUBLIC ${BLAKE3_SRC_DIR}
 )
 
-# blake3 C 源码关掉严格 warning (SYSTEM 第三方)
+# 三方库豁免: BLAKE3 C 源码 — ADR-010 §3.2
 # GM 错 #11 hotfix (W6 W2 push 前): blake3_dispatch.c 含 get_cpu_features unused-function
 # 当 BLAKE3_NO_AVX512/AVX2/SSE41/SSE2 全关时, get_cpu_features 永不被调, AppleClang 21 触发 -Wunused-function
 target_compile_options(stcpp_blake3 PRIVATE
-    -Wno-cast-align -Wno-conversion -Wno-sign-conversion
-    -Wno-shadow -Wno-old-style-cast
-    -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable
+    -Wno-cast-align            # 三方库豁免: BLAKE3
+    -Wno-conversion            # 三方库豁免: BLAKE3
+    -Wno-sign-conversion       # 三方库豁免: BLAKE3
+    -Wno-shadow                # 三方库豁免: BLAKE3
+    -Wno-old-style-cast        # 三方库豁免: BLAKE3
+    -Wno-unused-function       # 三方库豁免: BLAKE3
+    -Wno-unused-but-set-variable  # 三方库豁免: BLAKE3
+    -Wno-unused-variable       # 三方库豁免: BLAKE3
 )
 
 # macOS / Linux 平台差异: blake3_dispatch.c 检测 SIMD 特性

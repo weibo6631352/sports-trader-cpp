@@ -58,6 +58,11 @@
   3. 老胡周报 §7 (新) Build Verification KPI: 本周 sub-agent 回汇时声称测试过 vs 实际 GM 整合 build 时回归数 (期望 0)
   4. GM 自检 6 题升 7 题, 加 "派单 prompt 是否写了 build+ctest 验证 hard约束"
 - **代价:** GM 30min hotfix (本来应 0), 老唐 / 小冯 / 老沈 / 小段 / 小卢 / 小蒋 W6 W3 补真本地 build + ctest 验证 + 回汇修正测试报告
+- **2026-05-29 调整 (老板 verbatim "让他们用 github action ci 跑测试"):**
+  - ADR-029 §3 Step 5.1 更新: 本地 ctest **优先但不阻断** — CI (GitHub Actions) 是 source of truth
+  - sub-agent 有本地环境时跑 ctest, 无环境时 push 后等 CI — 不强制本地 build 才能 push
+  - 派单 prompt 保留 "本地 ctest 优先" 建议, 但删除"必须全过才回汇"的硬约束 (CI 跑是裁判)
+  - 落地: ADR-029 §3 Step 5.1 (Wave 74 老高 CI fix)
 
 ### 错 #13 — 越权代修别人代码, 不协调不上报严重冲突
 

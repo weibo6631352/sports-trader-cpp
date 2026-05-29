@@ -91,15 +91,16 @@ target_compile_definitions(stcpp_debug_api PRIVATE
     STCPP_EXEC_MODE_STR="${STCPP_EXEC_MODE}"
 )
 
-# cpp-httplib warning suppression (third-party header-only)
+# 三方库豁免: cpp-httplib (header-only, 引入多项 warning)
+# ADR-010 §3.2: third-party header-only 豁免, 注明来源
 target_compile_options(stcpp_debug_api PRIVATE
-    -Wno-old-style-cast
-    -Wno-cast-align
-    -Wno-sign-conversion
-    -Wno-conversion
-    -Wno-shadow
-    -Wno-double-promotion
-    -Wno-format-nonliteral
+    -Wno-old-style-cast        # 三方库豁免: cpp-httplib
+    -Wno-cast-align            # 三方库豁免: cpp-httplib
+    -Wno-sign-conversion       # 三方库豁免: cpp-httplib
+    -Wno-conversion            # 三方库豁免: cpp-httplib
+    -Wno-shadow                # 三方库豁免: cpp-httplib
+    -Wno-double-promotion      # 三方库豁免: cpp-httplib
+    -Wno-format-nonliteral     # 三方库豁免: cpp-httplib
 )
 
 find_package(Threads REQUIRED)

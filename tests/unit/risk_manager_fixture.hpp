@@ -6,12 +6,13 @@
 
 #pragma once
 
-#include <gtest/gtest.h>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/risk/reject_enum.hpp"
 
@@ -22,6 +23,7 @@ public:
     explicit VirtualClock(std::int64_t init_ns) : now_ns_(init_ns) {}
     [[nodiscard]] std::int64_t now_ns() const noexcept { return now_ns_; }
     void advance_ns(std::int64_t d) noexcept { now_ns_ += d; }
+
 private:
     std::int64_t now_ns_;
 };
@@ -33,21 +35,21 @@ struct OrderIntentStub {
     std::int64_t data_source_ts_ns{0};
     std::int64_t ingestion_ts_ns{0};
     std::int64_t as_of_ts_ns{0};
-    std::string  feature_snapshot_id;   // R-20 §7 / ML-R8
-    std::string  market_id;
-    std::string  strategy_id;
+    std::string feature_snapshot_id;  // R-20 §7 / ML-R8
+    std::string market_id;
+    std::string strategy_id;
     std::int64_t size_usdc{0};
-    double       price{0.0};
-    bool         is_buy{true};
+    double price{0.0};
+    bool is_buy{true};
 };
 
 enum class Decision : std::uint8_t { APPROVED, REJECTED, DEFERRED };
 
 struct DecisionStub {
-    Decision                     decision{Decision::APPROVED};
-    risk::RejectCode             reject_code{risk::RejectCode::INTERNAL_ERROR};
+    Decision decision{Decision::APPROVED};
+    risk::RejectCode reject_code{risk::RejectCode::INTERNAL_ERROR};
     risk::InvalidIntentSubReason sub_reason{risk::InvalidIntentSubReason::NONE};
-    std::string                  audit_id;  // R-1: 非空
+    std::string audit_id;  // R-1: 非空
 };
 
 class MockRiskGateway {
@@ -58,15 +60,15 @@ public:
     }
     void prime_deferred(const std::string& key) {
         primed_[key] = DecisionStub{Decision::DEFERRED, risk::RejectCode::INTERNAL_ERROR,
-                                     risk::InvalidIntentSubReason::NONE, "01HMOCK" + key};
+                                    risk::InvalidIntentSubReason::NONE, "01HMOCK" + key};
     }
     [[nodiscard]] DecisionStub evaluate(const OrderIntentStub& it) const {
         auto i = primed_.find(it.strategy_id);
-        return i == primed_.end()
-            ? DecisionStub{Decision::APPROVED, risk::RejectCode::INTERNAL_ERROR,
-                           risk::InvalidIntentSubReason::NONE, "01HMOCKOK"}
-            : i->second;
+        return i == primed_.end() ? DecisionStub{Decision::APPROVED, risk::RejectCode::INTERNAL_ERROR,
+                                                 risk::InvalidIntentSubReason::NONE, "01HMOCKOK"}
+                                  : i->second;
     }
+
 private:
     std::unordered_map<std::string, DecisionStub> primed_;
 };
@@ -75,22 +77,22 @@ class RiskManagerFixture : public ::testing::Test {
 protected:
     void SetUp() override {
         clock_ = std::make_shared<VirtualClock>(1'700'000'000'000'000'000LL);
-        gw_    = std::make_unique<MockRiskGateway>();
+        gw_ = std::make_unique<MockRiskGateway>();
     }
     // 4 ts PIT 构造器: 默认满足单调不等式
     OrderIntentStub make_intent_pit_ok(std::string strategy_id = "s_default") const {
         const auto now = clock_->now_ns();
         return OrderIntentStub{
-            .event_ts_ns       = now - 200'000'000,
+            .event_ts_ns = now - 200'000'000,
             .data_source_ts_ns = now - 150'000'000,
-            .ingestion_ts_ns   = now -  50'000'000,
-            .as_of_ts_ns       = now -   1'000'000,
+            .ingestion_ts_ns = now - 50'000'000,
+            .as_of_ts_ns = now - 1'000'000,
             .feature_snapshot_id = "fs_01HMOCK",
-            .market_id    = "mkt_test",
-            .strategy_id  = std::move(strategy_id),
-            .size_usdc    = 100,
-            .price        = 0.55,
-            .is_buy       = true,
+            .market_id = "mkt_test",
+            .strategy_id = std::move(strategy_id),
+            .size_usdc = 100,
+            .price = 0.55,
+            .is_buy = true,
         };
     }
     OrderIntentStub make_intent_pit_violated() const {
@@ -104,7 +106,7 @@ protected:
         EXPECT_EQ(d.reject_code, code);
         EXPECT_FALSE(d.audit_id.empty());  // R-1
     }
-    std::shared_ptr<VirtualClock>    clock_;
+    std::shared_ptr<VirtualClock> clock_;
     std::unique_ptr<MockRiskGateway> gw_;
 };
 

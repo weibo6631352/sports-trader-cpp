@@ -25,17 +25,16 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(benchmark)
 
-# 第三方 benchmark 源码不接受公司 -Werror 严格 flag (与 tests/CMakeLists.txt 同处理)
-# 注: 这里也救济 tests/bench (W3 小肖 bench_slippage_model) 的同款问题 —
-#     顶层 -Werror -Wformat=2 -Wformat-nonliteral 会卡 benchmark/src/colorprint.cc vsnprintf.
+# 三方库豁免: google-benchmark 源码 — ADR-010 §3.2
+# 注: 顶层 -Werror -Wformat=2 -Wformat-nonliteral 会卡 benchmark/src/colorprint.cc vsnprintf.
 foreach(_bm_target benchmark benchmark_main)
     if(TARGET ${_bm_target})
         target_compile_options(${_bm_target} PRIVATE
-            -Wno-double-promotion   # ADR-010 grandfather: benchmark 浮点宏
-            -Wno-old-style-cast     # ADR-010 grandfather: benchmark 宏展开
-            -Wno-cast-align         # ADR-010 grandfather: benchmark 内部转型
-            -Wno-format-nonliteral  # benchmark colorprint.cc vsnprintf
-            -Wno-error
+            -Wno-double-promotion   # 三方库豁免: google-benchmark
+            -Wno-old-style-cast     # 三方库豁免: google-benchmark
+            -Wno-cast-align         # 三方库豁免: google-benchmark
+            -Wno-format-nonliteral  # 三方库豁免: google-benchmark (colorprint.cc vsnprintf)
+            -Wno-error              # 三方库豁免: google-benchmark (第三方不受 -Werror 约束)
         )
     endif()
 endforeach()

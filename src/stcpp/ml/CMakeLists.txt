@@ -26,10 +26,8 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
         STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
     )
 
-    # 关 hook.cpp 内必要的 cast warning
-    target_compile_options(stcpp_ml PRIVATE
-        -Wno-old-style-cast
-    )
+    # ADR-010 §2.1: 生产代码严禁 -Wno-* 抑制 (Wave 74 fix)
+    # hook.cpp 使用 reinterpret_cast (C++ cast, 非 old-style-cast); 已确认 -Wno-old-style-cast 多余, 移除.
 
     # 链路: WAL framework + risk + execution_paper + strategy
     target_link_libraries(stcpp_ml

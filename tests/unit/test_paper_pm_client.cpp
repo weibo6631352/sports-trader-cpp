@@ -13,12 +13,12 @@
 //   - OrderStatus 7 状态机转移 (合法 + 非法各覆)
 //   - HMAC bug #3 反模式拦截 (sigType != 1 → Rejected)
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/execution/execution_mode.hpp"
 #include "stcpp/infra/wal/pit.hpp"
@@ -37,48 +37,48 @@ constexpr const char* kTokA = "1111";
 
 polymarket::TimestampQuad MakeValidTs(std::int64_t now) {
     polymarket::TimestampQuad ts;
-    ts.event_ts_ns        = now - 10'000'000;
-    ts.data_source_ts_ns  = now -  8'000'000;
-    ts.ingestion_ts_ns    = now -  4'000'000;
-    ts.as_of_ts_ns        = now;
-    ts.ds_ts_source       = polymarket::DataSourceTsSource::UpstreamPayload;
+    ts.event_ts_ns = now - 10'000'000;
+    ts.data_source_ts_ns = now - 8'000'000;
+    ts.ingestion_ts_ns = now - 4'000'000;
+    ts.as_of_ts_ns = now;
+    ts.ds_ts_source = polymarket::DataSourceTsSource::UpstreamPayload;
     return ts;
 }
 
 polymarket::SignedOrder MakeValidOrder(std::int64_t now, std::string client_id = "c1") {
     polymarket::SignedOrder o;
-    o.condition_id      = kCidA;
-    o.token_id          = kTokA;
-    o.side              = 0;            // BUY YES
-    o.limit_price_bps   = 5500;         // 0.55
-    o.size_usdc_micro   = 100'000'000;  // $100
-    o.expiration_unix_s = 0;            // GTC
-    o.signature_type    = 1;            // HMAC bug #3: 必 sigType=1
-    o.signature         = "";           // paper 不签真 (live reserve)
-    o.maker_address     = "0xfunder";
-    o.client_order_id   = std::move(client_id);
-    o.ts                = MakeValidTs(now);
+    o.condition_id = kCidA;
+    o.token_id = kTokA;
+    o.side = 0;                       // BUY YES
+    o.limit_price_bps = 5500;         // 0.55
+    o.size_usdc_micro = 100'000'000;  // $100
+    o.expiration_unix_s = 0;          // GTC
+    o.signature_type = 1;             // HMAC bug #3: 必 sigType=1
+    o.signature = "";                 // paper 不签真 (live reserve)
+    o.maker_address = "0xfunder";
+    o.client_order_id = std::move(client_id);
+    o.ts = MakeValidTs(now);
     return o;
 }
 
 polymarket::OrderBookSnapshot MakeOrderbook(std::string_view cid, std::int64_t now) {
     polymarket::OrderBookSnapshot s;
     s.condition_id = std::string{cid};
-    s.token_id     = kTokA;
-    s.ts           = MakeValidTs(now);
+    s.token_id = kTokA;
+    s.ts = MakeValidTs(now);
     s.tick_size_bps = 10;
-    s.neg_risk      = false;
+    s.neg_risk = false;
     // L5 yes_bids: 0.54 / 0.53 / 0.52 / 0.51 / 0.50  (降序)
     for (std::size_t i = 0; i < polymarket::kBookDepth; ++i) {
-        s.yes_bids[i].price_bps        = static_cast<std::uint32_t>(5400 - 100 * i);
-        s.yes_bids[i].size_usdc_micro  = (i + 1) * 100'000'000ULL;
-        s.yes_bids[i].level_ts_ns      = now - 1'000'000;
+        s.yes_bids[i].price_bps = static_cast<std::uint32_t>(5400 - 100 * i);
+        s.yes_bids[i].size_usdc_micro = (i + 1) * 100'000'000ULL;
+        s.yes_bids[i].level_ts_ns = now - 1'000'000;
     }
     // L5 yes_asks: 0.56 / 0.57 / 0.58 / 0.59 / 0.60  (升序)
     for (std::size_t i = 0; i < polymarket::kBookDepth; ++i) {
-        s.yes_asks[i].price_bps        = static_cast<std::uint32_t>(5600 + 100 * i);
-        s.yes_asks[i].size_usdc_micro  = (i + 1) * 100'000'000ULL;
-        s.yes_asks[i].level_ts_ns      = now - 1'000'000;
+        s.yes_asks[i].price_bps = static_cast<std::uint32_t>(5600 + 100 * i);
+        s.yes_asks[i].size_usdc_micro = (i + 1) * 100'000'000ULL;
+        s.yes_asks[i].level_ts_ns = now - 1'000'000;
     }
     return s;
 }
@@ -216,33 +216,33 @@ TEST(PaperPmClient, F03_CancelOrder_TerminalRejected) {
 
 TEST(PaperPmClient, StateMachine_LegalTransitions_All7) {
     using polymarket::OrderStatus;
-    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked,          OrderStatus::PartiallyFilled));
-    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked,          OrderStatus::Filled));
-    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked,          OrderStatus::Canceled));
-    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked,          OrderStatus::Expired));
-    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked,          OrderStatus::Rejected));
+    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked, OrderStatus::PartiallyFilled));
+    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked, OrderStatus::Filled));
+    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked, OrderStatus::Canceled));
+    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked, OrderStatus::Expired));
+    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Booked, OrderStatus::Rejected));
     EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::PartiallyFilled, OrderStatus::Filled));
     EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::PartiallyFilled, OrderStatus::Canceled));
     EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::PartiallyFilled, OrderStatus::Expired));
-    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Filled,          OrderStatus::Settled));
+    EXPECT_TRUE(polymarket::IsLegalTransition(OrderStatus::Filled, OrderStatus::Settled));
 
     // 非法: 终态 → 任何 (Settled 例外性自闭合)
     EXPECT_FALSE(polymarket::IsLegalTransition(OrderStatus::Canceled, OrderStatus::Filled));
-    EXPECT_FALSE(polymarket::IsLegalTransition(OrderStatus::Expired,  OrderStatus::Booked));
+    EXPECT_FALSE(polymarket::IsLegalTransition(OrderStatus::Expired, OrderStatus::Booked));
     EXPECT_FALSE(polymarket::IsLegalTransition(OrderStatus::Rejected, OrderStatus::Booked));
-    EXPECT_FALSE(polymarket::IsLegalTransition(OrderStatus::Settled,  OrderStatus::Booked));
+    EXPECT_FALSE(polymarket::IsLegalTransition(OrderStatus::Settled, OrderStatus::Booked));
     // Filled 只可 → Settled, 不可回 PartiallyFilled
-    EXPECT_FALSE(polymarket::IsLegalTransition(OrderStatus::Filled,   OrderStatus::PartiallyFilled));
+    EXPECT_FALSE(polymarket::IsLegalTransition(OrderStatus::Filled, OrderStatus::PartiallyFilled));
 }
 
 TEST(PaperPmClient, StateMachine_IsTerminal_All7) {
     EXPECT_FALSE(polymarket::IsTerminal(polymarket::OrderStatus::Booked));
     EXPECT_FALSE(polymarket::IsTerminal(polymarket::OrderStatus::PartiallyFilled));
-    EXPECT_TRUE (polymarket::IsTerminal(polymarket::OrderStatus::Filled));
-    EXPECT_TRUE (polymarket::IsTerminal(polymarket::OrderStatus::Canceled));
-    EXPECT_TRUE (polymarket::IsTerminal(polymarket::OrderStatus::Expired));
-    EXPECT_TRUE (polymarket::IsTerminal(polymarket::OrderStatus::Rejected));
-    EXPECT_TRUE (polymarket::IsTerminal(polymarket::OrderStatus::Settled));
+    EXPECT_TRUE(polymarket::IsTerminal(polymarket::OrderStatus::Filled));
+    EXPECT_TRUE(polymarket::IsTerminal(polymarket::OrderStatus::Canceled));
+    EXPECT_TRUE(polymarket::IsTerminal(polymarket::OrderStatus::Expired));
+    EXPECT_TRUE(polymarket::IsTerminal(polymarket::OrderStatus::Rejected));
+    EXPECT_TRUE(polymarket::IsTerminal(polymarket::OrderStatus::Settled));
 }
 
 // ============================================================
@@ -272,13 +272,13 @@ TEST(PaperPmClient, F05_GetMarketInfo_HitCache) {
     PaperPolymarketClient c{};
     const std::int64_t now = infra::wal::pit::NowRealtimeNs();
     polymarket::MarketInfo m;
-    m.condition_id           = kCidA;
-    m.tick_size_bps          = 10;
-    m.neg_risk               = false;
-    m.fee_rate_bps           = 300;     // taker 3%
-    m.accepting_orders       = true;
-    m.liquidity_usdc         = 50000.0;
-    m.ts                     = MakeValidTs(now);
+    m.condition_id = kCidA;
+    m.tick_size_bps = 10;
+    m.neg_risk = false;
+    m.fee_rate_bps = 300;  // taker 3%
+    m.accepting_orders = true;
+    m.liquidity_usdc = 50000.0;
+    m.ts = MakeValidTs(now);
     c.TestInjectMarketInfo(m);
 
     auto r = c.GetMarketInfo(kCidA);
@@ -302,12 +302,12 @@ TEST(PaperPmClient, F05_GetMarketInfo_NotFound) {
 TEST(PaperPmClient, F06_GetUserPositions_InjectedLedger) {
     PaperPolymarketClient c{};
     polymarket::Position p;
-    p.condition_id    = kCidA;
-    p.token_id        = kTokA;
-    p.size_micro      = 500'000'000;  // $500 long
-    p.avg_price_bps   = 5400;
-    p.cur_price_bps   = 5500;
-    p.ts              = MakeValidTs(infra::wal::pit::NowRealtimeNs());
+    p.condition_id = kCidA;
+    p.token_id = kTokA;
+    p.size_micro = 500'000'000;  // $500 long
+    p.avg_price_bps = 5400;
+    p.cur_price_bps = 5500;
+    p.ts = MakeValidTs(infra::wal::pit::NowRealtimeNs());
     c.TestInjectPosition(p);
 
     auto r = c.GetUserPositions("0xfunder");
@@ -366,11 +366,11 @@ TEST(PaperPmClient, F10_GetMyTrades_LimitZeroReturnsAll) {
     PaperPolymarketClient c{};
     const std::int64_t now = infra::wal::pit::NowRealtimeNs();
     polymarket::Trade t;
-    t.trade_id       = "t1";
-    t.condition_id   = kCidA;
-    t.price_bps      = 5500;
+    t.trade_id = "t1";
+    t.condition_id = kCidA;
+    t.price_bps = 5500;
     t.size_usdc_micro = 100'000'000;
-    t.ts             = MakeValidTs(now);
+    t.ts = MakeValidTs(now);
     c.TestInjectTrade(t);
     auto r = c.GetMyTrades(0);
     ASSERT_TRUE(r.ok());
@@ -413,7 +413,7 @@ TEST(PaperPmClient, F13_GetPricesHistory_EmptyIsOk) {
 namespace {
 struct WssCallbackState {
     std::uint32_t fired_count{0};
-    std::string   last_cid;
+    std::string last_cid;
 };
 void OnBook(const polymarket::OrderBookSnapshot& snap, void* ud) {
     auto* st = static_cast<WssCallbackState*>(ud);
@@ -448,16 +448,16 @@ TEST(PaperPmClient, F14_SubscribeSportsWss_NullCallback) {
 
 TEST(PaperPmClient, PMError_AllKindsHaveToString) {
     using K = polymarket::PMErrorKind;
-    EXPECT_STREQ(polymarket::ToString(K::Ok).data(),                 "Ok");
-    EXPECT_STREQ(polymarket::ToString(K::NotAuthenticated).data(),   "NotAuthenticated");
-    EXPECT_STREQ(polymarket::ToString(K::RateLimited).data(),        "RateLimited");
-    EXPECT_STREQ(polymarket::ToString(K::ServerError).data(),        "ServerError");
-    EXPECT_STREQ(polymarket::ToString(K::BadRequest).data(),         "BadRequest");
-    EXPECT_STREQ(polymarket::ToString(K::NotFound).data(),           "NotFound");
-    EXPECT_STREQ(polymarket::ToString(K::NetworkError).data(),       "NetworkError");
-    EXPECT_STREQ(polymarket::ToString(K::Stale).data(),              "Stale");
+    EXPECT_STREQ(polymarket::ToString(K::Ok).data(), "Ok");
+    EXPECT_STREQ(polymarket::ToString(K::NotAuthenticated).data(), "NotAuthenticated");
+    EXPECT_STREQ(polymarket::ToString(K::RateLimited).data(), "RateLimited");
+    EXPECT_STREQ(polymarket::ToString(K::ServerError).data(), "ServerError");
+    EXPECT_STREQ(polymarket::ToString(K::BadRequest).data(), "BadRequest");
+    EXPECT_STREQ(polymarket::ToString(K::NotFound).data(), "NotFound");
+    EXPECT_STREQ(polymarket::ToString(K::NetworkError).data(), "NetworkError");
+    EXPECT_STREQ(polymarket::ToString(K::Stale).data(), "Stale");
     EXPECT_STREQ(polymarket::ToString(K::InvariantViolation).data(), "InvariantViolation");
-    EXPECT_STREQ(polymarket::ToString(K::Unknown).data(),            "Unknown");
+    EXPECT_STREQ(polymarket::ToString(K::Unknown).data(), "Unknown");
 }
 
 // ============================================================
@@ -483,7 +483,7 @@ TEST(PaperPmClient, R20_IngestionTsMonotonic_AcrossSubmits) {
     // a 用 (now - 100ms), b 用 (now - 50ms) — 都在 wall clock 现在之前, 保证 PIT 不被 NowRealtimeNs() 拒
     const std::int64_t now = infra::wal::pit::NowRealtimeNs();
     auto a = c.SubmitOrder(MakeValidOrder(now - 100'000'000, "a"));
-    auto b = c.SubmitOrder(MakeValidOrder(now -  50'000'000, "b"));
+    auto b = c.SubmitOrder(MakeValidOrder(now - 50'000'000, "b"));
     ASSERT_TRUE(a.ok() && b.ok());
     // ack 的 ingestion_ts 直接继承自 caller 注入 — paper 不修改
     EXPECT_LE(a.value->ts.ingestion_ts_ns, b.value->ts.ingestion_ts_ns);

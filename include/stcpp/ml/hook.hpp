@@ -73,15 +73,15 @@ namespace stcpp::ml {
 
 struct SettlementEvent {
     // 4 ts (settle 端)
-    std::int64_t event_ts        = 0;   // match_end_ts
-    std::int64_t data_source_ts  = 0;   // PM resolve event
-    std::int64_t ingestion_ts    = 0;
-    std::int64_t as_of_ts        = 0;
+    std::int64_t event_ts = 0;        // match_end_ts
+    std::int64_t data_source_ts = 0;  // PM resolve event
+    std::int64_t ingestion_ts = 0;
+    std::int64_t as_of_ts = 0;
 
     std::array<std::uint8_t, 16> audit_id_bytes{};
-    std::uint64_t                feature_snapshot_id = 0;
-    SettlementOutcome            outcome             = SettlementOutcome::Pending;
-    double                       realized_pnl_usdc   = 0.0;
+    std::uint64_t feature_snapshot_id = 0;
+    SettlementOutcome outcome = SettlementOutcome::Pending;
+    double realized_pnl_usdc = 0.0;
 };
 
 // ---------- Hook stats (counter; 不落盘, 监控用) ------------------------------
@@ -91,8 +91,8 @@ struct HookStats {
     std::atomic<std::uint64_t> decisions_recorded{0};
     std::atomic<std::uint64_t> fills_recorded{0};
     std::atomic<std::uint64_t> settlements_recorded{0};
-    std::atomic<std::uint64_t> dropped_pit_fail{0};   // R-20 ts_chain_ok 失败
-    std::atomic<std::uint64_t> dropped_id_zero{0};    // ML-R8 feature_snapshot_id == 0
+    std::atomic<std::uint64_t> dropped_pit_fail{0};      // R-20 ts_chain_ok 失败
+    std::atomic<std::uint64_t> dropped_id_zero{0};       // ML-R8 feature_snapshot_id == 0
     std::atomic<std::uint64_t> dropped_backpressure{0};  // ring 满
     std::atomic<std::uint64_t> dropped_writer_null{0};
 };
@@ -100,34 +100,31 @@ struct HookStats {
 // ---------- MLDataHook ------------------------------------------------------
 
 class MLDataHook {
- public:
+public:
     using FeatureWriterT = stcpp::infra::wal::WalWriter<FeatureSnapshot>;
-    using LabelWriterT   = stcpp::infra::wal::WalWriter<TrainingLabel>;
+    using LabelWriterT = stcpp::infra::wal::WalWriter<TrainingLabel>;
 
     // ctor: 注入两个 writer (caller 已 Open 到 ShadowAudit kind + path_prefix).
     // writer 可为 nullptr (单测 / mode-disabled), 此时 on_*() 仍 noexcept void, 计 dropped_writer_null.
     MLDataHook(FeatureWriterT* feature_writer, LabelWriterT* label_writer) noexcept
         : feature_writer_(feature_writer), label_writer_(label_writer) {}
 
-    MLDataHook(const MLDataHook&)            = delete;
+    MLDataHook(const MLDataHook&) = delete;
     MLDataHook& operator=(const MLDataHook&) = delete;
 
     // ---- 4 个钩子入口 (R-12: 同步 ≤ 1us; 不抛; ring 满 silent drop) ----
 
     // 1) 信号 tick 完成时调 (含 nullopt — 不下注的也抓 feature, 用于 regret learning)
-    void on_signal_compute(stcpp::strategy::SignalContext const& ctx,
-                           FeatureSnapshot const&                snap) noexcept;
+    void on_signal_compute(stcpp::strategy::SignalContext const& ctx, FeatureSnapshot const& snap) noexcept;
 
     // 2) RM 决策完成时调 (APPROVED / REJECTED / DEFERRED 都抓)
-    void on_risk_decision(stcpp::risk::RiskDecision const&       decision,
-                          FeatureSnapshot const&                 snap) noexcept;
+    void on_risk_decision(stcpp::risk::RiskDecision const& decision, FeatureSnapshot const& snap) noexcept;
 
     // 3) 撮合 fill 时调 (paper: VirtualFill; live: RealFill 同 schema)
-    void on_fill(stcpp::execution::VirtualFill const&            fill,
-                 FeatureSnapshot const&                          snap) noexcept;
+    void on_fill(stcpp::execution::VirtualFill const& fill, FeatureSnapshot const& snap) noexcept;
 
     // 4) 比赛结算时调 — 写 TrainingLabel
-    void on_settle(SettlementEvent const&                        settle) noexcept;
+    void on_settle(SettlementEvent const& settle) noexcept;
 
     // ---- 监控 / 测试 ----
     [[nodiscard]] HookStats const& stats() const noexcept { return stats_; }
@@ -143,14 +140,14 @@ class MLDataHook {
     // 单测用: 清 cache (settle 完成应 evict, 默认未实现 — 简化)
     void clear_cache() noexcept { join_cache_.clear(); }
 
- private:
+private:
     // 内部 emit (R-12 try_push 路径, 不阻塞)
     void emit_feature_(FeatureSnapshot const& snap) noexcept;
-    void emit_label_(TrainingLabel const&   label) noexcept;
+    void emit_label_(TrainingLabel const& label) noexcept;
 
     FeatureWriterT* feature_writer_;
-    LabelWriterT*   label_writer_;
-    HookStats       stats_;
+    LabelWriterT* label_writer_;
+    HookStats stats_;
 
     // join cache (audit_id 16B → FeatureSnapshot)
     // v0.1 用 std::string (16 char) 作 key — 简化, W6 切定长 array hash

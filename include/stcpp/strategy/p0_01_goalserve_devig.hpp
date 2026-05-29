@@ -73,8 +73,8 @@ namespace stcpp::strategy {
 // ---------------------------------------------------------------------------
 struct BookmakerOdds {
     std::int32_t bookmaker_id{0};    // 小段 ETL-12: 14/15/16/17/18/65/105/144
-    double       odds_yes{0.0};      // decimal odds YES (home / over)
-    double       odds_no{0.0};       // decimal odds NO  (away / under)
+    double odds_yes{0.0};            // decimal odds YES (home / over)
+    double odds_no{0.0};             // decimal odds NO  (away / under)
     std::int64_t snapshot_ts_ns{0};  // R-20 data_source_ts (来自 bookmaker @ts)
 };
 
@@ -89,9 +89,9 @@ struct BookmakerOdds {
 // ---------------------------------------------------------------------------
 struct DevigResult {
     std::size_t books_used{0};
-    double      overround_avg{0.0};
-    double      p_yes_fair_avg{0.0};
-    bool        valid{false};
+    double overround_avg{0.0};
+    double p_yes_fair_avg{0.0};
+    bool valid{false};
 };
 
 // ---------------------------------------------------------------------------
@@ -107,8 +107,7 @@ inline constexpr std::size_t MIN_BOOKMAKERS = 3;  // < 3 家 → fallback valid=
 // 最少 MIN_BOOKMAKERS (3) 家有效 bookmaker 才计算均值.
 // noexcept: 无堆分配, 纯 FP 运算.
 // ---------------------------------------------------------------------------
-[[nodiscard]] DevigResult compute_multiplicative_devig(
-    std::span<const BookmakerOdds> bookmakers) noexcept;
+[[nodiscard]] DevigResult compute_multiplicative_devig(std::span<const BookmakerOdds> bookmakers) noexcept;
 
 // ---------------------------------------------------------------------------
 // IGoalserveOddsSource — Goalserve 报价抽象 (W6 接老彭 CSV, 未来切 WSS)
@@ -117,33 +116,31 @@ inline constexpr std::size_t MIN_BOOKMAKERS = 3;  // < 3 家 → fallback valid=
 // 实现: 从 OddsRecord[] 按 market_id + "home"/"away" outcome 聚合.
 // ---------------------------------------------------------------------------
 class IGoalserveOddsSource {
- public:
-    IGoalserveOddsSource()                                             = default;
-    IGoalserveOddsSource(IGoalserveOddsSource const&)                  = delete;
-    IGoalserveOddsSource(IGoalserveOddsSource&&) noexcept              = delete;
-    IGoalserveOddsSource& operator=(IGoalserveOddsSource const&)       = delete;
-    IGoalserveOddsSource& operator=(IGoalserveOddsSource&&) noexcept   = delete;
-    virtual ~IGoalserveOddsSource()                                    = default;
+public:
+    IGoalserveOddsSource() = default;
+    IGoalserveOddsSource(IGoalserveOddsSource const&) = delete;
+    IGoalserveOddsSource(IGoalserveOddsSource&&) noexcept = delete;
+    IGoalserveOddsSource& operator=(IGoalserveOddsSource const&) = delete;
+    IGoalserveOddsSource& operator=(IGoalserveOddsSource&&) noexcept = delete;
+    virtual ~IGoalserveOddsSource() = default;
 
     // 查询 market_id 对应的所有 bookmaker 报价.
     // 返回 false: market 不存在或无有效报价 (调用方走 nullopt).
-    [[nodiscard]] virtual bool lookup(
-        std::string const& market_id,
-        std::vector<BookmakerOdds>& out) const noexcept = 0;
+    [[nodiscard]] virtual bool lookup(std::string const& market_id,
+                                      std::vector<BookmakerOdds>& out) const noexcept = 0;
 };
 
 // In-memory mock (单测 + W6 paper run; 老彭 CSV W6 EOW 接入后切真源)
 class MockGoalserveOddsSource : public IGoalserveOddsSource {
- public:
+public:
     void put(std::string market_id, std::vector<BookmakerOdds> odds);
 
-    [[nodiscard]] bool lookup(
-        std::string const& market_id,
-        std::vector<BookmakerOdds>& out) const noexcept override;
+    [[nodiscard]] bool lookup(std::string const& market_id,
+                              std::vector<BookmakerOdds>& out) const noexcept override;
 
     [[nodiscard]] std::size_t size() const noexcept { return book_.size(); }
 
- private:
+private:
     std::unordered_map<std::string, std::vector<BookmakerOdds>> book_;
 };
 
@@ -157,11 +154,9 @@ class MockGoalserveOddsSource : public IGoalserveOddsSource {
 // 共享接口: IPmSnapshotSource / IGameStateSource 来自 p0_01_pinnacle_no_vig.hpp
 // ---------------------------------------------------------------------------
 class GoalserveDevigSignal final : public ISignalEngine {
- public:
-    GoalserveDevigSignal(IGoalserveOddsSource const& goalserve,
-                         IPmSnapshotSource const& pm,
-                         IGameStateSource const& games,
-                         std::int64_t bankroll_usdc) noexcept;
+public:
+    GoalserveDevigSignal(IGoalserveOddsSource const& goalserve, IPmSnapshotSource const& pm,
+                         IGameStateSource const& games, std::int64_t bankroll_usdc) noexcept;
 
     [[nodiscard]] std::optional<SignalOutput> tick(SignalContext const& ctx) noexcept override;
 
@@ -172,13 +167,13 @@ class GoalserveDevigSignal final : public ISignalEngine {
     // paper run 期间 bankroll 由 RM 注入; 单测 deterministic
     void set_bankroll(std::int64_t usdc) noexcept { bankroll_usdc_ = usdc; }
 
- private:
+private:
     [[nodiscard]] bool validate_context_(SignalContext const& ctx) const noexcept;
 
     IGoalserveOddsSource const& goalserve_;
-    IPmSnapshotSource const&    pm_;
-    IGameStateSource const&     games_;
-    std::int64_t                bankroll_usdc_;
+    IPmSnapshotSource const& pm_;
+    IGameStateSource const& games_;
+    std::int64_t bankroll_usdc_;
 };
 
 }  // namespace stcpp::strategy
