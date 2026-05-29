@@ -53,9 +53,13 @@ target_include_directories(stcpp_blake3
 # blake3 C 源码关掉严格 warning (SYSTEM 第三方)
 # GM 错 #11 hotfix (W6 W2 push 前): blake3_dispatch.c 含 get_cpu_features unused-function
 # 当 BLAKE3_NO_AVX512/AVX2/SSE41/SSE2 全关时, get_cpu_features 永不被调, AppleClang 21 触发 -Wunused-function
+#
+# Wave 78 fix: -Wno-old-style-cast 是 C++/ObjC++ only flag, 不能传给 C 编译器 (blake3 是纯 C).
+# Linux GCC -Werror 下 cc1 报 "command-line option '-Wno-old-style-cast' is valid for C++/ObjC++ but not for C".
+# 移除该 flag; blake3 C 代码本身无 C++ cast, 不需要此抑制.
 target_compile_options(stcpp_blake3 PRIVATE
     -Wno-cast-align -Wno-conversion -Wno-sign-conversion
-    -Wno-shadow -Wno-old-style-cast
+    -Wno-shadow
     -Wno-unused-function -Wno-unused-but-set-variable -Wno-unused-variable
 )
 

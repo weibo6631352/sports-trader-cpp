@@ -871,3 +871,34 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
         PROPERTIES LABELS "unit;signer;v53;token_id;side;adr027;w9"
     )
 endif()
+
+# 老沈 Wave 76 W9 W4: PositionLedger read API + StateMachine cpp (ADR-027 Enforce-1)
+#   TC-01: 快照一致性 (read 不锁 hot path)
+#   TC-02: CAS 幂等 (try_transition RUNNING->DRAIN 2次, 1成1fail)
+#   TC-03: DRAIN 平仓放行 (is_close+Sell)
+#   TC-04: reject ring tail_copy (HALTED reject, audit_id 非零)
+# cite: ADR-027 Enforce-1 / polymarket_ssot §2.3 §3.3 / handshake §3
+add_executable(test_position_ledger_w76
+    test_position_ledger_w76.cpp
+)
+target_link_libraries(test_position_ledger_w76 PRIVATE
+    GTest::gtest_main
+    stcpp_risk
+)
+target_compile_options(test_position_ledger_w76 PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_position_ledger_w76 PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_position_ledger_w76 PRIVATE cxx_std_20)
+target_compile_definitions(test_position_ledger_w76 PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_position_ledger_w76
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;risk;position-ledger;state-machine;adr027;wave76;w9"
+)

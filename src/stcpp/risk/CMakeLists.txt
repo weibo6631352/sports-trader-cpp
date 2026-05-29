@@ -10,6 +10,7 @@
 
 add_library(stcpp_risk STATIC
     risk_gateway.cpp
+    position_ledger.cpp
 )
 
 target_include_directories(stcpp_risk
