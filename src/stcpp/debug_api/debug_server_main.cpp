@@ -64,10 +64,10 @@
 // 消费真实 live book → paper 成交 → LedgerSnapshotHub/QuoteSnapshotHub
 // R-11: paper 不污染真账本; R-12: 独立线程; R-20: 4 ts 透传
 // ToS: 仅 paper 虚拟成交, 不向 Polymarket CLOB 下单
-#include "stcpp/paper/paper_loop.hpp"           // PaperLoop (小肖)
+#include "stcpp/paper/paper_loop.hpp"              // PaperLoop (小肖)
 #include "stcpp/pricing/fair_value_estimator.hpp"  // BaselineFairValueModel
-#include "stcpp/risk/position_ledger.hpp"       // PositionLedger (paper 专用)
-#include "stcpp/risk/rm_debug_snapshot.hpp"     // RmDebugSnapshot + attach/detach
+#include "stcpp/risk/position_ledger.hpp"          // PositionLedger (paper 专用)
+#include "stcpp/risk/rm_debug_snapshot.hpp"        // RmDebugSnapshot + attach/detach
 
 #include "src/stcpp/debug_api/live_book_publisher.hpp"  // CLOB book → hub
 #include "src/stcpp/debug_api/live_wss_transport.hpp"   // 真实 WSS transport
@@ -697,25 +697,23 @@ int main(int argc, char** argv) {
     auto paper_audit_emitter = std::make_shared<NullAuditEmitter>();
     stcpp::risk::RiskConfig paper_rm_cfg;  // 默认 cap (per_order=10K, bankroll=100K)
     // paper_rm_cfg: 降低阈值以便 paper demo 产生成交 (M1 调试)
-    paper_rm_cfg.per_order_cap_usdc = 10;          // 10 pUSD demo cap
-    paper_rm_cfg.market_exposure_cap_usdc = 50;    // 50 pUSD
-    paper_rm_cfg.per_outcome_cap_usdc = 25;        // 25 pUSD
-    paper_rm_cfg.bankroll_usdc = 1000;             // 1K pUSD demo bankroll
-    paper_rm_cfg.edge_ci_lower_floor = -1.0;       // M1 放宽 CI 门 (所有 edge 均放行)
+    paper_rm_cfg.per_order_cap_usdc = 10;        // 10 pUSD demo cap
+    paper_rm_cfg.market_exposure_cap_usdc = 50;  // 50 pUSD
+    paper_rm_cfg.per_outcome_cap_usdc = 25;      // 25 pUSD
+    paper_rm_cfg.bankroll_usdc = 1000;           // 1K pUSD demo bankroll
+    paper_rm_cfg.edge_ci_lower_floor = -1.0;     // M1 放宽 CI 门 (所有 edge 均放行)
     paper_rm_cfg.enable_moneyline = true;
     // R-12: recon freshness 设置极大 (不触发 STALE_DATA; M1 无 recon 数据源)
-    auto paper_rm =
-        std::make_unique<stcpp::risk::RiskGateway>(paper_rm_cfg, paper_audit_emitter);
+    auto paper_rm = std::make_unique<stcpp::risk::RiskGateway>(paper_rm_cfg, paper_audit_emitter);
 
     // BaselineFairValueModel (小肖 pricing v0.1; 先验 sigmoid)
     stcpp::pricing::ScorePriorParams fv_params{0.30, 0.50};
-    auto paper_fv_model =
-        std::make_unique<stcpp::pricing::BaselineFairValueModel>(fv_params, 0.20);
+    auto paper_fv_model = std::make_unique<stcpp::pricing::BaselineFairValueModel>(fv_params, 0.20);
 
     // PaperLoopConfig
     stcpp::paper::PaperLoopConfig paper_loop_cfg;
-    paper_loop_cfg.tick_interval_ms = 500;     // 500ms 一次 tick (调试友好)
-    paper_loop_cfg.bankroll_usdc = 1000.0;     // 1K pUSD demo
+    paper_loop_cfg.tick_interval_ms = 500;  // 500ms 一次 tick (调试友好)
+    paper_loop_cfg.bankroll_usdc = 1000.0;  // 1K pUSD demo
     paper_loop_cfg.n_effective = 30;
     paper_loop_cfg.z_90 = 1.645;
     paper_loop_cfg.strategy_id = "paper-demo-v1";
@@ -726,14 +724,9 @@ int main(int argc, char** argv) {
     // R-11: paper_position_ledger 与 live 路径物理隔离
     // ToS: 仅 paper 虚拟成交, 不向 Polymarket CLOB 下单
     auto paper_loop = std::make_unique<stcpp::paper::PaperLoop>(
-        *hub_owned,
-        *paper_rm,
-        *paper_position_ledger,
-        *ledger_hub_owned,
-        *quote_hub_owned,
-        paper_rm_snap.get(),
-        *paper_fv_model,
-        token_map,   // condition_id → (token0_id, token1_id)
+        *hub_owned, *paper_rm, *paper_position_ledger, *ledger_hub_owned, *quote_hub_owned,
+        paper_rm_snap.get(), *paper_fv_model,
+        token_map,  // condition_id → (token0_id, token1_id)
         paper_loop_cfg);
     // ---- paper loop 对象构造完成; Start() 在 WSS 建立后调用 (Step 4b) ----
 
