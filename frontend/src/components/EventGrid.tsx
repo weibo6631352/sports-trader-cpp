@@ -178,7 +178,12 @@ function EventHeader(props: { group: EventGroup }) {
 }
 
 // ============================================================
-// CondQuote
+// CondQuote — AI provenance + sizing (小邓 XD 红线)
+//
+// XD-1: fair_value 旁必带 model_confidence + model_id (三位一体)
+// XD-3: advisory=true → "仅供参考/不下单" 角标
+// XD-4: model_calibrated=false → 灰色降级 + "未校准" 标
+// XD-5: predict_ok=false → 不渲染 edge/kelly/notional 区
 // ============================================================
 
 function CondQuote(props: { quote: Quote | null; isDemoData: boolean }) {
@@ -197,27 +202,66 @@ function CondQuote(props: { quote: Quote | null; isDemoData: boolean }) {
       }
     >
       {(quote) => {
-        const fairValue = () => Number(quote().fair_value);
-        const marketMid = () => Number(quote().market_mid);
-        const edgeBps = () => Number(quote().edge_bps);
-        const kelly = () => Number(quote().kelly_fraction);
-        const notional = () => Number(quote().suggested_notional);
+        // --- sizing ---
+        const fairValue    = () => Number(quote().fair_value);
+        const marketMid    = () => Number(quote().market_mid);
+        const edgeBps      = () => Number(quote().edge_bps);
+        const kelly        = () => Number(quote().kelly_fraction);
+        const notional     = () => Number(quote().suggested_notional);
+        const signalStr    = () => Number(quote().signal_strength);
 
+        // --- AI provenance ---
+        const modelConf    = () => Number(quote().model_confidence ?? quote().model_conf);
+        const modelId      = () => quote().model_id ?? '—';
+        const modelKind    = () => quote().model_kind ?? '—';
+        const calibrated   = () => quote().model_calibrated !== false;
+        const predictOk    = () => quote().predict_ok !== false;
+        const advisory     = () => quote().advisory === true;
+        const ciLower      = () => quote().fair_ci_lower;
+        const ciUpper      = () => quote().fair_ci_upper;
+        const hasCi        = () =>
+          Number.isFinite(ciLower()) && Number.isFinite(ciUpper());
+
+        // --- 样式 ---
         const edgePositive = () => fairValue() >= marketMid();
-        const edgeCls = () => (edgePositive() ? 'edge-pos' : 'edge-neg');
-        const edgeBarPct = () => `${Math.min(Math.abs(edgeBps()) / 100, 1) * 100}%`;
-
+        const edgeCls      = () => (edgePositive() ? 'edge-pos' : 'edge-neg');
+        const edgeBarPct   = () => `${Math.min(Math.abs(edgeBps()) / 100, 1) * 100}%`;
         const kellyPositive = () => Number.isFinite(kelly()) && kelly() > 0;
-        const kellyCls = () => (kellyPositive() ? 'kelly-pos' : 'kelly-zero');
+        const kellyCls      = () => (kellyPositive() ? 'kelly-pos' : 'kelly-zero');
+
+        // XD-4: 未校准 → 降级 class
+        const uncalibCls   = () => (calibrated() ? '' : ' q-uncalibrated');
+
+        // model_confidence 颜色 (≥0.7 green, ≥0.5 yellow, <0.5 red/dim)
+        const confCls = () => {
+          const c = modelConf();
+          if (!Number.isFinite(c)) return 'conf-dim';
+          if (c >= 0.7) return 'conf-high';
+          if (c >= 0.5) return 'conf-mid';
+          return 'conf-low';
+        };
 
         return (
           <>
-            <div class="cond-quote-row">
+            {/* XD-3: advisory 角标 */}
+            <Show when={advisory()}>
+              <div class="advisory-banner" title="模型当前仅供参考，系统不会自动下单">
+                <span class="advisory-icon">!</span>
+                仅供参考·不下单
+              </div>
+            </Show>
+
+            {/* Row 1: 公允价 || 市场中间价 — XD-1 三位一体 */}
+            <div class={`cond-quote-row${uncalibCls()}`}>
               <span class="q-lbl">公允</span>
               <span class="q-fair mono-main">
                 {Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}
               </span>
-              <span class="q-lbl">中间</span>
+              {/* XD-4: 未校准标注 (Show 反转: when=!calibrated) */}
+              <Show when={!calibrated()}>
+                <span class="uncalib-chip" title="模型尚未完成校准，数值仅供参考">未校准</span>
+              </Show>
+              <span class="q-lbl">市场</span>
               <span class="q-mid mono-sub">
                 {Number.isFinite(marketMid()) ? marketMid().toFixed(4) : '—'}
               </span>
@@ -225,24 +269,69 @@ function CondQuote(props: { quote: Quote | null; isDemoData: boolean }) {
                 <span class="demo-chip" title="演示数据·非实盘">demo</span>
               </Show>
             </div>
-            <div class="cond-edge-row">
-              <span class="q-lbl">优势</span>
-              <div class="edge-track-sm">
-                <div class={`edge-fill-sm ${edgeCls()}`} style={{ width: edgeBarPct() }} />
+
+            {/* Row 2: AI provenance (XD-1 三位一体) */}
+            <div class={`cond-prov-row${uncalibCls()}`}>
+              <span class="q-lbl">模型</span>
+              <span
+                class="q-model-id mono-sub"
+                title={`${modelId()} · ${modelKind()} · ${quote().spec_version ?? '—'}`}
+              >
+                {modelId()}
+              </span>
+              <span class="q-prov-sep">|</span>
+              <span class="q-lbl">置信</span>
+              <span class={`q-conf mono-sub ${confCls()}`}>
+                {Number.isFinite(modelConf()) ? `${(modelConf() * 100).toFixed(0)}%` : '—'}
+              </span>
+              {/* CI 区间 (可选小字) */}
+              <Show when={hasCi()}>
+                <span
+                  class="q-ci mono-sub"
+                  title={`95% CI: [${ciLower()!.toFixed(4)}, ${ciUpper()!.toFixed(4)}]`}
+                >
+                  [{ciLower()!.toFixed(3)}–{ciUpper()!.toFixed(3)}]
+                </span>
+              </Show>
+            </div>
+
+            {/* XD-5: predict_ok=false → 显示预测异常，不画 edge/kelly/notional */}
+            <Show
+              when={predictOk()}
+              fallback={
+                <div class="predict-fail-row">
+                  <span class="predict-fail-chip" title="模型预测异常，sizing 数据不可用">
+                    预测异常
+                  </span>
+                  <span class="q-lbl">edge/kelly/额度 暂不可用</span>
+                </div>
+              }
+            >
+              {/* Row 3: 优势 edge bar */}
+              <div class="cond-edge-row">
+                <span class="q-lbl">优势</span>
+                <div class="edge-track-sm">
+                  <div class={`edge-fill-sm ${edgeCls()}`} style={{ width: edgeBarPct() }} />
+                </div>
+                <span class={`q-edge ${edgeCls()}`}>{fmtBps(edgeBps())}</span>
+                <span class="q-lbl">信号</span>
+                <span class="q-sig mono-sub">
+                  {Number.isFinite(signalStr()) ? signalStr().toFixed(2) : '—'}
+                </span>
               </div>
-              <span class={`q-edge ${edgeCls()}`}>{fmtBps(edgeBps())}</span>
-            </div>
-            <div class="cond-kelly-row">
-              <span class="q-lbl">Kelly</span>
-              <span class={`q-kelly ${kellyCls()} mono-main`}>
-                {Number.isFinite(kelly()) ? `${(kelly() * 100).toFixed(1)}%` : '—'}
-              </span>
-              <span class="q-lbl">额</span>
-              <span class="q-notional mono-sub">
-                ${Number.isFinite(notional()) ? notional().toLocaleString() : '—'}
-              </span>
-              <span class="advisory-chip" title="paper期模型旁路·不下单">仅供参考</span>
-            </div>
+
+              {/* Row 4: Kelly + 建议额度 */}
+              <div class="cond-kelly-row">
+                <span class="q-lbl">Kelly</span>
+                <span class={`q-kelly ${kellyCls()} mono-main`}>
+                  {Number.isFinite(kelly()) ? `${(kelly() * 100).toFixed(1)}%` : '—'}
+                </span>
+                <span class="q-lbl">额</span>
+                <span class="q-notional mono-sub">
+                  ${Number.isFinite(notional()) ? notional().toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : '—'}
+                </span>
+              </div>
+            </Show>
           </>
         );
       }}

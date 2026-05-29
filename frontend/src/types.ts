@@ -239,14 +239,39 @@ export interface Quote {
   as_of_ts: number;
   found: boolean;
   market_id: string;
+
+  // --- 真实 sizing 字段 ---
   fair_value: number;
   market_mid: number;
   edge_bps: number;
   kelly_fraction: number;
   suggested_notional: number;
   signal_strength: number;
+  /** @deprecated 旧别名, 改用 model_confidence */
   model_conf: number;
   quote_as_of_ts: number;
+
+  // --- AI provenance 字段 (小邓 XD 红线) ---
+  /** 模型 ID, e.g. "demo-fv-v0" */
+  model_id: string;
+  /** 模型种类, e.g. "stub" / "lgbm" / "nn" */
+  model_kind: string;
+  /** 特征规格版本, e.g. "ml-feature-spec-v0.1" */
+  spec_version: string;
+  /** 模型置信度 [0,1] (XD-1 三位一体) */
+  model_confidence: number;
+  /** 是否已完成校准 (XD-4 降级门控) */
+  model_calibrated: boolean;
+  /** 公允价置信区间下界 */
+  fair_ci_lower: number;
+  /** 公允价置信区间上界 */
+  fair_ci_upper: number;
+  /** 预测是否正常 (XD-5: false → 不画 edge/kelly/notional) */
+  predict_ok: boolean;
+  /** 仅供参考模式 (XD-3: true → advisory 角标 + 不下单) */
+  advisory: boolean;
+  /** 模型快照时间戳 epoch_ns */
+  model_as_of_ts: number;
 }
 
 // ---------- 渲染用聚合类型 ----------

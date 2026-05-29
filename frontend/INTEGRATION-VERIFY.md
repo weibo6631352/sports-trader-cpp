@@ -1,9 +1,76 @@
-# INTEGRATION-VERIFY.md — v5.2 SolidJS + TS + Vite 迁移验证记录
+# INTEGRATION-VERIFY.md — v5.3 量化区 AI Provenance + Sizing 真值渲染
 
 owner: 小苏 (#12, E单元)
 last_review: 2026-05-29
 关联ADR: ADR-038 §3 schema 铁律 + v5 方向 A (老板选定) + ADR-040 book_pair + SolidJS 迁移 (老板拍板)
+关联任务: feat(frontend): 量化区渲染真实 sizing + AI provenance (model_id/confidence/advisory/calibrated, 小邓 XD 红线)
 SSOT: `src/stcpp/debug_api/endpoint_*.cpp` + `include/stcpp/debug_api/state_provider.hpp`
+
+---
+
+## v5.3 量化区 AI Provenance 渲染 (2026-05-29)
+
+### 后端 Quote 字段确认
+
+```bash
+curl http://127.0.0.1:8080/api/v1/quote/0x1234
+# → 返回完整 AI provenance 字段 (小卢/小邓 已落 main)
+```
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `fair_value` | number | 真实公允价 |
+| `market_mid` | number | 市场中间价 |
+| `edge_bps` | number | 边际 bps |
+| `kelly_fraction` | number | Kelly 分数 (真算) |
+| `suggested_notional` | number | 建议额度 (过 cap 链) |
+| `signal_strength` | number | 信号强度 |
+| `model_conf` | number | deprecated alias |
+| `model_id` | string | 模型 ID |
+| `model_kind` | string | 模型种类 |
+| `spec_version` | string | 特征规格版本 |
+| `model_confidence` | number | 模型置信度 [0,1] |
+| `model_calibrated` | bool | 是否已校准 |
+| `fair_ci_lower` | number | CI 下界 |
+| `fair_ci_upper` | number | CI 上界 |
+| `predict_ok` | bool | 预测是否正常 |
+| `advisory` | bool | 仅供参考模式 |
+| `model_as_of_ts` | number | 模型快照 epoch_ns |
+
+### 小邓 XD 红线落实
+
+| 规则 | 实现 | 状态 |
+|------|------|------|
+| XD-1: fair_value + model_confidence + model_id 三位一体 | Row1 公允价 + Row2 模型ID/置信度并排 | PASS |
+| XD-3: advisory=true → "仅供参考/不下单" 角标 | `.advisory-banner` amber 横幅 + advisory-icon | PASS |
+| XD-4: model_calibrated=false → 视觉降级 + "未校准" | `.q-uncalibrated` 灰化 + `.uncalib-chip` | PASS |
+| XD-5: predict_ok=false → 不画 edge/kelly/notional | `<Show when={predictOk()}>` 门控, fallback `.predict-fail-chip` | PASS |
+
+### CI 区间
+
+- `fair_ci_lower` / `fair_ci_upper` 在 Row2 (AI provenance 行) 以小字 `[lower–upper]` 显示
+- title tooltip 显示完整 4 位精度
+- 字段缺失时自动隐藏 (`<Show when={hasCi()}>`)
+
+### Stub 演示场景 (stub.ts)
+
+| 盘口 | 演示 XD |
+|------|---------|
+| `nba-lal-bos-ml` | advisory=true → amber 角标 |
+| `nba-lal-bos-total` | model_calibrated=false → 灰化 + 未校准chip |
+| `nba-lal-bos-spread` | predict_ok=false → 预测异常, 不画 edge/kelly |
+| `epl-ars-che-total` | lgbm 模型 + 窄 CI |
+| `nfl-kc-buf-spread` | 正常 stub |
+| `mlb-nyy-bos-ml` | 正常 stub |
+
+### 构建验证 (2026-05-29)
+
+```
+tsc --noEmit → 0 errors  PASS
+vite build   → 16 modules transformed, 55.57 kB  PASS
+```
+
+---
 
 ---
 
