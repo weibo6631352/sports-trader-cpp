@@ -87,10 +87,11 @@ enum class InvalidIntentSubReason : std::uint8_t {
     // ABI 注意: 13-16 编号已与 laohan spec §7.2 对齐。
     // 若 WAL 存在 v0.6 前 INVALID_BYTES32_FORMAT=14 的历史记录, 需 migration (老唐 replay)
     // 编号变更须老郭架构评审 ack (ADR-029 ABI 变更流程) — 标注待 review
-    TS_V2_MISSING         = 13,  // intent.timestamp_ms == 0 (V2 CLOB 必须非零)     [R3.6]
-    TS_V2_STALE           = 14,  // timestamp_ms < now_ms - 60_000 (60s 窗口)       [R3.7] ← Wave 3 新增
-    TS_V2_FUTURE          = 15,  // timestamp_ms > now_ms + 5_000 (5s 漂移容忍)     [R3.8] ← Wave 3 新增
-    INVALID_BYTES32_FORMAT = 16, // metadata 或 builder: 非 ^0x[0-9a-f]{64}$ 66chars [R3.9/R3.10] ← 从 14 移到 16
+    TS_V2_MISSING = 13,  // intent.timestamp_ms == 0 (V2 CLOB 必须非零)     [R3.6]
+    TS_V2_STALE = 14,    // timestamp_ms < now_ms - 60_000 (60s 窗口)       [R3.7] ← Wave 3 新增
+    TS_V2_FUTURE = 15,   // timestamp_ms > now_ms + 5_000 (5s 漂移容忍)     [R3.8] ← Wave 3 新增
+    INVALID_BYTES32_FORMAT =
+        16,  // metadata 或 builder: 非 ^0x[0-9a-f]{64}$ 66chars [R3.9/R3.10] ← 从 14 移到 16
 };
 
 struct RejectDetail {

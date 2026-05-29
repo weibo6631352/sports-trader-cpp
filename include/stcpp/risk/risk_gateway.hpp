@@ -279,9 +279,9 @@ struct AuditRecord {
     std::uint8_t side_val{0};  // Side enum 底层值 (← v0.5 新增)
     std::string signal_id;
     // v0.6 Wave 3: V2 CLOB 字段透传 (AuditRecord v1.4 对齐, spec §2.3.6 必填)
-    std::int64_t timestamp_ms{0};   // ← v0.6 Wave 3 新增 (V2 EIP-712 Order.timestamp, ms)
-    std::string metadata;           // ← v0.6 Wave 3 新增 (bytes32 hex, V2 Order.metadata)
-    std::string builder;            // ← v0.6 Wave 3 新增 (bytes32 hex, V2 Order.builder)
+    std::int64_t timestamp_ms{0};  // ← v0.6 Wave 3 新增 (V2 EIP-712 Order.timestamp, ms)
+    std::string metadata;          // ← v0.6 Wave 3 新增 (bytes32 hex, V2 Order.metadata)
+    std::string builder;           // ← v0.6 Wave 3 新增 (bytes32 hex, V2 Order.builder)
 };
 
 class AuditEmitter {
@@ -303,9 +303,9 @@ struct RiskConfig {
     // daily_loss_soft_pct: 跌破后拒新开仓 (is_close=false), 放平仓 (is_close=true)
     // daily_loss_hard_pct: 跌破后 → HALTED, 全拒含平仓, 人工解除
     // daily_loss_halt_usdc: 保留向后兼容 (旧测试); 若 >0 则覆盖 hard_pct 绝对值
-    double daily_loss_soft_pct = 0.03;              // v0.6 Wave 3 新增: -3% 软熔断
-    double daily_loss_hard_pct = 0.05;              // v0.6 Wave 3 新增: -5% 硬 kill
-    std::int64_t daily_loss_halt_usdc = 5'000;      // 旧字段保留兼容 (绝对值, 覆盖 hard_pct)
+    double daily_loss_soft_pct = 0.03;          // v0.6 Wave 3 新增: -3% 软熔断
+    double daily_loss_hard_pct = 0.05;          // v0.6 Wave 3 新增: -5% 硬 kill
+    std::int64_t daily_loss_halt_usdc = 5'000;  // 旧字段保留兼容 (绝对值, 覆盖 hard_pct)
     std::int32_t consec_loss_halt_count = 5;
     std::int32_t excessive_slippage_bps = 200;  // 小肖 v1 默认
     double edge_ci_lower_floor = 0.0;           // CI 下界 > 0 才放行

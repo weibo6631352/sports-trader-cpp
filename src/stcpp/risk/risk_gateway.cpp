@@ -106,12 +106,15 @@ namespace {
 // 合法: ^0x[0-9a-f]{64}$ (66 chars, 小写 hex, 0x 前缀)
 // cite: laohan-rm-v0.5-integration-spec-v1.md §7.2 R3.9/R3.10
 [[nodiscard]] bool is_valid_bytes32_hex(std::string const& s) noexcept {
-    if (s.size() != 66u) return false;
-    if (s[0] != '0' || s[1] != 'x') return false;
+    if (s.size() != 66u)
+        return false;
+    if (s[0] != '0' || s[1] != 'x')
+        return false;
     for (std::size_t i = 2; i < 66u; ++i) {
         char c = s[i];
         bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
-        if (!ok) return false;
+        if (!ok)
+            return false;
     }
     return true;
 }
@@ -465,13 +468,12 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
         if (cfg_.daily_loss_halt_usdc > 0) {
             hard_threshold = cfg_.daily_loss_halt_usdc;
         } else {
-            hard_threshold = static_cast<std::int64_t>(
-                static_cast<double>(br) * cfg_.daily_loss_hard_pct);
+            hard_threshold = static_cast<std::int64_t>(static_cast<double>(br) * cfg_.daily_loss_hard_pct);
         }
 
         // 软阈值: daily_loss_soft_pct × bankroll
-        std::int64_t const soft_threshold = static_cast<std::int64_t>(
-            static_cast<double>(br) * cfg_.daily_loss_soft_pct);
+        std::int64_t const soft_threshold =
+            static_cast<std::int64_t>(static_cast<double>(br) * cfg_.daily_loss_soft_pct);
 
         if (loss >= hard_threshold) {
             // -5% 硬 kill: 返回 DAILY_LOSS_HALT; evaluate() 主路径负责 set_state(HALTED)
@@ -599,15 +601,15 @@ bool RiskGateway::emit_audit_(OrderIntent const& it, RiskDecision& d) noexcept {
     rec.reject = d.reject;
     rec.sub_reason = d.sub_reason;
     rec.decision = d.decision;
-    rec.condition_id = it.condition_id;                    // v0.5: renamed from market_id
-    rec.token_id = it.token_id;                            // v0.5: new
-    rec.outcome = static_cast<std::uint8_t>(it.outcome);   // v0.5: new
-    rec.side_val = static_cast<std::uint8_t>(it.side);     // v0.5: new
+    rec.condition_id = it.condition_id;                   // v0.5: renamed from market_id
+    rec.token_id = it.token_id;                           // v0.5: new
+    rec.outcome = static_cast<std::uint8_t>(it.outcome);  // v0.5: new
+    rec.side_val = static_cast<std::uint8_t>(it.side);    // v0.5: new
     rec.signal_id = it.signal_id;
     // v0.6 Wave 3: V2 CLOB 字段透传 (AuditRecord v1.4 §2.3.6 必填)
-    rec.timestamp_ms = it.timestamp_ms;    // V2 EIP-712 Order.timestamp
-    rec.metadata = it.metadata;            // bytes32 hex (V2 Order.metadata)
-    rec.builder = it.builder;             // bytes32 hex (V2 Order.builder, optional)
+    rec.timestamp_ms = it.timestamp_ms;  // V2 EIP-712 Order.timestamp
+    rec.metadata = it.metadata;          // bytes32 hex (V2 Order.metadata)
+    rec.builder = it.builder;            // bytes32 hex (V2 Order.builder, optional)
     if (!emitter_)
         return true;
     return emitter_->emit(rec);
@@ -661,9 +663,10 @@ RiskDecision RiskGateway::evaluate(OrderIntent const& intent) noexcept {
             auto const br = bankroll_usdc_.load(std::memory_order_acquire);
             auto const pnl = daily_pnl_usdc_.load(std::memory_order_acquire);
             if (pnl < 0) {
-                std::int64_t hard_threshold = (cfg_.daily_loss_halt_usdc > 0)
-                    ? cfg_.daily_loss_halt_usdc
-                    : static_cast<std::int64_t>(static_cast<double>(br) * cfg_.daily_loss_hard_pct);
+                std::int64_t hard_threshold =
+                    (cfg_.daily_loss_halt_usdc > 0)
+                        ? cfg_.daily_loss_halt_usdc
+                        : static_cast<std::int64_t>(static_cast<double>(br) * cfg_.daily_loss_hard_pct);
                 if (-pnl >= hard_threshold) {
                     state_.store(RmState::HALTED, std::memory_order_release);
                 }

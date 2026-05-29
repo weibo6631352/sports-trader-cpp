@@ -31,17 +31,18 @@ public:
     OutboundBuffer() noexcept = default;
 
     // 禁 copy/move — buffer 语义是 per-worker 独占, 不应传递
-    OutboundBuffer(const OutboundBuffer&)            = delete;
+    OutboundBuffer(const OutboundBuffer&) = delete;
     OutboundBuffer& operator=(const OutboundBuffer&) = delete;
-    OutboundBuffer(OutboundBuffer&&)                 = delete;
-    OutboundBuffer& operator=(OutboundBuffer&&)      = delete;
+    OutboundBuffer(OutboundBuffer&&) = delete;
+    OutboundBuffer& operator=(OutboundBuffer&&) = delete;
 
     // 重置游标 O(1), 无 memset. caller 必须在 reset() 前确保 view() 已不被使用.
     void reset() noexcept { write_pos_ = 0; }
 
     // 追加字符串. 溢出返 false (caller emit metric + drop).
     [[nodiscard]] bool append(std::string_view sv) noexcept {
-        if (write_pos_ + sv.size() > kMaxOutboundJson) return false;
+        if (write_pos_ + sv.size() > kMaxOutboundJson)
+            return false;
         std::memcpy(buf_.data() + write_pos_, sv.data(), sv.size());
         write_pos_ += sv.size();
         return true;
@@ -49,7 +50,8 @@ public:
 
     // 追加单字符 (JSON 分隔符: '{' '}' '[' ']' ':' ',' '"').
     [[nodiscard]] bool append(char c) noexcept {
-        if (write_pos_ >= kMaxOutboundJson) return false;
+        if (write_pos_ >= kMaxOutboundJson)
+            return false;
         buf_[write_pos_++] = static_cast<std::byte>(c);
         return true;
     }
@@ -60,13 +62,11 @@ public:
         return {reinterpret_cast<const char*>(buf_.data()), write_pos_};
     }
 
-    [[nodiscard]] std::size_t size()  const noexcept { return write_pos_; }
-    [[nodiscard]] bool        empty() const noexcept { return write_pos_ == 0; }
+    [[nodiscard]] std::size_t size() const noexcept { return write_pos_; }
+    [[nodiscard]] bool empty() const noexcept { return write_pos_ == 0; }
 
     // remaining() — 给 serializer 做边界预检用
-    [[nodiscard]] std::size_t remaining() const noexcept {
-        return kMaxOutboundJson - write_pos_;
-    }
+    [[nodiscard]] std::size_t remaining() const noexcept { return kMaxOutboundJson - write_pos_; }
 
 private:
     std::array<std::byte, kMaxOutboundJson> buf_{};

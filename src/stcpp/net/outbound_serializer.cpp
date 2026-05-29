@@ -29,7 +29,7 @@ namespace {
 [[nodiscard]] bool AppendUint64Impl(std::uint64_t v, OutboundBuffer& buf) noexcept {
     // 最多 20 位 (UINT64_MAX = 18446744073709551615)
     char tmp[24];
-    int  len = 0;
+    int len = 0;
     if (v == 0) {
         tmp[len++] = '0';
     } else {
@@ -39,7 +39,9 @@ namespace {
         }
         // reverse
         for (int i = 0, j = len - 1; i < j; ++i, --j) {
-            char c = tmp[i]; tmp[i] = tmp[j]; tmp[j] = c;
+            char c = tmp[i];
+            tmp[i] = tmp[j];
+            tmp[j] = c;
         }
     }
     return buf.append(std::string_view{tmp, static_cast<std::size_t>(len)});
@@ -51,29 +53,35 @@ namespace {
 [[nodiscard]] bool AppendDoubleImpl(double v, int precision, OutboundBuffer& buf) noexcept {
     // 处理负号 (price/size 不应为负, 但防御)
     if (v < 0.0) {
-        if (!buf.append('-')) return false;
+        if (!buf.append('-'))
+            return false;
         v = -v;
     }
     // 整数部分
     auto int_part = static_cast<std::uint64_t>(v);
-    double frac   = v - static_cast<double>(int_part);
+    double frac = v - static_cast<double>(int_part);
 
-    if (!AppendUint64Impl(int_part, buf)) return false;
-    if (precision <= 0) return true;
-    if (!buf.append('.')) return false;
+    if (!AppendUint64Impl(int_part, buf))
+        return false;
+    if (precision <= 0)
+        return true;
+    if (!buf.append('.'))
+        return false;
 
     // 小数部分: 乘以 10^precision 取整
     // 精度 <= 9 时用整数算避免浮点误差累积
     std::uint64_t mul = 1;
-    for (int i = 0; i < precision; ++i) mul *= 10;
+    for (int i = 0; i < precision; ++i)
+        mul *= 10;
     auto frac_int = static_cast<std::uint64_t>(frac * static_cast<double>(mul) + 0.5);
 
     // 补零前缀 (e.g. 0.0050 → frac_int=50, precision=4 → "0050")
     char frac_buf[12];
-    int  flen = 0;
+    int flen = 0;
     std::uint64_t tmp_frac = frac_int;
     if (tmp_frac == 0) {
-        for (int i = 0; i < precision; ++i) frac_buf[flen++] = '0';
+        for (int i = 0; i < precision; ++i)
+            frac_buf[flen++] = '0';
     } else {
         // 写 precision 位 (右对齐, 补前缀零)
         for (int i = precision - 1; i >= 0; --i) {
@@ -114,10 +122,8 @@ bool OutboundSerializer::AppendDouble(double v, int precision, OutboundBuffer& b
 //
 // HMAC bug #3 enforce: signatureType = 1 (整数, 不得写字符串 "1")
 
-bool OutboundSerializer::SerializeSignedOrder(
-    const polymarket::SignedOrder& order,
-    OutboundBuffer& buf) noexcept
-{
+bool OutboundSerializer::SerializeSignedOrder(const polymarket::SignedOrder& order,
+                                              OutboundBuffer& buf) noexcept {
     // 侧名 (side=0→BUY, side=1→SELL; 其他值视为 SELL 降级处理)
     std::string_view side_str = (order.side == 0) ? "BUY" : "SELL";
 
@@ -125,9 +131,13 @@ bool OutboundSerializer::SerializeSignedOrder(
     double price = static_cast<double>(order.limit_price_bps) / 10000.0;
 
     // size  = size_usdc_micro / 1_000_000.0  (6 小数位)
-    double size  = static_cast<double>(order.size_usdc_micro) / 1'000'000.0;
+    double size = static_cast<double>(order.size_usdc_micro) / 1'000'000.0;
 
-#define APPEND_OR_RETURN(expr) do { if (!(expr)) return false; } while (false)
+#define APPEND_OR_RETURN(expr) \
+    do {                       \
+        if (!(expr))           \
+            return false;      \
+    } while (false)
 
     APPEND_OR_RETURN(buf.append('{'));
 
@@ -158,8 +168,8 @@ bool OutboundSerializer::SerializeSignedOrder(
 
     // expiration (integer, unix seconds; 0 = GTC)
     APPEND_OR_RETURN(AppendKey("expiration", buf));
-    APPEND_OR_RETURN(AppendUint64(static_cast<std::uint64_t>(
-        order.expiration_unix_s >= 0 ? order.expiration_unix_s : 0), buf));
+    APPEND_OR_RETURN(AppendUint64(
+        static_cast<std::uint64_t>(order.expiration_unix_s >= 0 ? order.expiration_unix_s : 0), buf));
     APPEND_OR_RETURN(buf.append(','));
 
     // signatureType = 1 (HMAC bug #3: 必须整数 1, 不得写字符串)

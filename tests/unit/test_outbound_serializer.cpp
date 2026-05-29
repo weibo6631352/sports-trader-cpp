@@ -12,12 +12,12 @@
 //   T7: SerializeCancelAll → "{}"
 //   T8: SerializeSignedOrder 大 token_id (uint256 string) + 空 signature (paper mode)
 
-#include <gtest/gtest.h>
-
 #include <cstdint>
 #include <string>
 #include <string_view>
 #include <thread>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/net/outbound_buffer.hpp"
 #include "stcpp/net/outbound_queue.hpp"
@@ -32,15 +32,15 @@ using namespace stcpp::polymarket;
 // 辅助: 构造最小合法 SignedOrder
 SignedOrder MakeOrder(std::uint8_t side = 0) {
     SignedOrder o;
-    o.condition_id      = "0xabc123def456abc123def456abc123def456abc123def456abc123def456abcd";
-    o.token_id          = "12345678901234567890123456789012345678901234567890";
-    o.side              = side;
-    o.limit_price_bps   = 5500;    // 0.5500
-    o.size_usdc_micro   = 10'000'000;  // 10.000000 USDC
-    o.expiration_unix_s = 0;       // GTC
-    o.signature_type    = 1;
-    o.signature         = "AAAA+base64sig==";
-    o.maker_address     = "0xDeadBeefDeadBeefDeadBeefDeadBeefDeadBeef";
+    o.condition_id = "0xabc123def456abc123def456abc123def456abc123def456abc123def456abcd";
+    o.token_id = "12345678901234567890123456789012345678901234567890";
+    o.side = side;
+    o.limit_price_bps = 5500;        // 0.5500
+    o.size_usdc_micro = 10'000'000;  // 10.000000 USDC
+    o.expiration_unix_s = 0;         // GTC
+    o.signature_type = 1;
+    o.signature = "AAAA+base64sig==";
+    o.maker_address = "0xDeadBeefDeadBeefDeadBeefDeadBeefDeadBeef";
     return o;
 }
 
@@ -112,8 +112,11 @@ TEST(OutboundSerializer, SerializeSignedOrderBuy) {
     std::string json{buf.view()};
 
     // 检查关键字段存在且格式正确
-    EXPECT_NE(json.find(R"("conditionId":"0xabc123def456abc123def456abc123def456abc123def456abc123def456abcd")"), std::string::npos);
-    EXPECT_NE(json.find(R"("tokenId":"12345678901234567890123456789012345678901234567890")"), std::string::npos);
+    EXPECT_NE(
+        json.find(R"("conditionId":"0xabc123def456abc123def456abc123def456abc123def456abc123def456abcd")"),
+        std::string::npos);
+    EXPECT_NE(json.find(R"("tokenId":"12345678901234567890123456789012345678901234567890")"),
+              std::string::npos);
     EXPECT_NE(json.find(R"("side":"BUY")"), std::string::npos);
     EXPECT_NE(json.find(R"("price":0.5500)"), std::string::npos);
     EXPECT_NE(json.find(R"("size":10.000000)"), std::string::npos);
@@ -173,9 +176,9 @@ TEST(OutboundSubmitQueue, BackpressureDrop) {
     std::uint64_t pushed = 0;
     for (std::size_t i = 0; i < q.capacity(); ++i) {
         OutboundSubmitItem item;
-        item.path      = "/clob/orders";
+        item.path = "/clob/orders";
         item.json_body = "{}";
-        item.seq       = static_cast<std::uint64_t>(i);
+        item.seq = static_cast<std::uint64_t>(i);
         if (q.try_push(std::move(item))) {
             ++pushed;
         }
@@ -185,9 +188,9 @@ TEST(OutboundSubmitQueue, BackpressureDrop) {
 
     // 再 push 一个 — 必须 drop (队列已满)
     OutboundSubmitItem overflow;
-    overflow.path      = "/clob/orders";
+    overflow.path = "/clob/orders";
     overflow.json_body = "{\"overflow\":true}";
-    overflow.seq       = 9999;
+    overflow.seq = 9999;
     EXPECT_FALSE(q.try_push(std::move(overflow)));
     EXPECT_GE(q.drop_count(), 1u);
 }
@@ -201,7 +204,7 @@ TEST(OutboundSubmitQueue, FifoOrder) {
     // push 5 items
     for (std::uint64_t i = 0; i < 5; ++i) {
         OutboundSubmitItem item;
-        item.seq  = i;
+        item.seq = i;
         item.path = "/clob/orders";
         item.json_body = "{}";
         EXPECT_TRUE(q.try_push(std::move(item)));
@@ -258,8 +261,8 @@ TEST(OutboundSerializer, PaperModeEmptySignature) {
 TEST(OutboundSerializer, PriceSizePrecision) {
     OutboundBuffer buf;
     SignedOrder o = MakeOrder(0);
-    o.limit_price_bps = 1;      // 0.0001 (最小 tick)
-    o.size_usdc_micro = 1;      // 0.000001 USDC (最小)
+    o.limit_price_bps = 1;  // 0.0001 (最小 tick)
+    o.size_usdc_micro = 1;  // 0.000001 USDC (最小)
 
     ASSERT_TRUE(OutboundSerializer::SerializeSignedOrder(o, buf));
     std::string json{buf.view()};

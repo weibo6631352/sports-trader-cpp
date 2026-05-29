@@ -39,9 +39,9 @@ static_assert(stcpp::infra::spsc::IS_POWER_OF_TWO<kOutboundSubmitQueueCapacity>,
 // 不含 OutboundBuffer 对象 (避免 4KB item 进 ring; 改为固定 size string copy)
 // JSON body ≤ 1KB, 用 std::string 保存 (一次 heap alloc per item, 可接受 — 不在热路径)
 struct OutboundSubmitItem {
-    std::string path;        // e.g. "/clob/orders"
-    std::string json_body;   // 已序列化 JSON (< 1KB)
-    std::uint64_t seq{0};    // 单调序号 (caller 填, 用于 audit dedup)
+    std::string path;       // e.g. "/clob/orders"
+    std::string json_body;  // 已序列化 JSON (< 1KB)
+    std::uint64_t seq{0};   // 单调序号 (caller 填, 用于 audit dedup)
 };
 
 // OutboundSubmitQueue — SPSC ring, 容量 256, 满时 drop
@@ -62,10 +62,10 @@ public:
     OutboundSubmitQueue() noexcept = default;
 
     // 禁 copy/move
-    OutboundSubmitQueue(const OutboundSubmitQueue&)            = delete;
+    OutboundSubmitQueue(const OutboundSubmitQueue&) = delete;
     OutboundSubmitQueue& operator=(const OutboundSubmitQueue&) = delete;
-    OutboundSubmitQueue(OutboundSubmitQueue&&)                 = delete;
-    OutboundSubmitQueue& operator=(OutboundSubmitQueue&&)      = delete;
+    OutboundSubmitQueue(OutboundSubmitQueue&&) = delete;
+    OutboundSubmitQueue& operator=(OutboundSubmitQueue&&) = delete;
 
     // 生产方: try_push (vCPU3 Orchestrator)
     // 满时: drop_count++ + 返 false (caller emit rest_submit_drop_total P0)
@@ -110,9 +110,7 @@ public:
         return drop_count_.load(std::memory_order_relaxed);
     }
 
-    void reset_drop_count() noexcept {
-        drop_count_.store(0, std::memory_order_relaxed);
-    }
+    void reset_drop_count() noexcept { drop_count_.store(0, std::memory_order_relaxed); }
 
     // approximate size (非精确, SPSC 语义下仅参考)
     [[nodiscard]] std::size_t approx_size() const noexcept {

@@ -41,32 +41,32 @@ namespace stcpp::execution {
 
 // Mode A++ floor / cap (小袁 microstructure v1, SlippageModel 路径)
 inline constexpr double kFillRateFloor = 0.50;
-inline constexpr double kFillRateCap   = 0.65;
+inline constexpr double kFillRateCap = 0.65;
 
 // Mode A (Wave 3 CLOB book 路径) cap — 真实 depth 建模更精确, 上限放宽到 0.90
 // (允许高流动性市场 NBA Pregame $15K depth 的高 fill rate)
 inline constexpr double kFillRateClobCap = 0.90;
 
 enum class MatchReject : std::uint8_t {
-    Ok                     = 0,
-    SlippageModelReject    = 1,  // SlippageModel 已拒 (INVALID_INTENT / ExceedBookDepth / FillRateBelowFloor)
-    BernoulliMissed        = 2,  // Bernoulli draw=0
-    InvalidConfig          = 3,
-    ClobModelReject        = 4,  // FillRateModel::compute_from_clob_book 拒 (InvalidSnapshot / BelowFloor)
-    InvalidBookSnapshot    = 5,  // MatchWithBook 入参 book 校验失败
+    Ok = 0,
+    SlippageModelReject = 1,  // SlippageModel 已拒 (INVALID_INTENT / ExceedBookDepth / FillRateBelowFloor)
+    BernoulliMissed = 2,      // Bernoulli draw=0
+    InvalidConfig = 3,
+    ClobModelReject = 4,      // FillRateModel::compute_from_clob_book 拒 (InvalidSnapshot / BelowFloor)
+    InvalidBookSnapshot = 5,  // MatchWithBook 入参 book 校验失败
 };
 
 struct VirtualOrder {
     std::array<std::uint8_t, 16> audit_id{};
-    std::uint64_t                intent_id{0};
-    std::string_view             market_id{};
-    std::string_view             outcome{};
-    double                       size_usdc{0.0};
+    std::uint64_t intent_id{0};
+    std::string_view market_id{};
+    std::string_view outcome{};
+    double size_usdc{0.0};
 
     // 来自 RM gateway 通过后的 book snapshot (SlippageModel 输入)
-    double                       quote_price{0.0};
-    double                       book_depth_l1_usdc{0.0};
-    double                       tick_size{0.01};
+    double quote_price{0.0};
+    double book_depth_l1_usdc{0.0};
+    double tick_size{0.01};
 
     // R-20 4 ts (从 RM/Signer 透传)
     std::int64_t event_ts_ns{0};
@@ -84,16 +84,16 @@ struct VirtualOrder {
 // 设计: MatchWithBook() 接受此结构, 不修改 VirtualOrder (保留向后兼容).
 // sport/phase 由 caller 从 Goalserve LiveSection + sport 映射注入.
 struct VirtualOrderWithBook {
-    std::array<std::uint8_t, 16>          audit_id{};
-    std::uint64_t                         intent_id{0};
-    std::string_view                      market_id{};
-    std::string_view                      outcome{};
-    double                                size_usdc{0.0};
+    std::array<std::uint8_t, 16> audit_id{};
+    std::uint64_t intent_id{0};
+    std::string_view market_id{};
+    std::string_view outcome{};
+    double size_usdc{0.0};
 
     // FillRateModel::compute_from_clob_book 输入
-    microstructure::OrderBookSnapshot     book{};      // 实时 CLOB depth
-    microstructure::Microprobe            probe{};     // QHL + AS (可传默认值)
-    microstructure::FillIntent            fill_intent{};  // side / price / sport / phase
+    microstructure::OrderBookSnapshot book{};  // 实时 CLOB depth
+    microstructure::Microprobe probe{};        // QHL + AS (可传默认值)
+    microstructure::FillIntent fill_intent{};  // side / price / sport / phase
 
     // R-20 4 ts (同 VirtualOrder)
     std::int64_t event_ts_ns{0};
@@ -104,16 +104,16 @@ struct VirtualOrderWithBook {
 };
 
 struct VirtualFill {
-    MatchReject  reject{MatchReject::Ok};
+    MatchReject reject{MatchReject::Ok};
 
-    double       fill_price{0.0};        // VWAP, SlippageModel 出 (Mode A++) 或 clob 估算 (Mode A)
-    double       fill_size_usdc{0.0};    // = order.size_usdc * effective_fill_rate (or 0)
-    double       expected_fill_rate{0.0};
-    double       p_fill_clamped{0.0};    // floor/cap 后的 Bernoulli 参数
+    double fill_price{0.0};      // VWAP, SlippageModel 出 (Mode A++) 或 clob 估算 (Mode A)
+    double fill_size_usdc{0.0};  // = order.size_usdc * effective_fill_rate (or 0)
+    double expected_fill_rate{0.0};
+    double p_fill_clamped{0.0};  // floor/cap 后的 Bernoulli 参数
     std::int32_t slippage_bps{0};
 
     // Bernoulli draw (单测可 reproduce)
-    bool         bernoulli_draw{false};
+    bool bernoulli_draw{false};
 
     // R-11 审计目标 (硬填 PaperAudit)
     infra::wal::WalKind audit_wal_kind{infra::wal::WalKind::PaperAudit};
@@ -122,12 +122,12 @@ struct VirtualFill {
     // market_id: 32B null-padded, 与 PolymarketClient::Position.market_id / PositionRecord 对齐
     // outcome: 0=YES, 1=NO (与 OrderStatus 协议 + PositionRecord.outcome 对齐)
     std::array<char, 32> market_id{};
-    std::uint8_t         outcome{0};
+    std::uint8_t outcome{0};
 
     // R-11 mode_tag — 物理标记 "paper" (Wave 3 新增, R-11 paper_ledger_guard 语义一致)
     // 1B flag: 0 = paper (only valid value for VirtualFill), non-zero = 开发期侦错
     // 不污染真账本: PositionLedger 写入前必须检查 mode_tag == 0
-    std::uint8_t         mode_tag{0};    // 0 = paper (R-11 硬填)
+    std::uint8_t mode_tag{0};  // 0 = paper (R-11 硬填)
 
     // R-20 4 ts (透传 + fill_ts_ns 出口)
     std::int64_t event_ts_ns{0};
@@ -145,13 +145,12 @@ struct VirtualFill {
 //   offset 46: market_id[32]@46 → outcome@78(1) → mode_tag@79(1) → pad6
 //   event_ts_ns@86? — 实际依赖编译器; 更新 sizeof 以编译时实测为准
 static_assert(sizeof(VirtualFill) == 120,
-    "VirtualFill sizeof 改变 — 确认后更新此断言 (paper engine 内部 struct, R-2 not affected)");
+              "VirtualFill sizeof 改变 — 确认后更新此断言 (paper engine 内部 struct, R-2 not affected)");
 
 class VirtualMatcher {
- public:
+public:
     // seed=0 → time-based; >0 → deterministic (单测必传)
-    explicit VirtualMatcher(std::uint64_t seed = 0xBE'EFCAFEULL) noexcept
-        : rng_(seed) {}
+    explicit VirtualMatcher(std::uint64_t seed = 0xBE'EFCAFEULL) noexcept : rng_(seed) {}
 
     // Mode A++ 单次撮合 (原有接口, 不变). 内部:
     //   1) SlippageModel.compute → expected_fill_rate / expected_fill_price
@@ -172,14 +171,14 @@ class VirtualMatcher {
     // 测试钩子: 直接注入 [0,1] 抽样源 (确定性)
     void SetUniformOverrideForTesting(double u) noexcept {
         uniform_override_ = u;
-        has_override_     = true;
+        has_override_ = true;
     }
     void ClearOverrideForTesting() noexcept { has_override_ = false; }
 
- private:
+private:
     std::mt19937_64 rng_;
-    double          uniform_override_{0.0};
-    bool            has_override_{false};
+    double uniform_override_{0.0};
+    bool has_override_{false};
 };
 
 }  // namespace stcpp::execution

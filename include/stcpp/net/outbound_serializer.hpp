@@ -41,9 +41,8 @@ public:
     //   signatureType = 1 (HMAC bug #3 enforce — 必须整数 1, 不得写 2)
     //
     // 返 false: buf 溢出 (caller drop + emit rest_submit_overflow_total)
-    [[nodiscard]] static bool SerializeSignedOrder(
-        const polymarket::SignedOrder& order,
-        OutboundBuffer& buf) noexcept;
+    [[nodiscard]] static bool SerializeSignedOrder(const polymarket::SignedOrder& order,
+                                                   OutboundBuffer& buf) noexcept;
 
     // 序列化 cancel-all 请求 body.
     // POST /cancel-all: body = "{}" 即可 (Polymarket spec)
