@@ -24,6 +24,7 @@
 
 add_library(stcpp_backtest STATIC
     backtest_metrics.cpp
+    replay_driver.cpp
 )
 
 target_include_directories(stcpp_backtest
@@ -37,8 +38,10 @@ target_compile_definitions(stcpp_backtest PUBLIC
 )
 
 # BR-1 + BR-5: 链接 microstructure (FillRateModel) 共用
+# ReplayDriver: 链接 orderbook_snapshot_hub (double-buffer 发布器)
 target_link_libraries(stcpp_backtest
     PUBLIC stcpp_microstructure
+    PUBLIC stcpp_orderbook_snapshot_hub
 )
 
 # ADR-010 §2.1: 生产代码 (src/+include/) 严禁 -Wno-* 抑制。

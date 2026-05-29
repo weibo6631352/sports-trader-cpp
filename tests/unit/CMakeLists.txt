@@ -78,6 +78,8 @@ set(EXTRA_LIBS_test_orderbook_snapshot_hub stcpp_orderbook_snapshot_hub)
 set(EXTRA_LIBS_test_score_snapshot_store  stcpp_data_inplay_parser stcpp_data_score_store)
 set(EXTRA_LIBS_test_sizing_calculator     stcpp_sizing stcpp_risk)
 set(EXTRA_LIBS_test_sizing_rm_consistency stcpp_sizing stcpp_risk)
+# 小肖 ReplayDriver: replay→hub→Read 端对端路径验证
+set(EXTRA_LIBS_test_replay_driver         stcpp_backtest stcpp_orderbook_snapshot_hub)
 
 # --- 追加 compile_definitions 映射 ---
 # (仅列出 STCPP_EXEC_MODE_* 以外的额外 define)
@@ -117,6 +119,7 @@ set(TIMEOUT_test_spsc_queue         60)
 set(TIMEOUT_test_signer_v53_pit     60)
 set(TIMEOUT_test_signer_v62         60)
 set(TIMEOUT_test_backtest_metrics   60)
+set(TIMEOUT_test_replay_driver      60)
 
 # --- LABELS 映射 (默认 "unit") ---
 set(LABELS_test_slippage_model             "unit")
@@ -165,6 +168,8 @@ set(LABELS_test_backtest_event_replayer    "unit;backtest;event-replayer;ledger;
 set(LABELS_test_feature_store_contract     "unit;feature-store;data-contract;adr-037;vendor-agnostic;pit")
 set(LABELS_test_orderbook_adapter          "unit;polymarket;clob-wss;orderbook-adapter;r-20;r-12;v0.1")
 set(LABELS_test_orderbook_snapshot_hub     "unit;polymarket;clob-wss;snapshot-hub;double-buffer;r-12;r-20;v0.1")
+# 小肖 ReplayDriver v0.1
+set(LABELS_test_replay_driver              "unit;backtest;replay-driver;r-12;r-20;synthetic;historical;e2e")
 
 # ============================================================================
 # §3  核心辅助宏: stcpp_add_unit_test(<target> <source>)
