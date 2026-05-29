@@ -4,6 +4,7 @@
 //   docs/ADR/2026-05-29-observability-debug-api.md §2 / §4 / §5
 //   docs/RESEARCH/laozhou-observability-api-arch-v1.md §3 (零耦合状态暴露) / §5
 //   docs/RESEARCH/xiaobai-observability-api-security-v1.md §1 (黑名单) / §3 (mode)
+//   docs/RESEARCH/laozhou-market-structure-contract-fix-v1.md (ADR-040 市场结构修正决议)
 //   R-11 (paper 不污染真账本; response 带 mode), R-12 (观测侧零反向依赖),
 //   R-20 (4 时间戳 epoch_ns int64)
 //
@@ -16,6 +17,16 @@
 //   - 4 时间戳字段名 + epoch_ns int64 (禁 ISO 字符串)
 //   - vendor-agnostic 字段语义 (禁 goalserve_/pm_ 原始字段; vendor 降为 source 标签)
 //   - 黑名单字段 (私钥/签名字节/API secret) 这些 POD 里【物理上不存在】, 从源头杜绝泄露
+//
+// ADR-040 市场结构修正 (老周决议, G-FREEZE-W correctness 例外, 2026-05-29):
+//   - 新增 TokenInfo: per-token 元数据 (token_id / outcome / price / winner)
+//   - MarketInfo 追加 condition_id (权威主键) / tokens[] / neg_risk_market_id / slug / polymarket_url
+//     market_id 保留为 deprecated alias (= condition_id 值; 前端切换后 P2 移除)
+//   - BookSnapshot per-token 化: 追加 token_id / condition_id / outcome;
+//     seq/gap/imbalance 语义变为 per-token (字段不动, 语义注释更新)
+//     market_id 保留为 deprecated alias (= condition_id 值)
+//   - 新增 BinaryMarketBookView: 双 token book view + cross_spread (后端算好)
+//   - StateProvider: book() 语义改为按 token_id 查单边; 新增 book_pair(condition_id)
 //
 // 注意: 本头文件【不得】#include 任何热路径模块头 (risk/signer/exec), 保证零反向依赖。
 //       只用标准库 POD。
@@ -155,15 +166,31 @@ struct MetricsSnapshot {
 };
 
 // ============================================================
+// ADR-040: TokenInfo (新增) — per-token 元数据
+// token_id = CLOB asset_id (ERC-1155 链上 positionId; 协议事实, 非 vendor 私有字段)
+// ============================================================
+struct TokenInfo {
+    std::string token_id;  // uint256 string (= CLOB asset_id; 协议事实)
+    std::string outcome;   // "Yes"/"No"/"Clippers"/"Over 220.5" 等 (gamma outcomes[i])
+    double price{0.0};     // gamma outcomePrices[i] / clob tokens[i].price
+    bool winner{false};    // 结算后 true
+};
+
+// ============================================================
 // /api/v1/market/{condition_id} (active/closed/resolved 三态分开)
+// ADR-040 修正: 追加 condition_id (权威) / tokens[] / neg_risk_market_id / slug / polymarket_url
+//   market_id 保留为 deprecated alias (= condition_id 值; 前端切换后 P2 移除)
 // ============================================================
 struct MarketInfo {
     bool found{false};
-    std::string market_id;  // = 请求的 condition_id 内部映射
-    std::string outcome;
+    std::string condition_id;  // 【权威·新增 ADR-040】bytes32 hex, 盘口主键
+    // DEPRECATED: 用 condition_id; 前端切换后 P2 移除。值 = condition_id。
+    std::string market_id;
+    std::vector<TokenInfo> tokens;  // 【P0 新增 ADR-040】双 token 列表 — 下单链路入口
     double tick_size{0.0};
     double fee_rate{0.0};
     bool neg_risk{false};
+    std::string neg_risk_market_id;  // 【P1 新增 ADR-040】negRisk 父合约 ID (可空)
     bool accepting_orders{false};
     bool active{false};
     bool closed{false};
@@ -172,6 +199,9 @@ struct MarketInfo {
     std::int64_t as_of_ts_ns{0};
     // 前端 v3 盯盘: market → event 锚 (ADR-038 增量, G-FREEZE-W 只增不改名)
     std::string event_id;
+    // ADR-040 Polymarket 超链接 (老板要求 P0)
+    std::string slug;            // gamma slug 字段 (如 "nba-lal-bos-2026-05-29")
+    std::string polymarket_url;  // = "https://polymarket.com/event/" + slug
 };
 
 // ============================================================
@@ -220,7 +250,7 @@ struct QuoteParams {
 };
 
 // ============================================================
-// /api/v1/book/{condition_id} (microprice/spread/imbalance 后端算好)
+// /api/v1/book/{token_id} (ADR-040 per-token 化; microprice/spread/imbalance 后端算好)
 // ============================================================
 // 单档报价 (深度阶梯一档); price/size 均 double。
 struct BookLevel {
@@ -228,22 +258,45 @@ struct BookLevel {
     double size{0.0};
 };
 
+// ADR-040: BookSnapshot per-token 化
+//   token_id / condition_id / outcome 为权威新增字段
+//   market_id 保留为 deprecated alias (= condition_id 值; 前端切换后 P2 移除)
+//   sequence_no / gap_count / imbalance 语义变为 per-token (本 token 的序列号/gap/单边 imbalance)
 struct BookSnapshot {
     bool found{false};
+    std::string token_id;      // 【权威·新增 ADR-040】asset_id — orderbook 真实粒度
+    std::string condition_id;  // 【新增 ADR-040】归属盘口 (UI 分组用)
+    std::string outcome;       // 【新增 ADR-040】"Yes"/"No"/球队名 — 这是哪一边的报价
+    // DEPRECATED: 用 condition_id; 前端切换后 P2 移除。值 = condition_id。
     std::string market_id;
     double best_bid{0.0};
     double best_ask{0.0};
     double microprice{0.0};
     double spread{0.0};
-    double imbalance{0.0};  // ∈ [-1, 1]
-    std::int64_t sequence_no{0};
-    std::int64_t gap_count{0};
+    double imbalance{0.0};        // 本 token 单边 imbalance (∈ [-1, 1]; per-token, 不再合并双边)
+    std::int64_t sequence_no{0};  // 本 token 的 WSS 序列号 (per asset_id; per-token)
+    std::int64_t gap_count{0};    // 本 token 的 gap (per-token)
     std::string wss_state{"unknown"};
     FourTs ts{};
     std::string source{"polymarket"};
     // 深度阶梯 (best 在前; 可空 = 仅 L1 摘要)。前端深度条可视化消费。
     std::vector<BookLevel> bids{};
     std::vector<BookLevel> asks{};
+};
+
+// ============================================================
+// ADR-040: BinaryMarketBookView (新增) — 看板主入口
+//   condition_id → 双 token book + cross_spread (后端算好, 1 RTT 拿齐)
+//   cross_spread = token0.best_ask + token1.best_ask - 1.0 (等效 vig)
+//   token0/token1: index 对齐 gamma outcomes[0]/outcomes[1]; outcome 字段自带语义
+// ============================================================
+struct BinaryMarketBookView {
+    bool found{false};
+    std::string condition_id;
+    BookSnapshot token0;       // outcomes[0] book (含 token_id + outcome)
+    BookSnapshot token1;       // outcomes[1] book (含 token_id + outcome)
+    double cross_spread{0.0};  // = token0.best_ask + token1.best_ask - 1.0 (等效 vig)
+    FourTs ts{};               // 取两 token 较旧 as_of (保守 staleness)
 };
 
 // ============================================================
@@ -265,7 +318,13 @@ public:
     virtual PaperGate paper_gate() const = 0;
     virtual MetricsSnapshot metrics() const = 0;
     virtual MarketInfo market(const std::string& condition_id) const = 0;
-    virtual BookSnapshot book(const std::string& condition_id) const = 0;
+
+    // ADR-040: book() 语义改为按 token_id 查单边 (策略/调试旁路)
+    // 签名不变但语义 = per-token; 入参应为 token_id (不再是 condition_id)
+    virtual BookSnapshot book(const std::string& token_id) const = 0;
+
+    // ADR-040 新增: 按 condition_id 返回双 token book view + cross_spread (看板主入口)
+    virtual BinaryMarketBookView book_pair(const std::string& condition_id) const = 0;
 
     // 前端 v3 盯盘新增 (ADR-038 增量, G-FREEZE-W 只增不改名)
     virtual EventScore score(const std::string& event_id) const = 0;
@@ -292,15 +351,34 @@ public:
     MarketInfo market(const std::string& condition_id) const override {
         MarketInfo m;
         m.found = false;  // stub: 无市场目录, 一律 not found
-        m.market_id = condition_id;
+        m.condition_id = condition_id;
+        m.market_id = condition_id;  // deprecated alias
         return m;
     }
 
-    BookSnapshot book(const std::string& condition_id) const override {
+    // ADR-040: book() 按 token_id 查单边 (stub: found=false)
+    BookSnapshot book(const std::string& token_id) const override {
         BookSnapshot b;
         b.found = false;  // stub: 无 orderbook feed 接入
-        b.market_id = condition_id;
+        b.token_id = token_id;
+        b.condition_id = token_id;  // stub: 无映射, fallback
+        b.market_id = token_id;     // deprecated alias
         return b;
+    }
+
+    // ADR-040 新增: book_pair — stub 返回 found=false 双空 book
+    BinaryMarketBookView book_pair(const std::string& condition_id) const override {
+        BinaryMarketBookView v;
+        v.found = false;
+        v.condition_id = condition_id;
+        v.token0.found = false;
+        v.token0.condition_id = condition_id;
+        v.token0.market_id = condition_id;  // deprecated alias
+        v.token1.found = false;
+        v.token1.condition_id = condition_id;
+        v.token1.market_id = condition_id;  // deprecated alias
+        v.cross_spread = 0.0;
+        return v;
     }
 
     // 前端 v3 盯盘新增 (stub: 返回 found=false 合法空值)

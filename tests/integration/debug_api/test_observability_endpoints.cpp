@@ -144,19 +144,34 @@ public:
     stcpp::debug_api::MarketInfo market(const std::string& cid) const override {
         stcpp::debug_api::MarketInfo mi;
         mi.found = true;
-        mi.market_id = cid;
-        mi.outcome = "home_win";
+        mi.condition_id = cid;
+        mi.market_id = cid;  // deprecated alias
         mi.tick_size = 0.01;
         mi.fee_rate = 0.02;
         mi.active = true;
         mi.source = "polymarket";
+        mi.slug = "test-market-2026-05-29";
+        mi.polymarket_url = "https://polymarket.com/event/test-market-2026-05-29";
+        stcpp::debug_api::TokenInfo t0;
+        t0.token_id = "tok-yes-001";
+        t0.outcome = "Yes";
+        t0.price = 0.55;
+        stcpp::debug_api::TokenInfo t1;
+        t1.token_id = "tok-no-001";
+        t1.outcome = "No";
+        t1.price = 0.45;
+        mi.tokens = {t0, t1};
         return mi;
     }
 
-    stcpp::debug_api::BookSnapshot book(const std::string& cid) const override {
+    // ADR-040: book() 按 token_id 查单边
+    stcpp::debug_api::BookSnapshot book(const std::string& token_id) const override {
         stcpp::debug_api::BookSnapshot b;
         b.found = true;
-        b.market_id = cid;
+        b.token_id = token_id;
+        b.condition_id = "fake-condition-id";
+        b.market_id = "fake-condition-id";  // deprecated alias
+        b.outcome = "Yes";
         b.best_bid = 0.54;
         b.best_ask = 0.56;
         b.microprice = 0.55;
@@ -167,6 +182,40 @@ public:
         b.ts.event_ts_ns = 1700000000000000000LL;
         b.ts.as_of_ts_ns = 1700000000000000001LL;
         return b;
+    }
+
+    // ADR-040: book_pair 新增
+    stcpp::debug_api::BinaryMarketBookView book_pair(const std::string& condition_id) const override {
+        stcpp::debug_api::BinaryMarketBookView bv;
+        bv.found = true;
+        bv.condition_id = condition_id;
+        // token0: Yes 侧
+        bv.token0.found = true;
+        bv.token0.token_id = "tok-yes-001";
+        bv.token0.condition_id = condition_id;
+        bv.token0.market_id = condition_id;
+        bv.token0.outcome = "Yes";
+        bv.token0.best_bid = 0.54;
+        bv.token0.best_ask = 0.56;
+        bv.token0.microprice = 0.55;
+        bv.token0.spread = 0.02;
+        bv.token0.ts.event_ts_ns = 1700000000000000000LL;
+        bv.token0.ts.as_of_ts_ns = 1700000000000000001LL;
+        // token1: No 侧 (互补)
+        bv.token1.found = true;
+        bv.token1.token_id = "tok-no-001";
+        bv.token1.condition_id = condition_id;
+        bv.token1.market_id = condition_id;
+        bv.token1.outcome = "No";
+        bv.token1.best_bid = 0.44;
+        bv.token1.best_ask = 0.46;
+        bv.token1.microprice = 0.45;
+        bv.token1.spread = 0.02;
+        bv.token1.ts.event_ts_ns = 1700000000000000000LL;
+        bv.token1.ts.as_of_ts_ns = 1700000000000000001LL;
+        // cross_spread = 0.56 + 0.46 - 1.0 = 0.02
+        bv.cross_spread = bv.token0.best_ask + bv.token1.best_ask - 1.0;
+        return bv;
     }
 
     // 前端 v3 盯盘新增 (ADR-038 增量)
@@ -317,20 +366,57 @@ TEST(ObservabilityEndpoints, AllEndpoints_FakeProvider) {
         EXPECT_TRUE(contains(r->body, "\"resolved\":false")) << r->body;
         // vendor 降为 source 标签
         EXPECT_TRUE(contains(r->body, "\"source\":\"polymarket\"")) << r->body;
+        // ADR-040: condition_id 权威字段
+        EXPECT_TRUE(contains(r->body, "\"condition_id\":\"0xCONDITION\"")) << r->body;
+        // ADR-040: tokens[] 存在且含 token_id
+        EXPECT_TRUE(contains(r->body, "\"tokens\":[")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"token_id\":\"tok-yes-001\"")) << r->body;
+        // ADR-040: slug + polymarket_url
+        EXPECT_TRUE(contains(r->body, "\"slug\":")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"polymarket_url\":")) << r->body;
+        EXPECT_TRUE(contains(r->body, "polymarket.com/event/")) << r->body;
     }
 
-    // /api/v1/book/{condition_id}
+    // /api/v1/book/{condition_id} — ADR-040: BinaryMarketBookView
     {
         auto r = cli.Get("/api/v1/book/0xCONDITION");
         ASSERT_TRUE(r) << r.error();
         EXPECT_EQ(r->status, 200);
         expect_mode_field(r->body, "/book");
         expect_no_blacklist(r->body, "/book");
-        EXPECT_TRUE(contains(r->body, "\"microprice\":0.55")) << r->body;
-        EXPECT_TRUE(contains(r->body, "\"spread\":0.02")) << r->body;
-        EXPECT_TRUE(contains(r->body, "\"imbalance\":0.1")) << r->body;
-        // 4 时间戳 (R-20): event_ts 透传, 非本地 now()
+        // ADR-040: BinaryMarketBookView 字段
+        EXPECT_TRUE(contains(r->body, "\"condition_id\":\"0xCONDITION\"")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"cross_spread\":")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"token0\":")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"token1\":")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"outcome\":\"Yes\"")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"outcome\":\"No\"")) << r->body;
+        // 4 时间戳 (R-20): event_ts 透传
         EXPECT_TRUE(contains(r->body, "\"event_ts\":1700000000000000000")) << r->body;
+    }
+
+    // /api/v1/book_pair/{condition_id} — ADR-040 显式 book_pair 端点
+    {
+        auto r = cli.Get("/api/v1/book_pair/0xCONDITION");
+        ASSERT_TRUE(r) << r.error();
+        EXPECT_EQ(r->status, 200);
+        expect_mode_field(r->body, "/book_pair");
+        expect_no_blacklist(r->body, "/book_pair");
+        EXPECT_TRUE(contains(r->body, "\"found\":true")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"cross_spread\":")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"token0\":")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"token1\":")) << r->body;
+    }
+
+    // /api/v1/book/token/{token_id} — ADR-040 单边旁路
+    {
+        auto r = cli.Get("/api/v1/book/token/tok-yes-001");
+        ASSERT_TRUE(r) << r.error();
+        EXPECT_EQ(r->status, 200);
+        expect_mode_field(r->body, "/book/token");
+        expect_no_blacklist(r->body, "/book/token");
+        EXPECT_TRUE(contains(r->body, "\"token_id\":\"tok-yes-001\"")) << r->body;
+        EXPECT_TRUE(contains(r->body, "\"outcome\":\"Yes\"")) << r->body;
     }
 
     srv.stop();

@@ -75,6 +75,8 @@ add_library(stcpp_debug_api STATIC
     # 前端 v3 盯盘新增 (ADR-038 增量, 2026-05-29)
     endpoint_score.cpp
     endpoint_quote.cpp
+    # ADR-040: book_pair + book/token/{token_id} (市场结构修正, 老周决议)
+    endpoint_book_pair.cpp
 )
 
 target_include_directories(stcpp_debug_api

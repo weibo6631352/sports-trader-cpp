@@ -40,16 +40,22 @@ void register_status(httplib::Server& svr, const HttpServer& hs) {
         const int64_t ts = now_epoch_ns_status();
         const int64_t uptime = uptime_sec_status(hs.start_time());
 
-        // W9 W2 stub 字段 (W9 W3 接真实 atomic snapshot)
-        // state: "RUNNING" stub; mode: 编译期常量; wss: all false; counts: 0
+        // P1-02 WSS 修正: wss_connected 读 provider.metrics() 的 wss 字段
+        // 与 /metrics 端点一致, 消除 /status hardcode false 与 /metrics DemoProvider true 的矛盾
+        // W9 W3 接真实 atomic snapshot 后自动正确 (metrics() 是同一 provider 方法)
+        const stcpp::debug_api::MetricsSnapshot msnap = hs.provider().metrics();
+
         std::string body;
         body.reserve(512);
         body += R"({"state":"RUNNING","mode":")";
         body += STCPP_EXEC_MODE_STR;
         body += R"(","wss_connected":{)";
-        body += R"("sports_api":false,)";
-        body += R"("clob":false,)";
-        body += R"("user_channel":false)";
+        body += R"("sports_api":)";
+        body += (msnap.wss_sports_api_connected ? "true" : "false");
+        body += R"(,"clob":)";
+        body += (msnap.wss_clob_connected ? "true" : "false");
+        body += R"(,"user_channel":)";
+        body += (msnap.wss_user_channel_connected ? "true" : "false");
         body += R"(},"signals_active_count":0)";
         body += R"(,"positions_count":0)";
         body += R"(,"rm_rejects_last_60s":0)";

@@ -19,12 +19,47 @@
 
 namespace stcpp::debug_api {
 
+// P1-01 timeseries 单位解析: 支持纯数字(秒) + 带单位后缀 (s/m/h/d → 秒)
+// e.g. "3600" → 3600, "1h" → 3600, "30m" → 1800, "2d" → 172800
+// 无效值 / 非正值 → 返回 def
 static std::int64_t query_i64(const httplib::Request& req, const char* key, std::int64_t def) {
     if (!req.has_param(key)) {
         return def;
     }
     try {
-        const std::int64_t v = std::stoll(req.get_param_value(key));
+        const std::string raw = req.get_param_value(key);
+        if (raw.empty()) {
+            return def;
+        }
+        // 解析数字部分 (可能整串都是数字, 或末尾带单位字符)
+        std::size_t num_end = 0;
+        // std::stoll 会解析尽可能多的数字, 并通过 &num_end 返回停止位置
+        const std::int64_t num = std::stoll(raw, &num_end);
+        if (num <= 0) {
+            return def;
+        }
+        // 解析可选单位后缀 (仅允许最多 1 个字符; 其余忽略)
+        std::int64_t multiplier = 1;
+        if (num_end < raw.size()) {
+            const char unit = raw[num_end];
+            switch (unit) {
+                case 's':
+                    multiplier = 1;
+                    break;  // seconds (explicit)
+                case 'm':
+                    multiplier = 60;
+                    break;  // minutes
+                case 'h':
+                    multiplier = 3600;
+                    break;  // hours
+                case 'd':
+                    multiplier = 86400;
+                    break;  // days
+                default:
+                    return def;  // 未知单位 → 拒绝
+            }
+        }
+        const std::int64_t v = num * multiplier;
         return v > 0 ? v : def;
     } catch (...) {
         return def;

@@ -30,6 +30,8 @@ void register_market(httplib::Server& svr, const HttpServer& hs);
 // 前端 v3 盯盘新增 (ADR-038 增量, 2026-05-29)
 void register_score(httplib::Server& svr, const HttpServer& hs);
 void register_quote(httplib::Server& svr, const HttpServer& hs);
+// ADR-040: book_pair + 单边 book/token/{token_id}
+void register_book_pair(httplib::Server& svr, const HttpServer& hs);
 }  // namespace stcpp::debug_api
 
 namespace stcpp::debug_api {
@@ -132,6 +134,9 @@ void HttpServer::register_handlers() {
     // 前端 v3 盯盘新增 (ADR-038 增量, 2026-05-29)
     register_score(server_, *this);
     register_quote(server_, *this);
+    // ADR-040: book_pair ({condition_id}) + book/token/{token_id}
+    // 注意: register_book_pair 内 book/token/{token_id} 先注册 (更具体路由优先于 book/{id})
+    register_book_pair(server_, *this);
 }
 
 }  // namespace stcpp::debug_api
