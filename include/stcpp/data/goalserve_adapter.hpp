@@ -63,34 +63,34 @@ namespace stcpp::data::adapter {
 // 信息类型 (四分类)
 enum class InfoKind : std::uint8_t {
     Scores = 0,  // 比分 + 时钟 + 赛事状态
-    Stats  = 1,  // 球队/球员统计
+    Stats = 1,   // 球队/球员统计
     Events = 2,  // 赛事事件 (goal/card/subst/VAR)
-    Odds   = 3,  // 赔率报价
+    Odds = 3,    // 赔率报价
 };
 
 // 数据源标识 (vendor)
 enum class VendorId : std::uint8_t {
-    Goalserve  = 0,   // 当前唯一接入源
-    Sportradar = 1,   // 未来可扩展
-    Pinnacle   = 2,   // 未来可扩展
+    Goalserve = 0,   // 当前唯一接入源
+    Sportradar = 1,  // 未来可扩展
+    Pinnacle = 2,    // 未来可扩展
     // 新 vendor 加枚举, 不动 IR struct
 };
 
 // 数据源端点路径 (用于 audit + 追溯)
 enum class GoalserveEndpointPath : std::uint8_t {
-    InplayGz      = 0,  // inplay.goalserve.com/inplay-<sport>.gz (bet365 单源)
-    PregameOdds   = 1,  // www.goalserve.com/getfeed/.../getodds/soccer?cat=<sport>_10 (9 bm)
+    InplayGz = 0,       // inplay.goalserve.com/inplay-<sport>.gz (bet365 单源)
+    PregameOdds = 1,    // www.goalserve.com/getfeed/.../getodds/soccer?cat=<sport>_10 (9 bm)
     LivescoreHome = 2,  // www.goalserve.com/getfeed/.../[sport]/home
-    InplayResult  = 3,  // inplay.goalserve.com/results/<yyyyMM>/<MID>.json
-    Settlement    = 4,  // oddsfeed.goalserve.com/api/v1/odds/pre-game/settlement?...
+    InplayResult = 3,   // inplay.goalserve.com/results/<yyyyMM>/<MID>.json
+    Settlement = 4,     // oddsfeed.goalserve.com/api/v1/odds/pre-game/settlement?...
 };
 
 // MatchId: 跨 vendor 通用 match 主键 (不耦合 Goalserve 具体格式)
 struct MatchId {
-    std::string vendor_match_id;      // Goalserve: pregame 6-digit id 或 inplay 134xxxxxx
-    std::string inplay_match_id;      // inplay.goalserve.com 专用 (可与 pregame id 不同)
-    std::string league_id;            // 联赛 id (Goalserve gid / category id)
-    VendorId    vendor = VendorId::Goalserve;
+    std::string vendor_match_id;  // Goalserve: pregame 6-digit id 或 inplay 134xxxxxx
+    std::string inplay_match_id;  // inplay.goalserve.com 专用 (可与 pregame id 不同)
+    std::string league_id;        // 联赛 id (Goalserve gid / category id)
+    VendorId vendor = VendorId::Goalserve;
 };
 
 // ============================================================================
@@ -109,34 +109,33 @@ struct MatchId {
 //   score  = 各阶段比分数组 (最多 12 槽, 与 goalserve_record::ScorePair 对齐)
 // ============================================================================
 struct GameScoreRecord {
-    goalserve::FourTs ts{};               // R-20 四时间戳
+    goalserve::FourTs ts{};  // R-20 四时间戳
 
-    MatchId       match_id{};
-    std::string   home_team;              // 主队名
-    std::string   away_team;             // 客队名
+    MatchId match_id{};
+    std::string home_team;  // 主队名
+    std::string away_team;  // 客队名
     goalserve::TimeStatus status = goalserve::TimeStatus::NotStarted;
 
     // 时钟 (inplay 才有, pregame 无)
-    std::optional<std::string>  period;          // 当前阶段 (e.g. "1st Half" / "Q2" / "Set 3")
-    std::optional<std::int32_t> elapsed_min;     // 已用分钟 (足球/篮球)
-    std::optional<std::int32_t> elapsed_sec;     // 已用秒 (额外精度)
-    std::optional<std::int32_t> stoppage_min;    // 补时分钟 (足球)
+    std::optional<std::string> period;         // 当前阶段 (e.g. "1st Half" / "Q2" / "Set 3")
+    std::optional<std::int32_t> elapsed_min;   // 已用分钟 (足球/篮球)
+    std::optional<std::int32_t> elapsed_sec;   // 已用秒 (额外精度)
+    std::optional<std::int32_t> stoppage_min;  // 补时分钟 (足球)
 
     // 比分
-    std::int32_t home_score_total = 0;   // 主队总分
-    std::int32_t away_score_total = 0;   // 客队总分
+    std::int32_t home_score_total = 0;  // 主队总分
+    std::int32_t away_score_total = 0;  // 客队总分
     // 分节/分盘比分 (最多 12 槽, 0 = 未发生)
     std::array<std::int32_t, 12> home_periods{{}};
     std::array<std::int32_t, 12> away_periods{{}};
-    std::uint8_t periods_used = 0;       // 实际节数
+    std::uint8_t periods_used = 0;  // 实际节数
 
     // Goalserve-specific state (内部 5 位状态码), 可选
-    std::optional<std::string> gs_state_code;    // e.g. "11007" (从 dictionaries/states 查)
+    std::optional<std::string> gs_state_code;  // e.g. "11007" (从 dictionaries/states 查)
 
     // R-20 合规检查
     [[nodiscard]] bool RespectsR20() const noexcept {
-        return ts.IsMonotonic()
-            && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
+        return ts.IsMonotonic() && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
     }
 };
 
@@ -185,19 +184,18 @@ struct TeamStats {
 
     // 板球 (wickets / overs)
     std::optional<std::int32_t> wickets;
-    std::optional<std::string>  overs;   // e.g. "2.1" = 2 over 1 ball
+    std::optional<std::string> overs;  // e.g. "2.1" = 2 over 1 ball
 };
 
 struct GameStatsRecord {
     goalserve::FourTs ts{};
 
-    MatchId    match_id{};
-    TeamStats  home_stats{};
-    TeamStats  away_stats{};
+    MatchId match_id{};
+    TeamStats home_stats{};
+    TeamStats away_stats{};
 
     [[nodiscard]] bool RespectsR20() const noexcept {
-        return ts.IsMonotonic()
-            && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
+        return ts.IsMonotonic() && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
     }
 };
 
@@ -211,50 +209,49 @@ struct GameStatsRecord {
 //   棒球 scoring play / 板球 ball-by-ball
 // ============================================================================
 enum class GameEventType : std::uint8_t {
-    Goal          = 0,
-    YellowCard    = 1,
-    YellowRed     = 2,   // 两黄变红
-    RedCard       = 3,
-    Substitution  = 4,
-    ShotOnTarget  = 5,
+    Goal = 0,
+    YellowCard = 1,
+    YellowRed = 2,  // 两黄变红
+    RedCard = 3,
+    Substitution = 4,
+    ShotOnTarget = 5,
     ShotOffTarget = 6,
-    Corner        = 7,
-    Offside       = 8,
-    Penalty       = 9,
-    VAR           = 10,
-    ScoringPlay   = 11,  // 棒球 / 板球 / 橄榄球 scoring event
-    Other         = 255,
+    Corner = 7,
+    Offside = 8,
+    Penalty = 9,
+    VAR = 10,
+    ScoringPlay = 11,  // 棒球 / 板球 / 橄榄球 scoring event
+    Other = 255,
 };
 
 struct GameEventRecord {
     goalserve::FourTs ts{};
 
-    MatchId       match_id{};
+    MatchId match_id{};
     GameEventType event_type = GameEventType::Other;
 
     // 时间定位
-    std::optional<std::int32_t> minute;        // 比赛分钟
-    std::optional<std::int32_t> extra_min;     // 补时 (足球 "90+3" 中的 3)
+    std::optional<std::int32_t> minute;     // 比赛分钟
+    std::optional<std::int32_t> extra_min;  // 补时 (足球 "90+3" 中的 3)
 
     // 参与者
-    std::string   team_side;                   // "home" / "away"
+    std::string team_side;  // "home" / "away"
     std::optional<std::string> player_name;
     std::optional<std::string> player_id;
-    std::optional<std::string> assist_name;    // 助攻 / 换人入场
+    std::optional<std::string> assist_name;  // 助攻 / 换人入场
     std::optional<std::string> assist_id;
 
     // 事件详情
-    std::optional<std::string> description;    // VAR reason / event comment
-    std::optional<bool>        own_goal;       // 乌龙球
-    std::optional<bool>        penalty_goal;   // 点球进球
+    std::optional<std::string> description;  // VAR reason / event comment
+    std::optional<bool> own_goal;            // 乌龙球
+    std::optional<bool> penalty_goal;        // 点球进球
 
     // Goalserve play-by-play 额外字段 (可选)
-    std::optional<double>  pitch_x;            // 球场坐标
-    std::optional<double>  pitch_y;
+    std::optional<double> pitch_x;  // 球场坐标
+    std::optional<double> pitch_y;
 
     [[nodiscard]] bool RespectsR20() const noexcept {
-        return ts.IsMonotonic()
-            && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
+        return ts.IsMonotonic() && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
     }
 };
 
@@ -279,40 +276,37 @@ struct GameEventRecord {
 //   bookmaker.@ts 各家可差 5-30 分钟 — 使用 per-bm ts 做精准 data_source_ts
 // ============================================================================
 enum class OddsSource : std::uint8_t {
-    InplayGz    = 0,   // inplay.goalserve.com (bet365 单源, 1s 刷新)
-    PregameOdds = 1,   // getodds pregame (9 bm, ~30s 增量)
-    RacingUk    = 2,   // racing/uk (赛马特殊路径, 18 bm)
+    InplayGz = 0,     // inplay.goalserve.com (bet365 单源, 1s 刷新)
+    PregameOdds = 1,  // getodds pregame (9 bm, ~30s 增量)
+    RacingUk = 2,     // racing/uk (赛马特殊路径, 18 bm)
 };
 
 // 单家 bookmaker 单 outcome 报价
 struct OddsQuoteRecord {
-    goalserve::FourTs ts{};             // R-20: data_source_ts 来自 bm.@ts 或 updated_ts
+    goalserve::FourTs ts{};  // R-20: data_source_ts 来自 bm.@ts 或 updated_ts
 
-    MatchId       match_id{};
+    MatchId match_id{};
 
-    OddsSource    source       = OddsSource::InplayGz;
-    std::int32_t  bookmaker_id = 0;     // 0 = bet365 (inplay 单源无 numeric id)
-    std::string   bookmaker_name;       // e.g. "bet365" / "WilliamHill" / "1xBet"
+    OddsSource source = OddsSource::InplayGz;
+    std::int32_t bookmaker_id = 0;  // 0 = bet365 (inplay 单源无 numeric id)
+    std::string bookmaker_name;     // e.g. "bet365" / "WilliamHill" / "1xBet"
 
     // 盘口定位
-    std::string   market_id;            // e.g. "1" / "27" / "421" (inplay) 或 "Match Winner" (pregame)
-    std::string   market_name;          // 人类可读 (从 dictionaries 查表填充)
-    std::string   outcome;              // "Home" / "Draw" / "Away" / "Over" / "Under" / "Player1"
-    std::optional<double> handicap;     // AH / Total 让分线 (可为负)
+    std::string market_id;           // e.g. "1" / "27" / "421" (inplay) 或 "Match Winner" (pregame)
+    std::string market_name;         // 人类可读 (从 dictionaries 查表填充)
+    std::string outcome;             // "Home" / "Draw" / "Away" / "Over" / "Under" / "Player1"
+    std::optional<double> handicap;  // AH / Total 让分线 (可为负)
 
     // 报价值
-    double        value_eu   = 0.0;    // 欧赔 (decimal odds), > 1.0 才有效
-    bool          suspended  = false;  // true = 庄家暂停此 outcome
+    double value_eu = 0.0;   // 欧赔 (decimal odds), > 1.0 才有效
+    bool suspended = false;  // true = 庄家暂停此 outcome
 
     // R-20
     [[nodiscard]] bool RespectsR20() const noexcept {
-        return ts.IsMonotonic()
-            && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
+        return ts.IsMonotonic() && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
     }
 
-    [[nodiscard]] bool IsValid() const noexcept {
-        return value_eu > 1.0 && !suspended && RespectsR20();
-    }
+    [[nodiscard]] bool IsValid() const noexcept { return value_eu > 1.0 && !suspended && RespectsR20(); }
 };
 
 // ============================================================================
@@ -322,10 +316,10 @@ struct OddsQuoteRecord {
 // 上层按 InfoKind 分发到对应 SPSC queue.
 // ============================================================================
 struct AdaptBatch {
-    std::int64_t             data_source_ts_ns = 0;  // fetch 整体 data_source_ts (R-20)
-    std::int64_t             ingestion_ts_ns   = 0;  // recv 完成时刻 (R-20)
-    VendorId                 vendor            = VendorId::Goalserve;
-    GoalserveEndpointPath    endpoint_path     = GoalserveEndpointPath::InplayGz;
+    std::int64_t data_source_ts_ns = 0;  // fetch 整体 data_source_ts (R-20)
+    std::int64_t ingestion_ts_ns = 0;    // recv 完成时刻 (R-20)
+    VendorId vendor = VendorId::Goalserve;
+    GoalserveEndpointPath endpoint_path = GoalserveEndpointPath::InplayGz;
 
     std::vector<GameScoreRecord> scores;
     std::vector<GameStatsRecord> stats;
@@ -365,9 +359,10 @@ struct AdaptBatch {
 // 公式: unix_sec = (ticks - 621355968000000000) / 10_000_000
 [[nodiscard]] inline std::int64_t NetTicksToEpochNs(std::int64_t ticks) noexcept {
     constexpr std::int64_t kTicksEpochOffset = 621'355'968'000'000'000LL;
-    constexpr std::int64_t kTicksPerSec      = 10'000'000LL;
-    constexpr std::int64_t kNsPerSec         = 1'000'000'000LL;
-    if (ticks <= kTicksEpochOffset) return 0;
+    constexpr std::int64_t kTicksPerSec = 10'000'000LL;
+    constexpr std::int64_t kNsPerSec = 1'000'000'000LL;
+    if (ticks <= kTicksEpochOffset)
+        return 0;
     return ((ticks - kTicksEpochOffset) / kTicksPerSec) * kNsPerSec;
 }
 
@@ -383,23 +378,34 @@ struct AdaptBatch {
 
 // GameEventType 从 Goalserve livescore event type string 映射
 [[nodiscard]] constexpr GameEventType MapGoalserveEventType(std::string_view gs_type) noexcept {
-    if (gs_type == "goal")          return GameEventType::Goal;
-    if (gs_type == "yellowcard")    return GameEventType::YellowCard;
-    if (gs_type == "yellowred")     return GameEventType::YellowRed;
-    if (gs_type == "redcard")       return GameEventType::RedCard;
-    if (gs_type == "subst")         return GameEventType::Substitution;
-    if (gs_type == "Shot On Target")  return GameEventType::ShotOnTarget;
-    if (gs_type == "Shot Off Target") return GameEventType::ShotOffTarget;
-    if (gs_type == "Corner")          return GameEventType::Corner;
-    if (gs_type == "Offside")         return GameEventType::Offside;
-    if (gs_type == "Penalty")         return GameEventType::Penalty;
+    if (gs_type == "goal")
+        return GameEventType::Goal;
+    if (gs_type == "yellowcard")
+        return GameEventType::YellowCard;
+    if (gs_type == "yellowred")
+        return GameEventType::YellowRed;
+    if (gs_type == "redcard")
+        return GameEventType::RedCard;
+    if (gs_type == "subst")
+        return GameEventType::Substitution;
+    if (gs_type == "Shot On Target")
+        return GameEventType::ShotOnTarget;
+    if (gs_type == "Shot Off Target")
+        return GameEventType::ShotOffTarget;
+    if (gs_type == "Corner")
+        return GameEventType::Corner;
+    if (gs_type == "Offside")
+        return GameEventType::Offside;
+    if (gs_type == "Penalty")
+        return GameEventType::Penalty;
     // VAR — 多个变体
-    if (gs_type.find("VAR") != std::string_view::npos) return GameEventType::VAR;
+    if (gs_type.find("VAR") != std::string_view::npos)
+        return GameEventType::VAR;
     return GameEventType::Other;
 }
 
 // compile-time 闭合校验
-static_assert(static_cast<std::uint8_t>(InfoKind::Odds)   == 3U);
+static_assert(static_cast<std::uint8_t>(InfoKind::Odds) == 3U);
 static_assert(static_cast<std::uint8_t>(VendorId::Goalserve) == 0U);
 static_assert(static_cast<std::uint8_t>(GameEventType::Other) == 255U);
 
