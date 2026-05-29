@@ -51,10 +51,8 @@ git fetch origin && git reset --hard origin/main
 ### B. Sub-agent 全流程 (老板 verbatim "拉取 + 合并 → 写 → 提交 + 拉取 + 合并 + 推送")
 
 ```bash
-# === 开展前 (worktree 启动后第一件事, 老板新加约束) ===
-pwd                                              # B.0a verify worktree path
-git fetch origin                                 # B.0b 拉取
-git merge origin/main --no-edit                  # B.0c 合并 (worktree base 双保险 latest)
+# === 开展前 (老板五次修正: 同一 batch 同 base, 不必再 sync 不必等其他 wave) ===
+pwd  # B.0 verify worktree path (GM 错 #19 防)
 
 # === 工作 ===
 # B.1 写代码/doc, 含 ADR-027 cite block
