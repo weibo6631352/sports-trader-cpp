@@ -120,8 +120,11 @@ export async function refreshGate(): Promise<void> {
 
 // ---------- refreshMetrics ----------
 
-export async function refreshMetrics(secondaryOpen: boolean): Promise<void> {
-  if (!secondaryOpen) return;
+/**
+ * v6: Ops 页常驻, 无论是否展开均轮询 (30s).
+ * 旧参数 secondaryOpen 保留签名兼容, 但已忽略.
+ */
+export async function refreshMetrics(_secondaryOpen?: boolean): Promise<void> {
   const text = USE_STUB ? STUB_METRICS_TEXT : await fetchMetrics();
   setState({ metrics: text ?? null });
 }
@@ -304,6 +307,7 @@ export function initPolling(): void {
   every(() => { void refreshMarketGrid(); }, 5000);
   every(() => { void refreshAttribution(); }, 15000);
   every(() => { void refreshGate(); }, 15000);
-  every(() => { void refreshMetrics(state.secondaryOpen); }, 30000);
+  // v6: metrics 无条件 30s 轮询 (Ops 页常驻消费)
+  every(() => { void refreshMetrics(); }, 30000);
   every(() => { void refreshMarketInfoSlow(); }, 60000);
 }

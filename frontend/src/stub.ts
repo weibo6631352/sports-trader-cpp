@@ -320,15 +320,20 @@ function makeHalfBook(
     data_source_ts: NOW_NS - 9e7,
     ingestion_ts: NOW_NS - 8e7,
     book_as_of_ts: NOW_NS,
+    // v6: 5 档 (up from 3)
     bids: [
       { price: bid,         size: 3200 },
       { price: bid - 0.006, size: 1800 },
       { price: bid - 0.014, size: 900  },
+      { price: bid - 0.022, size: 420  },
+      { price: bid - 0.031, size: 180  },
     ],
     asks: [
       { price: ask,         size: 2700 },
       { price: ask + 0.006, size: 1500 },
       { price: ask + 0.014, size: 600  },
+      { price: ask + 0.022, size: 280  },
+      { price: ask + 0.031, size: 110  },
     ],
   };
 }
@@ -548,9 +553,20 @@ stcpp_uptime_seconds{mode="paper"} 3721
 stcpp_wss_connected{mode="paper",channel="sports_api"} 1
 stcpp_wss_connected{mode="paper",channel="clob"} 1
 stcpp_wss_connected{mode="paper",channel="user"} 0
+# HELP stcpp_wss_reconnect_total WSS reconnect count
+# TYPE stcpp_wss_reconnect_total counter
+stcpp_wss_reconnect_total{mode="paper",channel="sports_api"} 0
+stcpp_wss_reconnect_total{mode="paper",channel="clob"} 2
+stcpp_wss_reconnect_total{mode="paper",channel="user"} 1
 # HELP stcpp_loop_latency_p99_us Hot loop p99 latency microseconds
 # TYPE stcpp_loop_latency_p99_us gauge
 stcpp_loop_latency_p99_us{mode="paper"} 74
+# HELP stcpp_subscribed_tokens_total Subscribed CLOB token count (GAP-01)
+# TYPE stcpp_subscribed_tokens_total gauge
+stcpp_subscribed_tokens_total{mode="paper"} 12
+# HELP stcpp_subscribed_markets_total Subscribed condition count (GAP-02)
+# TYPE stcpp_subscribed_markets_total gauge
+stcpp_subscribed_markets_total{mode="paper"} 6
 # HELP stcpp_rm_decision_total Total RM decisions
 # TYPE stcpp_rm_decision_total counter
 stcpp_rm_decision_total{mode="paper"} 142
@@ -569,4 +585,10 @@ stcpp_cum_net_pnl{mode="paper"} 307
 # HELP stcpp_data_staleness_ms_max Max feed staleness milliseconds
 # TYPE stcpp_data_staleness_ms_max gauge
 stcpp_data_staleness_ms_max{mode="paper"} 38
+# HELP stcpp_feed_gap_total Sequence gap count
+# TYPE stcpp_feed_gap_total counter
+stcpp_feed_gap_total{mode="paper"} 0
+# HELP stcpp_price_drift_bps Cross-source price drift bps
+# TYPE stcpp_price_drift_bps gauge
+stcpp_price_drift_bps{mode="paper"} 4.2
 `.trim();

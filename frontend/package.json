@@ -1,15 +1,19 @@
 {
   "name": "sports-trader-cpp-frontend",
-  "version": "5.2.0",
-  "description": "sports-trader-cpp 单屏盯盘终端 v5 — SolidJS + TypeScript + Vite",
+  "version": "6.0.0",
+  "description": "sports-trader-cpp 操盘终端 v6 — SolidJS + TypeScript + Tailwind + Kobalte",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "solid-js": "^1.8.17"
+    "@kobalte/core": "^0.13.11",
+    "@tailwindcss/vite": "^4.3.0",
+    "solid-js": "^1.8.17",
+    "tailwindcss": "^4.3.0"
   },
   "devDependencies": {
     "typescript": "^5.4.5",
