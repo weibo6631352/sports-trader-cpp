@@ -72,6 +72,7 @@ set(EXTRA_LIBS_test_backtest_stats      stcpp_backtest)
 set(EXTRA_LIBS_test_backtest_event_replayer stcpp_backtest stcpp_microstructure)
 set(EXTRA_LIBS_test_feature_store_contract stcpp_data_contract)
 set(EXTRA_LIBS_test_orderbook_adapter   stcpp_polymarket_clob_wss)
+set(EXTRA_LIBS_test_orderbook_snapshot_hub stcpp_orderbook_snapshot_hub)
 
 # --- 追加 compile_definitions 映射 ---
 # (仅列出 STCPP_EXEC_MODE_* 以外的额外 define)
@@ -156,6 +157,7 @@ set(LABELS_test_backtest_stats             "unit;backtest;stats;bonferroni;dsr;o
 set(LABELS_test_backtest_event_replayer    "unit;backtest;event-replayer;ledger;fill-rate;br1;br5;backtest-v0.2")
 set(LABELS_test_feature_store_contract     "unit;feature-store;data-contract;adr-037;vendor-agnostic;pit")
 set(LABELS_test_orderbook_adapter          "unit;polymarket;clob-wss;orderbook-adapter;r-20;r-12;v0.1")
+set(LABELS_test_orderbook_snapshot_hub     "unit;polymarket;clob-wss;snapshot-hub;double-buffer;r-12;r-20;v0.1")
 
 # ============================================================================
 # §3  核心辅助宏: stcpp_add_unit_test(<target> <source>)

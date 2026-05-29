@@ -14,6 +14,35 @@ add_library(stcpp_polymarket_clob_wss STATIC
     orderbook_adapter.cpp
 )
 
+# ---------------------------------------------------------------------------
+# stcpp_orderbook_snapshot_hub — per-token double-buffer 只读快照发布器
+#
+# Owner: 小冯 (#34)
+# 独立 target: 仅依赖 stcpp_polymarket_wss (WssEvent POD) + 标准库
+# 零反向依赖 (R-12): 不 link RM / signer / exec
+# 供 debug_api RealBookStateProvider 消费 (集成步骤后续独立做)
+#
+# root add_subdirectory 集成说明 (供 GM 合并时参考):
+#   本 target 已在 src/stcpp/polymarket/clob_wss/CMakeLists.txt 中定义.
+#   src/stcpp/polymarket/CMakeLists.txt 已 add_subdirectory(clob_wss).
+#   root CMakeLists.txt 已 add_subdirectory(src/stcpp/polymarket).
+#   → 无需修改 root CMakeLists.txt, 直接可用 stcpp_orderbook_snapshot_hub target.
+# ---------------------------------------------------------------------------
+add_library(stcpp_orderbook_snapshot_hub STATIC
+    orderbook_snapshot_hub.cpp
+)
+
+target_include_directories(stcpp_orderbook_snapshot_hub
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_features(stcpp_orderbook_snapshot_hub PUBLIC cxx_std_20)
+
+# 仅依赖 microstructure (OrderBookLevel / kBookDepthLevels) — 零热路径反向依赖
+target_link_libraries(stcpp_orderbook_snapshot_hub
+    PUBLIC stcpp_polymarket_wss
+)
+
 target_include_directories(stcpp_polymarket_clob_wss
     PUBLIC ${CMAKE_SOURCE_DIR}/include
 )
