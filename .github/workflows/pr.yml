@@ -215,9 +215,12 @@ jobs:
           # R-33 流程红线 (v1.1 新): PM market WSS 必须用 wss://sports-api.polymarket.com/ws
           # 严禁 paper mode 接 clob WSS (clob 是私有 user channel, paper 不下单不需要)
           # 严禁 hard-code 旧 host ws-subscriptions-clob 当 market channel
+          # 例外: clob_wss/ 路径 — PolymarketCLOBSubscriber 合法使用 clob host (老李 W9 W2 ack)
+          #   PMWssSubscriber (sports-api)  vs  PolymarketCLOBSubscriber (clob) 是两个不同服务
           if git grep -nE 'wss://ws-subscriptions-clob\.polymarket\.com/ws/market' \
              -- 'src/**/*.cpp' 'src/**/*.hpp' 'include/**/*.hpp' '**/*.yaml' '**/*.json' \
-             ':!docs/**' ':!**/*_test.cpp'; then
+             ':!docs/**' ':!**/*_test.cpp' \
+             ':!**/clob_wss/**'; then
             echo "::error::R-33: PM market WSS 严禁旧 host (ws-subscriptions-clob/ws/market), 必须用第 5 host wss://sports-api.polymarket.com/ws"; fail=1
           fi
           # paper mode 路径下严禁出现 /ws/user (私有 channel)
