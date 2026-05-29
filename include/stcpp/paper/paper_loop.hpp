@@ -1,0 +1,209 @@
+// include/stcpp/paper/paper_loop.hpp — PaperLoop: 最小 paper 交易循环
+//
+// Owner: 小肖 (numerical-algorithms, A 系统工程部)
+// last_review: 2026-05-30
+//
+// 设计目标 (M1 路径, 参见 xiaoxiao-paper-runtime-integration-design-v1.md):
+//   消费真实 live book (OrderBookSnapshotHub) → 生成 paper 成交 → 喂 LedgerSnapshotHub
+//   + QuoteSnapshotHub → RealStateProvider.positions/pnl_attribution 返回真实 paper 数据
+//
+// 架构 (简化 vCPU 模型 — 单线程顺序执行, debug_server live 路径):
+//   每 tick_interval_ms 唤醒一次:
+//     1. 遍历 token_map: hub_.Read(token_id) 取真实 book
+//     2. FairValueEstimator::estimate → fair_value / p_yes
+//     3. SizingCalculator::compute → suggested_notional / kelly_fraction
+//     4. QuoteSnapshotHub::Publish (quote 快照)
+//     5. 构造 OrderIntent v0.6 (4 ts / condition_id / token_id / side / price / size_pUSD_micro)
+//     6. RiskGateway::evaluate → Decision
+//     7. APPROVED: PaperSigner::Sign → VirtualMatcher::MatchWithBook → PositionLedger::apply_fill
+//     8. apply_fill Ok: LedgerSnapshotHub::Publish (positions/pnl 快照)
+//     9. REJECTED: rm_snap->push_reject
+//
+// 红线守法:
+//   R-11: paper 不污染真账本
+//     - VirtualFill.mode_tag == 0 (硬填 paper 标记, VirtualMatcher 内部保证)
+//     - PositionLedger 独立实例 (由调用方构建, 与 live 路径隔离)
+//     - PaperSigner.audit_wal_kind = PaperAudit (signer 内部保证)
+//     - PaperLoop 仅产出快照 (LedgerSnapshotHub / QuoteSnapshotHub), 不写真账本
+//   R-12: PaperLoop 独立线程 (std::jthread), 不进 WSS event loop
+//     - hub_.Read() 原子只读, 不阻塞 WSS io_thread_
+//     - LedgerSnapshotHub::Publish / QuoteSnapshotHub::Publish 均 noexcept
+//     - 线程 sleep_for tick_interval_ms, 不 spinlock
+//   R-20: 4 时间戳全链路透传
+//     - data_source_ts_ns 来自 OrderBookFeatures (hub 快照, 禁本地 now() 替代)
+//     - event_ts_ns <= data_source_ts_ns <= ingestion_ts_ns <= as_of_ts_ns 单调链
+//     - as_of_ts_ns = NowNs() (信号评估时刻, >= ingestion_ts_ns)
+//     - LedgerFeatures / QuoteFeatures 4 ts 来自 fill/feat 链路透传
+//
+// 注意 (ToS): PaperLoop 仅产生 paper 虚拟成交 (VirtualFill), 不向 Polymarket CLOB 下单.
+//   所有 OrderIntent 均经 PaperSigner (mock, 不上链), 不调用 live REST API.
+//
+// 线程安全:
+//   - Start() / Stop() 由主线程调用 (非热路径)
+//   - 内部 loop_thread_ 为 std::jthread (Stop() join 等待完成)
+//   - hub_ / ledger_hub_ / quote_hub_ 均为 SWMR 快照接口 (线程安全)
+//   - position_ledger_ 写端仅 loop_thread_ (单 writer, 符合 PositionLedger 设计)
+
+#pragma once
+
+#include <atomic>
+#include <cstdint>
+#include <string>
+#include <thread>
+#include <unordered_map>
+#include <utility>
+
+#include "stcpp/execution/virtual_matcher.hpp"
+#include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
+#include "stcpp/pricing/fair_value_estimator.hpp"
+#include "stcpp/risk/ledger_snapshot_hub.hpp"
+#include "stcpp/risk/position_ledger.hpp"
+#include "stcpp/risk/risk_gateway.hpp"
+#include "stcpp/risk/rm_debug_snapshot.hpp"
+#include "stcpp/signer/paper/paper_signer.hpp"
+#include "stcpp/sizing/quote_snapshot_hub.hpp"
+#include "stcpp/sizing/sizing_calculator.hpp"
+
+namespace stcpp::paper {
+
+// ---------------------------------------------------------------------------
+// PaperLoopConfig — 运行参数
+// ---------------------------------------------------------------------------
+struct PaperLoopConfig {
+    // 每次 tick 间隔 (ms). 默认 500ms 适合 debug 观测.
+    std::int64_t tick_interval_ms{500};
+
+    // bankroll (pUSD). 用于 SizingCalculator.
+    double bankroll_usdc{100'000.0};
+
+    // CI 参数 (§10.3 保守值 n=30, z=1.645)
+    int n_effective{30};
+    double z_90{1.645};
+
+    // strategy_id / signal_id (audit / RM 去重用)
+    std::string strategy_id{"paper-demo-v1"};
+
+    // FairValue 先验参数
+    double fv_alpha{0.30};
+    double fv_beta{0.50};
+    double fv_book_blend{0.20};
+
+    // 启动时把 RiskGateway 从 SAFE_MODE 切到 RUNNING
+    bool set_rm_running{true};
+};
+
+// ---------------------------------------------------------------------------
+// PaperLoopStats — 可观测计数器 (atomic, 只增)
+// ---------------------------------------------------------------------------
+struct PaperLoopStats {
+    std::atomic<std::uint64_t> ticks_total{0};
+    std::atomic<std::uint64_t> orders_attempted{0};
+    std::atomic<std::uint64_t> orders_approved{0};
+    std::atomic<std::uint64_t> orders_rejected{0};
+    std::atomic<std::uint64_t> fills_completed{0};
+    std::atomic<std::uint64_t> fills_missed{0};
+    std::atomic<std::uint64_t> hub_reads_empty{0};
+    std::atomic<std::uint64_t> quote_publishes{0};
+    std::atomic<std::uint64_t> ledger_publishes{0};
+
+    PaperLoopStats() = default;
+    PaperLoopStats(const PaperLoopStats&) = delete;
+    PaperLoopStats& operator=(const PaperLoopStats&) = delete;
+};
+
+// ---------------------------------------------------------------------------
+// PaperLoop — 最小 paper 交易循环
+// ---------------------------------------------------------------------------
+class PaperLoop {
+public:
+    // 构造 — 注入依赖, 不启动线程
+    //   hub:              OrderBookSnapshotHub (只读, live book 快照)
+    //   rm:               RiskGateway (写: evaluate; caller 保证此线程是唯一 evaluate 调用方)
+    //   position_ledger:  PositionLedger (写: apply_fill; 单 writer = loop_thread_)
+    //   ledger_hub:       LedgerSnapshotHub (写: Publish)
+    //   quote_hub:        QuoteSnapshotHub (写: Publish)
+    //   rm_snap:          RmDebugSnapshot* (可 nullptr; 非 nullptr 时 REJECTED 写 push_reject)
+    //   fv_model:         IFairValueModel (只读; 调用方保证生命周期 >= PaperLoop)
+    //   token_map:        condition_id → (token0_id YES, token1_id NO)
+    explicit PaperLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk::RiskGateway& rm,
+                       risk::PositionLedger& position_ledger, risk::LedgerSnapshotHub& ledger_hub,
+                       sizing::QuoteSnapshotHub& quote_hub, risk::RmDebugSnapshot* rm_snap,
+                       const pricing::IFairValueModel& fv_model,
+                       std::unordered_map<std::string, std::pair<std::string, std::string>> token_map,
+                       PaperLoopConfig cfg = {}) noexcept;
+
+    PaperLoop(const PaperLoop&) = delete;
+    PaperLoop& operator=(const PaperLoop&) = delete;
+    PaperLoop(PaperLoop&&) = delete;
+    PaperLoop& operator=(PaperLoop&&) = delete;
+
+    // 析构 — 保证线程已 join
+    ~PaperLoop();
+
+    // Start — 启动 loop_thread_ (幂等)
+    void Start();
+
+    // Stop — 请求停止并等待线程退出 (幂等, noexcept)
+    void Stop() noexcept;
+
+    [[nodiscard]] bool is_running() const noexcept { return running_.load(std::memory_order_acquire); }
+
+    [[nodiscard]] const PaperLoopStats& stats() const noexcept { return stats_; }
+
+private:
+    // ---- 依赖引用 ----
+    const polymarket::clob_wss::OrderBookSnapshotHub& hub_;
+    risk::RiskGateway& rm_;
+    risk::PositionLedger& position_ledger_;
+    risk::LedgerSnapshotHub& ledger_hub_;
+    sizing::QuoteSnapshotHub& quote_hub_;
+    risk::RmDebugSnapshot* rm_snap_;
+
+    // ---- 自有对象 (FairValueEstimator 是 facade, 持 model 引用) ----
+    pricing::FairValueEstimator fv_estimator_;
+
+    // ---- Paper signer 三件套 (自有; 单 writer 用) ----
+    signer::paper::VirtualNonceProvider nonce_provider_;
+    signer::paper::VirtualGasEstimator gas_estimator_;
+    signer::paper::VirtualConfirmWatcher confirm_watcher_;
+    signer::paper::PaperSigner psigner_;
+
+    // ---- VirtualMatcher (Mode A++) ----
+    execution::VirtualMatcher matcher_;
+
+    // ---- 配置与 token map ----
+    std::unordered_map<std::string, std::pair<std::string, std::string>> token_map_;
+    PaperLoopConfig cfg_;
+
+    // ---- 线程控制 ----
+    std::jthread loop_thread_;
+    std::atomic<bool> stop_requested_{false};
+    std::atomic<bool> running_{false};
+
+    // ---- 统计 ----
+    mutable PaperLoopStats stats_;
+
+    // ---- intent_id 单调递增 (loop_thread_ 单写) ----
+    std::uint64_t intent_seq_{0};
+
+    // ---- 内部实现 ----
+    void RunLoop(std::stop_token st);
+    void TickAll();
+    void TickOne(const std::string& condition_id, const std::string& token_id,
+                 const polymarket::clob_wss::OrderBookFeatures& feat);
+
+    // CI 下界: edge_ci_lower = (p_fair - p_ask) - z * sqrt(p*(1-p)/n)
+    [[nodiscard]] static double ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept;
+
+    [[nodiscard]] static std::int64_t NowNs() noexcept;
+
+    void PublishLedgerSnapshot(const std::string& condition_id, const execution::VirtualFill& fill,
+                               double mark_price,
+                               const polymarket::clob_wss::OrderBookFeatures& feat) noexcept;
+
+    void PublishQuoteSnapshot(const std::string& condition_id, const pricing::FairValueResult& fv_result,
+                              const sizing::SizingOutput& sizing_out, double mark_price, double edge_ci_lower,
+                              const polymarket::clob_wss::OrderBookFeatures& feat) noexcept;
+};
+
+}  // namespace stcpp::paper

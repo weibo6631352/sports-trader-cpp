@@ -163,6 +163,10 @@ target_link_libraries(stcpp_debug_server PRIVATE
     stcpp_quote_snapshot_hub    # 集成 ④: quote hub (小石)
     stcpp_data_score_store
     stcpp_data_inplay_feed      # Goalserve InplayFeedThread (小段 W5, POSIX+zlib, 常开)
+    stcpp_paper_loop            # feat/xiaoxiao-paper-loop: 最小 paper 交易循环 (小肖)
+    stcpp_pricing               # BaselineFairValueModel
+    stcpp_signer_paper          # PaperSigner (paper loop 内部使用)
+    stcpp_execution_paper       # VirtualMatcher (paper loop 内部使用)
 )
 
 # OpenSSL link (LiveWssTransport POSIX+OpenSSL TLS 1.3, live 常开必须)

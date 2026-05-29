@@ -135,4 +135,10 @@ endif()
 # R-7:  paper / backtest 共用 (mode-agnostic)
 add_subdirectory(src/stcpp/backtest)
 
+# feat/xiaoxiao-paper-loop (小肖 paper runtime integration, 2026-05-30)
+# 最小 paper 交易循环: OrderBookSnapshotHub → FairValue → Sizing → RM → PaperSigner
+#   → VirtualMatcher → PositionLedger → LedgerSnapshotHub + QuoteSnapshotHub
+# R-11: paper 不污染真账本; R-12: 独立线程; R-20: 4 ts 全链路透传
+add_subdirectory(src/stcpp/paper)
+
 message(STATUS "stcpp project scaffold (Sprint-3 W9 W2 + backtest v0.2). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1 + debug-api v0.1 + fair-value-estimator v0.1 + backtest framework v0.2.")

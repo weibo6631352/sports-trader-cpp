@@ -60,6 +60,15 @@
 #include "stcpp/risk/ledger_snapshot_hub.hpp"   // LedgerSnapshotHub
 #include "stcpp/sizing/quote_snapshot_hub.hpp"  // QuoteSnapshotHub
 
+// feat/xiaoxiao-paper-loop: 最小 paper 交易循环 (2026-05-30)
+// 消费真实 live book → paper 成交 → LedgerSnapshotHub/QuoteSnapshotHub
+// R-11: paper 不污染真账本; R-12: 独立线程; R-20: 4 ts 透传
+// ToS: 仅 paper 虚拟成交, 不向 Polymarket CLOB 下单
+#include "stcpp/paper/paper_loop.hpp"           // PaperLoop (小肖)
+#include "stcpp/pricing/fair_value_estimator.hpp"  // BaselineFairValueModel
+#include "stcpp/risk/position_ledger.hpp"       // PositionLedger (paper 专用)
+#include "stcpp/risk/rm_debug_snapshot.hpp"     // RmDebugSnapshot + attach/detach
+
 #include "src/stcpp/debug_api/live_book_publisher.hpp"  // CLOB book → hub
 #include "src/stcpp/debug_api/live_wss_transport.hpp"   // 真实 WSS transport
 #include "src/stcpp/debug_api/real_state_provider.hpp"
@@ -672,12 +681,68 @@ int main(int argc, char** argv) {
     auto ledger_hub_owned = std::make_unique<stcpp::risk::LedgerSnapshotHub>();
     auto quote_hub_owned = std::make_unique<stcpp::sizing::QuoteSnapshotHub>();
 
+    // ---- feat/xiaoxiao-paper-loop: paper 交易循环依赖对象 (2026-05-30) ----
+    // R-11: paper PositionLedger 独立实例, 与 live 路径物理隔离
+    // R-11: RmDebugSnapshot 注入 attach_rm_debug_snapshot, 供 RM 内部 push_reject
+    auto paper_position_ledger = std::make_unique<stcpp::risk::PositionLedger>();
+    auto paper_rm_snap = std::make_unique<stcpp::risk::RmDebugSnapshot>();
+    stcpp::risk::attach_rm_debug_snapshot(paper_rm_snap.get());
+
+    // paper RiskGateway (paper 专用; 与 live RM 隔离; 无 WAL emitter — M1 audit 落简化)
+    // M1: 使用 InMemory null emitter (不落 WAL); 后续 M2 接 WalWriter<PaperAudit>
+    class NullAuditEmitter final : public stcpp::risk::AuditEmitter {
+    public:
+        bool emit(stcpp::risk::AuditRecord const& /*rec*/) noexcept override { return true; }
+    };
+    auto paper_audit_emitter = std::make_shared<NullAuditEmitter>();
+    stcpp::risk::RiskConfig paper_rm_cfg;  // 默认 cap (per_order=10K, bankroll=100K)
+    // paper_rm_cfg: 降低阈值以便 paper demo 产生成交 (M1 调试)
+    paper_rm_cfg.per_order_cap_usdc = 10;          // 10 pUSD demo cap
+    paper_rm_cfg.market_exposure_cap_usdc = 50;    // 50 pUSD
+    paper_rm_cfg.per_outcome_cap_usdc = 25;        // 25 pUSD
+    paper_rm_cfg.bankroll_usdc = 1000;             // 1K pUSD demo bankroll
+    paper_rm_cfg.edge_ci_lower_floor = -1.0;       // M1 放宽 CI 门 (所有 edge 均放行)
+    paper_rm_cfg.enable_moneyline = true;
+    // R-12: recon freshness 设置极大 (不触发 STALE_DATA; M1 无 recon 数据源)
+    auto paper_rm =
+        std::make_unique<stcpp::risk::RiskGateway>(paper_rm_cfg, paper_audit_emitter);
+
+    // BaselineFairValueModel (小肖 pricing v0.1; 先验 sigmoid)
+    stcpp::pricing::ScorePriorParams fv_params{0.30, 0.50};
+    auto paper_fv_model =
+        std::make_unique<stcpp::pricing::BaselineFairValueModel>(fv_params, 0.20);
+
+    // PaperLoopConfig
+    stcpp::paper::PaperLoopConfig paper_loop_cfg;
+    paper_loop_cfg.tick_interval_ms = 500;     // 500ms 一次 tick (调试友好)
+    paper_loop_cfg.bankroll_usdc = 1000.0;     // 1K pUSD demo
+    paper_loop_cfg.n_effective = 30;
+    paper_loop_cfg.z_90 = 1.645;
+    paper_loop_cfg.strategy_id = "paper-demo-v1";
+    paper_loop_cfg.set_rm_running = true;
+
+    // 构造 PaperLoop (注入所有依赖)
+    // R-12: PaperLoop 内部为 std::jthread, 不进 WSS event loop
+    // R-11: paper_position_ledger 与 live 路径物理隔离
+    // ToS: 仅 paper 虚拟成交, 不向 Polymarket CLOB 下单
+    auto paper_loop = std::make_unique<stcpp::paper::PaperLoop>(
+        *hub_owned,
+        *paper_rm,
+        *paper_position_ledger,
+        *ledger_hub_owned,
+        *quote_hub_owned,
+        paper_rm_snap.get(),
+        *paper_fv_model,
+        token_map,   // condition_id → (token0_id, token1_id)
+        paper_loop_cfg);
+    // ---- paper loop 对象构造完成; Start() 在 WSS 建立后调用 (Step 4b) ----
+
     SizingConfig sizing_cfg;
     stcpp::risk::RiskConfig risk_cfg;
 
     auto real_provider =
         std::make_unique<RealStateProvider>(*hub_owned,
-                                            /*snap=*/nullptr,
+                                            /*snap=*/paper_rm_snap.get(),
                                             /*score_store=*/score_store_owned.get(),
                                             /*token_map=*/token_map, sizing_cfg, risk_cfg, mode,
                                             /*ledger_hub=*/ledger_hub_owned.get(),
@@ -757,6 +822,22 @@ int main(int argc, char** argv) {
     }
 
     // -------------------------------------------------------------------------
+    // Step 4b: PaperLoop — 启动 paper 交易循环 (feat/xiaoxiao-paper-loop)
+    //
+    // 在 WSS io_thread_ 启动后再启动 PaperLoop, 确保 hub_ 已就位.
+    // R-12: PaperLoop 独立线程 (std::jthread), 不进 WSS event loop
+    // R-11: paper_position_ledger 与 live PositionLedger 物理隔离
+    // R-20: 4 ts 来自 hub 快照 (真实 Polymarket CLOB WSS 时间戳)
+    // ToS: 仅 paper 虚拟成交 (VirtualFill), 不向 Polymarket CLOB 下单
+    // -------------------------------------------------------------------------
+    std::printf("[debug_server] 启动 paper 交易循环 (PaperLoop, 独立线程, 500ms tick)...\n");
+    std::printf("[debug_server] [paper] R-11 隔离: PositionLedger 独立实例 (非 live 账本)\n");
+    std::printf("[debug_server] [paper] R-20 透传: data_source_ts_ns 来自 Polymarket CLOB hub 快照\n");
+    std::printf("[debug_server] [paper] ToS: 仅 VirtualFill, 不向 CLOB 下单\n");
+    std::fflush(stdout);
+    paper_loop->Start();
+
+    // -------------------------------------------------------------------------
     // Step 5: HttpServer (R-12: 独立 server_thread_)
     // -------------------------------------------------------------------------
     HttpServer server{port, real_provider.get(), host.c_str()};
@@ -775,7 +856,7 @@ int main(int argc, char** argv) {
                 static_cast<unsigned>(port), STCPP_EXEC_MODE_STR);
     std::printf("[debug_server] live: book/event=真实 Polymarket CLOB WSS + gamma /events\n");
     std::printf("[debug_server]       score=真实 Goalserve inplay feed (soccer/basketball/tennis)\n");
-    std::printf("[debug_server]       positions/pnl/quote: 无 paper 源 → 空/灰显\n");
+    std::printf("[debug_server]       positions/pnl/quote: paper 交易循环驱动 (PaperLoop, 500ms tick)\n");
     std::printf("[debug_server] endpoints: /healthz /version /status /metrics\n");
     std::printf("[debug_server]            /api/v1/events\n");
     std::printf("[debug_server]            /api/v1/{market/<cond>,book/<cond>}\n");
@@ -795,6 +876,17 @@ int main(int argc, char** argv) {
 
     std::printf("\n[debug_server] 收到停止信号, 关闭...\n");
     server.stop();
+
+    // 停止 PaperLoop (先于 hub / ledger_hub / rm 析构; Stop() 内含 jthread join)
+    std::printf("[debug_server] 停止 PaperLoop...\n");
+    paper_loop->Stop();
+    std::printf("[debug_server] PaperLoop 已停止 (ticks=%llu approved=%llu fills=%llu)\n",
+                static_cast<unsigned long long>(paper_loop->stats().ticks_total.load()),
+                static_cast<unsigned long long>(paper_loop->stats().orders_approved.load()),
+                static_cast<unsigned long long>(paper_loop->stats().fills_completed.load()));
+
+    // R-11: 注销 RmDebugSnapshot 全局 hook (在 paper_rm_snap 析构前)
+    stcpp::risk::detach_rm_debug_snapshot();
 
     // 停止 InplayFeedThread (先于 score_store 析构; Stop() 内含 join)
     std::printf("[debug_server] 停止 InplayFeedThread...\n");
