@@ -35,3 +35,4 @@ Testing/
 # Frontend (SolidJS + Vite)
 frontend/node_modules/
 frontend/dist/
+.claude/worktrees/
