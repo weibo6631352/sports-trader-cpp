@@ -33,7 +33,8 @@ class NoopEmitter : public AuditEmitter {
     [[nodiscard]] bool emit(AuditRecord const& r) noexcept override {
         // 不调 benchmark::DoNotOptimize(r) — Google Benchmark v1.8 标 const-ref 版 deprecated.
         // 只读字段防被优化掉:
-        last_market_size_ = r.market_id.size();
+        // Wave 81 fix: market_id → condition_id (ABI break #1, Wave 76)
+        last_market_size_ = r.condition_id.size();
         ++count_;
         return true;
     }
@@ -51,12 +52,13 @@ OrderIntent make_ok_intent(std::int64_t now, std::string sig) {
     it.event_ts_ns         = now - 500 * NS_PER_MS;
     it.data_source_ts_ns   = now - 400 * NS_PER_MS;
     it.ingestion_ts_ns     = now - 100 * NS_PER_MS;
-    it.as_of_ts_ns         = now -  10 * NS_PER_MS;
-    it.market_id           = "mkt_bench";
+    it.as_of_ts_ns         = now - 10 * NS_PER_MS;
+    // Wave 81 fix: market_id → condition_id (ABI break #1), is_buy → side (ABI break #4), Wave 76
+    it.condition_id        = "mkt_bench";
     it.strategy_id         = "strat_a";
     it.signal_id           = std::move(sig);
     it.feature_snapshot_id = "fs_01H";
-    it.is_buy              = true;
+    it.side                = Side::Buy;
     it.price               = 0.50;
     it.size_usdc           = 1'000;
     it.book_depth_l1_usdc  = 5'000;

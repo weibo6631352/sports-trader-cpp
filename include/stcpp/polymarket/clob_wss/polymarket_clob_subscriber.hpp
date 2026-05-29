@@ -61,19 +61,22 @@ using stcpp::polymarket::wss::WssTransportState;
 // v0.1 实施: 单 market conn (hot path). cold conn + user conn 在 v0.2+ 扩展.
 struct PolymarketCLOBSubscriberConfig {
     // market channel (老李 spec §2 — token_id 粒度, 无鉴权)
-    std::string market_url = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
+    std::string market_url =
+        "wss://ws-subscriptions-clob.polymarket.com/ws/market";  // CI-EXEMPT: CLOB host 合法, 老李 W9 W2 ack
     // user channel (老李 spec §3 — condition_id 粒度, payload 内鉴权)
-    std::string user_url   = "wss://ws-subscriptions-clob.polymarket.com/ws/user";
+    std::string user_url =
+        "wss://ws-subscriptions-clob.polymarket.com/ws/user";  // CI-EXEMPT: CLOB user 合法 (非 paper), 老李
+                                                               // W9 W2 ack
 
     // reconnect exp backoff (老李 spec §5.1)
-    std::chrono::milliseconds reconnect_initial    {1000};
-    std::chrono::milliseconds reconnect_cap        {30000};
-    double                    reconnect_multiplier {2.0};
+    std::chrono::milliseconds reconnect_initial{1000};
+    std::chrono::milliseconds reconnect_cap{30000};
+    double reconnect_multiplier{2.0};
 
     // heartbeat (老李 spec §5.2): 10s PING / 30s 无帧 → 强重连
-    std::chrono::milliseconds heartbeat_interval   {10000};
-    std::chrono::milliseconds heartbeat_timeout    {30000};
-    std::string               heartbeat_ping_text  = "PING";
+    std::chrono::milliseconds heartbeat_interval{10000};
+    std::chrono::milliseconds heartbeat_timeout{30000};
+    std::string heartbeat_ping_text = "PING";
 
     // user channel 凭证 (从 .env 读, 严禁落日志 P-09)
     std::string api_key;
@@ -104,12 +107,10 @@ struct PolymarketCLOBSubscriberConfig {
 //   所有 market 状态 (token_seq_map_, hot/cold set) 仅 vCPU0 访问, 无锁
 class PolymarketCLOBSubscriber {
 public:
-    PolymarketCLOBSubscriber(
-        std::unique_ptr<IWssTransport>  market_transport,
-        std::unique_ptr<IWssTransport>  user_transport,
-        std::shared_ptr<ISpscEventSink> market_sink,
-        std::shared_ptr<ISpscEventSink> user_sink,
-        PolymarketCLOBSubscriberConfig  cfg);
+    PolymarketCLOBSubscriber(std::unique_ptr<IWssTransport> market_transport,
+                             std::unique_ptr<IWssTransport> user_transport,
+                             std::shared_ptr<ISpscEventSink> market_sink,
+                             std::shared_ptr<ISpscEventSink> user_sink, PolymarketCLOBSubscriberConfig cfg);
 
     PolymarketCLOBSubscriber(const PolymarketCLOBSubscriber&) = delete;
     PolymarketCLOBSubscriber& operator=(const PolymarketCLOBSubscriber&) = delete;
@@ -142,9 +143,9 @@ public:
         return last_user_msg_ts_ns_.load(std::memory_order_relaxed);
     }
     [[nodiscard]] const SubscriberMetrics& market_metrics() const noexcept { return market_metrics_; }
-    [[nodiscard]] const SubscriberMetrics& user_metrics()   const noexcept { return user_metrics_; }
+    [[nodiscard]] const SubscriberMetrics& user_metrics() const noexcept { return user_metrics_; }
     [[nodiscard]] WssTransportState market_state() const noexcept { return market_state_.load(); }
-    [[nodiscard]] WssTransportState user_state()   const noexcept { return user_state_.load(); }
+    [[nodiscard]] WssTransportState user_state() const noexcept { return user_state_.load(); }
 
     // 测试可注入时钟 (默认 system_clock UTC epoch_ns)
     using NowFn = std::function<std::int64_t()>;
@@ -155,57 +156,53 @@ private:
     void OnMarketConnected();
     void OnMarketDisconnected(std::string_view reason);
     void OnMarketFrame(std::string_view payload, std::int64_t recv_ts_ns);
-    bool ParseBook(std::string_view body,        std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseBook(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
     bool ParsePriceChange(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParseLastTrade(std::string_view body,   std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParseTickChange(std::string_view body,  std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseLastTrade(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseTickChange(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
     void ScheduleMarketReconnect();
 
     // --- user channel ---------------------------------------------------------
     void OnUserConnected();
     void OnUserDisconnected(std::string_view reason);
-    void OnUserFrame(std::string_view payload,   std::int64_t recv_ts_ns);
-    bool ParseTrade(std::string_view body,       std::int64_t recv_ts_ns, WssEvent& ev);
-    bool ParseOrder(std::string_view body,       std::int64_t recv_ts_ns, WssEvent& ev);
+    void OnUserFrame(std::string_view payload, std::int64_t recv_ts_ns);
+    bool ParseTrade(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
+    bool ParseOrder(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev);
     void ScheduleUserReconnect();
 
     // --- subscribe frame builders (老李 spec §2.1 / §3.1) --------------------
     // P-01: assets_ids 必须包含双 token (type "Market" 大写 M)
     // P-07: user channel markets 用 condition_id, 不是 token_id
-    [[nodiscard]] std::string MakeMarketSubscribeFrame(
-        std::span<const std::string> token_ids) const;
-    [[nodiscard]] std::string MakeUserSubscribeFrame(
-        std::span<const std::string> condition_ids) const;
+    [[nodiscard]] std::string MakeMarketSubscribeFrame(std::span<const std::string> token_ids) const;
+    [[nodiscard]] std::string MakeUserSubscribeFrame(std::span<const std::string> condition_ids) const;
 
     // --- sequence_no gap detection (老李 spec §4) ----------------------------
     // vCPU0 单线程访问 token_seq_map_, 无锁
     bool CheckSequenceGap(std::string_view token_id, std::uint64_t seq) noexcept;
     void TriggerResubscribe(std::string_view token_id);
 
-    [[nodiscard]] std::int64_t NowNs() const noexcept {
-        return now_fn_ ? now_fn_() : 0;
-    }
+    [[nodiscard]] std::int64_t NowNs() const noexcept { return now_fn_ ? now_fn_() : 0; }
 
     // --- data members ---------------------------------------------------------
-    std::unique_ptr<IWssTransport>  market_transport_;
-    std::unique_ptr<IWssTransport>  user_transport_;
+    std::unique_ptr<IWssTransport> market_transport_;
+    std::unique_ptr<IWssTransport> user_transport_;
     std::shared_ptr<ISpscEventSink> market_sink_;
     std::shared_ptr<ISpscEventSink> user_sink_;
-    PolymarketCLOBSubscriberConfig  cfg_;
+    PolymarketCLOBSubscriberConfig cfg_;
 
-    SubscriberMetrics               market_metrics_;
-    SubscriberMetrics               user_metrics_;
+    SubscriberMetrics market_metrics_;
+    SubscriberMetrics user_metrics_;
 
-    std::atomic<WssTransportState>  market_state_{WssTransportState::kDisconnected};
-    std::atomic<WssTransportState>  user_state_{WssTransportState::kDisconnected};
+    std::atomic<WssTransportState> market_state_{WssTransportState::kDisconnected};
+    std::atomic<WssTransportState> user_state_{WssTransportState::kDisconnected};
 
-    std::atomic<std::int64_t>       last_market_msg_ts_ns_{0};
-    std::atomic<std::int64_t>       last_user_msg_ts_ns_{0};
-    std::atomic<std::int64_t>       last_market_ping_ts_ns_{0};
-    std::atomic<std::int64_t>       last_user_ping_ts_ns_{0};
+    std::atomic<std::int64_t> last_market_msg_ts_ns_{0};
+    std::atomic<std::int64_t> last_user_msg_ts_ns_{0};
+    std::atomic<std::int64_t> last_market_ping_ts_ns_{0};
+    std::atomic<std::int64_t> last_user_ping_ts_ns_{0};
 
-    std::atomic<std::uint32_t>      market_reconnect_attempt_{0};
-    std::atomic<std::uint32_t>      user_reconnect_attempt_{0};
+    std::atomic<std::uint32_t> market_reconnect_attempt_{0};
+    std::atomic<std::uint32_t> user_reconnect_attempt_{0};
 
     // vCPU0 single-thread: no lock needed
     // token_id (string) → last seen sequence_no
@@ -215,7 +212,7 @@ private:
     std::unordered_set<std::string> hot_token_ids_;
     std::unordered_set<std::string> cold_token_ids_;
     // current user subscription condition_ids (for reconnect replay)
-    std::vector<std::string>        user_condition_ids_;
+    std::vector<std::string> user_condition_ids_;
 
     NowFn now_fn_;
 };

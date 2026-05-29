@@ -22,7 +22,9 @@ target_compile_features(stcpp_polymarket_clob_wss PUBLIC cxx_std_20)
 # Depends on stcpp_polymarket_wss for IWssTransport / ISpscEventSink / WssEvent
 target_link_libraries(stcpp_polymarket_clob_wss PUBLIC stcpp_polymarket_wss)
 
-# ADR-010 grandfather list only
+# 第三方 transport 豁免: boost.beast IWssTransport 抽象头含 double-promotion / old-style-cast / cast-align
+# ADR-010 §2.2 grandfather 保留 (Wave 79 小冯, 老周 W10+ ack boost.beast 接入后清)
+# 三方库豁免: boost (transport 层 header-only, 同 stcpp_polymarket_wss pattern)
 target_compile_options(stcpp_polymarket_clob_wss PRIVATE
     -Wno-double-promotion
     -Wno-old-style-cast
