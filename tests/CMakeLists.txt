@@ -23,16 +23,31 @@ FetchContent_MakeAvailable(googletest)
 
 # gtest / gmock 第三方源码本身也 inherit 顶层 -Werror -Wdouble-promotion 等严格 flag,
 # 关掉这些 warning 让 gtest 能 build (生产代码 src/ + include/ 保持严格)
-# ADR-010 §2.2 grandfather list: 仅保留 4 项已验证来源 (gtest 框架触发, 非测试代码问题)
-# 已删除: -Wno-sign-conversion / -Wno-shadow / -Wno-conversion / -Wno-character-conversion
-#   (gtest 以 SYSTEM include 处理, 这些 warning 不从 system header 传播; 测试代码本身无此问题)
-foreach(_gt_target gtest gtest_main gmock gmock_main)
+# ADR-010 §2.2 grandfather list: 5 项已验证来源 (gtest/gmock 框架触发, 非测试代码问题)
+# W81 cherry-pick (57f545b): gmock 在 Linux GCC 13 下 -Wsign-conversion 触发于内部 matcher 宏;
+#   SYSTEM include 处理不覆盖 gmock_main 源码 (FetchContent 源码而非 header-only);
+#   ADR-010 §3.2 三方库豁免条款适用: 仅加 gmock/gmock_main, 不加 gtest/gtest_main.
+foreach(_gt_target gtest gtest_main)
     if(TARGET ${_gt_target})
         target_compile_options(${_gt_target} PRIVATE
             -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
             -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
             -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
             -Wno-character-conversion  # GM 错 #11 配套 W6 W2 reinstate: gtest-printers.h:502 char8_t→char32_t (AppleClang 21)
+        )
+    endif()
+endforeach()
+
+foreach(_gm_target gmock gmock_main)
+    if(TARGET ${_gm_target})
+        # 三方库豁免: google-mock (ADR-010 §3.2)
+        # -Wsign-conversion: gmock internal matcher 宏在 Linux GCC 13 下触发 (W81 cherry-pick 57f545b)
+        target_compile_options(${_gm_target} PRIVATE
+            -Wno-double-promotion   # ADR-010 grandfather: gmock 浮点宏
+            -Wno-old-style-cast     # ADR-010 grandfather: gmock 宏展开
+            -Wno-cast-align         # ADR-010 grandfather: gmock mock 转型
+            -Wno-character-conversion  # gtest-printers.h char8_t→char32_t (AppleClang 21)
+            -Wno-sign-conversion    # 三方库豁免: gmock internal matcher 宏 (ADR-010 §3.2, Linux GCC 13)
         )
     endif()
 endforeach()

@@ -57,6 +57,10 @@ function(stcpp_add_perf_bench TGT)
         -Wno-double-promotion   # ADR-010 grandfather: benchmark 浮点宏
         -Wno-old-style-cast     # ADR-010 grandfather: benchmark 宏展开
         -Wno-cast-align         # ADR-010 grandfather: benchmark mock 转型
+        # W81 cherry-pick (0ab5269): benchmark::State iteration loop in bench TU 触发
+        # -Wsign-conversion on Linux GCC 13 (benchmark_main 内部 int64 ↔ size_t 转型).
+        # 三方库豁免: ADR-010 §3.2; 仅限 perf bench TU, 不影响生产代码.
+        -Wno-sign-conversion    # 三方库豁免: google-benchmark State loop (ADR-010 §3.2)
     )
     target_compile_definitions(${TGT} PRIVATE
         STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1

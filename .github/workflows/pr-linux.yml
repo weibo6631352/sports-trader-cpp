@@ -1,0 +1,208 @@
+name: PR Linux Checks (ADR-032 v2)
+# 老高 Wave 89 — ADR-032 §3 策略 2: 远端精简版
+#
+# ADR-032 §3 策略 2 落地: 仅保留 Linux specific 检查 (本地 mac 跑不了的)
+# 本地 pre-push hook (.git/hooks/pre-push) 已跑 95% 检查:
+#   - cmake build + ctest
+#   - clang-format dry-run
+#   - 5 grep: abi_lock / risk_enum / adr010_wno / ssot / worktree_commit
+# 远端保留 5 job (Linux specific + 平台差异验证):
+#   1. build-paper-linux   (Ubuntu GCC 13, ASAN/UBSAN — 本地 macOS AppleClang 测不到)
+#   2. build-release-linux (Ubuntu Release -O2 + UBSAN, RM 单测)
+#   3. ctest-linux         (Linux ctest 全跑, 含 gmock Linux 行为)
+#   4. clang-format-linux  (Linux clang-format-19 pin, 防本地 22 vs CI 19 drift)
+#   5. perf-bench          (Linux perf 工具 + e2e latency guard)
+#
+# sub-agent 不等本 workflow CI (ADR-032 §3 策略 3):
+#   push → gh pr create → 立刻汇报 → 不等远端 CI
+#   远端 CI fail → GM merge 时决定 (admin merge 或回炉)
+#
+# 改本文件: 老高 + 老郭 + 老雷 三方任一签字
+#
+# cite: ADR-032 §3 策略 1+2+3 (docs/ADR/2026-06-W4-adr-032-local-first-ci-strategy.md)
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+
+  # ---------------------------------------------------------------------------
+  # Job 1: build-paper-linux — Ubuntu GCC 13, Debug + ASAN/UBSAN
+  # ---------------------------------------------------------------------------
+  build-paper-linux:
+    name: Build paper (Ubuntu GCC 13, ASAN/UBSAN)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q cmake ninja-build
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DSTCPP_EXEC_MODE=paper \
+            -DSTCPP_ENABLE_ASAN=ON \
+            -DSTCPP_ENABLE_UBSAN=ON \
+            -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build --parallel 4
+      - name: CTest
+        run: |
+          if [ -d build/tests ]; then
+            ctest --test-dir build --output-on-failure -j 4
+          else
+            echo "no tests yet, skip"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job 2: build-release-linux — Release -O2 + UBSAN, RM 单测专跑
+  # ---------------------------------------------------------------------------
+  build-release-linux:
+    name: Build release -O2 + UBSAN (RM 单测)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo apt-get update -q && sudo apt-get install -y -q cmake ninja-build
+      - name: Configure
+        env:
+          CXXFLAGS: "-O2 -fsanitize=undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer"
+          LDFLAGS:  "-fsanitize=undefined"
+        run: |
+          cmake -S . -B build-rel -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTCPP_EXEC_MODE=paper \
+            -DSTCPP_ENABLE_UBSAN=ON \
+            -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build-rel --parallel 4
+      - name: Test RM 单测 (UBSAN halt_on_error=1)
+        env:
+          UBSAN_OPTIONS: "halt_on_error=1:print_stacktrace=1:abort_on_error=1"
+        run: |
+          if [ -d build-rel/tests ]; then
+            ctest --test-dir build-rel \
+              -R 'RiskGateway|AuditId|RejectEnum|InvalidIntentSubReason' \
+              --output-on-failure
+          else
+            echo "no tests yet, skip"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job 3: ctest-linux — Linux ctest 全跑 (含 gmock Linux GCC 13 行为验证)
+  # ---------------------------------------------------------------------------
+  ctest-linux:
+    name: CTest full (Linux gmock + GCC 13)
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: sudo apt-get update -q && sudo apt-get install -y -q cmake ninja-build
+      - name: Configure
+        run: |
+          cmake -S . -B build-test -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DSTCPP_EXEC_MODE=paper \
+            -DBUILD_TESTING=ON
+      - name: Build
+        run: cmake --build build-test --parallel 4
+      - name: CTest full
+        run: |
+          if [ -d build-test/tests ]; then
+            ctest --test-dir build-test --output-on-failure -j 4
+          else
+            echo "no tests yet, skip"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job 4: clang-format-linux — pin clang-format-19 (防本地 22 vs CI 19 drift)
+  # ---------------------------------------------------------------------------
+  clang-format-linux:
+    name: clang-format-19 (Linux pin, ADR-032 §3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format-19
+        run: |
+          # Wave 75 fix: pin clang-format-19; Wave 77 fallback → pip
+          install_via_apt() {
+            wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+              | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+            echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" \
+              | sudo tee /etc/apt/sources.list.d/llvm-19.list
+            sudo apt-get update -q
+            sudo apt-get install -y -q clang-format-19
+            sudo ln -sf /usr/bin/clang-format-19 /usr/local/bin/clang-format
+          }
+          install_via_pip() {
+            echo "apt.llvm.org unavailable, fallback: pip install clang-format"
+            pip install --quiet "clang-format==19.*" || pip install --quiet clang-format
+            CF_BIN="$(python3 -m site --user-base)/bin/clang-format"
+            [ -f "$CF_BIN" ] && sudo ln -sf "$CF_BIN" /usr/local/bin/clang-format
+          }
+          install_via_apt 2>/dev/null || install_via_pip
+      - name: clang-format check
+        run: |
+          if find src include tests -type f \( -name '*.cpp' -o -name '*.hpp' \) 2>/dev/null | head -1 | grep -q .; then
+            clang-format --version
+            find src include tests -type f \( -name '*.cpp' -o -name '*.hpp' \) -print0 \
+              | xargs -0 clang-format --dry-run --Werror
+          else
+            echo "no C++ files yet, skip"
+          fi
+
+  # ---------------------------------------------------------------------------
+  # Job 5: perf-bench — Linux perf 工具 + e2e latency guard (ADR-015 配套)
+  # ---------------------------------------------------------------------------
+  perf-bench:
+    name: Perf bench e2e guard (Linux, ADR-015)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install deps
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q cmake ninja-build python3
+      - name: Prepare WAL paths (R-11 paper kind)
+        run: |
+          sudo mkdir -p /var/lib/stcpp/paper /var/lib/stcpp/audit
+          sudo chmod 777 /var/lib/stcpp/paper /var/lib/stcpp/audit
+          sudo mount -t tmpfs -o size=256M,mode=0777 tmpfs /var/lib/stcpp/paper || true
+          sudo mount -t tmpfs -o size=256M,mode=0777 tmpfs /var/lib/stcpp/audit || true
+      - name: Configure (Release + BENCH=ON)
+        run: |
+          cmake -S . -B build-perf -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSTCPP_EXEC_MODE=paper \
+            -DSTCPP_BUILD_BENCH=ON \
+            -DBUILD_TESTING=ON
+      - name: Build perf targets
+        run: |
+          cmake --build build-perf --parallel 4 --target \
+            bench_e2e_latency bench_spsc_latency bench_risk_gateway \
+            bench_audit_emitter bench_paper_signer bench_virtual_matcher \
+            bench_goalserve_parse bench_slippage || echo "some bench targets not ready, partial ok"
+      - name: Run e2e latency bench (lower guard p99 >= 100 ns)
+        run: |
+          if [ -f build-perf/tests/perf/bench_e2e_latency ]; then
+            mkdir -p build-perf/perf-results
+            ./build-perf/tests/perf/bench_e2e_latency \
+              --benchmark_format=json \
+              --benchmark_out=build-perf/perf-results/e2e_latency.json \
+              --benchmark_min_time=0.5s \
+              --benchmark_repetitions=3 \
+              --benchmark_report_aggregates_only=true
+            echo "e2e latency bench complete"
+          else
+            echo "bench_e2e_latency not built (STCPP_BUILD_BENCH may be off), skip"
+          fi

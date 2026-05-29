@@ -120,7 +120,7 @@ TEST(SingleInstanceLock, T2_DoubleProcess_ChildFails) {
 
         // 等 parent 信号 (read block)
         char dummy = 0;
-        ::read(ready_pipe[0], &dummy, 1);
+        (void)::read(ready_pipe[0], &dummy, 1);  // sync pipe: result intentionally ignored
         ::close(ready_pipe[0]);
 
         // child 尝试 acquire 同一 path — 应失败
@@ -135,7 +135,7 @@ TEST(SingleInstanceLock, T2_DoubleProcess_ChildFails) {
         } catch (...) {
             result = '0';
         }
-        ::write(result_pipe[1], &result, 1);
+        (void)::write(result_pipe[1], &result, 1);  // sync pipe: result intentionally ignored
         ::close(result_pipe[1]);
         ::_exit(0);
     }
@@ -146,12 +146,12 @@ TEST(SingleInstanceLock, T2_DoubleProcess_ChildFails) {
 
     // 通知 child: parent 已持锁
     char go = 'g';
-    ::write(ready_pipe[1], &go, 1);
+    (void)::write(ready_pipe[1], &go, 1);  // sync pipe: result intentionally ignored
     ::close(ready_pipe[1]);
 
     // 读 child 结果
     char result = '?';
-    ::read(result_pipe[0], &result, 1);
+    (void)::read(result_pipe[0], &result, 1);  // sync pipe: result intentionally ignored
     ::close(result_pipe[0]);
 
     int wstatus = 0;
@@ -197,12 +197,12 @@ TEST(SingleInstanceLock, T3_KillMinusNine_NextAcquireSucceeds) {
                 stcpp::execution::ExecutionMode::Paper};
             // 通知 parent: 已持锁
             char rdy = 'r';
-            ::write(child_ready[1], &rdy, 1);
+            (void)::write(child_ready[1], &rdy, 1);  // sync pipe: result intentionally ignored
             ::close(child_ready[1]);
 
             // 等 parent kill 信号 (实际是 pipe eof / 消息)
             char dummy = 0;
-            ::read(kill_ack[0], &dummy, 1);
+            (void)::read(kill_ack[0], &dummy, 1);  // sync pipe: result intentionally ignored
             // 模拟 kill -9: 直接 _exit (lock 析构不运行 → fd close by kernel)
         }
         ::_exit(0);
@@ -214,7 +214,7 @@ TEST(SingleInstanceLock, T3_KillMinusNine_NextAcquireSucceeds) {
 
     // 等 child 持锁
     char rdy = 0;
-    ::read(child_ready[0], &rdy, 1);
+    (void)::read(child_ready[0], &rdy, 1);  // sync pipe: result intentionally ignored
     ::close(child_ready[0]);
 
     EXPECT_EQ(rdy, 'r');
@@ -376,7 +376,7 @@ TEST(SingleInstanceLock, T6_SigtermHandler_UnlinksPidFile) {
         }
         // Should not reach here if handler ran
         char r = '0';
-        ::write(result_pipe[1], &r, 1);
+        (void)::write(result_pipe[1], &r, 1);  // sync pipe: result intentionally ignored
         ::close(result_pipe[1]);
         ::_exit(1);
     }
@@ -386,7 +386,7 @@ TEST(SingleInstanceLock, T6_SigtermHandler_UnlinksPidFile) {
     char r = '?';
     // non-blocking read (child may have _exit before writing)
     ::fcntl(result_pipe[0], F_SETFL, O_NONBLOCK);   // NOLINT(hicpp-signed-bitwise)
-    ::read(result_pipe[0], &r, 1);
+    (void)::read(result_pipe[0], &r, 1);  // non-blocking: EOF ok if child _exit before writing
     ::close(result_pipe[0]);
 
     int wstatus = 0;
@@ -440,7 +440,7 @@ TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
 
             // wait for start signal
             char dummy = 0;
-            ::read(start_gate[0], &dummy, 1);
+            (void)::read(start_gate[0], &dummy, 1);  // sync pipe: result intentionally ignored
             ::close(start_gate[0]);
 
             char result = 'F';
@@ -453,7 +453,7 @@ TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
             } catch (const stcpp::infra::process::SingleInstanceLockFailure&) {
                 result = 'F';
             }
-            ::write(result_pipe[1], &result, 1);
+            (void)::write(result_pipe[1], &result, 1);  // sync pipe: result intentionally ignored
             ::close(result_pipe[1]);
             ::_exit(0);
         }
@@ -468,7 +468,7 @@ TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
     // write kNumChildren bytes — each child reads 1
     for (int i = 0; i < kNumChildren; ++i) {
         char go = 'g';
-        ::write(start_gate[1], &go, 1);
+        (void)::write(start_gate[1], &go, 1);  // sync pipe: result intentionally ignored
     }
     ::close(start_gate[1]);
 
@@ -476,7 +476,7 @@ TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
     int success_count = 0;
     for (int i = 0; i < kNumChildren; ++i) {
         char r = '?';
-        ::read(result_pipe[0], &r, 1);
+        (void)::read(result_pipe[0], &r, 1);  // sync pipe: result intentionally ignored
         if (r == 'S') ++success_count;
     }
     ::close(result_pipe[0]);
