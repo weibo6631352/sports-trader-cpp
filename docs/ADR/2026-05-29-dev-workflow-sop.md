@@ -97,40 +97,41 @@ worktree(ADR-029, isolation=worktree)
 - [ ] 老胡周报加 §6 PR 周度清扫段
 - [ ] 老吴 评估本地 pre-commit hook(把 gate 再前移一步, 缩短反馈环)
 
-## 9. 完整工作流 + main/远端同步时机 (老板 2026-05-29 "把所有环节梳理清楚")
+## 9. 采纳工作流 — 本地集成 + 评审前置 + 直推 main (老板 2026-05-29 定)
+
+> 推翻早期"每 worktree 各自 push+PR"模型(它导致 rebase 竞速 + #31/#32/#36 污染)。老板原话: "worktree 从本地 main 为基准; 做完只本地提交; 所有 worktree 做完后清理、逐个合并解冲突; 完成后推送远端。" + "直推 main, 评审前置"。
 
 ### 9.0 第一原则: origin/main 是唯一真相
+本地 `main` 是会过期的缓存。**开批前必须 `git fetch` + 本地 main 快进到 `origin/main`(快进失败=分叉, 先解决)**, 才能作 worktree base。
 
-**本地 `main` 只是个会过期的缓存指针, 不可信。** 任何"基于 main"的动作前, 必须 `git fetch` 并确认本地 main 已快进到 `origin/main`(或直接基于 `origin/main` 开分支)。这次连环事故的根因就是误信了落后/被污染的本地 main。
+### 9.1 流程(本地集成优先, 批量 fan-in)
 
-### 9.1 全环节 + 同步点(⟲ = 必须同步远端的时机)
+| # | 环节 | 谁 | 动作 |
+|---|---|---|---|
+| 0 | **开批前同步** | dispatcher | `git fetch origin && git checkout main && git pull --ff-only`; 校验 `HEAD==origin/main`(唯一同步点) |
+| 1 | **开 worktree** | dispatcher | 从【本地 main】建一批: `git worktree add -b feat/X <path> main` |
+| 2 | **并行开发** | IC(各 worktree) | 开发 → `add` → **本地 `commit`**。**不 push、不开 PR、绝不 git 手术**(reset/rebase/force/切分支) |
+| 3 | **评审前置** | reviewer agent | 每个 worktree 产出由 老高(质量)/老郭(ABI)/红线 owner 审过 + 全量 ctest 绿 → 该 worktree 才算 done |
+| 4a | **逐个集成** | dispatcher | 全部 done 后, 把各 worktree 分支【逐个 merge 进本地 main, 逐个解冲突】(一人连贯解, e.g. CMakeLists append 取并集) |
+| 4b | **集成验证** | dispatcher | 集成后本地 `cmake --build && ctest` 全量绿 |
+| 4c | **清理** | dispatcher | `git worktree remove` 清理所有 worktree |
+| 5 | **直推** | dispatcher | `git push origin main`(一次, 无 PR; pre-push gate 把关) |
 
-| # | 环节 | 谁 | 动作 | 同步? |
-|---|---|---|---|---|
-| 1 | **派单前** | dispatcher | `git fetch origin`(拿最新远端 snapshot) | ⟲ **同步点 A** |
-| 2 | **开 worktree** | dispatcher | 每个 worktree 从 `origin/main` 起: `git worktree add -b feat/X <path> origin/main` —— 不依赖本地 main 指针 | (基于 A 的快照) |
-| 3 | **并行开发** | IC (各自 worktree) | 写 → `add` → `commit`。只动自己分支, **不 fetch/reset/rebase/checkout 别的分支, 不碰共享 ref** | — |
-| 4 | **push 前** | IC | `git fetch origin && git rebase origin/main` → 自解冲突 → `cmake --build && ctest` 全量复跑绿 | ⟲ **同步点 B(关键)** |
-| 5 | **push** | IC | 普通 `git push -u origin feat/X`; pre-push gate(build+全量ctest+format+grep)自动把关 | — |
-| 6 | **PR + 评审** | 系统 + reviewer | claude-review 自动评审 + reviewer agent(§5) | — |
-| 7 | **merge 前** | IC | 若评审期间 origin/main 又前进 → 再 `git rebase origin/main` 解冲突复跑(require-up-to-date) | ⟲ **同步点 C(按需)** |
-| 8 | **merge** | reviewer/GM | `gh pr merge --squash --delete-branch`; GitHub 自动关 PR | — |
-| 9 | **下一轮前** | dispatcher | 回到环节 1(`git fetch`); 本地 main 用前 `git pull --ff-only` 快进, 快进失败=分叉, 先解决 | ⟲ **回到同步点 A** |
+### 9.2 同步时机(精炼)
+- **只在环节 0 同步一次** 本地 main = origin/main。
+- 批次中途无人 push → origin/main 不动 → **无 rebase 竞速**(根除 #31/#32/#36 那类乱象)。
+- 结尾直推一次。
 
-### 9.2 三个同步时机(精炼回答老板)
+### 9.3 为什么直推不走 PR(老板定)
+- 评审【前置】在环节 3(reviewer agent 审 worktree 产出), 不靠 PR 后置。
+- 单机编排: 所有写者是本地 worktree, 集成由 dispatcher 一人连贯做 → PR 的并发协调价值低, 反引入竞速。
+- `claude-review.yml` / `CODEOWNERS` 保留给**偶发外部 PR**; 内部批次走本流程。
 
-- **A 派单/开工前**: dispatcher `fetch` 一次, 所有并行 worktree 共享这一最新远端快照。
-- **B push 前**: IC 自己 `fetch + rebase origin/main + 解冲突 + 全量复跑`(从开工到完工 origin/main 可能被 sibling 推进了)。**这一步之前缺失, 是 #31/#32 冲突要 GM 手工解的根因。**
-- **C merge 前(按需)**: 评审耗时久、其间 origin/main 又动 → 再 rebase 一次, 保证 merge 时是最新 base。
-
-> **本地 main 同步时机 = 每次要基于它做事之前**(派单、建分支、快进), 一律先 `fetch` + 校验 `HEAD == origin/main`。平时本地 main 落后无所谓, 用前必同步。
-
-### 9.3 铁律(本会话事故固化)
-
-1. **作者职责**: push 前/merge 前的 rebase + 解冲突 + 复跑由**作者自己做**, 不甩给 GM 在 merge 时替解(替解 = 掩盖缺口, 这次 GM 犯了)。
-2. **禁 agent 在共享工作树做 git 手术**(`reset --hard`/`rebase`/`push --force`/切别的分支)—— #30 共享树污染的直接原因 = 派单让 agent 做 git 手术。agent 只在自己 worktree 普通流程。
-3. **dispatcher 工作树洁癖**: `checkout`/`branch` 前清 uncommitted 残留; `--ff-only` 失败必须察觉处理, 不静默继续。
-4. **每个动作前校验**: 基于 main 的操作前 `[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]`。
+### 9.4 铁律(本会话事故固化)
+1. **agent 只在自己 worktree 本地 commit, 不 push/PR, 绝不 git 手术**(#30 共享树污染根因 = 派单让 agent 做 git 手术)。
+2. **集成 + 解冲突由 dispatcher 一人连贯做**(评审前置已保证各产出合格, 集成只解 sibling 间冲突)。
+3. **dispatcher 每步校验** `HEAD==origin/main` + 工作树洁癖(checkout/branch 前清 uncommitted 残留)。
+4. **直推 main 前必过本地 pre-push gate**(build+全量 ctest);本地 `build/` 文件增删后先 `cmake -B build` reconfigure 防 stale。
 
 ## 10. 已知漏洞 + 待办(老板"看看有没有遗漏/不合理")
 
