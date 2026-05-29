@@ -1,0 +1,241 @@
+name: Weekly Report Cron (Sprint-3 周报自动创建)
+
+# Owner: 老胡 (pm-project-manager, E-026)
+# 触发: 每周日 04:00 UTC (北京 12:00 周日) — 为周一站会准备周报 Issue
+# 作用: 自动创建 GitHub Issue 作为周报模板, 老胡 W10 W3 起替代手动每周 push PR
+# 关联:
+#   - docs/SPRINTS/sprint-03-w10-w2-progress.md (老胡 Wave 102)
+#   - docs/ADR/2026-06-W4-adr-029-worktree-push-pr-flow.md (ADR-029 flow)
+#   - docs/ADR/2026-06-W4-adr-032-local-first-ci-strategy.md (push 后不等 CI)
+# ADR-029+032: push 后不等 CI, sub-agent 自己 push + gh pr create
+#
+# 激活条件: 总裁 (老雷) ack 后 老胡 W10 W3 落地 (替代手动每周 push PR)
+
+on:
+  schedule:
+    - cron: '0 4 * * 0'   # 每周日 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      week_label:
+        description: '手动触发时指定周标签, 例如 W10-W3 (留空则自动计算)'
+        required: false
+        default: ''
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  create-weekly-report-issue:
+    name: 创建 Sprint-3 周报 Issue
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: 计算周标签 + Sprint 信息
+        id: sprint_info
+        run: |
+          # Sprint-3 基准: 2026-07-06 (W10 W1 Mon)
+          SPRINT3_START_EPOCH=$(date -u -d '2026-07-06' +%s)
+          NOW_EPOCH=$(date -u +%s)
+          DAYS_SINCE=$(( (NOW_EPOCH - SPRINT3_START_EPOCH) / 86400 ))
+          WEEK_NUM=$(( DAYS_SINCE / 7 + 10 ))   # W10 起算
+          DAY_OF_WEEK=$(( DAYS_SINCE % 7 + 1 ))  # 1=Mon
+
+          # 手动覆盖
+          if [ -n "${{ github.event.inputs.week_label }}" ]; then
+            WEEK_LABEL="${{ github.event.inputs.week_label }}"
+          else
+            WEEK_LABEL="W${WEEK_NUM}"
+          fi
+
+          # 本周 Wave 范围估算 (每周约 6 wave, 基线 W10=Wave 89-102)
+          WAVE_BASE=$(( (WEEK_NUM - 10) * 6 + 89 ))
+          WAVE_END=$(( WAVE_BASE + 5 ))
+
+          echo "WEEK_LABEL=${WEEK_LABEL}" >> $GITHUB_OUTPUT
+          echo "WEEK_NUM=${WEEK_NUM}" >> $GITHUB_OUTPUT
+          echo "WAVE_BASE=${WAVE_BASE}" >> $GITHUB_OUTPUT
+          echo "WAVE_END=${WAVE_END}" >> $GITHUB_OUTPUT
+          echo "REPORT_DATE=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      - name: 统计 ctest delta (本地 build, ADR-032 本地优先)
+        id: ctest_stats
+        run: |
+          # ADR-032: 本地验证优先. CI 只做增量 Linux-specific job.
+          # 这里统计 CMakeLists.txt 中 add_test 数量作为 ctest 总数估算
+          CTEST_COUNT=$(grep -r "add_test\|ctest_add" CMakeLists.txt tests/ --include="CMakeLists.txt" 2>/dev/null | wc -l || echo "N/A")
+          echo "CTEST_COUNT=${CTEST_COUNT}" >> $GITHUB_OUTPUT
+
+      - name: 统计 Wave count (本周 merged PR 数)
+        id: wave_stats
+        run: |
+          WEEK_START=$(date -u -d 'last monday' +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -d '6 days ago' +%Y-%m-%dT00:00:00Z)
+          # 统计本周 commit 数 (git log 本周)
+          WAVE_COUNT=$(git log --oneline --since="${WEEK_START}" | wc -l || echo "N/A")
+          # 统计本周 merged PR 数 (从 commit message 含 (#NNN) 推断)
+          PR_COUNT=$(git log --oneline --since="${WEEK_START}" | grep -c "(#[0-9]" || echo "N/A")
+          echo "WAVE_COUNT=${WAVE_COUNT}" >> $GITHUB_OUTPUT
+          echo "PR_COUNT=${PR_COUNT}" >> $GITHUB_OUTPUT
+
+      - name: 检查 Idle 部门 (ADR-031 §2 条件 4 监控)
+        id: idle_check
+        run: |
+          # 扫描 sprint-03-w10-plan-v2.md 各单元 ticket 区块
+          PLAN_DOC="docs/SPRINTS/sprint-03-w10-plan-v2.md"
+          MISSING_UNITS=""
+          for UNIT in "A 单元" "B 单元" "C 单元" "D 单元" "E 单元" "F 单元" "总裁办"; do
+            if ! grep -q "## §.*${UNIT}\|## ${UNIT}" "${PLAN_DOC}" 2>/dev/null; then
+              MISSING_UNITS="${MISSING_UNITS} ${UNIT}"
+            fi
+          done
+          if [ -z "${MISSING_UNITS}" ]; then
+            IDLE_STATUS="ADR-031 §2 条件 4 Pass — 7 单元全覆盖"
+          else
+            IDLE_STATUS="WARNING: 以下单元疑似无 ticket: ${MISSING_UNITS}"
+          fi
+          echo "IDLE_STATUS=${IDLE_STATUS}" >> $GITHUB_OUTPUT
+
+      - name: 防重复检查 (24h 内同标题 Issue 已存在则跳过)
+        id: dedup_check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          WEEK_LABEL="${{ steps.sprint_info.outputs.WEEK_LABEL }}"
+          SEARCH_TITLE="Sprint-3 ${WEEK_LABEL} 周报"
+          EXISTING=$(gh issue list \
+            --repo ${{ github.repository }} \
+            --label "weekly-report" \
+            --state open \
+            --search "${SEARCH_TITLE} in:title" \
+            --json number \
+            --jq 'length' 2>/dev/null || echo "0")
+          echo "EXISTING=${EXISTING}" >> $GITHUB_OUTPUT
+
+      - name: 创建周报 Issue
+        if: steps.dedup_check.outputs.EXISTING == '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          WEEK_LABEL="${{ steps.sprint_info.outputs.WEEK_LABEL }}"
+          WEEK_NUM="${{ steps.sprint_info.outputs.WEEK_NUM }}"
+          WAVE_BASE="${{ steps.sprint_info.outputs.WAVE_BASE }}"
+          WAVE_END="${{ steps.sprint_info.outputs.WAVE_END }}"
+          REPORT_DATE="${{ steps.sprint_info.outputs.REPORT_DATE }}"
+          CTEST_COUNT="${{ steps.ctest_stats.outputs.CTEST_COUNT }}"
+          WAVE_COUNT="${{ steps.wave_stats.outputs.WAVE_COUNT }}"
+          PR_COUNT="${{ steps.wave_stats.outputs.PR_COUNT }}"
+          IDLE_STATUS="${{ steps.idle_check.outputs.IDLE_STATUS }}"
+
+          gh issue create \
+            --repo ${{ github.repository }} \
+            --title "Sprint-3 ${WEEK_LABEL} 周报" \
+            --label "weekly-report,pm" \
+            --assignee weibo6631352 \
+            --body "$(cat <<EOF
+## Sprint-3 ${WEEK_LABEL} 周报
+
+- **报告日:** ${REPORT_DATE} (${WEEK_LABEL}, Wave ${WAVE_BASE}-${WAVE_END})
+- **Owner:** 老胡 (pm-project-manager, E-026)
+- **抄送:** 老雷 / 老郭 / 老韩 / 老周 / 小梁 / 小余 / 老钱
+
+---
+
+## §0 TL;DR (老胡填写)
+
+> 本节由老胡在每周站会前 (周一 09:00 前) 填写。
+
+---
+
+## §1 ctest delta
+
+| 指标 | 值 |
+|---|---|
+| ctest add_test 计数 (ADR-032 本地优先, CI 估算) | ${CTEST_COUNT} |
+| 本周 commit 数 | ${WAVE_COUNT} |
+| 本周 merged PR 数 | ${PR_COUNT} |
+
+> 精确 ctest 数字由老胡从本地 \`cmake --build build && ctest\` 输出补充。
+
+---
+
+## §2 Wave count
+
+- 本周 Wave 范围 (估算): Wave ${WAVE_BASE} - ${WAVE_END}
+- 实际 wave 数: ${WAVE_COUNT} (git commit 数, 含直推 main)
+- PR merged 数: ${PR_COUNT}
+
+---
+
+## §3 Idle 部门监控 (ADR-031 §2 条件 4)
+
+${IDLE_STATUS}
+
+> 老胡补充: 本周各部门真实激活状态 (Active / Idle / Blocked)
+
+| 部门 | 状态 | 主要 deliverable | 备注 |
+|---|---|---|---|
+| A 系统工程 | | | |
+| B 风控合规 | | | |
+| C 量化研究 | | | |
+| D 数据基础 | | | |
+| E 产品保障 | | | |
+| F 顾问团 | | | |
+| 总裁办 | | | |
+
+---
+
+## §4 风险 Registry (老胡更新)
+
+> 参考 docs/SPRINTS/sprint-03-w10-w2-progress.md §6 风险表, 本周变化补充。
+
+| 风险 ID | 描述 | 级别 | 本周状态 | 变化 |
+|---|---|---|---|---|
+| R-V2 | CLOB V2 升级链路 | P0 | | |
+| R-FRANKFURT | Frankfurt server | P1 | | |
+| R-W11 | paper runtime W11 gate | P1 | | |
+| R-IDLE | Idle 激活 | P1 | | |
+
+---
+
+## §5 W11 paper runtime checklist 进度
+
+9 项 gate 当前状态 (老胡填写):
+
+- [ ] CLOB V2 全链路通
+- [ ] WSS subscriber reconnect chaos pass
+- [ ] RM v0.5 22 reject case pass
+- [ ] Frankfurt server SSH + base image
+- [ ] audit replay verify pass
+- [ ] REST API 9 endpoint wrk p99 < 100us
+- [ ] chaos + replay 3 种信号注入可运行
+- [ ] CI main 全绿
+- [ ] security audit 红线 0 violation
+
+---
+
+## §6 Opus 使用率监控 (ADR-009 v2)
+
+- Sprint-3 目标: < 5% 总 wave
+- 本周实测: (老胡填写)
+
+---
+
+## §7 下周目标 (老胡填写)
+
+> 参考 docs/SPRINTS/sprint-03-w10-plan-v2.md 对应 W X 计划
+
+---
+
+*自动创建: weekly-report-cron.yml (老胡 Wave 102, 2026-05-29)*
+*ADR-029+032: push 后不等 CI. 老胡 W10 W3 起替代手动每周 push PR.*
+EOF
+)"
+
+      - name: 跳过重复 Issue 通知
+        if: steps.dedup_check.outputs.EXISTING != '0'
+        run: |
+          echo "本周 Sprint-3 ${{ steps.sprint_info.outputs.WEEK_LABEL }} 周报 Issue 已存在, 跳过创建."
