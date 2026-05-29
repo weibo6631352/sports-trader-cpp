@@ -25,22 +25,21 @@ namespace {
 
 using namespace stcpp;
 
-execution::VirtualOrder make_order(double size, double price,
-                                   double depth, double tick = 0.01) {
+execution::VirtualOrder make_order(double size, double price, double depth, double tick = 0.01) {
     execution::VirtualOrder o;
-    o.intent_id          = 7;
-    o.market_id          = "0xMatch";
-    o.outcome            = "YES";
-    o.size_usdc          = size;
-    o.quote_price        = price;
+    o.intent_id = 7;
+    o.market_id = "0xMatch";
+    o.outcome = "YES";
+    o.size_usdc = size;
+    o.quote_price = price;
     o.book_depth_l1_usdc = depth;
-    o.tick_size          = tick;
+    o.tick_size = tick;
     const std::int64_t t = infra::wal::pit::NowRealtimeNs();
-    o.event_ts_ns        = t - 10'000'000;
-    o.data_source_ts_ns  = t -  8'000'000;
-    o.ingestion_ts_ns    = t -  4'000'000;
-    o.as_of_ts_ns        = t;
-    o.wall_now_ns        = t;
+    o.event_ts_ns = t - 10'000'000;
+    o.data_source_ts_ns = t - 8'000'000;
+    o.ingestion_ts_ns = t - 4'000'000;
+    o.as_of_ts_ns = t;
+    o.wall_now_ns = t;
     return o;
 }
 

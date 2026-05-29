@@ -7,10 +7,10 @@
 // T4: 5 emitter pool 各自独立 ring + 全局 chain 串联 (老周 Smell #A)
 // T5: build-time switch (BLAKE3_REAL=1 必定义; BLAKE3_STUB 禁止 — 老韩 Smell #2)
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cstdint>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/infra/wal/wal_error.hpp"
@@ -26,6 +26,9 @@
 namespace stcpp::test::blake3 {
 namespace {
 
+using stcpp::infra::wal::WalConfig;
+using stcpp::infra::wal::WalKind;
+using stcpp::infra::wal::WalWriter;
 using stcpp::observability::AuditEmitter;
 using stcpp::observability::AuditEmitterPool;
 using stcpp::observability::AuditEventType;
@@ -33,25 +36,26 @@ using stcpp::observability::AuditOrigin;
 using stcpp::observability::AuditRecord;
 using stcpp::observability::Blake3Hasher;
 using stcpp::observability::RiskDecisionInput;
-using stcpp::infra::wal::WalConfig;
-using stcpp::infra::wal::WalKind;
-using stcpp::infra::wal::WalWriter;
 
 static std::int64_t NowNs() noexcept {
     return stcpp::infra::wal::pit::NowRealtimeNs();
 }
 
-static RiskDecisionInput make_input(int i = 0,
-    AuditEventType t = AuditEventType::OrderApproved) {
+static RiskDecisionInput make_input(int i = 0, AuditEventType t = AuditEventType::OrderApproved) {
     const std::int64_t base = NowNs() - 1'000'000'000LL;
     RiskDecisionInput in{};
-    in.event_ts = base; in.data_source_ts = base + 1000;
-    in.ingestion_ts = base + 2000; in.as_of_ts = base + 3000;
+    in.event_ts = base;
+    in.data_source_ts = base + 1000;
+    in.ingestion_ts = base + 2000;
+    in.as_of_ts = base + 3000;
     in.decision_ts = base + 4000 + i;
-    in.audit_id_bytes = {static_cast<std::uint8_t>(i & 0xFF), 1, 2, 3,
-                         4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
-    in.market_id = "mkt_b3"; in.strategy_id = "b3_strat";
-    in.size_usdc = 100; in.price = 0.6; in.is_buy = true;
+    in.audit_id_bytes = {
+        static_cast<std::uint8_t>(i & 0xFF), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
+    in.market_id = "mkt_b3";
+    in.strategy_id = "b3_strat";
+    in.size_usdc = 100;
+    in.price = 0.6;
+    in.is_buy = true;
     in.event_type = t;
     in.reject_code = stcpp::risk::RejectCode::INTERNAL_ERROR;
     in.sub_reason = stcpp::risk::InvalidIntentSubReason::NONE;
@@ -59,7 +63,8 @@ static RiskDecisionInput make_input(int i = 0,
 }
 
 static auto open_writer(const char* s) {
-    WalConfig c{}; c.kind = WalKind::PaperAudit;
+    WalConfig c{};
+    c.kind = WalKind::PaperAudit;
     c.path_prefix = std::string("/var/lib/stcpp/paper/") + s;
     return WalWriter<AuditRecord>::Open(c);
 }
@@ -77,16 +82,14 @@ TEST(Blake3Hash, T1_SameInputSameOutput) {
 TEST(Blake3Hash, T1_DifferentInputDifferentOutput) {
     const std::array<std::uint8_t, 4> a = {1, 2, 3, 4};
     const std::array<std::uint8_t, 4> b = {1, 2, 3, 5};
-    EXPECT_NE(Blake3Hasher::hash_256({a.data(), a.size()}),
-              Blake3Hasher::hash_256({b.data(), b.size()}));
+    EXPECT_NE(Blake3Hasher::hash_256({a.data(), a.size()}), Blake3Hasher::hash_256({b.data(), b.size()}));
 }
 
 TEST(Blake3Hash, T1_HashChain_Deterministic) {
     Blake3Hasher::Hash256 prev{};
     const std::array<std::uint8_t, 4> pl = {0xAB, 0xCD, 0xEF, 0x01};
     const auto ph = Blake3Hasher::hash_256({pl.data(), pl.size()});
-    EXPECT_EQ(Blake3Hasher::hash_chain(prev, ph),
-              Blake3Hasher::hash_chain(prev, ph)) << "T1: chain 确定性";
+    EXPECT_EQ(Blake3Hasher::hash_chain(prev, ph), Blake3Hasher::hash_chain(prev, ph)) << "T1: chain 确定性";
     EXPECT_NE(Blake3Hasher::hash_chain(prev, ph), Blake3Hasher::Hash256{});
 }
 
@@ -149,29 +152,30 @@ TEST(AuditEmitterBlake3, T3_TamperDetection) {
 // ---- T4: 5 emitter pool 各自独立 ring (老周 Smell #A) -----------------------
 
 TEST(AuditEmitterPool, T4_5Origins_IndependentEmitters) {
-    auto wr = [](const char* s) { return open_writer(s); };
+    auto wr = [](const char* s) {
+        return open_writer(s);
+    };
     auto w0 = wr("pool_t4_risk"), w1 = wr("pool_t4_signer");
-    auto w2 = wr("pool_t4_ml"),   w3 = wr("pool_t4_stats");
+    auto w2 = wr("pool_t4_ml"), w3 = wr("pool_t4_stats");
     auto w4 = wr("pool_t4_strat");
     ASSERT_TRUE(w0 && w1 && w2 && w3 && w4);
 
-    AuditEmitterPool pool{w0.value().get(), w1.value().get(),
-                          w2.value().get(), w3.value().get(), w4.value().get()};
+    AuditEmitterPool pool{w0.value().get(), w1.value().get(), w2.value().get(), w3.value().get(),
+                          w4.value().get()};
 
     // 5 个 emitter 指针独立非空
     const auto* re = pool.get_emitter(AuditOrigin::Risk);
     const auto* se = pool.get_emitter(AuditOrigin::Signer);
-    EXPECT_NE(re, nullptr); EXPECT_NE(se, nullptr);
+    EXPECT_NE(re, nullptr);
+    EXPECT_NE(se, nullptr);
     EXPECT_NE(re, se) << "T4: 各 emitter 独立 (不同指针)";
 
     // 初始 global_seq = 0
     EXPECT_EQ(pool.global_seq(), 0u);
 
     // 5 origin 各 emit 1 条
-    const std::array<AuditOrigin, 5> origins = {
-        AuditOrigin::Risk, AuditOrigin::Signer, AuditOrigin::Ml,
-        AuditOrigin::Stats, AuditOrigin::Strategy
-    };
+    const std::array<AuditOrigin, 5> origins = {AuditOrigin::Risk, AuditOrigin::Signer, AuditOrigin::Ml,
+                                                AuditOrigin::Stats, AuditOrigin::Strategy};
     Blake3Hasher::Hash256 prev{};
     for (std::size_t i = 0; i < 5; ++i) {
         ASSERT_TRUE(pool.emit(origins[i], make_input(static_cast<int>(i))).has_value())
@@ -183,17 +187,17 @@ TEST(AuditEmitterPool, T4_5Origins_IndependentEmitters) {
 }
 
 TEST(AuditEmitterPool, T4_GlobalChainVerify) {
-    auto mk = [](const char* s) { return open_writer(s); };
+    auto mk = [](const char* s) {
+        return open_writer(s);
+    };
     auto w0 = mk("pool_gv_r"), w1 = mk("pool_gv_s"), w2 = mk("pool_gv_m");
     auto w3 = mk("pool_gv_st"), w4 = mk("pool_gv_sg");
     ASSERT_TRUE(w0 && w1 && w2 && w3 && w4);
-    AuditEmitterPool pool{w0.value().get(), w1.value().get(),
-                          w2.value().get(), w3.value().get(), w4.value().get()};
+    AuditEmitterPool pool{w0.value().get(), w1.value().get(), w2.value().get(), w3.value().get(),
+                          w4.value().get()};
     constexpr int kN = 10;
-    const std::array<AuditOrigin, 5> origs = {
-        AuditOrigin::Risk, AuditOrigin::Signer, AuditOrigin::Ml,
-        AuditOrigin::Stats, AuditOrigin::Strategy
-    };
+    const std::array<AuditOrigin, 5> origs = {AuditOrigin::Risk, AuditOrigin::Signer, AuditOrigin::Ml,
+                                              AuditOrigin::Stats, AuditOrigin::Strategy};
     for (int i = 0; i < kN; ++i) {
         ASSERT_TRUE(pool.emit(origs[static_cast<std::size_t>(i) % 5], make_input(i)));
     }
@@ -222,7 +226,8 @@ TEST(Blake3BuildSwitch, T5_BLAKE3_STUB_Not_Defined) {
 TEST(Blake3BuildSwitch, T5_TrueBlake3_NonSymmetric) {
     // 真 BLAKE3 非对称: hash_chain(a, b) != hash_chain(b, a)
     Blake3Hasher::Hash256 a{}, b{};
-    a[0] = 0x01; b[0] = 0x02;
+    a[0] = 0x01;
+    b[0] = 0x02;
     EXPECT_NE(Blake3Hasher::hash_chain(a, b), Blake3Hasher::hash_chain(b, a))
         << "T5: 真 BLAKE3 非对称 (prev/payload 顺序不可换)";
 }

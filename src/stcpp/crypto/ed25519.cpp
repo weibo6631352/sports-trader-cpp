@@ -29,21 +29,17 @@ namespace stcpp::crypto {
 
 // ---------- Ed25519::sign ----------
 
-std::array<std::uint8_t, kEd25519SignatureBytes>
-Ed25519::sign(const SecureBuffer<kEd25519SecretKeyBytes>& secret_key,
-              std::span<const std::uint8_t> message) noexcept {
+std::array<std::uint8_t, kEd25519SignatureBytes> Ed25519::sign(
+    const SecureBuffer<kEd25519SecretKeyBytes>& secret_key, std::span<const std::uint8_t> message) noexcept {
     std::array<std::uint8_t, kEd25519SignatureBytes> sig{};
 
     // libsodium detached sign
     // sig_len 为 out 参数; Ed25519 detached 固定 64B
     unsigned long long sig_len = 0ULL;  // NOLINT(google-runtime-int) — libsodium API
     int rc = crypto_sign_ed25519_detached(
-        sig.data(),
-        &sig_len,
-        message.data(),
+        sig.data(), &sig_len, message.data(),
         static_cast<unsigned long long>(message.size()),  // NOLINT(google-runtime-int)
-        secret_key.data()
-    );
+        secret_key.data());
 
     if (rc != 0 || sig_len != kEd25519SignatureBytes) {
         // 极罕见: libsodium 内部错误; 返回全零数组 (caller 需检验非零)
@@ -56,17 +52,13 @@ Ed25519::sign(const SecureBuffer<kEd25519SecretKeyBytes>& secret_key,
 
 // ---------- Ed25519::verify ----------
 
-bool Ed25519::verify(
-    std::span<const std::uint8_t, kEd25519PublicKeyBytes> public_key,
-    std::span<const std::uint8_t> message,
-    std::span<const std::uint8_t, kEd25519SignatureBytes> signature) noexcept {
-
+bool Ed25519::verify(std::span<const std::uint8_t, kEd25519PublicKeyBytes> public_key,
+                     std::span<const std::uint8_t> message,
+                     std::span<const std::uint8_t, kEd25519SignatureBytes> signature) noexcept {
     int rc = crypto_sign_ed25519_verify_detached(
-        signature.data(),
-        message.data(),
+        signature.data(), message.data(),
         static_cast<unsigned long long>(message.size()),  // NOLINT(google-runtime-int)
-        public_key.data()
-    );
+        public_key.data());
 
     // libsodium: 0 = 有效; -1 = 无效 (含 message 被篡改 / key 不匹配)
     return rc == 0;
@@ -74,10 +66,8 @@ bool Ed25519::verify(
 
 // ---------- Ed25519::generate_keypair ----------
 
-bool Ed25519::generate_keypair(
-    std::array<std::uint8_t, kEd25519PublicKeyBytes>& pk_out,
-    SecureBuffer<kEd25519SecretKeyBytes>& sk_out) noexcept {
-
+bool Ed25519::generate_keypair(std::array<std::uint8_t, kEd25519PublicKeyBytes>& pk_out,
+                               SecureBuffer<kEd25519SecretKeyBytes>& sk_out) noexcept {
     // crypto_sign_ed25519_keypair: 写 pk (32B) + sk (64B = seed || pk)
     int rc = crypto_sign_ed25519_keypair(pk_out.data(), sk_out.data());
     return rc == 0;

@@ -41,9 +41,9 @@ NoVigResult compute_no_vig(double decimal_yes, double decimal_no) noexcept {
     if (decimal_yes < MIN_DECIMAL_ODDS || decimal_no < MIN_DECIMAL_ODDS) {
         return r;
     }
-    r.p_yes_raw  = 1.0 / decimal_yes;
-    r.p_no_raw   = 1.0 / decimal_no;
-    r.overround  = r.p_yes_raw + r.p_no_raw;
+    r.p_yes_raw = 1.0 / decimal_yes;
+    r.p_no_raw = 1.0 / decimal_no;
+    r.overround = r.p_yes_raw + r.p_no_raw;
     if (r.overround <= 0.0 || !is_finite(r.overround)) {
         return r;
     }
@@ -97,23 +97,18 @@ bool MockGameStateSource::lookup(std::string const& market_id, GameState& out) c
 
 // ----- PinnacleNoVigSignal -----
 
-PinnacleNoVigSignal::PinnacleNoVigSignal(IPinnacleSource const& pinnacle,
-                                         IPmSnapshotSource const& pm,
-                                         IGameStateSource const& games,
-                                         std::int64_t bankroll_usdc) noexcept
+PinnacleNoVigSignal::PinnacleNoVigSignal(IPinnacleSource const& pinnacle, IPmSnapshotSource const& pm,
+                                         IGameStateSource const& games, std::int64_t bankroll_usdc) noexcept
     : pinnacle_(pinnacle), pm_(pm), games_(games), bankroll_usdc_(bankroll_usdc) {}
 
 bool PinnacleNoVigSignal::validate_context_(SignalContext const& ctx) const noexcept {
     // R-20: 4 ts 全 > 0 且单调非降, feature_snapshot_id 非空, market_id 非空.
-    if (ctx.event_ts_ns       <= 0 ||
-        ctx.data_source_ts_ns <= 0 ||
-        ctx.ingestion_ts_ns   <= 0 ||
-        ctx.as_of_ts_ns       <= 0) {
+    if (ctx.event_ts_ns <= 0 || ctx.data_source_ts_ns <= 0 || ctx.ingestion_ts_ns <= 0 ||
+        ctx.as_of_ts_ns <= 0) {
         return false;
     }
-    if (ctx.event_ts_ns       > ctx.data_source_ts_ns ||
-        ctx.data_source_ts_ns > ctx.ingestion_ts_ns   ||
-        ctx.ingestion_ts_ns   > ctx.as_of_ts_ns) {
+    if (ctx.event_ts_ns > ctx.data_source_ts_ns || ctx.data_source_ts_ns > ctx.ingestion_ts_ns ||
+        ctx.ingestion_ts_ns > ctx.as_of_ts_ns) {
         return false;
     }
     if (ctx.market_id.empty() || ctx.feature_snapshot_id.empty()) {
@@ -155,7 +150,7 @@ std::optional<SignalOutput> PinnacleNoVigSignal::tick(SignalContext const& ctx) 
 
     // edge
     double const edge_signed = pm.mid - nv.p_yes_fair;
-    double const edge_abs    = edge_signed < 0.0 ? -edge_signed : edge_signed;
+    double const edge_abs = edge_signed < 0.0 ? -edge_signed : edge_signed;
 
     // 触发条件 1: |edge| > 0.05 (严格大于)
     if (!(edge_abs > EDGE_THRESHOLD)) {
@@ -197,8 +192,8 @@ std::optional<SignalOutput> PinnacleNoVigSignal::tick(SignalContext const& ctx) 
         return std::nullopt;
     }
 
-    double const raw_size_usdc = KELLY_FRACTION * kelly_full * pm.expected_fill_rate *
-                                 static_cast<double>(bankroll_usdc_);
+    double const raw_size_usdc =
+        KELLY_FRACTION * kelly_full * pm.expected_fill_rate * static_cast<double>(bankroll_usdc_);
     // clip [0, MAX_SIZE_USDC]
     double clipped = raw_size_usdc;
     if (clipped < 0.0) {
@@ -216,12 +211,12 @@ std::optional<SignalOutput> PinnacleNoVigSignal::tick(SignalContext const& ctx) 
 
     // ----- 装配 SignalOutput -----
     SignalOutput out;
-    out.signal_id           = SignalId::P0_01_PinnacleNoVig;
+    out.signal_id = SignalId::P0_01_PinnacleNoVig;
     // v0.5: Side 解耦 outcome; Buy = 开仓方向, outcome 由 token_id 决定 (Orchestrator 层设)
-    out.side                = Side::Buy;
-    out.edge_bps            = round_to_bps(edge_abs);
+    out.side = Side::Buy;
+    out.edge_bps = round_to_bps(edge_abs);
     out.suggested_size_usdc = size_usdc;
-    out.confidence          = clamp01(edge_abs / CONFIDENCE_NORMALIZER);
+    out.confidence = clamp01(edge_abs / CONFIDENCE_NORMALIZER);
     return out;
 }
 

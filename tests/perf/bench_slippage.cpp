@@ -13,8 +13,8 @@
 //
 // 输出 JSON 由 --benchmark_out=*.json 写出, scripts/perf_compare.py 比对 baseline.
 
-#include <cstdint>
 #include <cmath>
+#include <cstdint>
 
 #include <benchmark/benchmark.h>
 
@@ -25,19 +25,19 @@ namespace {
 using stcpp::numerical::SlippageInput;
 using stcpp::numerical::SlippageModel;
 
-constexpr std::int64_t kWallNow        = 1'700'000'000'000'000'000LL;
-constexpr std::int64_t kBookFreshTs    = kWallNow - 200'000'000LL;   // 200 ms ago
-constexpr std::int64_t kBookStaleTs    = kWallNow - 90'000'000'000LL; // 90 s ago (> 60s STALE_MAX_NS)
+constexpr std::int64_t kWallNow = 1'700'000'000'000'000'000LL;
+constexpr std::int64_t kBookFreshTs = kWallNow - 200'000'000LL;     // 200 ms ago
+constexpr std::int64_t kBookStaleTs = kWallNow - 90'000'000'000LL;  // 90 s ago (> 60s STALE_MAX_NS)
 
 // ---------- OneLevel (ρ < 1, 单层吃饱) ----------
 void BM_Slippage_OneLevel(benchmark::State& state) {
     SlippageInput const in{
         /*order_size_usdc*/ 2'000.0,
-        /*quote_price*/      0.50,
-        /*book_depth_l1*/   2'500.0,
+        /*quote_price*/ 0.50,
+        /*book_depth_l1*/ 2'500.0,
         /*book_snapshot_ts*/ kBookFreshTs,
-        /*wall_now*/         kWallNow,
-        /*tick_size*/        0.01,
+        /*wall_now*/ kWallNow,
+        /*tick_size*/ 0.01,
     };
     for (auto _ : state) {
         auto out = SlippageModel::compute(in);

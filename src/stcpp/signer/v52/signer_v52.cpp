@@ -39,11 +39,11 @@
 //   本 stub 返回 SignV52Error::InternalError
 
 #include "stcpp/signer/v52/signer_v52.hpp"
-#include "stcpp/crypto/ed25519.hpp"
 
 #include <algorithm>
 #include <cstring>
 
+#include "stcpp/crypto/ed25519.hpp"
 #include "stcpp/infra/wal/pit.hpp"
 
 namespace stcpp::signer::v52 {
@@ -52,22 +52,18 @@ namespace {
 
 // ---------- R-20 PIT AssertChain ----------
 
-[[nodiscard]] bool AssertChainTs(std::int64_t event_ts,
-                                 std::int64_t ds_ts,
-                                 std::int64_t ingest_ts,
+[[nodiscard]] bool AssertChainTs(std::int64_t event_ts, std::int64_t ds_ts, std::int64_t ingest_ts,
                                  std::int64_t as_of_ts) noexcept {
-    return event_ts  >  0
-        && ds_ts     >= event_ts
-        && ingest_ts >= ds_ts
-        && as_of_ts  >= ingest_ts
-        && as_of_ts  <= infra::wal::pit::NowRealtimeNs();
+    return event_ts > 0 && ds_ts >= event_ts && ingest_ts >= ds_ts && as_of_ts >= ingest_ts &&
+           as_of_ts <= infra::wal::pit::NowRealtimeNs();
 }
 
 // ---------- BUG-W5-001 防御: audit_id 全零检测 ----------
 
 [[nodiscard]] bool AuditIdNonZero(const std::array<std::uint8_t, 16>& id) noexcept {
     for (const auto b : id) {
-        if (b != 0U) return true;
+        if (b != 0U)
+            return true;
     }
     return false;
 }
@@ -129,8 +125,7 @@ namespace {
 
 [[nodiscard]] bool GeneratePaperKeypair(
     std::array<std::uint8_t, crypto::kEd25519PublicKeyBytes>& pk_out,
-    crypto::SecureBuffer<crypto::kEd25519SecretKeyBytes>&     sk_out) noexcept {
-
+    crypto::SecureBuffer<crypto::kEd25519SecretKeyBytes>& sk_out) noexcept {
     return crypto::Ed25519::generate_keypair(pk_out, sk_out);
 }
 
@@ -138,9 +133,7 @@ namespace {
 
 // ---------- SignerV52 constructor ----------
 
-SignerV52::SignerV52(execution::ExecutionMode mode)
-    : mode_(mode), sk_{}, pk_{}, keypair_valid_(false) {
-
+SignerV52::SignerV52(execution::ExecutionMode mode) : mode_(mode), sk_{}, pk_{}, keypair_valid_(false) {
     if (mode_ != execution::ExecutionMode::Paper) {
         // live / backtest: stub — M5+ secp256k1 真切
         return;
@@ -172,10 +165,7 @@ SignerV52::~SignerV52() {
 // ---------- SignerV52 move constructor ----------
 
 SignerV52::SignerV52(SignerV52&& other) noexcept
-    : mode_(other.mode_)
-    , sk_(std::move(other.sk_))
-    , pk_(other.pk_)
-    , keypair_valid_(other.keypair_valid_) {
+    : mode_(other.mode_), sk_(std::move(other.sk_)), pk_(other.pk_), keypair_valid_(other.keypair_valid_) {
     // 清空 other 防止析构时访问已移走资源
     other.keypair_valid_ = false;
     other.pk_.fill(0U);
@@ -188,10 +178,10 @@ SignV52Response SignerV52::Sign(const SignV52Request& req) noexcept {
     SignV52Response resp;
 
     // R-20 4 ts 透传 (原样 copy, 无论 sign 成功与否)
-    resp.event_ts_ns       = req.event_ts_ns;
+    resp.event_ts_ns = req.event_ts_ns;
     resp.data_source_ts_ns = req.data_source_ts_ns;
-    resp.ingestion_ts_ns   = req.ingestion_ts_ns;
-    resp.as_of_ts_ns       = req.as_of_ts_ns;
+    resp.ingestion_ts_ns = req.ingestion_ts_ns;
+    resp.as_of_ts_ns = req.as_of_ts_ns;
 
     // R-11: audit_wal_kind 按 mode 硬填
     resp.audit_wal_kind = WalKindForMode(mode_);
@@ -200,8 +190,7 @@ SignV52Response SignerV52::Sign(const SignV52Request& req) noexcept {
     resp.audit_id = req.audit_id;
 
     // R-7 ModeMismatch: paper signer 不允许被 live/backtest mode 调 (防御)
-    if (mode_ == execution::ExecutionMode::Live
-        || mode_ == execution::ExecutionMode::Backtest) {
+    if (mode_ == execution::ExecutionMode::Live || mode_ == execution::ExecutionMode::Backtest) {
         resp.error = SignV52Error::InternalError;
         return resp;
     }
@@ -213,8 +202,7 @@ SignV52Response SignerV52::Sign(const SignV52Request& req) noexcept {
     }
 
     // R-20: 入口 PIT AssertChain
-    if (!AssertChainTs(req.event_ts_ns, req.data_source_ts_ns,
-                       req.ingestion_ts_ns, req.as_of_ts_ns)) {
+    if (!AssertChainTs(req.event_ts_ns, req.data_source_ts_ns, req.ingestion_ts_ns, req.as_of_ts_ns)) {
         resp.error = SignV52Error::PitViolation;
         return resp;
     }
@@ -265,8 +253,8 @@ SignV52Response SignerV52::Sign(const SignV52Request& req) noexcept {
 
     // event_ts_ns (8B little-endian)
     for (std::size_t i = 0U; i < 8U; ++i) {
-        msg.push_back(static_cast<std::uint8_t>(
-            (static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
+        msg.push_back(
+            static_cast<std::uint8_t>((static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
     }
     // market_id (UTF-8 bytes, condition_id)
     for (const char c : req.market_id) {
@@ -292,15 +280,15 @@ SignV52Response SignerV52::Sign(const SignV52Request& req) noexcept {
     //
     // 单一路径: stcpp::crypto::Ed25519::sign(sk_, message)
     // 撤 W6 W3 STCPP_SIGNER_V52_LIBSODIUM=0/1 条件编译双路径
-    auto sig_arr = crypto::Ed25519::sign(
-        sk_,
-        std::span<const std::uint8_t>{msg.data(), msg.size()}
-    );
+    auto sig_arr = crypto::Ed25519::sign(sk_, std::span<const std::uint8_t>{msg.data(), msg.size()});
 
     // Ed25519 失败: sign() 返回全零数组 (极罕见)
     bool sig_is_zero = true;
     for (const auto b : sig_arr) {
-        if (b != 0U) { sig_is_zero = false; break; }
+        if (b != 0U) {
+            sig_is_zero = false;
+            break;
+        }
     }
     if (sig_is_zero) {
         resp.error = SignV52Error::InternalError;

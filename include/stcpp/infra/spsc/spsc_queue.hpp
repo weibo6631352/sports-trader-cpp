@@ -35,8 +35,9 @@
 #include <type_traits>
 #include <utility>
 
-#include "rigtorp/SPSCQueue.h"                    // rigtorp/SPSCQueue (FetchContent)
 #include "stcpp/infra/spsc/queue_capacities.hpp"
+
+#include "rigtorp/SPSCQueue.h"  // rigtorp/SPSCQueue (FetchContent)
 
 namespace stcpp::infra::spsc {
 
@@ -61,8 +62,7 @@ inline constexpr std::size_t CACHE_LINE_SIZE = 64;
 
 template <typename T, std::size_t Capacity>
 class SpscQueue {
-    static_assert(IS_POWER_OF_TWO<Capacity>,
-                  "SpscQueue Capacity must be power of two");
+    static_assert(IS_POWER_OF_TWO<Capacity>, "SpscQueue Capacity must be power of two");
     static_assert(std::is_trivially_copyable_v<T> || std::is_move_constructible_v<T>,
                   "SpscQueue element must be trivially copyable or move-constructible");
 
@@ -71,10 +71,10 @@ public:
     SpscQueue() : queue_(Capacity) {}
 
     // 禁 copy/move — ring 持有 heap 分配, 语义不明确
-    SpscQueue(const SpscQueue&)            = delete;
+    SpscQueue(const SpscQueue&) = delete;
     SpscQueue& operator=(const SpscQueue&) = delete;
-    SpscQueue(SpscQueue&&)                 = delete;
-    SpscQueue& operator=(SpscQueue&&)      = delete;
+    SpscQueue(SpscQueue&&) = delete;
+    SpscQueue& operator=(SpscQueue&&) = delete;
 
     ~SpscQueue() = default;
 
@@ -122,9 +122,7 @@ public:
     }
 
     // reset: 仅测试用, 不在生产 hot path 调
-    void reset_drop_count() noexcept {
-        drop_count_.store(0, std::memory_order_relaxed);
-    }
+    void reset_drop_count() noexcept { drop_count_.store(0, std::memory_order_relaxed); }
 
     [[nodiscard]] static constexpr std::size_t capacity() noexcept { return Capacity; }
 
@@ -153,9 +151,7 @@ public:
     SpscEventSink() = default;
 
     // 实现 ISpscEventSink 接口 (不继承虚基, 避免 vtable 开销; 调用方 duck-type 或 wrap)
-    [[nodiscard]] bool TryPush(const T& ev) noexcept {
-        return queue_.try_push(ev);
-    }
+    [[nodiscard]] bool TryPush(const T& ev) noexcept { return queue_.try_push(ev); }
 
     [[nodiscard]] std::size_t Capacity() const noexcept { return Cap; }
 

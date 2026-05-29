@@ -20,22 +20,16 @@ namespace stcpp::data {
 // ---------------------------------------------------------------------------
 // append(FeatureSnapshot, TrainingLabel)
 // ---------------------------------------------------------------------------
-FlushResult ParquetBatchWriter::append(
-    const ml::FeatureSnapshot& fs,
-    const ml::TrainingLabel&   tl,
-    std::string_view           sport,
-    std::string_view           market_type,
-    std::int32_t               year,
-    std::int32_t               week)
-{
+FlushResult ParquetBatchWriter::append(const ml::FeatureSnapshot& fs, const ml::TrainingLabel& tl,
+                                       std::string_view sport, std::string_view market_type,
+                                       std::int32_t year, std::int32_t week) {
     // R-20 check — 两端 ts chain 都必须满足
     if (!fs.ts_chain_ok() || !tl.ts_chain_ok()) {
         ++ts_violations_;
         return FlushResult::TsChainViolation;
     }
 
-    feature_buf_.push_back(
-        FeatureSnapshotRecord::from_snapshots(fs, tl, sport, market_type, year, week));
+    feature_buf_.push_back(FeatureSnapshotRecord::from_snapshots(fs, tl, sport, market_type, year, week));
 
     // Auto-flush at capacity (stub: just clear — W7+ 真写磁盘)
     if (feature_buf_.size() >= buffer_capacity_) {
@@ -47,13 +41,9 @@ FlushResult ParquetBatchWriter::append(
 // ---------------------------------------------------------------------------
 // append(MultiBookOddsRecord)
 // ---------------------------------------------------------------------------
-FlushResult ParquetBatchWriter::append(
-    const data::goalserve::MultiBookOddsRecord& rec,
-    std::string_view                            sport,
-    std::string_view                            market_type,
-    std::int32_t                                year,
-    std::int32_t                                week)
-{
+FlushResult ParquetBatchWriter::append(const data::goalserve::MultiBookOddsRecord& rec,
+                                       std::string_view sport, std::string_view market_type,
+                                       std::int32_t year, std::int32_t week) {
     // R-20 check
     if (!rec.IsFourTsMonotonic()) {
         ++ts_violations_;
@@ -61,25 +51,25 @@ FlushResult ParquetBatchWriter::append(
     }
 
     MultiBookOddsParquetRecord r;
-    r.event_ts       = rec.event_ts_ns();
+    r.event_ts = rec.event_ts_ns();
     r.data_source_ts = rec.data_source_ts_ns();
-    r.ingestion_ts   = rec.ingestion_ts_ns();
-    r.as_of_ts       = rec.as_of_ts_ns();
-    r.ds_origin      = static_cast<std::uint8_t>(rec.ts.ds_origin);
-    r.sport          = std::string(sport);
-    r.market_type    = std::string(market_type);
-    r.year           = year;
-    r.week           = week;
-    r.match_id       = rec.match_id;
-    r.market_id_str  = rec.market_id;
-    r.crc32c         = rec.crc32c;
+    r.ingestion_ts = rec.ingestion_ts_ns();
+    r.as_of_ts = rec.as_of_ts_ns();
+    r.ds_origin = static_cast<std::uint8_t>(rec.ts.ds_origin);
+    r.sport = std::string(sport);
+    r.market_type = std::string(market_type);
+    r.year = year;
+    r.week = week;
+    r.match_id = rec.match_id;
+    r.market_id_str = rec.market_id;
+    r.crc32c = rec.crc32c;
 
     // wide format: slots[i] → yes_odds[i], no_odds[i], valid_bm[i]
     // ABI 锁: kBookmakerIds[0..7] = [10bet, williamhill, bet365, marathon,
     //                                unibet, betvictor, 1xbet, betano]
     for (std::size_t i = 0; i < data::goalserve::kNumBookmakers; ++i) {
         r.yes_odds[i] = rec.slots[i].odds_yes;
-        r.no_odds[i]  = rec.slots[i].odds_no;
+        r.no_odds[i] = rec.slots[i].odds_no;
         r.valid_bm[i] = rec.slots[i].valid;
     }
 
@@ -98,8 +88,7 @@ FlushResult ParquetBatchWriter::append(
 //   parquet::arrow::WriteTable(compression=ZSTD, level=19, row_group=64MB)
 //   写入: root_path_ / sport=X/market_type=Y/year=Z/week=W/part-NNN.parquet
 // ---------------------------------------------------------------------------
-FlushResult ParquetBatchWriter::flush_to_file()
-{
+FlushResult ParquetBatchWriter::flush_to_file() {
     if (feature_buf_.empty() && odds_buf_.empty()) {
         return FlushResult::BufferEmpty;
     }

@@ -31,15 +31,15 @@ using namespace stcpp;
 
 signer::SignRequest make_valid_req(std::int64_t t_now) {
     signer::SignRequest req;
-    req.intent_id         = 42;
-    req.market_id         = "0xabc";
-    req.outcome           = "YES";
-    req.price             = 0.55;
-    req.size_usdc         = 100.0;
-    req.event_ts_ns       = t_now - 10'000'000;
-    req.data_source_ts_ns = t_now -  8'000'000;
-    req.ingestion_ts_ns   = t_now -  4'000'000;
-    req.as_of_ts_ns       = t_now;
+    req.intent_id = 42;
+    req.market_id = "0xabc";
+    req.outcome = "YES";
+    req.price = 0.55;
+    req.size_usdc = 100.0;
+    req.event_ts_ns = t_now - 10'000'000;
+    req.data_source_ts_ns = t_now - 8'000'000;
+    req.ingestion_ts_ns = t_now - 4'000'000;
+    req.as_of_ts_ns = t_now;
     return req;
 }
 
@@ -67,10 +67,10 @@ BENCHMARK(BM_Paper_Gas_Estimate);
 // ---------- PIT_Violation: 4 ts 错乱, fast-fail return ----------
 //   不会触发 confirm wait, 真测 PIT assert + return — 应 ≤ 1us
 void BM_Paper_Sign_PitViolation(benchmark::State& state) {
-    signer::paper::VirtualNonceProvider   n{0};
-    signer::paper::VirtualGasEstimator    g;
-    signer::paper::VirtualConfirmWatcher  c{0xBADC0FFEE};
-    signer::paper::PaperSigner            s{&n, &g, &c};
+    signer::paper::VirtualNonceProvider n{0};
+    signer::paper::VirtualGasEstimator g;
+    signer::paper::VirtualConfirmWatcher c{0xBADC0FFEE};
+    signer::paper::PaperSigner s{&n, &g, &c};
 
     for (auto _ : state) {
         const auto t = infra::wal::pit::NowRealtimeNs();
@@ -90,22 +90,20 @@ BENCHMARK(BM_Paper_Sign_PitViolation);
 //
 // 当前 paper mode 留 3 iter 取均值, 既快又稳.
 void BM_Paper_Sign_FullPath_INCLUDES_CONFIRM_2S(benchmark::State& state) {
-    signer::paper::VirtualNonceProvider   n{0};
-    signer::paper::VirtualGasEstimator    g;
-    signer::paper::VirtualConfirmWatcher  c{0xCAFEBABE};
-    signer::paper::PaperSigner            s{&n, &g, &c};
+    signer::paper::VirtualNonceProvider n{0};
+    signer::paper::VirtualGasEstimator g;
+    signer::paper::VirtualConfirmWatcher c{0xCAFEBABE};
+    signer::paper::PaperSigner s{&n, &g, &c};
 
     for (auto _ : state) {
         const auto t = infra::wal::pit::NowRealtimeNs();
-        auto req  = make_valid_req(t);
+        auto req = make_valid_req(t);
         auto resp = s.Sign(req);
         benchmark::DoNotOptimize(resp);
     }
 }
 // 单条短 iter, 避免占满 CI 时间
-BENCHMARK(BM_Paper_Sign_FullPath_INCLUDES_CONFIRM_2S)
-    ->Iterations(3)
-    ->Unit(benchmark::kMillisecond);
+BENCHMARK(BM_Paper_Sign_FullPath_INCLUDES_CONFIRM_2S)->Iterations(3)->Unit(benchmark::kMillisecond);
 
 }  // namespace
 

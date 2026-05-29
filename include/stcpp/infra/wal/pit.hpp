@@ -12,28 +12,27 @@
 
 #pragma once
 
-#include <ctime>
 #include <cstdint>
+#include <ctime>
 
 #include "stcpp/infra/wal/wal_record_header.hpp"
 
 namespace stcpp::infra::wal::pit {
 
 enum class PitViolation : std::uint8_t {
-    Ok                   = 0,
-    EventTsZero          = 1,   // → INVALID_INTENT.sub=BOOK_TS_ZERO
-    DsBeforeEvent        = 2,   // → INVALID_INTENT.sub=TS_ORDER_VIOLATED
-    IngestionBeforeDs    = 3,   // → 同上
-    AsOfBeforeIngestion  = 4,   // → 同上
-    AsOfInFuture         = 5,   // → INVALID_INTENT.sub=TS_FUTURE
+    Ok = 0,
+    EventTsZero = 1,          // → INVALID_INTENT.sub=BOOK_TS_ZERO
+    DsBeforeEvent = 2,        // → INVALID_INTENT.sub=TS_ORDER_VIOLATED
+    IngestionBeforeDs = 3,    // → 同上
+    AsOfBeforeIngestion = 4,  // → 同上
+    AsOfInFuture = 5,         // → INVALID_INTENT.sub=TS_FUTURE
 };
 
 // 内部辅助: now_realtime_ns. Append 同步路径 100ns budget — Linux REALTIME ~25ns.
 [[nodiscard]] inline std::int64_t NowRealtimeNs() noexcept {
     timespec ts{};
     ::clock_gettime(CLOCK_REALTIME, &ts);
-    return static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000LL +
-           static_cast<std::int64_t>(ts.tv_nsec);
+    return static_cast<std::int64_t>(ts.tv_sec) * 1'000'000'000LL + static_cast<std::int64_t>(ts.tv_nsec);
 }
 
 // 同步 Append 必调. 短路无分支 (链式 &&). p99 ≤ 100 ns.
@@ -46,20 +45,23 @@ enum class PitViolation : std::uint8_t {
 //   5) as_of_ts       ≤ now() (穿越未来拒收)
 [[nodiscard]] inline bool AssertChain(const WalRecordHeader& h) noexcept {
     const std::int64_t now = NowRealtimeNs();
-    return (h.event_ts_ns       >  0)
-        && (h.data_source_ts_ns >= h.event_ts_ns)
-        && (h.ingestion_ts_ns   >= h.data_source_ts_ns)
-        && (h.as_of_ts_ns       >= h.ingestion_ts_ns)
-        && (h.as_of_ts_ns       <= now);
+    return (h.event_ts_ns > 0) && (h.data_source_ts_ns >= h.event_ts_ns) &&
+           (h.ingestion_ts_ns >= h.data_source_ts_ns) && (h.as_of_ts_ns >= h.ingestion_ts_ns) &&
+           (h.as_of_ts_ns <= now);
 }
 
 // 慢路径诊断 (Append 失败后, emit risk_audit RECON_DRIFT 时调). 不进热路径.
 [[nodiscard]] inline PitViolation DiagnoseViolation(const WalRecordHeader& h) noexcept {
-    if (h.event_ts_ns <= 0)                              return PitViolation::EventTsZero;
-    if (h.data_source_ts_ns < h.event_ts_ns)             return PitViolation::DsBeforeEvent;
-    if (h.ingestion_ts_ns   < h.data_source_ts_ns)       return PitViolation::IngestionBeforeDs;
-    if (h.as_of_ts_ns       < h.ingestion_ts_ns)         return PitViolation::AsOfBeforeIngestion;
-    if (h.as_of_ts_ns       > NowRealtimeNs())           return PitViolation::AsOfInFuture;
+    if (h.event_ts_ns <= 0)
+        return PitViolation::EventTsZero;
+    if (h.data_source_ts_ns < h.event_ts_ns)
+        return PitViolation::DsBeforeEvent;
+    if (h.ingestion_ts_ns < h.data_source_ts_ns)
+        return PitViolation::IngestionBeforeDs;
+    if (h.as_of_ts_ns < h.ingestion_ts_ns)
+        return PitViolation::AsOfBeforeIngestion;
+    if (h.as_of_ts_ns > NowRealtimeNs())
+        return PitViolation::AsOfInFuture;
     return PitViolation::Ok;
 }
 

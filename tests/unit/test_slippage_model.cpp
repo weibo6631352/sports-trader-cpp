@@ -24,8 +24,7 @@ using stcpp::numerical::SlippageOutput;
 constexpr std::int64_t WALL_NOW = 1'700'000'000'000'000'000LL;
 constexpr std::int64_t NS_PER_MS = 1'000'000LL;
 
-constexpr SlippageInput make_input(double size, double q, double l1, std::int64_t dt_ms,
-                                   double tick = 0.01) {
+constexpr SlippageInput make_input(double size, double q, double l1, std::int64_t dt_ms, double tick = 0.01) {
     return SlippageInput{size, q, l1, WALL_NOW - dt_ms * NS_PER_MS, WALL_NOW, tick};
 }
 

@@ -45,26 +45,33 @@ namespace stcpp::stats {
 // ---------------------------------------------------------------------------
 
 enum class GateId : std::uint8_t {
-    G1_PnLTTest         = 1,
+    G1_PnLTTest = 1,
     G2_SharpeBoostrapCI = 2,
-    G3_RMZeroFail       = 3,
-    G4_Uptime           = 4,
-    G5_MaxDD            = 5,
-    G6_MinTrades        = 6,
-    G7_AboveRandom      = 7,
+    G3_RMZeroFail = 3,
+    G4_Uptime = 4,
+    G5_MaxDD = 5,
+    G6_MinTrades = 6,
+    G7_AboveRandom = 7,
 };
 
 inline constexpr std::size_t kNumGates = 7;
 
 [[nodiscard]] constexpr const char* GateIdName(GateId id) noexcept {
     switch (id) {
-        case GateId::G1_PnLTTest:         return "G1_PnLTTest";
-        case GateId::G2_SharpeBoostrapCI: return "G2_SharpeBoostrapCI";
-        case GateId::G3_RMZeroFail:       return "G3_RMZeroFail";
-        case GateId::G4_Uptime:           return "G4_Uptime";
-        case GateId::G5_MaxDD:            return "G5_MaxDD";
-        case GateId::G6_MinTrades:        return "G6_MinTrades";
-        case GateId::G7_AboveRandom:      return "G7_AboveRandom";
+        case GateId::G1_PnLTTest:
+            return "G1_PnLTTest";
+        case GateId::G2_SharpeBoostrapCI:
+            return "G2_SharpeBoostrapCI";
+        case GateId::G3_RMZeroFail:
+            return "G3_RMZeroFail";
+        case GateId::G4_Uptime:
+            return "G4_Uptime";
+        case GateId::G5_MaxDD:
+            return "G5_MaxDD";
+        case GateId::G6_MinTrades:
+            return "G6_MinTrades";
+        case GateId::G7_AboveRandom:
+            return "G7_AboveRandom";
     }
     return "G?_Unknown";
 }
@@ -80,52 +87,56 @@ inline constexpr std::size_t kNumGates = 7;
 // M5_Q1 = live 第 1 季度稳态
 // NorthStar = 北极星 T+36 月 KPI
 enum class GateStage : std::uint8_t {
-    M2        = 0,
-    M4_5      = 1,
-    M5_Q1     = 2,
+    M2 = 0,
+    M4_5 = 1,
+    M5_Q1 = 2,
     NorthStar = 3,
 };
 
 // G2 Sharpe bootstrap CI 下界 — 4 stage 梯度 (ADR-016)
 // 索引与 GateStage 一一对应
 inline constexpr std::array<double, 4> kG2SharpeCILowerByStage = {
-    0.3,   // M2: alpha 检测低门槛, 14d 50 笔 CI 宽 ~1.2, > 0.3 说明不是全靠运气
-    0.5,   // M4_5: paper 解锁门槛 (小梁会签 SSOT; retro 口头 0.3 以本值为准)
-    0.8,   // M5_Q1: live 第 1 季度稳态
-    1.5,   // NorthStar: T+36 月北极星 KPI (CLAUDE.md §2)
+    0.3,  // M2: alpha 检测低门槛, 14d 50 笔 CI 宽 ~1.2, > 0.3 说明不是全靠运气
+    0.5,  // M4_5: paper 解锁门槛 (小梁会签 SSOT; retro 口头 0.3 以本值为准)
+    0.8,  // M5_Q1: live 第 1 季度稳态
+    1.5,  // NorthStar: T+36 月北极星 KPI (CLAUDE.md §2)
 };
 
 // ---------------------------------------------------------------------------
 // 阈值常量 (与 Sprint-1 retro + 小董 v1 research doc 一致, 任何调整须 GM 决议)
 // ---------------------------------------------------------------------------
 
-inline constexpr double kG1_PValueMax        = 0.05;   // Welch 双侧
+inline constexpr double kG1_PValueMax = 0.05;  // Welch 双侧
 // G2 M4.5 paper 解锁阈值 (ADR-016 会签值; 多 stage 见 kG2SharpeCILowerByStage)
-inline constexpr double kG2_SharpeCILow      = kG2SharpeCILowerByStage[static_cast<std::size_t>(GateStage::M4_5)];
-inline constexpr std::size_t kG2_BootstrapN  = 1000;   // 平衡 SE_pct ~0.014 与 paper 跑批耗时
-inline constexpr int    kG3_RMFailMax        = 0;
-inline constexpr double kG4_UptimeMin        = 0.995;
-inline constexpr double kG5_MaxDDMax         = 0.08;   // 8% peak-to-trough
-inline constexpr std::size_t kG6_TradesMin   = 50;
-inline constexpr double kG7_PValueMax        = 0.05;   // Welch one-sided (paper vs random)
+inline constexpr double kG2_SharpeCILow = kG2SharpeCILowerByStage[static_cast<std::size_t>(GateStage::M4_5)];
+inline constexpr std::size_t kG2_BootstrapN = 1000;  // 平衡 SE_pct ~0.014 与 paper 跑批耗时
+inline constexpr int kG3_RMFailMax = 0;
+inline constexpr double kG4_UptimeMin = 0.995;
+inline constexpr double kG5_MaxDDMax = 0.08;  // 8% peak-to-trough
+inline constexpr std::size_t kG6_TradesMin = 50;
+inline constexpr double kG7_PValueMax = 0.05;  // Welch one-sided (paper vs random)
 
 // ---------------------------------------------------------------------------
 // 错误类型 (fail-closed 统一返回)
 // ---------------------------------------------------------------------------
 
 enum class EvalError : std::uint8_t {
-    Ok                  = 0,
-    InvalidInput        = 1,   // NaN / Inf / size mismatch
-    InsufficientSample  = 2,   // 不足以做 t-test / bootstrap (返 pass=false + 此 code)
-    PitViolation        = 3,   // R-20 4 ts 不等式破坏
+    Ok = 0,
+    InvalidInput = 1,        // NaN / Inf / size mismatch
+    InsufficientSample = 2,  // 不足以做 t-test / bootstrap (返 pass=false + 此 code)
+    PitViolation = 3,        // R-20 4 ts 不等式破坏
 };
 
 [[nodiscard]] constexpr const char* EvalErrorName(EvalError e) noexcept {
     switch (e) {
-        case EvalError::Ok:                 return "Ok";
-        case EvalError::InvalidInput:       return "InvalidInput";
-        case EvalError::InsufficientSample: return "InsufficientSample";
-        case EvalError::PitViolation:       return "PitViolation";
+        case EvalError::Ok:
+            return "Ok";
+        case EvalError::InvalidInput:
+            return "InvalidInput";
+        case EvalError::InsufficientSample:
+            return "InsufficientSample";
+        case EvalError::PitViolation:
+            return "PitViolation";
     }
     return "?";
 }
@@ -136,10 +147,10 @@ enum class EvalError : std::uint8_t {
 
 struct GateMetrics {
     // R-20 4 ts (sample window 起止 + 接入完成 + as_of). 单调链: start ≤ end ≤ ingestion ≤ as_of.
-    std::int64_t window_start_ts_ns        = 0;   // event_ts (paper 第一笔 fill)
-    std::int64_t window_end_ts_ns          = 0;   // data_source_ts (paper 最后一笔 fill)
-    std::int64_t ingestion_completed_ts_ns = 0;   // ingestion_ts (audit.wal 读完时刻)
-    std::int64_t as_of_ts_ns               = 0;   // as_of_ts (evaluator 调起时刻)
+    std::int64_t window_start_ts_ns = 0;         // event_ts (paper 第一笔 fill)
+    std::int64_t window_end_ts_ns = 0;           // data_source_ts (paper 最后一笔 fill)
+    std::int64_t ingestion_completed_ts_ns = 0;  // ingestion_ts (audit.wal 读完时刻)
+    std::int64_t as_of_ts_ns = 0;                // as_of_ts (evaluator 调起时刻)
 
     // 时序: per-trade PnL (USDC, 含手续费). G1 用此, G7 paper 端用此.
     // 长度 == 实际成交笔数; G6 用此 size.
@@ -153,7 +164,7 @@ struct GateMetrics {
     // 时序: per-trade return (用于 Sharpe). 调用方按 paper 跑批口径算好 (per-trade or per-day).
     // 与 per_trade_pnl_usdc 同长度; Sharpe = mean / std * sqrt(annualizer).
     std::vector<double> per_trade_return;
-    double sharpe_annualizer = 1.0;   // sqrt(N_periods_per_year). 默认 1 = 不年化 (per-trade Sharpe).
+    double sharpe_annualizer = 1.0;  // sqrt(N_periods_per_year). 默认 1 = 不年化 (per-trade Sharpe).
 
     // 时序: random baseline per-trade PnL (G7 用). 长度可不等 paper.
     // 生成规则 (v1): paper 同窗内每个 signal trigger 时点, 同 size, 50/50 BUY_YES/NO 随机.
@@ -161,9 +172,9 @@ struct GateMetrics {
     std::vector<double> random_baseline_pnl_usdc;
 
     // Scalar 计数
-    int      rm_failure_count   = 0;          // G3
-    double   uptime_seconds     = 0.0;        // G4 分子
-    double   total_window_seconds = 0.0;      // G4 分母 (≥ uptime_seconds)
+    int rm_failure_count = 0;           // G3
+    double uptime_seconds = 0.0;        // G4 分子
+    double total_window_seconds = 0.0;  // G4 分母 (≥ uptime_seconds)
 
     // bootstrap 可复现 seed (G2). 默认 0 → seed=42 (单测确定性).
     std::uint64_t bootstrap_seed = 42;
@@ -174,16 +185,16 @@ struct GateMetrics {
 // ---------------------------------------------------------------------------
 
 struct GateResult {
-    GateId      id           = GateId::G1_PnLTTest;
-    bool        pass         = false;
-    double      actual       = 0.0;   // 实际值 (Sharpe / DD / uptime / count / p-value)
-    double      threshold    = 0.0;   // 阈值
-    double      p_value      = -1.0;  // t-test gate 才有; 其他 = -1
-    double      ci_lower     = 0.0;   // G2 bootstrap CI lower; 其他 = 0
-    double      ci_upper     = 0.0;   // G2 bootstrap CI upper; 其他 = 0
-    std::size_t sample_size  = 0;
-    EvalError   error        = EvalError::Ok;
-    std::string note;                 // 简短人读 (失败原因 / 调用方诊断)
+    GateId id = GateId::G1_PnLTTest;
+    bool pass = false;
+    double actual = 0.0;     // 实际值 (Sharpe / DD / uptime / count / p-value)
+    double threshold = 0.0;  // 阈值
+    double p_value = -1.0;   // t-test gate 才有; 其他 = -1
+    double ci_lower = 0.0;   // G2 bootstrap CI lower; 其他 = 0
+    double ci_upper = 0.0;   // G2 bootstrap CI upper; 其他 = 0
+    std::size_t sample_size = 0;
+    EvalError error = EvalError::Ok;
+    std::string note;  // 简短人读 (失败原因 / 调用方诊断)
 };
 
 // ---------------------------------------------------------------------------
@@ -192,9 +203,9 @@ struct GateResult {
 
 struct GateOutcome {
     std::array<GateResult, kNumGates> per_gate{};
-    std::size_t pass_count    = 0;
-    bool        all_pass      = false;   // pass_count == 7
-    EvalError   first_error   = EvalError::Ok;  // 任一 gate InvalidInput / PitViolation 高优透出
+    std::size_t pass_count = 0;
+    bool all_pass = false;                  // pass_count == 7
+    EvalError first_error = EvalError::Ok;  // 任一 gate InvalidInput / PitViolation 高优透出
 };
 
 // ---------------------------------------------------------------------------
@@ -202,7 +213,7 @@ struct GateOutcome {
 // ---------------------------------------------------------------------------
 
 class GateEvaluator {
-   public:
+public:
     GateEvaluator() = default;
 
     // R-20 PIT pre-check (4 ts 不等式). 失败 → all gates pass=false + first_error=PitViolation.

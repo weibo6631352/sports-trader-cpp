@@ -9,8 +9,6 @@
 
 #pragma once
 
-#include <gtest/gtest.h>
-
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
@@ -18,6 +16,8 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 namespace stcpp::test::r12 {
 
@@ -42,7 +42,7 @@ class MockWssStub {
 public:
     void publish(std::string /*market_id*/) { ++published_; }
     void disconnect_all() { ++disconnect_calls_; }
-    [[nodiscard]] std::size_t published()        const noexcept { return published_; }
+    [[nodiscard]] std::size_t published() const noexcept { return published_; }
     [[nodiscard]] std::size_t disconnect_calls() const noexcept { return disconnect_calls_; }
 
 private:
@@ -56,7 +56,7 @@ protected:
     void SetUp() override {
         wss_tick_latencies_ns_.clear();
         clob_ = MockClobStub{};
-        wss_  = MockWssStub{};
+        wss_ = MockWssStub{};
     }
 
     // S-1: 给 mock CLOB 注入慢响应
@@ -64,15 +64,15 @@ protected:
 
     // 工具: p99 / p99.9 计算 (R-12 §17.1.1 量化口径)
     static std::int64_t p99_ns(std::vector<std::int64_t> xs) {
-        if (xs.empty()) return 0;
+        if (xs.empty())
+            return 0;
         std::sort(xs.begin(), xs.end());
-        const auto idx = static_cast<std::size_t>(
-            static_cast<double>(xs.size()) * 0.99);
+        const auto idx = static_cast<std::size_t>(static_cast<double>(xs.size()) * 0.99);
         return xs[std::min(idx, xs.size() - 1)];
     }
 
     MockClobStub clob_;
-    MockWssStub  wss_;
+    MockWssStub wss_;
     std::vector<std::int64_t> wss_tick_latencies_ns_;  // 子 case 填
 };
 

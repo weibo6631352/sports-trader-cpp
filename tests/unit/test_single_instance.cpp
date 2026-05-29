@@ -8,22 +8,22 @@
 // STCPP_TEST_PID_DIR 通过编译期 macro 注入 (CMakeLists 设).
 // 双进程用例走 fork + pipe 同步 (小宋 review 点: 无竞态 + macOS/Linux 双绿).
 
-#include "stcpp/infra/process/single_instance.hpp"
-#include "stcpp/infra/process/fd_guard.hpp"
-#include "stcpp/execution/execution_mode.hpp"
-
-#include <gtest/gtest.h>
-
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
-#include <fcntl.h>
-#include <signal.h>     // NOLINT(modernize-deprecated-headers)
+#include <gtest/gtest.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+
+#include "stcpp/execution/execution_mode.hpp"
+#include "stcpp/infra/process/fd_guard.hpp"
+#include "stcpp/infra/process/single_instance.hpp"
+
+#include <fcntl.h>
+#include <signal.h>  // NOLINT(modernize-deprecated-headers)
 #include <unistd.h>
 
 // ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@
 // 若未注入则退到 /tmp 下随机子目录
 // ---------------------------------------------------------------------------
 #ifndef STCPP_TEST_PID_DIR
-#  define STCPP_TEST_PID_DIR "/tmp/stcpp_test"
+#    define STCPP_TEST_PID_DIR "/tmp/stcpp_test"
 #endif
 
 namespace {
@@ -69,19 +69,15 @@ TEST(SingleInstanceLock, T1_AcquireReleaseReacquire) {
     // 第 1 次 acquire
     {
         ASSERT_NO_THROW({
-            stcpp::infra::process::SingleInstanceLock lock{
-                stcpp::execution::ExecutionMode::Paper};
+            stcpp::infra::process::SingleInstanceLock lock{stcpp::execution::ExecutionMode::Paper};
             // lock 持有期间 fd 应有效 (通过 pid file 存在验证)
-            EXPECT_EQ(::access(path.c_str(), F_OK), 0)
-                << "PID file should exist while lock is held";
+            EXPECT_EQ(::access(path.c_str(), F_OK), 0) << "PID file should exist while lock is held";
         });  // 析构 → fd close → flock 释放
     }
 
     // 第 2 次 acquire (锁已释放)
-    ASSERT_NO_THROW({
-        stcpp::infra::process::SingleInstanceLock lock2{
-            stcpp::execution::ExecutionMode::Paper};
-    });
+    ASSERT_NO_THROW(
+        { stcpp::infra::process::SingleInstanceLock lock2{stcpp::execution::ExecutionMode::Paper}; });
 
     UnlinkIfExists(path);
 }
@@ -104,11 +100,10 @@ TEST(SingleInstanceLock, T2_DoubleProcess_ChildFails) {
     // pipe[0]=read, pipe[1]=write
     int ready_pipe[2];   // parent → child: parent 拿锁后通知
     int result_pipe[2];  // child → parent: child 结果 (1=fail as expected, 0=unexpected success)
-    ASSERT_EQ(::pipe(ready_pipe),  0);
+    ASSERT_EQ(::pipe(ready_pipe), 0);
     ASSERT_EQ(::pipe(result_pipe), 0);
 
-    stcpp::infra::process::SingleInstanceLock parent_lock{
-        stcpp::execution::ExecutionMode::Paper};
+    stcpp::infra::process::SingleInstanceLock parent_lock{stcpp::execution::ExecutionMode::Paper};
 
     const pid_t child = ::fork();
     ASSERT_GE(child, 0) << "fork failed";
@@ -126,8 +121,7 @@ TEST(SingleInstanceLock, T2_DoubleProcess_ChildFails) {
         // child 尝试 acquire 同一 path — 应失败
         char result = '0';  // '0' = unexpected success
         try {
-            stcpp::infra::process::SingleInstanceLock lock{
-                stcpp::execution::ExecutionMode::Paper};
+            stcpp::infra::process::SingleInstanceLock lock{stcpp::execution::ExecutionMode::Paper};
             // 不该到这里
             result = '0';
         } catch (const stcpp::infra::process::SingleInstanceLockFailure&) {
@@ -179,11 +173,11 @@ TEST(SingleInstanceLock, T3_KillMinusNine_NextAcquireSucceeds) {
     }
     UnlinkIfExists(path);
 
-    int child_ready[2];   // child → parent: 已获锁
-    int kill_ack[2];      // parent → child: 可以退了
+    int child_ready[2];  // child → parent: 已获锁
+    int kill_ack[2];     // parent → child: 可以退了
 
     ASSERT_EQ(::pipe(child_ready), 0);
-    ASSERT_EQ(::pipe(kill_ack),    0);
+    ASSERT_EQ(::pipe(kill_ack), 0);
 
     const pid_t child = ::fork();
     ASSERT_GE(child, 0);
@@ -193,8 +187,7 @@ TEST(SingleInstanceLock, T3_KillMinusNine_NextAcquireSucceeds) {
         ::close(kill_ack[1]);
 
         {
-            stcpp::infra::process::SingleInstanceLock lock{
-                stcpp::execution::ExecutionMode::Paper};
+            stcpp::infra::process::SingleInstanceLock lock{stcpp::execution::ExecutionMode::Paper};
             // 通知 parent: 已持锁
             char rdy = 'r';
             ::write(child_ready[1], &rdy, 1);
@@ -229,8 +222,7 @@ TEST(SingleInstanceLock, T3_KillMinusNine_NextAcquireSucceeds) {
     EXPECT_EQ(::access(path.c_str(), F_OK), 0) << "PID file should remain after kill -9";
 
     ASSERT_NO_THROW({
-        stcpp::infra::process::SingleInstanceLock lock{
-            stcpp::execution::ExecutionMode::Paper};
+        stcpp::infra::process::SingleInstanceLock lock{stcpp::execution::ExecutionMode::Paper};
     }) << "After kill -9, new acquire should succeed (kernel auto-released flock)";
 
     ::unsetenv("STCPP_TEST_PID_DIR");
@@ -243,17 +235,14 @@ TEST(SingleInstanceLock, T3_KillMinusNine_NextAcquireSucceeds) {
 // ===========================================================================
 TEST(SingleInstanceLock, T4_PhysicalIsolation_ThreeModes) {
     EnsureTestDir();
-    const std::string paper_path =
-        PidPathForMode(stcpp::execution::ExecutionMode::Paper);
-    const std::string live_path =
-        PidPathForMode(stcpp::execution::ExecutionMode::Live);
-    const std::string bt_path =
-        PidPathForMode(stcpp::execution::ExecutionMode::Backtest);
+    const std::string paper_path = PidPathForMode(stcpp::execution::ExecutionMode::Paper);
+    const std::string live_path = PidPathForMode(stcpp::execution::ExecutionMode::Live);
+    const std::string bt_path = PidPathForMode(stcpp::execution::ExecutionMode::Backtest);
 
     // 三路径必须不同 (R-7 / R-11)
     ASSERT_NE(paper_path, live_path);
     ASSERT_NE(paper_path, bt_path);
-    ASSERT_NE(live_path,  bt_path);
+    ASSERT_NE(live_path, bt_path);
 
     UnlinkIfExists(paper_path);
     UnlinkIfExists(live_path);
@@ -261,16 +250,13 @@ TEST(SingleInstanceLock, T4_PhysicalIsolation_ThreeModes) {
 
     // 三锁可同时持有 (互不影响)
     {
-        stcpp::infra::process::SingleInstanceLock lp{
-            stcpp::execution::ExecutionMode::Paper};
-        stcpp::infra::process::SingleInstanceLock ll{
-            stcpp::execution::ExecutionMode::Live};
-        stcpp::infra::process::SingleInstanceLock lb{
-            stcpp::execution::ExecutionMode::Backtest};
+        stcpp::infra::process::SingleInstanceLock lp{stcpp::execution::ExecutionMode::Paper};
+        stcpp::infra::process::SingleInstanceLock ll{stcpp::execution::ExecutionMode::Live};
+        stcpp::infra::process::SingleInstanceLock lb{stcpp::execution::ExecutionMode::Backtest};
 
         EXPECT_EQ(::access(paper_path.c_str(), F_OK), 0);
-        EXPECT_EQ(::access(live_path.c_str(),  F_OK), 0);
-        EXPECT_EQ(::access(bt_path.c_str(),    F_OK), 0);
+        EXPECT_EQ(::access(live_path.c_str(), F_OK), 0);
+        EXPECT_EQ(::access(bt_path.c_str(), F_OK), 0);
     }  // all three released
 
     UnlinkIfExists(paper_path);
@@ -290,11 +276,10 @@ TEST(SingleInstanceLock, T5_PidFileContent) {
     const pid_t my_pid = ::getpid();
 
     {
-        stcpp::infra::process::SingleInstanceLock lock{
-            stcpp::execution::ExecutionMode::Paper};
+        stcpp::infra::process::SingleInstanceLock lock{stcpp::execution::ExecutionMode::Paper};
 
         // 直接读文件内容
-        const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);   // NOLINT
+        const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC);  // NOLINT
         ASSERT_GE(fd, 0) << "PID file should be readable";
 
         char buf[256]{};
@@ -311,16 +296,15 @@ TEST(SingleInstanceLock, T5_PidFileContent) {
         nl = ::strchr(p, '\n');
         ASSERT_NE(nl, nullptr);
         *nl = '\0';
-        const long long file_pid = ::atoll(p);    // NOLINT(cert-err34-c)
-        EXPECT_EQ(static_cast<pid_t>(file_pid), my_pid)
-            << "PID in file should match getpid()";
+        const long long file_pid = ::atoll(p);  // NOLINT(cert-err34-c)
+        EXPECT_EQ(static_cast<pid_t>(file_pid), my_pid) << "PID in file should match getpid()";
         p = nl + 1;
 
         // line 2: start_ts_ns
         nl = ::strchr(p, '\n');
         ASSERT_NE(nl, nullptr);
         *nl = '\0';
-        const long long ts = ::atoll(p);          // NOLINT(cert-err34-c)
+        const long long ts = ::atoll(p);  // NOLINT(cert-err34-c)
         EXPECT_GT(ts, 0LL) << "start_ts_ns should be positive";
         p = nl + 1;
 
@@ -333,7 +317,8 @@ TEST(SingleInstanceLock, T5_PidFileContent) {
 
         // line 4: commit hash (non-empty; "unknown" OK in unit test)
         nl = ::strchr(p, '\n');
-        if (nl) *nl = '\0';
+        if (nl)
+            *nl = '\0';
         EXPECT_GT(::strlen(p), 0u) << "build_commit_hash should not be empty";
     }
 
@@ -366,8 +351,7 @@ TEST(SingleInstanceLock, T6_SigtermHandler_UnlinksPidFile) {
         // Strategy: install handler that unlinks + writes pipe + _exit.
         // We override g_pid_path_for_handler approach: use child-local wrapper.
         {
-            stcpp::infra::process::SingleInstanceLock lock{
-                stcpp::execution::ExecutionMode::Paper};
+            stcpp::infra::process::SingleInstanceLock lock{stcpp::execution::ExecutionMode::Paper};
             stcpp::infra::process::InstallSigtermHandler(path);
 
             // Handler will _exit(0) after unlink. We won't reach pipe write.
@@ -385,7 +369,7 @@ TEST(SingleInstanceLock, T6_SigtermHandler_UnlinksPidFile) {
     ::close(result_pipe[1]);
     char r = '?';
     // non-blocking read (child may have _exit before writing)
-    ::fcntl(result_pipe[0], F_SETFL, O_NONBLOCK);   // NOLINT(hicpp-signed-bitwise)
+    ::fcntl(result_pipe[0], F_SETFL, O_NONBLOCK);  // NOLINT(hicpp-signed-bitwise)
     ::read(result_pipe[0], &r, 1);
     ::close(result_pipe[0]);
 
@@ -394,8 +378,7 @@ TEST(SingleInstanceLock, T6_SigtermHandler_UnlinksPidFile) {
 
     // child exited (via _exit(0) in SIGTERM handler or normally)
     // Verify: PID file should NOT exist (handler unlinked it)
-    EXPECT_NE(::access(path.c_str(), F_OK), 0)
-        << "PID file should be unlinked after SIGTERM handler ran";
+    EXPECT_NE(::access(path.c_str(), F_OK), 0) << "PID file should be unlinked after SIGTERM handler ran";
 }
 
 // ===========================================================================
@@ -445,8 +428,7 @@ TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
 
             char result = 'F';
             try {
-                stcpp::infra::process::SingleInstanceLock lock{
-                    stcpp::execution::ExecutionMode::Paper};
+                stcpp::infra::process::SingleInstanceLock lock{stcpp::execution::ExecutionMode::Paper};
                 result = 'S';
                 // hold briefly
                 ::usleep(5000);  // 5ms
@@ -477,7 +459,8 @@ TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
     for (int i = 0; i < kNumChildren; ++i) {
         char r = '?';
         ::read(result_pipe[0], &r, 1);
-        if (r == 'S') ++success_count;
+        if (r == 'S')
+            ++success_count;
     }
     ::close(result_pipe[0]);
 
@@ -486,8 +469,7 @@ TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
         ::waitpid(c, &wstatus, 0);
     }
 
-    EXPECT_EQ(success_count, 1)
-        << "Exactly 1 child should win the lock race (got " << success_count << ")";
+    EXPECT_EQ(success_count, 1) << "Exactly 1 child should win the lock race (got " << success_count << ")";
 
     ::unsetenv("STCPP_TEST_PID_DIR");
     UnlinkIfExists(path);
@@ -520,8 +502,7 @@ TEST(FdGuard, T8_RAII_Lifecycle) {
         // 析构时 close pipefd[0]
     }
     // pipefd[0] 已被 FdGuard 析构关闭: fcntl 应返回 -1
-    EXPECT_EQ(::fcntl(pipefd[0], F_GETFD), -1)
-        << "FdGuard dtor should have closed fd";
+    EXPECT_EQ(::fcntl(pipefd[0], F_GETFD), -1) << "FdGuard dtor should have closed fd";
     ::close(pipefd[1]);  // 手动关闭 write end
 
     // ---- release: 转移所有权, RAII 不 close ----
@@ -533,13 +514,12 @@ TEST(FdGuard, T8_RAII_Lifecycle) {
         FdGuard g{pipefd2[0]};
         EXPECT_TRUE(g.valid());
         released_fd = g.release();
-        EXPECT_FALSE(g.valid());          // 所有权已转出
+        EXPECT_FALSE(g.valid());  // 所有权已转出
         EXPECT_EQ(released_fd, pipefd2[0]);
         // 析构时 g 不 close (已 release)
     }
     // released_fd 仍有效
-    EXPECT_NE(::fcntl(released_fd, F_GETFD), -1)
-        << "release() should leave fd open after dtor";
+    EXPECT_NE(::fcntl(released_fd, F_GETFD), -1) << "release() should leave fd open after dtor";
     ::close(released_fd);
     ::close(pipefd2[1]);
 
@@ -554,8 +534,7 @@ TEST(FdGuard, T8_RAII_Lifecycle) {
         EXPECT_TRUE(ok);
         EXPECT_FALSE(g.valid());
         // fd 已关闭
-        EXPECT_EQ(::fcntl(pipefd3[0], F_GETFD), -1)
-            << "close_now() should have closed fd immediately";
+        EXPECT_EQ(::fcntl(pipefd3[0], F_GETFD), -1) << "close_now() should have closed fd immediately";
         // 析构时 g 不再尝试关闭 (valid() == false)
     }
     ::close(pipefd3[1]);
@@ -569,13 +548,12 @@ TEST(FdGuard, T8_RAII_Lifecycle) {
         EXPECT_TRUE(src.valid());
 
         FdGuard dst{std::move(src)};
-        EXPECT_FALSE(src.valid());         // src 交出所有权
+        EXPECT_FALSE(src.valid());  // src 交出所有权
         EXPECT_TRUE(dst.valid());
         EXPECT_EQ(dst.get(), pipefd4[0]);
         // dst 析构 close pipefd4[0]
     }
-    EXPECT_EQ(::fcntl(pipefd4[0], F_GETFD), -1)
-        << "move-ctor: moved-into FdGuard should close fd on dtor";
+    EXPECT_EQ(::fcntl(pipefd4[0], F_GETFD), -1) << "move-ctor: moved-into FdGuard should close fd on dtor";
     ::close(pipefd4[1]);
 
     // ---- 移动赋值 ----
@@ -592,12 +570,10 @@ TEST(FdGuard, T8_RAII_Lifecycle) {
         EXPECT_FALSE(b.valid());
         EXPECT_EQ(a.get(), pipefd6[0]);
         // pipefd5[0] 已被关闭
-        EXPECT_EQ(::fcntl(pipefd5[0], F_GETFD), -1)
-            << "move-assign: displaced fd should be closed";
+        EXPECT_EQ(::fcntl(pipefd5[0], F_GETFD), -1) << "move-assign: displaced fd should be closed";
         // a 析构 close pipefd6[0]
     }
-    EXPECT_EQ(::fcntl(pipefd6[0], F_GETFD), -1)
-        << "move-assign: new fd should be closed by dtor";
+    EXPECT_EQ(::fcntl(pipefd6[0], F_GETFD), -1) << "move-assign: new fd should be closed by dtor";
     ::close(pipefd5[1]);
     ::close(pipefd6[1]);
 }
@@ -641,8 +617,7 @@ TEST(SingleInstanceLock, T9_SigtermHandler_ClosesLockFd) {
         ::close(sync_pipe[0]);
 
         // acquire live lock (inject_lock_fd_for_handler 在构造中调用)
-        stcpp::infra::process::SingleInstanceLock lock{
-            stcpp::execution::ExecutionMode::Live};
+        stcpp::infra::process::SingleInstanceLock lock{stcpp::execution::ExecutionMode::Live};
 
         // install SIGTERM handler (now g_lock_fd_for_handler is populated)
         stcpp::infra::process::InstallSigtermHandler(path);
@@ -674,8 +649,7 @@ TEST(SingleInstanceLock, T9_SigtermHandler_ClosesLockFd) {
 
     // 验证 1: child 以 _exit(0) 退出 (handler 跑了)
     ASSERT_TRUE(WIFEXITED(wstatus)) << "child should exit normally";
-    EXPECT_EQ(WEXITSTATUS(wstatus), 0)
-        << "SIGTERM handler should _exit(0), not _exit(42)";
+    EXPECT_EQ(WEXITSTATUS(wstatus), 0) << "SIGTERM handler should _exit(0), not _exit(42)";
 
     // 验证 2: PID file 已被 handler unlink (不存在)
     EXPECT_NE(::access(path.c_str(), F_OK), 0)

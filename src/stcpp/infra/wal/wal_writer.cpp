@@ -26,16 +26,14 @@ namespace {
 
 // R-11 path prefix 硬校验. 不抛 — 防 caller try-catch 绕过.
 // 调用点: WalWriter<R>::Open() 第一步, fail 立即 std::abort.
-[[noreturn, maybe_unused]] inline void AbortOnPathMismatch(
-    WalKind kind, std::string_view actual) noexcept {
+[[noreturn, maybe_unused]] inline void AbortOnPathMismatch(WalKind kind, std::string_view actual) noexcept {
     // 留 stderr 痕迹 (W4 接 syslog + chaos drill). 这里只 abort, 不 throw.
     static_cast<void>(kind);
     static_cast<void>(actual);
     std::abort();
 }
 
-[[nodiscard, maybe_unused]] inline bool PathPrefixOk(
-    WalKind kind, std::string_view path) noexcept {
+[[nodiscard, maybe_unused]] inline bool PathPrefixOk(WalKind kind, std::string_view path) noexcept {
     const std::string_view root = PathRootOf(kind);
     return path.size() >= root.size() && path.substr(0, root.size()) == root;
 }
@@ -46,7 +44,7 @@ template <WalRecord R>
 WalResult<std::unique_ptr<WalWriter<R>>> WalWriter<R>::Open(const WalConfig& cfg) {
     // P9 / R-11: 路径前缀硬校验. 不命中 = 配置/部署 bug → 立即 abort.
     if (!PathPrefixOk(cfg.kind, cfg.path_prefix)) {
-        AbortOnPathMismatch(cfg.kind, cfg.path_prefix);   // [[noreturn]]
+        AbortOnPathMismatch(cfg.kind, cfg.path_prefix);  // [[noreturn]]
     }
 
     // ring_capacity 2 的幂 (CI lint 也拦, 这里兜底)
@@ -57,7 +55,7 @@ WalResult<std::unique_ptr<WalWriter<R>>> WalWriter<R>::Open(const WalConfig& cfg
     // TODO W4: 开 segment fd / 启动 bg jthread / pin cfg.bg_cpu_core / 启 SPSC ring.
     // [已转 Sprint-3 WAL-B01, 见 docs/SPRINTS/sprint-03-backlog.md]
     // 当前 skeleton: 构造空对象, API 闭环, 让 R-11 / R-20 / API 表面可测.
-    auto w  = std::unique_ptr<WalWriter<R>>(new WalWriter<R>());
+    auto w = std::unique_ptr<WalWriter<R>>(new WalWriter<R>());
     w->cfg_ = cfg;
     return WalResult<std::unique_ptr<WalWriter<R>>>{std::move(w)};
 }
@@ -78,8 +76,8 @@ WalResult<std::uint64_t> WalWriter<R>::Append(const R& record) noexcept {
 
     // seq 单调 (framework 管).
     const std::uint64_t seq = next_seq_.fetch_add(1, std::memory_order_acq_rel) + 1;
-    h.seq         = seq;
-    h.len_payload = static_cast<std::uint16_t>(0);   // W4: 真实 serialize_into 后填
+    h.seq = seq;
+    h.len_payload = static_cast<std::uint16_t>(0);  // W4: 真实 serialize_into 后填
 
     // TODO W4: build_frame (header + payload + CRC32C) → ring.try_push.
     //  ring 满 → return WalError::Backpressure (老韩 v0.3 #18 AUDIT_WAL_BACKPRESSURE).
@@ -91,10 +89,10 @@ WalResult<std::uint64_t> WalWriter<R>::Append(const R& record) noexcept {
 }
 
 template <WalRecord R>
-WalResult<void> WalWriter<R>::FlushUntil(
-    std::uint64_t seq, std::chrono::milliseconds /*timeout*/) noexcept {
+WalResult<void> WalWriter<R>::FlushUntil(std::uint64_t seq, std::chrono::milliseconds /*timeout*/) noexcept {
     // W4: 真 fdatasync + condvar. 当前 skeleton: HighWatermark ≥ seq 即视作 flush 完成.
-    if (high_watermark_.load(std::memory_order_acquire) >= seq) return WalResult<void>{};
+    if (high_watermark_.load(std::memory_order_acquire) >= seq)
+        return WalResult<void>{};
     return WalError::Io;
 }
 

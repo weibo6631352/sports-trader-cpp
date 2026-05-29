@@ -69,54 +69,53 @@ namespace stcpp::infra::wal {
 #pragma pack(push, 1)
 struct PositionRecord {
     // -- 市场标识 ---------------------------------------------------------
-    std::array<char, 32>          market_id{};            //   0..32
-    std::uint8_t                  outcome{0};             //  32..33  0=YES 1=NO
-    std::array<std::uint8_t, 7>   pad0_{};                //  33..40  显式 padding
+    std::array<char, 32> market_id{};     //   0..32
+    std::uint8_t outcome{0};              //  32..33  0=YES 1=NO
+    std::array<std::uint8_t, 7> pad0_{};  //  33..40  显式 padding
 
     // -- 仓位核心 (int64, USDC * 1e6) ------------------------------------
-    std::int64_t  position_delta{0};         //  40..48  本次变动 (+买 -卖)
-    std::int64_t  position_total{0};         //  48..56  累计净持仓
-    std::int64_t  realized_pnl{0};           //  56..64  已实现 PnL
-    std::int64_t  unrealized_pnl{0};         //  64..72  未实现 PnL
-    std::int64_t  entry_avg_price_micro{0};  //  72..80  平均买入价 * 1e6
+    std::int64_t position_delta{0};         //  40..48  本次变动 (+买 -卖)
+    std::int64_t position_total{0};         //  48..56  累计净持仓
+    std::int64_t realized_pnl{0};           //  56..64  已实现 PnL
+    std::int64_t unrealized_pnl{0};         //  64..72  未实现 PnL
+    std::int64_t entry_avg_price_micro{0};  //  72..80  平均买入价 * 1e6
 
     // -- RM circuit breaker 状态 (老韩 P0 #3 核心) ----------------------
-    std::int64_t  bankroll_total{0};         //  80..88  总资金 (USDC * 1e6)
-    std::int32_t  consec_loss_count{0};      //  88..92  连续亏损笔数
-    std::int32_t  exposure_pct{0};           //  92..96  敞口占比 (basis points)
+    std::int64_t bankroll_total{0};     //  80..88  总资金 (USDC * 1e6)
+    std::int32_t consec_loss_count{0};  //  88..92  连续亏损笔数
+    std::int32_t exposure_pct{0};       //  92..96  敞口占比 (basis points)
 
     // -- R-20: 4 时间戳 (ns) ---------------------------------------------
     // 命名含 fill_ 前缀, 与 WalRecord concept 方法名区分 (防字段/方法同名歧义)
-    std::int64_t  fill_event_ts_ns{0};       //  96..104 fill/settle 上游 ts
-    std::int64_t  fill_ds_ts_ns{0};          // 104..112 数据源 ts
-    std::int64_t  fill_ingestion_ts_ns{0};   // 112..120 本地接收 ts
-    std::int64_t  fill_as_of_ts_ns{0};       // 120..128 决策快照 ts
+    std::int64_t fill_event_ts_ns{0};      //  96..104 fill/settle 上游 ts
+    std::int64_t fill_ds_ts_ns{0};         // 104..112 数据源 ts
+    std::int64_t fill_ingestion_ts_ns{0};  // 112..120 本地接收 ts
+    std::int64_t fill_as_of_ts_ns{0};      // 120..128 决策快照 ts
 
     // -- 审计标识 + 完整性 -----------------------------------------------
-    std::array<std::uint8_t, 16>  audit_id_{};  // 128..144 ULID
-    std::uint32_t                 crc32c{0};    // 144..148 CRC32C (framework 算)
-    std::array<std::uint8_t, 4>   pad1_{};      // 148..152 trailing padding
+    std::array<std::uint8_t, 16> audit_id_{};  // 128..144 ULID
+    std::uint32_t crc32c{0};                   // 144..148 CRC32C (framework 算)
+    std::array<std::uint8_t, 4> pad1_{};       // 148..152 trailing padding
 
     // -----------------------------------------------------------------------
     // WalRecord concept 满足接口 (laowang-wal-framework-cpp-interface-v1.md §6)
     //   方法名必须与 wal_writer.hpp concept 要求一致 (不含 fill_ 前缀)
     // -----------------------------------------------------------------------
 
-    [[nodiscard]] std::int64_t event_ts_ns()       const noexcept { return fill_event_ts_ns; }
+    [[nodiscard]] std::int64_t event_ts_ns() const noexcept { return fill_event_ts_ns; }
     [[nodiscard]] std::int64_t data_source_ts_ns() const noexcept { return fill_ds_ts_ns; }
-    [[nodiscard]] std::int64_t ingestion_ts_ns()   const noexcept { return fill_ingestion_ts_ns; }
-    [[nodiscard]] std::int64_t as_of_ts_ns()       const noexcept { return fill_as_of_ts_ns; }
+    [[nodiscard]] std::int64_t ingestion_ts_ns() const noexcept { return fill_ingestion_ts_ns; }
+    [[nodiscard]] std::int64_t as_of_ts_ns() const noexcept { return fill_as_of_ts_ns; }
 
-    [[nodiscard]] std::array<std::uint8_t, 16> audit_id() const noexcept {
-        return audit_id_;
-    }
+    [[nodiscard]] std::array<std::uint8_t, 16> audit_id() const noexcept { return audit_id_; }
 
     // serialize_into: 写整个 struct 到 out (包含 crc32c 字段, 但此时 crc32c=0;
     // 调用方在 WalWriter::Append 内由 framework 计算后回填).
     // 返回写入字节数.
     [[nodiscard]] std::size_t serialize_into(std::span<std::byte> out) const noexcept {
         constexpr std::size_t sz = sizeof(PositionRecord);
-        if (out.size() < sz) return 0;
+        if (out.size() < sz)
+            return 0;
         std::memcpy(out.data(), this, sz);
         return sz;
     }
@@ -131,29 +130,28 @@ struct PositionRecord {
 // ABI 硬校验 (变更须 ADR + 老韩/老周 review + 下游 M4.5/ML hook/replay 同步)
 // ---------------------------------------------------------------------------
 
-static_assert(sizeof(PositionRecord) == 152,
-    "PositionRecord 必须 152B — ABI 锁定");
+static_assert(sizeof(PositionRecord) == 152, "PositionRecord 必须 152B — ABI 锁定");
 static_assert(std::is_trivially_copyable_v<PositionRecord>,
-    "PositionRecord 必须 trivially copyable (POD 落盘 + memcpy replay)");
+              "PositionRecord 必须 trivially copyable (POD 落盘 + memcpy replay)");
 static_assert(std::is_standard_layout_v<PositionRecord>,
-    "PositionRecord 必须 standard layout (offsetof 安全)");
+              "PositionRecord 必须 standard layout (offsetof 安全)");
 
 // 字段偏移硬校验
-static_assert(offsetof(PositionRecord, market_id)             ==   0);
-static_assert(offsetof(PositionRecord, outcome)               ==  32);
-static_assert(offsetof(PositionRecord, position_delta)        ==  40);
-static_assert(offsetof(PositionRecord, position_total)        ==  48);
-static_assert(offsetof(PositionRecord, realized_pnl)          ==  56);
-static_assert(offsetof(PositionRecord, unrealized_pnl)        ==  64);
-static_assert(offsetof(PositionRecord, entry_avg_price_micro) ==  72);
-static_assert(offsetof(PositionRecord, bankroll_total)        ==  80);
-static_assert(offsetof(PositionRecord, consec_loss_count)     ==  88);
-static_assert(offsetof(PositionRecord, exposure_pct)          ==  92);
-static_assert(offsetof(PositionRecord, fill_event_ts_ns)      ==  96);
-static_assert(offsetof(PositionRecord, fill_ds_ts_ns)         == 104);
-static_assert(offsetof(PositionRecord, fill_ingestion_ts_ns)  == 112);
-static_assert(offsetof(PositionRecord, fill_as_of_ts_ns)      == 120);
-static_assert(offsetof(PositionRecord, audit_id_)             == 128);
-static_assert(offsetof(PositionRecord, crc32c)                == 144);
+static_assert(offsetof(PositionRecord, market_id) == 0);
+static_assert(offsetof(PositionRecord, outcome) == 32);
+static_assert(offsetof(PositionRecord, position_delta) == 40);
+static_assert(offsetof(PositionRecord, position_total) == 48);
+static_assert(offsetof(PositionRecord, realized_pnl) == 56);
+static_assert(offsetof(PositionRecord, unrealized_pnl) == 64);
+static_assert(offsetof(PositionRecord, entry_avg_price_micro) == 72);
+static_assert(offsetof(PositionRecord, bankroll_total) == 80);
+static_assert(offsetof(PositionRecord, consec_loss_count) == 88);
+static_assert(offsetof(PositionRecord, exposure_pct) == 92);
+static_assert(offsetof(PositionRecord, fill_event_ts_ns) == 96);
+static_assert(offsetof(PositionRecord, fill_ds_ts_ns) == 104);
+static_assert(offsetof(PositionRecord, fill_ingestion_ts_ns) == 112);
+static_assert(offsetof(PositionRecord, fill_as_of_ts_ns) == 120);
+static_assert(offsetof(PositionRecord, audit_id_) == 128);
+static_assert(offsetof(PositionRecord, crc32c) == 144);
 
 }  // namespace stcpp::infra::wal

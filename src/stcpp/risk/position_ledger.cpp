@@ -30,13 +30,13 @@ namespace stcpp::risk {
 
 // ---------- apply_fill -------------------------------------------------------
 
-void PositionLedger::apply_fill(std::string const& condition_id,
-                                std::string const& token_id,
-                                Outcome             outcome,
+void PositionLedger::apply_fill(std::string const& condition_id, std::string const& token_id, Outcome outcome,
                                 execution::VirtualFill const& fill) noexcept {
     // 仅处理成功成交 (BernoulliMissed / SlippageModelReject 不更新仓位)
-    if (fill.reject != execution::MatchReject::Ok) return;
-    if (fill.fill_size_usdc == 0.0) return;
+    if (fill.reject != execution::MatchReject::Ok)
+        return;
+    if (fill.fill_size_usdc == 0.0)
+        return;
 
     // side 语义: VirtualFill 无 side 字段; 调用方约定:
     //   BUY  → delta = +fill_size_usdc (round to int, signed)
@@ -51,26 +51,22 @@ void PositionLedger::apply_fill(std::string const& condition_id,
     auto const ts = fill.as_of_ts_ns;
 
     std::unique_lock<std::shared_mutex> lk(mu_);
-    update_position_locked_(condition_id, token_id, outcome,
-                            delta_raw, fill.fill_price, ts);
+    update_position_locked_(condition_id, token_id, outcome, delta_raw, fill.fill_price, ts);
 }
 
-void PositionLedger::update_position_locked_(std::string const& condition_id,
-                                             std::string const& token_id,
-                                             Outcome             outcome,
-                                             std::int64_t        delta_usdc,
-                                             double              fill_price,
-                                             std::int64_t        as_of_ts_ns) noexcept {
+void PositionLedger::update_position_locked_(std::string const& condition_id, std::string const& token_id,
+                                             Outcome outcome, std::int64_t delta_usdc, double fill_price,
+                                             std::int64_t as_of_ts_ns) noexcept {
     auto it = token_positions_.find(token_id);
     if (it == token_positions_.end()) {
         // 新仓
         PositionView pv;
-        pv.condition_id      = condition_id;
-        pv.token_id          = token_id;
-        pv.outcome           = outcome;
-        pv.size_usdc         = delta_usdc;
-        pv.avg_entry_price   = (delta_usdc != 0 && fill_price > 0.0) ? fill_price : 0.0;
-        pv.last_update_ts    = as_of_ts_ns;   // R-20: 透传
+        pv.condition_id = condition_id;
+        pv.token_id = token_id;
+        pv.outcome = outcome;
+        pv.size_usdc = delta_usdc;
+        pv.avg_entry_price = (delta_usdc != 0 && fill_price > 0.0) ? fill_price : 0.0;
+        pv.last_update_ts = as_of_ts_ns;  // R-20: 透传
         token_positions_.emplace(token_id, std::move(pv));
     } else {
         PositionView& pv = it->second;
@@ -83,17 +79,17 @@ void PositionLedger::update_position_locked_(std::string const& condition_id,
             if (old_size == 0) {
                 pv.avg_entry_price = fill_price;
             } else {
-                pv.avg_entry_price =
-                    (static_cast<double>(old_size) * pv.avg_entry_price +
-                     static_cast<double>(delta_usdc) * fill_price) /
-                    static_cast<double>(new_size);
+                pv.avg_entry_price = (static_cast<double>(old_size) * pv.avg_entry_price +
+                                      static_cast<double>(delta_usdc) * fill_price) /
+                                     static_cast<double>(new_size);
             }
         }
         // 全平: 归零
-        if (new_size == 0) pv.avg_entry_price = 0.0;
+        if (new_size == 0)
+            pv.avg_entry_price = 0.0;
 
-        pv.size_usdc      = new_size;
-        pv.last_update_ts = as_of_ts_ns;   // R-20: 透传
+        pv.size_usdc = new_size;
+        pv.last_update_ts = as_of_ts_ns;  // R-20: 透传
     }
 
     // 更新 condition_exposure_ (signed sum)
@@ -107,7 +103,8 @@ std::vector<PositionView> PositionLedger::get_all_positions() const noexcept {
     std::vector<PositionView> out;
     out.reserve(token_positions_.size());
     for (auto const& [_, pv] : token_positions_) {
-        if (pv.size_usdc != 0) out.push_back(pv);
+        if (pv.size_usdc != 0)
+            out.push_back(pv);
     }
     return out;
 }
@@ -115,12 +112,12 @@ std::vector<PositionView> PositionLedger::get_all_positions() const noexcept {
 std::optional<PositionView> PositionLedger::get_position(std::string const& token_id) const noexcept {
     std::shared_lock<std::shared_mutex> lk(mu_);
     auto it = token_positions_.find(token_id);
-    if (it == token_positions_.end()) return std::nullopt;
+    if (it == token_positions_.end())
+        return std::nullopt;
     return it->second;
 }
 
-std::unordered_map<std::string, std::int64_t>
-PositionLedger::get_per_outcome_exposure() const noexcept {
+std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_outcome_exposure() const noexcept {
     std::shared_lock<std::shared_mutex> lk(mu_);
     std::unordered_map<std::string, std::int64_t> out;
     out.reserve(token_positions_.size());
@@ -130,8 +127,7 @@ PositionLedger::get_per_outcome_exposure() const noexcept {
     return out;
 }
 
-std::unordered_map<std::string, std::int64_t>
-PositionLedger::get_per_condition_exposure() const noexcept {
+std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_condition_exposure() const noexcept {
     std::shared_lock<std::shared_mutex> lk(mu_);
     return condition_exposure_;
 }

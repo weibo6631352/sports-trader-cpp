@@ -20,11 +20,11 @@
 //
 // 红线: R-7 / R-11 / R-20 全 enforce
 
-#include "tests/integration/test_fixture.hpp"
-
 #include <array>
 #include <cstdint>
 #include <string>
+
+#include "tests/integration/test_fixture.hpp"
 
 namespace stcpp::test::integration {
 namespace {
@@ -42,34 +42,32 @@ TEST_F(PaperE2EFixture, T1_R11_50_e2e_only_paper_audit_writes) {
     for (int i = 0; i < kN; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id           = "mkt_pollution_" + std::to_string(i);
-        b.is_buy              = (i % 2) == 0;
-        b.price               = 0.50 + 0.001 * (i % 20);
-        b.book_depth_l1_usdc  = 20'000.0;
-        b.event_ts_ns         = now - 5'000'000;
-        b.data_source_ts_ns   = now - 4'000'000;
-        b.ingestion_ts_ns     = now - 2'000'000;
+        b.market_id = "mkt_pollution_" + std::to_string(i);
+        b.is_buy = (i % 2) == 0;
+        b.price = 0.50 + 0.001 * (i % 20);
+        b.book_depth_l1_usdc = 20'000.0;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_pollution_" + std::to_string(i));
-        if (out.rm_decision.is_approved())      ++approved;
-        else if (out.rm_decision.is_rejected()) ++rejected;
+        if (out.rm_decision.is_approved())
+            ++approved;
+        else if (out.rm_decision.is_rejected())
+            ++rejected;
     }
 
     EXPECT_EQ(approved + rejected, static_cast<std::uint64_t>(kN));
     EXPECT_GE(approved, 1u) << "50 笔小单 happy path 至少 1 笔过 RM";
 
     // M1-D02 / R-11: paper_audit 有 record, 其余 3 wal 空
-    EXPECT_GT(paper_audit_->HighWatermark(), 0u)
-        << "paper_audit.wal 必有 record (每笔 audit emit 至少 1)";
-    EXPECT_EQ(risk_audit_->HighWatermark(),   0u)
+    EXPECT_GT(paper_audit_->HighWatermark(), 0u) << "paper_audit.wal 必有 record (每笔 audit emit 至少 1)";
+    EXPECT_EQ(risk_audit_->HighWatermark(), 0u)
         << "M1-D02 / R-11: paper 不写 risk_audit.wal (live mode 才写)";
-    EXPECT_EQ(position_->HighWatermark(),     0u)
-        << "M1-D03 / R-11: paper 不写 position.wal (paper 不动真账本)";
-    EXPECT_EQ(shadow_audit_->HighWatermark(), 0u)
-        << "M1-D02 / R-11: paper 不写 shadow_audit.wal";
+    EXPECT_EQ(position_->HighWatermark(), 0u) << "M1-D03 / R-11: paper 不写 position.wal (paper 不动真账本)";
+    EXPECT_EQ(shadow_audit_->HighWatermark(), 0u) << "M1-D02 / R-11: paper 不写 shadow_audit.wal";
 
     // audit emit 计数应 ≥ paper_audit HighWatermark
-    EXPECT_EQ(audit_emitter_->paper_audit_records(),
-              paper_audit_->HighWatermark());
+    EXPECT_EQ(audit_emitter_->paper_audit_records(), paper_audit_->HighWatermark());
     EXPECT_EQ(audit_emitter_->emitted_total(), static_cast<std::uint64_t>(kN));
 }
 
@@ -80,13 +78,13 @@ TEST_F(PaperE2EFixture, T2_R11_sign_response_wal_kind_always_PaperAudit) {
     for (int i = 0; i < kN; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_sign_" + std::to_string(i);
-        b.is_buy             = true;
-        b.price              = 0.55;
+        b.market_id = "mkt_sign_" + std::to_string(i);
+        b.is_buy = true;
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_sign_kind_" + std::to_string(i));
         if (out.went_through_signer) {
             ++went_through;
@@ -105,13 +103,13 @@ TEST_F(PaperE2EFixture, T3_R11_virtual_fill_wal_kind_always_PaperAudit) {
     for (int i = 0; i < kN; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_fill_" + std::to_string(i);
-        b.is_buy             = true;
-        b.price              = 0.55;
+        b.market_id = "mkt_fill_" + std::to_string(i);
+        b.is_buy = true;
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_fill_kind_" + std::to_string(i));
         if (out.went_through_signer) {
             ++fills;
@@ -124,8 +122,7 @@ TEST_F(PaperE2EFixture, T3_R11_virtual_fill_wal_kind_always_PaperAudit) {
 
 // ---- T4: PaperSigner Mode == Paper (R-7 mode tag) --------------------------
 TEST_F(PaperE2EFixture, T4_R7_signer_mode_is_paper) {
-    EXPECT_EQ(signer_->Mode(), ExecutionMode::Paper)
-        << "R-7: paper signer Mode 必 Paper";
+    EXPECT_EQ(signer_->Mode(), ExecutionMode::Paper) << "R-7: paper signer Mode 必 Paper";
 }
 
 // ---- T5: build-time mode 锁定 paper (R-7) -----------------------------------

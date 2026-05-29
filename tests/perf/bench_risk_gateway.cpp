@@ -29,7 +29,7 @@ namespace {
 using namespace stcpp::risk;
 
 class NoopEmitter : public AuditEmitter {
- public:
+public:
     [[nodiscard]] bool emit(AuditRecord const& r) noexcept override {
         // 不调 benchmark::DoNotOptimize(r) — Google Benchmark v1.8 标 const-ref 版 deprecated.
         // 只读字段防被优化掉:
@@ -39,9 +39,10 @@ class NoopEmitter : public AuditEmitter {
         return true;
     }
     std::uint64_t count() const noexcept { return count_; }
- private:
+
+private:
     std::uint64_t count_{0};
-    std::size_t   last_market_size_{0};
+    std::size_t last_market_size_{0};
 };
 
 constexpr std::int64_t NS_PER_MS = 1'000'000LL;
@@ -49,34 +50,34 @@ constexpr std::int64_t NS_PER_MS = 1'000'000LL;
 // 合法 4 ts intent (R-20 单调) + book fresh + 价格 / size 合理
 OrderIntent make_ok_intent(std::int64_t now, std::string sig) {
     OrderIntent it;
-    it.event_ts_ns         = now - 500 * NS_PER_MS;
-    it.data_source_ts_ns   = now - 400 * NS_PER_MS;
-    it.ingestion_ts_ns     = now - 100 * NS_PER_MS;
-    it.as_of_ts_ns         = now - 10 * NS_PER_MS;
+    it.event_ts_ns = now - 500 * NS_PER_MS;
+    it.data_source_ts_ns = now - 400 * NS_PER_MS;
+    it.ingestion_ts_ns = now - 100 * NS_PER_MS;
+    it.as_of_ts_ns = now - 10 * NS_PER_MS;
     // Wave 81 fix: market_id → condition_id (ABI break #1), is_buy → side (ABI break #4), Wave 76
-    it.condition_id        = "mkt_bench";
-    it.strategy_id         = "strat_a";
-    it.signal_id           = std::move(sig);
+    it.condition_id = "mkt_bench";
+    it.strategy_id = "strat_a";
+    it.signal_id = std::move(sig);
     it.feature_snapshot_id = "fs_01H";
-    it.side                = Side::Buy;
-    it.price               = 0.50;
-    it.size_usdc           = 1'000;
-    it.book_depth_l1_usdc  = 5'000;
+    it.side = Side::Buy;
+    it.price = 0.50;
+    it.size_usdc = 1'000;
+    it.book_depth_l1_usdc = 5'000;
     it.book_snapshot_ts_ns = now - 200 * NS_PER_MS;
-    it.tick_size           = 0.01;
-    it.is_close            = false;
+    it.tick_size = 0.01;
+    it.is_close = false;
     return it;
 }
 
 RiskConfig make_cfg() {
     RiskConfig c;
-    c.per_order_cap_usdc       = 10'000;
+    c.per_order_cap_usdc = 10'000;
     c.market_exposure_cap_usdc = 50'000;
-    c.bankroll_usdc            = 100'000;
-    c.daily_loss_halt_usdc     = 5'000;
-    c.consec_loss_halt_count   = 5;
-    c.excessive_slippage_bps   = 200;
-    c.enable_moneyline         = true;
+    c.bankroll_usdc = 100'000;
+    c.daily_loss_halt_usdc = 5'000;
+    c.consec_loss_halt_count = 5;
+    c.excessive_slippage_bps = 200;
+    c.enable_moneyline = true;
     return c;
 }
 
@@ -87,11 +88,11 @@ struct Fx {
 
     explicit Fx(std::string const& market = "mkt_bench") {
         emitter = std::make_shared<NoopEmitter>();
-        rm      = std::make_unique<RiskGateway>(make_cfg(), emitter);
+        rm = std::make_unique<RiskGateway>(make_cfg(), emitter);
         rm->set_state(RmState::RUNNING);
         rm->set_market_active(market, true);
         rm->set_market_state(market, MarketState::PREGAME);
-        rm->set_market_freshness_ms(market, 100);   // < 5000 warn
+        rm->set_market_freshness_ms(market, 100);  // < 5000 warn
         rm->set_market_exposure(market, 0);
         rm->set_bankroll(100'000);
         rm->set_daily_pnl(0);
@@ -107,7 +108,7 @@ void BM_RiskGateway_Approved(benchmark::State& state) {
         // 每次换 signal_id 避免 DUPLICATE_INTENT cache hit (clear 也行, 但每次 atomic ++ 更轻)
         const auto now = ::stcpp::infra::wal::pit::NowRealtimeNs();
         auto it = make_ok_intent(now, "sig_bench_" + std::to_string(i++));
-        auto d  = fx.rm->evaluate(it);
+        auto d = fx.rm->evaluate(it);
         benchmark::DoNotOptimize(d);
     }
 }
@@ -121,7 +122,7 @@ void BM_RiskGateway_Reject_StateHalted(benchmark::State& state) {
     for (auto _ : state) {
         const auto now = ::stcpp::infra::wal::pit::NowRealtimeNs();
         auto it = make_ok_intent(now, "sig_halt_" + std::to_string(i++));
-        auto d  = fx.rm->evaluate(it);
+        auto d = fx.rm->evaluate(it);
         benchmark::DoNotOptimize(d);
     }
 }
@@ -151,7 +152,7 @@ void BM_RiskGateway_Reject_Duplicate(benchmark::State& state) {
     (void)fx.rm->evaluate(warmup);
     for (auto _ : state) {
         auto it = make_ok_intent(now, "sig_dup_fixed");
-        auto d  = fx.rm->evaluate(it);
+        auto d = fx.rm->evaluate(it);
         benchmark::DoNotOptimize(d);
     }
 }
@@ -166,7 +167,7 @@ void BM_RiskGateway_Reject_StaleData(benchmark::State& state) {
     for (auto _ : state) {
         const auto now = ::stcpp::infra::wal::pit::NowRealtimeNs();
         auto it = make_ok_intent(now, "sig_stale_" + std::to_string(i++));
-        auto d  = fx.rm->evaluate(it);
+        auto d = fx.rm->evaluate(it);
         benchmark::DoNotOptimize(d);
     }
 }

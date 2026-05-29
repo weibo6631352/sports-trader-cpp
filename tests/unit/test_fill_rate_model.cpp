@@ -25,33 +25,31 @@
 //   T19 Sport enum 数值与 GoalserveSport 一致 (static_assert)
 //   T20 NBA Late phase late_decay_penalty 触发 (实测 §1.3 Q4 hot)
 
-#include <gtest/gtest.h>
-
 #include <cstdint>
 
+#include <gtest/gtest.h>
+
+#include "stcpp/data/goalserve_client.hpp"
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
 #include "stcpp/microstructure/sport_profile.hpp"
-#include "stcpp/data/goalserve_client.hpp"
 
 namespace ms = stcpp::microstructure;
 
 namespace {
 
 // 4 ts 合法 (严格不递减, 全正)
-constexpr std::int64_t kEventTs       = 1'000'000'000'000LL;  // 1000s
-constexpr std::int64_t kDataSourceTs  = 1'000'001'000'000LL;
-constexpr std::int64_t kIngestionTs   = 1'000'002'000'000LL;
-constexpr std::int64_t kAsOfTs        = 1'000'003'000'000LL;
+constexpr std::int64_t kEventTs = 1'000'000'000'000LL;  // 1000s
+constexpr std::int64_t kDataSourceTs = 1'000'001'000'000LL;
+constexpr std::int64_t kIngestionTs = 1'000'002'000'000LL;
+constexpr std::int64_t kAsOfTs = 1'000'003'000'000LL;
 
 ms::OrderBookTs MakeTs() {
     return {kEventTs, kDataSourceTs, kIngestionTs, kAsOfTs};
 }
 
 // 构造一个合法的 gameday "正常" book (NBA $5K ±2tick 深度, spread 1¢)
-ms::OrderBookSnapshot MakeBook(double l1_size = 1500.0,
-                               double top3 = 5000.0,
-                               std::int32_t spread_bps = 20) {
+ms::OrderBookSnapshot MakeBook(double l1_size = 1500.0, double top3 = 5000.0, std::int32_t spread_bps = 20) {
     ms::OrderBookSnapshot b;
     b.ts = MakeTs();
     b.market_id = "test-market";
@@ -63,26 +61,24 @@ ms::OrderBookSnapshot MakeBook(double l1_size = 1500.0,
     b.ask[0] = {0.50, l1_size};
     b.ask[1] = {0.51, l1_size * 0.6};
     b.ask[2] = {0.52, l1_size * 0.4};
-    b.top3_depth_usdc  = top3;
-    b.spread_bps       = spread_bps;
+    b.top3_depth_usdc = top3;
+    b.spread_bps = spread_bps;
     b.last_trade_ts_ns = kEventTs - 1'000'000'000LL;  // 1s ago
     return b;
 }
 
-ms::Microprobe MakeProbe(std::int64_t qhl_ms = 30'000,
-                         double as_score = 0.0) {
+ms::Microprobe MakeProbe(std::int64_t qhl_ms = 30'000, double as_score = 0.0) {
     ms::Microprobe p;
-    p.microprice  = 0.495;
-    p.mid         = 0.495;
-    p.imbalance   = 0.0;
-    p.quote_half_life_ms      = qhl_ms;
+    p.microprice = 0.495;
+    p.mid = 0.495;
+    p.imbalance = 0.0;
+    p.quote_half_life_ms = qhl_ms;
     p.adverse_selection_score = as_score;
-    p.is_hot_token            = false;
+    p.is_hot_token = false;
     return p;
 }
 
-ms::FillIntent MakeIntent(double size_usdc,
-                          ms::Sport sport = ms::Sport::Basketball,
+ms::FillIntent MakeIntent(double size_usdc, ms::Sport sport = ms::Sport::Basketball,
                           ms::InplayPhase phase = ms::InplayPhase::Mid,
                           ms::MatchPath path = ms::MatchPath::Maker) {
     ms::FillIntent it;
@@ -91,7 +87,7 @@ ms::FillIntent MakeIntent(double size_usdc,
     it.size_usdc = size_usdc;
     it.sport = sport;
     it.phase = phase;
-    it.path  = path;
+    it.path = path;
     return it;
 }
 
@@ -99,8 +95,8 @@ ms::FillIntent MakeIntent(double size_usdc,
 
 // === T01: depth 充足 + 正常 spread → 高 fill_rate ===
 TEST(FillRateModelV01, T01_DepthAmpleNormalSpread) {
-    auto book   = MakeBook(/*l1=*/3000.0, /*top3=*/15000.0, /*spread=*/20);
-    auto probe  = MakeProbe();
+    auto book = MakeBook(/*l1=*/3000.0, /*top3=*/15000.0, /*spread=*/20);
+    auto probe = MakeProbe();
     auto intent = MakeIntent(/*size=*/2000.0);  // ratio = 15000 / 2000 = 7.5 → base=0.95 cap
     auto out = ms::FillRateModel::compute_maker(book, probe, intent);
     EXPECT_EQ(out.reject, ms::FillRateReject::Ok);
@@ -123,10 +119,10 @@ TEST(FillRateModelV01, T02_DepthInsufficientBelowFloor) {
 // sport 选 Basketball Mid (base=0.72, bias=+0.07) → 合成 ~0.47, penalty 后 ~0.32, 线性可比.
 TEST(FillRateModelV01, T03_QhlShortPenalty) {
     auto book = MakeBook(1000.0, 800.0, 20);  // top3=800
-    auto probe_long  = MakeProbe(/*qhl=*/30'000);
+    auto probe_long = MakeProbe(/*qhl=*/30'000);
     auto probe_short = MakeProbe(/*qhl=*/200);  // < 500ms
-    auto intent = MakeIntent(2000.0);  // base = 800/2000 = 0.40
-    auto o_long  = ms::FillRateModel::compute_maker(book, probe_long, intent);
+    auto intent = MakeIntent(2000.0);           // base = 800/2000 = 0.40
+    auto o_long = ms::FillRateModel::compute_maker(book, probe_long, intent);
     auto o_short = ms::FillRateModel::compute_maker(book, probe_short, intent);
     EXPECT_NEAR(o_short.fill_rate - o_long.fill_rate, -ms::PENALTY_QHL_SHORT, 1e-9);
     EXPECT_NEAR(o_short.breakdown.qhl_penalty, ms::PENALTY_QHL_SHORT, 1e-9);
@@ -135,21 +131,21 @@ TEST(FillRateModelV01, T03_QhlShortPenalty) {
 // === T04: spread 宽 → -0.10 penalty ===
 TEST(FillRateModelV01, T04_SpreadWidePenalty) {
     auto book_narrow = MakeBook(1000.0, 800.0, /*spread=*/20);
-    auto book_wide   = MakeBook(1000.0, 800.0, /*spread=*/80);  // > 50
+    auto book_wide = MakeBook(1000.0, 800.0, /*spread=*/80);  // > 50
     auto probe = MakeProbe();
     auto intent = MakeIntent(2000.0);
     auto o_n = ms::FillRateModel::compute_maker(book_narrow, probe, intent);
-    auto o_w = ms::FillRateModel::compute_maker(book_wide,   probe, intent);
+    auto o_w = ms::FillRateModel::compute_maker(book_wide, probe, intent);
     EXPECT_NEAR(o_w.fill_rate - o_n.fill_rate, -ms::PENALTY_SPREAD_WIDE, 1e-9);
 }
 
 // === T05: adverse selection → -0.20 ===
 TEST(FillRateModelV01, T05_AdverseSelectionPenalty) {
     auto book = MakeBook(1000.0, 800.0, 20);
-    auto probe_no  = MakeProbe(30'000, /*as=*/0.0);
+    auto probe_no = MakeProbe(30'000, /*as=*/0.0);
     auto probe_yes = MakeProbe(30'000, /*as=*/0.8);  // > 0.5
     auto intent = MakeIntent(2000.0);
-    auto o1 = ms::FillRateModel::compute_maker(book, probe_no,  intent);
+    auto o1 = ms::FillRateModel::compute_maker(book, probe_no, intent);
     auto o2 = ms::FillRateModel::compute_maker(book, probe_yes, intent);
     EXPECT_NEAR(o2.fill_rate - o1.fill_rate, -ms::PENALTY_ADVERSE_SELECT, 1e-9);
 }
@@ -160,39 +156,36 @@ TEST(FillRateModelV01, T05_AdverseSelectionPenalty) {
 TEST(FillRateModelV01, T06_LatePhaseTimeDecay) {
     auto book = MakeBook(1000.0, 800.0, 20);
     auto probe = MakeProbe();
-    auto intent_mid  = MakeIntent(2000.0, ms::Sport::Basketball, ms::InplayPhase::Mid);
+    auto intent_mid = MakeIntent(2000.0, ms::Sport::Basketball, ms::InplayPhase::Mid);
     auto intent_late = MakeIntent(2000.0, ms::Sport::Basketball, ms::InplayPhase::Late);
     auto o_m = ms::FillRateModel::compute_maker(book, probe, intent_mid);
     auto o_l = ms::FillRateModel::compute_maker(book, probe, intent_late);
     auto const& prof_late = ms::profile_of(ms::Sport::Basketball, ms::InplayPhase::Late);
-    auto const& prof_mid  = ms::profile_of(ms::Sport::Basketball, ms::InplayPhase::Mid);
+    auto const& prof_mid = ms::profile_of(ms::Sport::Basketball, ms::InplayPhase::Mid);
     double const delta_expected =
-        -prof_late.late_decay_penalty
-        + (prof_late.base_fill_rate - prof_mid.base_fill_rate);
+        -prof_late.late_decay_penalty + (prof_late.base_fill_rate - prof_mid.base_fill_rate);
     EXPECT_NEAR(o_l.fill_rate - o_m.fill_rate, delta_expected, 1e-9);
     EXPECT_GT(o_l.breakdown.time_decay_penalty, 0.0);
 }
 
 // === T07: 复合 penalty 叠加 (QHL + spread + AS + Late) ===
 TEST(FillRateModelV01, T07_CompoundPenaltiesStack) {
-    auto book   = MakeBook(3000.0, 12000.0, /*spread=*/80);
-    auto probe  = MakeProbe(/*qhl=*/200, /*as=*/0.9);
+    auto book = MakeBook(3000.0, 12000.0, /*spread=*/80);
+    auto probe = MakeProbe(/*qhl=*/200, /*as=*/0.9);
     auto intent = MakeIntent(2000.0, ms::Sport::Basketball, ms::InplayPhase::Late);
     auto out = ms::FillRateModel::compute_maker(book, probe, intent);
     auto const& p = ms::profile_of(ms::Sport::Basketball, ms::InplayPhase::Late);
-    double const expected_sum_penalties = -(ms::PENALTY_QHL_SHORT
-                                          + ms::PENALTY_SPREAD_WIDE
-                                          + ms::PENALTY_ADVERSE_SELECT
-                                          + p.late_decay_penalty);
+    double const expected_sum_penalties = -(ms::PENALTY_QHL_SHORT + ms::PENALTY_SPREAD_WIDE +
+                                            ms::PENALTY_ADVERSE_SELECT + p.late_decay_penalty);
     EXPECT_NEAR(out.breakdown.sum_penalties, expected_sum_penalties, 1e-9);
 }
 
 // === T08: Soccer vs Esports Pregame sport_bias 差异 (Soccer base 高) ===
 TEST(FillRateModelV01, T08_SoccerVsEsportsSportBias) {
-    auto book   = MakeBook(3000.0, 8000.0, 20);
-    auto probe  = MakeProbe();
-    auto i_soc  = MakeIntent(2000.0, ms::Sport::Soccer,  ms::InplayPhase::Pregame);
-    auto i_esp  = MakeIntent(2000.0, ms::Sport::Esports, ms::InplayPhase::Pregame);
+    auto book = MakeBook(3000.0, 8000.0, 20);
+    auto probe = MakeProbe();
+    auto i_soc = MakeIntent(2000.0, ms::Sport::Soccer, ms::InplayPhase::Pregame);
+    auto i_esp = MakeIntent(2000.0, ms::Sport::Esports, ms::InplayPhase::Pregame);
     auto o_soc = ms::FillRateModel::compute_maker(book, probe, i_soc);
     auto o_esp = ms::FillRateModel::compute_maker(book, probe, i_esp);
     EXPECT_GT(o_soc.fill_rate, o_esp.fill_rate);
@@ -201,8 +194,8 @@ TEST(FillRateModelV01, T08_SoccerVsEsportsSportBias) {
 
 // === T09: fill_rate clamp 下界 = 0 (极端复合 penalty) ===
 TEST(FillRateModelV01, T09_ClampLowerZero) {
-    auto book   = MakeBook(/*l1=*/50.0, /*top3=*/50.0, /*spread=*/200);
-    auto probe  = MakeProbe(/*qhl=*/100, /*as=*/0.99);
+    auto book = MakeBook(/*l1=*/50.0, /*top3=*/50.0, /*spread=*/200);
+    auto probe = MakeProbe(/*qhl=*/100, /*as=*/0.99);
     auto intent = MakeIntent(/*size=*/100000.0,  // depth/size = 0.0005 → BASE_MIN=0.10
                              ms::Sport::Esports, ms::InplayPhase::Late);
     auto out = ms::FillRateModel::compute_maker(book, probe, intent);
@@ -213,8 +206,8 @@ TEST(FillRateModelV01, T09_ClampLowerZero) {
 
 // === T10: fill_rate clamp 上界 = 1 (极厚深度 + Tennis Pregame bias 高) ===
 TEST(FillRateModelV01, T10_ClampUpperOne) {
-    auto book   = MakeBook(50000.0, 200000.0, 10);
-    auto probe  = MakeProbe();
+    auto book = MakeBook(50000.0, 200000.0, 10);
+    auto probe = MakeProbe();
     auto intent = MakeIntent(100.0, ms::Sport::Tennis, ms::InplayPhase::Pregame);
     auto out = ms::FillRateModel::compute_maker(book, probe, intent);
     EXPECT_LE(out.fill_rate, 1.0);
@@ -265,8 +258,8 @@ TEST(FillRateModelV01, T15_NegativeSizeRejects) {
 // === T16: Taker 路径 size <= L1 → ~0.95 ===
 TEST(FillRateModelV01, T16_TakerSmallSizeNearOne) {
     auto book = MakeBook(/*l1=*/3000.0, 8000.0, 20);
-    auto intent = MakeIntent(/*size=*/1000.0, ms::Sport::Basketball,
-                             ms::InplayPhase::Mid, ms::MatchPath::Taker);
+    auto intent =
+        MakeIntent(/*size=*/1000.0, ms::Sport::Basketball, ms::InplayPhase::Mid, ms::MatchPath::Taker);
     auto out = ms::FillRateModel::compute_taker(book, intent);
     EXPECT_NEAR(out.fill_rate, 0.95, 1e-9);
     EXPECT_EQ(out.reject, ms::FillRateReject::Ok);
@@ -275,8 +268,7 @@ TEST(FillRateModelV01, T16_TakerSmallSizeNearOne) {
 // === T17: Taker 路径 size > L1 → 0.85 ===
 TEST(FillRateModelV01, T17_TakerLargeSizeMultiLevel) {
     auto book = MakeBook(/*l1=*/500.0, 8000.0, 20);
-    auto intent = MakeIntent(2000.0, ms::Sport::Basketball,
-                             ms::InplayPhase::Mid, ms::MatchPath::Taker);
+    auto intent = MakeIntent(2000.0, ms::Sport::Basketball, ms::InplayPhase::Mid, ms::MatchPath::Taker);
     auto out = ms::FillRateModel::compute_taker(book, intent);
     EXPECT_NEAR(out.fill_rate, 0.85, 1e-9);
 }
@@ -293,22 +285,18 @@ TEST(FillRateModelV01, T18_L1ProbeMicropriceCap) {
     EXPECT_LE(p.microprice, 0.505 + 2 * ms::TICK_01 + 1e-9);
     EXPECT_GE(p.microprice, 0.505 - 2 * ms::TICK_01 - 1e-9);
     EXPECT_GT(p.imbalance, -1.0);
-    EXPECT_LT(p.imbalance,  0.0);  // bid 量更小 → imbalance 负
+    EXPECT_LT(p.imbalance, 0.0);  // bid 量更小 → imbalance 负
 }
 
 // === T19: Sport enum 数值与 GoalserveSport 一致 ===
 TEST(FillRateModelV01, T19_SportEnumAlignsWithGoalserve) {
     using G = stcpp::data::goalserve::GoalserveSport;
-    static_assert(static_cast<std::uint8_t>(ms::Sport::Soccer)
-                  == static_cast<std::uint8_t>(G::Soccer));
-    static_assert(static_cast<std::uint8_t>(ms::Sport::Basketball)
-                  == static_cast<std::uint8_t>(G::Basketball));
-    static_assert(static_cast<std::uint8_t>(ms::Sport::Tennis)
-                  == static_cast<std::uint8_t>(G::Tennis));
-    static_assert(static_cast<std::uint8_t>(ms::Sport::Esports)
-                  == static_cast<std::uint8_t>(G::Esports));
-    static_assert(static_cast<std::uint8_t>(ms::Sport::Baseball)
-                  == static_cast<std::uint8_t>(G::Baseball));
+    static_assert(static_cast<std::uint8_t>(ms::Sport::Soccer) == static_cast<std::uint8_t>(G::Soccer));
+    static_assert(static_cast<std::uint8_t>(ms::Sport::Basketball) ==
+                  static_cast<std::uint8_t>(G::Basketball));
+    static_assert(static_cast<std::uint8_t>(ms::Sport::Tennis) == static_cast<std::uint8_t>(G::Tennis));
+    static_assert(static_cast<std::uint8_t>(ms::Sport::Esports) == static_cast<std::uint8_t>(G::Esports));
+    static_assert(static_cast<std::uint8_t>(ms::Sport::Baseball) == static_cast<std::uint8_t>(G::Baseball));
     SUCCEED();
 }
 

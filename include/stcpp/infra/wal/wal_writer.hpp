@@ -37,45 +37,45 @@ namespace stcpp::infra::wal {
 
 template <typename T>
 concept WalRecord = requires(const T& r, std::span<std::byte> out) {
-    { r.event_ts_ns()         } -> std::same_as<std::int64_t>;
-    { r.data_source_ts_ns()   } -> std::same_as<std::int64_t>;
-    { r.ingestion_ts_ns()     } -> std::same_as<std::int64_t>;
-    { r.as_of_ts_ns()         } -> std::same_as<std::int64_t>;
-    { r.audit_id()            } -> std::convertible_to<std::array<std::uint8_t, 16>>;
-    { r.serialize_into(out)   } -> std::convertible_to<std::size_t>;
-    { T::max_serialized_size()} -> std::convertible_to<std::size_t>;
+    { r.event_ts_ns() } -> std::same_as<std::int64_t>;
+    { r.data_source_ts_ns() } -> std::same_as<std::int64_t>;
+    { r.ingestion_ts_ns() } -> std::same_as<std::int64_t>;
+    { r.as_of_ts_ns() } -> std::same_as<std::int64_t>;
+    { r.audit_id() } -> std::convertible_to<std::array<std::uint8_t, 16>>;
+    { r.serialize_into(out) } -> std::convertible_to<std::size_t>;
+    { T::max_serialized_size() } -> std::convertible_to<std::size_t>;
 };
 
 template <WalRecord R>
 inline void FillHeaderFromRecord(const R& r, WalKind kind, WalRecordHeader& h) noexcept {
-    h.magic             = kMagicV2;
-    h.ver               = kHeaderVersionV2;
-    h.wal_kind          = static_cast<std::uint8_t>(kind);
-    h.event_ts_ns       = r.event_ts_ns();
+    h.magic = kMagicV2;
+    h.ver = kHeaderVersionV2;
+    h.wal_kind = static_cast<std::uint8_t>(kind);
+    h.event_ts_ns = r.event_ts_ns();
     h.data_source_ts_ns = r.data_source_ts_ns();
-    h.ingestion_ts_ns   = r.ingestion_ts_ns();
-    h.as_of_ts_ns       = r.as_of_ts_ns();
-    h.audit_id          = r.audit_id();
+    h.ingestion_ts_ns = r.ingestion_ts_ns();
+    h.as_of_ts_ns = r.as_of_ts_ns();
+    h.audit_id = r.audit_id();
 }
 
 // ---------- WalConfig (cpp-interface §7) ---------------------------------
 
 enum class FsyncMode : std::uint8_t {
     GroupCommit = 0,
-    PerRecord   = 1,    // position only, RPO=0
+    PerRecord = 1,  // position only, RPO=0
 };
 
 struct WalConfig {
-    WalKind                   kind;
-    std::string               path_prefix;              // 必须 starts_with(PathRootOf(kind))
-    std::size_t               ring_capacity        = 16384;     // 2 的幂
-    std::size_t               segment_max_bytes    = 64ULL << 20;
-    std::chrono::seconds      rotation_period{3600};
-    FsyncMode                 fsync_mode           = FsyncMode::GroupCommit;
-    std::uint16_t             batch_size           = 64;
+    WalKind kind;
+    std::string path_prefix;            // 必须 starts_with(PathRootOf(kind))
+    std::size_t ring_capacity = 16384;  // 2 的幂
+    std::size_t segment_max_bytes = 64ULL << 20;
+    std::chrono::seconds rotation_period{3600};
+    FsyncMode fsync_mode = FsyncMode::GroupCommit;
+    std::uint16_t batch_size = 64;
     std::chrono::microseconds batch_timeout{1000};
-    int                       bg_cpu_core          = 7;         // shadow = 6 (Q-PE1)
-    bool                      reset_on_replay_failure = false;  // ShadowAudit = true (Q-PE2)
+    int bg_cpu_core = 7;                   // shadow = 6 (Q-PE1)
+    bool reset_on_replay_failure = false;  // ShadowAudit = true (Q-PE2)
 };
 
 // ---------- WalWriter<R> (cpp-interface §8) ------------------------------
@@ -84,7 +84,7 @@ struct WalConfig {
 
 template <WalRecord R>
 class WalWriter {
- public:
+public:
     // Open(): 构造期 P9 path prefix 硬校验 — 不命中 → std::abort (不抛, R-11 防绕过).
     // 启动 SPSC ring + bg fsync 线程 (pin cfg.bg_cpu_core).
     // 返回错误仅限非 R-11 类 (例如 path_prefix 已通过白名单但 fd 打不开 → Io).
@@ -97,33 +97,30 @@ class WalWriter {
     [[nodiscard]] WalResult<std::uint64_t> Append(const R& record) noexcept;
 
     // 等到指定 seq 已落盘 (group commit 显式 flush, position PerRecord 用不上).
-    [[nodiscard]] WalResult<void> FlushUntil(
-        std::uint64_t seq, std::chrono::milliseconds timeout) noexcept;
+    [[nodiscard]] WalResult<void> FlushUntil(std::uint64_t seq, std::chrono::milliseconds timeout) noexcept;
 
     [[nodiscard]] std::uint64_t HighWatermark() const noexcept {
         return high_watermark_.load(std::memory_order_acquire);
     }
-    [[nodiscard]] bool    IsFailed() const noexcept {
-        return failed_.load(std::memory_order_acquire);
-    }
+    [[nodiscard]] bool IsFailed() const noexcept { return failed_.load(std::memory_order_acquire); }
     [[nodiscard]] WalKind Kind() const noexcept { return cfg_.kind; }
 
     ~WalWriter();
 
-    WalWriter(const WalWriter&)            = delete;
+    WalWriter(const WalWriter&) = delete;
     WalWriter& operator=(const WalWriter&) = delete;
-    WalWriter(WalWriter&&)                 = delete;
-    WalWriter& operator=(WalWriter&&)      = delete;
+    WalWriter(WalWriter&&) = delete;
+    WalWriter& operator=(WalWriter&&) = delete;
 
- private:
+private:
     WalWriter() = default;
 
     // W4 接 rigtorp::SPSCQueue<Frame> (@小石), std::jthread bg, RAII fd_.
     // 当前 skeleton 仅保留计数器, 让 PIT / path check / API 闭环可测.
-    WalConfig                 cfg_;
+    WalConfig cfg_;
     std::atomic<std::uint64_t> next_seq_{0};
     std::atomic<std::uint64_t> high_watermark_{0};
-    std::atomic<bool>          failed_{false};
+    std::atomic<bool> failed_{false};
 };
 
 // ---------- 4 类 record forward-declare (W3 仅声明, 实现在 src/.../wal_writer.cpp) ----------
@@ -131,9 +128,9 @@ class WalWriter {
 // 老唐 audit envelope (RiskAudit / PaperAudit / ShadowAudit) + 老周 position record.
 // 真 struct 在各自 owner 仓位下定义, framework 只通过 WalRecord concept 约束.
 
-struct RiskAuditRecord;     // owner: 老韩 + 老唐 — laotang v1.1 audit envelope
-struct PositionRecord;      // owner: 老周 + 老孙 — laozhou v0.5 §X position WAL
-struct PaperAuditRecord;    // owner: 小蒋
-struct ShadowAuditRecord;   // owner: 小蒋 / 小邓
+struct RiskAuditRecord;    // owner: 老韩 + 老唐 — laotang v1.1 audit envelope
+struct PositionRecord;     // owner: 老周 + 老孙 — laozhou v0.5 §X position WAL
+struct PaperAuditRecord;   // owner: 小蒋
+struct ShadowAuditRecord;  // owner: 小蒋 / 小邓
 
 }  // namespace stcpp::infra::wal

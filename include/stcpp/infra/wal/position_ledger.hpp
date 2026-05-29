@@ -63,16 +63,16 @@ namespace stcpp::infra::wal {
 // ---------------------------------------------------------------------------
 struct PositionState {
     std::array<char, 32> market_id{};
-    std::uint8_t         outcome{0};              // 0=YES 1=NO
+    std::uint8_t outcome{0};  // 0=YES 1=NO
 
-    std::int64_t position_total{0};               // USDC * 1e6
+    std::int64_t position_total{0};  // USDC * 1e6
     std::int64_t realized_pnl{0};
     std::int64_t unrealized_pnl{0};
-    std::int64_t entry_avg_price_micro{0};        // * 1e6
+    std::int64_t entry_avg_price_micro{0};  // * 1e6
     std::int64_t bankroll_total{0};
 
     std::int32_t consec_loss_count{0};
-    std::int32_t exposure_pct{0};                 // basis points
+    std::int32_t exposure_pct{0};  // basis points
 
     // 最近一笔 record 的 4 ts (用于 ML hook + M4.5 读取)
     std::int64_t last_event_ts_ns{0};
@@ -88,26 +88,26 @@ struct PositionState {
 // circuit_breaker_state() 返回此结构, RM 判断是否触发 circuit breaker.
 // ---------------------------------------------------------------------------
 struct CircuitBreakerState {
-    std::int64_t bankroll_total{0};       // USDC * 1e6
-    std::int32_t consec_loss_count{0};    // 连续亏损笔数
-    std::int32_t exposure_pct{0};         // basis points (当前敞口占比)
+    std::int64_t bankroll_total{0};     // USDC * 1e6
+    std::int32_t consec_loss_count{0};  // 连续亏损笔数
+    std::int32_t exposure_pct{0};       // basis points (当前敞口占比)
 };
 
 // ---------------------------------------------------------------------------
 // ApplyResult — apply_fill 返回值 (noexcept 路径)
 // ---------------------------------------------------------------------------
 enum class ApplyStatus : std::uint8_t {
-    Ok             = 0,
-    PitViolation   = 1,   // 4 ts 不等式违反 (R-20)
-    WalBackpressure= 2,   // WAL ring 满 (老韩 #18)
-    WalFailed      = 3,   // WAL writer 已失败 (fsync error)
-    InvalidFill    = 4,   // fill 字段非法 (size=0 且非 reject)
+    Ok = 0,
+    PitViolation = 1,     // 4 ts 不等式违反 (R-20)
+    WalBackpressure = 2,  // WAL ring 满 (老韩 #18)
+    WalFailed = 3,        // WAL writer 已失败 (fsync error)
+    InvalidFill = 4,      // fill 字段非法 (size=0 且非 reject)
 };
 
 struct ApplyResult {
-    ApplyStatus    status{ApplyStatus::Ok};
+    ApplyStatus status{ApplyStatus::Ok};
     PositionRecord record{};   // 已写入 WAL 的 record (status=Ok 时有效)
-    std::uint64_t  wal_seq{0}; // WAL sequence number
+    std::uint64_t wal_seq{0};  // WAL sequence number
 };
 
 // ---------------------------------------------------------------------------
@@ -116,14 +116,13 @@ struct ApplyResult {
 // 生产代码走 WalWriter<PositionRecord>; 单测注入 InMemoryPositionWal.
 // ---------------------------------------------------------------------------
 class IWalWriterForPosition {
- public:
+public:
     virtual ~IWalWriterForPosition() = default;
 
-    [[nodiscard]] virtual WalResult<std::uint64_t>
-        Append(const PositionRecord& rec) noexcept = 0;
+    [[nodiscard]] virtual WalResult<std::uint64_t> Append(const PositionRecord& rec) noexcept = 0;
 
     [[nodiscard]] virtual std::uint64_t HighWatermark() const noexcept = 0;
-    [[nodiscard]] virtual bool          IsFailed()      const noexcept = 0;
+    [[nodiscard]] virtual bool IsFailed() const noexcept = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -134,7 +133,7 @@ class IWalWriterForPosition {
 //   restore_from_wal 只在启动期 (main thread) 调用, 之后不再调.
 // ---------------------------------------------------------------------------
 class PositionLedger {
- public:
+public:
     // -- 构造 (生产路径) -------------------------------------------------------
     //
     // path_prefix: WAL 文件路径前缀, 必须以 WalKind::Position 的 PathRootOf 开头
@@ -147,20 +146,18 @@ class PositionLedger {
     // 注: 当前 WalKind::Position PathRootOf = "/var/lib/stcpp/exec/"
     //   R-7 paper/live 隔离通过 path_prefix 参数 + CMake 注入实现.
     //   CMake 会根据 STCPP_EXEC_MODE 选择正确的 path_prefix (详见 CMakeLists.txt guard).
-    explicit PositionLedger(std::string_view path_prefix,
-                            std::int64_t     init_bankroll);
+    explicit PositionLedger(std::string_view path_prefix, std::int64_t init_bankroll);
 
     // -- 测试专用构造 (注入 mock WAL writer) -----------------------------------
     // 不做路径校验, 用于单测 T1-T6.
-    explicit PositionLedger(std::unique_ptr<IWalWriterForPosition> mock_writer,
-                            std::int64_t                           init_bankroll);
+    explicit PositionLedger(std::unique_ptr<IWalWriterForPosition> mock_writer, std::int64_t init_bankroll);
 
     ~PositionLedger() = default;
 
-    PositionLedger(const PositionLedger&)            = delete;
+    PositionLedger(const PositionLedger&) = delete;
     PositionLedger& operator=(const PositionLedger&) = delete;
-    PositionLedger(PositionLedger&&)                 = delete;
-    PositionLedger& operator=(PositionLedger&&)      = delete;
+    PositionLedger(PositionLedger&&) = delete;
+    PositionLedger& operator=(PositionLedger&&) = delete;
 
     // -- 热路径 write (vCPU3 SPSC 单写) ---------------------------------------
 
@@ -174,8 +171,7 @@ class PositionLedger {
     //
     // noexcept: WAL 失败通过 ApplyResult.status 返回, 不抛.
     // SPSC 保证: 只有 vCPU3 调用此方法 (apply_fill + WAL 在同一线程).
-    [[nodiscard]] ApplyResult
-        apply_fill(const stcpp::execution::VirtualFill& fill) noexcept;
+    [[nodiscard]] ApplyResult apply_fill(const stcpp::execution::VirtualFill& fill) noexcept;
 
     // -- 启动期 (冷路径) replay -----------------------------------------------
 
@@ -193,8 +189,7 @@ class PositionLedger {
 
     // query_position: 按 market_id 查当前 PositionState.
     // 返回: 找不到则返回空 PositionState (market_id 全零).
-    [[nodiscard]] PositionState
-        query_position(std::string_view market_id) const;
+    [[nodiscard]] PositionState query_position(std::string_view market_id) const;
 
     // circuit_breaker_state: RM evaluate() 调用入口 (R-1).
     // 返回全局聚合 circuit breaker 状态 (汇总所有 market 的 consec_loss + exposure).
@@ -211,7 +206,7 @@ class PositionLedger {
         return record_count_.load(std::memory_order_acquire);
     }
 
- private:
+private:
     // -- 内部辅助 -------------------------------------------------------------
 
     // _update_state: 根据 PositionRecord 更新内存 PositionState.
@@ -224,16 +219,16 @@ class PositionLedger {
     PositionRecord _build_record(const stcpp::execution::VirtualFill& fill) noexcept;
 
     // -- 内存状态 (读写锁) ----------------------------------------------------
-    mutable std::mutex                                       state_mutex_;
-    std::unordered_map<std::string, PositionState>           states_;  // key=market_id string
-    PositionRecord                                           last_record_{};
+    mutable std::mutex state_mutex_;
+    std::unordered_map<std::string, PositionState> states_;  // key=market_id string
+    PositionRecord last_record_{};
 
     // -- 全局聚合 circuit breaker 状态 (原子读, RM 热路径) --------------------
     // consec_loss_count: 取所有 market 中最大值 (最保守)
     // exposure_pct: 所有 market 敞口之和 (basis points)
-    std::atomic<std::int64_t>  global_bankroll_{0};
-    std::atomic<std::int32_t>  global_consec_loss_{0};
-    std::atomic<std::int32_t>  global_exposure_pct_{0};
+    std::atomic<std::int64_t> global_bankroll_{0};
+    std::atomic<std::int32_t> global_consec_loss_{0};
+    std::atomic<std::int32_t> global_exposure_pct_{0};
 
     // -- WAL writer (持有权) --------------------------------------------------
     std::unique_ptr<IWalWriterForPosition> writer_;
@@ -249,23 +244,17 @@ class PositionLedger {
 // 单测中被 InMemoryPositionWal 替换.
 // ---------------------------------------------------------------------------
 class RealWalWriter final : public IWalWriterForPosition {
- public:
-    explicit RealWalWriter(std::unique_ptr<WalWriter<PositionRecord>> w)
-        : writer_(std::move(w)) {}
+public:
+    explicit RealWalWriter(std::unique_ptr<WalWriter<PositionRecord>> w) : writer_(std::move(w)) {}
 
-    [[nodiscard]] WalResult<std::uint64_t>
-        Append(const PositionRecord& rec) noexcept override {
+    [[nodiscard]] WalResult<std::uint64_t> Append(const PositionRecord& rec) noexcept override {
         return writer_->Append(rec);
     }
 
-    [[nodiscard]] std::uint64_t HighWatermark() const noexcept override {
-        return writer_->HighWatermark();
-    }
-    [[nodiscard]] bool IsFailed() const noexcept override {
-        return writer_->IsFailed();
-    }
+    [[nodiscard]] std::uint64_t HighWatermark() const noexcept override { return writer_->HighWatermark(); }
+    [[nodiscard]] bool IsFailed() const noexcept override { return writer_->IsFailed(); }
 
- private:
+private:
     std::unique_ptr<WalWriter<PositionRecord>> writer_;
 };
 

@@ -51,18 +51,18 @@ namespace stcpp::microstructure {
 // ---------------------------------------------------------------------------
 
 inline constexpr double FILL_RATE_FLOOR = 0.50;  // 与 risk_gateway / virtual_matcher 一致
-inline constexpr double FILL_RATE_CAP   = 1.00;  // 最大 clamp 上限
-inline constexpr double BASE_MIN        = 0.10;  // base 下界 (无深度也不直接 0, 留给 RM 拒)
-inline constexpr double BASE_MAX        = 0.95;  // base 上界 (留 5% 给非建模因素)
+inline constexpr double FILL_RATE_CAP = 1.00;    // 最大 clamp 上限
+inline constexpr double BASE_MIN = 0.10;         // base 下界 (无深度也不直接 0, 留给 RM 拒)
+inline constexpr double BASE_MAX = 0.95;         // base 上界 (留 5% 给非建模因素)
 
 // Penalty 常量
-inline constexpr double PENALTY_QHL_SHORT  = 0.15;  // qhl < 500ms
-inline constexpr double PENALTY_SPREAD_WIDE = 0.10;  // spread > 50 bps (= 0.5¢ @ p=1.0)
+inline constexpr double PENALTY_QHL_SHORT = 0.15;       // qhl < 500ms
+inline constexpr double PENALTY_SPREAD_WIDE = 0.10;     // spread > 50 bps (= 0.5¢ @ p=1.0)
 inline constexpr double PENALTY_ADVERSE_SELECT = 0.20;  // AS_score > 0.5
 
 // 触发阈值
-inline constexpr std::int32_t SPREAD_WIDE_BPS = 50;       // 0.5¢ @ mid 0.50 (= 1 tick)
-inline constexpr double       AS_THRESHOLD    = 0.5;
+inline constexpr std::int32_t SPREAD_WIDE_BPS = 50;  // 0.5¢ @ mid 0.50 (= 1 tick)
+inline constexpr double AS_THRESHOLD = 0.5;
 
 // Sport profile bias 中位 (sport_bias 计算用; 8 sport × 4 phase 中位 ~ 0.65)
 inline constexpr double PROFILE_BIAS_PIVOT = 0.65;
@@ -79,22 +79,22 @@ enum class MatchPath : std::uint8_t {
 };
 
 struct FillIntent {
-    Side         side{Side::Buy};
-    double       price{0.0};       // ∈ (0, 1)
-    double       size_usdc{0.0};   // > 0
-    Sport        sport{Sport::Basketball};
-    InplayPhase  phase{InplayPhase::Mid};
-    MatchPath    path{MatchPath::Maker};
+    Side side{Side::Buy};
+    double price{0.0};      // ∈ (0, 1)
+    double size_usdc{0.0};  // > 0
+    Sport sport{Sport::Basketball};
+    InplayPhase phase{InplayPhase::Mid};
+    MatchPath path{MatchPath::Maker};
 };
 
 // ---------------------------------------------------------------------------
 // 3. Reject code (轻量, 与老韩 21 enum 子集映射)
 // ---------------------------------------------------------------------------
 enum class FillRateReject : std::uint8_t {
-    Ok               = 0,
-    InvalidSnapshot  = 1,   // ts / NaN / Inf / crossed book
-    InvalidIntent    = 2,   // size / price 非法
-    BelowFloor       = 3,   // fill_rate < FILL_RATE_FLOOR  (caller 决策, 本 lib 不强拒)
+    Ok = 0,
+    InvalidSnapshot = 1,  // ts / NaN / Inf / crossed book
+    InvalidIntent = 2,    // size / price 非法
+    BelowFloor = 3,       // fill_rate < FILL_RATE_FLOOR  (caller 决策, 本 lib 不强拒)
 };
 
 // ---------------------------------------------------------------------------
@@ -113,31 +113,29 @@ struct FillRateBreakdown {
 };
 
 struct FillRateOutput {
-    FillRateReject    reject{FillRateReject::Ok};
-    double            fill_rate{0.0};
+    FillRateReject reject{FillRateReject::Ok};
+    double fill_rate{0.0};
     FillRateBreakdown breakdown{};
     // 透传 4 ts (R-20 audit chain)
-    OrderBookTs       ts{};
+    OrderBookTs ts{};
 };
 
 // ---------------------------------------------------------------------------
 // 5. FillRateModel — 主类 (无状态, static method, paper / live / backtest 共用)
 // ---------------------------------------------------------------------------
 class FillRateModel {
- public:
+public:
     // Maker 路径 (默认, paper Mode A++ 用)
-    [[nodiscard]] static FillRateOutput compute_maker(OrderBookSnapshot const& book,
-                                                      Microprobe       const& probe,
-                                                      FillIntent       const& intent) noexcept;
+    [[nodiscard]] static FillRateOutput compute_maker(OrderBookSnapshot const& book, Microprobe const& probe,
+                                                      FillIntent const& intent) noexcept;
 
     // Taker 路径 (穿价立即成交; fill_rate ~ 1.0, 留 5% 给 cancel race)
     [[nodiscard]] static FillRateOutput compute_taker(OrderBookSnapshot const& book,
-                                                      FillIntent        const& intent) noexcept;
+                                                      FillIntent const& intent) noexcept;
 
     // 统一入口 — 按 intent.path 分流
-    [[nodiscard]] static FillRateOutput compute(OrderBookSnapshot const& book,
-                                                Microprobe        const& probe,
-                                                FillIntent        const& intent) noexcept {
+    [[nodiscard]] static FillRateOutput compute(OrderBookSnapshot const& book, Microprobe const& probe,
+                                                FillIntent const& intent) noexcept {
         if (intent.path == MatchPath::Taker) {
             return compute_taker(book, intent);
         }
@@ -146,9 +144,12 @@ class FillRateModel {
 
     // 静态 helper (单测 + 调试 + audit)
     [[nodiscard]] static double clamp_unit(double x) noexcept {
-        if (!detail::finite(x)) return 0.0;
-        if (x < 0.0) return 0.0;
-        if (x > 1.0) return 1.0;
+        if (!detail::finite(x))
+            return 0.0;
+        if (x < 0.0)
+            return 0.0;
+        if (x > 1.0)
+            return 1.0;
         return x;
     }
 };

@@ -52,7 +52,7 @@
 namespace stcpp::polymarket::live {
 
 class LivePolymarketClient final : public IPolymarketClient {
- public:
+public:
     LivePolymarketClient() noexcept = default;
 
     [[nodiscard]] execution::ExecutionMode Mode() const noexcept override {
@@ -60,21 +60,21 @@ class LivePolymarketClient final : public IPolymarketClient {
     }
 
     [[nodiscard]] Result<OrderBookSnapshot> GetOrderbook(std::string_view) noexcept override;
-    [[nodiscard]] Result<OrderAck>          SubmitOrder(const SignedOrder&) noexcept override;
-    [[nodiscard]] Result<OrderAck>          CancelOrder(std::string_view) noexcept override;
-    [[nodiscard]] Result<std::uint32_t>     CancelAll() noexcept override;
-    [[nodiscard]] Result<MarketInfo>        GetMarketInfo(std::string_view) noexcept override;
+    [[nodiscard]] Result<OrderAck> SubmitOrder(const SignedOrder&) noexcept override;
+    [[nodiscard]] Result<OrderAck> CancelOrder(std::string_view) noexcept override;
+    [[nodiscard]] Result<std::uint32_t> CancelAll() noexcept override;
+    [[nodiscard]] Result<MarketInfo> GetMarketInfo(std::string_view) noexcept override;
     [[nodiscard]] Result<std::vector<Position>> GetUserPositions(std::string_view) noexcept override;
-    [[nodiscard]] Result<Balance>           GetBalance() noexcept override;
-    [[nodiscard]] Result<OrderAck>          GetOrderStatus(std::string_view) noexcept override;
+    [[nodiscard]] Result<Balance> GetBalance() noexcept override;
+    [[nodiscard]] Result<OrderAck> GetOrderStatus(std::string_view) noexcept override;
     [[nodiscard]] Result<std::vector<OrderAck>> GetMyOpenOrders() noexcept override;
     [[nodiscard]] Result<std::vector<Trade>> GetMyTrades(std::uint32_t) noexcept override;
-    [[nodiscard]] Result<std::string>       DeriveApiKey() noexcept override;
+    [[nodiscard]] Result<std::string> DeriveApiKey() noexcept override;
     [[nodiscard]] Result<std::vector<std::string>> ListApiKeys() noexcept override;
-    [[nodiscard]] Result<std::vector<PriceHistoryPoint>> GetPricesHistory(
-        std::string_view, std::int64_t, std::int64_t) noexcept override;
-    [[nodiscard]] Result<std::uint32_t>     SubscribeSportsWss(
-        const std::vector<std::string>&, OrderBookCallback, void*) noexcept override;
+    [[nodiscard]] Result<std::vector<PriceHistoryPoint>> GetPricesHistory(std::string_view, std::int64_t,
+                                                                          std::int64_t) noexcept override;
+    [[nodiscard]] Result<std::uint32_t> SubscribeSportsWss(const std::vector<std::string>&, OrderBookCallback,
+                                                           void*) noexcept override;
 };
 
 }  // namespace stcpp::polymarket::live

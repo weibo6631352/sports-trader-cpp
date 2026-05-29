@@ -24,16 +24,19 @@
 namespace stcpp::execution {
 
 enum class ExecutionMode : std::uint8_t {
-    Live     = 0,
-    Paper    = 1,
+    Live = 0,
+    Paper = 1,
     Backtest = 2,
 };
 
 [[nodiscard]] constexpr std::string_view ToString(ExecutionMode m) noexcept {
     switch (m) {
-        case ExecutionMode::Live:     return "live";
-        case ExecutionMode::Paper:    return "paper";
-        case ExecutionMode::Backtest: return "backtest";
+        case ExecutionMode::Live:
+            return "live";
+        case ExecutionMode::Paper:
+            return "paper";
+        case ExecutionMode::Backtest:
+            return "backtest";
     }
     return "unknown";
 }
@@ -54,18 +57,17 @@ inline constexpr ExecutionMode kCompiledMode = ExecutionMode::Paper;
 // ExecutionContext: 进程级 singleton, 只携带 mode 标识 + 起始 ns (audit chain).
 // Init() 双调 → abort (R-7 防 runtime 切换).
 class ExecutionContext {
- public:
+public:
     static void Init(ExecutionMode m) noexcept {
         bool expected = false;
-        if (!initialized_.compare_exchange_strong(expected, true,
-                                                  std::memory_order_acq_rel)) {
+        if (!initialized_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
             std::abort();  // R-7: 双调 = bug, 立即 abort 不放行
         }
         mode_ = m;
     }
 
     [[nodiscard]] static ExecutionMode Mode() noexcept { return mode_; }
-    [[nodiscard]] static bool          IsInitialized() noexcept {
+    [[nodiscard]] static bool IsInitialized() noexcept {
         return initialized_.load(std::memory_order_acquire);
     }
 
@@ -75,9 +77,9 @@ class ExecutionContext {
         mode_ = kCompiledMode;
     }
 
- private:
+private:
     static inline std::atomic<bool> initialized_{false};
-    static inline ExecutionMode     mode_{kCompiledMode};
+    static inline ExecutionMode mode_{kCompiledMode};
 };
 
 }  // namespace stcpp::execution

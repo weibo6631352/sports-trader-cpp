@@ -13,28 +13,29 @@
 //
 // ADR-010 §2.2: grandfather warnings 保持与 unit test 统一风格
 
-#include <gtest/gtest.h>
 #include <cmath>
 #include <limits>
 #include <string>
 
+#include <gtest/gtest.h>
+
+#include "stcpp/data/data_contract.hpp"
+#include "stcpp/data/odds_record.hpp"
 #include "stcpp/data/parquet_writer.hpp"
 #include "stcpp/ml/feature_snapshot.hpp"
 #include "stcpp/ml/training_label.hpp"
-#include "stcpp/data/odds_record.hpp"
-#include "stcpp/data/data_contract.hpp"
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 static stcpp::ml::FeatureSnapshot make_valid_snapshot() {
     stcpp::ml::FeatureSnapshot fs;
-    fs.event_ts        = 1'700'000'000'000'000'000LL;
-    fs.data_source_ts  = fs.event_ts  + 1'000'000'000LL;   // +1s
-    fs.ingestion_ts    = fs.data_source_ts + 50'000'000LL;  // +50ms
-    fs.as_of_ts        = fs.ingestion_ts   + 5'000'000LL;   // +5ms
+    fs.event_ts = 1'700'000'000'000'000'000LL;
+    fs.data_source_ts = fs.event_ts + 1'000'000'000LL;   // +1s
+    fs.ingestion_ts = fs.data_source_ts + 50'000'000LL;  // +50ms
+    fs.as_of_ts = fs.ingestion_ts + 5'000'000LL;         // +5ms
     fs.feature_snapshot_id = 0xDEADBEEF12345678ULL;
-    fs.signal_id_u8    = 1;
+    fs.signal_id_u8 = 1;
     // feat_04 = Goalserve_devig_p_yes_fair (ADR-008, must not be NaN)
     fs.set(stcpp::ml::FeatureName::Goalserve_devig_p_yes_fair, 0.55f);
     fs.set(stcpp::ml::FeatureName::edge_bps, 350.0f);
@@ -46,28 +47,28 @@ static stcpp::ml::FeatureSnapshot make_valid_snapshot() {
 static stcpp::ml::TrainingLabel make_valid_label(std::uint64_t snapshot_id) {
     stcpp::ml::TrainingLabel tl;
     // label ts must be > feature as_of_ts + 30s
-    tl.event_ts        = 1'700'000'000'000'000'000LL + 3'600'000'000'000LL;  // +1h
-    tl.data_source_ts  = tl.event_ts + 1'000'000'000LL;
-    tl.ingestion_ts    = tl.data_source_ts + 50'000'000LL;
-    tl.as_of_ts        = tl.ingestion_ts   + 5'000'000LL;
+    tl.event_ts = 1'700'000'000'000'000'000LL + 3'600'000'000'000LL;  // +1h
+    tl.data_source_ts = tl.event_ts + 1'000'000'000LL;
+    tl.ingestion_ts = tl.data_source_ts + 50'000'000LL;
+    tl.as_of_ts = tl.ingestion_ts + 5'000'000LL;
     tl.feature_snapshot_id = snapshot_id;
-    tl.decision_taken  = true;
-    tl.executed        = true;
-    tl.filled_price    = 0.52;
+    tl.decision_taken = true;
+    tl.executed = true;
+    tl.filled_price = 0.52;
     tl.filled_size_usdc = 100.0;
     tl.settlement_outcome = stcpp::ml::SettlementOutcome::Win;
-    tl.realized_pnl_usdc  = 23.5;
+    tl.realized_pnl_usdc = 23.5;
     return tl;
 }
 
 static stcpp::data::goalserve::MultiBookOddsRecord make_valid_odds_record() {
     stcpp::data::goalserve::MultiBookOddsRecord rec;
-    rec.ts.event_ts_ns        = 1'700'000'000'000'000'000LL;
-    rec.ts.data_source_ts_ns  = rec.ts.event_ts_ns + 1'000'000'000LL;
-    rec.ts.ingestion_ts_ns    = rec.ts.data_source_ts_ns + 50'000'000LL;
-    rec.ts.as_of_ts_ns        = rec.ts.ingestion_ts_ns + 5'000'000LL;
+    rec.ts.event_ts_ns = 1'700'000'000'000'000'000LL;
+    rec.ts.data_source_ts_ns = rec.ts.event_ts_ns + 1'000'000'000LL;
+    rec.ts.ingestion_ts_ns = rec.ts.data_source_ts_ns + 50'000'000LL;
+    rec.ts.as_of_ts_ns = rec.ts.ingestion_ts_ns + 5'000'000LL;
     rec.ts.ds_origin = stcpp::data::goalserve::DataSourceTsOrigin::PayloadScoresTs;
-    rec.sport    = stcpp::data::goalserve::GoalserveSport::Soccer;
+    rec.sport = stcpp::data::goalserve::GoalserveSport::Soccer;
     rec.match_id = "gs_match_001";
     rec.market_id = "1";
     // Fill all 8 bookmaker slots with valid odds
@@ -173,14 +174,13 @@ TEST(ParquetWriterStub, T8_FeatureSnapshotRecord_FromSnapshots_TsAndFeat04) {
     auto fs = make_valid_snapshot();
     auto tl = make_valid_label(fs.feature_snapshot_id);
 
-    auto rec = stcpp::data::FeatureSnapshotRecord::from_snapshots(
-        fs, tl, "Basketball", "Totals", 2025, 5);
+    auto rec = stcpp::data::FeatureSnapshotRecord::from_snapshots(fs, tl, "Basketball", "Totals", 2025, 5);
 
     // R-20 4 ts 透传
-    EXPECT_EQ(rec.event_ts,       fs.event_ts);
+    EXPECT_EQ(rec.event_ts, fs.event_ts);
     EXPECT_EQ(rec.data_source_ts, fs.data_source_ts);
-    EXPECT_EQ(rec.ingestion_ts,   fs.ingestion_ts);
-    EXPECT_EQ(rec.as_of_ts,       fs.as_of_ts);
+    EXPECT_EQ(rec.ingestion_ts, fs.ingestion_ts);
+    EXPECT_EQ(rec.as_of_ts, fs.as_of_ts);
     EXPECT_TRUE(rec.ts_chain_ok());
 
     // ADR-008 feat_04 = Goalserve_devig_p_yes_fair (index 4)
@@ -188,14 +188,13 @@ TEST(ParquetWriterStub, T8_FeatureSnapshotRecord_FromSnapshots_TsAndFeat04) {
     EXPECT_FLOAT_EQ(rec.feat[4], 0.55f);
 
     // partition keys
-    EXPECT_EQ(rec.sport,       "Basketball");
+    EXPECT_EQ(rec.sport, "Basketball");
     EXPECT_EQ(rec.market_type, "Totals");
     EXPECT_EQ(rec.year, 2025);
     EXPECT_EQ(rec.week, 5);
 
     // TrainingLabel fields
-    EXPECT_EQ(rec.settlement_outcome,
-              static_cast<std::uint8_t>(stcpp::ml::SettlementOutcome::Win));
+    EXPECT_EQ(rec.settlement_outcome, static_cast<std::uint8_t>(stcpp::ml::SettlementOutcome::Win));
     EXPECT_DOUBLE_EQ(rec.realized_pnl_usdc, 23.5);
 }
 
@@ -205,15 +204,18 @@ TEST(ParquetWriterStub, T8_FeatureSnapshotRecord_FromSnapshots_TsAndFeat04) {
 TEST(ParquetWriterStub, T9_MultiBookOddsParquetRecord_8BookmakerSlots) {
     auto rec = make_valid_odds_record();
     stcpp::data::MultiBookOddsParquetRecord pr;
-    pr.event_ts       = rec.event_ts_ns();
+    pr.event_ts = rec.event_ts_ns();
     pr.data_source_ts = rec.data_source_ts_ns();
-    pr.ingestion_ts   = rec.ingestion_ts_ns();
-    pr.as_of_ts       = rec.as_of_ts_ns();
-    pr.sport = "Soccer"; pr.market_type = "Moneyline"; pr.year = 2024; pr.week = 20;
+    pr.ingestion_ts = rec.ingestion_ts_ns();
+    pr.as_of_ts = rec.as_of_ts_ns();
+    pr.sport = "Soccer";
+    pr.market_type = "Moneyline";
+    pr.year = 2024;
+    pr.week = 20;
 
     for (std::size_t i = 0; i < stcpp::data::goalserve::kNumBookmakers; ++i) {
         pr.yes_odds[i] = rec.slots[i].odds_yes;
-        pr.no_odds[i]  = rec.slots[i].odds_no;
+        pr.no_odds[i] = rec.slots[i].odds_no;
         pr.valid_bm[i] = rec.slots[i].valid;
     }
 
@@ -227,12 +229,8 @@ TEST(ParquetWriterStub, T9_MultiBookOddsParquetRecord_8BookmakerSlots) {
 // T10: FlushResult to_string ABI (string repr 稳定)
 // ---------------------------------------------------------------------------
 TEST(ParquetWriterStub, T10_FlushResultToString_Stable) {
-    EXPECT_EQ(stcpp::data::to_string(stcpp::data::FlushResult::Ok),
-              "Ok");
-    EXPECT_EQ(stcpp::data::to_string(stcpp::data::FlushResult::StubNotImplemented),
-              "StubNotImplemented");
-    EXPECT_EQ(stcpp::data::to_string(stcpp::data::FlushResult::TsChainViolation),
-              "TsChainViolation");
-    EXPECT_EQ(stcpp::data::to_string(stcpp::data::FlushResult::BufferEmpty),
-              "BufferEmpty");
+    EXPECT_EQ(stcpp::data::to_string(stcpp::data::FlushResult::Ok), "Ok");
+    EXPECT_EQ(stcpp::data::to_string(stcpp::data::FlushResult::StubNotImplemented), "StubNotImplemented");
+    EXPECT_EQ(stcpp::data::to_string(stcpp::data::FlushResult::TsChainViolation), "TsChainViolation");
+    EXPECT_EQ(stcpp::data::to_string(stcpp::data::FlushResult::BufferEmpty), "BufferEmpty");
 }

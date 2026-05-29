@@ -32,15 +32,15 @@ using namespace stcpp::infra::wal;
 // ---------------------------------------------------------------------------
 // Shared constants
 // ---------------------------------------------------------------------------
-static constexpr std::int64_t kTs_event  = 1'000'000'000LL;
-static constexpr std::int64_t kTs_ds     = 1'000'001'000LL;
+static constexpr std::int64_t kTs_event = 1'000'000'000LL;
+static constexpr std::int64_t kTs_ds = 1'000'001'000LL;
 static constexpr std::int64_t kTs_ingest = 1'000'002'000LL;
 
 // MakeWriter: unique_ptr — IngestRawWriter 有 atomic 成员, 禁 move
 static std::unique_ptr<IngestRawWriter> MakeWriter(bool truncate = true) {
     IngestRawWriterConfig cfg;
-    cfg.tier1_path_prefix          = "/var/lib/stcpp/ingest/paper";
-    cfg.tier2_path_prefix          = "/var/lib/stcpp/ingest/paper/counter";
+    cfg.tier1_path_prefix = "/var/lib/stcpp/ingest/paper";
+    cfg.tier2_path_prefix = "/var/lib/stcpp/ingest/paper/counter";
     cfg.truncate_oversized_payload = truncate;
     auto w = std::make_unique<IngestRawWriter>(cfg);
     w->set_now_fn_for_test([]() -> std::int64_t { return kTs_ingest; });
@@ -54,13 +54,12 @@ TEST(IngestRaw, T1_PmWss_Tier1Accepted) {
     auto w = MakeWriter();
 
     const std::string payload = R"({"type":"price_change","market":"0xabc"})";
-    const ApplyResult r = w->record_frame(
-        IngestSourceKind::PM_WSS, payload, kTs_event, kTs_ds);
+    const ApplyResult r = w->record_frame(IngestSourceKind::PM_WSS, payload, kTs_event, kTs_ds);
 
     EXPECT_EQ(r, ApplyResult::Tier1Accepted);
     EXPECT_EQ(w->tier1_accepted_total(), 1u);
     EXPECT_EQ(w->tier2_fallback_total(), 0u);
-    EXPECT_EQ(w->pit_rejected_total(),   0u);
+    EXPECT_EQ(w->pit_rejected_total(), 0u);
 }
 
 // ---------------------------------------------------------------------------
@@ -71,28 +70,24 @@ TEST(IngestRaw, T2_FiveSourceKinds) {
     const std::string payload = "test_payload_1234";
 
     const IngestSourceKind kinds[] = {
-        IngestSourceKind::PM_WSS,
-        IngestSourceKind::GS_OddsFeed,
-        IngestSourceKind::GS_LiveScore,
-        IngestSourceKind::GS_Inplay,
-        IngestSourceKind::GS_Mapping,
+        IngestSourceKind::PM_WSS,    IngestSourceKind::GS_OddsFeed, IngestSourceKind::GS_LiveScore,
+        IngestSourceKind::GS_Inplay, IngestSourceKind::GS_Mapping,
     };
 
     std::uint64_t accepted = 0;
     for (const auto kind : kinds) {
         const ApplyResult r = w->record_frame(kind, payload, kTs_event, kTs_ds);
-        EXPECT_EQ(r, ApplyResult::Tier1Accepted)
-            << "source_kind=" << static_cast<int>(kind);
+        EXPECT_EQ(r, ApplyResult::Tier1Accepted) << "source_kind=" << static_cast<int>(kind);
         ++accepted;
     }
     EXPECT_EQ(w->tier1_accepted_total(), accepted);
     EXPECT_EQ(w->tier2_fallback_total(), 0u);
 
-    EXPECT_EQ(ToString(IngestSourceKind::PM_WSS),       "PM_WSS");
-    EXPECT_EQ(ToString(IngestSourceKind::GS_OddsFeed),  "GS_OddsFeed");
-    EXPECT_EQ(ToString(IngestSourceKind::GS_LiveScore),  "GS_LiveScore");
-    EXPECT_EQ(ToString(IngestSourceKind::GS_Inplay),    "GS_Inplay");
-    EXPECT_EQ(ToString(IngestSourceKind::GS_Mapping),   "GS_Mapping");
+    EXPECT_EQ(ToString(IngestSourceKind::PM_WSS), "PM_WSS");
+    EXPECT_EQ(ToString(IngestSourceKind::GS_OddsFeed), "GS_OddsFeed");
+    EXPECT_EQ(ToString(IngestSourceKind::GS_LiveScore), "GS_LiveScore");
+    EXPECT_EQ(ToString(IngestSourceKind::GS_Inplay), "GS_Inplay");
+    EXPECT_EQ(ToString(IngestSourceKind::GS_Mapping), "GS_Mapping");
 }
 
 // ---------------------------------------------------------------------------
@@ -139,8 +134,7 @@ TEST(IngestRaw, T4_R20_UpstreamPayloadPriority) {
     EXPECT_GE(w->r20_fallback_total(), 1u);
 
     // event_ts = 0, ds = 0 → 均 fallback
-    EXPECT_EQ(w->record_frame(IngestSourceKind::PM_WSS, payload, 0, 0),
-              ApplyResult::Tier1Accepted);
+    EXPECT_EQ(w->record_frame(IngestSourceKind::PM_WSS, payload, 0, 0), ApplyResult::Tier1Accepted);
     EXPECT_GE(w->r20_fallback_total(), 2u);
 
     // PIT violation: now=500, event=1000, ds=2000 → ds > ingest(500) → PitRejected
@@ -174,11 +168,11 @@ TEST(IngestRaw, T5_PaperLivePhysicalIsolation) {
     EXPECT_EQ(ToString(WalKind::IngestRaw), "ingest_raw");
     EXPECT_EQ(kWalKindCount, 5u);
 
-    EXPECT_EQ(static_cast<int>(WalKind::RiskAudit),   0);
-    EXPECT_EQ(static_cast<int>(WalKind::Position),    1);
-    EXPECT_EQ(static_cast<int>(WalKind::PaperAudit),  2);
+    EXPECT_EQ(static_cast<int>(WalKind::RiskAudit), 0);
+    EXPECT_EQ(static_cast<int>(WalKind::Position), 1);
+    EXPECT_EQ(static_cast<int>(WalKind::PaperAudit), 2);
     EXPECT_EQ(static_cast<int>(WalKind::ShadowAudit), 3);
-    EXPECT_EQ(static_cast<int>(WalKind::IngestRaw),   4);
+    EXPECT_EQ(static_cast<int>(WalKind::IngestRaw), 4);
 }
 
 // ---------------------------------------------------------------------------
@@ -213,9 +207,9 @@ TEST(IngestRaw, T6_PayloadBoundary_16KB) {
     // Case D: empty → ParseFailed
     {
         auto w = MakeWriter();
-        EXPECT_EQ(w->record_frame(IngestSourceKind::GS_OddsFeed,
-                                  std::span<const std::byte>{}, kTs_event, kTs_ds),
-                  ApplyResult::ParseFailed);
+        EXPECT_EQ(
+            w->record_frame(IngestSourceKind::GS_OddsFeed, std::span<const std::byte>{}, kTs_event, kTs_ds),
+            ApplyResult::ParseFailed);
     }
 }
 
@@ -242,32 +236,28 @@ TEST(IngestRaw, T7_MlTraining_WalRecordConceptAndSerialize) {
     rec.audit_id_ref().fill(0xAB);
 
     // (a) WalRecord concept accessor 接口
-    EXPECT_EQ(rec.event_ts_ns(),       kTs_event);
+    EXPECT_EQ(rec.event_ts_ns(), kTs_event);
     EXPECT_EQ(rec.data_source_ts_ns(), kTs_ds);
-    EXPECT_EQ(rec.ingestion_ts_ns(),   kTs_ingest);
-    EXPECT_EQ(rec.as_of_ts_ns(),       kTs_ingest);
-    EXPECT_EQ(rec.audit_id().size(),   16u);
+    EXPECT_EQ(rec.ingestion_ts_ns(), kTs_ingest);
+    EXPECT_EQ(rec.as_of_ts_ns(), kTs_ingest);
+    EXPECT_EQ(rec.audit_id().size(), 16u);
 
     // (b) serialize_into + payload 还原
     const std::size_t max_sz = IngestRawRecord::max_serialized_size();
     EXPECT_GE(max_sz, kIngestRawMaxPayloadBytes + 26u);
 
     std::vector<std::byte> buf(max_sz);
-    const std::size_t written = rec.serialize_into(
-        std::span<std::byte>(buf.data(), buf.size()));
+    const std::size_t written = rec.serialize_into(std::span<std::byte>(buf.data(), buf.size()));
     EXPECT_GT(written, 0u);
 
-    EXPECT_EQ(static_cast<std::uint8_t>(buf[0]),
-              static_cast<std::uint8_t>(IngestSourceKind::GS_Inplay));
-    EXPECT_EQ(static_cast<std::uint8_t>(buf[1]),
-              static_cast<std::uint8_t>(ReceptionOutcome::Accepted));
+    EXPECT_EQ(static_cast<std::uint8_t>(buf[0]), static_cast<std::uint8_t>(IngestSourceKind::GS_Inplay));
+    EXPECT_EQ(static_cast<std::uint8_t>(buf[1]), static_cast<std::uint8_t>(ReceptionOutcome::Accepted));
 
     std::uint32_t de_psz = 0;
     std::memcpy(&de_psz, buf.data() + 2, 4);
     EXPECT_EQ(de_psz, static_cast<std::uint32_t>(raw.size()));
 
-    const std::string_view recovered(
-        reinterpret_cast<const char*>(buf.data() + 6), de_psz);
+    const std::string_view recovered(reinterpret_cast<const char*>(buf.data() + 6), de_psz);
     EXPECT_EQ(recovered, raw) << "payload 完整还原 (ML 训练源数据)";
 
     // (c) Tier 2 metadata-only = 26B
@@ -285,15 +275,15 @@ TEST(IngestRaw, T7_MlTraining_WalRecordConceptAndSerialize) {
     EXPECT_EQ(meta.serialize_into(std::span<std::byte>(buf2.data(), buf2.size())), 26u);
 
     // (d) ReceptionOutcome ToString
-    EXPECT_EQ(ToString(ReceptionOutcome::Accepted),           "ACCEPTED");
-    EXPECT_EQ(ToString(ReceptionOutcome::DroppedRingFull),    "DROPPED_RING_FULL");
-    EXPECT_EQ(ToString(ReceptionOutcome::DroppedParseFail),   "DROPPED_PARSE_FAIL");
-    EXPECT_EQ(ToString(ReceptionOutcome::DroppedR20Pit),      "DROPPED_R20_PIT");
+    EXPECT_EQ(ToString(ReceptionOutcome::Accepted), "ACCEPTED");
+    EXPECT_EQ(ToString(ReceptionOutcome::DroppedRingFull), "DROPPED_RING_FULL");
+    EXPECT_EQ(ToString(ReceptionOutcome::DroppedParseFail), "DROPPED_PARSE_FAIL");
+    EXPECT_EQ(ToString(ReceptionOutcome::DroppedR20Pit), "DROPPED_R20_PIT");
 
     // (e) ApplyResult ToString
     EXPECT_EQ(ToString(ApplyResult::Tier1Accepted), "Tier1Accepted");
     EXPECT_EQ(ToString(ApplyResult::Tier2Fallback), "Tier2Fallback");
     EXPECT_EQ(ToString(ApplyResult::Tier2Overflow), "Tier2Overflow");
-    EXPECT_EQ(ToString(ApplyResult::PitRejected),   "PitRejected");
-    EXPECT_EQ(ToString(ApplyResult::ParseFailed),   "ParseFailed");
+    EXPECT_EQ(ToString(ApplyResult::PitRejected), "PitRejected");
+    EXPECT_EQ(ToString(ApplyResult::ParseFailed), "ParseFailed");
 }

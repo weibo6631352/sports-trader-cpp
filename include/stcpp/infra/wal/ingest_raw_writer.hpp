@@ -87,20 +87,25 @@ struct IngestRawWriterConfig {
 // ApplyResult — record_frame() 返回值
 // ---------------------------------------------------------------------------
 enum class ApplyResult : std::uint8_t {
-    Tier1Accepted    = 0,  // Tier 1 SPSC push 成功, 完整 payload 落盘路径
-    Tier2Fallback    = 1,  // Tier 1 ring 满, fallback Tier 2 metadata-only
-    Tier2Overflow    = 2,  // Tier 1 + Tier 2 都满 (极端), 仅递增 tier2_overflow_count_
-    PitRejected      = 3,  // R-20 PIT 违反, 写 Tier 2 with DroppedR20Pit
-    ParseFailed      = 4,  // parse fail (payload=null/0), 写 Tier 2 with DroppedParseFail
+    Tier1Accepted = 0,  // Tier 1 SPSC push 成功, 完整 payload 落盘路径
+    Tier2Fallback = 1,  // Tier 1 ring 满, fallback Tier 2 metadata-only
+    Tier2Overflow = 2,  // Tier 1 + Tier 2 都满 (极端), 仅递增 tier2_overflow_count_
+    PitRejected = 3,    // R-20 PIT 违反, 写 Tier 2 with DroppedR20Pit
+    ParseFailed = 4,    // parse fail (payload=null/0), 写 Tier 2 with DroppedParseFail
 };
 
 [[nodiscard]] constexpr std::string_view ToString(ApplyResult r) noexcept {
     switch (r) {
-        case ApplyResult::Tier1Accepted: return "Tier1Accepted";
-        case ApplyResult::Tier2Fallback: return "Tier2Fallback";
-        case ApplyResult::Tier2Overflow: return "Tier2Overflow";
-        case ApplyResult::PitRejected:   return "PitRejected";
-        case ApplyResult::ParseFailed:   return "ParseFailed";
+        case ApplyResult::Tier1Accepted:
+            return "Tier1Accepted";
+        case ApplyResult::Tier2Fallback:
+            return "Tier2Fallback";
+        case ApplyResult::Tier2Overflow:
+            return "Tier2Overflow";
+        case ApplyResult::PitRejected:
+            return "PitRejected";
+        case ApplyResult::ParseFailed:
+            return "ParseFailed";
     }
     return "unknown";
 }
@@ -119,10 +124,10 @@ public:
     // 构造: Open 两层 WAL (Tier 1 + Tier 2). 如果路径不合法 → std::abort (R-11).
     explicit IngestRawWriter(IngestRawWriterConfig cfg = {});
 
-    IngestRawWriter(const IngestRawWriter&)            = delete;
+    IngestRawWriter(const IngestRawWriter&) = delete;
     IngestRawWriter& operator=(const IngestRawWriter&) = delete;
-    IngestRawWriter(IngestRawWriter&&)                 = delete;
-    IngestRawWriter& operator=(IngestRawWriter&&)      = delete;
+    IngestRawWriter(IngestRawWriter&&) = delete;
+    IngestRawWriter& operator=(IngestRawWriter&&) = delete;
 
     ~IngestRawWriter();
 
@@ -140,38 +145,32 @@ public:
     //
     // 返回: ApplyResult (调用方可 emit metric, 不需要处理错误)
     // -----------------------------------------------------------------------
-    [[nodiscard]] ApplyResult record_frame(
-        IngestSourceKind          source_kind,
-        std::span<const std::byte> payload,
-        std::int64_t              event_ts_ns,
-        std::int64_t              data_source_ts_ns) noexcept;
+    [[nodiscard]] ApplyResult record_frame(IngestSourceKind source_kind, std::span<const std::byte> payload,
+                                           std::int64_t event_ts_ns, std::int64_t data_source_ts_ns) noexcept;
 
     // 便捷重载 — string_view payload (PM WSS text frame 常用)
-    [[nodiscard]] ApplyResult record_frame(
-        IngestSourceKind source_kind,
-        std::string_view payload_text,
-        std::int64_t     event_ts_ns,
-        std::int64_t     data_source_ts_ns) noexcept;
+    [[nodiscard]] ApplyResult record_frame(IngestSourceKind source_kind, std::string_view payload_text,
+                                           std::int64_t event_ts_ns, std::int64_t data_source_ts_ns) noexcept;
 
     // -----------------------------------------------------------------------
     // Observability
     // -----------------------------------------------------------------------
-    [[nodiscard]] std::uint64_t tier1_accepted_total()   const noexcept {
+    [[nodiscard]] std::uint64_t tier1_accepted_total() const noexcept {
         return tier1_accepted_.load(std::memory_order_relaxed);
     }
-    [[nodiscard]] std::uint64_t tier2_fallback_total()   const noexcept {
+    [[nodiscard]] std::uint64_t tier2_fallback_total() const noexcept {
         return tier2_fallback_.load(std::memory_order_relaxed);
     }
-    [[nodiscard]] std::uint64_t tier2_overflow_total()   const noexcept {
+    [[nodiscard]] std::uint64_t tier2_overflow_total() const noexcept {
         return tier2_overflow_.load(std::memory_order_relaxed);
     }
-    [[nodiscard]] std::uint64_t pit_rejected_total()     const noexcept {
+    [[nodiscard]] std::uint64_t pit_rejected_total() const noexcept {
         return pit_rejected_.load(std::memory_order_relaxed);
     }
-    [[nodiscard]] std::uint64_t parse_failed_total()     const noexcept {
+    [[nodiscard]] std::uint64_t parse_failed_total() const noexcept {
         return parse_failed_.load(std::memory_order_relaxed);
     }
-    [[nodiscard]] std::uint64_t r20_fallback_total()     const noexcept {
+    [[nodiscard]] std::uint64_t r20_fallback_total() const noexcept {
         return r20_fallback_.load(std::memory_order_relaxed);
     }
 
@@ -188,12 +187,11 @@ private:
     [[nodiscard]] bool push_tier2(const IngestRawRecord& rec) noexcept;
 
     // R-20 PIT check (inline 快路径)
-    [[nodiscard]] bool check_pit(
-        std::int64_t event_ts, std::int64_t ds_ts,
-        std::int64_t ingest_ts, std::int64_t as_of_ts) const noexcept;
+    [[nodiscard]] bool check_pit(std::int64_t event_ts, std::int64_t ds_ts, std::int64_t ingest_ts,
+                                 std::int64_t as_of_ts) const noexcept;
 
     IngestRawWriterConfig cfg_;
-    NowFn                 now_fn_;
+    NowFn now_fn_;
 
     // metrics (cache-line 对齐防伪共享)
     alignas(64) std::atomic<std::uint64_t> tier1_accepted_{0};
@@ -206,8 +204,8 @@ private:
     // Tier 1 / Tier 2 内部 ring buffer (使用 IngestRawRecord SPSC; W6 stub: 原子计数模拟)
     // W6 stub: ring 用 bool flag 模拟 full 状态 (单测可通过 fill_tier1_ring() 触发 full)
     // W7: 接 rigtorp::SPSCQueue<IngestRawRecord, kTier1RingCapacity> (老王 ack)
-    std::atomic<bool> tier1_ring_full_{false};   // 单测 hook: set true → 触发 Tier 2 fallback
-    std::atomic<bool> tier2_ring_full_{false};   // 单测 hook: set true → 触发 overflow
+    std::atomic<bool> tier1_ring_full_{false};  // 单测 hook: set true → 触发 Tier 2 fallback
+    std::atomic<bool> tier2_ring_full_{false};  // 单测 hook: set true → 触发 overflow
 
 public:
     // 单测专用: 模拟 ring 满

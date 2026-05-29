@@ -18,8 +18,6 @@
 //   MakeValidFill: 构造 4 ts 合法的 VirtualFill
 //   TmpWalDir: RAII 临时目录 (T3 WAL 落盘 + replay)
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -30,10 +28,10 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 // POSIX (T7)
-#include <fcntl.h>
 #include <sys/wait.h>
-#include <unistd.h>
 
 #include "stcpp/execution/execution_mode.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
@@ -44,6 +42,9 @@
 #include "stcpp/infra/wal/wal_error.hpp"
 #include "stcpp/infra/wal/wal_kind.hpp"
 #include "stcpp/infra/wal/wal_record_header.hpp"
+
+#include <fcntl.h>
+#include <unistd.h>
 
 // PositionLedger.cpp 内已实例化 WalWriter<PositionRecord>;
 // 这里只拉 position_ledger.cpp (它内部已 #include wal_writer.cpp 并实例化)
@@ -62,41 +63,38 @@ namespace {
 
 // 构造 4 ts 合法的 VirtualFill (R-20)
 // fill_ts_ns ≤ ds_ts_ns ≤ ingest_ts_ns ≤ as_of_ts_ns, 全部 ≤ now
-[[nodiscard]] stcpp::execution::VirtualFill
-MakeValidFill(double fill_price, double fill_size_usdc) {
+[[nodiscard]] stcpp::execution::VirtualFill MakeValidFill(double fill_price, double fill_size_usdc) {
     const std::int64_t base = NowNs() - 1'000'000'000LL;  // now - 1s
     stcpp::execution::VirtualFill f{};
-    f.reject             = stcpp::execution::MatchReject::Ok;
-    f.fill_price         = fill_price;
-    f.fill_size_usdc     = fill_size_usdc;
+    f.reject = stcpp::execution::MatchReject::Ok;
+    f.fill_price = fill_price;
+    f.fill_size_usdc = fill_size_usdc;
     f.expected_fill_rate = 0.6;
-    f.p_fill_clamped     = 0.6;
-    f.slippage_bps       = 5;
-    f.bernoulli_draw     = true;
-    f.audit_wal_kind     = WalKind::PaperAudit;
+    f.p_fill_clamped = 0.6;
+    f.slippage_bps = 5;
+    f.bernoulli_draw = true;
+    f.audit_wal_kind = WalKind::PaperAudit;
     // W6 Wave 29: market_id / outcome 透传字段 (VirtualFill 加字段后 fixture 补齐)
     // 保持 "paper_market_0" 与 T1/T2 query_position 参数一致
     {
         static constexpr std::string_view kMid = "paper_market_0";
         std::memcpy(f.market_id.data(), kMid.data(), kMid.size());
     }
-    f.outcome            = 0;  // YES
-    f.fill_ts_ns         = base;
-    f.event_ts_ns        = base;
-    f.data_source_ts_ns  = base + 100;
-    f.ingestion_ts_ns    = base + 200;
-    f.as_of_ts_ns        = base + 300;
+    f.outcome = 0;  // YES
+    f.fill_ts_ns = base;
+    f.event_ts_ns = base;
+    f.data_source_ts_ns = base + 100;
+    f.ingestion_ts_ns = base + 200;
+    f.as_of_ts_ns = base + 300;
     return f;
 }
 
 // InMemoryPositionWal: mock WAL writer (内存存储, 可遍历)
 class InMemoryPositionWal final : public IWalWriterForPosition {
- public:
-    [[nodiscard]] WalResult<std::uint64_t>
-        Append(const PositionRecord& rec) noexcept override {
+public:
+    [[nodiscard]] WalResult<std::uint64_t> Append(const PositionRecord& rec) noexcept override {
         records_.push_back(rec);
-        const std::uint64_t seq =
-            static_cast<std::uint64_t>(records_.size());
+        const std::uint64_t seq = static_cast<std::uint64_t>(records_.size());
         hwm_.store(seq, std::memory_order_release);
         return WalResult<std::uint64_t>{seq};
     }
@@ -106,21 +104,18 @@ class InMemoryPositionWal final : public IWalWriterForPosition {
     }
     [[nodiscard]] bool IsFailed() const noexcept override { return false; }
 
-    [[nodiscard]] const std::vector<PositionRecord>& records() const noexcept {
-        return records_;
-    }
+    [[nodiscard]] const std::vector<PositionRecord>& records() const noexcept { return records_; }
 
- private:
-    std::vector<PositionRecord>   records_;
-    std::atomic<std::uint64_t>    hwm_{0};
+private:
+    std::vector<PositionRecord> records_;
+    std::atomic<std::uint64_t> hwm_{0};
 };
 
 // TmpWalDir: RAII 临时目录 (T3 使用)
 class TmpWalDir {
- public:
+public:
     TmpWalDir() {
-        path_ = std::filesystem::temp_directory_path() /
-                ("stcpp_test_wal_" + std::to_string(::getpid()));
+        path_ = std::filesystem::temp_directory_path() / ("stcpp_test_wal_" + std::to_string(::getpid()));
         std::filesystem::create_directories(path_);
     }
     ~TmpWalDir() {
@@ -132,30 +127,30 @@ class TmpWalDir {
     TmpWalDir(const TmpWalDir&) = delete;
     TmpWalDir& operator=(const TmpWalDir&) = delete;
 
- private:
+private:
     std::filesystem::path path_;
 };
 
 // 把 PositionRecord 序列写成简化 WAL 文件 (Header + Record + 4B CRC footer stub)
 // 用于 T3 restore_from_wal 测试
-void WriteWalFile(const std::filesystem::path& file_path,
-                  const std::vector<PositionRecord>& records) {
+void WriteWalFile(const std::filesystem::path& file_path, const std::vector<PositionRecord>& records) {
     std::ofstream ofs{file_path, std::ios::binary | std::ios::trunc};
-    if (!ofs) throw std::runtime_error("TmpWalDir: cannot open " + file_path.string());
+    if (!ofs)
+        throw std::runtime_error("TmpWalDir: cannot open " + file_path.string());
 
     for (const auto& rec : records) {
         // WAL 头 (64B)
         WalRecordHeader hdr{};
-        hdr.magic             = kMagicV2;
-        hdr.ver               = kHeaderVersionV2;
-        hdr.wal_kind          = static_cast<std::uint8_t>(WalKind::Position);
-        hdr.len_payload       = static_cast<std::uint16_t>(sizeof(PositionRecord));
-        hdr.seq               = 1;  // T3 单文件, seq 无需严格单调
-        hdr.event_ts_ns       = rec.fill_event_ts_ns;
+        hdr.magic = kMagicV2;
+        hdr.ver = kHeaderVersionV2;
+        hdr.wal_kind = static_cast<std::uint8_t>(WalKind::Position);
+        hdr.len_payload = static_cast<std::uint16_t>(sizeof(PositionRecord));
+        hdr.seq = 1;  // T3 单文件, seq 无需严格单调
+        hdr.event_ts_ns = rec.fill_event_ts_ns;
         hdr.data_source_ts_ns = rec.fill_ds_ts_ns;
-        hdr.ingestion_ts_ns   = rec.fill_ingestion_ts_ns;
-        hdr.as_of_ts_ns       = rec.fill_as_of_ts_ns;
-        hdr.audit_id          = rec.audit_id_;
+        hdr.ingestion_ts_ns = rec.fill_ingestion_ts_ns;
+        hdr.as_of_ts_ns = rec.fill_as_of_ts_ns;
+        hdr.audit_id = rec.audit_id_;
 
         ofs.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
 
@@ -186,8 +181,7 @@ TEST(PositionLedger, T1_ApplyFill_QueryPosition_SingleFill) {
     EXPECT_EQ(mock_ptr->records().size(), 1u);
 
     // position_total = fill_size_usdc * 1e6 = 10_000_000
-    EXPECT_EQ(res.record.position_total, 10'000'000LL)
-        << "position_total = fill_size_usdc * 1e6";
+    EXPECT_EQ(res.record.position_total, 10'000'000LL) << "position_total = fill_size_usdc * 1e6";
 
     // position_delta = same as total (首笔)
     EXPECT_EQ(res.record.position_delta, 10'000'000LL);
@@ -219,7 +213,7 @@ TEST(PositionLedger, T2_MultiFill_PositionAccumulation) {
     // 第 2 笔: 20 USDC @ 0.70
     const ApplyResult r2 = ledger.apply_fill(MakeValidFill(0.70, 20.0));
     ASSERT_EQ(r2.status, ApplyStatus::Ok);
-    EXPECT_EQ(r2.record.position_total, 30'000'000LL)   // 10 + 20 USDC
+    EXPECT_EQ(r2.record.position_total, 30'000'000LL)  // 10 + 20 USDC
         << "position_total should accumulate";
 
     // 加权均价: (10*0.60 + 20*0.70) / 30 = (6+14)/30 = 20/30 = 0.6667
@@ -232,8 +226,7 @@ TEST(PositionLedger, T2_MultiFill_PositionAccumulation) {
     // 第 3 笔: 5 USDC @ 0.50 (低于均价, 但 v0.1 开仓阶段 realized_pnl 不变)
     const ApplyResult r3 = ledger.apply_fill(MakeValidFill(0.50, 5.0));
     ASSERT_EQ(r3.status, ApplyStatus::Ok);
-    EXPECT_EQ(r3.record.position_total, 35'000'000LL)
-        << "third fill should accumulate";
+    EXPECT_EQ(r3.record.position_total, 35'000'000LL) << "third fill should accumulate";
 
     EXPECT_EQ(ledger.record_count(), 3u);
 }
@@ -252,40 +245,40 @@ TEST(PositionLedger, T3_RestoreFromWal_CircuitBreakerState) {
 
     PositionRecord rec1{};
     std::memcpy(rec1.market_id.data(), "paper_market_0", 14);
-    rec1.outcome               = 0;
-    rec1.position_delta        = 10'000'000LL;
-    rec1.position_total        = 10'000'000LL;
-    rec1.realized_pnl          = 0;
-    rec1.unrealized_pnl        = 0;
+    rec1.outcome = 0;
+    rec1.position_delta = 10'000'000LL;
+    rec1.position_total = 10'000'000LL;
+    rec1.realized_pnl = 0;
+    rec1.unrealized_pnl = 0;
     rec1.entry_avg_price_micro = 600'000LL;
-    rec1.bankroll_total        = 100'000'000LL;
-    rec1.consec_loss_count     = 0;
-    rec1.exposure_pct          = 1000;  // 10% basis points
-    rec1.fill_event_ts_ns      = base_ts;
-    rec1.fill_ds_ts_ns         = base_ts + 100;
-    rec1.fill_ingestion_ts_ns  = base_ts + 200;
-    rec1.fill_as_of_ts_ns      = base_ts + 300;
+    rec1.bankroll_total = 100'000'000LL;
+    rec1.consec_loss_count = 0;
+    rec1.exposure_pct = 1000;  // 10% basis points
+    rec1.fill_event_ts_ns = base_ts;
+    rec1.fill_ds_ts_ns = base_ts + 100;
+    rec1.fill_ingestion_ts_ns = base_ts + 200;
+    rec1.fill_as_of_ts_ns = base_ts + 300;
 
     PositionRecord rec2 = rec1;
-    rec2.position_delta    = 20'000'000LL;
-    rec2.position_total    = 30'000'000LL;
-    rec2.consec_loss_count = 1;   // 模拟 1 次亏损
-    rec2.exposure_pct      = 3000;
-    rec2.fill_event_ts_ns      = base_ts + 1'000'000'000LL;
-    rec2.fill_ds_ts_ns         = base_ts + 1'000'000'100LL;
-    rec2.fill_ingestion_ts_ns  = base_ts + 1'000'000'200LL;
-    rec2.fill_as_of_ts_ns      = base_ts + 1'000'000'300LL;
+    rec2.position_delta = 20'000'000LL;
+    rec2.position_total = 30'000'000LL;
+    rec2.consec_loss_count = 1;  // 模拟 1 次亏损
+    rec2.exposure_pct = 3000;
+    rec2.fill_event_ts_ns = base_ts + 1'000'000'000LL;
+    rec2.fill_ds_ts_ns = base_ts + 1'000'000'100LL;
+    rec2.fill_ingestion_ts_ns = base_ts + 1'000'000'200LL;
+    rec2.fill_as_of_ts_ns = base_ts + 1'000'000'300LL;
 
     PositionRecord rec3 = rec2;
-    rec3.position_delta    = 5'000'000LL;
-    rec3.position_total    = 35'000'000LL;
-    rec3.consec_loss_count = 2;   // 模拟 2 次连续亏损 (circuit breaker 输入)
-    rec3.exposure_pct      = 3500;
-    rec3.bankroll_total    = 95'000'000LL;  // bankroll 已下降
-    rec3.fill_event_ts_ns      = base_ts + 2'000'000'000LL;
-    rec3.fill_ds_ts_ns         = base_ts + 2'000'000'100LL;
-    rec3.fill_ingestion_ts_ns  = base_ts + 2'000'000'200LL;
-    rec3.fill_as_of_ts_ns      = base_ts + 2'000'000'300LL;
+    rec3.position_delta = 5'000'000LL;
+    rec3.position_total = 35'000'000LL;
+    rec3.consec_loss_count = 2;  // 模拟 2 次连续亏损 (circuit breaker 输入)
+    rec3.exposure_pct = 3500;
+    rec3.bankroll_total = 95'000'000LL;  // bankroll 已下降
+    rec3.fill_event_ts_ns = base_ts + 2'000'000'000LL;
+    rec3.fill_ds_ts_ns = base_ts + 2'000'000'100LL;
+    rec3.fill_ingestion_ts_ns = base_ts + 2'000'000'200LL;
+    rec3.fill_as_of_ts_ns = base_ts + 2'000'000'300LL;
 
     // 写 WAL 文件
     const auto wal_path = tmp.path() / "position_0001.wal";
@@ -301,19 +294,15 @@ TEST(PositionLedger, T3_RestoreFromWal_CircuitBreakerState) {
 
     // circuit_breaker_state 应完全恢复
     const CircuitBreakerState cbs = restored.circuit_breaker_state();
-    EXPECT_EQ(cbs.bankroll_total,    rec3.bankroll_total)
-        << "bankroll should be restored from last WAL record";
+    EXPECT_EQ(cbs.bankroll_total, rec3.bankroll_total) << "bankroll should be restored from last WAL record";
     EXPECT_EQ(cbs.consec_loss_count, rec3.consec_loss_count)
         << "consec_loss_count MUST be restored (老韩 #3: circuit breaker 不归零)";
-    EXPECT_EQ(cbs.exposure_pct,      rec3.exposure_pct)
-        << "exposure_pct should be restored";
+    EXPECT_EQ(cbs.exposure_pct, rec3.exposure_pct) << "exposure_pct should be restored";
 
     // position_total 应恢复到最新记录
     const PositionState st = restored.query_position("paper_market_0");
-    EXPECT_EQ(st.position_total, rec3.position_total)
-        << "position_total should be restored from last record";
-    EXPECT_EQ(st.consec_loss_count, 2)
-        << "consec_loss_count must survive WAL replay (老韩 #3 P0)";
+    EXPECT_EQ(st.position_total, rec3.position_total) << "position_total should be restored from last record";
+    EXPECT_EQ(st.consec_loss_count, 2) << "consec_loss_count must survive WAL replay (老韩 #3 P0)";
 }
 
 // ===========================================================================
@@ -327,16 +316,16 @@ TEST(PositionLedger, T4_R20_FourTs_Transparency) {
     const std::int64_t base = NowNs() - 1'000'000'000LL;
 
     stcpp::execution::VirtualFill fill{};
-    fill.reject             = stcpp::execution::MatchReject::Ok;
-    fill.fill_price         = 0.55;
-    fill.fill_size_usdc     = 15.0;
-    fill.bernoulli_draw     = true;
+    fill.reject = stcpp::execution::MatchReject::Ok;
+    fill.fill_price = 0.55;
+    fill.fill_size_usdc = 15.0;
+    fill.bernoulli_draw = true;
     // R-20: 严格递增链
-    fill.fill_ts_ns         = base;
-    fill.event_ts_ns        = base;
-    fill.data_source_ts_ns  = base + 1'000;
-    fill.ingestion_ts_ns    = base + 2'000;
-    fill.as_of_ts_ns        = base + 3'000;
+    fill.fill_ts_ns = base;
+    fill.event_ts_ns = base;
+    fill.data_source_ts_ns = base + 1'000;
+    fill.ingestion_ts_ns = base + 2'000;
+    fill.as_of_ts_ns = base + 3'000;
 
     const ApplyResult res = ledger.apply_fill(fill);
     ASSERT_EQ(res.status, ApplyStatus::Ok) << "PIT-valid fill should succeed";
@@ -345,30 +334,22 @@ TEST(PositionLedger, T4_R20_FourTs_Transparency) {
     const PositionRecord& rec = mock_ptr->records().front();
 
     // 4 ts 必须与 VirtualFill 一致 (透传, 不替换)
-    EXPECT_EQ(rec.fill_event_ts_ns,      fill.fill_ts_ns)
-        << "event_ts must equal fill_ts_ns (R-20 透传)";
-    EXPECT_EQ(rec.fill_ds_ts_ns,         fill.data_source_ts_ns)
-        << "data_source_ts must be transparent";
-    EXPECT_EQ(rec.fill_ingestion_ts_ns,  fill.ingestion_ts_ns)
-        << "ingestion_ts must be transparent";
-    EXPECT_EQ(rec.fill_as_of_ts_ns,      fill.as_of_ts_ns)
-        << "as_of_ts must be transparent";
+    EXPECT_EQ(rec.fill_event_ts_ns, fill.fill_ts_ns) << "event_ts must equal fill_ts_ns (R-20 透传)";
+    EXPECT_EQ(rec.fill_ds_ts_ns, fill.data_source_ts_ns) << "data_source_ts must be transparent";
+    EXPECT_EQ(rec.fill_ingestion_ts_ns, fill.ingestion_ts_ns) << "ingestion_ts must be transparent";
+    EXPECT_EQ(rec.fill_as_of_ts_ns, fill.as_of_ts_ns) << "as_of_ts must be transparent";
 
     // PIT 顺序不等式
-    EXPECT_LE(rec.fill_event_ts_ns,      rec.fill_ds_ts_ns)
-        << "PIT: event_ts ≤ data_source_ts";
-    EXPECT_LE(rec.fill_ds_ts_ns,         rec.fill_ingestion_ts_ns)
-        << "PIT: data_source_ts ≤ ingestion_ts";
-    EXPECT_LE(rec.fill_ingestion_ts_ns,  rec.fill_as_of_ts_ns)
-        << "PIT: ingestion_ts ≤ as_of_ts";
-    EXPECT_LE(rec.fill_as_of_ts_ns,      NowNs())
-        << "PIT: as_of_ts ≤ now (no future ts)";
+    EXPECT_LE(rec.fill_event_ts_ns, rec.fill_ds_ts_ns) << "PIT: event_ts ≤ data_source_ts";
+    EXPECT_LE(rec.fill_ds_ts_ns, rec.fill_ingestion_ts_ns) << "PIT: data_source_ts ≤ ingestion_ts";
+    EXPECT_LE(rec.fill_ingestion_ts_ns, rec.fill_as_of_ts_ns) << "PIT: ingestion_ts ≤ as_of_ts";
+    EXPECT_LE(rec.fill_as_of_ts_ns, NowNs()) << "PIT: as_of_ts ≤ now (no future ts)";
 
     // WalRecord concept 方法 4 ts 对齐
-    EXPECT_EQ(rec.event_ts_ns(),       fill.fill_ts_ns);
+    EXPECT_EQ(rec.event_ts_ns(), fill.fill_ts_ns);
     EXPECT_EQ(rec.data_source_ts_ns(), fill.data_source_ts_ns);
-    EXPECT_EQ(rec.ingestion_ts_ns(),   fill.ingestion_ts_ns);
-    EXPECT_EQ(rec.as_of_ts_ns(),       fill.as_of_ts_ns);
+    EXPECT_EQ(rec.ingestion_ts_ns(), fill.ingestion_ts_ns);
+    EXPECT_EQ(rec.as_of_ts_ns(), fill.as_of_ts_ns);
 }
 
 TEST(PositionLedger, T4_PitViolation_Rejected) {
@@ -378,16 +359,16 @@ TEST(PositionLedger, T4_PitViolation_Rejected) {
     const std::int64_t base = NowNs() - 1'000'000'000LL;
 
     stcpp::execution::VirtualFill fill{};
-    fill.reject             = stcpp::execution::MatchReject::Ok;
-    fill.fill_price         = 0.55;
-    fill.fill_size_usdc     = 15.0;
-    fill.bernoulli_draw     = true;
+    fill.reject = stcpp::execution::MatchReject::Ok;
+    fill.fill_price = 0.55;
+    fill.fill_size_usdc = 15.0;
+    fill.bernoulli_draw = true;
     // 违反 PIT: data_source_ts < fill_ts (DsBeforeEvent)
-    fill.fill_ts_ns         = base + 1'000;
-    fill.event_ts_ns        = base + 1'000;
-    fill.data_source_ts_ns  = base;          // < fill_ts → PIT violation
-    fill.ingestion_ts_ns    = base + 2'000;
-    fill.as_of_ts_ns        = base + 3'000;
+    fill.fill_ts_ns = base + 1'000;
+    fill.event_ts_ns = base + 1'000;
+    fill.data_source_ts_ns = base;  // < fill_ts → PIT violation
+    fill.ingestion_ts_ns = base + 2'000;
+    fill.as_of_ts_ns = base + 3'000;
 
     const ApplyResult res = ledger.apply_fill(fill);
     EXPECT_EQ(res.status, ApplyStatus::PitViolation)
@@ -407,16 +388,14 @@ TEST(PositionLedger, T5_WalKindPhysicalIsolation) {
     //
     // 本测试用路径字符串验证 PathRootOf 与 paper/live 期望值
     const std::string_view position_root = PathRootOf(WalKind::Position);
-    EXPECT_EQ(position_root, "/var/lib/stcpp/exec/")
-        << "WalKind::Position PathRootOf = /var/lib/stcpp/exec/";
+    EXPECT_EQ(position_root, "/var/lib/stcpp/exec/") << "WalKind::Position PathRootOf = /var/lib/stcpp/exec/";
 
     // paper 期望路径 (CMake 注入 paper 模式时)
     // live  期望路径 (CMake 注入 live 模式时)
     // 两者不相等 (R-7 / R-11 物理隔离)
     const std::string paper_path = "/var/lib/stcpp/paper/position";
-    const std::string live_path  = "/var/lib/stcpp/live/position";
-    EXPECT_NE(paper_path, live_path)
-        << "paper/live position WAL paths must differ (R-7 physical isolation)";
+    const std::string live_path = "/var/lib/stcpp/live/position";
+    EXPECT_NE(paper_path, live_path) << "paper/live position WAL paths must differ (R-7 physical isolation)";
 
     // paper path 不包含 "live" (防止 paper binary 误写 live 路径)
     EXPECT_EQ(paper_path.find("live"), std::string::npos)
@@ -427,8 +406,7 @@ TEST(PositionLedger, T5_WalKindPhysicalIsolation) {
         << "live position WAL path must not contain 'paper'";
 
     // PositionRecord ABI 锁定 (R-11 ABI 不变确保 paper/live replay 可交叉验证)
-    EXPECT_EQ(sizeof(PositionRecord), 152u)
-        << "PositionRecord ABI: 152B fixed (R-11 cross-mode replay)";
+    EXPECT_EQ(sizeof(PositionRecord), 152u) << "PositionRecord ABI: 152B fixed (R-11 cross-mode replay)";
 }
 
 TEST(PositionLedger, T5_WalKind_PositionEnum) {
@@ -458,7 +436,7 @@ TEST(PositionLedger, T5_WalKind_PositionEnum) {
 // RM evaluate mock (简化版, 模拟 老韩 RM circuit breaker 判断)
 struct MockRmEvaluate {
     bool halted{false};
-    int  calls{0};
+    int calls{0};
 
     void evaluate(const CircuitBreakerState& cbs) {
         ++calls;
@@ -492,10 +470,8 @@ TEST(PositionLedger, T6_CircuitBreakerState_RmEvaluateIntegration) {
         const CircuitBreakerState cbs = ledger.circuit_breaker_state();
         rm.evaluate(cbs);
         // 60 USDC / 100 USDC = 60% = 6000 bps → halt
-        EXPECT_TRUE(rm.halted)
-            << "exposure_pct=6000 > 5000 → RM should halt (R-1 circuit breaker)";
-        EXPECT_EQ(cbs.exposure_pct, 6000)
-            << "exposure_pct should be 6000 bps (60 USDC / 100 USDC)";
+        EXPECT_TRUE(rm.halted) << "exposure_pct=6000 > 5000 → RM should halt (R-1 circuit breaker)";
+        EXPECT_EQ(cbs.exposure_pct, 6000) << "exposure_pct should be 6000 bps (60 USDC / 100 USDC)";
     }
 
     EXPECT_EQ(rm.calls, 2);
@@ -513,9 +489,9 @@ TEST(PositionLedger, T6_CircuitBreakerState_AtomicRead_NoLock) {
     const CircuitBreakerState cbs0 = ledger.circuit_breaker_state();
     for (int i = 0; i < 10; ++i) {
         const CircuitBreakerState cbs_i = ledger.circuit_breaker_state();
-        EXPECT_EQ(cbs_i.bankroll_total,    cbs0.bankroll_total);
+        EXPECT_EQ(cbs_i.bankroll_total, cbs0.bankroll_total);
         EXPECT_EQ(cbs_i.consec_loss_count, cbs0.consec_loss_count);
-        EXPECT_EQ(cbs_i.exposure_pct,      cbs0.exposure_pct);
+        EXPECT_EQ(cbs_i.exposure_pct, cbs0.exposure_pct);
     }
 }
 
@@ -532,8 +508,7 @@ TEST(PositionLedger, T7_SingleInstanceLock_PaperMode_CrossProcess) {
     // STCPP_TEST_BUILD 隔离: fork 前设 STCPP_TEST_PID_DIR, 让 parent+child 用同一 pid dir
     // 保证 child 和 parent 竞争同一 flock (R-7 不受影响, 仅测试代码走此路径)
     const std::string pid_path =
-        stcpp::infra::process::SingleInstanceLock::path_for(
-            stcpp::execution::ExecutionMode::Paper);
+        stcpp::infra::process::SingleInstanceLock::path_for(stcpp::execution::ExecutionMode::Paper);
     {
         const auto slash = pid_path.rfind('/');
         const std::string pid_dir = (slash != std::string::npos) ? pid_path.substr(0, slash) : "/tmp";
@@ -542,15 +517,13 @@ TEST(PositionLedger, T7_SingleInstanceLock_PaperMode_CrossProcess) {
     ::unlink(pid_path.c_str());  // clean up before test
 
     // Parent acquires lock + creates PositionLedger
-    stcpp::infra::process::SingleInstanceLock parent_lock{
-        stcpp::execution::ExecutionMode::Paper};
+    stcpp::infra::process::SingleInstanceLock parent_lock{stcpp::execution::ExecutionMode::Paper};
 
     // Parent PositionLedger works normally
     auto mock = std::make_unique<InMemoryPositionWal>();
     PositionLedger ledger{std::move(mock), 50'000'000LL};
     const ApplyResult res = ledger.apply_fill(MakeValidFill(0.5, 5.0));
-    EXPECT_EQ(res.status, ApplyStatus::Ok)
-        << "PositionLedger should work while holding SingleInstanceLock";
+    EXPECT_EQ(res.status, ApplyStatus::Ok) << "PositionLedger should work while holding SingleInstanceLock";
 
     // Fork child: child tries to acquire same lock → should fail
     int result_pipe[2];
@@ -564,8 +537,7 @@ TEST(PositionLedger, T7_SingleInstanceLock_PaperMode_CrossProcess) {
         ::close(result_pipe[0]);
         char result = '0';
         try {
-            stcpp::infra::process::SingleInstanceLock child_lock{
-                stcpp::execution::ExecutionMode::Paper};
+            stcpp::infra::process::SingleInstanceLock child_lock{stcpp::execution::ExecutionMode::Paper};
             // should not reach here
             result = '0';
         } catch (const stcpp::infra::process::SingleInstanceLockFailure&) {
@@ -586,8 +558,7 @@ TEST(PositionLedger, T7_SingleInstanceLock_PaperMode_CrossProcess) {
     int wstatus = 0;
     ::waitpid(child, &wstatus, 0);
 
-    EXPECT_EQ(result, '1')
-        << "Child should fail to acquire paper lock (防多开 T7)";
+    EXPECT_EQ(result, '1') << "Child should fail to acquire paper lock (防多开 T7)";
 
     ::unsetenv("STCPP_TEST_PID_DIR");
     ::unlink(pid_path.c_str());
@@ -598,52 +569,49 @@ TEST(PositionLedger, T7_SingleInstanceLock_PaperMode_CrossProcess) {
 // ===========================================================================
 TEST(PositionRecord, WalRecordConceptSatisfied) {
     // 编译期 concept check (如果不满足, 此行编译失败)
-    static_assert(WalRecord<PositionRecord>,
-        "PositionRecord must satisfy WalRecord concept");
+    static_assert(WalRecord<PositionRecord>, "PositionRecord must satisfy WalRecord concept");
     SUCCEED() << "PositionRecord satisfies WalRecord concept";
 }
 
 TEST(PositionRecord, AbiLayout_152B) {
-    EXPECT_EQ(sizeof(PositionRecord), 152u)
-        << "PositionRecord ABI 152B (变更须 ADR)";
-    EXPECT_EQ(offsetof(PositionRecord, market_id),             0u);
-    EXPECT_EQ(offsetof(PositionRecord, outcome),              32u);
-    EXPECT_EQ(offsetof(PositionRecord, position_delta),       40u);
-    EXPECT_EQ(offsetof(PositionRecord, position_total),       48u);
-    EXPECT_EQ(offsetof(PositionRecord, realized_pnl),         56u);
-    EXPECT_EQ(offsetof(PositionRecord, unrealized_pnl),       64u);
-    EXPECT_EQ(offsetof(PositionRecord, entry_avg_price_micro),72u);
-    EXPECT_EQ(offsetof(PositionRecord, bankroll_total),       80u);
-    EXPECT_EQ(offsetof(PositionRecord, consec_loss_count),    88u);
-    EXPECT_EQ(offsetof(PositionRecord, exposure_pct),         92u);
-    EXPECT_EQ(offsetof(PositionRecord, fill_event_ts_ns),     96u);
-    EXPECT_EQ(offsetof(PositionRecord, fill_ds_ts_ns),       104u);
-    EXPECT_EQ(offsetof(PositionRecord, fill_ingestion_ts_ns),112u);
-    EXPECT_EQ(offsetof(PositionRecord, fill_as_of_ts_ns),    120u);
-    EXPECT_EQ(offsetof(PositionRecord, audit_id_),           128u);
-    EXPECT_EQ(offsetof(PositionRecord, crc32c),              144u);
+    EXPECT_EQ(sizeof(PositionRecord), 152u) << "PositionRecord ABI 152B (变更须 ADR)";
+    EXPECT_EQ(offsetof(PositionRecord, market_id), 0u);
+    EXPECT_EQ(offsetof(PositionRecord, outcome), 32u);
+    EXPECT_EQ(offsetof(PositionRecord, position_delta), 40u);
+    EXPECT_EQ(offsetof(PositionRecord, position_total), 48u);
+    EXPECT_EQ(offsetof(PositionRecord, realized_pnl), 56u);
+    EXPECT_EQ(offsetof(PositionRecord, unrealized_pnl), 64u);
+    EXPECT_EQ(offsetof(PositionRecord, entry_avg_price_micro), 72u);
+    EXPECT_EQ(offsetof(PositionRecord, bankroll_total), 80u);
+    EXPECT_EQ(offsetof(PositionRecord, consec_loss_count), 88u);
+    EXPECT_EQ(offsetof(PositionRecord, exposure_pct), 92u);
+    EXPECT_EQ(offsetof(PositionRecord, fill_event_ts_ns), 96u);
+    EXPECT_EQ(offsetof(PositionRecord, fill_ds_ts_ns), 104u);
+    EXPECT_EQ(offsetof(PositionRecord, fill_ingestion_ts_ns), 112u);
+    EXPECT_EQ(offsetof(PositionRecord, fill_as_of_ts_ns), 120u);
+    EXPECT_EQ(offsetof(PositionRecord, audit_id_), 128u);
+    EXPECT_EQ(offsetof(PositionRecord, crc32c), 144u);
 }
 
 TEST(PositionRecord, SerializeInto_RoundTrip) {
     PositionRecord orig{};
     std::memcpy(orig.market_id.data(), "test_market_abc", 15);
-    orig.outcome              = 1;
-    orig.position_total       = 5'000'000LL;
-    orig.fill_event_ts_ns     = 1'000'000'000LL;
-    orig.fill_ds_ts_ns        = 1'000'000'100LL;
+    orig.outcome = 1;
+    orig.position_total = 5'000'000LL;
+    orig.fill_event_ts_ns = 1'000'000'000LL;
+    orig.fill_ds_ts_ns = 1'000'000'100LL;
     orig.fill_ingestion_ts_ns = 1'000'000'200LL;
-    orig.fill_as_of_ts_ns     = 1'000'000'300LL;
+    orig.fill_as_of_ts_ns = 1'000'000'300LL;
 
     std::array<std::byte, 152> buf{};
-    const std::size_t written =
-        orig.serialize_into(std::span<std::byte>{buf.data(), buf.size()});
+    const std::size_t written = orig.serialize_into(std::span<std::byte>{buf.data(), buf.size()});
     EXPECT_EQ(written, 152u);
 
     PositionRecord copy{};
     std::memcpy(&copy, buf.data(), 152);
     EXPECT_EQ(std::string(copy.market_id.data(), 15), "test_market_abc");
-    EXPECT_EQ(copy.outcome,          1u);
-    EXPECT_EQ(copy.position_total,   5'000'000LL);
+    EXPECT_EQ(copy.outcome, 1u);
+    EXPECT_EQ(copy.position_total, 5'000'000LL);
     EXPECT_EQ(copy.fill_event_ts_ns, 1'000'000'000LL);
 }
 
@@ -658,9 +626,9 @@ TEST(PositionLedger, T3_EmptyWalDir_ReturnsZero) {
     EXPECT_EQ(count, 0u) << "Empty WAL dir should replay 0 records";
 
     const CircuitBreakerState cbs = ledger.circuit_breaker_state();
-    EXPECT_EQ(cbs.bankroll_total,    100'000'000LL);
+    EXPECT_EQ(cbs.bankroll_total, 100'000'000LL);
     EXPECT_EQ(cbs.consec_loss_count, 0);
-    EXPECT_EQ(cbs.exposure_pct,      0);
+    EXPECT_EQ(cbs.exposure_pct, 0);
 }
 
 // nonexistent dir → returns 0 (不抛, 全新启动)
@@ -668,9 +636,7 @@ TEST(PositionLedger, T3_NonexistentWalDir_ReturnsZero) {
     auto mock = std::make_unique<InMemoryPositionWal>();
     PositionLedger ledger{std::move(mock), 100'000'000LL};
 
-    const std::size_t count =
-        ledger.restore_from_wal("/tmp/stcpp_nonexistent_" +
-                                std::to_string(::getpid()));
+    const std::size_t count = ledger.restore_from_wal("/tmp/stcpp_nonexistent_" + std::to_string(::getpid()));
     EXPECT_EQ(count, 0u) << "Nonexistent WAL dir should replay 0 records";
 }
 

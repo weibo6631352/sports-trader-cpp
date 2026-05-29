@@ -14,8 +14,6 @@
 //   handshake_cite:       laoli-laoSun-handshake-v1.md §3
 //   adr_cite:             ADR-027 Enforce-1
 
-#include <gtest/gtest.h>
-
 #include <atomic>
 #include <cstdint>
 #include <memory>
@@ -23,6 +21,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 // Headers under test
 #include "stcpp/risk/position_ledger.hpp"
@@ -42,52 +42,50 @@ namespace {
 
 // InMemory AuditEmitter for RiskGateway tests
 class InMemAudit final : public AuditEmitter {
- public:
+public:
     bool emit(AuditRecord const& /*rec*/) noexcept override { return true; }
 };
 
 // Build a minimal valid OrderIntent (R-20 4 ts, token_id, condition_id, side)
-static OrderIntent make_valid_intent(std::string const& signal_id,
-                                     bool is_close = false,
+static OrderIntent make_valid_intent(std::string const& signal_id, bool is_close = false,
                                      Side side = Side::Buy) {
     OrderIntent it{};
     // R-20: event_ts <= data_source_ts <= ingestion_ts <= as_of_ts
-    it.event_ts_ns       = 1'000'000'000LL;
+    it.event_ts_ns = 1'000'000'000LL;
     it.data_source_ts_ns = 1'000'000'001LL;
-    it.ingestion_ts_ns   = 1'000'000'002LL;
-    it.as_of_ts_ns       = 1'000'000'003LL;
-    it.condition_id      = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab";
-    it.token_id          = "123456789012345678901234567890";
-    it.outcome           = Outcome::Yes;
-    it.side              = side;
-    it.strategy_id       = "S1";
-    it.signal_id         = signal_id;
+    it.ingestion_ts_ns = 1'000'000'002LL;
+    it.as_of_ts_ns = 1'000'000'003LL;
+    it.condition_id = "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab";
+    it.token_id = "123456789012345678901234567890";
+    it.outcome = Outcome::Yes;
+    it.side = side;
+    it.strategy_id = "S1";
+    it.signal_id = signal_id;
     it.feature_snapshot_id = "fs-001";
-    it.price             = 0.55;
-    it.size_usdc         = 100;
+    it.price = 0.55;
+    it.size_usdc = 100;
     it.book_depth_l1_usdc = 500.0;
     it.book_snapshot_ts_ns = 999'999'999LL;  // recent (< 60s before as_of)
-    it.tick_size         = 0.01;
-    it.is_close          = is_close;
+    it.tick_size = 0.01;
+    it.is_close = is_close;
     return it;
 }
 
 // Build a VirtualFill (MatchReject::Ok, fill_size_usdc > 0)
-static execution::VirtualFill make_fill(std::int64_t as_of_ts_ns,
-                                         double fill_price = 0.55,
-                                         double fill_size_usdc = 100.0) {
+static execution::VirtualFill make_fill(std::int64_t as_of_ts_ns, double fill_price = 0.55,
+                                        double fill_size_usdc = 100.0) {
     execution::VirtualFill f{};
-    f.reject           = execution::MatchReject::Ok;
-    f.fill_price       = fill_price;
-    f.fill_size_usdc   = fill_size_usdc;
+    f.reject = execution::MatchReject::Ok;
+    f.fill_price = fill_price;
+    f.fill_size_usdc = fill_size_usdc;
     f.expected_fill_rate = 0.60;
-    f.bernoulli_draw   = true;
+    f.bernoulli_draw = true;
     // R-20: as_of_ts_ns 严格透传
-    f.event_ts_ns        = as_of_ts_ns - 3;
-    f.data_source_ts_ns  = as_of_ts_ns - 2;
-    f.ingestion_ts_ns    = as_of_ts_ns - 1;
-    f.as_of_ts_ns        = as_of_ts_ns;
-    f.fill_ts_ns         = as_of_ts_ns + 1;
+    f.event_ts_ns = as_of_ts_ns - 3;
+    f.data_source_ts_ns = as_of_ts_ns - 2;
+    f.ingestion_ts_ns = as_of_ts_ns - 1;
+    f.as_of_ts_ns = as_of_ts_ns;
+    f.fill_ts_ns = as_of_ts_ns + 1;
     return f;
 }
 
@@ -185,14 +183,14 @@ TEST(SystemStateW76, TC03_DrainCloseAllowed) {
     // 使用 RiskGateway 的 DRAIN state 验证放行条件
     // (DRAIN: is_close=true + side=Sell 放行; 其余 reject STATE_DRAIN)
     RiskConfig cfg;
-    cfg.per_order_cap_usdc       = 100'000;
+    cfg.per_order_cap_usdc = 100'000;
     cfg.market_exposure_cap_usdc = 500'000;
-    cfg.per_outcome_cap_usdc     = 250'000;
-    cfg.bankroll_usdc            = 1'000'000;
-    cfg.daily_loss_halt_usdc     = 50'000;
-    cfg.consec_loss_halt_count   = 100;
-    cfg.edge_ci_lower_floor      = 0.0;
-    cfg.enable_moneyline         = true;
+    cfg.per_outcome_cap_usdc = 250'000;
+    cfg.bankroll_usdc = 1'000'000;
+    cfg.daily_loss_halt_usdc = 50'000;
+    cfg.consec_loss_halt_count = 100;
+    cfg.edge_ci_lower_floor = 0.0;
+    cfg.enable_moneyline = true;
 
     auto emitter = std::make_shared<InMemAudit>();
     RiskGateway gw(cfg, emitter);
@@ -242,7 +240,7 @@ TEST(SystemStateW76, TC03_DrainCloseAllowed) {
 TEST(SystemStateW76, TC04_RejectRingTailCopy) {
     RiskConfig cfg;
     cfg.enable_moneyline = true;
-    cfg.bankroll_usdc    = 1'000'000;
+    cfg.bankroll_usdc = 1'000'000;
     cfg.per_order_cap_usdc = 100'000;
     cfg.market_exposure_cap_usdc = 500'000;
     cfg.per_outcome_cap_usdc = 250'000;
@@ -266,7 +264,10 @@ TEST(SystemStateW76, TC04_RejectRingTailCopy) {
         // audit_id 非零 (R-1: 非空, 即使 APPROVED; REJECTED 同样要求)
         bool any_nonzero = false;
         for (auto b : d.audit_id) {
-            if (b != 0) { any_nonzero = true; break; }
+            if (b != 0) {
+                any_nonzero = true;
+                break;
+            }
         }
         EXPECT_TRUE(any_nonzero) << "audit_id must be non-zero for intent " << i;
 

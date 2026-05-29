@@ -21,9 +21,9 @@ using namespace stcpp::data::goalserve;
 
 GoalserveClient make_client() {
     GoalserveClient::Config cfg;
-    cfg.key          = "perf_bench_key_dummy_32_chars_ok";
+    cfg.key = "perf_bench_key_dummy_32_chars_ok";
     cfg.prefer_https = true;
-    cfg.gzip         = true;
+    cfg.gzip = true;
     return GoalserveClient{cfg};
 }
 
@@ -31,9 +31,9 @@ GoalserveClient make_client() {
 void BM_Goalserve_BuildUrl_InplayOdds(benchmark::State& state) {
     auto client = make_client();
     UrlSpec spec;
-    spec.host     = GoalserveHost::Inplay;
+    spec.host = GoalserveHost::Inplay;
     spec.endpoint = GoalserveEndpoint::InplayOdds;
-    spec.json     = true;
+    spec.json = true;
     std::size_t i = 0;
     for (auto _ : state) {
         spec.sport = static_cast<GoalserveSport>(i % kNumSports);
@@ -48,9 +48,9 @@ BENCHMARK(BM_Goalserve_BuildUrl_InplayOdds);
 void BM_Goalserve_BuildUrl_PregameOdds(benchmark::State& state) {
     auto client = make_client();
     UrlSpec spec;
-    spec.host     = GoalserveHost::Www;
+    spec.host = GoalserveHost::Www;
     spec.endpoint = GoalserveEndpoint::PregameOdds;
-    spec.json     = true;
+    spec.json = true;
     spec.bookmaker = "bet365,pinnacle";
     std::size_t i = 0;
     for (auto _ : state) {
@@ -66,10 +66,10 @@ BENCHMARK(BM_Goalserve_BuildUrl_PregameOdds);
 void BM_Goalserve_BuildUrl_InplayResults(benchmark::State& state) {
     auto client = make_client();
     UrlSpec spec;
-    spec.host     = GoalserveHost::Inplay;
+    spec.host = GoalserveHost::Inplay;
     spec.endpoint = GoalserveEndpoint::InplayResults;
-    spec.sport    = GoalserveSport::Baseball;
-    spec.yyyymm   = "202604";
+    spec.sport = GoalserveSport::Baseball;
+    spec.yyyymm = "202604";
     spec.match_id = "12345678";
     for (auto _ : state) {
         auto url = client.BuildUrl(spec);

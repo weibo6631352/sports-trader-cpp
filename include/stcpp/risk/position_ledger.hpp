@@ -30,7 +30,7 @@
 
 #include "stcpp/execution/virtual_matcher.hpp"  // VirtualFill
 #include "stcpp/risk/position_view.hpp"
-#include "stcpp/strategy/signal_iface.hpp"       // Outcome
+#include "stcpp/strategy/signal_iface.hpp"  // Outcome
 
 namespace stcpp::risk {
 
@@ -38,23 +38,21 @@ namespace stcpp::risk {
 // 线程模型: 单 writer (apply_fill), 多 reader (get_*)
 // 所有读 API 返回 snapshot copy, 不持锁到 caller 域
 class PositionLedger {
- public:
+public:
     PositionLedger() = default;
     ~PositionLedger() = default;
 
-    PositionLedger(PositionLedger const&)            = delete;
+    PositionLedger(PositionLedger const&) = delete;
     PositionLedger& operator=(PositionLedger const&) = delete;
-    PositionLedger(PositionLedger&&)                 = delete;
-    PositionLedger& operator=(PositionLedger&&)      = delete;
+    PositionLedger(PositionLedger&&) = delete;
+    PositionLedger& operator=(PositionLedger&&) = delete;
 
     // ---------- Write API (R-1: 所有仓位变更必经此处) --------------------------
 
     // 注入一笔虚拟成交
     // last_update_ts 严格透传 fill.as_of_ts_ns (R-20)
     // condition_id + token_id 来自 PositionView 初始化时提供的映射
-    void apply_fill(std::string const& condition_id,
-                    std::string const& token_id,
-                    Outcome             outcome,
+    void apply_fill(std::string const& condition_id, std::string const& token_id, Outcome outcome,
                     execution::VirtualFill const& fill) noexcept;
 
     // ---------- Read API (老韩 spec §2, 快照一致性 TC-01) ----------------------
@@ -66,14 +64,12 @@ class PositionLedger {
     [[nodiscard]] std::optional<PositionView> get_position(std::string const& token_id) const noexcept;
 
     // per-outcome exposure: token_id → net_size_usdc (signed)
-    [[nodiscard]] std::unordered_map<std::string, std::int64_t>
-    get_per_outcome_exposure() const noexcept;
+    [[nodiscard]] std::unordered_map<std::string, std::int64_t> get_per_outcome_exposure() const noexcept;
 
     // per-condition exposure: condition_id → net_size_usdc (signed, sum of all tokens)
-    [[nodiscard]] std::unordered_map<std::string, std::int64_t>
-    get_per_condition_exposure() const noexcept;
+    [[nodiscard]] std::unordered_map<std::string, std::int64_t> get_per_condition_exposure() const noexcept;
 
- private:
+private:
     // 内部存储 (老韩 spec §2)
     // token_positions_: token_id → PositionView (含 avg_entry_price + last_update_ts)
     // condition_exposure_: condition_id → net size (sum of all tokens under condition)
@@ -82,12 +78,9 @@ class PositionLedger {
     std::unordered_map<std::string, std::int64_t> condition_exposure_;
 
     // Internal: update position on fill
-    void update_position_locked_(std::string const& condition_id,
-                                 std::string const& token_id,
-                                 Outcome             outcome,
-                                 std::int64_t        delta_usdc,
-                                 double              fill_price,
-                                 std::int64_t        as_of_ts_ns) noexcept;
+    void update_position_locked_(std::string const& condition_id, std::string const& token_id,
+                                 Outcome outcome, std::int64_t delta_usdc, double fill_price,
+                                 std::int64_t as_of_ts_ns) noexcept;
 };
 
 }  // namespace stcpp::risk

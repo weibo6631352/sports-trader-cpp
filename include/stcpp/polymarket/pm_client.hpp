@@ -68,79 +68,97 @@ namespace stcpp::polymarket {
 // ---------- TimestampQuad (R-20, 与 stcpp::core::TimestampQuad 一致, 复制本地避免 core 头依赖) ----------
 
 enum class DataSourceTsSource : std::uint8_t {
-    UpstreamPayload          = 0,  // payload 自带 `timestamp` 字段 (PM WSS / clob /books 等)
-    UpstreamHeader           = 1,  // HTTP Response Header `Date` 解出 (gamma listing 兜底)
-    InferredFromDsTs         = 2,  // 同 batch 内 ds_ts 推断 (outcomes settle event)
-    InferredFromIngestion    = 3,  // 实在没源, 走本地 ingestion_ts (月度 sweep > 5% 报警)
+    UpstreamPayload = 0,        // payload 自带 `timestamp` 字段 (PM WSS / clob /books 等)
+    UpstreamHeader = 1,         // HTTP Response Header `Date` 解出 (gamma listing 兜底)
+    InferredFromDsTs = 2,       // 同 batch 内 ds_ts 推断 (outcomes settle event)
+    InferredFromIngestion = 3,  // 实在没源, 走本地 ingestion_ts (月度 sweep > 5% 报警)
 };
 
 // ABI LOCK: DataSourceTsSource 值 (handshake §4.3 — 老孙 signer v5.1 IPC uint8 映射, 值改动 = L3)
-static_assert(static_cast<std::uint8_t>(DataSourceTsSource::UpstreamPayload)       == 0, "ABI lock: DataSourceTsSource::UpstreamPayload");
-static_assert(static_cast<std::uint8_t>(DataSourceTsSource::UpstreamHeader)        == 1, "ABI lock: DataSourceTsSource::UpstreamHeader");
-static_assert(static_cast<std::uint8_t>(DataSourceTsSource::InferredFromDsTs)      == 2, "ABI lock: DataSourceTsSource::InferredFromDsTs");
-static_assert(static_cast<std::uint8_t>(DataSourceTsSource::InferredFromIngestion) == 3, "ABI lock: DataSourceTsSource::InferredFromIngestion");
+static_assert(static_cast<std::uint8_t>(DataSourceTsSource::UpstreamPayload) == 0,
+              "ABI lock: DataSourceTsSource::UpstreamPayload");
+static_assert(static_cast<std::uint8_t>(DataSourceTsSource::UpstreamHeader) == 1,
+              "ABI lock: DataSourceTsSource::UpstreamHeader");
+static_assert(static_cast<std::uint8_t>(DataSourceTsSource::InferredFromDsTs) == 2,
+              "ABI lock: DataSourceTsSource::InferredFromDsTs");
+static_assert(static_cast<std::uint8_t>(DataSourceTsSource::InferredFromIngestion) == 3,
+              "ABI lock: DataSourceTsSource::InferredFromIngestion");
 
 [[nodiscard]] constexpr std::string_view ToString(DataSourceTsSource s) noexcept {
     switch (s) {
-        case DataSourceTsSource::UpstreamPayload:       return "UPSTREAM_PAYLOAD";
-        case DataSourceTsSource::UpstreamHeader:        return "UPSTREAM_HEADER";
-        case DataSourceTsSource::InferredFromDsTs:      return "INFERRED_FROM_DS_TS";
-        case DataSourceTsSource::InferredFromIngestion: return "INFERRED_FROM_INGESTION";
+        case DataSourceTsSource::UpstreamPayload:
+            return "UPSTREAM_PAYLOAD";
+        case DataSourceTsSource::UpstreamHeader:
+            return "UPSTREAM_HEADER";
+        case DataSourceTsSource::InferredFromDsTs:
+            return "INFERRED_FROM_DS_TS";
+        case DataSourceTsSource::InferredFromIngestion:
+            return "INFERRED_FROM_INGESTION";
     }
     return "unknown";
 }
 
 struct TimestampQuad {
-    std::int64_t       event_ts_ns{0};         // R-20: upstream payload (game.last_update / market.timestamp)
-    std::int64_t       data_source_ts_ns{0};   // R-20: PM server emit ts (payload.timestamp × 1e6)
-    std::int64_t       ingestion_ts_ns{0};     // R-20: vCPU0 recv stamp (CLOCK_REALTIME)
-    std::int64_t       as_of_ts_ns{0};         // R-20: caller 决策快照 (Signal / RM)
+    std::int64_t event_ts_ns{0};        // R-20: upstream payload (game.last_update / market.timestamp)
+    std::int64_t data_source_ts_ns{0};  // R-20: PM server emit ts (payload.timestamp × 1e6)
+    std::int64_t ingestion_ts_ns{0};    // R-20: vCPU0 recv stamp (CLOCK_REALTIME)
+    std::int64_t as_of_ts_ns{0};        // R-20: caller 决策快照 (Signal / RM)
     DataSourceTsSource ds_ts_source{DataSourceTsSource::UpstreamPayload};
 };
 
 // ABI LOCK: TimestampQuad layout (R-20 red line — any field change = L2)
 // handshake: docs/RESEARCH/laoli-laoSun-handshake-v1.md §3
 static_assert(sizeof(TimestampQuad) == 40,
-    "ABI lock: TimestampQuad sizeof must be 40 (4×int64 + uint8 + 7B pad)");
-static_assert(offsetof(TimestampQuad, event_ts_ns)       ==  0, "ABI lock: TimestampQuad.event_ts_ns offset");
-static_assert(offsetof(TimestampQuad, data_source_ts_ns) ==  8, "ABI lock: TimestampQuad.data_source_ts_ns offset");
-static_assert(offsetof(TimestampQuad, ingestion_ts_ns)   == 16, "ABI lock: TimestampQuad.ingestion_ts_ns offset");
-static_assert(offsetof(TimestampQuad, as_of_ts_ns)       == 24, "ABI lock: TimestampQuad.as_of_ts_ns offset");
-static_assert(offsetof(TimestampQuad, ds_ts_source)      == 32, "ABI lock: TimestampQuad.ds_ts_source offset");
+              "ABI lock: TimestampQuad sizeof must be 40 (4×int64 + uint8 + 7B pad)");
+static_assert(offsetof(TimestampQuad, event_ts_ns) == 0, "ABI lock: TimestampQuad.event_ts_ns offset");
+static_assert(offsetof(TimestampQuad, data_source_ts_ns) == 8,
+              "ABI lock: TimestampQuad.data_source_ts_ns offset");
+static_assert(offsetof(TimestampQuad, ingestion_ts_ns) == 16,
+              "ABI lock: TimestampQuad.ingestion_ts_ns offset");
+static_assert(offsetof(TimestampQuad, as_of_ts_ns) == 24, "ABI lock: TimestampQuad.as_of_ts_ns offset");
+static_assert(offsetof(TimestampQuad, ds_ts_source) == 32, "ABI lock: TimestampQuad.ds_ts_source offset");
 
 // ---------- OrderStatus (7 enum, v3 §B 实测 + 官方 SDK) ----------
 
 enum class OrderStatus : std::uint8_t {
-    Booked             = 0,  // 上 book 等撮合 (maker 状态, 非终态)
-    PartiallyFilled    = 1,  // 部分成交, 余量在 book (非终态)
-    Filled             = 2,  // 全成交 (终态)
-    Canceled           = 3,  // 用户撤单 (终态)
-    Expired            = 4,  // expiration 到期 (终态)
-    Rejected           = 5,  // 不合法被拒 (终态, payload.reject_reason)
-    Settled            = 6,  // 比赛结束 + CTF redeem 完成 (终态)
+    Booked = 0,           // 上 book 等撮合 (maker 状态, 非终态)
+    PartiallyFilled = 1,  // 部分成交, 余量在 book (非终态)
+    Filled = 2,           // 全成交 (终态)
+    Canceled = 3,         // 用户撤单 (终态)
+    Expired = 4,          // expiration 到期 (终态)
+    Rejected = 5,         // 不合法被拒 (终态, payload.reject_reason)
+    Settled = 6,          // 比赛结束 + CTF redeem 完成 (终态)
 };
 
 inline constexpr std::size_t kOrderStatusCount = 7;
 
 // ABI LOCK: OrderStatus enum 值 (handshake §4.1 — 值改动 = L3)
-static_assert(static_cast<std::uint8_t>(OrderStatus::Booked)          == 0, "ABI lock: OrderStatus::Booked");
-static_assert(static_cast<std::uint8_t>(OrderStatus::PartiallyFilled) == 1, "ABI lock: OrderStatus::PartiallyFilled");
-static_assert(static_cast<std::uint8_t>(OrderStatus::Filled)          == 2, "ABI lock: OrderStatus::Filled");
-static_assert(static_cast<std::uint8_t>(OrderStatus::Canceled)        == 3, "ABI lock: OrderStatus::Canceled");
-static_assert(static_cast<std::uint8_t>(OrderStatus::Expired)         == 4, "ABI lock: OrderStatus::Expired");
-static_assert(static_cast<std::uint8_t>(OrderStatus::Rejected)        == 5, "ABI lock: OrderStatus::Rejected");
-static_assert(static_cast<std::uint8_t>(OrderStatus::Settled)         == 6, "ABI lock: OrderStatus::Settled");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Booked) == 0, "ABI lock: OrderStatus::Booked");
+static_assert(static_cast<std::uint8_t>(OrderStatus::PartiallyFilled) == 1,
+              "ABI lock: OrderStatus::PartiallyFilled");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Filled) == 2, "ABI lock: OrderStatus::Filled");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Canceled) == 3, "ABI lock: OrderStatus::Canceled");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Expired) == 4, "ABI lock: OrderStatus::Expired");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Rejected) == 5, "ABI lock: OrderStatus::Rejected");
+static_assert(static_cast<std::uint8_t>(OrderStatus::Settled) == 6, "ABI lock: OrderStatus::Settled");
 static_assert(kOrderStatusCount == 7, "ABI lock: OrderStatus count must be 7");
 
 [[nodiscard]] constexpr std::string_view ToString(OrderStatus s) noexcept {
     switch (s) {
-        case OrderStatus::Booked:          return "BOOKED";
-        case OrderStatus::PartiallyFilled: return "PARTIALLY_FILLED";
-        case OrderStatus::Filled:          return "FILLED";
-        case OrderStatus::Canceled:        return "CANCELED";
-        case OrderStatus::Expired:         return "EXPIRED";
-        case OrderStatus::Rejected:        return "REJECTED";
-        case OrderStatus::Settled:         return "SETTLED";
+        case OrderStatus::Booked:
+            return "BOOKED";
+        case OrderStatus::PartiallyFilled:
+            return "PARTIALLY_FILLED";
+        case OrderStatus::Filled:
+            return "FILLED";
+        case OrderStatus::Canceled:
+            return "CANCELED";
+        case OrderStatus::Expired:
+            return "EXPIRED";
+        case OrderStatus::Rejected:
+            return "REJECTED";
+        case OrderStatus::Settled:
+            return "SETTLED";
     }
     return "unknown";
 }
@@ -169,12 +187,10 @@ static_assert(kOrderStatusCount == 7, "ABI lock: OrderStatus count must be 7");
     }
     switch (from) {
         case OrderStatus::Booked:
-            return to == OrderStatus::PartiallyFilled || to == OrderStatus::Filled
-                || to == OrderStatus::Canceled        || to == OrderStatus::Expired
-                || to == OrderStatus::Rejected;
+            return to == OrderStatus::PartiallyFilled || to == OrderStatus::Filled ||
+                   to == OrderStatus::Canceled || to == OrderStatus::Expired || to == OrderStatus::Rejected;
         case OrderStatus::PartiallyFilled:
-            return to == OrderStatus::Filled || to == OrderStatus::Canceled
-                || to == OrderStatus::Expired;
+            return to == OrderStatus::Filled || to == OrderStatus::Canceled || to == OrderStatus::Expired;
         case OrderStatus::Filled:
             return to == OrderStatus::Settled;
         case OrderStatus::Canceled:
@@ -189,54 +205,67 @@ static_assert(kOrderStatusCount == 7, "ABI lock: OrderStatus count must be 7");
 // ---------- PMErrorKind (9 enum, §3.2) ----------
 
 enum class PMErrorKind : std::uint8_t {
-    Ok                   = 0,
-    NotAuthenticated     = 1,  // HMAC 401, 走 v3 §B SOP, 5min 内禁说 "key 失效"
-    RateLimited          = 2,  // 429, 退避 + 自我限流
-    ServerError          = 3,  // 5xx, 老韩 STALE 判定
-    BadRequest           = 4,  // 400, signing bug (sigType must be 1, not 2) 等
-    NotFound             = 5,  // 404
-    NetworkError         = 6,  // 断 / 超时, 老姜 STALE 5 档
-    Stale                = 7,  // payload data_source_ts 落后超阈 (R-20)
-    InvariantViolation   = 8,  // 语义违反 (outcome_index=999 误用 / next_cursor=LTE= 兜底失败)
-    Unknown              = 9,
+    Ok = 0,
+    NotAuthenticated = 1,    // HMAC 401, 走 v3 §B SOP, 5min 内禁说 "key 失效"
+    RateLimited = 2,         // 429, 退避 + 自我限流
+    ServerError = 3,         // 5xx, 老韩 STALE 判定
+    BadRequest = 4,          // 400, signing bug (sigType must be 1, not 2) 等
+    NotFound = 5,            // 404
+    NetworkError = 6,        // 断 / 超时, 老姜 STALE 5 档
+    Stale = 7,               // payload data_source_ts 落后超阈 (R-20)
+    InvariantViolation = 8,  // 语义违反 (outcome_index=999 误用 / next_cursor=LTE= 兜底失败)
+    Unknown = 9,
 };
 
 inline constexpr std::size_t kPMErrorKindCount = 10;  // Ok + 9 失败
 
 // ABI LOCK: PMErrorKind enum 值 (handshake §4.2 — 值改动 = L3)
-static_assert(static_cast<std::uint8_t>(PMErrorKind::Ok)                == 0, "ABI lock: PMErrorKind::Ok");
-static_assert(static_cast<std::uint8_t>(PMErrorKind::NotAuthenticated)  == 1, "ABI lock: PMErrorKind::NotAuthenticated");
-static_assert(static_cast<std::uint8_t>(PMErrorKind::RateLimited)       == 2, "ABI lock: PMErrorKind::RateLimited");
-static_assert(static_cast<std::uint8_t>(PMErrorKind::ServerError)       == 3, "ABI lock: PMErrorKind::ServerError");
-static_assert(static_cast<std::uint8_t>(PMErrorKind::BadRequest)        == 4, "ABI lock: PMErrorKind::BadRequest");
-static_assert(static_cast<std::uint8_t>(PMErrorKind::NotFound)          == 5, "ABI lock: PMErrorKind::NotFound");
-static_assert(static_cast<std::uint8_t>(PMErrorKind::NetworkError)      == 6, "ABI lock: PMErrorKind::NetworkError");
-static_assert(static_cast<std::uint8_t>(PMErrorKind::Stale)             == 7, "ABI lock: PMErrorKind::Stale");
-static_assert(static_cast<std::uint8_t>(PMErrorKind::InvariantViolation)== 8, "ABI lock: PMErrorKind::InvariantViolation");
-static_assert(static_cast<std::uint8_t>(PMErrorKind::Unknown)           == 9, "ABI lock: PMErrorKind::Unknown");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::Ok) == 0, "ABI lock: PMErrorKind::Ok");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::NotAuthenticated) == 1,
+              "ABI lock: PMErrorKind::NotAuthenticated");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::RateLimited) == 2, "ABI lock: PMErrorKind::RateLimited");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::ServerError) == 3, "ABI lock: PMErrorKind::ServerError");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::BadRequest) == 4, "ABI lock: PMErrorKind::BadRequest");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::NotFound) == 5, "ABI lock: PMErrorKind::NotFound");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::NetworkError) == 6,
+              "ABI lock: PMErrorKind::NetworkError");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::Stale) == 7, "ABI lock: PMErrorKind::Stale");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::InvariantViolation) == 8,
+              "ABI lock: PMErrorKind::InvariantViolation");
+static_assert(static_cast<std::uint8_t>(PMErrorKind::Unknown) == 9, "ABI lock: PMErrorKind::Unknown");
 static_assert(kPMErrorKindCount == 10, "ABI lock: PMErrorKind count must be 10 (Ok + 9 failure kinds)");
 
 [[nodiscard]] constexpr std::string_view ToString(PMErrorKind k) noexcept {
     switch (k) {
-        case PMErrorKind::Ok:                 return "Ok";
-        case PMErrorKind::NotAuthenticated:   return "NotAuthenticated";
-        case PMErrorKind::RateLimited:        return "RateLimited";
-        case PMErrorKind::ServerError:        return "ServerError";
-        case PMErrorKind::BadRequest:         return "BadRequest";
-        case PMErrorKind::NotFound:           return "NotFound";
-        case PMErrorKind::NetworkError:       return "NetworkError";
-        case PMErrorKind::Stale:              return "Stale";
-        case PMErrorKind::InvariantViolation: return "InvariantViolation";
-        case PMErrorKind::Unknown:            return "Unknown";
+        case PMErrorKind::Ok:
+            return "Ok";
+        case PMErrorKind::NotAuthenticated:
+            return "NotAuthenticated";
+        case PMErrorKind::RateLimited:
+            return "RateLimited";
+        case PMErrorKind::ServerError:
+            return "ServerError";
+        case PMErrorKind::BadRequest:
+            return "BadRequest";
+        case PMErrorKind::NotFound:
+            return "NotFound";
+        case PMErrorKind::NetworkError:
+            return "NetworkError";
+        case PMErrorKind::Stale:
+            return "Stale";
+        case PMErrorKind::InvariantViolation:
+            return "InvariantViolation";
+        case PMErrorKind::Unknown:
+            return "Unknown";
     }
     return "unknown";
 }
 
 struct PMError {
-    PMErrorKind   kind{PMErrorKind::Ok};
-    int           http_status{0};        // 0 = 非 HTTP / 无 status (e.g. NetworkError)
-    std::string   body;                  // 老沈 enforce: 已 redact HMAC sig / apiKey / passphrase
-    std::int64_t  observed_ts_ns{0};     // 本地观测到错误的 ts (CLOCK_REALTIME)
+    PMErrorKind kind{PMErrorKind::Ok};
+    int http_status{0};              // 0 = 非 HTTP / 无 status (e.g. NetworkError)
+    std::string body;                // 老沈 enforce: 已 redact HMAC sig / apiKey / passphrase
+    std::int64_t observed_ts_ns{0};  // 本地观测到错误的 ts (CLOCK_REALTIME)
 };
 
 // ---------- OrderBookSnapshot (F-01 输出, L5 yes 双侧) ----------
@@ -245,21 +274,21 @@ struct PMError {
 // L5 = book depth 5 档 (Polymarket 实测 L5 足够覆盖 99% 决策路径).
 
 struct PriceLevel {
-    std::uint32_t price_bps{0};      // 0..10000 (Polymarket 0.0..1.0 概率 × 10000)
-    std::uint64_t size_usdc_micro{0};// USDC × 1e6
-    std::int64_t  level_ts_ns{0};    // 内层 t (price level last update, R-20 data_source 级)
+    std::uint32_t price_bps{0};        // 0..10000 (Polymarket 0.0..1.0 概率 × 10000)
+    std::uint64_t size_usdc_micro{0};  // USDC × 1e6
+    std::int64_t level_ts_ns{0};       // 内层 t (price level last update, R-20 data_source 级)
 };
 
 inline constexpr std::size_t kBookDepth = 5;
 
 struct OrderBookSnapshot {
-    TimestampQuad                              ts;                  // R-20 4 ts
-    std::string                                condition_id;        // CTF condition (bytes32 hex)
-    std::string                                token_id;            // ERC1155 (uint256 string)
-    std::array<PriceLevel, kBookDepth>         yes_bids{};          // 降序 (best bid first)
-    std::array<PriceLevel, kBookDepth>         yes_asks{};          // 升序 (best ask first)
-    std::uint32_t                              tick_size_bps{10};   // 默认 0.001 = 10 bps (PM tick_size 字段)
-    bool                                       neg_risk{false};     // PM negRisk 标识 (CTF v2)
+    TimestampQuad ts;                               // R-20 4 ts
+    std::string condition_id;                       // CTF condition (bytes32 hex)
+    std::string token_id;                           // ERC1155 (uint256 string)
+    std::array<PriceLevel, kBookDepth> yes_bids{};  // 降序 (best bid first)
+    std::array<PriceLevel, kBookDepth> yes_asks{};  // 升序 (best ask first)
+    std::uint32_t tick_size_bps{10};                // 默认 0.001 = 10 bps (PM tick_size 字段)
+    bool neg_risk{false};                           // PM negRisk 标识 (CTF v2)
 };
 
 // ---------- SignedOrder (F-02 输入) ----------
@@ -269,16 +298,16 @@ struct OrderBookSnapshot {
 // paper mode signature 留空 (mock 不签真签名, 但接口字段 reserve 给 live W5+ patch).
 
 struct SignedOrder {
-    std::string   condition_id;
-    std::string   token_id;
-    std::uint8_t  side{0};                 // 0=BUY (YES), 1=SELL (NO 或 YES 的对侧)
-    std::uint32_t limit_price_bps{0};      // 0..10000
-    std::uint64_t size_usdc_micro{0};      // USDC × 1e6
-    std::int64_t  expiration_unix_s{0};    // 0 = GTC, otherwise epoch seconds
-    std::uint32_t signature_type{1};       // HMAC bug #3: 必 sigType=1 (Magic 1-of-1 Safe)
-    std::string   signature;               // L1 EIP-712 sig (live 填; paper 留空 reserve)
-    std::string   maker_address;           // funder wallet
-    std::string   client_order_id;         // 客户端 dedup key
+    std::string condition_id;
+    std::string token_id;
+    std::uint8_t side{0};               // 0=BUY (YES), 1=SELL (NO 或 YES 的对侧)
+    std::uint32_t limit_price_bps{0};   // 0..10000
+    std::uint64_t size_usdc_micro{0};   // USDC × 1e6
+    std::int64_t expiration_unix_s{0};  // 0 = GTC, otherwise epoch seconds
+    std::uint32_t signature_type{1};    // HMAC bug #3: 必 sigType=1 (Magic 1-of-1 Safe)
+    std::string signature;              // L1 EIP-712 sig (live 填; paper 留空 reserve)
+    std::string maker_address;          // funder wallet
+    std::string client_order_id;        // 客户端 dedup key
 
     // R-20 4 ts (caller 注入, RM Allowed 后透传)
     TimestampQuad ts;
@@ -287,85 +316,85 @@ struct SignedOrder {
 // ---------- OrderAck (F-02 ~ F-04 输出) ----------
 
 struct OrderAck {
-    TimestampQuad        ts;                          // R-20 4 ts (booked_at = data_source_ts)
-    std::string          order_id;                    // PM server 返 UUID (paper mock 走 "paper-XXXX")
-    std::string          client_order_id;             // echo back
-    OrderStatus          status{OrderStatus::Booked};
-    PMError              error;                       // 失败时填; status=Rejected 必带 reject_reason
-    std::string          reject_reason;               // status=Rejected / error.kind!=Ok 时填
-    std::uint64_t        nonce{0};                    // server-issued nonce (paper 走 VirtualNonceProvider)
+    TimestampQuad ts;             // R-20 4 ts (booked_at = data_source_ts)
+    std::string order_id;         // PM server 返 UUID (paper mock 走 "paper-XXXX")
+    std::string client_order_id;  // echo back
+    OrderStatus status{OrderStatus::Booked};
+    PMError error;              // 失败时填; status=Rejected 必带 reject_reason
+    std::string reject_reason;  // status=Rejected / error.kind!=Ok 时填
+    std::uint64_t nonce{0};     // server-issued nonce (paper 走 VirtualNonceProvider)
 
     // R-11: paper 实现硬绑 PaperAudit (绝不进 RiskAudit / Position)
-    infra::wal::WalKind  audit_wal_kind{infra::wal::WalKind::PaperAudit};
+    infra::wal::WalKind audit_wal_kind{infra::wal::WalKind::PaperAudit};
 };
 
 // ---------- MarketInfo (F-05 输出) ----------
 
 struct MarketOutcome {
-    std::string   name;             // "Yes" / "No" 或队伍名
-    std::string   token_id;         // ERC1155 outcome token
-    std::uint32_t last_price_bps{0};// 最近成交
-    double        volume_24h_usdc{0.0};
+    std::string name;                 // "Yes" / "No" 或队伍名
+    std::string token_id;             // ERC1155 outcome token
+    std::uint32_t last_price_bps{0};  // 最近成交
+    double volume_24h_usdc{0.0};
 };
 
 struct MarketInfo {
-    TimestampQuad                ts;                    // R-20 4 ts
-    std::string                  condition_id;
-    std::vector<MarketOutcome>   outcomes;              // 通常 2 个 (Yes/No)
-    std::uint32_t                tick_size_bps{10};     // 0.001 = 10 bps
-    bool                         neg_risk{false};       // CTF v2 标识
-    std::uint16_t                fee_rate_bps{0};       // taker 3% = 300; maker 0
-    bool                         accepting_orders{true};
-    std::int64_t                 game_start_time_unix_s{0};
-    std::vector<std::string>     clob_token_ids;        // listing.markets[i].clob_token_ids
-    double                       liquidity_usdc{0.0};   // listing.markets[i].liquidity
+    TimestampQuad ts;  // R-20 4 ts
+    std::string condition_id;
+    std::vector<MarketOutcome> outcomes;  // 通常 2 个 (Yes/No)
+    std::uint32_t tick_size_bps{10};      // 0.001 = 10 bps
+    bool neg_risk{false};                 // CTF v2 标识
+    std::uint16_t fee_rate_bps{0};        // taker 3% = 300; maker 0
+    bool accepting_orders{true};
+    std::int64_t game_start_time_unix_s{0};
+    std::vector<std::string> clob_token_ids;  // listing.markets[i].clob_token_ids
+    double liquidity_usdc{0.0};               // listing.markets[i].liquidity
 };
 
 // ---------- Position (F-06 输出) ----------
 
 struct Position {
-    std::string   condition_id;
-    std::string   token_id;          // (= asset, data-api 字段别名)
-    std::int64_t  size_micro{0};     // signed; 正 long, 负 short
+    std::string condition_id;
+    std::string token_id;        // (= asset, data-api 字段别名)
+    std::int64_t size_micro{0};  // signed; 正 long, 负 short
     std::uint32_t avg_price_bps{0};
     std::uint32_t cur_price_bps{0};
-    bool          redeemable{false}; // PM 已 settle, 等用户 redeem
-    bool          mergeable{false};  // CTF mergePositions 可合并
+    bool redeemable{false};  // PM 已 settle, 等用户 redeem
+    bool mergeable{false};   // CTF mergePositions 可合并
     TimestampQuad ts;
 };
 
 // ---------- Balance (F-07 输出) ----------
 
 struct AllowanceEntry {
-    std::string   spender;             // 0xC5d563A36AE78145C45a50134d48A1215220f80a 等 PM exchange
+    std::string spender;               // 0xC5d563A36AE78145C45a50134d48A1215220f80a 等 PM exchange
     std::uint64_t allowance_micro{0};  // USDC × 1e6
 };
 
 struct Balance {
-    TimestampQuad                  ts;
-    std::uint64_t                  balance_usdc_micro{0};
-    std::vector<AllowanceEntry>    allowances;  // multi-spender (CTF + exchange v2)
+    TimestampQuad ts;
+    std::uint64_t balance_usdc_micro{0};
+    std::vector<AllowanceEntry> allowances;  // multi-spender (CTF + exchange v2)
 };
 
 // ---------- Trade (F-10 输出) ----------
 
 struct Trade {
     TimestampQuad ts;
-    std::string   trade_id;
-    std::string   order_id;
-    std::string   condition_id;
-    std::string   token_id;
-    std::uint8_t  side{0};
+    std::string trade_id;
+    std::string order_id;
+    std::string condition_id;
+    std::string token_id;
+    std::uint8_t side{0};
     std::uint32_t price_bps{0};
     std::uint64_t size_usdc_micro{0};
     std::uint64_t fee_usdc_micro{0};
-    std::int64_t  match_time_ns{0};   // R-20: event_ts (撮合时刻, payload `match_time`)
+    std::int64_t match_time_ns{0};  // R-20: event_ts (撮合时刻, payload `match_time`)
 };
 
 // ---------- PriceHistoryPoint (F-13 输出) ----------
 
 struct PriceHistoryPoint {
-    std::int64_t  bucket_ts_unix_s{0};
+    std::int64_t bucket_ts_unix_s{0};
     std::uint32_t price_bps{0};
 };
 
@@ -384,19 +413,20 @@ using OrderBookCallback = void (*)(const OrderBookSnapshot& snap, void* user_dat
 template <typename T>
 struct Result {
     std::optional<T> value;
-    PMError          error;
+    PMError error;
 
     [[nodiscard]] bool ok() const noexcept { return error.kind == PMErrorKind::Ok && value.has_value(); }
 };
 
 class IPolymarketClient {
- public:
+public:
     virtual ~IPolymarketClient() = default;
 
     // 标识本实例 mode (paper / live), R-7 防御 caller 误注入
     [[nodiscard]] virtual execution::ExecutionMode Mode() const noexcept = 0;
 
-    // F-01: 取 condition_id 的最新 orderbook snapshot (paper: 从内存 mirror; live: WSS market + REST /books 兜底)
+    // F-01: 取 condition_id 的最新 orderbook snapshot (paper: 从内存 mirror; live: WSS market + REST /books
+    // 兜底)
     [[nodiscard]] virtual Result<OrderBookSnapshot> GetOrderbook(std::string_view condition_id) noexcept = 0;
 
     // F-02: 下单 (paper: VirtualMatcher mock; live: POST /clob/orders + HMAC L2)
@@ -412,7 +442,8 @@ class IPolymarketClient {
     [[nodiscard]] virtual Result<MarketInfo> GetMarketInfo(std::string_view condition_id) noexcept = 0;
 
     // F-06: 用户持仓 (paper: PaperLedger; live: GET /data/positions + L1 cache 15s)
-    [[nodiscard]] virtual Result<std::vector<Position>> GetUserPositions(std::string_view funder_addr) noexcept = 0;
+    [[nodiscard]] virtual Result<std::vector<Position>> GetUserPositions(
+        std::string_view funder_addr) noexcept = 0;
 
     // F-07: USDC + allowance (paper: infinite; live: GET /balance-allowance + HMAC, sigType=1)
     [[nodiscard]] virtual Result<Balance> GetBalance() noexcept = 0;
@@ -434,16 +465,12 @@ class IPolymarketClient {
 
     // F-13: K 线 (paper / live both real, 公开 endpoint)
     [[nodiscard]] virtual Result<std::vector<PriceHistoryPoint>> GetPricesHistory(
-        std::string_view token_id,
-        std::int64_t     start_unix_s,
-        std::int64_t     end_unix_s) noexcept = 0;
+        std::string_view token_id, std::int64_t start_unix_s, std::int64_t end_unix_s) noexcept = 0;
 
     // F-14: 订阅 sports WSS (both real; paper read-only, paper 不影响 book)
     //   传 callback + user_data 走 C-style 防 std::function 堆分配 (R-12 热路径).
     [[nodiscard]] virtual Result<std::uint32_t> SubscribeSportsWss(
-        const std::vector<std::string>& condition_ids,
-        OrderBookCallback                cb,
-        void*                            user_data) noexcept = 0;
+        const std::vector<std::string>& condition_ids, OrderBookCallback cb, void* user_data) noexcept = 0;
 };
 
 }  // namespace stcpp::polymarket

@@ -11,12 +11,12 @@
 #pragma once
 
 // cpp-httplib header-only (SYSTEM include — 不受公司 -Werror 约束)
-#include <httplib.h>
-
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <thread>
+
+#include <httplib.h>
 
 namespace stcpp::debug_api {
 
@@ -41,10 +41,10 @@ public:
     explicit HttpServer(uint16_t port);
 
     // 禁止拷贝/移动 (httplib::Server 不可拷贝; thread 不可拷贝)
-    HttpServer(const HttpServer&)            = delete;
+    HttpServer(const HttpServer&) = delete;
     HttpServer& operator=(const HttpServer&) = delete;
-    HttpServer(HttpServer&&)                 = delete;
-    HttpServer& operator=(HttpServer&&)      = delete;
+    HttpServer(HttpServer&&) = delete;
+    HttpServer& operator=(HttpServer&&) = delete;
 
     ~HttpServer();
 
@@ -68,13 +68,13 @@ private:
     // 注册所有 endpoint handler 到 server_
     void register_handlers();
 
-    httplib::Server   server_;
-    std::thread       server_thread_;
+    httplib::Server server_;
+    std::thread server_thread_;
     std::atomic<bool> running_{false};
-    uint16_t          port_;
+    uint16_t port_;
 
     // 构造时记录, 不变; 用于 uptime_sec (steady_clock 不受系统时钟调整影响)
     std::chrono::steady_clock::time_point start_time_;
 };
 
-} // namespace stcpp::debug_api
+}  // namespace stcpp::debug_api

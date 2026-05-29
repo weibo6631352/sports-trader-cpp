@@ -19,25 +19,19 @@ namespace stcpp::debug_api {
 void register_healthz(httplib::Server& svr, const HttpServer& hs);
 void register_version(httplib::Server& svr);
 void register_status(httplib::Server& svr, const HttpServer& hs);
-} // namespace stcpp::debug_api
+}  // namespace stcpp::debug_api
 
 namespace stcpp::debug_api {
 
-HttpServer::HttpServer(uint16_t port)
-    : port_(port)
-    , start_time_(std::chrono::steady_clock::now())
-{
-}
+HttpServer::HttpServer(uint16_t port) : port_(port), start_time_(std::chrono::steady_clock::now()) {}
 
-HttpServer::~HttpServer()
-{
+HttpServer::~HttpServer() {
     stop();
 }
 
-void HttpServer::start()
-{
+void HttpServer::start() {
     if (running_.load(std::memory_order_acquire)) {
-        return; // 幂等
+        return;  // 幂等
     }
 
     register_handlers();
@@ -53,7 +47,7 @@ void HttpServer::start()
     // Spin-wait: 等待 server 实际进入 listening 状态 (最多 200ms)
     // httplib::Server::is_running() 在 listen() 开始后变 true
     constexpr int k_max_wait_ms = 200;
-    constexpr int k_poll_us     = 1000; // 1ms
+    constexpr int k_poll_us = 1000;  // 1ms
     int waited_ms = 0;
     while (!server_.is_running() && waited_ms < k_max_wait_ms) {
         std::this_thread::sleep_for(std::chrono::microseconds(k_poll_us));
@@ -62,10 +56,9 @@ void HttpServer::start()
     // 即使超时也不 throw — server 可能在极低负载的 CI 环境稍慢, 继续运行
 }
 
-void HttpServer::stop()
-{
+void HttpServer::stop() {
     if (!server_thread_.joinable()) {
-        return; // 幂等
+        return;  // 幂等
     }
     server_.stop();
     if (server_thread_.joinable()) {
@@ -74,11 +67,10 @@ void HttpServer::stop()
     running_.store(false, std::memory_order_release);
 }
 
-void HttpServer::register_handlers()
-{
+void HttpServer::register_handlers() {
     register_healthz(server_, *this);
     register_version(server_);
     register_status(server_, *this);
 }
 
-} // namespace stcpp::debug_api
+}  // namespace stcpp::debug_api

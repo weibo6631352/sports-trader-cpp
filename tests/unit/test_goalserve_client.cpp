@@ -13,10 +13,10 @@
 //   R-20: 任何 FourTs::IsMonotonic() = false 必须测出
 //   GM 红线: 严禁参考老项目 (CI grep 老仓库名 拦, 见 .github/workflows/pr.yml)
 
-#include <gtest/gtest.h>
-
 #include <chrono>
 #include <thread>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/data/goalserve_client.hpp"
 #include "stcpp/data/goalserve_record.hpp"
@@ -34,16 +34,14 @@ GoalserveClient::Config MakeCfg() {
 }
 
 constexpr std::array<GoalserveHost, kNumHosts> kAllHosts{
-    GoalserveHost::Www,       GoalserveHost::Inplay,
-    GoalserveHost::OddsFeed,  GoalserveHost::LiveScore,
-    GoalserveHost::InplayMapping,
+    GoalserveHost::Www,       GoalserveHost::Inplay,        GoalserveHost::OddsFeed,
+    GoalserveHost::LiveScore, GoalserveHost::InplayMapping,
 };
 
 constexpr std::array<GoalserveSport, kNumSports> kAllSports{
-    GoalserveSport::Soccer,           GoalserveSport::Basketball,
-    GoalserveSport::Tennis,           GoalserveSport::Volleyball,
-    GoalserveSport::AmericanFootball, GoalserveSport::Esports,
-    GoalserveSport::Hockey,           GoalserveSport::Baseball,
+    GoalserveSport::Soccer,     GoalserveSport::Basketball,       GoalserveSport::Tennis,
+    GoalserveSport::Volleyball, GoalserveSport::AmericanFootball, GoalserveSport::Esports,
+    GoalserveSport::Hockey,     GoalserveSport::Baseball,
 };
 
 }  // namespace
@@ -52,20 +50,14 @@ constexpr std::array<GoalserveSport, kNumSports> kAllSports{
 // T1.0  Host base 5 host 闭合 — 顺序与 docs/GOALSERVER/feeds_urls.txt 一致
 // ---------------------------------------------------------------------------
 TEST(GoalserveHost, FiveHostBaseClosed) {
-    EXPECT_EQ(HostBaseStatic(GoalserveHost::Www, true),
-              "https://www.goalserve.com");
+    EXPECT_EQ(HostBaseStatic(GoalserveHost::Www, true), "https://www.goalserve.com");
     // Inplay 仅 http (实证 TLS cert 域名错配)
-    EXPECT_EQ(HostBaseStatic(GoalserveHost::Inplay, true),
-              "http://inplay.goalserve.com");
-    EXPECT_EQ(HostBaseStatic(GoalserveHost::Inplay, false),
-              "http://inplay.goalserve.com");
-    EXPECT_EQ(HostBaseStatic(GoalserveHost::OddsFeed, true),
-              "https://oddsfeed.goalserve.com");
-    EXPECT_EQ(HostBaseStatic(GoalserveHost::LiveScore, true),
-              "https://livescore.goalserve.com");
+    EXPECT_EQ(HostBaseStatic(GoalserveHost::Inplay, true), "http://inplay.goalserve.com");
+    EXPECT_EQ(HostBaseStatic(GoalserveHost::Inplay, false), "http://inplay.goalserve.com");
+    EXPECT_EQ(HostBaseStatic(GoalserveHost::OddsFeed, true), "https://oddsfeed.goalserve.com");
+    EXPECT_EQ(HostBaseStatic(GoalserveHost::LiveScore, true), "https://livescore.goalserve.com");
     // InplayMapping 物理挂 www 子树
-    EXPECT_EQ(HostBaseStatic(GoalserveHost::InplayMapping, true),
-              "https://www.goalserve.com");
+    EXPECT_EQ(HostBaseStatic(GoalserveHost::InplayMapping, true), "https://www.goalserve.com");
 }
 
 // ---------------------------------------------------------------------------
@@ -74,14 +66,14 @@ TEST(GoalserveHost, FiveHostBaseClosed) {
 TEST(GoalserveUrl, InplayOdds8SportSlug) {
     GoalserveClient c(MakeCfg());
     const std::array<std::pair<GoalserveSport, std::string_view>, 8> expect{{
-        {GoalserveSport::Soccer,           "soccer"},
-        {GoalserveSport::Basketball,       "basket"},
-        {GoalserveSport::Tennis,           "tennis"},
-        {GoalserveSport::Volleyball,       "volleyball"},
+        {GoalserveSport::Soccer, "soccer"},
+        {GoalserveSport::Basketball, "basket"},
+        {GoalserveSport::Tennis, "tennis"},
+        {GoalserveSport::Volleyball, "volleyball"},
         {GoalserveSport::AmericanFootball, "amfootball"},
-        {GoalserveSport::Esports,          "esports"},
-        {GoalserveSport::Hockey,           "hockey"},
-        {GoalserveSport::Baseball,         "baseball"},
+        {GoalserveSport::Esports, "esports"},
+        {GoalserveSport::Hockey, "hockey"},
+        {GoalserveSport::Baseball, "baseball"},
     }};
     for (const auto& [sport, slug] : expect) {
         UrlSpec spec{};
@@ -90,8 +82,7 @@ TEST(GoalserveUrl, InplayOdds8SportSlug) {
         spec.sport = sport;
         spec.json = false;
         const std::string url = c.BuildUrl(spec);
-        const std::string want = "http://inplay.goalserve.com/inplay-"
-                               + std::string(slug) + ".gz";
+        const std::string want = "http://inplay.goalserve.com/inplay-" + std::string(slug) + ".gz";
         EXPECT_EQ(url, want) << "sport slug 错: " << slug;
     }
 }
@@ -106,17 +97,15 @@ TEST(GoalserveUrl, FortyCombosHostXSport) {
     for (auto h : kAllHosts) {
         for (auto s : kAllSports) {
             UrlSpec spec{};
-            spec.host     = h;
+            spec.host = h;
             spec.endpoint = (h == GoalserveHost::Inplay)
-                          ? GoalserveEndpoint::InplayOdds
-                          : (h == GoalserveHost::InplayMapping
-                             ? GoalserveEndpoint::InplayMapping
-                             : GoalserveEndpoint::PregameLiveScore);
+                                ? GoalserveEndpoint::InplayOdds
+                                : (h == GoalserveHost::InplayMapping ? GoalserveEndpoint::InplayMapping
+                                                                     : GoalserveEndpoint::PregameLiveScore);
             spec.sport = s;
-            spec.json  = false;
+            spec.json = false;
             const std::string url = c.BuildUrl(spec);
-            EXPECT_FALSE(url.empty()) << "host=" << static_cast<int>(h)
-                                      << " sport=" << static_cast<int>(s);
+            EXPECT_FALSE(url.empty()) << "host=" << static_cast<int>(h) << " sport=" << static_cast<int>(s);
             EXPECT_NE(url.find(HostBaseStatic(h, true)), std::string::npos);
             ++combos;
         }
@@ -155,8 +144,7 @@ TEST(GoalserveUrl, InplayResultsPath) {
     spec.match_id = "59077136";
     spec.json = false;
     const std::string url = c.BuildUrl(spec);
-    EXPECT_EQ(url,
-              "http://inplay.goalserve.com/results/202604/59077136.json");
+    EXPECT_EQ(url, "http://inplay.goalserve.com/results/202604/59077136.json");
 }
 
 // ---------------------------------------------------------------------------
@@ -171,8 +159,7 @@ TEST(GoalserveUrl, InplayDictPathUsesPregameSlug) {
     spec.sport = GoalserveSport::Soccer;
     spec.json = false;
     const std::string url = c.BuildUrl(spec);
-    EXPECT_NE(url.find("/dictionaries/odds-markets/soccernew"),
-              std::string::npos);
+    EXPECT_NE(url.find("/dictionaries/odds-markets/soccernew"), std::string::npos);
 }
 
 // ---------------------------------------------------------------------------
@@ -195,17 +182,17 @@ TEST(GoalserveUrl, TsDeltaParamAppended) {
 // ---------------------------------------------------------------------------
 TEST(GoalserveTimeStatus, ElevenEnumClosed) {
     EXPECT_EQ(kAllTimeStatus.size(), 11U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::NotStarted),  0U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::InPlay),      1U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::ToBeFixed),   2U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Ended),       3U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Postponed),   4U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Cancelled),   5U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Walkover),    6U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::NotStarted), 0U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::InPlay), 1U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::ToBeFixed), 2U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Ended), 3U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Postponed), 4U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Cancelled), 5U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Walkover), 6U);
     EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Interrupted), 7U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Abandoned),   8U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Retired),     9U);
-    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Removed),     99U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Abandoned), 8U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Retired), 9U);
+    EXPECT_EQ(static_cast<std::uint8_t>(TimeStatus::Removed), 99U);
 }
 
 TEST(GoalserveTimeStatus, TerminalSetClosed) {
@@ -234,56 +221,56 @@ TEST(GoalserveTimeStatus, NamesNonEmpty) {
 // ---------------------------------------------------------------------------
 TEST(GoalserveFourTs, MonotonicChainOk) {
     FourTs ts;
-    ts.event_ts_ns       = 1'000'000'000'000LL;
+    ts.event_ts_ns = 1'000'000'000'000LL;
     ts.data_source_ts_ns = 1'000'000'000'001LL;
-    ts.ingestion_ts_ns   = 1'000'000'000'002LL;
-    ts.as_of_ts_ns       = 1'000'000'000'003LL;
+    ts.ingestion_ts_ns = 1'000'000'000'002LL;
+    ts.as_of_ts_ns = 1'000'000'000'003LL;
     EXPECT_TRUE(ts.IsMonotonic());
 }
 
 TEST(GoalserveFourTs, EventTsZeroRejected) {
     FourTs ts;
-    ts.event_ts_ns       = 0;  // 违反
+    ts.event_ts_ns = 0;  // 违反
     ts.data_source_ts_ns = 1'000'000'000'001LL;
-    ts.ingestion_ts_ns   = 1'000'000'000'002LL;
-    ts.as_of_ts_ns       = 1'000'000'000'003LL;
+    ts.ingestion_ts_ns = 1'000'000'000'002LL;
+    ts.as_of_ts_ns = 1'000'000'000'003LL;
     EXPECT_FALSE(ts.IsMonotonic());
 }
 
 TEST(GoalserveFourTs, DsBeforeEventRejected) {
     FourTs ts;
-    ts.event_ts_ns       = 1'000'000'000'002LL;
+    ts.event_ts_ns = 1'000'000'000'002LL;
     ts.data_source_ts_ns = 1'000'000'000'001LL;  // 倒流
-    ts.ingestion_ts_ns   = 1'000'000'000'003LL;
-    ts.as_of_ts_ns       = 1'000'000'000'004LL;
+    ts.ingestion_ts_ns = 1'000'000'000'003LL;
+    ts.as_of_ts_ns = 1'000'000'000'004LL;
     EXPECT_FALSE(ts.IsMonotonic());
 }
 
 TEST(GoalserveFourTs, IngestionBeforeDsRejected) {
     FourTs ts;
-    ts.event_ts_ns       = 1'000'000'000'000LL;
+    ts.event_ts_ns = 1'000'000'000'000LL;
     ts.data_source_ts_ns = 1'000'000'000'005LL;
-    ts.ingestion_ts_ns   = 1'000'000'000'002LL;  // 倒流
-    ts.as_of_ts_ns       = 1'000'000'000'006LL;
+    ts.ingestion_ts_ns = 1'000'000'000'002LL;  // 倒流
+    ts.as_of_ts_ns = 1'000'000'000'006LL;
     EXPECT_FALSE(ts.IsMonotonic());
 }
 
 TEST(GoalserveFourTs, AsOfBeforeIngestionRejected) {
     FourTs ts;
-    ts.event_ts_ns       = 1'000'000'000'000LL;
+    ts.event_ts_ns = 1'000'000'000'000LL;
     ts.data_source_ts_ns = 1'000'000'000'001LL;
-    ts.ingestion_ts_ns   = 1'000'000'000'005LL;
-    ts.as_of_ts_ns       = 1'000'000'000'002LL;  // 倒流
+    ts.ingestion_ts_ns = 1'000'000'000'005LL;
+    ts.as_of_ts_ns = 1'000'000'000'002LL;  // 倒流
     EXPECT_FALSE(ts.IsMonotonic());
 }
 
 TEST(GoalserveRecord, GameRecordR20Compliance) {
     GameRecord g;
-    g.ts.event_ts_ns       = 1'700'000'000'000'000'000LL;
+    g.ts.event_ts_ns = 1'700'000'000'000'000'000LL;
     g.ts.data_source_ts_ns = 1'732'000'000'000'000'000LL;  // TsMsToNs(1732000000000)
-    g.ts.ingestion_ts_ns   = g.ts.data_source_ts_ns + 1'000'000LL;
-    g.ts.as_of_ts_ns       = g.ts.ingestion_ts_ns + 1'000'000LL;
-    g.ts.ds_origin         = DataSourceTsOrigin::PayloadScoresTs;
+    g.ts.ingestion_ts_ns = g.ts.data_source_ts_ns + 1'000'000LL;
+    g.ts.as_of_ts_ns = g.ts.ingestion_ts_ns + 1'000'000LL;
+    g.ts.ds_origin = DataSourceTsOrigin::PayloadScoresTs;
     EXPECT_TRUE(g.RespectsR20());
 
     g.ts.ds_origin = DataSourceTsOrigin::IngestionFallback;
@@ -292,11 +279,11 @@ TEST(GoalserveRecord, GameRecordR20Compliance) {
 
 TEST(GoalserveRecord, OddsRecordR20Compliance) {
     OddsRecord o;
-    o.ts.event_ts_ns       = 1'700'000'000'000'000'000LL;
+    o.ts.event_ts_ns = 1'700'000'000'000'000'000LL;
     o.ts.data_source_ts_ns = 1'732'000'000'000'000'000LL;
-    o.ts.ingestion_ts_ns   = o.ts.data_source_ts_ns + 1;
-    o.ts.as_of_ts_ns       = o.ts.ingestion_ts_ns + 1;
-    o.ts.ds_origin         = DataSourceTsOrigin::PayloadScoresTs;
+    o.ts.ingestion_ts_ns = o.ts.data_source_ts_ns + 1;
+    o.ts.as_of_ts_ns = o.ts.ingestion_ts_ns + 1;
+    o.ts.ds_origin = DataSourceTsOrigin::PayloadScoresTs;
     o.bookmaker_id = 16;
     o.market_id = "1x2";
     o.outcome = "home";
@@ -311,9 +298,8 @@ TEST(GoalserveDelta, FullThenIncrementalRoundTrip) {
     GoalserveClient c(MakeCfg());
 
     // 第一次: 全量
-    auto r1 = c.FetchWithTsDelta(GoalserveHost::Www,
-                                 GoalserveEndpoint::PregameOdds,
-                                 GoalserveSport::Soccer, 0);
+    auto r1 =
+        c.FetchWithTsDelta(GoalserveHost::Www, GoalserveEndpoint::PregameOdds, GoalserveSport::Soccer, 0);
     EXPECT_EQ(r1.http_status, 200);
     EXPECT_FALSE(r1.is_delta);
     EXPECT_TRUE(r1.next_ts_ms.has_value());
@@ -321,39 +307,36 @@ TEST(GoalserveDelta, FullThenIncrementalRoundTrip) {
 
     // 4 ts 不等式 (data_source < ingestion < as_of)
     EXPECT_GT(r1.data_source_ts_ns, 0);
-    EXPECT_GT(r1.ingestion_ts_ns,   0);
-    EXPECT_GT(r1.as_of_ts_ns,       0);
+    EXPECT_GT(r1.ingestion_ts_ns, 0);
+    EXPECT_GT(r1.as_of_ts_ns, 0);
     EXPECT_LE(r1.data_source_ts_ns, r1.as_of_ts_ns);
 
     // 第二次: 增量 (压缩后体积 < 全量)
-    auto r2 = c.FetchWithTsDelta(GoalserveHost::Www,
-                                 GoalserveEndpoint::PregameOdds,
-                                 GoalserveSport::Soccer,
+    auto r2 = c.FetchWithTsDelta(GoalserveHost::Www, GoalserveEndpoint::PregameOdds, GoalserveSport::Soccer,
                                  *r1.next_ts_ms);
     EXPECT_TRUE(r2.is_delta);
     EXPECT_TRUE(r2.next_ts_ms.has_value());
     EXPECT_GT(*r2.next_ts_ms, *r1.next_ts_ms);
-    EXPECT_LT(r2.bytes_uncompressed, r1.bytes_uncompressed)
-        << "增量协议应压缩 (mock 模拟 83x)";
+    EXPECT_LT(r2.bytes_uncompressed, r1.bytes_uncompressed) << "增量协议应压缩 (mock 模拟 83x)";
 }
 
 // ---------------------------------------------------------------------------
 // T5  sport 命名陷阱 — shedule 单 c (Goalserve 拼写错), basket vs bsktbl
 // ---------------------------------------------------------------------------
 TEST(GoalserveNamingTrap, BasketHasTwoSlugs) {
-    EXPECT_EQ(SportInplaySlug(GoalserveSport::Basketball),  "basket");
+    EXPECT_EQ(SportInplaySlug(GoalserveSport::Basketball), "basket");
     EXPECT_EQ(SportPregameSlug(GoalserveSport::Basketball), "bsktbl");
-    EXPECT_EQ(SportOddsCat(GoalserveSport::Basketball),     "basket");
+    EXPECT_EQ(SportOddsCat(GoalserveSport::Basketball), "basket");
 }
 
 TEST(GoalserveNamingTrap, AmFootballPrefixDiffersFromFootball) {
-    EXPECT_EQ(SportInplaySlug(GoalserveSport::AmericanFootball),  "amfootball");
+    EXPECT_EQ(SportInplaySlug(GoalserveSport::AmericanFootball), "amfootball");
     EXPECT_EQ(SportPregameSlug(GoalserveSport::AmericanFootball), "football");
-    EXPECT_EQ(SportOddsCat(GoalserveSport::AmericanFootball),     "football");
+    EXPECT_EQ(SportOddsCat(GoalserveSport::AmericanFootball), "football");
 }
 
 TEST(GoalserveNamingTrap, TennisHasTwoSlugs) {
-    EXPECT_EQ(SportInplaySlug(GoalserveSport::Tennis),  "tennis");
+    EXPECT_EQ(SportInplaySlug(GoalserveSport::Tennis), "tennis");
     EXPECT_EQ(SportPregameSlug(GoalserveSport::Tennis), "tennis_scores");
 }
 
@@ -398,8 +381,7 @@ TEST(GoalserveTime, IngestionMonotonic) {
 TEST(GoalserveTime, TsMsToNsExact) {
     EXPECT_EQ(GoalserveClient::TsMsToNs(0), 0);
     EXPECT_EQ(GoalserveClient::TsMsToNs(1), 1'000'000LL);
-    EXPECT_EQ(GoalserveClient::TsMsToNs(1474825423341LL),
-              1'474'825'423'341'000'000LL);
+    EXPECT_EQ(GoalserveClient::TsMsToNs(1474825423341LL), 1'474'825'423'341'000'000LL);
 }
 
 // ---------------------------------------------------------------------------

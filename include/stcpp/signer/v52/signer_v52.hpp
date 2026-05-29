@@ -65,7 +65,7 @@
 #include <string_view>
 #include <vector>
 
-#include "stcpp/crypto/ed25519.hpp"        // SecureBuffer<N> + Ed25519 (老沈 W7 ack)
+#include "stcpp/crypto/ed25519.hpp"  // SecureBuffer<N> + Ed25519 (老沈 W7 ack)
 #include "stcpp/execution/execution_mode.hpp"
 #include "stcpp/infra/wal/wal_kind.hpp"
 #include "stcpp/polymarket/pm_client.hpp"  // DataSourceTsSource ABI lock
@@ -75,24 +75,31 @@ namespace stcpp::signer::v52 {
 // ---------- SignV52Error ----------
 
 enum class SignV52Error : std::uint8_t {
-    Ok                = 0,
-    PitViolation      = 1,  // R-20 4 ts 顺序违反
-    ModeMismatch      = 2,  // R-7 paper signer 被 live mode 调用
+    Ok = 0,
+    PitViolation = 1,       // R-20 4 ts 顺序违反
+    ModeMismatch = 2,       // R-7 paper signer 被 live mode 调用
     LibsodiumInitFail = 3,  // sodium_init() 返回 -1 (不应发生)
-    InternalError     = 4,
-    InvalidSide       = 5,  // v5.3 新增: side != 0/1 (0=Buy,1=Sell; 拒签)
-    InvalidIntent     = 6,  // v5.3 新增: INVALID_INTENT (缺 token_id / schema v1.3 不兼容)
+    InternalError = 4,
+    InvalidSide = 5,    // v5.3 新增: side != 0/1 (0=Buy,1=Sell; 拒签)
+    InvalidIntent = 6,  // v5.3 新增: INVALID_INTENT (缺 token_id / schema v1.3 不兼容)
 };
 
 [[nodiscard]] constexpr std::string_view ToString(SignV52Error e) noexcept {
     switch (e) {
-        case SignV52Error::Ok:                return "Ok";
-        case SignV52Error::PitViolation:      return "PitViolation";
-        case SignV52Error::ModeMismatch:      return "ModeMismatch";
-        case SignV52Error::LibsodiumInitFail: return "LibsodiumInitFail";
-        case SignV52Error::InternalError:     return "InternalError";
-        case SignV52Error::InvalidSide:       return "InvalidSide";
-        case SignV52Error::InvalidIntent:     return "InvalidIntent";
+        case SignV52Error::Ok:
+            return "Ok";
+        case SignV52Error::PitViolation:
+            return "PitViolation";
+        case SignV52Error::ModeMismatch:
+            return "ModeMismatch";
+        case SignV52Error::LibsodiumInitFail:
+            return "LibsodiumInitFail";
+        case SignV52Error::InternalError:
+            return "InternalError";
+        case SignV52Error::InvalidSide:
+            return "InvalidSide";
+        case SignV52Error::InvalidIntent:
+            return "InvalidIntent";
     }
     return "unknown";
 }
@@ -132,13 +139,13 @@ struct SignV52Request {
     std::uint8_t data_source_ts_source{0};
 
     // --- 订单标识 (与小蒋 VirtualFill 对齐) ---
-    std::string  market_id;     // CTF condition_id (32B hex, ~66 chars with 0x)
+    std::string market_id;  // CTF condition_id (32B hex, ~66 chars with 0x)
 
     // --- v5.3 新增: CLOB 一等公民 token_id (ADR-027 Enforce-1 gap 修复) ---
     // uint256 decimal string (无 0x 前缀), 进 EIP-712 Order.tokenId (uint256 bignum)
     // cite: SSOT §3.5 token_id + handshake §84 tokenId
     // 老韩 v0.5 OrderIntent.token_id 直传, 不做任何 string 变换
-    std::string  token_id;      // e.g. "16772020035481685..."  (up to ~77 chars)
+    std::string token_id;  // e.g. "16772020035481685..."  (up to ~77 chars)
 
     // --- v5.3 新增: side (与老韩 v0.5 Side enum 对齐) ---
     // 0=Buy, 1=Sell; 进 EIP-712 Order.side (uint8); 其他值 → InvalidSide 拒签
@@ -156,22 +163,18 @@ struct SignV52Request {
 
     // --- audit 链路 ---
     std::array<std::uint8_t, 16> audit_id{};  // 16B non-zero (BUG-W5-001 防御)
-    std::uint64_t                intent_id{0};
+    std::uint64_t intent_id{0};
 };
 
 // ABI 断言: data_source_ts_source 值域 0-3 与老李 DataSourceTsSource 一致
-static_assert(
-    static_cast<std::uint8_t>(polymarket::DataSourceTsSource::UpstreamPayload)       == 0U,
-    "v52 ABI lock: DataSourceTsSource::UpstreamPayload must be 0");
-static_assert(
-    static_cast<std::uint8_t>(polymarket::DataSourceTsSource::UpstreamHeader)        == 1U,
-    "v52 ABI lock: DataSourceTsSource::UpstreamHeader must be 1");
-static_assert(
-    static_cast<std::uint8_t>(polymarket::DataSourceTsSource::InferredFromDsTs)      == 2U,
-    "v52 ABI lock: DataSourceTsSource::InferredFromDsTs must be 2");
-static_assert(
-    static_cast<std::uint8_t>(polymarket::DataSourceTsSource::InferredFromIngestion) == 3U,
-    "v52 ABI lock: DataSourceTsSource::InferredFromIngestion must be 3");
+static_assert(static_cast<std::uint8_t>(polymarket::DataSourceTsSource::UpstreamPayload) == 0U,
+              "v52 ABI lock: DataSourceTsSource::UpstreamPayload must be 0");
+static_assert(static_cast<std::uint8_t>(polymarket::DataSourceTsSource::UpstreamHeader) == 1U,
+              "v52 ABI lock: DataSourceTsSource::UpstreamHeader must be 1");
+static_assert(static_cast<std::uint8_t>(polymarket::DataSourceTsSource::InferredFromDsTs) == 2U,
+              "v52 ABI lock: DataSourceTsSource::InferredFromDsTs must be 2");
+static_assert(static_cast<std::uint8_t>(polymarket::DataSourceTsSource::InferredFromIngestion) == 3U,
+              "v52 ABI lock: DataSourceTsSource::InferredFromIngestion must be 3");
 
 // ---------- SignV52Response ----------
 //
@@ -203,7 +206,7 @@ struct SignV52Response {
 
     // v5.3 新增: 拒签原因 (success=false 时填写, 与老沈 v0.5 联动)
     // cite: handshake §84 OrderAck.reject_reason
-    std::string  reject_reason;  // "invalid_side" / "invalid_signature_type" / ""
+    std::string reject_reason;  // "invalid_side" / "invalid_signature_type" / ""
 };
 
 // ---------- SignerV52 ----------
@@ -217,7 +220,7 @@ struct SignV52Response {
 // 私钥: 仅存活于构造到析构; 析构时 SecureBuffer 自动 sodium_memzero 清零.
 
 class SignerV52 {
- public:
+public:
     // 构造: mode 决定 paper/live/backtest 行为 (R-7).
     // paper: 随机生成 Ed25519 keypair (mock, 非真私钥, 不从 .env 读 — R-11).
     // live/backtest: 不生成 keypair (stub).
@@ -227,7 +230,7 @@ class SignerV52 {
     ~SignerV52();
 
     // 禁止拷贝 (私钥是唯一资源, 不可 copy)
-    SignerV52(const SignerV52&)            = delete;
+    SignerV52(const SignerV52&) = delete;
     SignerV52& operator=(const SignerV52&) = delete;
     // 允许 move (私钥所有权转移; SecureBuffer move 自动清零 source)
     SignerV52(SignerV52&&) noexcept;
@@ -243,7 +246,7 @@ class SignerV52 {
     // 返回 32B pubkey vector; live/backtest 返回空.
     [[nodiscard]] std::vector<std::uint8_t> PublicKeyBytes() const noexcept;
 
- private:
+private:
     execution::ExecutionMode mode_;
 
     // Ed25519 keypair (paper mode only):
@@ -252,7 +255,7 @@ class SignerV52 {
     //   pk_: std::array<uint8_t,32> — 公钥, 不需要清零
     crypto::SecureBuffer<crypto::kEd25519SecretKeyBytes> sk_{};
     std::array<std::uint8_t, crypto::kEd25519PublicKeyBytes> pk_{};
-    bool                           keypair_valid_{false};
+    bool keypair_valid_{false};
 };
 
 }  // namespace stcpp::signer::v52

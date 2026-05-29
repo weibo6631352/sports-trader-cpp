@@ -25,8 +25,6 @@
 //   R-11 paper mock key, audit_wal_kind=PaperAudit
 //   私钥不入 log (CLAUDE.md §8 红线)
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <chrono>
 #include <cstdint>
@@ -34,12 +32,14 @@
 #include <string>
 #include <vector>
 
-#include <sodium.h>  // crypto_sign_ed25519_verify_detached, CLOCK_MONOTONIC_RAW
+#include <gtest/gtest.h>
 
 #include "stcpp/crypto/ed25519.hpp"
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/infra/wal/wal_kind.hpp"
 #include "stcpp/signer/v52/signer_v52.hpp"
+
+#include <sodium.h>  // crypto_sign_ed25519_verify_detached, CLOCK_MONOTONIC_RAW
 
 namespace stcpp::signer::v52::test_v53 {
 
@@ -51,28 +51,36 @@ namespace {
 SignV52Request MakeValidV53Request() {
     SignV52Request req;
     const std::int64_t base = infra::wal::pit::NowRealtimeNs() - 1'000'000'000LL;
-    req.event_ts_ns        = base;
-    req.data_source_ts_ns  = base + 1'000'000LL;
-    req.ingestion_ts_ns    = base + 2'000'000LL;
-    req.as_of_ts_ns        = base + 3'000'000LL;
+    req.event_ts_ns = base;
+    req.data_source_ts_ns = base + 1'000'000LL;
+    req.ingestion_ts_ns = base + 2'000'000LL;
+    req.as_of_ts_ns = base + 3'000'000LL;
     req.data_source_ts_source = 0U;  // UpstreamPayload
-    req.market_id          = "0xa9db6005902abcdef1234567890abcdef1234567890abcdef12345678900000";
+    req.market_id = "0xa9db6005902abcdef1234567890abcdef1234567890abcdef12345678900000";
     // token_id: 样本 uint256 decimal (spec §5 T1 golden)
     // cite: SSOT §3.5 token_id + handshake §84 tokenId
-    req.token_id           = "1677202003548168512111076196662317438975560192301735320827449539424843146463";
-    req.side               = 0U;    // Buy
-    req.outcome            = 0U;    // Yes (audit only)
-    req.signature_type     = 1U;    // Magic Safe EOA (HMAC bug #2 修正)
-    req.intent_id          = 1234ULL;
+    req.token_id = "1677202003548168512111076196662317438975560192301735320827449539424843146463";
+    req.side = 0U;            // Buy
+    req.outcome = 0U;         // Yes (audit only)
+    req.signature_type = 1U;  // Magic Safe EOA (HMAC bug #2 修正)
+    req.intent_id = 1234ULL;
     // audit_id 非零 (BUG-W5-001)
-    req.audit_id[0]  = 0xDE; req.audit_id[1]  = 0xAD;
-    req.audit_id[2]  = 0xBE; req.audit_id[3]  = 0xEF;
-    req.audit_id[4]  = 0x01; req.audit_id[5]  = 0x02;
-    req.audit_id[6]  = 0x03; req.audit_id[7]  = 0x04;
-    req.audit_id[8]  = 0x05; req.audit_id[9]  = 0x06;
-    req.audit_id[10] = 0x07; req.audit_id[11] = 0x08;
-    req.audit_id[12] = 0x09; req.audit_id[13] = 0x0A;
-    req.audit_id[14] = 0x0B; req.audit_id[15] = 0x0C;
+    req.audit_id[0] = 0xDE;
+    req.audit_id[1] = 0xAD;
+    req.audit_id[2] = 0xBE;
+    req.audit_id[3] = 0xEF;
+    req.audit_id[4] = 0x01;
+    req.audit_id[5] = 0x02;
+    req.audit_id[6] = 0x03;
+    req.audit_id[7] = 0x04;
+    req.audit_id[8] = 0x05;
+    req.audit_id[9] = 0x06;
+    req.audit_id[10] = 0x07;
+    req.audit_id[11] = 0x08;
+    req.audit_id[12] = 0x09;
+    req.audit_id[13] = 0x0A;
+    req.audit_id[14] = 0x0B;
+    req.audit_id[15] = 0x0C;
     return req;
 }
 
@@ -85,8 +93,8 @@ std::vector<std::uint8_t> BuildProxyMessage(const SignV52Request& req) {
     msg.reserve(8U + req.market_id.size() + req.token_id.size() + 1U + 1U + 16U);
     // event_ts_ns (8B LE)
     for (std::size_t i = 0U; i < 8U; ++i) {
-        msg.push_back(static_cast<std::uint8_t>(
-            (static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
+        msg.push_back(
+            static_cast<std::uint8_t>((static_cast<std::uint64_t>(req.event_ts_ns) >> (i * 8U)) & 0xFFU));
     }
     for (const char c : req.market_id) {
         msg.push_back(static_cast<std::uint8_t>(c));
@@ -116,8 +124,7 @@ TEST(SignerV53, T1_TokenIdAbiBindingEndToEnd) {
     // 基准请求: token_id = spec §5 T1 golden value
     auto req_a = MakeValidV53Request();
     const auto resp_a = signer.Sign(req_a);
-    ASSERT_EQ(resp_a.error, SignV52Error::Ok)
-        << "T1: valid token_id request must succeed";
+    ASSERT_EQ(resp_a.error, SignV52Error::Ok) << "T1: valid token_id request must succeed";
     ASSERT_EQ(resp_a.signature.size(), 64U);
 
     // 验收标准 1: recovered address (paper Ed25519 verify)
@@ -128,8 +135,7 @@ TEST(SignerV53, T1_TokenIdAbiBindingEndToEnd) {
         resp_a.signature.data(), msg_a.data(),
         static_cast<unsigned long long>(msg_a.size()),  // NOLINT(google-runtime-int)
         pk.data());
-    EXPECT_EQ(vr_a, 0)
-        << "T1: verify_detached of token_id message must succeed (recovered address ok)";
+    EXPECT_EQ(vr_a, 0) << "T1: verify_detached of token_id message must succeed (recovered address ok)";
 
     // 验收标准 2: 不同 token_id → 不同签名 (token_id 进消息, byte-deterministic)
     auto req_b = req_a;
@@ -151,8 +157,7 @@ TEST(SignerV53, T1_TokenIdAbiBindingEndToEnd) {
     const auto resp_empty = signer.Sign(req_empty);
     EXPECT_EQ(resp_empty.error, SignV52Error::InvalidIntent)
         << "T1: empty token_id must be rejected as InvalidIntent";
-    EXPECT_EQ(resp_empty.reject_reason, "invalid_token_id")
-        << "T1: reject_reason must be 'invalid_token_id'";
+    EXPECT_EQ(resp_empty.reject_reason, "invalid_token_id") << "T1: reject_reason must be 'invalid_token_id'";
 }
 
 // ============================================================
@@ -171,16 +176,14 @@ TEST(SignerV53, T2_SideEnumRoundTrip) {
         auto req = MakeValidV53Request();
         req.side = 0U;  // Buy
         const auto resp = signer.Sign(req);
-        ASSERT_EQ(resp.error, SignV52Error::Ok)
-            << "T2: side=0 (Buy) must be accepted";
+        ASSERT_EQ(resp.error, SignV52Error::Ok) << "T2: side=0 (Buy) must be accepted";
         ASSERT_EQ(resp.signature.size(), 64U);
         const auto msg = BuildProxyMessage(req);
         const int vr = crypto_sign_ed25519_verify_detached(
             resp.signature.data(), msg.data(),
             static_cast<unsigned long long>(msg.size()),  // NOLINT(google-runtime-int)
             pk.data());
-        EXPECT_EQ(vr, 0)
-            << "T2: side=0 signature must verify ok";
+        EXPECT_EQ(vr, 0) << "T2: side=0 signature must verify ok";
     }
 
     // side=1 (Sell) → accept + verify
@@ -188,16 +191,14 @@ TEST(SignerV53, T2_SideEnumRoundTrip) {
         auto req = MakeValidV53Request();
         req.side = 1U;  // Sell
         const auto resp = signer.Sign(req);
-        ASSERT_EQ(resp.error, SignV52Error::Ok)
-            << "T2: side=1 (Sell) must be accepted";
+        ASSERT_EQ(resp.error, SignV52Error::Ok) << "T2: side=1 (Sell) must be accepted";
         ASSERT_EQ(resp.signature.size(), 64U);
         const auto msg = BuildProxyMessage(req);
         const int vr = crypto_sign_ed25519_verify_detached(
             resp.signature.data(), msg.data(),
             static_cast<unsigned long long>(msg.size()),  // NOLINT(google-runtime-int)
             pk.data());
-        EXPECT_EQ(vr, 0)
-            << "T2: side=1 signature must verify ok";
+        EXPECT_EQ(vr, 0) << "T2: side=1 signature must verify ok";
     }
 
     // side=0 和 side=1 的签名必须不同 (side 进消息)
@@ -206,9 +207,9 @@ TEST(SignerV53, T2_SideEnumRoundTrip) {
         req_buy.side = 0U;
         auto req_sell = req_buy;
         req_sell.side = 1U;
-        const auto resp_buy  = signer.Sign(req_buy);
+        const auto resp_buy = signer.Sign(req_buy);
         const auto resp_sell = signer.Sign(req_sell);
-        ASSERT_EQ(resp_buy.error,  SignV52Error::Ok);
+        ASSERT_EQ(resp_buy.error, SignV52Error::Ok);
         ASSERT_EQ(resp_sell.error, SignV52Error::Ok);
         EXPECT_NE(resp_buy.signature, resp_sell.signature)
             << "T2: Buy and Sell must produce different signatures (side in message)";
@@ -219,8 +220,7 @@ TEST(SignerV53, T2_SideEnumRoundTrip) {
         auto req = MakeValidV53Request();
         req.side = 2U;
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::InvalidSide)
-            << "T2: side=2 must be rejected as InvalidSide";
+        EXPECT_EQ(resp.error, SignV52Error::InvalidSide) << "T2: side=2 must be rejected as InvalidSide";
         EXPECT_EQ(resp.reject_reason, "invalid_side")
             << "T2: reject_reason must be 'invalid_side' for side=2";
     }
@@ -230,8 +230,7 @@ TEST(SignerV53, T2_SideEnumRoundTrip) {
         auto req = MakeValidV53Request();
         req.side = 255U;
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::InvalidSide)
-            << "T2: side=255 must be rejected as InvalidSide";
+        EXPECT_EQ(resp.error, SignV52Error::InvalidSide) << "T2: side=255 must be rejected as InvalidSide";
     }
 
     // R-20 4 ts 仍透传 (即使 side 无效)
@@ -239,10 +238,10 @@ TEST(SignerV53, T2_SideEnumRoundTrip) {
         auto req = MakeValidV53Request();
         req.side = 2U;
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.event_ts_ns,       req.event_ts_ns);
+        EXPECT_EQ(resp.event_ts_ns, req.event_ts_ns);
         EXPECT_EQ(resp.data_source_ts_ns, req.data_source_ts_ns);
-        EXPECT_EQ(resp.ingestion_ts_ns,   req.ingestion_ts_ns);
-        EXPECT_EQ(resp.as_of_ts_ns,       req.as_of_ts_ns);
+        EXPECT_EQ(resp.ingestion_ts_ns, req.ingestion_ts_ns);
+        EXPECT_EQ(resp.as_of_ts_ns, req.as_of_ts_ns);
     }
 }
 
@@ -263,8 +262,7 @@ TEST(SignerV53, T3_HmacBug4AntiPatternV53) {
         auto req = MakeValidV53Request();
         req.signature_type = 1U;  // 正确值 (Magic Safe EOA)
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::Ok)
-            << "T3b: sigType=1 (Magic Safe EOA) must be accepted in v5.3";
+        EXPECT_EQ(resp.error, SignV52Error::Ok) << "T3b: sigType=1 (Magic Safe EOA) must be accepted in v5.3";
     }
 
     // T3b: sigType=2 → reject (v5.3: 2 是 HMAC bug #2 的错误值)
@@ -284,8 +282,7 @@ TEST(SignerV53, T3_HmacBug4AntiPatternV53) {
         auto req = MakeValidV53Request();
         req.signature_type = 0U;
         const auto resp = signer.Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::InternalError)
-            << "T3b: sigType=0 must be rejected";
+        EXPECT_EQ(resp.error, SignV52Error::InternalError) << "T3b: sigType=0 must be rejected";
     }
 
     // T3c: signature 64B (paper Ed25519 detached; BUG#3 base64 padding = live M5+ 层约束)
@@ -293,14 +290,15 @@ TEST(SignerV53, T3_HmacBug4AntiPatternV53) {
         auto req = MakeValidV53Request();
         const auto resp = signer.Sign(req);
         ASSERT_EQ(resp.error, SignV52Error::Ok);
-        EXPECT_EQ(resp.signature.size(), 64U)
-            << "T3c: paper Ed25519 signature must be exactly 64 bytes";
+        EXPECT_EQ(resp.signature.size(), 64U) << "T3c: paper Ed25519 signature must be exactly 64 bytes";
         bool nonzero = false;
         for (const auto b : resp.signature) {
-            if (b != 0U) { nonzero = true; break; }
+            if (b != 0U) {
+                nonzero = true;
+                break;
+            }
         }
-        EXPECT_TRUE(nonzero)
-            << "T3c: signature must not be all-zero (base64 = live layer, not here)";
+        EXPECT_TRUE(nonzero) << "T3c: signature must not be all-zero (base64 = live layer, not here)";
     }
 
     // T3a: market_id 含 querystring — signer 不崩溃 (BUG#1 + BUG#4 caller 层约定)
@@ -340,7 +338,7 @@ TEST(SignerV53, T4_SecureBufferMemzeroMaintained) {
 
         crypto::SecureBuffer<crypto::kEd25519SecretKeyBytes> sk2{std::move(sk)};
         EXPECT_NE(sk2[0], 0U) << "T4: moved-to buffer retains data";
-        EXPECT_EQ(sk[0], 0U)  << "T4: moved-from buffer must be zeroed (sodium_memzero)";
+        EXPECT_EQ(sk[0], 0U) << "T4: moved-from buffer must be zeroed (sodium_memzero)";
     }
 
     // 2. SignerV52 析构后 sk_ 清零 (通过 heap allocation 验证析构路径)
@@ -348,8 +346,7 @@ TEST(SignerV53, T4_SecureBufferMemzeroMaintained) {
         SignerV52* s = new SignerV52{execution::ExecutionMode::Paper};
         auto req = MakeValidV53Request();
         const auto resp = s->Sign(req);
-        EXPECT_EQ(resp.error, SignV52Error::Ok)
-            << "T4: sign must succeed before destruct";
+        EXPECT_EQ(resp.error, SignV52Error::Ok) << "T4: sign must succeed before destruct";
         delete s;  // NOLINT(cppcoreguidelines-owning-memory)
         // 无 crash = SecureBuffer<64> sodium_memzero 析构路径 ok
     }
@@ -359,10 +356,8 @@ TEST(SignerV53, T4_SecureBufferMemzeroMaintained) {
     {
         auto req = MakeValidV53Request();
         // token_id 可正常 read (公开订单参数)
-        EXPECT_FALSE(req.token_id.empty())
-            << "T4: token_id is public order param, no SecureBuffer needed";
-        EXPECT_LE(req.side, 1U)
-            << "T4: side is public order param, no SecureBuffer needed";
+        EXPECT_FALSE(req.token_id.empty()) << "T4: token_id is public order param, no SecureBuffer needed";
+        EXPECT_LE(req.side, 1U) << "T4: side is public order param, no SecureBuffer needed";
         // outcome 是 audit only, 不进签名, 不需要 SecureBuffer
         EXPECT_EQ(req.outcome, 0U);
     }
@@ -394,10 +389,8 @@ TEST(SignerV53, T5_PaperLiveShareCryptoEd25519) {
 
     auto req = MakeValidV53Request();
     const auto resp = signer.Sign(req);
-    ASSERT_EQ(resp.error, SignV52Error::Ok)
-        << "T5: paper mode sign must succeed";
-    ASSERT_EQ(resp.signature.size(), 64U)
-        << "T5: paper Ed25519 signature must be 64B";
+    ASSERT_EQ(resp.error, SignV52Error::Ok) << "T5: paper mode sign must succeed";
+    ASSERT_EQ(resp.signature.size(), 64U) << "T5: paper Ed25519 signature must be 64B";
 
     // 2. 同一参数签名两次 byte-equal (deterministic Ed25519 + 同 keypair)
     const auto resp2 = signer.Sign(req);
@@ -416,12 +409,11 @@ TEST(SignerV53, T5_PaperLiveShareCryptoEd25519) {
     std::copy(resp.signature.begin(), resp.signature.end(), sig_arr.begin());
 
     const auto msg = BuildProxyMessage(req);
-    const bool ok = crypto::Ed25519::verify(
-        std::span<const std::uint8_t, crypto::kEd25519PublicKeyBytes>{pk_arr},
-        std::span<const std::uint8_t>{msg.data(), msg.size()},
-        std::span<const std::uint8_t, crypto::kEd25519SignatureBytes>{sig_arr});
-    EXPECT_TRUE(ok)
-        << "T5: Ed25519::verify of paper signature via shared stcpp_crypto_ed25519 must succeed";
+    const bool ok =
+        crypto::Ed25519::verify(std::span<const std::uint8_t, crypto::kEd25519PublicKeyBytes>{pk_arr},
+                                std::span<const std::uint8_t>{msg.data(), msg.size()},
+                                std::span<const std::uint8_t, crypto::kEd25519SignatureBytes>{sig_arr});
+    EXPECT_TRUE(ok) << "T5: Ed25519::verify of paper signature via shared stcpp_crypto_ed25519 must succeed";
 
     // 4. crypto 层无 mode 判断 (stcpp_crypto_ed25519 不区分 paper/live)
     //    验证方式: 直接调 Ed25519::generate_keypair (不经 SignerV52)
@@ -431,8 +423,7 @@ TEST(SignerV53, T5_PaperLiveShareCryptoEd25519) {
         const int init_rc = sodium_init();
         ASSERT_GE(init_rc, 0);
         const bool gen_ok = crypto::Ed25519::generate_keypair(pk2, sk2);
-        EXPECT_TRUE(gen_ok)
-            << "T5: Ed25519::generate_keypair via shared lib must succeed (no mode check)";
+        EXPECT_TRUE(gen_ok) << "T5: Ed25519::generate_keypair via shared lib must succeed (no mode check)";
     }
 
     // 5. R-11: paper mode audit_wal_kind = PaperAudit
@@ -516,16 +507,16 @@ TEST(SignerV53, T6_V51CasesMigration) {
     {
         auto req = MakeValidV53Request();
         const std::int64_t base = infra::wal::pit::NowRealtimeNs() - 2'000'000'000LL;
-        req.event_ts_ns        = base + 2'000'000LL;
-        req.data_source_ts_ns  = base + 1'000'000LL;  // ds < event → PitViolation
-        req.ingestion_ts_ns    = base + 3'000'000LL;
-        req.as_of_ts_ns        = base + 4'000'000LL;
+        req.event_ts_ns = base + 2'000'000LL;
+        req.data_source_ts_ns = base + 1'000'000LL;  // ds < event → PitViolation
+        req.ingestion_ts_ns = base + 3'000'000LL;
+        req.as_of_ts_ns = base + 4'000'000LL;
         const auto resp = signer.Sign(req);
         EXPECT_EQ(resp.error, SignV52Error::PitViolation);
-        EXPECT_EQ(resp.event_ts_ns,       req.event_ts_ns);
+        EXPECT_EQ(resp.event_ts_ns, req.event_ts_ns);
         EXPECT_EQ(resp.data_source_ts_ns, req.data_source_ts_ns);
-        EXPECT_EQ(resp.ingestion_ts_ns,   req.ingestion_ts_ns);
-        EXPECT_EQ(resp.as_of_ts_ns,       req.as_of_ts_ns);
+        EXPECT_EQ(resp.ingestion_ts_ns, req.ingestion_ts_ns);
+        EXPECT_EQ(resp.as_of_ts_ns, req.as_of_ts_ns);
     }
 }
 
@@ -558,8 +549,7 @@ TEST(SignerV53, T7_HotPathLatencyP99Under8us) {
         const auto resp = signer.Sign(req);
         clock_gettime(CLOCK_MONOTONIC_RAW, &t1);
 
-        const std::int64_t elapsed_ns =
-            (t1.tv_sec - t0.tv_sec) * 1'000'000'000LL + (t1.tv_nsec - t0.tv_nsec);
+        const std::int64_t elapsed_ns = (t1.tv_sec - t0.tv_sec) * 1'000'000'000LL + (t1.tv_nsec - t0.tv_nsec);
         latencies_ns.push_back(elapsed_ns);
 
         // sign 必须成功 (采样期间不允许失败)
@@ -569,8 +559,8 @@ TEST(SignerV53, T7_HotPathLatencyP99Under8us) {
 
     // 计算 P50 / P99 / P999
     std::sort(latencies_ns.begin(), latencies_ns.end());
-    const auto p50  = latencies_ns[static_cast<std::size_t>(kN * 50  / 100)];
-    const auto p99  = latencies_ns[static_cast<std::size_t>(kN * 99  / 100)];
+    const auto p50 = latencies_ns[static_cast<std::size_t>(kN * 50 / 100)];
+    const auto p99 = latencies_ns[static_cast<std::size_t>(kN * 99 / 100)];
     const auto p999 = latencies_ns[static_cast<std::size_t>(kN * 999 / 1000)];
 
     // 验收标准 (spec §5 T7): SSO 超标用 WARNING 不 FAIL.
@@ -579,8 +569,7 @@ TEST(SignerV53, T7_HotPathLatencyP99Under8us) {
 
     // P50 gate: warn >= 3us, catastrophic >= 30us
     if (p50 >= 3'000LL) {
-        GTEST_LOG_(WARNING)
-            << "T7 P50 overage: " << p50 << " ns (target < 3000 ns)";
+        GTEST_LOG_(WARNING) << "T7 P50 overage: " << p50 << " ns (target < 3000 ns)";
     }
     if (p50 >= 30'000LL) {
         GTEST_FAIL() << "T7 P50 catastrophic: " << p50 << " ns (>= 30us = 10x threshold)";
@@ -589,9 +578,8 @@ TEST(SignerV53, T7_HotPathLatencyP99Under8us) {
     // P99 gate: warn >= 8us, catastrophic >= 80us
     // token_id SSO heap alloc 可能导致 P99 超 8us → WARNING + TODO FixedString<80>
     if (p99 >= 8'000LL) {
-        GTEST_LOG_(WARNING)
-            << "T7 P99 SSO overage: " << p99 << " ns (target < 8000 ns); "
-            << "TODO: consider FixedString<80> for token_id to avoid SSO heap alloc";
+        GTEST_LOG_(WARNING) << "T7 P99 SSO overage: " << p99 << " ns (target < 8000 ns); "
+                            << "TODO: consider FixedString<80> for token_id to avoid SSO heap alloc";
     }
     if (p99 >= 80'000LL) {
         GTEST_FAIL() << "T7 P99 catastrophic: " << p99 << " ns (>= 80us = 10x threshold)";
@@ -599,19 +587,16 @@ TEST(SignerV53, T7_HotPathLatencyP99Under8us) {
 
     // P999 gate: warn >= 15us, catastrophic >= 150us
     if (p999 >= 15'000LL) {
-        GTEST_LOG_(WARNING)
-            << "T7 P999 overage: " << p999 << " ns (target < 15000 ns)";
+        GTEST_LOG_(WARNING) << "T7 P999 overage: " << p999 << " ns (target < 15000 ns)";
     }
     if (p999 >= 150'000LL) {
         GTEST_FAIL() << "T7 P999 catastrophic: " << p999 << " ns (>= 150us = 10x threshold)";
     }
 
     // 实测值汇总 log (方便 @老姜 W10 perf review)
-    GTEST_LOG_(INFO)
-        << "T7 latency sample N=" << kN
-        << " P50=" << p50 << "ns"
-        << " P99=" << p99 << "ns"
-        << " P999=" << p999 << "ns";
+    GTEST_LOG_(INFO) << "T7 latency sample N=" << kN << " P50=" << p50 << "ns"
+                     << " P99=" << p99 << "ns"
+                     << " P999=" << p999 << "ns";
 }
 
 }  // namespace stcpp::signer::v52::test_v53

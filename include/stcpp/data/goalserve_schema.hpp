@@ -9,12 +9,12 @@
 
 #pragma once
 
-#include "stcpp/data/goalserve_client.hpp"
-
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <string_view>
+
+#include "stcpp/data/goalserve_client.hpp"
 
 namespace stcpp::data::goalserve {
 
@@ -25,10 +25,10 @@ inline constexpr std::string_view kSchemaVersion = "goalserve-schema-v0.1-w6";
 // 1. PayloadType — 4 种 payload 来源 (R-20 ts 字段位置分类)
 // ---------------------------------------------------------------------------
 enum class PayloadType : std::uint8_t {
-    PM_WSS       = 0,  // Polymarket sports WSS 帧
-    GS_OddsFeed  = 1,  // Goalserve oddsfeed
+    PM_WSS = 0,        // Polymarket sports WSS 帧
+    GS_OddsFeed = 1,   // Goalserve oddsfeed
     GS_LiveScore = 2,  // Goalserve livescore REST
-    GS_Inplay    = 3,  // Goalserve inplay-{sport}.gz
+    GS_Inplay = 3,     // Goalserve inplay-{sport}.gz
 };
 
 inline constexpr std::size_t kNumPayloadTypes = 4;
@@ -45,13 +45,13 @@ struct TsFieldSpec {
 [[nodiscard]] constexpr TsFieldSpec GetTsFieldSpec(PayloadType pt) noexcept {
     switch (pt) {
         case PayloadType::PM_WSS:
-            return {"ts",               "timestamp",         "ingestion_local_now"};
+            return {"ts", "timestamp", "ingestion_local_now"};
         case PayloadType::GS_OddsFeed:
-            return {"scores@ts",        "match@last_update", "ingestion_local_now"};
+            return {"scores@ts", "match@last_update", "ingestion_local_now"};
         case PayloadType::GS_LiveScore:
-            return {"match@last_update","http_date_header",  "ingestion_local_now"};
+            return {"match@last_update", "http_date_header", "ingestion_local_now"};
         case PayloadType::GS_Inplay:
-            return {"scores@ts",        "match@last_update", "ingestion_local_now"};
+            return {"scores@ts", "match@last_update", "ingestion_local_now"};
     }
     return {"", "", ""};
 }
@@ -67,31 +67,28 @@ struct TsFieldSpec {
 // 4. BuildUrlFromSchema — 按 (host, sport, endpoint) 构造 URL
 //    仅用于测试 / offline tooling; 生产路径用 GoalserveClient::BuildUrl.
 // ---------------------------------------------------------------------------
-[[nodiscard]] inline std::string BuildUrlFromSchema(GoalserveHost     host,
-                                                    GoalserveSport    sport,
-                                                    GoalserveEndpoint endpoint,
-                                                    std::string_view  key = "") {
+[[nodiscard]] inline std::string BuildUrlFromSchema(GoalserveHost host, GoalserveSport sport,
+                                                    GoalserveEndpoint endpoint, std::string_view key = "") {
     GoalserveClient::Config cfg;
-    cfg.key          = std::string(key.empty() ? "KEY_PLACEHOLDER" : key);
+    cfg.key = std::string(key.empty() ? "KEY_PLACEHOLDER" : key);
     cfg.prefer_https = true;
-    cfg.gzip         = false;
+    cfg.gzip = false;
     GoalserveClient client(cfg);
     UrlSpec spec{};
-    spec.host     = host;
-    spec.sport    = sport;
+    spec.host = host;
+    spec.sport = sport;
     spec.endpoint = endpoint;
-    spec.json     = false;
+    spec.json = false;
     return client.BuildUrl(spec);
 }
 
 // ---------------------------------------------------------------------------
 // 5. Compile-time 闭合校验 (ADR-009 v2)
 // ---------------------------------------------------------------------------
-static_assert(kNumSports == 8,         "GoalserveSport must have 8 values");
-static_assert(kNumHosts  == 5,         "GoalserveHost must have 5 values");
+static_assert(kNumSports == 8, "GoalserveSport must have 8 values");
+static_assert(kNumHosts == 5, "GoalserveHost must have 5 values");
 static_assert(kAllTimeStatus.size() == 11U, "kAllTimeStatus must have 11 values (0-9 + 99)");
-static_assert(static_cast<std::uint8_t>(TimeStatus::Removed) == 99U,
-              "TimeStatus::Removed must == 99");
-static_assert(kNumPayloadTypes == 4U,  "PayloadType must have 4 values");
+static_assert(static_cast<std::uint8_t>(TimeStatus::Removed) == 99U, "TimeStatus::Removed must == 99");
+static_assert(kNumPayloadTypes == 4U, "PayloadType must have 4 values");
 
 }  // namespace stcpp::data::goalserve

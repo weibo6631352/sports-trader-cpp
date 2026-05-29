@@ -18,14 +18,14 @@
 //
 // W5 末替换点: MockPmWss → 小冯 PM WSS subscriber callback (不动其他).
 
-#include "tests/integration/test_fixture.hpp"
-
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <string>
 #include <thread>
 #include <vector>
+
+#include "tests/integration/test_fixture.hpp"
 
 namespace stcpp::test::integration {
 namespace {
@@ -40,13 +40,13 @@ constexpr std::int64_t kE2EP99BudgetNs = 50'000'000LL;
 // 构造一笔合法的 PM book update (R-20 4 ts 满足: event ≤ ds ≤ ingestion ≤ as_of)
 PmBookUpdate MakeValidBook(const std::string& mid, std::int64_t now_ns) {
     PmBookUpdate b;
-    b.market_id           = mid;
-    b.is_buy              = true;
-    b.price               = 0.55;
-    b.book_depth_l1_usdc  = 20'000.0;
-    b.event_ts_ns         = now_ns - 5'000'000;     // 5ms 前 event
-    b.data_source_ts_ns   = now_ns - 4'000'000;
-    b.ingestion_ts_ns     = now_ns - 2'000'000;
+    b.market_id = mid;
+    b.is_buy = true;
+    b.price = 0.55;
+    b.book_depth_l1_usdc = 20'000.0;
+    b.event_ts_ns = now_ns - 5'000'000;  // 5ms 前 event
+    b.data_source_ts_ns = now_ns - 4'000'000;
+    b.ingestion_ts_ns = now_ns - 2'000'000;
     return b;
 }
 
@@ -74,9 +74,9 @@ TEST_F(PaperE2EFixture, T1_E2E_10_book_updates_under_50ms_p99) {
             // R-11: SignResponse.audit_wal_kind 硬填 PaperAudit
             EXPECT_EQ(out.sign_resp.audit_wal_kind, WalKind::PaperAudit);
             // R-20: VirtualFill 4 ts 透传
-            EXPECT_EQ(out.fill.event_ts_ns,       b.event_ts_ns);
+            EXPECT_EQ(out.fill.event_ts_ns, b.event_ts_ns);
             EXPECT_EQ(out.fill.data_source_ts_ns, b.data_source_ts_ns);
-            EXPECT_EQ(out.fill.ingestion_ts_ns,   b.ingestion_ts_ns);
+            EXPECT_EQ(out.fill.ingestion_ts_ns, b.ingestion_ts_ns);
             EXPECT_GT(out.fill.as_of_ts_ns, b.ingestion_ts_ns);
             // R-11: VirtualFill.audit_wal_kind = PaperAudit (硬约束)
             EXPECT_EQ(out.fill.audit_wal_kind, WalKind::PaperAudit);
@@ -91,26 +91,22 @@ TEST_F(PaperE2EFixture, T1_E2E_10_book_updates_under_50ms_p99) {
                     << "W6: VirtualFill.market_id 透传 market=" << mid;
             }
             // outcome: fixture MakeValidIntent 设 "YES" (RunOneE2E req.outcome="YES")
-            EXPECT_EQ(out.fill.outcome, std::uint8_t{0})
-                << "W6: VirtualFill.outcome YES=0 透传";
+            EXPECT_EQ(out.fill.outcome, std::uint8_t{0}) << "W6: VirtualFill.outcome YES=0 透传";
         }
         // R-1: 即使 reject, audit_id 也应非全零 (老韩 R-1 invariant).
         // BUG-W5-001 fixed (老沈 W5 Wave 24, 2026-05-28): next_audit_id() shift
         //   exponent 72 UB 已修 (seq 段 6B big-endian). 单测 AuditId.NonZero_O2
         //   1000 次唯一非零覆盖.
         std::array<std::uint8_t, 16> const zero{};
-        EXPECT_NE(out.rm_decision.audit_id, zero)
-            << "R-1: audit_id 非空 invariant (BUG-W5-001 regression)";
+        EXPECT_NE(out.rm_decision.audit_id, zero) << "R-1: audit_id 非空 invariant (BUG-W5-001 regression)";
     }
 
     EXPECT_EQ(latencies.size(), 10u);
     EXPECT_GE(approved, 1u) << "10 笔小单 happy path 至少 1 笔过 RM";
     const auto p99 = p99_ns(latencies);
-    EXPECT_LT(p99, kE2EP99BudgetNs)
-        << "M1-G1 / M1-D01: 端到端 p99 < 50ms (实测 " << p99 << " ns)";
+    EXPECT_LT(p99, kE2EP99BudgetNs) << "M1-G1 / M1-D01: 端到端 p99 < 50ms (实测 " << p99 << " ns)";
     // 公开实测数 (老胡 review 看)
-    std::printf("[T1 e2e p99] %lld ns (budget %lld)\n",
-                static_cast<long long>(p99),
+    std::printf("[T1 e2e p99] %lld ns (budget %lld)\n", static_cast<long long>(p99),
                 static_cast<long long>(kE2EP99BudgetNs));
 }
 
@@ -118,14 +114,14 @@ TEST_F(PaperE2EFixture, T1_E2E_10_book_updates_under_50ms_p99) {
 TEST_F(PaperE2EFixture, T2_R11_four_wal_physical_isolation) {
     // 4 wal writer 各自 path_prefix 必命中 kPathRoots 白名单 (skeleton Open()
     // 已硬校验; 这里复核 + path 不重叠).
-    ASSERT_NE(paper_audit_,  nullptr) << "paper_audit writer Open 失败";
-    ASSERT_NE(risk_audit_,   nullptr) << "risk_audit writer Open 失败";
-    ASSERT_NE(position_,     nullptr) << "position writer Open 失败";
+    ASSERT_NE(paper_audit_, nullptr) << "paper_audit writer Open 失败";
+    ASSERT_NE(risk_audit_, nullptr) << "risk_audit writer Open 失败";
+    ASSERT_NE(position_, nullptr) << "position writer Open 失败";
     ASSERT_NE(shadow_audit_, nullptr) << "shadow_audit writer Open 失败";
 
-    EXPECT_EQ(paper_audit_->Kind(),  WalKind::PaperAudit);
-    EXPECT_EQ(risk_audit_->Kind(),   WalKind::RiskAudit);
-    EXPECT_EQ(position_->Kind(),     WalKind::Position);
+    EXPECT_EQ(paper_audit_->Kind(), WalKind::PaperAudit);
+    EXPECT_EQ(risk_audit_->Kind(), WalKind::RiskAudit);
+    EXPECT_EQ(position_->Kind(), WalKind::Position);
     EXPECT_EQ(shadow_audit_->Kind(), WalKind::ShadowAudit);
 
     // 跑 5 笔 e2e, 计 paper_audit_ HighWatermark, 其余 3 wal 必 0
@@ -135,14 +131,11 @@ TEST_F(PaperE2EFixture, T2_R11_four_wal_physical_isolation) {
         const auto out = RunOneE2E(b, "sig_isol_" + std::to_string(i));
         (void)out;
     }
-    EXPECT_GT(paper_audit_->HighWatermark(), 0u)
-        << "paper_audit.wal 必有 record (5 笔 → audit emit)";
-    EXPECT_EQ(risk_audit_->HighWatermark(),   0u)
-        << "M1-G3 / R-11: paper mode 不写 risk_audit.wal";
-    EXPECT_EQ(position_->HighWatermark(),     0u)
+    EXPECT_GT(paper_audit_->HighWatermark(), 0u) << "paper_audit.wal 必有 record (5 笔 → audit emit)";
+    EXPECT_EQ(risk_audit_->HighWatermark(), 0u) << "M1-G3 / R-11: paper mode 不写 risk_audit.wal";
+    EXPECT_EQ(position_->HighWatermark(), 0u)
         << "M1-G3 / R-11: paper mode 不写 position.wal (paper 不动真账本)";
-    EXPECT_EQ(shadow_audit_->HighWatermark(), 0u)
-        << "M1-G3 / R-11: paper mode 不写 shadow_audit.wal";
+    EXPECT_EQ(shadow_audit_->HighWatermark(), 0u) << "M1-G3 / R-11: paper mode 不写 shadow_audit.wal";
 }
 
 // ---- T3: M1-G5 / M1-D04 R-20 4 ts 全链路 + PIT 拦截 -------------------------
@@ -153,36 +146,33 @@ TEST_F(PaperE2EFixture, T3_R20_4ts_full_chain_and_PIT_reject) {
         const auto now = NowRealtimeNs();
         auto b = MakeValidBook("mkt_ts_ok", now);
         auto out = RunOneE2E(b, "sig_ts_ok");
-        EXPECT_TRUE(out.rm_decision.is_approved() ||
-                    out.rm_decision.is_rejected());  // 不抛
+        EXPECT_TRUE(out.rm_decision.is_approved() || out.rm_decision.is_rejected());  // 不抛
     }
-    EXPECT_GT(paper_audit_->HighWatermark(), t0_paper)
-        << "R-20 + audit emit happy path 应写 paper_audit";
+    EXPECT_GT(paper_audit_->HighWatermark(), t0_paper) << "R-20 + audit emit happy path 应写 paper_audit";
 
     // M1-D04 / M1-G8: 4 ts 违例 → INVALID_INTENT.TS_ORDER_VIOLATED
     // 构造 data_source < event (R-20 §7 不等式违反)
     {
         risk::OrderIntent it{};
         const auto now = NowRealtimeNs();
-        it.event_ts_ns         = now - 1'000'000;
-        it.data_source_ts_ns   = now - 2'000'000;        // < event_ts → 违例
-        it.ingestion_ts_ns     = now - 500'000;
-        it.as_of_ts_ns         = now;
-        it.condition_id        = "0xmkt_ts_violate";  // v0.5: was market_id
-        it.token_id            = "1234567890";          // v0.5: new
-        it.outcome             = risk::Outcome::Yes;    // v0.5: new
-        it.side                = risk::Side::Buy;        // v0.5: was is_buy=true
-        it.strategy_id         = "strat_p001_paper";
-        it.signal_id           = "sig_ts_violate";
+        it.event_ts_ns = now - 1'000'000;
+        it.data_source_ts_ns = now - 2'000'000;  // < event_ts → 违例
+        it.ingestion_ts_ns = now - 500'000;
+        it.as_of_ts_ns = now;
+        it.condition_id = "0xmkt_ts_violate";  // v0.5: was market_id
+        it.token_id = "1234567890";            // v0.5: new
+        it.outcome = risk::Outcome::Yes;       // v0.5: new
+        it.side = risk::Side::Buy;             // v0.5: was is_buy=true
+        it.strategy_id = "strat_p001_paper";
+        it.signal_id = "sig_ts_violate";
         it.feature_snapshot_id = "fs_ts_violate";
-        it.price               = 0.55;
-        it.size_usdc           = 100;
-        it.book_depth_l1_usdc  = 20'000.0;
+        it.price = 0.55;
+        it.size_usdc = 100;
+        it.book_depth_l1_usdc = 20'000.0;
         it.book_snapshot_ts_ns = it.data_source_ts_ns;
-        it.tick_size           = 0.01;
+        it.tick_size = 0.01;
         auto d = rg_->evaluate(it);
-        EXPECT_TRUE(d.is_rejected())
-            << "R-20: data_source < event 必拒";
+        EXPECT_TRUE(d.is_rejected()) << "R-20: data_source < event 必拒";
         EXPECT_EQ(d.reject, risk::RejectCode::INVALID_INTENT);
         EXPECT_EQ(d.sub_reason, risk::InvalidIntentSubReason::TS_ORDER_VIOLATED);
         // R-1 audit_id 非零 (BUG-W5-001 fixed, 老沈 W5 Wave 24) + audit emit 计数兜底.
@@ -204,8 +194,7 @@ TEST_F(PaperE2EFixture, T4_RM_reject_path_at_least_one_code) {
         auto out = RunOneE2E(b, "sig_stale_1");
         EXPECT_TRUE(out.rm_decision.is_rejected());
         EXPECT_EQ(out.rm_decision.reject, risk::RejectCode::STALE_DATA);
-        EXPECT_FALSE(out.went_through_signer)
-            << "reject 不应走 signer (R-1: 必经 RM)";
+        EXPECT_FALSE(out.went_through_signer) << "reject 不应走 signer (R-1: 必经 RM)";
     }
 
     // duplicate path: 同 signal_id 两次
@@ -242,10 +231,10 @@ TEST_F(PaperE2EFixture, T4_RM_reject_path_at_least_one_code) {
     }
 
     // 至少 4 类 reject 命中 (M1-G8 → W5 末派老沈 12 全覆盖)
-    EXPECT_GE(audit_emitter_->reject_count(risk::RejectCode::STALE_DATA),         1u);
-    EXPECT_GE(audit_emitter_->reject_count(risk::RejectCode::DUPLICATE_INTENT),   1u);
+    EXPECT_GE(audit_emitter_->reject_count(risk::RejectCode::STALE_DATA), 1u);
+    EXPECT_GE(audit_emitter_->reject_count(risk::RejectCode::DUPLICATE_INTENT), 1u);
     EXPECT_GE(audit_emitter_->reject_count(risk::RejectCode::EXCEED_PER_ORDER_CAP), 1u);
-    EXPECT_GE(audit_emitter_->reject_count(risk::RejectCode::STATE_HALTED),       1u);
+    EXPECT_GE(audit_emitter_->reject_count(risk::RejectCode::STATE_HALTED), 1u);
 }
 
 // ---- T5: M1-G4 0 R-12 违例 (worker thread 同步 e2e, event loop 不阻塞) -----
@@ -265,15 +254,13 @@ TEST_F(PaperE2EFixture, T5_R12_no_blocking_io_in_worker_thread) {
         auto d = rg_->evaluate(it);
         const auto t1 = std::chrono::steady_clock::now();
         (void)d;
-        per_evaluate_ns.push_back(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+        per_evaluate_ns.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
     }
 
     const auto p99 = p99_ns(per_evaluate_ns);
     // R-12 §17.1.1: hot path 无单步 > 100us 阻塞 IO. evaluate() 单笔 < 100us = OK.
     // (老姜 budget: RM evaluate p99 < 1ms; 这里更严, R-12 实测 < 100us)
-    EXPECT_LT(p99, 100'000)
-        << "R-12: RM evaluate p99 < 100us (实测 " << p99 << " ns) — 0 阻塞 IO";
+    EXPECT_LT(p99, 100'000) << "R-12: RM evaluate p99 < 100us (实测 " << p99 << " ns) — 0 阻塞 IO";
     std::printf("[T5 RM evaluate p99] %lld ns\n", static_cast<long long>(p99));
 }
 

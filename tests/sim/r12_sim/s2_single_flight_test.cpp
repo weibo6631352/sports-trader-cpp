@@ -16,8 +16,7 @@ TEST_F(R12SimFixture, S2_single_flight_dedups_concurrent_callers) {
         // 模拟 1000 strategy 调用 — single-flight 后真实 HTTP 只走 1 次
     }
 
-    EXPECT_EQ(clob_.recv_count(path), 1u)
-        << "R-12 §17.1.1 S-2: 1000 并发 caller 必须 dedup 为 1 REST";
+    EXPECT_EQ(clob_.recv_count(path), 1u) << "R-12 §17.1.1 S-2: 1000 并发 caller 必须 dedup 为 1 REST";
 }
 
 }  // namespace stcpp::test::r12
