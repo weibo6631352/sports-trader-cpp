@@ -12,12 +12,24 @@
 //     1. 遍历 token_map: hub_.Read(token_id) 取真实 book
 //     2. FairValueEstimator::estimate → fair_value / p_yes
 //     3. SizingCalculator::compute → suggested_notional / kelly_fraction
-//     4. QuoteSnapshotHub::Publish (quote 快照)
+//     4. QuoteSnapshotHub::Publish (quote 快照; P0-3: 无真实 fair 时清零 edge/kelly/notional)
+//     4b. [P0-4 gate] advisory_markets_no_intent=true → return (不产生 intent)
+//     4c. [P0-3 gate] has_real_fair=false → return (stub fair, 不产生 intent)
 //     5. 构造 OrderIntent v0.6 (4 ts / condition_id / token_id / side / price / size_pUSD_micro)
 //     6. RiskGateway::evaluate → Decision
 //     7. APPROVED: PaperSigner::Sign → VirtualMatcher::MatchWithBook → PositionLedger::apply_fill
 //     8. apply_fill Ok: LedgerSnapshotHub::Publish (positions/pnl 快照)
-//     9. REJECTED: rm_snap->push_reject
+//     9. REJECTED: 仅计数 (P0-1: RM 内部已 push_reject 一次, paper_loop 不再重复 push)
+//
+// P0 整改 (2026-05-30, 小肖, dogfood-remediation):
+//   P0-1 拒单去重: RM::evaluate() 内 reject_here() lambda 已通过 g_rm_debug_snapshot
+//         全局指针调用 push_reject 一次. paper_loop 删除冗余的 rm_snap_->push_reject.
+//         验证: /api/v1/risk/rejects count 从 256→128 (唯一 128 不再翻倍).
+//   P0-3 fake fair gate: has_real_fair=false (time_status==NotStarted, M1 stub) 时
+//         PublishQuoteSnapshot 清零 edge_bps/kelly/suggested_notional/signal/predict_ok.
+//         TickOne 在 Step 4c 拦截, 不构造 intent. 宁可空不可假.
+//   P0-4 advisory gate: cfg_.advisory_markets_no_intent=true (M1 默认) 时, Step 4b
+//         直接 return, advisory 市场不进 RM, 不产生 intent.
 //
 // 红线守法:
 //   R-11: paper 不污染真账本
@@ -90,6 +102,12 @@ struct PaperLoopConfig {
 
     // 启动时把 RiskGateway 从 SAFE_MODE 切到 RUNNING
     bool set_rm_running{true};
+
+    // P0-4 advisory gate (ML-R2): paper 期所有市场均为 advisory.
+    // true (默认) = advisory 市场不产生 OrderIntent, 不进 RiskGateway::evaluate.
+    // false = 允许产生 intent (仅当 has_real_fair=true 且未来真实 ML 模型接入后使用).
+    // 当前 M1: 恒 true. 修改此值须同步更新 advisory 字段逻辑并重走 paper gate.
+    bool advisory_markets_no_intent{true};
 };
 
 // ---------------------------------------------------------------------------
@@ -122,7 +140,7 @@ public:
     //   position_ledger:  PositionLedger (写: apply_fill; 单 writer = loop_thread_)
     //   ledger_hub:       LedgerSnapshotHub (写: Publish)
     //   quote_hub:        QuoteSnapshotHub (写: Publish)
-    //   rm_snap:          RmDebugSnapshot* (可 nullptr; 非 nullptr 时 REJECTED 写 push_reject)
+    //   rm_snap:          RmDebugSnapshot* (可 nullptr; P0-1: 读用, 写由 RM 内部唯一负责)
     //   fv_model:         IFairValueModel (只读; 调用方保证生命周期 >= PaperLoop)
     //   token_map:        condition_id → (token0_id YES, token1_id NO)
     explicit PaperLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk::RiskGateway& rm,
@@ -157,7 +175,10 @@ private:
     risk::PositionLedger& position_ledger_;
     risk::LedgerSnapshotHub& ledger_hub_;
     sizing::QuoteSnapshotHub& quote_hub_;
-    risk::RmDebugSnapshot* rm_snap_;
+    // P0-1: rm_snap_ 字段保留供外部通过 attach_rm_debug_snapshot() 读取 ring snapshot.
+    // paper_loop 不再调用 push_reject (RM 内部已唯一负责), 但字段生命周期管理仍属 paper_loop.
+    // [[maybe_unused]]: clang -Wunused-private-field 豁免 (字段不在 loop 热路径使用, 但保留接口语义)
+    [[maybe_unused]] risk::RmDebugSnapshot* rm_snap_;
 
     // ---- 自有对象 (FairValueEstimator 是 facade, 持 model 引用) ----
     pricing::FairValueEstimator fv_estimator_;
@@ -201,9 +222,11 @@ private:
                                double mark_price,
                                const polymarket::clob_wss::OrderBookFeatures& feat) noexcept;
 
+    // P0-3: has_real_fair=false → 清零 edge/kelly/notional/signal/predict_ok (宁可空不可假)
     void PublishQuoteSnapshot(const std::string& condition_id, const pricing::FairValueResult& fv_result,
                               const sizing::SizingOutput& sizing_out, double mark_price, double edge_ci_lower,
-                              const polymarket::clob_wss::OrderBookFeatures& feat) noexcept;
+                              const polymarket::clob_wss::OrderBookFeatures& feat,
+                              bool has_real_fair) noexcept;
 };
 
 }  // namespace stcpp::paper
