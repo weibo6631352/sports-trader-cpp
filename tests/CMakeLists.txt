@@ -44,9 +44,13 @@ endforeach()
 # tests/ 子树: ADR-010 §2.2 grandfather list (仅保留 gtest 框架真实触发项)
 # 已删除: -Wno-sign-conversion / -Wno-shadow / -Wno-conversion
 #   测试代码自身已无这些 warning; gtest SYSTEM include 已通过 CMake SYSTEM 关键字处理
+# Wave 81 新增: -Wno-unused-result (fork/pipe 同步测试, GCC 13 strict warn_unused_result)
 add_compile_options(
     -Wno-double-promotion   # ADR-010 grandfather: gtest ASSERT_NEAR / EXPECT_DOUBLE_EQ 浮点宏
     -Wno-old-style-cast     # ADR-010 grandfather: gtest ASSERT_* / EXPECT_* 宏展开
+    # Wave 81: POSIX read/write in fork/pipe tests — GCC 13 warn_unused_result strict
+    # 三方库豁免范畴: OS API test 场景无法合理处理 EINTR/EIO (直接 _exit())
+    -Wno-unused-result
 )
 
 # include path: 让 tests 内 #include "tests/unit/..." 工作
