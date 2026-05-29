@@ -75,9 +75,44 @@ struct FeatureVector {
 };
 
 // ---------------------------------------------------------------------------
+// CalibMethod — confidence / 区间的校准方法标签 (复盘 + 看板 tooltip; spec §3.1).
+//   None      未校准 (Stub / 真模型校准前). 看板据此视觉降级 (spec §4 XD-4).
+//   Isotonic  离线 isotonic regression 校准 (树模型可靠度).
+//   Conformal conformal prediction 区间 (覆盖率保证).
+//   Ensemble  deep ensemble / MC-dropout 方差估计.
+//   注: 本任务只定契约枚举; 实际 isotonic / conformal 算法由小邓后续独立 spec +
+//       walk-forward backtest 验证校准质量 (ADR-037 §gate), 不在本 header 实现.
+// ---------------------------------------------------------------------------
+enum class CalibMethod : std::uint8_t {
+    None = 0,
+    Isotonic = 1,
+    Conformal = 2,
+    Ensemble = 3,
+};
+
+[[nodiscard]] constexpr std::string_view to_string(CalibMethod m) noexcept {
+    switch (m) {
+        case CalibMethod::None:
+            return "none";
+        case CalibMethod::Isotonic:
+            return "isotonic";
+        case CalibMethod::Conformal:
+            return "conformal";
+        case CalibMethod::Ensemble:
+            return "ensemble";
+    }
+    return "unknown";
+}
+
+// ---------------------------------------------------------------------------
 // ModelPrediction — 推理输出. per-outcome fair probability + 元数据.
 //   probs[i] in [0,1]; sum over [0,num_outcomes) 应 ≈ 1 (normalized=true 时保证).
 //   ok=false → 推理失败 (输入维度不匹配 / session 未加载 / NaN 阻断), probs 不可信.
+//
+//   非 WAL 序列化 POD (不受 concept / static_assert layout 约束); 新增字段一律
+//   append 到结构末尾, 不改既有字段顺序与默认值, 调用方源码兼容. 本结构不在
+//   ABI_LOCKED_FILES / ABI_LOCKED_STRUCT_KEYWORDS (tests/ci_grep/abi_lock.py),
+//   append 不触发 abi_lock.
 // ---------------------------------------------------------------------------
 struct ModelPrediction {
     std::array<double, kMaxOutcomes> probs{};  // per-outcome fair prob
@@ -89,6 +124,17 @@ struct ModelPrediction {
     std::string_view model_id = "";       // 模型标识 (stub / onnx 文件 hash)
     std::int64_t as_of_ts_ns = 0;         // 输入 feature 的 PIT 锚
     std::size_t input_feature_count = 0;  // 实际喂入的 feature 数
+    std::string_view spec_version = "";   // feature 契约版本 (= fv.spec_version; ML-R8 provenance)
+
+    // ---- 校准 / 置信度 (看板可解释性 + spec §4 红线 XD-1/XD-4; append-safe) ----
+    // 降级语义: 默认 confidence=0 / calibrated=false / calib_method=None,
+    //   表示"未校准". 前端据此对 fair / confidence 做视觉降级 (灰显 + tooltip),
+    //   不得把 stub 的 0.0 confidence 误当"真模型低置信" (spec §3.1 注).
+    double confidence{0.0};  // 校准后置信度 ∈ [0,1] (来源见 CalibMethod / spec §3.1)
+    bool calibrated{false};  // confidence 是否经过校准 (Stub=false, 真模型校准后 true)
+    double ci_low{0.0};      // probs[0] 预测区间下界 ([0,1] 同尺度; 来源 quantile/conformal)
+    double ci_high{0.0};     // probs[0] 预测区间上界; ci_low <= probs[0] <= ci_high
+    CalibMethod calib_method{CalibMethod::None};  // 校准 / 区间方法标签 (复盘 + tooltip)
 
     [[nodiscard]] double prob(std::size_t i) const noexcept {
         return (i < num_outcomes) ? probs[i] : std::numeric_limits<double>::quiet_NaN();
@@ -180,11 +226,22 @@ public:
         p.model_id = model_id_;
         p.as_of_ts_ns = fv.as_of_ts_ns;
         p.input_feature_count = fv.size();
+        p.spec_version = fv.spec_version;
         p.num_outcomes = outcome_count_;
+
+        // 校准降级语义 (Stub = 占位非真模型): confidence=0 / calibrated=false /
+        //   calib_method=None. 看板据此对 fair / confidence 视觉降级 (spec §4 XD-4),
+        //   不得把 0.0 confidence 当真模型低置信. ci 给零宽 [probs[0], probs[0]] (无区间).
+        //   真模型 W11+ 校准后 (isotonic / conformal) 填真值, 接口不变.
+        p.confidence = 0.0;
+        p.calibrated = false;
+        p.calib_method = CalibMethod::None;
 
         // 维度契约: 不匹配 → ok=false (调用方必须先对齐 spec).
         if (fv.size() != feature_count_) {
             p.ok = false;
+            p.ci_low = 0.0;
+            p.ci_high = 0.0;
             return p;
         }
 
@@ -220,6 +277,10 @@ public:
                 p.normalized = true;
             }
         }
+
+        // Stub 无区间: ci 给零宽 = probs[0] (看板画零宽误差带 = "无区间"). 真模型替换.
+        p.ci_low = p.probs[0];
+        p.ci_high = p.probs[0];
 
         p.ok = true;
         return p;
