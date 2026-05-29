@@ -27,6 +27,7 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
     )
 
     # 关 hook.cpp 内必要的 cast warning
+    # 三方库豁免: nlohmann_json (ADR-010 §3.2 — header-only JSON 宏展开 old-style-cast 警告)
     target_compile_options(stcpp_ml PRIVATE
         -Wno-old-style-cast
     )

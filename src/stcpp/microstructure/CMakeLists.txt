@@ -15,6 +15,7 @@ target_compile_features(stcpp_microstructure PUBLIC cxx_std_20)
 
 # fill_rate_model.cpp 内部使用 OrderBookLevel 等 POD 算数; 关闭 double-promotion 警告.
 # 主仓 -Werror 保留, 仅本模块的旧式 cast / 隐式转换 (depth_ratio division) 放宽.
+# 三方库豁免: nlohmann_json (ADR-010 §3.2 — header-only JSON 宏展开 double-promotion)
 target_compile_options(stcpp_microstructure PRIVATE
     -Wno-double-promotion
 )

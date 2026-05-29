@@ -97,11 +97,14 @@ jobs:
             echo "::error::R-20 §6: 时间字段必须 int64"; fail=1
           fi
           # 4/5/6: signal/IPC/audit struct 必须含 feature_snapshot_id + 4 ts
+          # exclude: microstructure/*.hpp — FillIntent 是 compute() 参数结构 (非 Signal/Intent 语义, W77)
           for pat in 'struct\s+\w*(Signal|Intent)\b:feature_snapshot_id' \
                      'struct\s+\w*(Intent|RmRequest|RiskRequest)\b:event_ts data_source_ts ingestion_ts as_of_ts' \
                      'struct\s+\w*(AuditRecord|WalEntry|AuditEntry)\b:event_ts data_source_ts ingestion_ts as_of_ts'; do
             decl="${pat%:*}"; reqs="${pat#*:}"
-            for f in $(git grep -lE "$decl" -- 'include/**/*.hpp' 'src/**/*.hpp' 2>/dev/null || true); do
+            for f in $(git grep -lE "$decl" -- 'include/**/*.hpp' 'src/**/*.hpp' \
+                         ':!include/stcpp/microstructure/*.hpp' \
+                         2>/dev/null || true); do
               for req in $reqs; do
                 grep -qE "${req}(_ns)?\b" "$f" || { echo "::error::R-20: $f $decl 缺 $req"; fail=1; }
               done
@@ -308,7 +311,7 @@ jobs:
   # ---------------------------------------------------------------------------
 
   risk-enum-coverage:
-    name: RM 21 reject enum coverage (21/21 必过)
+    name: RM 22 reject enum coverage (22/22 必过, Wave 77 v0.5 扩展)
     runs-on: ubuntu-latest
     timeout-minutes: 1
     steps:
@@ -328,11 +331,26 @@ jobs:
         run: |
           # Wave 75 fix: pin clang-format-19 (Ubuntu 24.04 default=18.1.3, 与 macOS 19+ 行为不一致)
           # .clang-format 声明 "clang-format 19+ 兼容", CI 必须与本地版本对齐
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee /etc/apt/sources.list.d/llvm-19.list
-          sudo apt-get update -q
-          sudo apt-get install -y -q clang-format-19
-          sudo ln -sf /usr/bin/clang-format-19 /usr/local/bin/clang-format
+          # Wave 77 fallback: apt.llvm.org GPG key 偶发 fetch fail → pip install clang-format
+          install_via_apt() {
+            wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+            echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-19 main" | sudo tee /etc/apt/sources.list.d/llvm-19.list
+            sudo apt-get update -q
+            sudo apt-get install -y -q clang-format-19
+            sudo ln -sf /usr/bin/clang-format-19 /usr/local/bin/clang-format
+          }
+          install_via_pip() {
+            echo "apt.llvm.org unavailable, fallback: pip install clang-format (LLVM 19)"
+            pip install --quiet "clang-format==19.*" || pip install --quiet clang-format
+            # pip 安装路径在 ~/.local/bin 或 venv bin, 建软链确保 PATH 可找
+            CF_BIN="$(python3 -m site --user-base)/bin/clang-format"
+            if [ -f "$CF_BIN" ]; then
+              sudo ln -sf "$CF_BIN" /usr/local/bin/clang-format
+            fi
+          }
+          if ! install_via_apt 2>/dev/null; then
+            install_via_pip
+          fi
       - name: clang-format check
         run: |
           if find src include tests -type f \( -name '*.cpp' -o -name '*.hpp' \) 2>/dev/null | head -1; then

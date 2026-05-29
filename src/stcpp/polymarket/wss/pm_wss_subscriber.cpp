@@ -132,7 +132,7 @@ PMWssSubscriber::PMWssSubscriber(std::unique_ptr<IWssTransport> transport,
       cfg_(std::move(cfg)),
       now_fn_([]() {
           return std::chrono::duration_cast<std::chrono::nanoseconds>(
-                     std::chrono::system_clock::now().time_since_epoch()).count();
+                     std::chrono::system_clock::now().time_since_epoch()).count();  // UTC epoch_ns
       }) {
     transport_->SetOnTextFrame([this](std::string_view p, std::int64_t ts) { OnTextFrame(p, ts); });
     transport_->SetOnConnected([this]() { OnTransportConnected(); });

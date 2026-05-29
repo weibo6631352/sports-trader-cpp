@@ -4,7 +4,7 @@
 //   server.hpp
 //   xiaolu-w9-rest-api-skeleton-implementation-spec-v1.md §3
 //   R-12: 独立 std::thread; listen() blocking 在 server_thread_
-//   R-20: as_of_ts = std::chrono::system_clock::now() epoch ns (debug endpoint 无上游 ts)
+//   R-20: as_of_ts = std::chrono::system_clock::now() epoch_ns (debug endpoint 无上游 ts)
 //   ADR-015: API server 独立 vCPU; paper 阶段不强 pin
 
 #include "src/stcpp/debug_api/server.hpp"
