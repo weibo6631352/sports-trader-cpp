@@ -14,12 +14,12 @@
 // ADR-037 cite: 2026-05-29-data-model-strategy-vendor-agnostic.md
 // 红线: R-12 (no blocking in ProcessEvent), R-20 (4-ts from WssEvent, not now())
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cmath>
 #include <string>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/microstructure/orderbook.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_adapter.hpp"
@@ -38,7 +38,8 @@ class CapturingFeatureSink : public IOrderBookFeatureSink {
 public:
     explicit CapturingFeatureSink(std::size_t cap = 64) : cap_(cap) {}
     bool OnFeatures(const OrderBookFeatures& f) noexcept override {
-        if (received_.size() >= cap_) return false;
+        if (received_.size() >= cap_)
+            return false;
         received_.push_back(f);
         return true;
     }
@@ -51,66 +52,55 @@ public:
 // ---------------------------------------------------------------------------
 
 // Build a synthetic kBook snapshot WssEvent
-WssEvent MakeBookSnapshot(
-    std::int64_t data_source_ts_ns,
-    std::int64_t ingestion_ts_ns,
-    std::uint32_t mid_bps,
-    std::uint32_t spread_bps,
-    std::uint32_t tick_bps,
-    std::uint32_t last_trade_bps) {
-
+WssEvent MakeBookSnapshot(std::int64_t data_source_ts_ns, std::int64_t ingestion_ts_ns, std::uint32_t mid_bps,
+                          std::uint32_t spread_bps, std::uint32_t tick_bps, std::uint32_t last_trade_bps) {
     WssEvent ev{};
     ev.topic = SubTopic::kBook;
     auto& b = ev.payload.book;
-    b.topic             = SubTopic::kBook;
-    b.is_snapshot       = 1;
-    b.num_changes       = 0;
-    b.mid_bps           = mid_bps;
-    b.spread_bps        = spread_bps;
-    b.tick_size_bps     = tick_bps;
+    b.topic = SubTopic::kBook;
+    b.is_snapshot = 1;
+    b.num_changes = 0;
+    b.mid_bps = mid_bps;
+    b.spread_bps = spread_bps;
+    b.tick_size_bps = tick_bps;
     b.last_trade_price_bps = last_trade_bps;
-    b.ts.event_ts_ns       = data_source_ts_ns;
+    b.ts.event_ts_ns = data_source_ts_ns;
     b.ts.data_source_ts_ns = data_source_ts_ns;
-    b.ts.ingestion_ts_ns   = ingestion_ts_ns;
-    b.ts.as_of_ts_ns       = ingestion_ts_ns;
-    b.ts.ds_origin         = DataSourceTsOrigin::kUpstreamPayload;
+    b.ts.ingestion_ts_ns = ingestion_ts_ns;
+    b.ts.as_of_ts_ns = ingestion_ts_ns;
+    b.ts.ds_origin = DataSourceTsOrigin::kUpstreamPayload;
     return ev;
 }
 
 // Build a synthetic kPriceChange delta WssEvent
-WssEvent MakePriceChangeDelta(
-    std::int64_t data_source_ts_ns,
-    std::int64_t ingestion_ts_ns,
-    std::uint32_t mid_bps,
-    std::uint32_t spread_bps,
-    std::uint32_t tick_bps) {
-
+WssEvent MakePriceChangeDelta(std::int64_t data_source_ts_ns, std::int64_t ingestion_ts_ns,
+                              std::uint32_t mid_bps, std::uint32_t spread_bps, std::uint32_t tick_bps) {
     WssEvent ev{};
     ev.topic = SubTopic::kPriceChange;
     auto& b = ev.payload.book;
-    b.topic             = SubTopic::kPriceChange;
-    b.is_snapshot       = 0;
-    b.num_changes       = 0;
-    b.mid_bps           = mid_bps;
-    b.spread_bps        = spread_bps;
-    b.tick_size_bps     = tick_bps;
-    b.ts.event_ts_ns       = data_source_ts_ns;
+    b.topic = SubTopic::kPriceChange;
+    b.is_snapshot = 0;
+    b.num_changes = 0;
+    b.mid_bps = mid_bps;
+    b.spread_bps = spread_bps;
+    b.tick_size_bps = tick_bps;
+    b.ts.event_ts_ns = data_source_ts_ns;
     b.ts.data_source_ts_ns = data_source_ts_ns;
-    b.ts.ingestion_ts_ns   = ingestion_ts_ns;
-    b.ts.as_of_ts_ns       = ingestion_ts_ns;
-    b.ts.ds_origin         = DataSourceTsOrigin::kUpstreamPayload;
+    b.ts.ingestion_ts_ns = ingestion_ts_ns;
+    b.ts.as_of_ts_ns = ingestion_ts_ns;
+    b.ts.ds_origin = DataSourceTsOrigin::kUpstreamPayload;
     return ev;
 }
 
 const std::string kTokenYes = "79394535786061696782398225752166997033617536527131936000440456503427498614313";
-const std::string kTokenNo  = "40471602955768311660697606657820773573478994022447498274937726738952879800738";
+const std::string kTokenNo = "40471602955768311660697606657820773573478994022447498274937726738952879800738";
 
 // ---------------------------------------------------------------------------
 // Fixture: pre-registers both tokens
 // ---------------------------------------------------------------------------
 struct TestFixture {
     CapturingFeatureSink sink;
-    OrderBookAdapter     adapter;
+    OrderBookAdapter adapter;
 
     TestFixture() : sink(64), adapter(&sink) {
         adapter.RegisterToken(kTokenYes);
@@ -134,12 +124,12 @@ TEST(OrderBookAdapter, T1_SnapshotProducesValidFeatures) {
 
     // mid = 0.55 (5500 bps), spread = 0.02 (200 bps), tick = 0.01 (100 bps)
     // best_bid = 0.54, best_ask = 0.56
-    constexpr std::int64_t kDsTs      = 1'748'390'400'000'000'000LL;  // 2026
-    constexpr std::int64_t kIngestTs  = kDsTs + 50'000'000LL;          // +50ms
+    constexpr std::int64_t kDsTs = 1'748'390'400'000'000'000LL;  // 2026
+    constexpr std::int64_t kIngestTs = kDsTs + 50'000'000LL;     // +50ms
 
     auto ev = MakeBookSnapshot(kDsTs, kIngestTs,
-        /*mid_bps=*/5500, /*spread_bps=*/200,
-        /*tick_bps=*/100, /*last_trade_bps=*/5450);
+                               /*mid_bps=*/5500, /*spread_bps=*/200,
+                               /*tick_bps=*/100, /*last_trade_bps=*/5450);
 
     fx.adapter.ProcessEvent(kTokenYes, ev);
 
@@ -163,7 +153,7 @@ TEST(OrderBookAdapter, T1_SnapshotProducesValidFeatures) {
 
     // imbalance ∈ [-1, 1]
     EXPECT_GE(f.imbalance, -1.0) << "imbalance >= -1";
-    EXPECT_LE(f.imbalance, 1.0)  << "imbalance <= 1";
+    EXPECT_LE(f.imbalance, 1.0) << "imbalance <= 1";
 
     // Depth aggregates non-negative
     EXPECT_GE(f.top3_depth_usdc_bid, 0.0);
@@ -172,9 +162,9 @@ TEST(OrderBookAdapter, T1_SnapshotProducesValidFeatures) {
     EXPECT_GE(f.total_depth_usdc_ask, 0.0);
 
     // R-20 4-ts monotonic chain
-    EXPECT_LE(f.ts.event_ts_ns,       f.ts.data_source_ts_ns) << "event_ts <= data_source_ts";
-    EXPECT_LE(f.ts.data_source_ts_ns, f.ts.ingestion_ts_ns)   << "data_source_ts <= ingestion_ts";
-    EXPECT_LE(f.ts.ingestion_ts_ns,   f.ts.as_of_ts_ns)       << "ingestion_ts <= as_of_ts";
+    EXPECT_LE(f.ts.event_ts_ns, f.ts.data_source_ts_ns) << "event_ts <= data_source_ts";
+    EXPECT_LE(f.ts.data_source_ts_ns, f.ts.ingestion_ts_ns) << "data_source_ts <= ingestion_ts";
+    EXPECT_LE(f.ts.ingestion_ts_ns, f.ts.as_of_ts_ns) << "ingestion_ts <= as_of_ts";
 }
 
 // ============================================================================
@@ -187,34 +177,28 @@ TEST(OrderBookAdapter, T2_DeltaBeforeSnapshotDropped) {
     TestFixture fx;
 
     // Send delta (no prior snapshot)
-    constexpr std::int64_t kDsTs     = 1'748'390'401'000'000'000LL;
+    constexpr std::int64_t kDsTs = 1'748'390'401'000'000'000LL;
     constexpr std::int64_t kIngestTs = kDsTs + 10'000'000LL;
     auto delta = MakePriceChangeDelta(kDsTs, kIngestTs, 5500, 200, 100);
 
     fx.adapter.ProcessEvent(kTokenYes, delta);
 
-    EXPECT_EQ(fx.sink.received_.size(), 0u)
-        << "Delta before snapshot must be dropped (reconnect safety)";
-    EXPECT_GE(fx.adapter.drop_count(), 1u)
-        << "drop_count must increment for delta-before-snapshot";
+    EXPECT_EQ(fx.sink.received_.size(), 0u) << "Delta before snapshot must be dropped (reconnect safety)";
+    EXPECT_GE(fx.adapter.drop_count(), 1u) << "drop_count must increment for delta-before-snapshot";
 
     // Now send snapshot → must produce output
-    auto snap = MakeBookSnapshot(kDsTs + 1'000'000LL, kIngestTs + 1'000'000LL,
-                                  5500, 200, 100, 5450);
+    auto snap = MakeBookSnapshot(kDsTs + 1'000'000LL, kIngestTs + 1'000'000LL, 5500, 200, 100, 5450);
     fx.adapter.ProcessEvent(kTokenYes, snap);
 
-    ASSERT_EQ(fx.sink.received_.size(), 1u)
-        << "Snapshot after delta-before-snapshot must produce 1 feature";
+    ASSERT_EQ(fx.sink.received_.size(), 1u) << "Snapshot after delta-before-snapshot must produce 1 feature";
     EXPECT_TRUE(fx.sink.received_[0].valid);
     EXPECT_TRUE(fx.sink.received_[0].is_snapshot);
 
     // Send another delta after snapshot → must produce output (not dropped)
-    auto delta2 = MakePriceChangeDelta(kDsTs + 2'000'000LL, kIngestTs + 2'000'000LL,
-                                        5600, 150, 100);
+    auto delta2 = MakePriceChangeDelta(kDsTs + 2'000'000LL, kIngestTs + 2'000'000LL, 5600, 150, 100);
     fx.adapter.ProcessEvent(kTokenYes, delta2);
 
-    ASSERT_EQ(fx.sink.received_.size(), 2u)
-        << "Delta after snapshot must produce 1 more feature";
+    ASSERT_EQ(fx.sink.received_.size(), 2u) << "Delta after snapshot must produce 1 more feature";
     EXPECT_TRUE(fx.sink.received_[1].valid);
     EXPECT_FALSE(fx.sink.received_[1].is_snapshot);
 }
@@ -227,7 +211,7 @@ TEST(OrderBookAdapter, T2_DeltaBeforeSnapshotDropped) {
 TEST(OrderBookAdapter, T3_DeltaUpsertShiftsMid) {
     TestFixture fx;
 
-    constexpr std::int64_t kDsTs     = 1'748'390'402'000'000'000LL;
+    constexpr std::int64_t kDsTs = 1'748'390'402'000'000'000LL;
     constexpr std::int64_t kIngestTs = kDsTs + 20'000'000LL;
 
     // Snapshot: mid=0.50, spread=0.04
@@ -237,8 +221,7 @@ TEST(OrderBookAdapter, T3_DeltaUpsertShiftsMid) {
     double mid_after_snap = fx.sink.received_[0].mid;
 
     // Delta: mid shifts up to 0.60, spread=0.02
-    auto delta = MakePriceChangeDelta(kDsTs + 1'000'000LL, kIngestTs + 1'000'000LL,
-                                       6000, 200, 100);
+    auto delta = MakePriceChangeDelta(kDsTs + 1'000'000LL, kIngestTs + 1'000'000LL, 6000, 200, 100);
     fx.adapter.ProcessEvent(kTokenYes, delta);
     ASSERT_EQ(fx.sink.received_.size(), 2u);
     const auto& after_delta = fx.sink.received_[1];
@@ -254,7 +237,7 @@ TEST(OrderBookAdapter, T3_DeltaUpsertShiftsMid) {
 
     // Imbalance and microprice remain in-range
     EXPECT_GE(after_delta.imbalance, -1.0);
-    EXPECT_LE(after_delta.imbalance,  1.0);
+    EXPECT_LE(after_delta.imbalance, 1.0);
     double tick = after_delta.tick_size;
     EXPECT_LE(std::abs(after_delta.microprice - after_delta.mid), 2.0 * tick + 1e-9)
         << "microprice cap still holds after delta";
@@ -269,14 +252,12 @@ TEST(OrderBookAdapter, T3_DeltaUpsertShiftsMid) {
 TEST(OrderBookAdapter, T4_TransportResetClearsAllTokens) {
     TestFixture fx;
 
-    constexpr std::int64_t kDsTs     = 1'748'390'403'000'000'000LL;
+    constexpr std::int64_t kDsTs = 1'748'390'403'000'000'000LL;
     constexpr std::int64_t kIngestTs = kDsTs + 30'000'000LL;
 
     // Establish live state for both tokens
-    fx.adapter.ProcessEvent(kTokenYes,
-        MakeBookSnapshot(kDsTs, kIngestTs, 5000, 200, 100, 4950));
-    fx.adapter.ProcessEvent(kTokenNo,
-        MakeBookSnapshot(kDsTs, kIngestTs, 5000, 200, 100, 5050));
+    fx.adapter.ProcessEvent(kTokenYes, MakeBookSnapshot(kDsTs, kIngestTs, 5000, 200, 100, 4950));
+    fx.adapter.ProcessEvent(kTokenNo, MakeBookSnapshot(kDsTs, kIngestTs, 5000, 200, 100, 5050));
     ASSERT_EQ(fx.sink.received_.size(), 2u) << "Both tokens should produce snapshots";
 
     // Simulate disconnect
@@ -284,18 +265,16 @@ TEST(OrderBookAdapter, T4_TransportResetClearsAllTokens) {
 
     // Deltas after reset must be dropped
     std::size_t before_drop = fx.sink.received_.size();
-    fx.adapter.ProcessEvent(kTokenYes,
-        MakePriceChangeDelta(kDsTs + 1'000'000LL, kIngestTs + 1'000'000LL, 5100, 200, 100));
-    fx.adapter.ProcessEvent(kTokenNo,
-        MakePriceChangeDelta(kDsTs + 1'000'000LL, kIngestTs + 1'000'000LL, 4900, 200, 100));
-    EXPECT_EQ(fx.sink.received_.size(), before_drop)
-        << "Deltas after transport reset must be dropped";
+    fx.adapter.ProcessEvent(
+        kTokenYes, MakePriceChangeDelta(kDsTs + 1'000'000LL, kIngestTs + 1'000'000LL, 5100, 200, 100));
+    fx.adapter.ProcessEvent(
+        kTokenNo, MakePriceChangeDelta(kDsTs + 1'000'000LL, kIngestTs + 1'000'000LL, 4900, 200, 100));
+    EXPECT_EQ(fx.sink.received_.size(), before_drop) << "Deltas after transport reset must be dropped";
 
     // Snapshots after reset must be accepted
-    fx.adapter.ProcessEvent(kTokenYes,
-        MakeBookSnapshot(kDsTs + 2'000'000LL, kIngestTs + 2'000'000LL, 5100, 180, 100, 5080));
-    EXPECT_EQ(fx.sink.received_.size(), before_drop + 1u)
-        << "Snapshot after reset must produce 1 feature";
+    fx.adapter.ProcessEvent(
+        kTokenYes, MakeBookSnapshot(kDsTs + 2'000'000LL, kIngestTs + 2'000'000LL, 5100, 180, 100, 5080));
+    EXPECT_EQ(fx.sink.received_.size(), before_drop + 1u) << "Snapshot after reset must produce 1 feature";
     EXPECT_TRUE(fx.sink.received_.back().valid);
     EXPECT_TRUE(fx.sink.received_.back().is_snapshot);
 }
@@ -310,9 +289,9 @@ TEST(OrderBookAdapter, T5_R20FourTsTransparency) {
     TestFixture fx;
 
     // Use a specific known timestamp (not "now") — verifiable exactly
-    constexpr std::int64_t kKnownDsTs    = 1'748'390'400'123'456'789LL;  // specific ns value
-    constexpr std::int64_t kKnownIngest  = kKnownDsTs + 100'000'000LL;   // +100ms ingestion lag
-    constexpr std::int64_t kKnownAsOf    = kKnownIngest;                  // same as ingestion for now
+    constexpr std::int64_t kKnownDsTs = 1'748'390'400'123'456'789LL;   // specific ns value
+    constexpr std::int64_t kKnownIngest = kKnownDsTs + 100'000'000LL;  // +100ms ingestion lag
+    constexpr std::int64_t kKnownAsOf = kKnownIngest;                  // same as ingestion for now
 
     auto ev = MakeBookSnapshot(kKnownDsTs, kKnownIngest, 5500, 200, 100, 5450);
     // Manually set as_of_ts
@@ -326,15 +305,13 @@ TEST(OrderBookAdapter, T5_R20FourTsTransparency) {
     // R-20: data_source_ts must exactly equal what the upstream sent
     EXPECT_EQ(f.ts.data_source_ts_ns, kKnownDsTs)
         << "R-20: data_source_ts_ns must be upstream payload ts, not local now()";
-    EXPECT_EQ(f.ts.event_ts_ns, kKnownDsTs)
-        << "event_ts_ns must equal data_source_ts_ns for book events";
-    EXPECT_EQ(f.ts.ingestion_ts_ns, kKnownIngest)
-        << "ingestion_ts_ns must be transport recv_ts (not now())";
+    EXPECT_EQ(f.ts.event_ts_ns, kKnownDsTs) << "event_ts_ns must equal data_source_ts_ns for book events";
+    EXPECT_EQ(f.ts.ingestion_ts_ns, kKnownIngest) << "ingestion_ts_ns must be transport recv_ts (not now())";
 
     // R-20 4-ts monotonic chain assertion
-    EXPECT_LE(f.ts.event_ts_ns,       f.ts.data_source_ts_ns) << "R-20: event ≤ ds";
-    EXPECT_LE(f.ts.data_source_ts_ns, f.ts.ingestion_ts_ns)   << "R-20: ds ≤ ingest";
-    EXPECT_LE(f.ts.ingestion_ts_ns,   f.ts.as_of_ts_ns)       << "R-20: ingest ≤ as_of";
+    EXPECT_LE(f.ts.event_ts_ns, f.ts.data_source_ts_ns) << "R-20: event ≤ ds";
+    EXPECT_LE(f.ts.data_source_ts_ns, f.ts.ingestion_ts_ns) << "R-20: ds ≤ ingest";
+    EXPECT_LE(f.ts.ingestion_ts_ns, f.ts.as_of_ts_ns) << "R-20: ingest ≤ as_of";
 
     // Ensure adapter did NOT use local system clock for data_source_ts
     // (We can't call std::chrono::system_clock::now() and compare directly,
@@ -344,6 +321,5 @@ TEST(OrderBookAdapter, T5_R20FourTsTransparency) {
     constexpr std::int64_t kYear2027Ns = 1'800'000'000'000'000'000LL;
     EXPECT_GE(f.ts.data_source_ts_ns, kYear2026Ns)
         << "data_source_ts_ns appears to be a valid 2026 timestamp";
-    EXPECT_LT(f.ts.data_source_ts_ns, kYear2027Ns)
-        << "data_source_ts_ns is not suspiciously far in future";
+    EXPECT_LT(f.ts.data_source_ts_ns, kYear2027Ns) << "data_source_ts_ns is not suspiciously far in future";
 }
