@@ -3,7 +3,7 @@
 - **ID:** ADR-039
 - **Date:** 2026-05-29
 - **Owner:** 老雷 (GM); 老吴 (CI/自动化) + 老高 (质量门) + 老郭 (架构门) + 小米 (doc) 维护
-- **Status:** Accepted
+- **Status:** ✅ **Validated / 强制规范** — 2026-05-29 首批 8 路并发 batch 实跑验证通过 (集成 PR #38, 双评审 approve, 见 §12)。**任何人(IC / dispatcher / GM)开发必须按 §9 办事,偏离 = 流程事故入 INCIDENTS。**
 - **触发 (老板 verbatim 2026-05-29):** "完善一下制度吧, 定规范, 能自动化的尽量自动化, 大家工作流确实很随意。" + "我们不会自动评审吗" + "pr 完成是不是需要关闭?" + "把状态弄对, 以后不要再遗漏了"
 - **背景:** 制度文档不缺 (PR 模板 v1.7 + 一堆 ADR), 缺的是**统一入口 + 自动强制**。本 ADR 是工作流**唯一 SSOT 索引**, 并固化本会话暴露的随意点。
 
@@ -151,6 +151,33 @@ worktree(ADR-029, isolation=worktree)
 - **根因链**: 派单让 agent 做 git 手术 + dispatcher 残留未清 + 未每步校验 HEAD + 作者未提交前 rebase 解冲突 + stale build。
 - **整改**: §9 全环节 + 同步时机入制度; #30 作废, 待小冯在隔离 worktree、从 origin/main、普通流程干净重做。
 
+## 12. 验证记录 (老板"成功后更新文档证明,形成规范")
+
+**首批实跑验证 — 2026-05-29 (集成 PR #38, 已 merge origin/main `77af3d2`):**
+
+- **规模**: 8 路 worktree 并发(小冯 orderbook / 小邓 AI模型 / 小肖 定价 / 小苏 前端 / 小蒋 回测 / 小宋 chaos-replay / 小宫 dogfood / 小颖 验收),覆盖 D/ML/A/前端/C/测试/E 各部门。
+- **§9 流程逐环兑现**:
+  - 开批前同步 main==origin/main ✓
+  - 8 worktree 均从同一 snapshot 起,**全部只本地 commit,零 push/PR/git 手术** ✓(每个 agent 回执确认)
+  - **本地 fan-in**: 7 个 git 自动合并,**1 个真冲突**(小蒋 root+tests CMakeLists vs 小邓/小肖)→ 一人 union 连贯解决 ✓
+  - **merge 成功即清理 worktree**(新增铁律 §9.4-5,见下)✓ 全部清理,无堆积
+  - **pre-push gate 三次拦截并修复**(工作流自证有效): clang-format(整批 56 文件漏跑)×2 轮 + **ADR-010 §2.1 生产 -Wno 红线**(小蒋 backtest 库,去掉后零警告)
+  - **集成 PR #38 → 双评审 approve**(老高质量 8/8 PASS 零红线 / 老郭架构无否决无不可逆)→ merge
+  - 全程 **全量 ctest 绿**: 671 unit + 22 integration + 19 replay + 4 sim
+- **结论**: 同一 snapshot + 本地 fan-in 比"每 worktree 各自 push+PR rebase 竞速"显著更干净(7/8 自动合并)。工作流可推广到后续所有批次。
+
+**§9.5 新增铁律(老板 2026-05-29):merge 成功 → 立即 `git worktree remove + 删分支`**,不堆积、不遗忘(本批已贯彻)。
+
+## 13. 本批 follow-up(评审提出,后续 wave 跟进,非阻塞)
+
+| # | 项 | owner | 截止 |
+|---|---|---|---|
+| F1 | **ADR-040: fair-value 层边界收敛** — 小邓 `ml::FairValueModel`(ONNX 向)vs 小肖 `pricing::IFairValueModel`(可解释向)两抽象需收敛(老郭建议: pricing 门面 + ml 引擎),否则 W11 接 ONNX 返工 | 小梁 牵头, 老郭评审 | W11 接 ONNX 前 |
+| F2 | **CMake 测试自动发现**(`file(GLOB)`/self-register)根除 CMakeLists 单点 append 冲突(§10)| 老吴 + 老高 | 紧跟本批(下一 solo) |
+| F3 | feature_store 契约级 enum(TimeStatus 等)提升 vendor-neutral 命名 | 小田/小冯 | 后续 |
+| F4 | backtest `event_replayer` sport/phase 硬编码 default 去除 | 小蒋 | 后续 |
+| F5 | 金额字段补 `_usdc` 后缀(backtest types)+ 文档措辞修正(pricing/orderbook 头注释)| 小蒋/小肖/小冯 | 后续 |
+
 ---
 
-**最后更新:** 2026-05-29 by 老雷 (GM) — 完善制度+自动化 + 全环节同步时机(§9)+ #30 事故教训
+**最后更新:** 2026-05-29 by 老雷 (GM) — 完善制度+自动化 + 全环节同步时机(§9)+ #30 事故 + **§12 首批验证通过, 升强制规范** + §13 follow-up
