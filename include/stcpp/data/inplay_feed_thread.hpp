@@ -2,7 +2,7 @@
 //
 // Owner: 小段 (goalserve-specialist, #37)
 // Date:  2026-05-29
-// Last-updated: 2026-05-30 (security harden: token-bucket/min_fetch_interval, 小白审计 §2.2)
+// Task:  W5 真实 HTTP inplay feed 接入
 //
 // 功能:
 //   独立采集线程: HTTP GET inplay-<sport>.gz → gzip 解压
@@ -78,11 +78,6 @@ struct InplayFeedConfig {
 
     // 连续失败后 backoff 最大时长 (ms)
     std::uint32_t max_backoff_ms = 30000;
-
-    // token-bucket: 每次 fetch 之间的最小间隔 (ms)
-    // 防止 backoff=0 时暴击 Goalserve (尊重 ToS rate limit, 小白审计 §2.2)
-    // 建议: 套餐速率 / sport 数 (默认 800ms ≈ 1.25 req/s/sport, 远低于 1-2s 刷新周期)
-    std::uint32_t min_fetch_interval_ms = 800;
 };
 
 // ============================================================================

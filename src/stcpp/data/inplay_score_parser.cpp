@@ -2,7 +2,7 @@
 //
 // Owner: 小段 (goalserve-specialist, #37)
 // Date:  2026-05-29
-// Last-updated: 2026-05-30 (security harden: max_depth/escape-guard/log-injection, 小白审计 §1.3-B/C)
+// Last-updated: 2026-05-29 (W5 live feed 实测修正)
 // Task:  小余接入方案 v1 §3 采集段 + W5 真实 HTTP 接线完成
 //
 // 解析策略:
@@ -51,33 +51,6 @@ namespace stcpp::data::inplay {
 namespace {
 
 // ============================================================================
-// §-1 安全常量 + 安全工具 (小白审计 §1.3-B/C, 2026-05-30)
-//
-// kMaxJsonDepth: 花括号深度上限 (ExtractEventsBlock / ParseEventInfo / EnumerateEvents)
-//   防攻击者发 `{{{{×N` 深嵌套触发 CPU 耗尽.
-//   真实 inplay JSON 深度约 3-5 层; 32 是极端安全上限.
-//
-// SanitizeId — 外部 id 字符串清洗:
-//   截断到 64 字节, 仅保留 [A-Za-z0-9_\-] (白名单), 其余替换为 '?'.
-//   用于: 拼入 parse_errors 日志串, 防 log injection (CRLF / 控制字符 / 格式符).
-// ============================================================================
-static constexpr int kMaxJsonDepth = 32;
-
-[[nodiscard]] std::string SanitizeId(const std::string& raw) noexcept {
-    constexpr std::size_t kMaxIdLen = 64;
-    const std::size_t take = std::min(raw.size(), kMaxIdLen);
-    std::string out;
-    out.reserve(take);
-    for (std::size_t i = 0; i < take; ++i) {
-        const char c = raw[i];
-        const bool ok = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') ||
-                        c == '_' || c == '-';
-        out.push_back(ok ? c : '?');
-    }
-    return out;
-}
-
-// ============================================================================
 // §0 极简 JSON 字段提取工具 (针对 Goalserve inplay 固定结构)
 //
 // 真实 Goalserve inplay JSON (2026-05-29 实测):
@@ -102,11 +75,6 @@ static constexpr int kMaxJsonDepth = 32;
 // 从 JSON 文本中找 "key": 后的字符串值 (去引号)
 // 返回 true = 找到. result 填入找到的字符串值.
 // 只查第一次出现 (从 search_start 位置开始).
-//
-// 安全加固 (小白审计 §1.3-C, 2026-05-30):
-//   转义边界 bug 修: 原 `if (json[end]=='\\') ++end;` 在字符串末尾恰好是 `\`
-//   时 ++end 越界一位, 导致吃掉闭合引号 → key/value 错位.
-//   修复: 显式 `if (end + 1 < json.size())` 守护后再跳过转义字符, 否则中止.
 [[nodiscard]] bool ExtractStringValue(std::string_view json, std::string_view key, std::string& result,
                                       std::size_t search_start = 0) noexcept {
     // 构造 "key": 模式
@@ -134,15 +102,8 @@ static constexpr int kMaxJsonDepth = 32;
         ++pos;
         std::size_t end = pos;
         while (end < json.size() && json[end] != '"') {
-            if (json[end] == '\\') {
-                // 转义边界守护: 必须确认后一位存在且不是字符串边界
-                if (end + 1 < json.size()) {
-                    ++end;  // 跳过转义字符 (e.g. \", \\, \n)
-                } else {
-                    // 末尾孤立 \: 截断, 不越界
-                    break;
-                }
-            }
+            if (json[end] == '\\')
+                ++end;  // 跳过转义
             ++end;
         }
         result.assign(json.data() + pos, end - pos);
@@ -216,17 +177,12 @@ static constexpr int kMaxJsonDepth = 32;
     }
 
     // 找 info 块的 } 结束 (简单计数器, 处理嵌套)
-    // 安全加固: max_depth 防深嵌套 CPU 耗尽 (小白审计 §1.3-C)
     int depth = 0;
     std::size_t info_end = brace_pos;
     for (std::size_t i = brace_pos; i < event_block.size(); ++i) {
-        if (event_block[i] == '{') {
+        if (event_block[i] == '{')
             ++depth;
-            if (depth > kMaxJsonDepth) {
-                error_out = "info block depth exceeded max_depth=" + std::to_string(kMaxJsonDepth);
-                return false;
-            }
-        } else if (event_block[i] == '}') {
+        else if (event_block[i] == '}') {
             --depth;
             if (depth == 0) {
                 info_end = i;
@@ -387,12 +343,7 @@ static constexpr int kMaxJsonDepth = 32;
 // §2 从顶层 JSON 提取 events 对象块
 //
 // 找 "events": { ... } 的外层花括号范围.
-//
-// 安全加固 (小白审计 §1.3-C, 2026-05-30):
-//   max_depth 防护: 攻击者发 `{{{{×10万` 深嵌套触发 CPU 耗尽.
-//   上限 kMaxJsonDepth=32, 超限中止返回空串.
 // ============================================================================
-
 [[nodiscard]] std::string_view ExtractEventsBlock(std::string_view json) noexcept {
     const auto key_pos = json.find("\"events\":");
     if (key_pos == std::string_view::npos)
@@ -404,15 +355,9 @@ static constexpr int kMaxJsonDepth = 32;
 
     int depth = 0;
     for (std::size_t i = brace_pos; i < json.size(); ++i) {
-        if (json[i] == '{') {
+        if (json[i] == '{')
             ++depth;
-            if (depth > kMaxJsonDepth) {
-                std::fprintf(stderr,
-                             "[inplay_parser] ExtractEventsBlock: depth exceeded %d (json_sz=%zu), abort\n",
-                             kMaxJsonDepth, json.size());
-                return {};  // 深度超限, 拒绝
-            }
-        } else if (json[i] == '}') {
+        else if (json[i] == '}') {
             --depth;
             if (depth == 0) {
                 return json.substr(brace_pos, i - brace_pos + 1);
@@ -464,30 +409,19 @@ struct EventEntry {
             break;
 
         // 找对应 value 块的结束 }
-        // 安全加固: max_depth 防深嵌套 CPU 耗尽 (小白审计 §1.3-C)
         const std::size_t blk_start = pos;
         int depth = 0;
         std::size_t blk_end = pos;
-        bool depth_exceeded = false;
         for (std::size_t i = pos; i < events_block.size(); ++i) {
-            if (events_block[i] == '{') {
+            if (events_block[i] == '{')
                 ++depth;
-                if (depth > kMaxJsonDepth) {
-                    depth_exceeded = true;
-                    break;
-                }
-            } else if (events_block[i] == '}') {
+            else if (events_block[i] == '}') {
                 --depth;
                 if (depth == 0) {
                     blk_end = i;
                     break;
                 }
             }
-        }
-        if (depth_exceeded) {
-            std::fprintf(stderr, "[inplay_parser] EnumerateEvents: event '%s' depth exceeded %d, skip\n",
-                         event_id.c_str(), kMaxJsonDepth);
-            break;  // 整个 events 块异常, 停止枚举
         }
 
         result.push_back({std::move(event_id), blk_start, blk_end});
@@ -554,8 +488,7 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
         adapter::GameScoreRecord rec;
         std::string err;
         if (!ParseEventInfo(event_block, sport, data_source_ts_ns, ingestion_ts_ns, rec, err)) {
-            // log injection 防护: entry.id 来自外部 feed, 截断+白名单过滤 (小白审计 §1.3-C)
-            result.parse_errors.push_back("event " + SanitizeId(entry.id) + ": " + err);
+            result.parse_errors.push_back("event " + entry.id + ": " + err);
             continue;
         }
 
@@ -567,8 +500,7 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
 
         // R-20 守法自检
         if (!TsChainOk(rec.ts)) {
-            result.parse_errors.push_back("event " + SanitizeId(entry.id) +
-                                          ": R-20 ts chain fail (data_source_ts=0?)");
+            result.parse_errors.push_back("event " + entry.id + ": R-20 ts chain fail (data_source_ts=0?)");
             // 仍加入 scores, 但调用方应 alert
         }
 

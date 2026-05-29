@@ -2,21 +2,13 @@
 //
 // Owner: 小段 (goalserve-specialist, #37)
 // Date:  2026-05-29
-// Last-updated: 2026-05-30 (security harden: gzip-bomb/max-body/cred-masking/token-bucket, 小白审计)
+// Task:  W5 真实 HTTP 接入 — POSIX socket + zlib gzip
 //
 // 实现说明:
 //   HTTP 层: POSIX socket (无第三方库, 匹配跨平台 C++20 标准库方法)
 //   代理支持: HTTP CONNECT 隧道 (读 http_proxy / HTTP_PROXY 环境变量)
 //   gzip 解压: zlib inflate (系统库, macOS + Linux 均有)
 //   线程: 每 sport 独立 std::thread (防单 sport 阻塞)
-//
-// 安全加固 (小白审计 2026-05-30):
-//   gzip 炸弹防护: DecompressGzImpl max_output_bytes=8MB, 超限中止+告警
-//   消息体上限: HTTP body kMaxBodyBytes=16MB (gzip 压缩前), 超限 drop
-//   凭证不入日志: inplay.goalserve.com URL 含 key (明文 http), 日志仅记 host+endpoint 类型,
-//                 完整 URL/路径 严禁 log; proxy addr 掩码为 "(proxy)"
-//   token-bucket: 每 sport 线程内嵌令牌桶 (cfg.poll_interval_ms + min_interval_ms 双重保护)
-//   insecure_fetch 告警: 直连时记 stderr [inplay_feed] WARN insecure_fetch host=...
 //
 // R-20:
 //   data_source_ts_ns = updated_ts (ms) × 1e6 (Goalserve payload)
@@ -240,14 +232,7 @@ void SleepMs(std::uint32_t ms) noexcept {
     }
 }
 
-// ---- zlib gzip 解压 (gzip 炸弹防护) ----
-//
-// 安全加固 (小白审计 §1.3-B, 2026-05-30):
-//   max_output_bytes = 8MB. 实证 Goalserve inplay 最大约 2-3MB, 留 buffer.
-//   超限: inflateEnd + return false + stderr 告警.
-//   防止: 1KB → 1GB 解压炸弹拖垮采集线程.
-static constexpr std::size_t kMaxGzipOutputBytes = 8UL * 1024 * 1024;  // 8MB
-
+// ---- zlib gzip 解压 ----
 [[nodiscard]] bool DecompressGzImpl(const std::string& gz_body, std::string& out_json) noexcept {
     out_json.clear();
     if (gz_body.empty())
@@ -275,14 +260,8 @@ static constexpr std::size_t kMaxGzipOutputBytes = 8UL * 1024 * 1024;  // 8MB
         }
         const std::size_t have = kChunk - zs.avail_out;
         out_json.append(chunk_buf, have);
-        if (out_json.size() > kMaxGzipOutputBytes) {
-            // gzip 炸弹防护: 超 8MB 中止, 告警 (小白审计 §1.3-B)
-            std::fprintf(stderr,
-                         "[inplay_feed] WARN gzip_bomb_abort: output exceeded %zu bytes "
-                         "(gz_input_sz=%zu), dropping frame\n",
-                         kMaxGzipOutputBytes, gz_body.size());
+        if (out_json.size() > 50 * 1024 * 1024) {  // 超 50MB 拒绝
             inflateEnd(&zs);
-            out_json.clear();
             return false;
         }
     } while (ret != Z_STREAM_END);
@@ -333,18 +312,10 @@ struct ProxySpec {
 
 // ---- HTTP GET via 直连或 CONNECT 代理 ----
 // 返回: {http_status, gz_body, ingestion_ns}; gz_body 空 = 失败
-//
-// 安全加固 (小白审计 §1.3-B, 2026-05-30):
-//   kMaxBodyBytes = 16MB: HTTP body (gzip 压缩前) 上限, 超限 drop.
-//   实证 Goalserve inplay.gz 压缩后约 30-100KB, 16MB 足够大又防资源耗尽.
-//   凭证不入日志: 日志仅记 host + endpoint 类型, 完整 path (含 key) 严禁打印.
-static constexpr std::size_t kMaxBodyBytes = 16UL * 1024 * 1024;  // 16MB
-
 struct FetchResult {
     int status = 0;
     std::string body;
     std::int64_t ingestion_ns = 0;
-    bool via_proxy = false;  // 是否走代理 (凭证保护状态)
 };
 
 [[nodiscard]] FetchResult HttpGetGz(const std::string& target_host, std::uint16_t target_port,
@@ -353,7 +324,6 @@ struct FetchResult {
     FetchResult result;
 
     const ProxySpec proxy = ParseProxySpec(proxy_str);
-    result.via_proxy = proxy.valid;
 
     // 连接目标或代理
     const std::string& connect_host = proxy.valid ? proxy.host : target_host;
@@ -361,9 +331,7 @@ struct FetchResult {
 
     const int fd = TcpConnect(connect_host, connect_port, timeout_ms);
     if (fd < 0) {
-        // 日志: 代理地址可以打, 但不含凭证; 直连 host 也不含路径
-        std::fprintf(stderr, "[inplay_feed] connect failed: host=%s via=%s\n", target_host.c_str(),
-                     proxy.valid ? "(proxy)" : "(direct)");
+        std::fprintf(stderr, "[inplay_feed] connect failed: %s:%u\n", connect_host.c_str(), connect_port);
         return result;
     }
 
@@ -381,15 +349,13 @@ struct FetchResult {
             return result;
         }
         if (ParseStatusCode(proxy_resp) != 200) {
-            std::fprintf(stderr, "[inplay_feed] CONNECT tunnel failed: status=%d host=%s\n",
-                         ParseStatusCode(proxy_resp), target_host.c_str());
+            std::fprintf(stderr, "[inplay_feed] CONNECT failed: %d\n", ParseStatusCode(proxy_resp));
             ::close(fd);
             return result;
         }
     }
 
     // HTTP/1.1 GET
-    // 安全: path 含 API key, 严禁进日志 (小白审计 §3.2 + §5.3)
     const std::string req = "GET " + path + " HTTP/1.1\r\n" + "Host: " + target_host + "\r\n" +
                             "Accept-Encoding: gzip\r\n" + "Connection: close\r\n\r\n";
     if (!SendAll(fd, req.data(), req.size())) {
@@ -406,9 +372,8 @@ struct FetchResult {
     result.status = ParseStatusCode(headers);
 
     if (result.status != 200) {
-        // 日志: 不打 path (含 key), 只记 host + status
-        std::fprintf(stderr, "[inplay_feed] HTTP status=%d host=%s (path redacted)\n", result.status,
-                     target_host.c_str());
+        std::fprintf(stderr, "[inplay_feed] HTTP %d for %s%s\n", result.status, target_host.c_str(),
+                     path.c_str());
         ::close(fd);
         return result;
     }
@@ -417,13 +382,6 @@ struct FetchResult {
     const std::int64_t content_length = ParseContentLength(headers);
     bool ok = false;
     if (content_length >= 0) {
-        // content-length 路径: 加上限检查 (小白审计 §1.3-B)
-        if (static_cast<std::size_t>(content_length) > kMaxBodyBytes) {
-            std::fprintf(stderr, "[inplay_feed] WARN max_body_bytes: content_length=%lld > %zu, dropping\n",
-                         static_cast<long long>(content_length), kMaxBodyBytes);
-            ::close(fd);
-            return result;
-        }
         result.body.resize(static_cast<std::size_t>(content_length));
         ok = RecvExact(fd, result.body.data(), static_cast<std::size_t>(content_length));
     } else {
@@ -437,13 +395,8 @@ struct FetchResult {
             ssize_t n;
             while ((n = ::recv(fd, buf, sizeof(buf), 0)) > 0) {
                 result.body.append(buf, static_cast<std::size_t>(n));
-                if (result.body.size() > kMaxBodyBytes) {
-                    std::fprintf(stderr,
-                                 "[inplay_feed] WARN max_body_bytes: body exceeded %zu bytes, dropping\n",
-                                 kMaxBodyBytes);
-                    result.body.clear();
+                if (result.body.size() > 20 * 1024 * 1024)
                     break;
-                }
             }
             ok = !result.body.empty();
         }
@@ -494,10 +447,8 @@ void InplayFeedThread::Start() {
     for (const auto sport : cfg_.sports) {
         threads_.emplace_back([this, sport]() { RunSportLoop(sport); });
     }
-    // 凭证不入日志: proxy 地址可能含认证信息 (user:pass@host), 只显示连接方式
-    // inplay.goalserve.com 走 http (明文), 需 proxy 保护 key (小白审计 §3.2/§4.2)
-    std::fprintf(stderr, "[inplay_feed] Started %zu sport thread(s). route=%s\n", cfg_.sports.size(),
-                 cfg_.http_proxy.empty() ? "direct(WARN:insecure)" : "via-proxy");
+    std::fprintf(stderr, "[inplay_feed] Started %zu sport thread(s). proxy=%s\n", cfg_.sports.size(),
+                 cfg_.http_proxy.empty() ? "(direct)" : cfg_.http_proxy.c_str());
 }
 
 void InplayFeedThread::Stop() {
@@ -533,38 +484,14 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
     std::uint32_t backoff_ms = 0;
     std::uint32_t fail_count = 0;
 
-    // 凭证不入日志: path 可能含 API key, 仅记 sport + host (小白审计 §3.2/§5.3)
-    std::fprintf(stderr, "[inplay_feed] sport=%s thread started, host=%s (path redacted)\n",
-                 sport_slug.c_str(), cfg_.inplay_host.c_str());
-
-    // token-bucket: 记录上次 fetch 完成时刻 (单调时钟 ms), 强制 min_fetch_interval_ms 间隔
-    // 防止 backoff=0 时暴击 (小白审计 §2.2 ToS rate limit 保护)
-    std::uint64_t last_fetch_mono_ms = 0;
-
-    // 简单单调 ms 时钟 (采集线程内部用, 不替代 R-20 ts)
-    auto mono_ms_now = []() -> std::uint64_t {
-        struct timespec ts{};
-        ::clock_gettime(CLOCK_MONOTONIC, &ts);
-        return static_cast<std::uint64_t>(ts.tv_sec) * 1000ULL +
-               static_cast<std::uint64_t>(ts.tv_nsec) / 1'000'000ULL;
-    };
+    std::fprintf(stderr, "[inplay_feed] sport=%s thread started, endpoint=http://%s%s\n", sport_slug.c_str(),
+                 cfg_.inplay_host.c_str(), path.c_str());
 
     while (!stop_.load(std::memory_order_acquire)) {
-        // token-bucket 速率控制: 距上次 fetch 不足 min_fetch_interval_ms 则等待
-        {
-            const std::uint64_t now_ms = mono_ms_now();
-            if (last_fetch_mono_ms > 0 && now_ms < last_fetch_mono_ms + cfg_.min_fetch_interval_ms) {
-                const std::uint32_t wait_ms =
-                    static_cast<std::uint32_t>(last_fetch_mono_ms + cfg_.min_fetch_interval_ms - now_ms);
-                SleepMs(wait_ms);
-            }
-        }
-
         // 拉取 gz
         std::string gz_body;
         std::int64_t ingestion_ns = 0;
         const bool fetch_ok = FetchGz(sport, gz_body, ingestion_ns);
-        last_fetch_mono_ms = mono_ms_now();  // 记录本次 fetch 完成时刻
 
         if (!fetch_ok || gz_body.empty()) {
             ++fail_count;
@@ -642,23 +569,9 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
 }
 
 // ---- FetchGz: HTTP GET → gzip body ----
-//
-// 安全加固 (小白审计 §2.2/§4.2, 2026-05-30):
-//   1. insecure_fetch 告警: inplay.goalserve.com 走 http (明文), 若无代理则记 WARN.
-//      key 在 URL query, 明文跨洋 → 走 GOALSERVE_PROXY 才能保护 key.
-//   2. token-bucket: min_interval_ms (cfg.min_fetch_interval_ms, 默认 800ms) 强制间隔.
-//      防止 backoff=0 时连续暴击 (尊重 Goalserve ToS rate limit).
 bool InplayFeedThread::FetchGz(goalserve::GoalserveSport sport, std::string& gz_body,
                                std::int64_t& ingestion_ns) noexcept {
     const std::string path = "/inplay-" + std::string(goalserve::SportInplaySlug(sport)) + ".gz";
-
-    // insecure_fetch 告警: inplay 强制 http, 无代理时 key 明文跨洋 (小白审计 §4.2)
-    if (cfg_.http_proxy.empty()) {
-        std::fprintf(stderr,
-                     "[inplay_feed] WARN insecure_fetch host=%s: no proxy configured, "
-                     "API key travels in plaintext over HTTP. Set GOALSERVE_PROXY.\n",
-                     cfg_.inplay_host.c_str());
-    }
 
     const auto result =
         HttpGetGz(cfg_.inplay_host, cfg_.inplay_port, path, cfg_.http_proxy, cfg_.http_timeout_ms);
