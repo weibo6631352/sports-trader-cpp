@@ -120,4 +120,10 @@ if(STCPP_BUILD_DEBUG_API)
     add_subdirectory(src/stcpp/debug_api)
 endif()
 
-message(STATUS "stcpp project scaffold (Sprint-3 W9 W2). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1 + debug-api v0.1.")
+# Sprint backtest framework v0.2 (小蒋 quant-backtest, W10+ skeleton)
+# BR-1: 复用 stcpp_microstructure (FillRateModel::compute_from_clob_book)
+# BR-5: 复用小肖 slippage model v1 (header-only, 无额外 link)
+# R-7:  paper / backtest 共用 (mode-agnostic)
+add_subdirectory(src/stcpp/backtest)
+
+message(STATUS "stcpp project scaffold (Sprint-3 W9 W2 + backtest v0.2). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1 + debug-api v0.1 + backtest framework v0.2.")
