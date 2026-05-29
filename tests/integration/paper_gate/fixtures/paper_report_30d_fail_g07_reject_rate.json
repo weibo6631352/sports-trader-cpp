@@ -1,0 +1,50 @@
+{
+  "window_start_ts_ns": 1730419200000000000,
+  "window_end_ts_ns":   1733011200000000000,
+  "window_days": 30,
+  "as_of_ts_ns":        1733011201000000000,
+
+  "_comment": "FAIL fixture: G-07 reject_rate=0.05 < 0.08 (低于区间下限, 老韩否决)",
+
+  "pregame_moneyline": {
+    "n_trades": 142,
+    "net_pnl_usdc": 187.43,
+    "daily_sharpe_annualized": 0.68,
+    "sharpe_bootstrap_ci_lower": 0.21,
+    "sharpe_bootstrap_ci_upper": 1.15,
+    "sharpe_bootstrap_n": 5000,
+    "ttest_pvalue_onesided": 0.047,
+    "win_days": 17,
+    "total_days": 30,
+    "max_daily_loss_pct": 0.021,
+    "equity_initial": 10000.0,
+    "market_type_labeled_pct": 1.0
+  },
+
+  "risk_control": {
+    "rm_reject_count": 8,
+    "rm_evaluate_count": 160,
+    "rm_bypass_count": 0,
+    "paper_to_live_crosswrite_count": 0
+  },
+
+  "data_attestation": {
+    "attestation_signed": true,
+    "attestation_signer": "小余",
+    "r20_violations": 0,
+    "lookahead_violations": 0,
+    "feature_join_orphans": 0,
+    "data_silent_drops": 0
+  },
+
+  "uptime": {
+    "uptime_seconds": 2572800,
+    "total_window_seconds": 2592000,
+    "uptime_pct": 0.9923
+  },
+
+  "inplay": {
+    "n_trades": 0,
+    "note": "inplay 不计入 GM-PAPER-G 核算, 仅透明度展示"
+  }
+}
