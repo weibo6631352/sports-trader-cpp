@@ -21,7 +21,10 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
         stcpp_infra_wal
         stcpp_microstructure
     )
-    # Wave 3: compute_from_clob_book 内含 std::exp (-cmath), 关闭 double-promotion 同 microstructure
+    # Wave 3: virtual_matcher.cpp 经 FillRateModel::compute_from_clob_book 间接拉入
+    # microstructure header (header-only nlohmann_json 宏展开 double-promotion).
+    # 与 microstructure target 同根因同处置 (ADR-010 §3.2 三方库豁免).
+    # 三方库豁免: nlohmann_json (ADR-010 §3.2 — header-only JSON 宏展开 double-promotion)
     target_compile_options(stcpp_execution_paper PRIVATE
         -Wno-double-promotion
     )
