@@ -49,3 +49,9 @@ endif()
 #   transport-agnostic — IWssTransport 抽象, 真 boost.beast 实现 W6 老周 ack 后接入.
 add_subdirectory(wss)
 
+# 小冯 Wave 79 (W9 W3): CLOB WSS subscriber — market + user channel
+#   endpoint: wss://ws-subscriptions-clob.polymarket.com/ws/{market,user}
+#   spec: 老李 W9 W2 laoli-w9-wss-subscriber-impl-spec-v1.md
+#   ADR-027 Enforce-1
+add_subdirectory(clob_wss)
+
