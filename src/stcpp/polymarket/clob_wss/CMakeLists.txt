@@ -11,6 +11,7 @@
 
 add_library(stcpp_polymarket_clob_wss STATIC
     polymarket_clob_subscriber.cpp
+    orderbook_adapter.cpp
 )
 
 target_include_directories(stcpp_polymarket_clob_wss
