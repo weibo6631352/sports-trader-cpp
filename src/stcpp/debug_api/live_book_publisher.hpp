@@ -217,12 +217,19 @@ private:
             return;
         }
 
+        // R-20 P0-2 fix: ingestion_ts = max(local_recv, data_source_ts)
+        // 跨洋部署时本地时钟可能落后 Polymarket 服务端时钟 10-30ms，
+        // 导致 recv_ts_ns < data_source_ts_ns (R-20 单调链倒挂)。
+        // 修法: 承认时钟偏差，ingestion_ts 不早于 data_source_ts，保证 R-20 单调链。
+        const std::int64_t ingestion_ts_ns =
+            (recv_ts_ns >= data_source_ts_ns) ? recv_ts_ns : data_source_ts_ns;
+
         // Build OrderBookFeatures
         OrderBookFeatures feat{};
         feat.event_ts_ns = data_source_ts_ns;
         feat.data_source_ts_ns = data_source_ts_ns;
-        feat.ingestion_ts_ns = recv_ts_ns;
-        feat.as_of_ts_ns = recv_ts_ns;  // as_of filled by consumer; placeholder = ingestion
+        feat.ingestion_ts_ns = ingestion_ts_ns;
+        feat.as_of_ts_ns = ingestion_ts_ns;  // as_of filled by consumer; placeholder = ingestion
         feat.wss_state = WssConnState::kConnected;
         feat.valid = false;  // set true after valid bid/ask extracted
 

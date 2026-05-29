@@ -228,6 +228,21 @@ public:
     // -----------------------------------------------------------------------
     [[nodiscard]] std::uint64_t publish_count() const noexcept { return publish_count_; }
 
+    // -----------------------------------------------------------------------
+    // OldestEventTsNs — 遍历所有已发布 token 的 front-buffer，返回最小 event_ts_ns
+    //
+    // 用途: P1-4 staleness 计算 — max_staleness_ms = (now - oldest_event_ts) / 1e6
+    //   观测线程调用; 遍历 slot_count_ 个 slot, 每个 atomic acquire load + 字段读取.
+    //   时延: O(N_tokens), N 通常 ≤ 200; 观测路径 (非热路径), R-12 compliant.
+    //
+    // 返回值:
+    //   0            — 无已发布 token (hub 空, 无数据)
+    //   > 0          — 最老 event_ts_ns (ns epoch)
+    //
+    // 线程安全: 与 Publish() SWMR 兼容 (每 slot atomic acquire 读 front index)。
+    // -----------------------------------------------------------------------
+    [[nodiscard]] std::int64_t OldestEventTsNs() const noexcept;
+
 private:
     // -----------------------------------------------------------------------
     // TokenSlot — per-token double-buffer 存储

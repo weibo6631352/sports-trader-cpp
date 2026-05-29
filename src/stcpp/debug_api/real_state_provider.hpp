@@ -186,9 +186,12 @@ public:
     // paper_gate: 无真实门禁数据源 → 空结构 (has_data=false, 前端灰显)
     PaperGate paper_gate() const override { return {}; }
 
-    // metrics — 覆写订阅计数字段为真实值 (GAP-01/02/03); 其余字段为合法 0 值
+    // metrics — 覆写订阅计数字段为真实值 (GAP-01/02/03)
     //   subscribed_tokens_total  = hub_.token_count()  (atomic read, R-12 合规)
     //   subscribed_markets_total = hub_.token_count() / 2  (双 token 规则)
+    //   max_staleness_ms         = (now - oldest_event_ts_ns) / 1e6 (P1-4 staleness 真实计算)
+    //     oldest_event_ts_ns 由 hub_.OldestEventTsNs() 提供 (遍历所有 front-buffer)
+    //     无数据时 (hub 空 / 所有 event_ts=0) → 0 (合法: 无数据不是 stale)
     MetricsSnapshot metrics() const override {
         MetricsSnapshot snap;
         const auto tok_cnt = static_cast<std::int64_t>(hub_.token_count());
@@ -196,6 +199,18 @@ public:
         snap.subscribed_markets_total = tok_cnt / 2;  // 双 token 规则 (老李 spec §2.1)
         snap.subscribed_user_conditions = 0;
         snap.wss_last_disconnect_ts_ns = 0;
+
+        // P1-4 staleness 真实计算: max_staleness_ms = (now - oldest_event_ts_ns) / 1e6
+        // oldest_event_ts_ns = hub 中所有 token 最小 event_ts (最旧数据)
+        // WSS 断线时 event_ts 停止更新 → staleness 持续增大 → Prometheus 触发告警
+        const std::int64_t oldest = hub_.OldestEventTsNs();
+        if (oldest > 0) {
+            const std::int64_t now = now_ns();
+            const std::int64_t diff_ns = now - oldest;
+            snap.max_staleness_ms = (diff_ns > 0) ? static_cast<double>(diff_ns) / 1'000'000.0 : 0.0;
+        }
+        // oldest == 0: hub 空 (无发布) → staleness = 0 (合法: 无数据不是 stale)
+
         return snap;
     }
 

@@ -172,4 +172,28 @@ std::size_t OrderBookSnapshotHub::token_count() const noexcept {
     return slot_count_;
 }
 
+// ===========================================================================
+// OldestEventTsNs — P1-4 staleness 计算辅助
+// 遍历所有已注册 token 的 front-buffer, 返回最小 event_ts_ns (最老数据)。
+// 观测线程调用 (非热路径); slot_count_ 是 vCPU0-only 写的 std::size_t,
+// 在观测线程看最多读到旧值 (少计一个 token), 可接受 (保守 staleness)。
+// ===========================================================================
+
+std::int64_t OrderBookSnapshotHub::OldestEventTsNs() const noexcept {
+    const std::size_t n = slot_count_;  // 快照读, 非原子; 观测侧可接受轻微 ABA
+    if (n == 0) {
+        return 0;
+    }
+    std::int64_t oldest = std::numeric_limits<std::int64_t>::max();
+    for (std::size_t i = 0; i < n; ++i) {
+        const TokenSlot& slot = slots_[i];
+        const std::uint8_t front = slot.front.load(std::memory_order_acquire);
+        const std::int64_t et = slot.buf[front].event_ts_ns;
+        if (et > 0 && et < oldest) {
+            oldest = et;
+        }
+    }
+    return (oldest == std::numeric_limits<std::int64_t>::max()) ? 0 : oldest;
+}
+
 }  // namespace stcpp::polymarket::clob_wss
