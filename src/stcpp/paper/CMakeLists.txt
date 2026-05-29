@@ -48,8 +48,5 @@ target_link_libraries(stcpp_paper_loop PUBLIC
     stcpp_infra_wal
 )
 
-# 抑制三方库相关 warning (位域/转型; 仅对本 lib 的 source)
-target_compile_options(stcpp_paper_loop PRIVATE
-    -Wno-conversion
-    -Wno-sign-conversion
-)
+# ADR-010: 不添加 -Wno-* 抑制 (Rule 1: 生产代码禁新增 -Wno-conversion/-Wno-sign-conversion)
+# paper_loop.cpp 源码已通过显式强转修正所有 conversion 警告
