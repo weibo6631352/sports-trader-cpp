@@ -56,6 +56,9 @@ static void register_market_info(httplib::Server& svr, const HttpServer& hs) {
             body += json::boolean(mi.resolved);
             body += ",\"source\":";
             body += json::str(mi.source);
+            // 前端 v3: market → event 锚 (ADR-038 增量, G-FREEZE-W 只增不改名)
+            body += ",\"event_id\":";
+            body += json::str(mi.event_id);
         }
         body += '}';
 

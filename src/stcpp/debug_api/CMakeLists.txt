@@ -72,6 +72,9 @@ add_library(stcpp_debug_api STATIC
     endpoint_gate.cpp
     endpoint_metrics.cpp
     endpoint_market.cpp
+    # 前端 v3 盯盘新增 (ADR-038 增量, 2026-05-29)
+    endpoint_score.cpp
+    endpoint_quote.cpp
 )
 
 target_include_directories(stcpp_debug_api

@@ -17,34 +17,27 @@
 // 字段 state 枚举值精确匹配老周 spec §6: "RUNNING" / "DRAIN" / "HALTED"
 // W9 W3 接老韩 SystemState atomic 后 state 变为真实值
 
-#include "src/stcpp/debug_api/server.hpp"
-
 #include <chrono>
 #include <cstdint>
 #include <string>
 
+#include "src/stcpp/debug_api/server.hpp"
+
 namespace stcpp::debug_api {
 
-static int64_t now_epoch_ns_status() noexcept
-{
+static int64_t now_epoch_ns_status() noexcept {
     using namespace std::chrono;
-    return static_cast<int64_t>(
-        duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count()
-    );
+    return static_cast<int64_t>(duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count());
 }
 
-static int64_t uptime_sec_status(std::chrono::steady_clock::time_point start) noexcept
-{
+static int64_t uptime_sec_status(std::chrono::steady_clock::time_point start) noexcept {
     using namespace std::chrono;
-    return static_cast<int64_t>(
-        duration_cast<seconds>(steady_clock::now() - start).count()
-    );
+    return static_cast<int64_t>(duration_cast<seconds>(steady_clock::now() - start).count());
 }
 
-void register_status(httplib::Server& svr, const HttpServer& hs)
-{
+void register_status(httplib::Server& svr, const HttpServer& hs) {
     svr.Get("/status", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
-        const int64_t ts     = now_epoch_ns_status();
+        const int64_t ts = now_epoch_ns_status();
         const int64_t uptime = uptime_sec_status(hs.start_time());
 
         // W9 W2 stub 字段 (W9 W3 接真实 atomic snapshot)
@@ -64,6 +57,10 @@ void register_status(httplib::Server& svr, const HttpServer& hs)
         body += std::to_string(uptime);
         body += R"(,"as_of_ts":)";
         body += std::to_string(ts);
+        // 前端 v3 DEMO 标记 (老钱红线): data_source 由 provider.data_source() 提供
+        body += R"(,"data_source":")";
+        body += hs.provider().data_source();
+        body += '"';
         body += '}';
 
         res.set_content(body, "application/json; charset=utf-8");
@@ -71,4 +68,4 @@ void register_status(httplib::Server& svr, const HttpServer& hs)
     });
 }
 
-} // namespace stcpp::debug_api
+}  // namespace stcpp::debug_api

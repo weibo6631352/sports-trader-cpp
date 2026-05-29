@@ -27,6 +27,9 @@ void register_risk(httplib::Server& svr, const HttpServer& hs);
 void register_gate(httplib::Server& svr, const HttpServer& hs);
 void register_metrics(httplib::Server& svr, const HttpServer& hs);
 void register_market(httplib::Server& svr, const HttpServer& hs);
+// 前端 v3 盯盘新增 (ADR-038 增量, 2026-05-29)
+void register_score(httplib::Server& svr, const HttpServer& hs);
+void register_quote(httplib::Server& svr, const HttpServer& hs);
 }  // namespace stcpp::debug_api
 
 namespace stcpp::debug_api {
@@ -126,6 +129,9 @@ void HttpServer::register_handlers() {
     register_gate(server_, *this);
     register_metrics(server_, *this);
     register_market(server_, *this);
+    // 前端 v3 盯盘新增 (ADR-038 增量, 2026-05-29)
+    register_score(server_, *this);
+    register_quote(server_, *this);
 }
 
 }  // namespace stcpp::debug_api

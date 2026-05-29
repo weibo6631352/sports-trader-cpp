@@ -170,6 +170,53 @@ struct MarketInfo {
     bool resolved{false};
     std::string source{"polymarket"};  // vendor 降为 source 标签 (非字段名前缀)
     std::int64_t as_of_ts_ns{0};
+    // 前端 v3 盯盘: market → event 锚 (ADR-038 增量, G-FREEZE-W 只增不改名)
+    std::string event_id;
+};
+
+// ============================================================
+// /api/v1/score/{event_id} (Goalserve 比分快照; 前端 v3 盯盘)
+// ============================================================
+// source 固定 "goalserve" (vendor 降为 source 标签, 非字段名前缀)。
+// Demo: 时间戳用 now() 减偏移模拟上游链路 (Demo 语义明确; 生产接入后由 provider 透传)。
+struct EventScore {
+    bool found{false};
+    std::string event_id;
+    std::string sport;
+    std::string status;         // pregame / inplay / halftime / final
+    std::string period;         // e.g. "Q3", "2H", "P1"
+    std::int64_t clock_sec{0};  // 场内计时 (秒); 0 = 不适用或未知
+    std::string home;
+    std::string away;
+    int home_score{0};
+    int away_score{0};
+    FourTs ts{};
+    std::string source{"goalserve"};
+};
+
+// ============================================================
+// /api/v1/quote/{condition_id} (量化参数快照; 前端 v3 盯盘)
+// ============================================================
+// 字段集对齐小梁量化部决议:
+//   fair_value      — de-vig fair prob (去佣金后真实概率)
+//   market_mid      — book microprice (best_bid+best_ask)/2 附近
+//   edge_bps        — net edge (fair_value - market_mid) in bps
+//   kelly_fraction  — Kelly 仓位比例 (已 cap)
+//   suggested_notional — 建议名义仓位 (USDC)
+//   signal_strength — α 信号强度 ∈ [0,1]
+//   model_conf      — 模型置信度 ∈ [0,1]
+//   as_of_ts_ns     — 快照时刻 epoch ns (R-20)
+struct QuoteParams {
+    bool found{false};
+    std::string market_id;
+    double fair_value{0.0};          // de-vig fair prob
+    double market_mid{0.0};          // book mid (microprice)
+    double edge_bps{0.0};            // net edge in basis points
+    double kelly_fraction{0.0};      // Kelly 仓位比例
+    double suggested_notional{0.0};  // 建议名义仓位 (USDC)
+    double signal_strength{0.0};     // α 信号强度
+    double model_conf{0.0};          // 模型置信度
+    std::int64_t as_of_ts_ns{0};
 };
 
 // ============================================================
@@ -219,6 +266,12 @@ public:
     virtual MetricsSnapshot metrics() const = 0;
     virtual MarketInfo market(const std::string& condition_id) const = 0;
     virtual BookSnapshot book(const std::string& condition_id) const = 0;
+
+    // 前端 v3 盯盘新增 (ADR-038 增量, G-FREEZE-W 只增不改名)
+    virtual EventScore score(const std::string& event_id) const = 0;
+    virtual QuoteParams quote_params(const std::string& condition_id) const = 0;
+    // 数据源标识 (返回 "demo"/"stub"/"live"; 供 /status DEMO 标记; 老钱红线)
+    virtual const char* data_source() const = 0;
 };
 
 // StubStateProvider — MVP 默认实现, 返回结构合法的空/0 值。
@@ -249,6 +302,23 @@ public:
         b.market_id = condition_id;
         return b;
     }
+
+    // 前端 v3 盯盘新增 (stub: 返回 found=false 合法空值)
+    EventScore score(const std::string& event_id) const override {
+        EventScore s;
+        s.found = false;
+        s.event_id = event_id;
+        return s;
+    }
+
+    QuoteParams quote_params(const std::string& condition_id) const override {
+        QuoteParams q;
+        q.found = false;
+        q.market_id = condition_id;
+        return q;
+    }
+
+    const char* data_source() const override { return "stub"; }
 
 private:
     ExecMode mode_;
