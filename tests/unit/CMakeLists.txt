@@ -76,6 +76,8 @@ set(EXTRA_LIBS_test_feature_store_contract stcpp_data_contract)
 set(EXTRA_LIBS_test_orderbook_adapter   stcpp_polymarket_clob_wss)
 set(EXTRA_LIBS_test_orderbook_snapshot_hub stcpp_orderbook_snapshot_hub)
 set(EXTRA_LIBS_test_score_snapshot_store  stcpp_data_inplay_parser stcpp_data_score_store)
+# 小段 2026-05-30: Goalserve inplay parser 安全加固单测 (gzip-bomb/max-depth/escape/log-injection)
+set(EXTRA_LIBS_test_inplay_parser_harden  stcpp_data_inplay_parser)
 set(EXTRA_LIBS_test_sizing_calculator     stcpp_sizing stcpp_risk)
 set(EXTRA_LIBS_test_sizing_rm_consistency stcpp_sizing stcpp_risk)
 # 小肖 ReplayDriver: replay→hub→Read 端对端路径验证
@@ -194,6 +196,7 @@ set(LABELS_test_paper_loop                 "unit;paper;paper-loop;r-11;r-12;r-20
 set(LABELS_test_ledger_snapshot_hub        "unit;risk;ledger;double-buffer;r-11;r-12;r-20;xiaoshi")
 # 小石 QuoteSnapshotHub v0.1
 set(LABELS_test_quote_snapshot_hub         "unit;sizing;quote;double-buffer;r-12;r-20;ml-provenance;xiaoshi")
+set(LABELS_test_inplay_parser_harden       "unit;goalserve;inplay;security;harden;gzip-bomb;max-depth;log-injection;xiaobai-audit")
 
 # ============================================================================
 # §3  核心辅助宏: stcpp_add_unit_test(<target> <source>)
