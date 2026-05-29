@@ -907,6 +907,44 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     )
 endif()
 
+# 老孙 Wave 104 P0: SignerV62 v6.2 + transformer_v62 5 ctest (T1-T5)
+#   T1: V2 ABI alignment (OrderIntent v0.6 → SignV62Request byte-equal)
+#   T2: spec-9 metadata/builder 格式错 → reject InvalidBytes32
+#   T3: spec-10 timestamp_ms=0 → reject TsV2Missing
+#   T4: V1 v5.3 共存 (paper mode V2; V1 backtest 历史兼容)
+#   T5: P99 < 10us hot path (100k 次 transformer + sign)
+# ADR-027 cite: laosun-w10-w1 spec + Wave 97 spec-9/10 + audit v1.4
+# R-7 paper mode only (paper + live 必 STCPP_CLOB_V2)
+if(STCPP_EXEC_MODE STREQUAL "paper")
+    add_executable(test_signer_v62
+        test_signer_v62.cpp
+    )
+    target_link_libraries(test_signer_v62 PRIVATE
+        GTest::gtest_main
+        stcpp_signer_v62_paper
+        stcpp_signer_v52_paper
+        stcpp_infra_wal
+    )
+    target_compile_options(test_signer_v62 PRIVATE
+        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    )
+    target_include_directories(test_signer_v62 PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(test_signer_v62 PRIVATE cxx_std_20)
+    target_compile_definitions(test_signer_v62 PRIVATE
+        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+        STCPP_CLOB_V2=1
+    )
+    gtest_discover_tests(test_signer_v62
+        DISCOVERY_TIMEOUT 60
+        PROPERTIES LABELS "unit;signer;v62;transformer;adr027;wave104;w10"
+    )
+endif()
+
 # 老沈 Wave 76 W9 W4: PositionLedger read API + StateMachine cpp (ADR-027 Enforce-1)
 #   TC-01: 快照一致性 (read 不锁 hot path)
 #   TC-02: CAS 幂等 (try_transition RUNNING->DRAIN 2次, 1成1fail)

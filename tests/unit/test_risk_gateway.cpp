@@ -25,8 +25,6 @@
 //       + SlippageModel 联动 + WAL emit 联动 + T1-T7 v0.5 新 cases
 // 红线 R-1: 每 reject 必 audit_id 非空
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -37,6 +35,8 @@
 #include <thread>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/risk/risk_gateway.hpp"
 
@@ -45,7 +45,7 @@ namespace stcpp::risk::test {
 // ---------- in-memory emitter ------------------------------------------------
 
 class InMemoryEmitter : public AuditEmitter {
- public:
+public:
     [[nodiscard]] bool emit(AuditRecord const& r) noexcept override {
         if (fail_next_) {
             fail_next_ = false;
@@ -57,9 +57,10 @@ class InMemoryEmitter : public AuditEmitter {
     void trigger_backpressure_next() noexcept { fail_next_ = true; }
     [[nodiscard]] std::size_t size() const noexcept { return records_.size(); }
     [[nodiscard]] AuditRecord const& back() const { return records_.back(); }
- private:
+
+private:
     std::vector<AuditRecord> records_;
-    bool                     fail_next_{false};
+    bool fail_next_{false};
 };
 
 // ---------- fixture ----------------------------------------------------------
@@ -71,17 +72,17 @@ constexpr const char* kMockTokenId = "1234567890";
 constexpr const char* kMockConditionId = "0xa9db600590209698097db2fb8382989ea1cf6a9b91f0428b2e1d4f35d724c3ff";
 
 class RiskGatewayTest : public ::testing::Test {
- protected:
+protected:
     void SetUp() override {
         emitter_ = std::make_shared<InMemoryEmitter>();
         cfg_ = RiskConfig{};
-        cfg_.per_order_cap_usdc       = 10'000;
+        cfg_.per_order_cap_usdc = 10'000;
         cfg_.market_exposure_cap_usdc = 50'000;
-        cfg_.per_outcome_cap_usdc     = 25'000;  // v0.5 新增
-        cfg_.bankroll_usdc            = 100'000;
-        cfg_.daily_loss_halt_usdc     = 5'000;
-        cfg_.consec_loss_halt_count   = 5;
-        cfg_.excessive_slippage_bps   = 200;
+        cfg_.per_outcome_cap_usdc = 25'000;  // v0.5 新增
+        cfg_.bankroll_usdc = 100'000;
+        cfg_.daily_loss_halt_usdc = 5'000;
+        cfg_.consec_loss_halt_count = 5;
+        cfg_.excessive_slippage_bps = 200;
         rm_ = std::make_unique<RiskGateway>(cfg_, emitter_);
         rm_->set_state(RmState::RUNNING);
     }
@@ -90,23 +91,23 @@ class RiskGatewayTest : public ::testing::Test {
     OrderIntent make_ok_intent(std::string sig = "sig_default") {
         auto const now = ::stcpp::infra::wal::pit::NowRealtimeNs();
         OrderIntent it;
-        it.event_ts_ns         = now - 500 * NS_PER_MS;
-        it.data_source_ts_ns   = now - 400 * NS_PER_MS;
-        it.ingestion_ts_ns     = now - 100 * NS_PER_MS;
-        it.as_of_ts_ns         = now -  10 * NS_PER_MS;
-        it.condition_id        = kMockConditionId;   // v0.5: was market_id
-        it.token_id            = kMockTokenId;       // v0.5: new
-        it.outcome             = Outcome::Yes;        // v0.5: new
-        it.side                = Side::Buy;           // v0.5: was is_buy=true
-        it.strategy_id         = "strat_a";
-        it.signal_id           = std::move(sig);
+        it.event_ts_ns = now - 500 * NS_PER_MS;
+        it.data_source_ts_ns = now - 400 * NS_PER_MS;
+        it.ingestion_ts_ns = now - 100 * NS_PER_MS;
+        it.as_of_ts_ns = now - 10 * NS_PER_MS;
+        it.condition_id = kMockConditionId;  // v0.5: was market_id
+        it.token_id = kMockTokenId;          // v0.5: new
+        it.outcome = Outcome::Yes;           // v0.5: new
+        it.side = Side::Buy;                 // v0.5: was is_buy=true
+        it.strategy_id = "strat_a";
+        it.signal_id = std::move(sig);
         it.feature_snapshot_id = "fs_01H";
-        it.price               = 0.50;
-        it.size_usdc           = 1'000;
-        it.book_depth_l1_usdc  = 5'000;
+        it.price = 0.50;
+        it.size_pUSD_micro = 1'000;
+        it.book_depth_l1_usdc = 5'000;
         it.book_snapshot_ts_ns = now - 200 * NS_PER_MS;
-        it.tick_size           = 0.01;
-        it.is_close            = false;
+        it.tick_size = 0.01;
+        it.is_close = false;
         return it;
     }
 
@@ -114,22 +115,22 @@ class RiskGatewayTest : public ::testing::Test {
         EXPECT_EQ(d.decision, Decision::REJECTED);
         EXPECT_EQ(d.reject, code);
         bool any_nonzero = false;
-        for (auto b : d.audit_id) any_nonzero = any_nonzero || (b != 0);
+        for (auto b : d.audit_id)
+            any_nonzero = any_nonzero || (b != 0);
         EXPECT_TRUE(any_nonzero) << "R-1 violation: audit_id 全 0";
     }
 
     // Helper: 让 set_market_freshness_ms + set_market_state 按 condition_id 注入
-    void inject_market(const std::string& cid = kMockConditionId,
-                       MarketState st = MarketState::PREGAME,
+    void inject_market(const std::string& cid = kMockConditionId, MarketState st = MarketState::PREGAME,
                        std::uint32_t freshness_ms = 100) {
         rm_->set_market_state(cid, st);
         rm_->set_market_freshness_ms(cid, freshness_ms);
         rm_->set_market_active(cid, true);
     }
 
-    RiskConfig                       cfg_;
+    RiskConfig cfg_;
     std::shared_ptr<InMemoryEmitter> emitter_;
-    std::unique_ptr<RiskGateway>     rm_;
+    std::unique_ptr<RiskGateway> rm_;
 };
 
 // ===== 21 reject enum 覆盖 ===================================================
@@ -213,7 +214,8 @@ TEST_F(RiskGatewayTest, R06c_INVALID_INTENT_BOOK_TS_STALE) {
 
 TEST_F(RiskGatewayTest, R06d_INVALID_INTENT_NAN_OR_INF) {
     auto it = make_ok_intent();
-    double nan = 0.0; nan = nan / nan;
+    double nan = 0.0;
+    nan = nan / nan;
     it.price = nan;
     auto d = rm_->evaluate(it);
     expect_rejected(d, RejectCode::INVALID_INTENT);
@@ -222,7 +224,7 @@ TEST_F(RiskGatewayTest, R06d_INVALID_INTENT_NAN_OR_INF) {
 
 TEST_F(RiskGatewayTest, R06e_INVALID_INTENT_NEGATIVE) {
     auto it = make_ok_intent();
-    it.size_usdc = -100;
+    it.size_pUSD_micro = -100;
     auto d = rm_->evaluate(it);
     expect_rejected(d, RejectCode::INVALID_INTENT);
     EXPECT_EQ(d.sub_reason, InvalidIntentSubReason::NEGATIVE);
@@ -292,7 +294,7 @@ TEST_F(RiskGatewayTest, R06l_INVALID_INTENT_INVALID_TOKEN_ID_FORMAT) {
 
 TEST_F(RiskGatewayTest, R07_EXCEED_PER_ORDER_CAP) {
     auto it = make_ok_intent();
-    it.size_usdc = 20'000;
+    it.size_pUSD_micro = 20'000;
     it.book_depth_l1_usdc = 100'000;
     auto d = rm_->evaluate(it);
     expect_rejected(d, RejectCode::EXCEED_PER_ORDER_CAP);
@@ -301,7 +303,7 @@ TEST_F(RiskGatewayTest, R07_EXCEED_PER_ORDER_CAP) {
 TEST_F(RiskGatewayTest, R08_EXCEED_MARKET_EXPOSURE) {
     rm_->set_market_exposure(kMockConditionId, 49'500);
     auto it = make_ok_intent();
-    it.size_usdc = 1'000;
+    it.size_pUSD_micro = 1'000;
     auto d = rm_->evaluate(it);
     // v0.5: EXCEED_CONDITION_EXPOSURE (= EXCEED_MARKET_EXPOSURE 同值 7, 向后兼容)
     EXPECT_EQ(d.decision, Decision::REJECTED);
@@ -350,14 +352,14 @@ TEST_F(RiskGatewayTest, R13_EDGE_NEGATED_BY_SLIPPAGE) {
 TEST_F(RiskGatewayTest, R14_MARKET_TYPE_NOT_ENABLED) {
     RiskConfig c = cfg_;
     c.enable_moneyline = false;
-    c.enable_totals    = false;
-    c.enable_spreads   = false;
+    c.enable_totals = false;
+    c.enable_spreads = false;
     auto local_emitter = std::make_shared<InMemoryEmitter>();
     RiskGateway local(c, local_emitter);
     local.set_state(RmState::RUNNING);
     auto d = local.evaluate(make_ok_intent());
     EXPECT_EQ(d.decision, Decision::REJECTED);
-    EXPECT_EQ(d.reject,   RejectCode::MARKET_TYPE_NOT_ENABLED);
+    EXPECT_EQ(d.reject, RejectCode::MARKET_TYPE_NOT_ENABLED);
 }
 
 TEST_F(RiskGatewayTest, R15_MARKET_NOT_ACTIVE) {
@@ -372,7 +374,7 @@ TEST_F(RiskGatewayTest, R16_LOW_FILL_RATE) {
     auto it = make_ok_intent("sig_low_fill");
     auto const now = ::stcpp::infra::wal::pit::NowRealtimeNs();
     it.book_snapshot_ts_ns = now - 40'000'000'000LL;
-    it.book_depth_l1_usdc  = 1'100;
+    it.book_depth_l1_usdc = 1'100;
     auto d = rm_->evaluate(it);
     expect_rejected(d, RejectCode::LOW_FILL_RATE);
 }
@@ -380,7 +382,7 @@ TEST_F(RiskGatewayTest, R16_LOW_FILL_RATE) {
 TEST_F(RiskGatewayTest, R17_EXCESSIVE_SLIPPAGE) {
     auto it = make_ok_intent("sig_xslip");
     it.book_depth_l1_usdc = 400;
-    it.size_usdc          = 1'000;
+    it.size_pUSD_micro = 1'000;
     auto d = rm_->evaluate(it);
     EXPECT_EQ(d.reject, RejectCode::LOW_FILL_RATE);
 }
@@ -388,12 +390,10 @@ TEST_F(RiskGatewayTest, R17_EXCESSIVE_SLIPPAGE) {
 TEST_F(RiskGatewayTest, R17b_EXCESSIVE_SLIPPAGE_pure) {
     auto it = make_ok_intent("sig_xslip_b");
     it.book_depth_l1_usdc = 400;
-    it.size_usdc          = 1'000;
+    it.size_pUSD_micro = 1'000;
     auto d = rm_->evaluate(it);
-    EXPECT_TRUE(d.reject == RejectCode::EXCESSIVE_SLIPPAGE ||
-                d.reject == RejectCode::LOW_FILL_RATE)
-        << "R17b: expected EXCESSIVE_SLIPPAGE or LOW_FILL_RATE, got "
-        << static_cast<int>(d.reject);
+    EXPECT_TRUE(d.reject == RejectCode::EXCESSIVE_SLIPPAGE || d.reject == RejectCode::LOW_FILL_RATE)
+        << "R17b: expected EXCESSIVE_SLIPPAGE or LOW_FILL_RATE, got " << static_cast<int>(d.reject);
 }
 
 TEST_F(RiskGatewayTest, R18_EXCEED_BOOK_DEPTH) {
@@ -409,7 +409,7 @@ TEST_F(RiskGatewayTest, R19_AUDIT_WAL_BACKPRESSURE) {
     emitter_->trigger_backpressure_next();
     auto d = rm_->evaluate(make_ok_intent("sig_bp"));
     EXPECT_EQ(d.decision, Decision::REJECTED);
-    EXPECT_EQ(d.reject,   RejectCode::AUDIT_WAL_BACKPRESSURE);
+    EXPECT_EQ(d.reject, RejectCode::AUDIT_WAL_BACKPRESSURE);
 }
 
 TEST_F(RiskGatewayTest, R20_STRATEGY_DECAYED) {
@@ -426,7 +426,7 @@ TEST_F(RiskGatewayTest, R21_INTERNAL_ERROR_default) {
 
 TEST_F(RiskGatewayTest, EvaluatePriority_PositionCapBeforeLiquidity) {
     auto it = make_ok_intent("sig_adr004_priority");
-    it.size_usdc          = 20'000;
+    it.size_pUSD_micro = 20'000;
     it.book_depth_l1_usdc = 5'000;
     auto const d = rm_->evaluate(it);
     expect_rejected(d, RejectCode::EXCEED_PER_ORDER_CAP);
@@ -459,13 +459,13 @@ TEST_F(RiskGatewayTest, StateMachine_transitions) {
 // ===== MarketState 5 档阈值 ==================================================
 
 TEST(MarketState, threshold_table) {
-    EXPECT_EQ(threshold_of(MarketState::INPLAY_HOT_CRIT).warn_ms,  200u);
-    EXPECT_EQ(threshold_of(MarketState::INPLAY_HOT_CRIT).halt_ms,  800u);
-    EXPECT_EQ(threshold_of(MarketState::INPLAY_HOT).warn_ms,       500u);
-    EXPECT_EQ(threshold_of(MarketState::INPLAY_HOT).halt_ms,     2'000u);
-    EXPECT_EQ(threshold_of(MarketState::INPLAY_COLD).halt_ms,   10'000u);
-    EXPECT_EQ(threshold_of(MarketState::PREGAME).halt_ms,       15'000u);
-    EXPECT_EQ(threshold_of(MarketState::SETTLED).halt_ms,       30'000u);
+    EXPECT_EQ(threshold_of(MarketState::INPLAY_HOT_CRIT).warn_ms, 200u);
+    EXPECT_EQ(threshold_of(MarketState::INPLAY_HOT_CRIT).halt_ms, 800u);
+    EXPECT_EQ(threshold_of(MarketState::INPLAY_HOT).warn_ms, 500u);
+    EXPECT_EQ(threshold_of(MarketState::INPLAY_HOT).halt_ms, 2'000u);
+    EXPECT_EQ(threshold_of(MarketState::INPLAY_COLD).halt_ms, 10'000u);
+    EXPECT_EQ(threshold_of(MarketState::PREGAME).halt_ms, 15'000u);
+    EXPECT_EQ(threshold_of(MarketState::SETTLED).halt_ms, 30'000u);
 }
 
 // ===== WAL emit 联动 =========================================================
@@ -484,7 +484,7 @@ TEST_F(RiskGatewayTest, WalEmit_approved_path_records_audit) {
 
 TEST_F(RiskGatewayTest, WalEmit_rejected_path_carries_sub_reason) {
     auto it = make_ok_intent("sig_inv");
-    it.size_usdc = -1;
+    it.size_pUSD_micro = -1;
     auto d = rm_->evaluate(it);
     EXPECT_EQ(d.decision, Decision::REJECTED);
     EXPECT_EQ(emitter_->size(), 1u);
@@ -500,10 +500,10 @@ TEST(RejectEnum, total_count_is_21) {
 TEST(InvalidIntentSubReason, total_count_is_9_plus_v05) {
     EXPECT_EQ(static_cast<int>(InvalidIntentSubReason::TS_UNKNOWN_SRC), 8);
     // v0.5 新增
-    EXPECT_EQ(static_cast<int>(InvalidIntentSubReason::MISSING_TOKEN_ID),        9);
-    EXPECT_EQ(static_cast<int>(InvalidIntentSubReason::MISSING_CONDITION_ID),    10);
+    EXPECT_EQ(static_cast<int>(InvalidIntentSubReason::MISSING_TOKEN_ID), 9);
+    EXPECT_EQ(static_cast<int>(InvalidIntentSubReason::MISSING_CONDITION_ID), 10);
     EXPECT_EQ(static_cast<int>(InvalidIntentSubReason::INVALID_TOKEN_ID_FORMAT), 11);
-    EXPECT_EQ(static_cast<int>(InvalidIntentSubReason::BOOK_TOKEN_ID_MISMATCH),  12);
+    EXPECT_EQ(static_cast<int>(InvalidIntentSubReason::BOOK_TOKEN_ID_MISMATCH), 12);
 }
 
 // ===== BUG-W5-001 regression =================================================
@@ -511,16 +511,17 @@ TEST(InvalidIntentSubReason, total_count_is_9_plus_v05) {
 TEST(AuditId, NonZero_O2) {
     std::set<std::array<std::uint8_t, 16>> ids;
     std::array<std::uint8_t, 16> const zero{};
-    std::array<std::uint8_t, 6>  prev_ts{};
+    std::array<std::uint8_t, 6> prev_ts{};
     bool prev_ts_init = false;
     auto const t_start = ::stcpp::infra::wal::pit::NowRealtimeNs();
     for (int i = 0; i < 1000; ++i) {
         auto const now = ::stcpp::infra::wal::pit::NowRealtimeNs();
-        auto const id  = RiskGateway::next_audit_id(now);
+        auto const id = RiskGateway::next_audit_id(now);
         EXPECT_NE(id, zero) << "BUG-W5-001: audit_id 全零 @ i=" << i;
         ids.insert(id);
         std::array<std::uint8_t, 6> ts_be{};
-        for (std::size_t k = 0; k < 6; ++k) ts_be[k] = id[k];
+        for (std::size_t k = 0; k < 6; ++k)
+            ts_be[k] = id[k];
         if (prev_ts_init) {
             EXPECT_GE(ts_be, prev_ts) << "ts_ms big-endian 段必单调 @ i=" << i;
         }
@@ -538,16 +539,18 @@ TEST_F(RiskGatewayTest, P0_01a_concurrent_different_signal_ids) {
     std::atomic<int> dup_count{0};
     auto worker = [&](std::string sig) {
         auto it = make_ok_intent(std::move(sig));
-        auto d  = rm_->evaluate(it);
-        if (d.decision == Decision::APPROVED)              approved_count++;
-        if (d.reject   == RejectCode::DUPLICATE_INTENT)   dup_count++;
+        auto d = rm_->evaluate(it);
+        if (d.decision == Decision::APPROVED)
+            approved_count++;
+        if (d.reject == RejectCode::DUPLICATE_INTENT)
+            dup_count++;
     };
     std::thread t1(worker, "sig_p001a_t1");
     std::thread t2(worker, "sig_p001a_t2");
     t1.join();
     t2.join();
     EXPECT_EQ(approved_count.load(), 2);
-    EXPECT_EQ(dup_count.load(),      0);
+    EXPECT_EQ(dup_count.load(), 0);
 }
 
 TEST_F(RiskGatewayTest, P0_01b_concurrent_same_signal_id) {
@@ -555,16 +558,18 @@ TEST_F(RiskGatewayTest, P0_01b_concurrent_same_signal_id) {
     std::atomic<int> dup_count{0};
     auto worker = [&]() {
         auto it = make_ok_intent("sig_p001b_shared");
-        auto d  = rm_->evaluate(it);
-        if (d.decision == Decision::APPROVED)              approved_count++;
-        if (d.reject   == RejectCode::DUPLICATE_INTENT)   dup_count++;
+        auto d = rm_->evaluate(it);
+        if (d.decision == Decision::APPROVED)
+            approved_count++;
+        if (d.reject == RejectCode::DUPLICATE_INTENT)
+            dup_count++;
     };
     std::thread t1(worker);
     std::thread t2(worker);
     t1.join();
     t2.join();
     EXPECT_EQ(approved_count.load(), 1);
-    EXPECT_EQ(dup_count.load(),      1);
+    EXPECT_EQ(dup_count.load(), 1);
 }
 
 TEST_F(RiskGatewayTest, P0_02_bankroll_zero_no_crash) {
@@ -610,14 +615,12 @@ TEST_F(RiskGatewayTest, T1_TokenId_PassThrough) {
     it.side = Side::Buy;
 
     auto d = rm_->evaluate(it);
-    EXPECT_EQ(d.decision, Decision::APPROVED)
-        << "T1: 合法 intent with token_id should be APPROVED";
+    EXPECT_EQ(d.decision, Decision::APPROVED) << "T1: 合法 intent with token_id should be APPROVED";
     // audit record 应该携带正确 token_id
     ASSERT_EQ(emitter_->size(), 1u);
     EXPECT_EQ(emitter_->back().token_id, it.token_id)
         << "T1: audit record token_id 应与 intent.token_id 一致 (pass-through)";
-    EXPECT_EQ(emitter_->back().condition_id, it.condition_id)
-        << "T1: audit record condition_id pass-through";
+    EXPECT_EQ(emitter_->back().condition_id, it.condition_id) << "T1: audit record condition_id pass-through";
 }
 
 // T2: per-outcome cap check (R6.2b, EXCEED_PER_OUTCOME_CAP)
@@ -631,7 +634,7 @@ TEST_F(RiskGatewayTest, T2_PerOutcomeCap_Reject) {
     it.token_id = no_token_id;
     it.outcome = Outcome::No;
     it.side = Side::Buy;
-    it.size_usdc = 30'000;  // 20K + 30K = 50K > per_outcome_cap 25K
+    it.size_pUSD_micro = 30'000;      // 20K + 30K = 50K > per_outcome_cap 25K
     it.book_depth_l1_usdc = 100'000;  // 足够深, 不触发 liquidity reject
 
     // 需先调大 per_order_cap 以避免 EXCEED_PER_ORDER_CAP 先触发
@@ -643,8 +646,7 @@ TEST_F(RiskGatewayTest, T2_PerOutcomeCap_Reject) {
     rm_->set_outcome_exposure(no_token_id, 20'000);
 
     auto d = rm_->evaluate(it);
-    EXPECT_EQ(d.decision, Decision::REJECTED)
-        << "T2: 超 per_outcome_cap 应 REJECTED";
+    EXPECT_EQ(d.decision, Decision::REJECTED) << "T2: 超 per_outcome_cap 应 REJECTED";
     EXPECT_EQ(d.reject, RejectCode::EXCEED_PER_OUTCOME_CAP)
         << "T2: reject code 应为 EXCEED_PER_OUTCOME_CAP (R6.2b)";
 }
@@ -660,8 +662,7 @@ TEST_F(RiskGatewayTest, T3_Drain_Close_Approved) {
     it_close.side = Side::Sell;
     it_close.outcome = Outcome::Yes;
     auto d_close = rm_->evaluate(it_close);
-    EXPECT_EQ(d_close.decision, Decision::APPROVED)
-        << "T3: DRAIN 模式 is_close=true + side=Sell 应 APPROVED";
+    EXPECT_EQ(d_close.decision, Decision::APPROVED) << "T3: DRAIN 模式 is_close=true + side=Sell 应 APPROVED";
 
     // 对照: 开仓 (is_close=false + side=Buy) 应 REJECTED
     auto it_open = make_ok_intent("sig_t3_open");
@@ -684,15 +685,15 @@ TEST_F(RiskGatewayTest, T4_WAL_Schema_V13_Fields_Exist) {
     rec.side_val = static_cast<std::uint8_t>(Side::Buy);
 
     EXPECT_EQ(rec.condition_id, "0xtest") << "T4 stub: AuditRecord.condition_id 存在";
-    EXPECT_EQ(rec.token_id,     "123456") << "T4 stub: AuditRecord.token_id 存在 (WAL v1.3)";
-    EXPECT_EQ(rec.outcome,      static_cast<std::uint8_t>(Outcome::Yes))
+    EXPECT_EQ(rec.token_id, "123456") << "T4 stub: AuditRecord.token_id 存在 (WAL v1.3)";
+    EXPECT_EQ(rec.outcome, static_cast<std::uint8_t>(Outcome::Yes))
         << "T4 stub: AuditRecord.outcome 存在 (WAL v1.3)";
-    EXPECT_EQ(rec.side_val,     static_cast<std::uint8_t>(Side::Buy))
+    EXPECT_EQ(rec.side_val, static_cast<std::uint8_t>(Side::Buy))
         << "T4 stub: AuditRecord.side_val 存在 (WAL v1.3, 原 is_buy:bool)";
 
     // v1.2 → v1.3 migration 语义验证 (模拟 replay reader 默认填充)
     // is_buy=true → side=Buy(0); is_buy=false → side=Sell(1)
-    EXPECT_EQ(static_cast<std::uint8_t>(Side::Buy),  0u) << "T4: Side::Buy=0 (Polymarket EIP-712)";
+    EXPECT_EQ(static_cast<std::uint8_t>(Side::Buy), 0u) << "T4: Side::Buy=0 (Polymarket EIP-712)";
     EXPECT_EQ(static_cast<std::uint8_t>(Side::Sell), 1u) << "T4: Side::Sell=1 (Polymarket EIP-712)";
     EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Yes), 0u) << "T4: migration 默认 outcome=Yes(0)";
 }
@@ -707,8 +708,7 @@ TEST_F(RiskGatewayTest, T5_ClosePosition_Boundary) {
     it_ok.outcome = Outcome::Yes;
     it_ok.token_id = kMockTokenId;
     auto d_ok = rm_->evaluate(it_ok);
-    EXPECT_EQ(d_ok.decision, Decision::APPROVED)
-        << "T5: is_close=true+Sell+Yes 是合法平仓, 应 APPROVED";
+    EXPECT_EQ(d_ok.decision, Decision::APPROVED) << "T5: is_close=true+Sell+Yes 是合法平仓, 应 APPROVED";
 
     // 矛盾: is_close=true + side=Buy (平仓但 Buy)
     // v0.5 设计: is_close + Buy 是矛盾, 但 RM 本身不强拒这种组合 (DRAIN 才强制)
@@ -730,7 +730,7 @@ TEST_F(RiskGatewayTest, T6_HotPath_P99_Under_50us) {
     // 预热: 确保 intent v0.5 (含 token_id / outcome / side) 在热路径下 P99 < 50us
     // 注: NoopEmitter (不写 IO), 10000 次 evaluate 统计 P99
     class NoopEmit : public AuditEmitter {
-     public:
+    public:
         [[nodiscard]] bool emit(AuditRecord const&) noexcept override { return true; }
     };
     auto noop = std::make_shared<NoopEmit>();
@@ -750,40 +750,37 @@ TEST_F(RiskGatewayTest, T6_HotPath_P99_Under_50us) {
     for (int i = 0; i < kN; ++i) {
         auto const now = ::stcpp::infra::wal::pit::NowRealtimeNs();
         OrderIntent it;
-        it.event_ts_ns         = now - 500 * NS_PER_MS;
-        it.data_source_ts_ns   = now - 400 * NS_PER_MS;
-        it.ingestion_ts_ns     = now - 100 * NS_PER_MS;
-        it.as_of_ts_ns         = now -  10 * NS_PER_MS;
-        it.condition_id        = kMockConditionId;
-        it.token_id            = kMockTokenId;
-        it.outcome             = Outcome::Yes;
-        it.side                = Side::Buy;
-        it.strategy_id         = "strat_a";
-        it.signal_id           = "sig_t6_" + std::to_string(i);
+        it.event_ts_ns = now - 500 * NS_PER_MS;
+        it.data_source_ts_ns = now - 400 * NS_PER_MS;
+        it.ingestion_ts_ns = now - 100 * NS_PER_MS;
+        it.as_of_ts_ns = now - 10 * NS_PER_MS;
+        it.condition_id = kMockConditionId;
+        it.token_id = kMockTokenId;
+        it.outcome = Outcome::Yes;
+        it.side = Side::Buy;
+        it.strategy_id = "strat_a";
+        it.signal_id = "sig_t6_" + std::to_string(i);
         it.feature_snapshot_id = "fs_t6";
-        it.price               = 0.50;
-        it.size_usdc           = 1'000;
-        it.book_depth_l1_usdc  = 5'000;
+        it.price = 0.50;
+        it.size_pUSD_micro = 1'000;
+        it.book_depth_l1_usdc = 5'000;
         it.book_snapshot_ts_ns = now - 200 * NS_PER_MS;
-        it.tick_size           = 0.01;
+        it.tick_size = 0.01;
 
         auto const t0 = std::chrono::steady_clock::now();
         auto d = fast_rm.evaluate(it);
         auto const t1 = std::chrono::steady_clock::now();
         (void)d;
-        times.push_back(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
+        times.push_back(std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count());
     }
 
     std::sort(times.begin(), times.end());
     auto const p99_idx = static_cast<std::size_t>(static_cast<double>(kN) * 0.99);
-    auto const p99_ns  = times[p99_idx];
-    auto const p50_ns  = times[kN / 2];
+    auto const p99_ns = times[p99_idx];
+    auto const p50_ns = times[kN / 2];
 
-    EXPECT_LT(p99_ns, 50'000)
-        << "T6: RM evaluate P99 < 50us (实测 " << p99_ns << " ns)";
-    EXPECT_LT(p50_ns,  5'000)
-        << "T6: RM evaluate P50 < 5us (实测 " << p50_ns << " ns)";
+    EXPECT_LT(p99_ns, 50'000) << "T6: RM evaluate P99 < 50us (实测 " << p99_ns << " ns)";
+    EXPECT_LT(p50_ns, 5'000) << "T6: RM evaluate P50 < 5us (实测 " << p50_ns << " ns)";
 
     std::printf("[T6 RM evaluate v0.5] P50=%lld ns  P99=%lld ns  budget=50000 ns\n",
                 static_cast<long long>(p50_ns), static_cast<long long>(p99_ns));
@@ -816,23 +813,22 @@ TEST(T7_ABI_Handshake, OrderIntent_V05_FieldAlignment) {
 
     // outcome → (not in SignedOrder, token_id 隐含) [OK, 设计意图]
     // Outcome enum ABI lock v1.7: 枚举值固定
-    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Yes),   0u) << "T7: Outcome::Yes=0";
-    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::No),    1u) << "T7: Outcome::No=1";
-    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Home),  2u) << "T7: Outcome::Home=2";
-    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Draw),  3u) << "T7: Outcome::Draw=3";
-    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Away),  4u) << "T7: Outcome::Away=4";
-    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Over),  5u) << "T7: Outcome::Over=5";
+    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Yes), 0u) << "T7: Outcome::Yes=0";
+    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::No), 1u) << "T7: Outcome::No=1";
+    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Home), 2u) << "T7: Outcome::Home=2";
+    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Draw), 3u) << "T7: Outcome::Draw=3";
+    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Away), 4u) << "T7: Outcome::Away=4";
+    EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Over), 5u) << "T7: Outcome::Over=5";
     EXPECT_EQ(static_cast<std::uint8_t>(Outcome::Under), 6u) << "T7: Outcome::Under=6";
 
     // price → limit_price_bps (*10000) [PASS, transformer 负责]
     it.price = 0.55;
-    EXPECT_NEAR(it.price * 10000.0, 5500.0, 0.01)
-        << "T7: price → limit_price_bps 转换正确性验证";
+    EXPECT_NEAR(it.price * 10000.0, 5500.0, 0.01) << "T7: price → limit_price_bps 转换正确性验证";
 
-    // size_usdc → size_usdc_micro (*1_000_000) [PASS, transformer 负责]
-    it.size_usdc = 10;
-    EXPECT_EQ(it.size_usdc * 1'000'000LL, 10'000'000LL)
-        << "T7: size_usdc → size_usdc_micro 转换正确性验证";
+    // size_pUSD_micro (v0.6 rename from size_usdc): 直接是 pUSD micro 单位 (1e-6)
+    // transformer_v62 直接透传此值进 SignV62Request.size_pUSD_micro
+    it.size_pUSD_micro = 10'000'000LL;  // 10 pUSD (micro)
+    EXPECT_EQ(it.size_pUSD_micro, 10'000'000LL) << "T7: size_pUSD_micro v0.6 rename (老唐 audit v1.4 对齐)";
 
     std::printf("[T7 ABI Handshake] OrderIntent v0.5 字段对齐 100%% PASS\n");
 }
