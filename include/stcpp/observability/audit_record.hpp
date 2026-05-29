@@ -1,10 +1,25 @@
-// stcpp/observability/audit_record.hpp — laotang audit envelope v0.1 (W4 Wave 19)
+// stcpp/observability/audit_record.hpp — laotang audit envelope v1.3 (W9 Wave 65)
 //
 // 落:
 //   laotang-audit-schema-v1.1.md §2.x (4 ts + 12 AET + reject + sub_reason + chain)
 //   laowang-wal-framework-cpp-interface-v1.md §6 (WalRecord concept)
 //   laohan-rm-v0.3.1 §5  (21 reject + INVALID_INTENT.sub_reason 字段化)
 //   laosun-blake3-v5.1 §3 (Sprint-3 真上线, 此处 stub digest)
+//
+// v1.3 变更 (W9 Wave 65, 老唐):
+//   - 新增 token_id: char[80]  (uint256 string, 无 0x 前缀, 最多 77 位 + null)
+//   - 新增 outcome: uint8_t    (Outcome enum 底层类型, 0=Yes/1=No/…)
+//   - 新增 side: uint8_t       (Side enum, 0=Buy/1=Sell)
+//   - market_id → condition_id rename (保留 market_id alias 兼容 v1.2 call sites)
+//   - is_buy 保留 (v1.2 replay migration 读取; v1.3 写路径用 side)
+//   - schema_version: 0x12 → 0x13 (WAL magic byte bump)
+//   - BLAKE3 chain 兼容: 新字段进 payload, hash chain 算法不变
+//
+// cite:
+//   polymarket_ssot_cite: laoli-w8-polymarket-data-structure-ssot-v1.md §3 §6
+//   goalserve_ssot_cite:  N/A
+//   handshake_cite:       laoli-laoSun-handshake-v1.md §3 SignedOrder + Position ABI
+//   adr_cite:             ADR-027 Enforce-1
 //
 // 红线:
 //   R-11 paper mode → WalKind::PaperAudit (/var/lib/stcpp/paper/), 同进程不出现 RiskAudit symbol
@@ -90,8 +105,18 @@ inline constexpr std::size_t kAuditEventTypeCount = 12;
 inline constexpr std::size_t kHashBytes      = 32;   // BLAKE3-256
 inline constexpr std::size_t kMarketIdMax    = 32;
 inline constexpr std::size_t kStrategyIdMax  = 32;
+// v1.3: token_id buffer (uint256 string, max 77 chars + null term, 80B 对齐)
+// SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 §3.3
+inline constexpr std::size_t kTokenIdMax     = 80;
+// v1.3 schema version magic byte
+inline constexpr std::uint8_t kAuditSchemaV12 = 0x12;
+inline constexpr std::uint8_t kAuditSchemaV13 = 0x13;
 
 struct AuditRecord {
+    // ---- schema_version (migration reader 用) ----------------------------
+    // v1.2 = 0x12, v1.3 = 0x13. 不进 BLAKE3 payload (chain 兼容).
+    std::uint8_t schema_version = kAuditSchemaV13;
+
     // ---- R-20 4 ts (与 framework header v2 offset 16/24/32/40 一致) ----
     std::int64_t event_ts        = 0;
     std::int64_t data_source_ts  = 0;
@@ -113,25 +138,76 @@ struct AuditRecord {
     stcpp::risk::RejectCode             reject_code{stcpp::risk::RejectCode::INTERNAL_ERROR};
     stcpp::risk::InvalidIntentSubReason sub_reason{stcpp::risk::InvalidIntentSubReason::NONE};
 
-    // 业务键 (固定长度, 不存指针 — POD 落盘 + 不可篡改)
-    std::array<char, kMarketIdMax>   market_id{};
+    // ---- 市场标识 (v1.3: condition_id + token_id 双主键) -----------------
+    // condition_id: bytes32 hex (0x 前缀, 66 char), market 级
+    //   alias: market_id 兼容 v1.2 call sites (指向同一 array)
+    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 §3.2
+    std::array<char, kMarketIdMax>   condition_id{};    // v1.3 正名 (原 market_id)
+
+    // token_id: uint256 string (无 0x 前缀, 十进制, 最多 77 位)
+    // 新增 v1.3 — CLOB 下单 EIP-712 Order.tokenId 一等公民
+    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 §3.3
+    // handshake: laoli-laoSun-handshake-v1.md §3 SignedOrder.token_id
+    std::array<char, kTokenIdMax>    token_id{};         // v1.3 新增
+
     std::array<char, kStrategyIdMax> strategy_id{};
 
     std::int64_t size_usdc = 0;
     double       price     = 0.0;
-    bool         is_buy    = true;
+
+    // v1.3: outcome + side (替换原 is_buy: bool)
+    // outcome: Outcome enum 底层 uint8 (0=Yes, 1=No, 2=Home, 3=Draw, 4=Away, 5=Over, 6=Under)
+    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §3.3 tokens[i].outcome
+    std::uint8_t outcome = 0;   // v1.3 新增, default=Yes(0)
+
+    // side: Side enum 底层 uint8 (0=Buy, 1=Sell)
+    // SSOT: laoli-laoSun-handshake-v1.md §3 SignedOrder.side (BUY=0/SELL=1)
+    std::uint8_t side    = 0;   // v1.3 新增, default=Buy(0)
+
+    // is_buy: 保留 v1.2 兼容 (v1.2 replay migration 读, v1.3 写路径从 side 推断)
+    // migration: is_buy=true → side=Buy(0); is_buy=false → side=Sell(1)
+    bool         is_buy  = true;  // v1.2 兼容字段, v1.3 写路径由 side 决定
 
     // ---- BLAKE3 hash chain (老唐 v1.1 §4) ------------------------------
     // prev_hash         = 上一条 current_hash (chain 起点 = 全 0)
     // payload_hash      = BLAKE3(payload bytes ex hash region)        — Sprint-3 真算
     // current_hash      = BLAKE3(prev_hash || payload_hash)            — Sprint-3 真算
     // W4 stub: payload_hash = u64 counter + len, current = prev XOR payload (链式可校验)
+    // v1.3: 新字段 token_id/outcome/side 进 payload (不破 chain 算法)
     std::array<std::uint8_t, kHashBytes> prev_hash{};
     std::array<std::uint8_t, kHashBytes> payload_hash{};
     std::array<std::uint8_t, kHashBytes> current_hash{};
 
     // framework 帧尾还有 CRC32C (framework 算); 这里 payload 内嵌一份 sanity check.
     std::uint32_t crc32c = 0;
+
+    // ---- v1.2 → v1.3 migration helpers ---------------------------------
+    // 读 v1.2 record (schema_version==0x12) 时调 apply_v12_migration():
+    //   condition_id = market_id (直接拷贝)
+    //   token_id = ""  (空, migration 默认)
+    //   outcome  = 0   (Yes, migration 默认)
+    //   side     = is_buy ? 0 : 1  (由 is_buy 推断)
+    void apply_v12_migration() noexcept {
+        // condition_id 已是 market_id 内容 (同 array), 无需再拷贝
+        // token_id 全零 = 空字符串 (array 已 zero-init)
+        outcome = 0;                       // default: Yes
+        side    = is_buy ? 0u : 1u;        // Buy=0 / Sell=1
+        schema_version = kAuditSchemaV13;  // 升版本标记 (replay 后不再触发)
+    }
+
+    // ---- v1.2 call-site 兼容: market_id 作为 condition_id 的 alias getter ----
+    // v1.2 代码访问 r.market_id → 读到 condition_id 内容 (同 array)
+    // 注: 直接访问 condition_id array 成员与 market_id() 读取等价
+    [[nodiscard]] std::string_view market_id_sv() const noexcept {
+        return std::string_view{condition_id.data(),
+                                std::min(condition_id.size(),
+                                         std::strlen(condition_id.data()))};
+    }
+    [[nodiscard]] std::string_view token_id_sv() const noexcept {
+        return std::string_view{token_id.data(),
+                                std::min(token_id.size(),
+                                         std::strlen(token_id.data()))};
+    }
 
     // ---- WalRecord concept 适配 (4 ts getters + ulid + serialize) ----
     [[nodiscard]] std::int64_t event_ts_ns()       const noexcept { return event_ts; }

@@ -1,10 +1,17 @@
-// stcpp/observability/audit_emitter.cpp — AuditEmitter v1.2 + AuditEmitterPool
+// stcpp/observability/audit_emitter.cpp — AuditEmitter v1.3 + AuditEmitterPool
 //
-// Owner: 老唐 (audit-expert, #38)  W7 Wave 33
+// Owner: 老唐 (audit-expert, #38)  W9 Wave 65
 // 落: laotang-audit-schema-v1.1.md §5
 //     老周 Smell #A (AuditEmitter pool 5 上游)
 //     老韩 Smell #2 (BLAKE3_REAL 替换 XOR stub)
 //     W7 Wave 33: friend 删 + emit_with_injected_chain public API (老高 H-07 / 老周 C-06)
+//     W9 Wave 65: v1.3 schema (token_id / outcome / side), build_record 写入新字段
+//
+// cite:
+//   polymarket_ssot_cite: laoli-w8-polymarket-data-structure-ssot-v1.md §3 §6
+//   goalserve_ssot_cite:  N/A
+//   handshake_cite:       laoli-laoSun-handshake-v1.md §3 SignedOrder + Position ABI
+//   adr_cite:             ADR-027 Enforce-1
 //
 // R-7: paper/live build 都 BLAKE3_REAL=1 (CMakeLists.txt 注入 -DBLAKE3_REAL=1)
 // 不耻下问: SPSC WALQueue 接 @小石 W7; hash chain verify WAL replay @老王 Sprint-3
@@ -54,6 +61,7 @@ bool AuditEmitter::ts_chain_ok(const RiskDecisionInput& in) const noexcept {
 AuditRecord AuditEmitter::build_record(const RiskDecisionInput& in,
                                         AuditEventType type_override) const noexcept {
     AuditRecord r{};
+    r.schema_version = kAuditSchemaV13;  // v1.3 schema
     r.event_ts        = in.event_ts;
     r.data_source_ts  = in.data_source_ts;
     r.ingestion_ts    = in.ingestion_ts;
@@ -64,12 +72,25 @@ AuditRecord AuditEmitter::build_record(const RiskDecisionInput& in,
     r.reject_code     = in.reject_code;
     r.sub_reason      = in.sub_reason;
 
-    copy_fixed(std::span<char>{r.market_id.data(),   r.market_id.size()},   in.market_id);
+    // v1.3: condition_id (正名); 兼容 v1.2: 若 condition_id 为空则回退用 market_id
+    const std::string_view cond_id = in.condition_id.empty() ? in.market_id : in.condition_id;
+    copy_fixed(std::span<char>{r.condition_id.data(), r.condition_id.size()}, cond_id);
+
+    // v1.3 新增: token_id (uint256 string, 无 0x 前缀)
+    copy_fixed(std::span<char>{r.token_id.data(),   r.token_id.size()},   in.token_id);
+
     copy_fixed(std::span<char>{r.strategy_id.data(), r.strategy_id.size()}, in.strategy_id);
 
     r.size_usdc = in.size_usdc;
     r.price     = in.price;
-    r.is_buy    = in.is_buy;
+
+    // v1.3 新增: outcome + side
+    r.outcome = in.outcome;
+    r.side    = in.side;
+
+    // v1.2 compat: is_buy 从 side 推断 (side=0=Buy → is_buy=true; side=1=Sell → is_buy=false)
+    r.is_buy  = (in.side == 0);
+
     r.crc32c    = 0;   // framework 帧尾算
     return r;
 }
@@ -175,7 +196,8 @@ AuditEmitter::ResultT AuditEmitter::emit_safe_mode_enter(
     const RiskDecisionInput& ctx, std::string_view reason) noexcept {
     if (!ts_chain_ok(ctx)) return stcpp::infra::wal::WalError::PitViolation;
     AuditRecord r = build_record(ctx, AuditEventType::SafeModeEnter);
-    copy_fixed(std::span<char>{r.market_id.data(), r.market_id.size()}, reason);
+    // reason 写入 condition_id (v1.3 正名, 原 market_id)
+    copy_fixed(std::span<char>{r.condition_id.data(), r.condition_id.size()}, reason);
     const auto seq = seq_counter_.fetch_add(1, std::memory_order_acq_rel) + 1;
     apply_hash_chain(r, seq);
     return write(r);
@@ -194,7 +216,8 @@ AuditEmitter::ResultT AuditEmitter::emit_state_transition(
     const RiskDecisionInput& ctx, std::string_view from_to) noexcept {
     if (!ts_chain_ok(ctx)) return stcpp::infra::wal::WalError::PitViolation;
     AuditRecord r = build_record(ctx, AuditEventType::StateTransition);
-    copy_fixed(std::span<char>{r.market_id.data(), r.market_id.size()}, from_to);
+    // from_to 写入 condition_id (v1.3 正名, 原 market_id)
+    copy_fixed(std::span<char>{r.condition_id.data(), r.condition_id.size()}, from_to);
     const auto seq = seq_counter_.fetch_add(1, std::memory_order_acq_rel) + 1;
     apply_hash_chain(r, seq);
     return write(r);
@@ -226,7 +249,8 @@ AuditEmitter::ResultT AuditEmitter::emit_strategy_decayed(
 AuditEmitter::ResultT AuditEmitter::emit_recon_drift(
     const RiskDecisionInput& ctx, std::string_view diag) noexcept {
     AuditRecord r = build_record(ctx, AuditEventType::ReconDrift);
-    copy_fixed(std::span<char>{r.market_id.data(), r.market_id.size()}, diag);
+    // diag 写入 condition_id (v1.3 正名, 原 market_id)
+    copy_fixed(std::span<char>{r.condition_id.data(), r.condition_id.size()}, diag);
     const auto seq = seq_counter_.fetch_add(1, std::memory_order_acq_rel) + 1;
     apply_hash_chain(r, seq);
     return write(r);

@@ -145,10 +145,13 @@ class CountingAuditEmitter final : public risk::AuditEmitter {
             : stcpp::observability::AuditEventType::OrderApproved;
         wal_rec.reject_code     = rec.reject;
         wal_rec.sub_reason      = rec.sub_reason;
-        // v0.5: market_id → condition_id in risk::AuditRecord
+        // v1.3: condition_id (正名; 原 market_id)
         const std::string& cid_str = rec.condition_id;
-        const std::size_t mlen  = std::min(cid_str.size(), wal_rec.market_id.size());
-        if (mlen > 0) std::memcpy(wal_rec.market_id.data(), cid_str.data(), mlen);
+        const std::size_t mlen  = std::min(cid_str.size(), wal_rec.condition_id.size() - 1);
+        if (mlen > 0) {
+            std::memcpy(wal_rec.condition_id.data(), cid_str.data(), mlen);
+            wal_rec.condition_id[mlen] = '\0';
+        }
 
         auto r = paper_audit_writer_->Append(wal_rec);
         if (!r) {
