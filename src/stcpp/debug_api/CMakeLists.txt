@@ -77,6 +77,8 @@ add_library(stcpp_debug_api STATIC
     endpoint_quote.cpp
     # ADR-040: book_pair + book/token/{token_id} (市场结构修正, 老周决议)
     endpoint_book_pair.cpp
+    # 小冯 schema append: EventInfo 列表 (G-FREEZE-W 只增, 2026-05-29)
+    endpoint_events.cpp
 )
 
 target_include_directories(stcpp_debug_api
@@ -114,25 +116,22 @@ target_compile_options(stcpp_debug_api PRIVATE
 find_package(Threads REQUIRED)
 target_link_libraries(stcpp_debug_api PUBLIC Threads::Threads)
 
-# ---------- stcpp_debug_server 可运行入口 (前端集成落地点) ----------
-# Owner: 老雷 (GM) 2026-05-29 — 让 frontend/ 看板连真后端 (非 ?stub=1 mock)。
-# 默认 DemoStateProvider (代表性数据, 全面板可渲染); --empty 用 StubStateProvider;
-# --real 用 RealStateProvider (book/rejects 接真实快照, 其余委托 Demo)。
-# 只读 server, 127.0.0.1 默认 (ADR-038 §5)。在 debug_api/ 定义以保证 target 顺序正确
-# (root 在 bin/ 之后才 add_subdirectory(debug_api), bin/ 取不到本 target)。
+# ---------- stcpp_debug_server 可运行入口 (live-only 模式) ----------
+# Owner: 小冯 (#34) 2026-05-29 — live-only 重构: 只有真实 WSS 模式
+#   删除 --real/--replay/--empty/--demo; gamma 发现走 /events;
+#   data_source 恒 "live"; positions/pnl/quote 无 paper 源 → 空/灰显
 #
-# --real 依赖:
+# 只读 server, 127.0.0.1 默认 (ADR-038 §5)。在 debug_api/ 定义以保证 target 顺序正确.
+#
+# 依赖:
 #   stcpp_orderbook_snapshot_hub — per-token double-buffer (小冯, 零反向依赖)
 #   stcpp_risk                   — RmDebugSnapshot + attach/detach free functions (老沈)
-#   stcpp_ledger_snapshot_hub    — LedgerSnapshotHub positions/pnl hub (小石, 集成 ④)
-#   stcpp_sizing                 — SizingCalculator 真实 Kelly 计算 (小袁, ADR-042, 集成 ③)
-#   stcpp_quote_snapshot_hub     — QuoteSnapshotHub quote hub (小石, 集成 ④)
-#   stcpp_data_score_store       — ScoreSnapshotStore live feed 比分快照 (小段, 集成 ③)
-#
-# --live 额外依赖 (小冯 2026-05-29):
+#   stcpp_ledger_snapshot_hub    — LedgerSnapshotHub positions/pnl hub (小石)
+#   stcpp_sizing                 — SizingCalculator 真实 Kelly 计算 (小袁, ADR-042)
+#   stcpp_quote_snapshot_hub     — QuoteSnapshotHub quote hub (小石)
+#   stcpp_data_score_store       — ScoreSnapshotStore live feed 比分快照 (小段)
 #   OpenSSL (libssl + libcrypto) — LiveWssTransport POSIX+OpenSSL TLS 1.3
-#   live_wss_transport.hpp + live_book_publisher.hpp — header-only, 在 src/stcpp/debug_api/
-#   POSIX socket (系统库): getaddrinfo / connect / recv / send — 无需额外 link (macOS/Linux 内置)
+#   POSIX socket (系统库)         — getaddrinfo/connect/recv/send (macOS/Linux 内置)
 
 # 查找 OpenSSL (--live 模式需要)
 find_package(OpenSSL QUIET)
@@ -158,7 +157,7 @@ target_link_libraries(stcpp_debug_server PRIVATE
     stcpp_sizing
     stcpp_quote_snapshot_hub    # 集成 ④: quote hub (小石)
     stcpp_data_score_store
-    stcpp_backtest              # ReplayDriver (--replay 模式, kSynthetic hub feed)
+    # stcpp_backtest 已移除: live-only 模式不再有 --replay (小冯 2026-05-29)
 )
 
 # OpenSSL link (--live 模式 LiveWssTransport)

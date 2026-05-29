@@ -459,6 +459,15 @@ public:
     // positions/pnl: LedgerSnapshotHub (--replay) → Demo
     const char* data_source() const override { return "real"; }
 
+    // ---- events (小冯 schema append, G-FREEZE-W 只增, 2026-05-29) ----
+    // 返回 live 模式从 gamma /events 发现的活跃体育 event 列表。
+    // 由 main (--live 路径) 在启动时调用 set_events() 注入; 之后只读。
+    // R-12: 只读 value copy, 无锁 (events_ 在 set_events 注入后不再写入)。
+    std::vector<EventInfo> events() const override { return events_; }
+
+    // set_events — 由 main --live 路径在启动时注入 (非热路径, 启动时调用一次)
+    void set_events(std::vector<EventInfo> ev) { events_ = std::move(ev); }
+
 private:
     const polymarket::clob_wss::OrderBookSnapshotHub& hub_;
     const risk::RmDebugSnapshot* snap_;            // nullable; nullptr → 回落 Demo
@@ -470,6 +479,10 @@ private:
     ExecMode mode_;
     const risk::LedgerSnapshotHub* ledger_hub_{nullptr};  // nullable; nullptr → 回落 Demo (集成 ④)
     const sizing::QuoteSnapshotHub* quote_hub_{nullptr};  // nullable; nullptr → 回落 Demo (集成 ④)
+    // 小冯 schema append (G-FREEZE-W 只增, 2026-05-29):
+    //   events_: live 模式从 gamma /events 发现的活跃体育 event 列表
+    //   由 main --live 路径 set_events() 注入; 之后只读 (R-12 无锁 const 方法读安全)
+    std::vector<EventInfo> events_;
 
     // -----------------------------------------------------------------------
     // to_book_snapshot — OrderBookFeatures → BookSnapshot

@@ -71,6 +71,11 @@ static void register_market_info(httplib::Server& svr, const HttpServer& hs) {
             body += json::str(mi.slug);
             body += ",\"polymarket_url\":";
             body += json::str(mi.polymarket_url);
+            // 小冯 schema append (G-FREEZE-W 只增, 2026-05-29)
+            body += ",\"sports_market_type\":";
+            body += json::str(mi.sports_market_type);
+            body += ",\"group_item_title\":";
+            body += json::str(mi.group_item_title);
             // ADR-040: tokens[] — per-token 元数据列表
             body += ",\"tokens\":[";
             for (std::size_t i = 0; i < mi.tokens.size(); ++i) {
@@ -165,6 +170,9 @@ static std::string serialize_book_snapshot(const BookSnapshot& b) {
             s += '}';
         }
         s += "]";
+        // 小冯 schema append (G-FREEZE-W 只增, 2026-05-29)
+        s += ",\"last_trade_price\":";
+        s += json::num(b.last_trade_price);
     }
     s += '}';
     return s;

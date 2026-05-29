@@ -359,6 +359,10 @@ public:
     // ---- data_source ----
     const char* data_source() const override { return "demo"; }
 
+    // ---- events (小冯 schema append): demo 返回空列表 ----
+    // Demo provider 无真实 gamma /events 数据; 前端 event 层由真实 RealStateProvider 填充。
+    std::vector<EventInfo> events() const override { return {}; }
+
     // ---- /api/v1/book/{token_id} (ADR-040 per-token) ----
     // 按 token_id 返回单边 book (策略/调试旁路)。
     // Demo: 从 token_id 反查 condition_id, 再取盘口专属价格构造 BookSnapshot。

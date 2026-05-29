@@ -1,10 +1,13 @@
 // src/stcpp/debug_api/state_provider.hpp — 观测只读状态契约 (ADR-038 MVP)
 // Owner: 小卢 (senior-ic-pool)  ADR-038 MVP
+// 小冯 (#34) 2026-05-29: 新增 EventInfo + MarketInfo.sports_market_type/group_item_title
+//                         + BookSnapshot.last_trade_price + StateProvider::events() (G-FREEZE-W 只增)
 // 关联:
 //   docs/ADR/2026-05-29-observability-debug-api.md §2 / §4 / §5
 //   docs/RESEARCH/laozhou-observability-api-arch-v1.md §3 (零耦合状态暴露) / §5
 //   docs/RESEARCH/xiaobai-observability-api-security-v1.md §1 (黑名单) / §3 (mode)
 //   docs/RESEARCH/laozhou-market-structure-contract-fix-v1.md (ADR-040 市场结构修正决议)
+//   docs/RESEARCH/laoli-events-ws-mapping-spec-v1.md (Events→Market→Token 字段映射)
 //   R-11 (paper 不污染真账本; response 带 mode), R-12 (观测侧零反向依赖),
 //   R-20 (4 时间戳 epoch_ns int64)
 //
@@ -27,6 +30,14 @@
 //     market_id 保留为 deprecated alias (= condition_id 值)
 //   - 新增 BinaryMarketBookView: 双 token book view + cross_spread (后端算好)
 //   - StateProvider: book() 语义改为按 token_id 查单边; 新增 book_pair(condition_id)
+//
+// 小冯 schema append (G-FREEZE-W 只增不改名, 2026-05-29):
+//   - 新增 EventInfo: event 层元数据 (event_id / slug / title / sport /
+//     neg_risk_market_id / condition_ids); 对应 gamma /events response 顶层字段
+//   - MarketInfo 追加 sports_market_type (moneyline/spread/totals/outright/prop/series)
+//                     + group_item_title (gamma groupItemTitle, 球队名/大小盘边)
+//   - BookSnapshot 追加 last_trade_price (CLOB price_change 最新成交价; 0=未知)
+//   - StateProvider 新增 events() → vector<EventInfo> (供前端 Event 层导航)
 //
 // 注意: 本头文件【不得】#include 任何热路径模块头 (risk/signer/exec), 保证零反向依赖。
 //       只用标准库 POD。
@@ -61,6 +72,26 @@ struct FourTs {
     std::int64_t data_source_ts_ns{0};
     std::int64_t ingestion_ts_ns{0};
     std::int64_t as_of_ts_ns{0};
+};
+
+// ============================================================
+// EventInfo — event 层元数据 (小冯 schema append, G-FREEZE-W 只增)
+//
+// 对应 gamma /events response 顶层 Event 对象字段:
+//   event_id          — gamma id (string)
+//   slug              — gamma slug (e.g. "nba-lal-bos-2026-05-29")
+//   title             — gamma title / description (比赛标题)
+//   sport             — 运动类别 (e.g. "NBA"/"NFL"/"Soccer")
+//   neg_risk_market_id — negRiskMarketID (可空; 合并下注市场 ID)
+//   condition_ids     — 本 event 下所有市场的 condition_id 列表 (双 token 盘口主键)
+// ============================================================
+struct EventInfo {
+    std::string event_id;                    // gamma Event id
+    std::string slug;                        // gamma slug (可构造 polymarket_url)
+    std::string title;                       // gamma title / description
+    std::string sport;                       // 运动类别 (e.g. "NBA")
+    std::string neg_risk_market_id;          // negRiskMarketID (可空)
+    std::vector<std::string> condition_ids;  // 本 event 下所有盘口 condition_id
 };
 
 // ============================================================
@@ -211,6 +242,13 @@ struct MarketInfo {
     // ADR-040 Polymarket 超链接 (老板要求 P0)
     std::string slug;            // gamma slug 字段 (如 "nba-lal-bos-2026-05-29")
     std::string polymarket_url;  // = "https://polymarket.com/event/" + slug
+    // 小冯 schema append (G-FREEZE-W 只增, 2026-05-29):
+    //   sports_market_type — 盘口类型 (moneyline/spread/totals/outright/prop/series/unknown)
+    //     来源: gamma market sportsMarketType 字段 (若无则由 groupItemTitle 推断)
+    //   group_item_title   — gamma groupItemTitle (球队名/大小盘边, e.g. "LAL"/"Over 220.5")
+    //     供前端 outcomes 列表标注 (比 outcome 更可读)
+    std::string sports_market_type;  // moneyline/spread/totals/outright/prop/series/unknown
+    std::string group_item_title;    // gamma groupItemTitle (可空)
 };
 
 // ============================================================
@@ -316,6 +354,10 @@ struct BookSnapshot {
     // 深度阶梯 (best 在前; 可空 = 仅 L1 摘要)。前端深度条可视化消费。
     std::vector<BookLevel> bids{};
     std::vector<BookLevel> asks{};
+    // 小冯 schema append (G-FREEZE-W 只增, 2026-05-29):
+    //   last_trade_price — CLOB price_change 事件携带的最新成交价 ∈ [0,1]; 0 = 未知/尚未收到
+    //   来源: CLOB market channel event_type=="price_change" 的 price 字段 (字符串→double)
+    double last_trade_price{0.0};
 };
 
 // ============================================================
@@ -365,6 +407,12 @@ public:
     virtual QuoteParams quote_params(const std::string& condition_id) const = 0;
     // 数据源标识 (返回 "demo"/"stub"/"live"; 供 /status DEMO 标记; 老钱红线)
     virtual const char* data_source() const = 0;
+
+    // 小冯 schema append (G-FREEZE-W 只增, 2026-05-29):
+    //   events() — 返回当前已发现的活跃体育 event 列表 (供前端 Event 层导航)
+    //   live 模式: 由 RealStateProvider 从 gamma /events 发现结果填充
+    //   stub/demo 模式: 返回空列表 (前端 fallback)
+    virtual std::vector<EventInfo> events() const = 0;
 };
 
 // StubStateProvider — MVP 默认实现, 返回结构合法的空/0 值。
@@ -434,6 +482,9 @@ public:
     }
 
     const char* data_source() const override { return "stub"; }
+
+    // events: stub 返回空列表
+    std::vector<EventInfo> events() const override { return {}; }
 
 private:
     ExecMode mode_;
