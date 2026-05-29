@@ -193,7 +193,7 @@ enum class PMErrorKind : std::uint8_t {
     NotAuthenticated     = 1,  // HMAC 401, 走 v3 §B SOP, 5min 内禁说 "key 失效"
     RateLimited          = 2,  // 429, 退避 + 自我限流
     ServerError          = 3,  // 5xx, 老韩 STALE 判定
-    BadRequest           = 4,  // 400, signing / sigType=2 bug 等
+    BadRequest           = 4,  // 400, signing bug (sigType must be 1, not 2) 等
     NotFound             = 5,  // 404
     NetworkError         = 6,  // 断 / 超时, 老姜 STALE 5 档
     Stale                = 7,  // payload data_source_ts 落后超阈 (R-20)
@@ -265,7 +265,7 @@ struct OrderBookSnapshot {
 // ---------- SignedOrder (F-02 输入) ----------
 //
 // HMAC 4 bug enforce (v3 §A): live 实现 signature 字段必须 base64 保留 padding;
-// signatureType=1 (Magic 1-of-1 Safe), 不可 sigType=2.
+// signatureType=1 (Magic 1-of-1 Safe, sigType must be 1).
 // paper mode signature 留空 (mock 不签真签名, 但接口字段 reserve 给 live W5+ patch).
 
 struct SignedOrder {
