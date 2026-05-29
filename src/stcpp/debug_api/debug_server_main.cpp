@@ -699,8 +699,7 @@ int main(int argc, char** argv) {
         stcpp::data::goalserve::GoalserveSport::Basketball,
         stcpp::data::goalserve::GoalserveSport::Tennis,
     };
-    auto inplay_feed =
-        std::make_unique<stcpp::data::InplayFeedThread>(*score_store_owned, feed_cfg);
+    auto inplay_feed = std::make_unique<stcpp::data::InplayFeedThread>(*score_store_owned, feed_cfg);
     inplay_feed->Start();
     std::printf("[debug_server] Goalserve InplayFeedThread 启动 (soccer/basketball/tennis, R-12)\n");
     std::fflush(stdout);
