@@ -739,6 +739,41 @@ gtest_discover_tests(test_blake3_audit
     PROPERTIES LABELS "unit;audit;blake3;w6;m1-a06;smell-a;smell-2"
 )
 
+# 老唐 W9 Wave 65: audit schema v1.3 cpp — 5 ctest (ADR-027 Enforce-1)
+#   T1: AuditEvent v1.3 含 token_id round-trip (serialize → deserialize)
+#   T2: outcome enum 序列化 (0-6 全 enum, uint8 round-trip)
+#   T3: side enum 序列化 (0/1 Buy/Sell round-trip, is_buy v1.2 compat)
+#   T4: BLAKE3 chain 新字段不破 hash 链 (T2_Chain_RecomputeMatches 仍 PASS)
+#   T5: schema v1.2 → v1.3 migration (旧 log read 加 default 字段)
+# cite: ADR-027 Enforce-1 / polymarket_ssot §3 §6 / handshake §3
+add_executable(test_audit_schema_v13
+    test_audit_schema_v13.cpp
+)
+target_link_libraries(test_audit_schema_v13 PRIVATE
+    GTest::gtest_main
+    stcpp_observability_audit
+)
+target_compile_options(test_audit_schema_v13 PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
+)
+target_include_directories(test_audit_schema_v13 PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_audit_schema_v13 PRIVATE cxx_std_20)
+# R-7: BLAKE3_REAL=1 (T4 chain 验证依赖真 BLAKE3)
+target_compile_definitions(test_audit_schema_v13 PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    BLAKE3_REAL=1
+)
+gtest_discover_tests(test_audit_schema_v13
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;audit;schema-v13;token_id;outcome;side;migration;adr027;w9"
+)
+
 # 老孙 W6 Wave 30: signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
 #   T1-T8 + Bonus_R11 + Bonus_R20: 10 test targets
 # R-7 物理隔离: paper mode only; libsodium homebrew prebuilt

@@ -1,4 +1,4 @@
-// stcpp/observability/audit_emitter.hpp — AuditEmitter v1.2 (W7 Wave 33)
+// stcpp/observability/audit_emitter.hpp — AuditEmitter v1.3 (W9 Wave 65)
 //
 // 落:
 //   laotang-audit-schema-v1.1.md §5 (emit_* API + hash chain owner)
@@ -6,6 +6,8 @@
 //   laohan-rm-v0.3.1 §6 (RiskDecision 联动)
 //   老周 Smell #A (W6 Wave 29): 5 上游各自独立 emitter instance → AuditEmitterPool
 //   老韩 Smell #2 (W6 Wave 29): BLAKE3_REAL build-time enforce, stub 禁进 live
+//   laohan-w9-orderintent-v05-spec-v1.md §3.3 (AuditRecord v1.3 WAL schema bump)
+//   laosun-w9-signer-v53-abi-align-spec-v1.md §2 (token_id/outcome/side 新字段)
 //
 // v1.1 变更 (W6 Wave 29):
 //   1. 引入 blake3_hash.hpp — apply_hash_chain 切真 BLAKE3 (BLAKE3_REAL)
@@ -17,6 +19,18 @@
 //   5. 删 friend class AuditEmitterPool (老高 H-07 + 老周 C-06 review ack)
 //   6. 新增 emit_with_injected_chain() public API — Pool 注入 chain 参数后调用
 //      (替代 friend 访问 private build_record / write 路径)
+//
+// v1.3 变更 (W9 Wave 65, 老唐):
+//   7. RiskDecisionInput: 新增 token_id / outcome / side; condition_id 补充 market_id alias
+//   8. emit_decision(OrderIntent) 含新字段 (从 RiskDecisionInput 读)
+//   9. build_record() 写入 token_id / outcome / side → AuditRecord v1.3
+//   10. v1.2 → v1.3 migration: 旧 audit log read 加 default 字段 (apply_v12_migration)
+//
+// cite:
+//   polymarket_ssot_cite: laoli-w8-polymarket-data-structure-ssot-v1.md §3 §6
+//   goalserve_ssot_cite:  N/A
+//   handshake_cite:       laoli-laoSun-handshake-v1.md §3 SignedOrder + Position ABI
+//   adr_cite:             ADR-027 Enforce-1
 //
 // 红线:
 //   R-1   只一处 emit 路径 (本类), 全仓 grep audit_event 唯此一处
@@ -46,7 +60,11 @@
 
 namespace stcpp::observability {
 
-// ---------- RiskDecisionInput (ABI locked W6) --------------------------------
+// ---------- RiskDecisionInput (v1.3, W9 Wave 65) --------------------------------
+//
+// v1.3 新增: token_id / outcome / side
+// v1.2 兼容: market_id alias → condition_id; is_buy 保留 (migration 用)
+// BLAKE3 chain payload 不变 (新字段进 AuditRecord, chain 算法不改)
 
 struct RiskDecisionInput {
     // 4 ts (R-20)
@@ -57,10 +75,30 @@ struct RiskDecisionInput {
     std::int64_t decision_ts     = 0;     // > as_of_ts, RM 决策时刻
 
     std::array<std::uint8_t, 16>     audit_id_bytes{};
-    std::string_view                 market_id;
+
+    // v1.3: condition_id (正名); market_id 保留作 v1.2 call-site 兼容 alias
+    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 condition_id
+    std::string_view                 condition_id;    // v1.3 正名
+    std::string_view                 market_id;       // v1.2 alias → 同 condition_id (调用方选一)
+
+    // v1.3 新增: token_id (uint256 decimal string, 无 0x 前缀)
+    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §3.3 token_id
+    // handshake: laoli-laoSun-handshake-v1.md §3 SignedOrder.token_id
+    std::string_view                 token_id;        // v1.3 新增
+
     std::string_view                 strategy_id;
     std::int64_t                     size_usdc{0};
     double                           price{0.0};
+
+    // v1.3 新增: outcome (Outcome enum 底层 uint8; 0=Yes,1=No,2=Over,3=Under,…)
+    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §3.3 tokens[i].outcome
+    std::uint8_t                     outcome{0};      // v1.3 新增, default=Yes(0)
+
+    // v1.3 新增: side (Side enum 底层 uint8; 0=Buy,1=Sell)
+    // SSOT: laoli-laoSun-handshake-v1.md §3 SignedOrder.side
+    std::uint8_t                     side{0};         // v1.3 新增, default=Buy(0)
+
+    // v1.2 compat: is_buy 保留; 写路径优先用 side; migration read 路径用 is_buy 推 side
     bool                             is_buy{true};
 
     AuditEventType                       event_type{AuditEventType::OrderApproved};
