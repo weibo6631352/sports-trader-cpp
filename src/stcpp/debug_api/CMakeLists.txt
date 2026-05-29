@@ -128,6 +128,27 @@ target_link_libraries(stcpp_debug_api PUBLIC Threads::Threads)
 #   stcpp_sizing                 — SizingCalculator 真实 Kelly 计算 (小袁, ADR-042, 集成 ③)
 #   stcpp_quote_snapshot_hub     — QuoteSnapshotHub quote hub (小石, 集成 ④)
 #   stcpp_data_score_store       — ScoreSnapshotStore live feed 比分快照 (小段, 集成 ③)
+#
+# --live 额外依赖 (小冯 2026-05-29):
+#   OpenSSL (libssl + libcrypto) — LiveWssTransport POSIX+OpenSSL TLS 1.3
+#   live_wss_transport.hpp + live_book_publisher.hpp — header-only, 在 src/stcpp/debug_api/
+#   POSIX socket (系统库): getaddrinfo / connect / recv / send — 无需额外 link (macOS/Linux 内置)
+
+# 查找 OpenSSL (--live 模式需要)
+find_package(OpenSSL QUIET)
+if(NOT OpenSSL_FOUND)
+    # macOS homebrew fallback
+    find_library(OPENSSL_SSL_LIB ssl PATHS /opt/homebrew/opt/openssl@3/lib NO_DEFAULT_PATH)
+    find_library(OPENSSL_CRYPTO_LIB crypto PATHS /opt/homebrew/opt/openssl@3/lib NO_DEFAULT_PATH)
+    find_path(OPENSSL_INCLUDE_DIR openssl/ssl.h PATHS /opt/homebrew/opt/openssl@3/include NO_DEFAULT_PATH)
+    if(OPENSSL_SSL_LIB AND OPENSSL_CRYPTO_LIB AND OPENSSL_INCLUDE_DIR)
+        set(OPENSSL_FOUND_MANUAL TRUE)
+        message(STATUS "OpenSSL found via homebrew: ${OPENSSL_SSL_LIB}")
+    else()
+        message(WARNING "OpenSSL not found — --live mode will fail at runtime (link error). Install: brew install openssl@3")
+    endif()
+endif()
+
 add_executable(stcpp_debug_server debug_server_main.cpp)
 target_link_libraries(stcpp_debug_server PRIVATE
     stcpp_debug_api
@@ -139,6 +160,21 @@ target_link_libraries(stcpp_debug_server PRIVATE
     stcpp_data_score_store
     stcpp_backtest              # ReplayDriver (--replay 模式, kSynthetic hub feed)
 )
+
+# OpenSSL link (--live 模式 LiveWssTransport)
+if(OpenSSL_FOUND)
+    target_link_libraries(stcpp_debug_server PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_definitions(stcpp_debug_server PRIVATE STCPP_LIVE_WSS_OPENSSL=1)
+    message(STATUS "stcpp_debug_server: OpenSSL found via find_package (--live 模式启用)")
+elseif(OPENSSL_FOUND_MANUAL)
+    target_link_libraries(stcpp_debug_server PRIVATE ${OPENSSL_SSL_LIB} ${OPENSSL_CRYPTO_LIB})
+    target_include_directories(stcpp_debug_server SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
+    target_compile_definitions(stcpp_debug_server PRIVATE STCPP_LIVE_WSS_OPENSSL=1)
+    message(STATUS "stcpp_debug_server: OpenSSL found via homebrew fallback (--live 模式启用)")
+else()
+    message(WARNING "stcpp_debug_server: OpenSSL NOT found — --live 模式将编译报错; 安装: brew install openssl@3")
+endif()
+
 target_include_directories(stcpp_debug_server PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
@@ -148,6 +184,7 @@ target_compile_definitions(stcpp_debug_server PRIVATE
     STCPP_EXEC_MODE_STR="${STCPP_EXEC_MODE}"
 )
 # 三方库豁免: cpp-httplib (经 stcpp_debug_api PUBLIC SYSTEM include 传入)
+# OpenSSL: SYSTEM include 豁免 (系统头, 非公司 -Werror 范围)
 target_compile_options(stcpp_debug_server PRIVATE
     -Wno-old-style-cast
     -Wno-cast-align
