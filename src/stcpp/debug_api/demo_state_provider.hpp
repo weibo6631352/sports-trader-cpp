@@ -42,10 +42,18 @@ public:
     std::vector<HoldingView> positions() const override {
         const std::int64_t now = now_ns();
         std::vector<HoldingView> v;
+        // LAL-BOS 赛事 — 三个盘口 (Moneyline / Totals / Spread) 共享 event_id nba-lal-bos-2026-05-29
         v.push_back(
             make_holding("nba-lal-bos-ml", "LAL", 1500.0, 0.62, 0.65, 45.0, 45.0, now - 60'000'000'000LL));
         v.push_back(
             make_holding("nba-lal-bos-ml", "BOS", -800.0, 0.38, 0.35, -12.5, 24.0, now - 30'000'000'000LL));
+        // 大小盘 — OVER_220.5 多头
+        v.push_back(make_holding("nba-lal-bos-total", "OVER_220.5", 900.0, 0.50, 0.52, 18.0, 18.0,
+                                 now - 20'000'000'000LL));
+        // 让分盘 — LAL_-5.5 多头
+        v.push_back(make_holding("nba-lal-bos-spread", "LAL_-5.5", 600.0, 0.47, 0.49, 12.0, 12.0,
+                                 now - 15'000'000'000LL));
+        // 对照赛事 (单盘口) — ARS-CHE 大小盘
         v.push_back(make_holding("epl-ars-che-total", "OVER_2.5", 2200.0, 0.71, 0.74, 110.0, 66.0,
                                  now - 10'000'000'000LL));
         return v;
@@ -100,11 +108,10 @@ public:
         a.spread = 24.6;
         a.net = a.gross + a.fee + a.gas + a.slippage + a.spread;  // = 307.0
         a.as_of_ts_ns = now_ns();
+        // LAL-BOS 三盘口共享 event_id nba-lal-bos-2026-05-29 (演示 赛事→多盘口 层级)
         a.per_market = {
-            {"nba-lal-bos-ml", 90.0},
-            {"epl-ars-che-total", 176.0},
-            {"nfl-kc-buf-spread", 77.5},
-            {"mlb-nyy-bos-ml", -36.5},
+            {"nba-lal-bos-ml", 90.0},     {"nba-lal-bos-total", 32.0}, {"nba-lal-bos-spread", 21.5},
+            {"epl-ars-che-total", 176.0}, {"nfl-kc-buf-spread", 77.5}, {"mlb-nyy-bos-ml", -36.5},
         };
         return a;
     }
@@ -181,18 +188,19 @@ public:
         mi.event_id = derive_event_id(condition_id);
 
         // ADR-040: tokens[] — 2 个 token, 互补价格 (价格之和 ≈ 1.00)
-        // 代表性 demo: nba-lal-bos-ml → LAL(tok-lal-001, 0.65) / BOS(tok-bos-001, 0.35)
+        // 各盘口价格来自 book_prices_for() 的 mid 值, 演示"同赛事不同盘口不同价格"
         const auto tok_ids = derive_token_ids(condition_id);
         const auto outcomes = derive_outcomes(condition_id);
+        const BookPrices bp = book_prices_for(condition_id);
         TokenInfo t0;
         t0.token_id = tok_ids.first;
         t0.outcome = outcomes.first;
-        t0.price = 0.65;
+        t0.price = bp.mid0;  // microprice as fair price proxy
         t0.winner = false;
         TokenInfo t1;
         t1.token_id = tok_ids.second;
         t1.outcome = outcomes.second;
-        t1.price = 0.35;
+        t1.price = bp.mid1;
         t1.winner = false;
         mi.tokens = {t0, t1};
 
@@ -275,14 +283,45 @@ public:
         QuoteParams q;
         q.found = true;
         q.market_id = condition_id;
-        q.fair_value = 0.662;
-        q.market_mid = 0.648;
-        q.edge_bps = 21.6;
-        q.kelly_fraction = 0.042;
-        q.suggested_notional = 850.0;
-        q.signal_strength = 0.71;
-        q.model_conf = 0.62;
         q.as_of_ts_ns = now_ns();
+
+        // 各盘口代表性 fair/edge/Kelly (演示"同赛事不同盘口各自报价")
+        if (condition_id == "nba-lal-bos-ml") {
+            q.fair_value = 0.662;
+            q.market_mid = 0.648;
+            q.edge_bps = 21.6;
+            q.kelly_fraction = 0.042;
+            q.suggested_notional = 850.0;
+            q.signal_strength = 0.71;
+            q.model_conf = 0.62;
+        } else if (condition_id == "nba-lal-bos-total") {
+            // 大小盘: Over 220.5 略有优势
+            q.fair_value = 0.535;
+            q.market_mid = 0.520;
+            q.edge_bps = 15.0;
+            q.kelly_fraction = 0.028;
+            q.suggested_notional = 560.0;
+            q.signal_strength = 0.58;
+            q.model_conf = 0.54;
+        } else if (condition_id == "nba-lal-bos-spread") {
+            // 让分盘: LAL -5.5 接近中性
+            q.fair_value = 0.502;
+            q.market_mid = 0.490;
+            q.edge_bps = 12.0;
+            q.kelly_fraction = 0.021;
+            q.suggested_notional = 420.0;
+            q.signal_strength = 0.50;
+            q.model_conf = 0.48;
+        } else {
+            // 其余盘口通用 demo 数值
+            q.fair_value = 0.662;
+            q.market_mid = 0.648;
+            q.edge_bps = 21.6;
+            q.kelly_fraction = 0.042;
+            q.suggested_notional = 850.0;
+            q.signal_strength = 0.71;
+            q.model_conf = 0.62;
+        }
         return q;
     }
 
@@ -290,19 +329,16 @@ public:
     const char* data_source() const override { return "demo"; }
 
     // ---- /api/v1/book/{token_id} (ADR-040 per-token) ----
-    // 按 token_id 返回单边 book。
-    // Demo: tok-lal-001 → token0 book (LAL, 0.65 side);
-    //        tok-bos-001 → token1 book (BOS, 0.35 side);
-    //        其他 → fallback token0 demo。
-    // token0.best_bid + token1.best_ask = 1.00 (互补镜像)
-    // token0.best_ask + token1.best_ask - 1.0 = cross_spread (vig)
+    // 按 token_id 返回单边 book (策略/调试旁路)。
+    // Demo: 从 token_id 反查 condition_id, 再取盘口专属价格构造 BookSnapshot。
+    // 互补镜像: 每盘口 token0.best_bid + token1.best_ask = 1.000
     BookSnapshot book(const std::string& token_id) const override {
         const std::int64_t now = now_ns();
-        // 判断是否为 token1 (BOS/Away/Under 侧)
-        const bool is_token1 = is_second_token(token_id);
-        BookSnapshot b = make_book_snapshot(token_id, is_token1, now);
-        // 从 token_id 反查 condition_id 和 outcome (Demo 简化: 枚举已知 token)
-        const auto [cond_id, outcome] = lookup_token_meta(token_id, is_token1);
+        const bool is_tok1 = is_second_token(token_id);
+        // 反查 condition_id → 取盘口专属价格
+        const auto [cond_id, outcome] = lookup_token_meta(token_id, is_tok1);
+        const BookPrices p = book_prices_for(cond_id);
+        BookSnapshot b = make_book_snapshot_ex(token_id, is_tok1, p, now);
         b.condition_id = cond_id;
         b.market_id = cond_id;  // deprecated alias
         b.outcome = outcome;
@@ -310,26 +346,28 @@ public:
     }
 
     // ---- /api/v1/book_pair/{condition_id} (ADR-040 新增) ----
-    // 组装 token0 + token1 双 book + cross_spread。
-    // 任意未知 condition_id 返回合法 demo (found=true)。
+    // 组装 token0 + token1 双 book + cross_spread (看板主入口, 1 RTT 拿双边)。
+    // 任意 condition_id 返回合法 demo (found=true)。
+    // 互补镜像约束 (各盘口): cross_spread = token0.best_ask + token1.best_ask - 1.0
     BinaryMarketBookView book_pair(const std::string& condition_id) const override {
         const std::int64_t now = now_ns();
         const auto tok_ids = derive_token_ids(condition_id);
         const auto outcomes = derive_outcomes(condition_id);
+        // 取盘口专属价格 (total/spread 各有不同价格, 演示"同赛事不同盘口价格差异")
+        const BookPrices p = book_prices_for(condition_id);
 
         BinaryMarketBookView v;
         v.found = true;
         v.condition_id = condition_id;
 
-        // token0 (LAL/Home/Yes/Over 侧): best_bid=0.644, best_ask=0.656
-        v.token0 = make_book_snapshot(tok_ids.first, false, now);
+        // token0: outcomes[0] 侧 (LAL / OVER_220.5 / LAL_-5.5)
+        v.token0 = make_book_snapshot_ex(tok_ids.first, false, p, now);
         v.token0.condition_id = condition_id;
         v.token0.market_id = condition_id;  // deprecated alias
         v.token0.outcome = outcomes.first;
 
-        // token1 (BOS/Away/No/Under 侧): best_bid=0.344, best_ask=0.356
-        // 互补性: token0.best_ask + token1.best_ask - 1.0 = 0.656 + 0.356 - 1.0 = 0.012
-        v.token1 = make_book_snapshot(tok_ids.second, true, now);
+        // token1: outcomes[1] 侧 (BOS / UNDER_220.5 / BOS_+5.5) — 互补镜像
+        v.token1 = make_book_snapshot_ex(tok_ids.second, true, p, now);
         v.token1.condition_id = condition_id;
         v.token1.market_id = condition_id;  // deprecated alias
         v.token1.outcome = outcomes.second;
@@ -407,7 +445,19 @@ private:
 
     // condition_id → (token0_id, token1_id)
     // Demo: 基于 condition_id 派生固定 demo token ids
+    // LAL-BOS 三盘口各有独立 token pair，确保 book(token_id) 能精确路由
     static std::pair<std::string, std::string> derive_token_ids(const std::string& condition_id) {
+        // LAL-BOS 三盘口分别精确匹配 (需在通配 nba-lal-bos 之前)
+        if (condition_id == "nba-lal-bos-ml") {
+            return {"tok-lal-ml-0", "tok-bos-ml-1"};
+        }
+        if (condition_id == "nba-lal-bos-total") {
+            return {"tok-over220-0", "tok-under220-1"};
+        }
+        if (condition_id == "nba-lal-bos-spread") {
+            return {"tok-lal-spd-0", "tok-bos-spd-1"};
+        }
+        // 其他含 nba-lal-bos 前缀的 fallback
         if (condition_id.find("nba-lal-bos") != std::string::npos) {
             return {"tok-lal-001", "tok-bos-001"};
         }
@@ -426,6 +476,17 @@ private:
 
     // condition_id → (outcome0, outcome1)
     static std::pair<std::string, std::string> derive_outcomes(const std::string& condition_id) {
+        // LAL-BOS 三盘口各自 outcome (精确匹配优先)
+        if (condition_id == "nba-lal-bos-ml") {
+            return {"LAL", "BOS"};
+        }
+        if (condition_id == "nba-lal-bos-total") {
+            return {"OVER_220.5", "UNDER_220.5"};
+        }
+        if (condition_id == "nba-lal-bos-spread") {
+            return {"LAL_-5.5", "BOS_+5.5"};
+        }
+        // 其他含 nba-lal-bos 前缀的 fallback
         if (condition_id.find("nba-lal-bos") != std::string::npos) {
             return {"LAL", "BOS"};
         }
@@ -453,14 +514,25 @@ private:
             const char* outcome;
         };
         static const Entry kMap[] = {
-            {"tok-lal-001", "nba-lal-bos-ml", "LAL"},
-            {"tok-bos-001", "nba-lal-bos-ml", "BOS"},
+            // LAL-BOS 胜负盘 (Moneyline)
+            {"tok-lal-ml-0", "nba-lal-bos-ml", "LAL"},
+            {"tok-bos-ml-1", "nba-lal-bos-ml", "BOS"},
+            // LAL-BOS 大小盘 (Totals)
+            {"tok-over220-0", "nba-lal-bos-total", "OVER_220.5"},
+            {"tok-under220-1", "nba-lal-bos-total", "UNDER_220.5"},
+            // LAL-BOS 让分盘 (Spread)
+            {"tok-lal-spd-0", "nba-lal-bos-spread", "LAL_-5.5"},
+            {"tok-bos-spd-1", "nba-lal-bos-spread", "BOS_+5.5"},
+            // 其他赛事 (各单盘口)
             {"tok-ars-001", "epl-ars-che-total", "ARS"},
             {"tok-che-001", "epl-ars-che-total", "CHE"},
             {"tok-kc-001", "nfl-kc-buf-spread", "KC"},
             {"tok-buf-001", "nfl-kc-buf-spread", "BUF"},
             {"tok-nyy-001", "mlb-nyy-bos-ml", "NYY"},
             {"tok-bos-nyy-001", "mlb-nyy-bos-ml", "BOS"},
+            // 旧 fallback token_id (向后兼容, 不应再产生新)
+            {"tok-lal-001", "nba-lal-bos-ml", "LAL"},
+            {"tok-bos-001", "nba-lal-bos-ml", "BOS"},
             {nullptr, nullptr, nullptr},
         };
         for (int i = 0; kMap[i].tok != nullptr; ++i) {
@@ -485,56 +557,80 @@ private:
         return {"unknown-condition", is_token1 ? "No" : "Yes"};
     }
 
-    // 判断 token_id 是否为 token1 (second token)
+    // 判断 token_id 是否为 token1 (second token, index=1)
     static bool is_second_token(const std::string& token_id) {
-        // Demo: tok-bos-001, tok-che-001, tok-buf-001, tok-bos-nyy-001, *-tok1
+        // LAL-BOS 三盘口 token1
+        if (token_id == "tok-bos-ml-1" || token_id == "tok-under220-1" || token_id == "tok-bos-spd-1") {
+            return true;
+        }
+        // 其他赛事 token1
         if (token_id == "tok-bos-001" || token_id == "tok-che-001" || token_id == "tok-buf-001" ||
             token_id == "tok-bos-nyy-001") {
             return true;
         }
-        // generic: ends with "-tok1"
-        const std::string suf = "-tok1";
-        if (token_id.size() > suf.size() &&
-            token_id.compare(token_id.size() - suf.size(), suf.size(), suf) == 0) {
+        // generic: ends with "-tok1" 或 "-1" (数字结尾 index)
+        const std::string suf1 = "-tok1";
+        if (token_id.size() > suf1.size() &&
+            token_id.compare(token_id.size() - suf1.size(), suf1.size(), suf1) == 0) {
             return true;
         }
         return false;
     }
 
-    // 构建单边 BookSnapshot demo 值
-    // token0 (is_token1=false): best_bid=0.644, best_ask=0.656 (LAL/Home/Yes 侧)
-    // token1 (is_token1=true):  best_bid=0.344, best_ask=0.356 (BOS/Away/No 侧)
-    // 互补性验证:
-    //   token0.best_bid + token1.best_ask = 0.644 + 0.356 = 1.000 ✓
-    //   token0.best_ask + token1.best_bid = 0.656 + 0.344 = 1.000 ✓
-    //   cross_spread = token0.best_ask + token1.best_ask - 1.0 = 0.656 + 0.356 - 1.0 = 0.012
-    static BookSnapshot make_book_snapshot(const std::string& token_id, bool is_token1, std::int64_t now) {
+    // BookPrices: 盘口价格参数 (互补镜像)
+    // 约束: bid0 + ask1 = 1.0, ask0 + bid1 = 1.0, cross_spread = ask0 + ask1 - 1.0
+    struct BookPrices {
+        double bid0, ask0, mid0, imb0;  // token0 侧
+        double bid1, ask1, mid1, imb1;  // token1 侧 (互补镜像)
+        std::int64_t seq0, seq1;
+    };
+
+    // 构建单边 BookSnapshot demo 值 (带盘口专属价格参数)
+    // 互补镜像约束 (对任意盘口均成立):
+    //   token0.best_bid + token1.best_ask = 1.000 ✓
+    //   token0.best_ask + token1.best_bid = 1.000 ✓
+    //   cross_spread = token0.best_ask + token1.best_ask - 1.0 (vig)
+    static BookSnapshot make_book_snapshot_ex(const std::string& token_id, bool is_token1,
+                                              const BookPrices& p, std::int64_t now) {
         BookSnapshot b;
         b.found = true;
         b.token_id = token_id;
         b.source = "polymarket";
         b.wss_state = "CONNECTED";
-        b.sequence_no = is_token1 ? 88422LL : 88421LL;
         b.gap_count = 0;
 
         if (!is_token1) {
-            // token0: LAL/Home/Yes 侧
-            b.best_bid = 0.644;
-            b.best_ask = 0.656;
-            b.microprice = 0.648;
-            b.spread = round4(b.best_ask - b.best_bid);
-            b.imbalance = 0.23;
-            b.bids = {{0.644, 3200.0}, {0.638, 1800.0}, {0.630, 900.0}, {0.620, 400.0}};
-            b.asks = {{0.656, 2700.0}, {0.662, 1500.0}, {0.670, 600.0}, {0.680, 300.0}};
+            b.sequence_no = p.seq0;
+            b.best_bid = p.bid0;
+            b.best_ask = p.ask0;
+            b.microprice = p.mid0;
+            b.spread = round4(p.ask0 - p.bid0);
+            b.imbalance = p.imb0;
+            // 阶梯深度: 以 best_bid 为基准向下 3 档
+            b.bids = {{p.bid0, 3200.0},
+                      {round4(p.bid0 - 0.006), 1800.0},
+                      {round4(p.bid0 - 0.014), 900.0},
+                      {round4(p.bid0 - 0.024), 400.0}};
+            b.asks = {{p.ask0, 2700.0},
+                      {round4(p.ask0 + 0.006), 1500.0},
+                      {round4(p.ask0 + 0.014), 600.0},
+                      {round4(p.ask0 + 0.024), 300.0}};
         } else {
-            // token1: BOS/Away/No 侧 (互补镜像)
-            b.best_bid = 0.344;
-            b.best_ask = 0.356;
-            b.microprice = 0.350;
-            b.spread = round4(b.best_ask - b.best_bid);
-            b.imbalance = -0.23;  // 镜像 imbalance
-            b.bids = {{0.344, 2700.0}, {0.338, 1500.0}, {0.330, 600.0}, {0.320, 300.0}};
-            b.asks = {{0.356, 3200.0}, {0.362, 1800.0}, {0.370, 900.0}, {0.380, 400.0}};
+            b.sequence_no = p.seq1;
+            b.best_bid = p.bid1;
+            b.best_ask = p.ask1;
+            b.microprice = p.mid1;
+            b.spread = round4(p.ask1 - p.bid1);
+            b.imbalance = p.imb1;
+            // 阶梯深度: 镜像 (ask 侧规模对齐 token0 bid)
+            b.bids = {{p.bid1, 2700.0},
+                      {round4(p.bid1 - 0.006), 1500.0},
+                      {round4(p.bid1 - 0.014), 600.0},
+                      {round4(p.bid1 - 0.024), 300.0}};
+            b.asks = {{p.ask1, 3200.0},
+                      {round4(p.ask1 + 0.006), 1800.0},
+                      {round4(p.ask1 + 0.014), 900.0},
+                      {round4(p.ask1 + 0.024), 400.0}};
         }
 
         // 4 时间戳 (R-20): Demo 用 now()-偏移模拟链路
@@ -544,6 +640,41 @@ private:
         b.ts.as_of_ts_ns = now;
 
         return b;
+    }
+
+    // 按 condition_id 返回盘口专属价格参数
+    // 互补镜像约束验证 (各盘口):
+    //   nba-lal-bos-ml:     0.644+0.356=1.000 ✓, 0.656+0.344=1.000 ✓, cross=0.012
+    //   nba-lal-bos-total:  0.514+0.486=1.000 ✓, 0.526+0.474=1.000 ✓, cross=0.012
+    //   nba-lal-bos-spread: 0.484+0.516=1.000 ✓, 0.496+0.504=1.000 ✓, cross=0.012
+    //   其他通用:           0.644+0.356=1.000 ✓, cross=0.012 (同 ml)
+    static BookPrices book_prices_for(const std::string& condition_id) noexcept {
+        if (condition_id == "nba-lal-bos-ml") {
+            // 胜负盘: LAL 强势 (0.65 fair), 价格偏 LAL 侧
+            return {0.644, 0.656, 0.648, 0.23, 0.344, 0.356, 0.350, -0.23, 88421LL, 88422LL};
+        }
+        if (condition_id == "nba-lal-bos-total") {
+            // 大小盘: Over 220.5 略优 (0.52 fair), 价格接近中性偏 Over
+            // bid0=0.514, ask0=0.526 → mid0=0.520; bid1=0.474, ask1=0.486 → mid1=0.480
+            // cross_spread = 0.526 + 0.486 - 1.0 = 0.012 ✓
+            return {0.514, 0.526, 0.520, 0.12, 0.474, 0.486, 0.480, -0.12, 91201LL, 91202LL};
+        }
+        if (condition_id == "nba-lal-bos-spread") {
+            // 让分盘: LAL -5.5 接近中性 (0.49 fair)
+            // bid0=0.484, ask0=0.496 → mid0=0.490; bid1=0.504, ask1=0.516 → mid1=0.510
+            // cross_spread = 0.496 + 0.516 - 1.0 = 0.012 ✓
+            return {0.484, 0.496, 0.490, 0.05, 0.504, 0.516, 0.510, -0.05, 93001LL, 93002LL};
+        }
+        // 通用 fallback (同 nba-lal-bos-ml 参数, 演示结构正确性)
+        return {0.644, 0.656, 0.648, 0.23, 0.344, 0.356, 0.350, -0.23, 88421LL, 88422LL};
+    }
+
+    // 构建单边 BookSnapshot demo 值 (原 API 兼容: 仅用通用价格)
+    // 内部调用统一走 make_book_snapshot_ex + book_prices_for
+    static BookSnapshot make_book_snapshot(const std::string& token_id, bool is_token1, std::int64_t now) {
+        // 通用 fallback 价格 (book() 入参为 token_id, 无 condition_id, 用 lookup 取盘口再路由)
+        const BookPrices p = {0.644, 0.656, 0.648, 0.23, 0.344, 0.356, 0.350, -0.23, 88421LL, 88422LL};
+        return make_book_snapshot_ex(token_id, is_token1, p, now);
     }
 
     static HoldingView make_holding(const char* mkt, const char* outcome, double qty, double avg, double mark,
