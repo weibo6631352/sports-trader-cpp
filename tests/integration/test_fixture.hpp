@@ -287,14 +287,26 @@ protected:
         out.rm_decision = rg_->evaluate(intent);
 
         if (out.rm_decision.is_approved()) {
+            // Wave 97 ABI V2: SignRequest 升级至 OrderIntent v0.6 字段语义
             signer::SignRequest req{};
             std::memcpy(req.audit_id.data(), out.rm_decision.audit_id.data(),
                         out.rm_decision.audit_id.size());
             req.intent_id = static_cast<std::uint64_t>(intent.size_pUSD_micro);
-            req.market_id = intent.condition_id;  // v0.5: was market_id
-            req.outcome = "YES";
+            // V2: condition_id (市场级 bytes32 hex), 替代 V1 market_id
+            req.condition_id = intent.condition_id;
+            // V2: token_id (uint256 decimal, 替代 V1 outcome="YES"/"NO")
+            req.token_id = intent.token_id;
             req.price = intent.price;
-            req.size_usdc = static_cast<double>(intent.size_pUSD_micro);
+            // V2: size_pUSD_micro (int64_t), 替代 V1 size_usdc:double
+            req.size_pUSD_micro = intent.size_pUSD_micro;
+            // V2: side (0=Buy/1=Sell)
+            req.side = static_cast<std::uint8_t>(intent.side);
+            // V2: timestamp_ms 非零 (R-R20-01); 从 intent 透传 (若可用) 否则从 as_of 推算
+            req.timestamp_ms =
+                (intent.timestamp_ms != 0) ? intent.timestamp_ms : intent.as_of_ts_ns / 1'000'000LL;
+            // V2: metadata/builder bytes32 零值 (不使用时)
+            req.metadata = "0x0000000000000000000000000000000000000000000000000000000000000000";
+            req.builder = "0x0000000000000000000000000000000000000000000000000000000000000000";
             req.event_ts_ns = intent.event_ts_ns;
             req.data_source_ts_ns = intent.data_source_ts_ns;
             req.ingestion_ts_ns = intent.ingestion_ts_ns;
