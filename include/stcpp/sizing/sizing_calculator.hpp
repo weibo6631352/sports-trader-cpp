@@ -70,7 +70,7 @@ struct SizingInput {
     // 毛 edge bps (展示用, 不进 gating)
     double edge_bps{0.0};  // = |p − c| × 10000
 
-    // 资金 (运行期值, 来自 PositionLedger / RM 同源快照; 禁用 RiskConfig 静态默认值)
+    // 资金 (运行期值, 来自仓位账本 / RM 同源快照; 禁用 RiskConfig 静态默认值)
     double bankroll_usdc{0.0};  // > 0; 防 drawdown 漂移 (老韩 §1.3)
 
     // fill_rate / slippage (来自 FillRateModel / SlippageModel; 调用方已算)
