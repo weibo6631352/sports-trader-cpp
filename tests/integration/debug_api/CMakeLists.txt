@@ -84,3 +84,44 @@ gtest_discover_tests(stcpp_test_observability_endpoints
     DISCOVERY_TIMEOUT 120
     PROPERTIES LABELS "integration;debug-api;adr-038"
 )
+
+# ---------- P1 dogfood 整改验证 (小卢 feat/xiaolu-market-metrics-fix) ----------
+# P1-1: market() catalog found=true
+# P1-2: metrics() uptime/rm_reject/fill/wss 非零
+# P1-3: book wss_state 与 /status 一致
+add_executable(stcpp_test_p1_market_metrics_wss
+    test_p1_market_metrics_wss.cpp
+)
+
+target_link_libraries(stcpp_test_p1_market_metrics_wss PRIVATE
+    GTest::gtest_main
+    stcpp_debug_api
+    stcpp_data_score_store
+    stcpp_orderbook_snapshot_hub
+    stcpp_ledger_snapshot_hub
+    stcpp_quote_snapshot_hub
+    stcpp_risk
+    stcpp_polymarket_wss
+)
+
+target_compile_features(stcpp_test_p1_market_metrics_wss PRIVATE cxx_std_20)
+
+target_compile_options(stcpp_test_p1_market_metrics_wss PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+)
+
+target_include_directories(stcpp_test_p1_market_metrics_wss PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_definitions(stcpp_test_p1_market_metrics_wss PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+
+gtest_discover_tests(stcpp_test_p1_market_metrics_wss
+    DISCOVERY_TIMEOUT 120
+    PROPERTIES LABELS "integration;debug-api;p1-dogfood"
+)
