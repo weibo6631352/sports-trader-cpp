@@ -97,6 +97,59 @@ worktree(ADR-029, isolation=worktree)
 - [ ] 老胡周报加 §6 PR 周度清扫段
 - [ ] 老吴 评估本地 pre-commit hook(把 gate 再前移一步, 缩短反馈环)
 
+## 9. 完整工作流 + main/远端同步时机 (老板 2026-05-29 "把所有环节梳理清楚")
+
+### 9.0 第一原则: origin/main 是唯一真相
+
+**本地 `main` 只是个会过期的缓存指针, 不可信。** 任何"基于 main"的动作前, 必须 `git fetch` 并确认本地 main 已快进到 `origin/main`(或直接基于 `origin/main` 开分支)。这次连环事故的根因就是误信了落后/被污染的本地 main。
+
+### 9.1 全环节 + 同步点(⟲ = 必须同步远端的时机)
+
+| # | 环节 | 谁 | 动作 | 同步? |
+|---|---|---|---|---|
+| 1 | **派单前** | dispatcher | `git fetch origin`(拿最新远端 snapshot) | ⟲ **同步点 A** |
+| 2 | **开 worktree** | dispatcher | 每个 worktree 从 `origin/main` 起: `git worktree add -b feat/X <path> origin/main` —— 不依赖本地 main 指针 | (基于 A 的快照) |
+| 3 | **并行开发** | IC (各自 worktree) | 写 → `add` → `commit`。只动自己分支, **不 fetch/reset/rebase/checkout 别的分支, 不碰共享 ref** | — |
+| 4 | **push 前** | IC | `git fetch origin && git rebase origin/main` → 自解冲突 → `cmake --build && ctest` 全量复跑绿 | ⟲ **同步点 B(关键)** |
+| 5 | **push** | IC | 普通 `git push -u origin feat/X`; pre-push gate(build+全量ctest+format+grep)自动把关 | — |
+| 6 | **PR + 评审** | 系统 + reviewer | claude-review 自动评审 + reviewer agent(§5) | — |
+| 7 | **merge 前** | IC | 若评审期间 origin/main 又前进 → 再 `git rebase origin/main` 解冲突复跑(require-up-to-date) | ⟲ **同步点 C(按需)** |
+| 8 | **merge** | reviewer/GM | `gh pr merge --squash --delete-branch`; GitHub 自动关 PR | — |
+| 9 | **下一轮前** | dispatcher | 回到环节 1(`git fetch`); 本地 main 用前 `git pull --ff-only` 快进, 快进失败=分叉, 先解决 | ⟲ **回到同步点 A** |
+
+### 9.2 三个同步时机(精炼回答老板)
+
+- **A 派单/开工前**: dispatcher `fetch` 一次, 所有并行 worktree 共享这一最新远端快照。
+- **B push 前**: IC 自己 `fetch + rebase origin/main + 解冲突 + 全量复跑`(从开工到完工 origin/main 可能被 sibling 推进了)。**这一步之前缺失, 是 #31/#32 冲突要 GM 手工解的根因。**
+- **C merge 前(按需)**: 评审耗时久、其间 origin/main 又动 → 再 rebase 一次, 保证 merge 时是最新 base。
+
+> **本地 main 同步时机 = 每次要基于它做事之前**(派单、建分支、快进), 一律先 `fetch` + 校验 `HEAD == origin/main`。平时本地 main 落后无所谓, 用前必同步。
+
+### 9.3 铁律(本会话事故固化)
+
+1. **作者职责**: push 前/merge 前的 rebase + 解冲突 + 复跑由**作者自己做**, 不甩给 GM 在 merge 时替解(替解 = 掩盖缺口, 这次 GM 犯了)。
+2. **禁 agent 在共享工作树做 git 手术**(`reset --hard`/`rebase`/`push --force`/切别的分支)—— #30 共享树污染的直接原因 = 派单让 agent 做 git 手术。agent 只在自己 worktree 普通流程。
+3. **dispatcher 工作树洁癖**: `checkout`/`branch` 前清 uncommitted 残留; `--ff-only` 失败必须察觉处理, 不静默继续。
+4. **每个动作前校验**: 基于 main 的操作前 `[ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ]`。
+
+## 10. 已知漏洞 + 待办(老板"看看有没有遗漏/不合理")
+
+| 漏洞 | 影响 | 建议 | owner |
+|---|---|---|---|
+| **CMakeLists.txt 单点 append** | 每个并发 PR 同处加 test target → 必冲突 | CMake 测试**自动发现**(`file(GLOB)`/self-register), 根除冲突 | 老吴+老高 |
+| **branch protection 私有 repo 不可用** | 无法自动 enforce 必 PR/必最新/禁直推(需 GitHub Pro) | 老板定: 升 Pro / 靠 CI+纪律(§9) | 老板 |
+| **作者漏做提交前 rebase 解冲突** | GM 替解掩盖缺口 | 入 Definition of Done + CI require-up-to-date | 老高(模板)+全员 |
+| **并发 background agent 过多 + git 手术** | 多 agent 同写共享区/做手术 → 污染(本次 #30) | 同区文件同时 1 写者; §9 禁手术 | GM 派单纪律 |
+| **本地 build/ 缓存陈旧** | 文件增删后 incremental build 失败 → 卡 push | reconfigure(`cmake -B build`)或 CI 干净环境构建 | 老吴 |
+
+## 11. #30 共享树污染事故(post-mortem 摘要)
+
+- **现象**: 小冯 #30 整改 agent 被派去在共享树做 `reset --hard`/rebase 手术 → 污染本地 repo + #30 分支"领先10落后2"; GM 本地 HEAD 反复错位; stale build 卡 push。
+- **未扩散**: **origin/main 全程干净完整**(所有 PR + 全部 test target 在), 仅 GM 本地受污染, 已 `reset --hard origin/main` 修复。
+- **小冯的"删除"是对的**: 删 `kAdapterBookDepth=20` 改用 SSOT `kBookDepthLevels=5`(老高评审要求), 非乱删冲突。
+- **根因链**: 派单让 agent 做 git 手术 + dispatcher 残留未清 + 未每步校验 HEAD + 作者未提交前 rebase 解冲突 + stale build。
+- **整改**: §9 全环节 + 同步时机入制度; #30 作废, 待小冯在隔离 worktree、从 origin/main、普通流程干净重做。
+
 ---
 
-**最后更新:** 2026-05-29 by 老雷 (GM) — 老板"完善制度+自动化"指令
+**最后更新:** 2026-05-29 by 老雷 (GM) — 完善制度+自动化 + 全环节同步时机(§9)+ #30 事故教训
