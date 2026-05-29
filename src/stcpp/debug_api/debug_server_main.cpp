@@ -51,15 +51,15 @@
 #include <thread>
 #include <vector>
 
-#include "stcpp/backtest/replay_driver.hpp"        // ReplayDriver (kSynthetic 模式)
-#include "stcpp/data/inplay_feed_thread.hpp"      // InplayFeedThread (--score-live, 小段 W5)
+#include "stcpp/backtest/replay_driver.hpp"     // ReplayDriver (kSynthetic 模式)
+#include "stcpp/data/inplay_feed_thread.hpp"    // InplayFeedThread (--score-live, 小段 W5)
 #include "stcpp/data/score_snapshot_store.hpp"  // ScoreSnapshotStore (小段, 集成 ③)
 #include "stcpp/risk/ledger_snapshot_hub.hpp"   // LedgerSnapshotHub (集成 ④)
 #include "stcpp/sizing/quote_snapshot_hub.hpp"  // QuoteSnapshotHub (集成 ④)
 
 #include "src/stcpp/debug_api/demo_state_provider.hpp"
-#include "src/stcpp/debug_api/live_book_publisher.hpp"   // --live: CLOB book → hub
-#include "src/stcpp/debug_api/live_wss_transport.hpp"    // --live: 真实 WSS transport
+#include "src/stcpp/debug_api/live_book_publisher.hpp"  // --live: CLOB book → hub
+#include "src/stcpp/debug_api/live_wss_transport.hpp"   // --live: 真实 WSS transport
 #include "src/stcpp/debug_api/real_state_provider.hpp"
 #include "src/stcpp/debug_api/replay_feed_coordinator.hpp"  // ReplayFeedCoordinator (集成 ④)
 #include "src/stcpp/debug_api/server.hpp"
@@ -99,7 +99,7 @@ stcpp::debug_api::ExecMode mode_from_build() noexcept {
 
 struct LiveMarketEntry {
     std::string condition_id;
-    std::string question;      // for logging
+    std::string question;  // for logging
     std::string token0_id;
     std::string token1_id;
 };
@@ -114,48 +114,62 @@ static std::string ExtractJsonString(const std::string& json, const std::string&
         needle = "\"" + key + "\": \"";
         pos = json.find(needle);
     }
-    if (pos == std::string::npos) return "";
+    if (pos == std::string::npos)
+        return "";
     pos += needle.size();
     std::size_t end = pos;
     bool esc = false;
     while (end < json.size()) {
-        if (esc) { esc = false; ++end; continue; }
-        if (json[end] == '\\') { esc = true; ++end; continue; }
-        if (json[end] == '"') break;
+        if (esc) {
+            esc = false;
+            ++end;
+            continue;
+        }
+        if (json[end] == '\\') {
+            esc = true;
+            ++end;
+            continue;
+        }
+        if (json[end] == '"')
+            break;
         ++end;
     }
     return json.substr(pos, end - pos);
 }
 
 // Extract clobTokenIds array: ["tok0","tok1"] → {tok0, tok1}
-static bool ExtractClobTokenIds(const std::string& json_obj,
-                                 std::string& tok0, std::string& tok1) {
+static bool ExtractClobTokenIds(const std::string& json_obj, std::string& tok0, std::string& tok1) {
     // find "clobTokenIds":
     const std::string needle = "\"clobTokenIds\":";
     std::size_t arr_start = json_obj.find(needle);
-    if (arr_start == std::string::npos) return false;
+    if (arr_start == std::string::npos)
+        return false;
     arr_start += needle.size();
     // skip whitespace
-    while (arr_start < json_obj.size() &&
-           (json_obj[arr_start] == ' ' || json_obj[arr_start] == '\n')) {
+    while (arr_start < json_obj.size() && (json_obj[arr_start] == ' ' || json_obj[arr_start] == '\n')) {
         ++arr_start;
     }
-    if (arr_start >= json_obj.size() || json_obj[arr_start] != '[') return false;
+    if (arr_start >= json_obj.size() || json_obj[arr_start] != '[')
+        return false;
     ++arr_start;
 
     // Extract two quoted strings
     std::vector<std::string> tokens;
     std::size_t pos = arr_start;
     while (pos < json_obj.size() && tokens.size() < 2) {
-        while (pos < json_obj.size() && json_obj[pos] != '"' && json_obj[pos] != ']') ++pos;
-        if (pos >= json_obj.size() || json_obj[pos] == ']') break;
+        while (pos < json_obj.size() && json_obj[pos] != '"' && json_obj[pos] != ']')
+            ++pos;
+        if (pos >= json_obj.size() || json_obj[pos] == ']')
+            break;
         ++pos;  // skip opening "
         std::size_t end = pos;
-        while (end < json_obj.size() && json_obj[end] != '"') ++end;
+        while (end < json_obj.size() && json_obj[end] != '"')
+            ++end;
         tokens.push_back(json_obj.substr(pos, end - pos));
         pos = end + 1;
     }
-    if (tokens.size() < 2) return false;
+    if (tokens.size() < 2)
+        return false;
     tok0 = tokens[0];
     tok1 = tokens[1];
     return true;
@@ -197,10 +211,12 @@ static std::vector<LiveMarketEntry> DiscoverSportsMarkets(int max_markets = 5) {
     std::size_t pos = 0;
     while (pos < json_buf.size() && result.size() < static_cast<std::size_t>(max_markets)) {
         while (pos < json_buf.size() && json_buf[pos] != '{') {
-            if (json_buf[pos] == ']') goto done;
+            if (json_buf[pos] == ']')
+                goto done;
             ++pos;
         }
-        if (pos >= json_buf.size()) break;
+        if (pos >= json_buf.size())
+            break;
 
         // Find matching '}'
         std::size_t obj_start = pos;
@@ -210,20 +226,33 @@ static std::vector<LiveMarketEntry> DiscoverSportsMarkets(int max_markets = 5) {
         std::size_t obj_end = pos;
         for (std::size_t i = pos; i < json_buf.size(); ++i) {
             char c = json_buf[i];
-            if (esc) { esc = false; continue; }
-            if (in_str) {
-                if (c == '\\') esc = true;
-                else if (c == '"') in_str = false;
+            if (esc) {
+                esc = false;
                 continue;
             }
-            if (c == '"') { in_str = true; continue; }
-            if (c == '{') ++depth;
+            if (in_str) {
+                if (c == '\\')
+                    esc = true;
+                else if (c == '"')
+                    in_str = false;
+                continue;
+            }
+            if (c == '"') {
+                in_str = true;
+                continue;
+            }
+            if (c == '{')
+                ++depth;
             else if (c == '}') {
                 --depth;
-                if (depth == 0) { obj_end = i; break; }
+                if (depth == 0) {
+                    obj_end = i;
+                    break;
+                }
             }
         }
-        if (obj_end <= obj_start) break;
+        if (obj_end <= obj_start)
+            break;
 
         std::string obj = json_buf.substr(obj_start, obj_end - obj_start + 1);
         pos = obj_end + 1;
@@ -231,24 +260,27 @@ static std::vector<LiveMarketEntry> DiscoverSportsMarkets(int max_markets = 5) {
         LiveMarketEntry entry;
         entry.condition_id = ExtractJsonString(obj, "conditionId");
         entry.question = ExtractJsonString(obj, "question");
-        if (entry.condition_id.empty()) continue;
+        if (entry.condition_id.empty())
+            continue;
 
-        if (!ExtractClobTokenIds(obj, entry.token0_id, entry.token1_id)) continue;
-        if (entry.token0_id.empty() || entry.token1_id.empty()) continue;
+        if (!ExtractClobTokenIds(obj, entry.token0_id, entry.token1_id))
+            continue;
+        if (entry.token0_id.empty() || entry.token1_id.empty())
+            continue;
 
         // Basic sports filter (question contains sports keywords)
         const std::string q_lower = [&]() {
             std::string s = entry.question;
-            for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            for (char& c : s)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
             return s;
         }();
         static const char* kSportsKw[] = {
-            "nba", "nfl", "mlb", "nhl", "ncaa", "mls",
-            "soccer", "football", "basketball", "baseball", "hockey",
-            "stanley cup", "world series", "super bowl",
-            "premier league", "euro", "champions", "world cup",
-            "tennis", "wimbledon", "cricket", nullptr
-        };
+            "nba",     "nfl",         "mlb",          "nhl",        "ncaa",
+            "mls",     "soccer",      "football",     "basketball", "baseball",
+            "hockey",  "stanley cup", "world series", "super bowl", "premier league",
+            "euro",    "champions",   "world cup",    "tennis",     "wimbledon",
+            "cricket", nullptr};
         bool is_sports = false;
         for (int k = 0; kSportsKw[k] != nullptr; ++k) {
             if (q_lower.find(kSportsKw[k]) != std::string::npos) {
@@ -256,7 +288,8 @@ static std::vector<LiveMarketEntry> DiscoverSportsMarkets(int max_markets = 5) {
                 break;
             }
         }
-        if (!is_sports) continue;
+        if (!is_sports)
+            continue;
 
         result.push_back(std::move(entry));
     }
@@ -323,7 +356,8 @@ int main(int argc, char** argv) {
     }
 
     // --live-verbose implies --live
-    if (live_verbose) live = true;
+    if (live_verbose)
+        live = true;
 
     // --empty 和 --real 不可同时使用
     if (empty && real) {
@@ -534,8 +568,8 @@ int main(int argc, char** argv) {
             } else {
                 std::printf("[debug_server] --live: 发现 %zu 个体育市场:\n", markets.size());
                 for (const auto& m : markets) {
-                    std::printf("[debug_server]   conditionId: %.24s... | %s\n",
-                                m.condition_id.c_str(), m.question.c_str());
+                    std::printf("[debug_server]   conditionId: %.24s... | %s\n", m.condition_id.c_str(),
+                                m.question.c_str());
                     std::printf("[debug_server]   token0: %.30s...\n", m.token0_id.c_str());
                     std::printf("[debug_server]   token1: %.30s...\n", m.token1_id.c_str());
                     // 填 token_map (for RealStateProvider.book_pair())
@@ -551,8 +585,7 @@ int main(int argc, char** argv) {
                 }
 
                 // Step 3: 构造 LiveBookPublisher (解析 book JSON → hub.Publish())
-                live_publisher = std::make_unique<LiveBookPublisher>(
-                    *hub_owned, all_token_ids, live_verbose);
+                live_publisher = std::make_unique<LiveBookPublisher>(*hub_owned, all_token_ids, live_verbose);
 
                 // Step 4: 构造 LiveWssTransport + 注册回调
                 live_transport = std::make_unique<LiveWssTransport>(live_verbose);
@@ -571,7 +604,8 @@ int main(int argc, char** argv) {
                     std::string sub = R"({"type":"Market","assets_ids":[)";
                     bool first = true;
                     for (const auto& tid : all_token_ids) {
-                        if (!first) sub.push_back(',');
+                        if (!first)
+                            sub.push_back(',');
                         sub.push_back('"');
                         sub.append(tid);
                         sub.push_back('"');
@@ -708,11 +742,12 @@ int main(int argc, char** argv) {
         std::printf("[debug_server] 停止 LiveWssTransport...\n");
         live_transport->Close();
         if (live_publisher) {
-            std::printf("[debug_server] LiveBookPublisher 统计: frames_received=%llu, "
-                        "books_published=%llu, frames_dropped=%llu\n",
-                        static_cast<unsigned long long>(live_publisher->frames_received()),
-                        static_cast<unsigned long long>(live_publisher->books_published()),
-                        static_cast<unsigned long long>(live_publisher->frames_dropped()));
+            std::printf(
+                "[debug_server] LiveBookPublisher 统计: frames_received=%llu, "
+                "books_published=%llu, frames_dropped=%llu\n",
+                static_cast<unsigned long long>(live_publisher->frames_received()),
+                static_cast<unsigned long long>(live_publisher->books_published()),
+                static_cast<unsigned long long>(live_publisher->frames_dropped()));
         }
         std::printf("[debug_server] LiveWssTransport 已停止\n");
     }
