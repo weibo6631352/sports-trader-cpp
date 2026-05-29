@@ -30,6 +30,7 @@ import {
 } from '../api';
 import {
   STATUS_ZH, SPORT_ZH, REJECT_REASON_ZH, SIDE_ZH, MARKET_TYPE_ZH, inferMarketLabel, inferMarketTypeZh,
+  inferSportFromSlug,
 } from '../i18n';
 import type {
   EventGroup, ConditionData, BinaryMarketBookView, HalfBook,
@@ -191,10 +192,13 @@ function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onCli
   // 拒单数
   const rejectCount = () => c().rejectRows.length;
 
-  // 延迟
+  // 延迟 — 使用真实数据时刻 event_ts / ingestion_ts (P1-7: 避免 book_as_of_ts 恒新假阳性)
   const staleMs = () => {
-    const asOf = book()?.as_of_ts_ns ?? book()?.token0?.book_as_of_ts;
-    return stalenessMs(asOf);
+    const b = book();
+    if (!b) return null;
+    // 优先取 event_ts (最接近数据源时刻); 降级 ingestion_ts; 最后才 book_as_of_ts
+    const ts = b.event_ts ?? b.token0?.event_ts ?? b.ingestion_ts ?? b.token0?.ingestion_ts;
+    return stalenessMs(ts);
   };
 
   // 市场名称 (含线值)
@@ -282,7 +286,7 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
       <div class="v8-expand-panel">
         <div class="v8-panel-title">双边订单簿</div>
         <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>
-          {isEndpointFailing(`/api/v1/book_pair/${props.conditionId}`) ? '拉取失败' : '订单簿未接入'}
+          {isEndpointFailing(`/api/v1/book_pair/${props.conditionId}`) ? '订单簿拉取失败' : '订单簿未接入'}
         </Typography>
       </div>
     );
@@ -542,7 +546,7 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
         fallback={
           <div class="v8-pos-empty">
             <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>
-              无持仓 — 等待 paper runtime
+              暂无 paper 成交（策略未触发 edge）
             </Typography>
           </div>
         }
@@ -629,26 +633,48 @@ function EventAccordion(props: { group: EventGroup }) {
   // 赛事头显示文本
   const sportZh = () => {
     const sp = grp().sport ?? score()?.sport;
-    return sp ? (SPORT_ZH[sp] ?? sp) : '';
+    if (sp) return SPORT_ZH[sp] ?? sp;
+    // sport 字段为空 (如 outright/futures) → 从 slug / neg_risk_market_id 推断
+    return inferSportFromSlug(grp().eventSlug ?? grp().eventTitle);
   };
-  const homeTeam = () => score()?.home ?? grp().eventTitle?.split(' vs ')[0] ?? '—';
-  const awayTeam = () => score()?.away ?? grp().eventTitle?.split(' vs ')[1] ?? '—';
+
+  // P1-5: 无 score 且 title 不含 ' vs ' 时直接用 title 原文，不强拆队名
+  const hasVs = () => (grp().eventTitle ?? '').includes(' vs ');
+  const isOutright = () => !score() && !hasVs();
+
+  const homeTeam = () => {
+    if (score()?.home) return score()!.home;
+    if (isOutright()) return null; // outright: 不显示主队列
+    return grp().eventTitle?.split(' vs ')[0] ?? null;
+  };
+  const awayTeam = () => {
+    if (score()?.away) return score()!.away;
+    if (isOutright()) return null; // outright: 不显示客队列
+    const parts = grp().eventTitle?.split(' vs ');
+    return (parts && parts.length >= 2) ? parts[1] : null;
+  };
   const homeScore = () => score()?.home_score;
   const awayScore = () => score()?.away_score;
   const statusZh  = () => STATUS_ZH[score()?.status ?? ''] ?? score()?.status ?? '?';
   const subheader = () => {
     const sc = score();
-    if (!sc) return grp().eventTitle ?? '';
+    // outright 无 score: 不把 title 重复放进 subheader (P1-5 — 已在主标题行显示完整 title)
+    if (!sc) return '';
     const parts: string[] = [];
     if (sc.period) parts.push(sc.period);
     if (sc.clock_sec != null) parts.push(fmtClock(sc.clock_sec));
     return parts.join(' · ');
   };
 
-  // 当前 event 下的最大延迟
+  // 当前 event 下的最大延迟 — 使用真实数据时刻 event_ts / ingestion_ts (P1-7)
   const maxStaleMs = () => {
     const vals = grp().conditions
-      .map((c) => c.book ? stalenessMs(c.book.as_of_ts_ns ?? c.book.token0?.book_as_of_ts) : null)
+      .map((c) => {
+        const b = c.book;
+        if (!b) return null;
+        const ts = b.event_ts ?? b.token0?.event_ts ?? b.ingestion_ts ?? b.token0?.ingestion_ts;
+        return stalenessMs(ts);
+      })
       .filter((v): v is number => v != null);
     if (vals.length === 0) return null;
     return Math.max(...vals);
@@ -677,14 +703,23 @@ function EventAccordion(props: { group: EventGroup }) {
           <span class="live-badge">LIVE</span>
         </Show>
 
-        {/* 队伍 + 比分 */}
-        <span class="v8-evt-team">{homeTeam()}</span>
-        <Show when={homeScore() != null}>
-          <span class="v8-evt-score">{homeScore()}</span>
-          <span class="v8-evt-dash">—</span>
-          <span class="v8-evt-score">{awayScore()}</span>
+        {/* 队伍 + 比分 — outright 无 ' vs ' 时直接用 title 原文 (P1-5) */}
+        <Show
+          when={!isOutright()}
+          fallback={
+            <span class="v8-evt-outright-title" title={grp().eventTitle ?? ''}>
+              {grp().eventTitle ?? '—'}
+            </span>
+          }
+        >
+          <span class="v8-evt-team">{homeTeam() ?? '—'}</span>
+          <Show when={homeScore() != null}>
+            <span class="v8-evt-score">{homeScore()}</span>
+            <span class="v8-evt-dash">—</span>
+            <span class="v8-evt-score">{awayScore()}</span>
+          </Show>
+          <span class="v8-evt-team">{awayTeam() ?? '—'}</span>
         </Show>
-        <span class="v8-evt-team">{awayTeam()}</span>
 
         {/* 状态 Chip */}
         <Show when={score()}>
@@ -822,6 +857,27 @@ export function TradingPage() {
   const [filter, setFilter] = createSignal<FilterMode>('all');
   const [search, setSearch] = createSignal('');
 
+  // P1-6: WSS 连接状态 Alert 计算
+  const wssStatus = () => state.status?.wss_connected ?? null;
+  const wssAllDown = () => {
+    const w = wssStatus();
+    if (!w) return false; // 后端未连接时 StatusBar 已有"后端离线"提示，不重复
+    return !w.sports_api && !w.clob && !w.user_channel;
+  };
+  const wssPartialDown = () => {
+    const w = wssStatus();
+    if (!w) return false;
+    const vals = [w.sports_api, w.clob, w.user_channel];
+    const downCount = vals.filter((v) => !v).length;
+    return downCount > 0 && downCount < 3; // 部分断
+  };
+
+  // P1 空态: 是否有成交 (判断显示 PnL 语境)
+  const hasFills = () => {
+    const attr = state.attribution;
+    return (attr?.per_market?.length ?? 0) > 0;
+  };
+
   const allGroups = () => state.eventGroups;
 
   const filteredGroups = () => {
@@ -857,6 +913,24 @@ export function TradingPage() {
 
   return (
     <div>
+      {/* P1-6: WSS 全断全局 Alert — 数据可能已过期 */}
+      <Show when={wssAllDown()}>
+        <Alert
+          severity="error"
+          sx={{ borderRadius: 0, py: 0.5, px: 2, fontSize: '13px', fontWeight: 600 }}
+        >
+          WSS 全部断连 · 订单簿数据可能已过期 · 请检查网络或 /status
+        </Alert>
+      </Show>
+      <Show when={wssPartialDown()}>
+        <Alert
+          severity="warning"
+          sx={{ borderRadius: 0, py: 0.5, px: 2, fontSize: '13px' }}
+        >
+          WSS 部分断连 · 部分市场数据可能已过期
+        </Alert>
+      </Show>
+
       <TradingToolbar
         filter={filter()}
         search={search()}
@@ -869,9 +943,9 @@ export function TradingPage() {
         onCollapseAll={() => collapseAllMarkets(allCondIds())}
       />
 
-      {/* PnL 净值曲线 */}
+      {/* PnL 净值曲线 — 无成交时明示语境 (空态语境) */}
       <div class="spark-section">
-        <PnlSparkline />
+        <PnlSparkline noFills={!hasFills()} />
       </div>
 
       {/* 赛事列表 (v8 Accordion) */}

@@ -64,6 +64,10 @@ export function StatusBar() {
     return null;
   };
 
+  // 空态语境: 有 PnL 返回但无持仓/成交 (P1 空态)
+  const hasFills = () => (state.attribution?.per_market?.length ?? 0) > 0;
+  const pnlIsZeroNoFills = () => netPnl() === 0 && !hasFills();
+
   const rmRejects = () => s().rm_rejects_last_60s;
 
   const hasApiErr = () =>
@@ -144,20 +148,24 @@ export function StatusBar() {
 
           <span class="appbar-sep">|</span>
 
-          {/* 净PnL */}
+          {/* 净PnL — 空态语境: $0.00 无成交时加说明，避免误以为统计失效 (P1 空态) */}
           <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '11px' }}>净PnL</Typography>
           <Show when={netPnl() != null}>
             <Typography
               variant="caption"
               class={`mono-main ${netPnl()! >= 0 ? 'pnl-pos' : 'pnl-neg'}`}
               sx={{ fontSize: '13px' }}
+              title={pnlIsZeroNoFills() ? 'paper 启动中，尚无成交记录' : undefined}
             >
               {fmtUsdc(netPnl()!)}
+              <Show when={pnlIsZeroNoFills()}>
+                <span style={{ 'font-size': '9px', color: '#888', 'margin-left': '4px', 'font-weight': '400', 'font-family': 'monospace' }}>(无成交)</span>
+              </Show>
             </Typography>
           </Show>
           <Show when={netPnl() == null}>
             <Typography variant="caption" sx={{ color: 'text.disabled', fontFamily: 'monospace' }}>
-              等待 paper runtime
+              暂无 paper 数据
             </Typography>
           </Show>
 

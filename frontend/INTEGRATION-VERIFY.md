@@ -1,12 +1,28 @@
-# INTEGRATION-VERIFY.md — v8 /events 真实市场发现 + 折叠/展开
+# INTEGRATION-VERIFY.md — v8.1 dogfood P1 整改 (标题/WSS Alert/StaleDot/空态语境)
 
 owner: 小苏 (#12, E单元)
-last_review: 2026-05-29
-关联: ADR-038/040/041, GM 老板 v8 派单 (events 真实发现 + 折叠/展开 + 去 DEMO 改 LIVE)
+last_review: 2026-05-30
+关联: ADR-038/040/041, 整改会议 2026-05-30-live-dogfood-remediation.md (P1-5/6/7 + 空态)
 
 ---
 
-## v8.0 主变更清单
+## v8.1 整改变更清单 (2026-05-30 dogfood P1)
+
+| 问题 | 修法 | 文件 |
+|------|------|------|
+| P1-5 赛事标题错乱 | outright (无 ` vs `) 直接用 title 原文单行显示，不强拆主客队 | TradingPage.tsx EventAccordion |
+| P1-6 WSS 全断无全局 Alert | TradingPage 顶部插 SUID Alert severity=error (全断) / warning (部分断) | TradingPage.tsx TradingPage() |
+| P1-7 StaleDot 假阳性 | stalenessMs 改用 event_ts / ingestion_ts (非 book_as_of_ts); MarketSummaryRow + maxStaleMs 均修 | TradingPage.tsx |
+| P1-7 book endpoint key 错配 | isEndpointFailing 已统一用 /api/v1/book_pair/ (与 api.ts fetchBook 对齐) | TradingPage.tsx ExpandBookPanel |
+| 空态语境 持仓 | "暂无 paper 成交（策略未触发 edge）" 代替 "等待 paper runtime" | TradingPage.tsx ExpandPosPanel |
+| 空态语境 PnL sparkline | 无成交时明示 "尚无成交记录，满 2 个 bucket 后自动绘制" | PnlSparkline.tsx |
+| 空态语境 AppBar 净PnL | $0.00 无成交时加 (无成交) 注释 + tooltip | StatusBar.tsx |
+| P2 sport 空 slug 推断 | inferSportFromSlug(slug) 从 NHL/NBA/FIFA 关键词推断; sportZh() 降级调用 | TradingPage.tsx + i18n.ts |
+| P2 INVALID_INTENT i18n | REJECT_REASON_ZH 补 INVALID_INTENT / ADVISORY_ONLY 等 | i18n.ts |
+
+---
+
+## v8.0 主变更清单 (继承)
 
 | 变更 | 内容 |
 |------|------|
@@ -15,20 +31,19 @@ last_review: 2026-05-29
 | DEMO 横幅 | 彻底去除 (data_source 恒 live); 改为 StatusBar 内 LIVE 实时标识 + 连接/加载/stale 三态 |
 | Stub 横幅 | 仅 `?stub=1` 时显示, 与 LIVE 模式无关 |
 | 展开状态 | sessionStorage 持久化 per conditionId/eventId, 轮询刷新不重置 |
-| 持仓空态 | "无持仓 — 等待 paper runtime" (不报错, live 模式 paper 未跑) |
 | EventGroup 类型 | 增加 eventSlug / eventTitle / sport 字段 (来自 /api/v1/events) |
 | ConditionData 类型 | 移除 isDemoData 字段 |
 
 ---
 
-## 构建验证 (2026-05-29)
+## 构建验证 (2026-05-30 v8.1)
 
 ```
 tsc --noEmit               → 0 errors (strict mode)        PASS
 vite build                 → 306 modules transformed
-                              dist/assets/*.css   25.87 kB  (gzip 4.87 kB)
-                              dist/assets/*.js   256.17 kB  (gzip 71.79 kB)
-                              built in 576ms               PASS
+                              dist/assets/*.css   26.03 kB  (gzip 4.90 kB)
+                              dist/assets/*.js   258.48 kB  (gzip 72.78 kB)
+                              built in 605ms               PASS
 ```
 
 ---
@@ -62,15 +77,23 @@ vite build                 → 306 modules transformed
 - [x] 展开状态 sessionStorage 持久化 (刷新不丢)
 - [x] 轮询 5s 不重置展开状态
 - [x] 全展开/全折叠快捷按钮
-- [x] 延迟三色: <100ms 绿 / 100ms-1s 黄 / >1s 红
+- [x] 延迟三色: <100ms 绿 / 100ms-1s 黄 / >1s 红 (v8.1: 用 event_ts 非 book_as_of_ts)
 - [x] edge bps 正绿负红
 - [x] 浮盈正绿负红, 括号负数格式 ($xx.x)
 - [x] 拒单 Badge ×N (N>0 红色, N=0 灰)
 - [x] ADVISORY 角标 (XD-3, AI 区强制显示)
-- [x] 持仓空态显示 "无持仓 — 等待 paper runtime"
+- [x] 持仓空态: "暂无 paper 成交（策略未触发 edge）" (v8.1 语境文案)
 - [x] 订单簿 5 档 + 深度条 bid 绿/ask 红
 - [x] vig Chip (cross_spread)
 - [x] XD-1/4/5 红线保留
+- [x] **v8.1 P1-5: outright 赛事标题不强拆，无 ' vs ' 时显示完整 title**
+- [x] **v8.1 P1-6: WSS 全断时 TradingPage 顶部 Alert severity=error；部分断 severity=warning**
+- [x] **v8.1 P1-7: StaleDot 用 event_ts / ingestion_ts 计算 staleness，非 book_as_of_ts**
+- [x] **v8.1 P1-7: isEndpointFailing 的 book key 统一为 /api/v1/book_pair/ (与 fetchBook 对齐)**
+- [x] **v8.1 空态: PnL sparkline "尚无成交记录" 替代 "加载中"**
+- [x] **v8.1 空态: AppBar 净PnL $0.00 无成交加 (无成交) 注释**
+- [x] **v8.1 P2: sport 空时从 slug 推断 (inferSportFromSlug)**
+- [x] **v8.1 P2: INVALID_INTENT 等 i18n 中文映射补全**
 
 ### 去 DEMO / 改 LIVE
 
@@ -86,9 +109,9 @@ vite build                 → 306 modules transformed
 - [x] subscribed_tokens_total=20 (真实)
 - [x] wss_connected: sports_api✓ clob✓ user_channel✗ (真实)
 
-### PnL / 市场详情 (保持 v7)
+### PnL / 市场详情
 
-- [x] PnL 空态: 等待 paper runtime
+- [x] PnL 空态: "尚无成交记录，满 2 个 bucket 后自动绘制" (v8.1 语境文案)
 - [x] 市场详情: condition_id 搜索正常
 
 ### 导航

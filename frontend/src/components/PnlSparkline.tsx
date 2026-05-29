@@ -82,14 +82,21 @@ function SparklineSvg(props: { data: PnlTimeseries }) {
   );
 }
 
-export function PnlSparkline() {
+export function PnlSparkline(props: { noFills?: boolean }) {
   const data = () => state.timeseries;
 
   const fallbackText = () => {
     if (isEndpointFailingPrefix('/api/v1/pnl/timeseries')) {
       return 'PnL 曲线拉取失败 — 点 ⚙ 确认 API Base, 或等待自动重试 (每 15s)';
     }
-    return 'PnL 曲线加载中...';
+    // 空态语境: 区分"无数据(无成交)"与"加载中"
+    if (props.noFills) {
+      return 'PnL 时序暂无数据（尚无成交记录，满 2 个 bucket 后自动绘制）';
+    }
+    if (data() !== null && (data()!.buckets?.length ?? 0) < 2) {
+      return 'PnL 时序暂无数据（bucket 不足 2 个，等待更多数据）';
+    }
+    return 'PnL 净值曲线加载中...';
   };
 
   return (

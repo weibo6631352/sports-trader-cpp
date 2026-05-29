@@ -886,6 +886,17 @@ html, body {
   text-align: center;
 }
 .v8-evt-team  { font-size: 13px; font-weight: 700; color: var(--md-text); white-space: nowrap; }
+/* outright/prop 赛事: 完整 title 单行显示 (P1-5 无 vs 不强拆) */
+.v8-evt-outright-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--md-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 480px;
+  flex: 1;
+}
 .v8-evt-score {
   font-family: var(--font-mono);
   font-size: 14px;
