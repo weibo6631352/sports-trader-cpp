@@ -33,6 +33,10 @@ foreach(_gt_target gtest gtest_main gmock gmock_main)
             -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
             -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
             -Wno-character-conversion  # GM 错 #11 配套 W6 W2 reinstate: gtest-printers.h:502 char8_t→char32_t (AppleClang 21)
+            # Wave 81 fix: gmock-function-mocker.h sign-conversion; SYSTEM keyword 仅管 include path
+            # 不管 gmock 自身源文件编译; Linux GCC 13 + -Werror=sign-conversion 触发
+            # 三方库豁免: googletest (ADR-010 §3.2)
+            -Wno-sign-conversion
         )
     endif()
 endforeach()
