@@ -62,7 +62,28 @@ git merge origin/main --no-edit                  # B.0c 合并 (worktree base �
 # === 完成时 (老板原话 "提交 + 拉取 + 合并 + 推送") ===
 git add -A && git commit -m "<persona> Wave NN ..."   # B.2 提交
 git fetch origin                                       # B.3 拉取 (代码不丢)
-git merge origin/main --no-edit                        # B.4 合并 (解 conflict 自己解)
+git merge origin/main --no-edit                        # B.4 合并 (无冲突 自动通过)
+
+# === B.4 冲突处理 (老板 5/29 三次补丁) ===
+# 若 B.4 输出 "CONFLICT (content): ..." 不要 abort, 自己解:
+git diff --name-only --diff-filter=U                   # B.4a 看冲突文件 list
+
+# B.4b 判断冲突文件 owner:
+#   - 全 自己 owner (sub-agent 自己改的) → 自己解 (走 B.4c)
+#   - 含 跨 owner (FOM ADR-005 §3.4) → 升 GM (走 B.4d)
+
+# B.4c 自己解 (推荐):
+#   - cat <冲突文件> 读 conflict marker (<<<<<<<, =======, >>>>>>>)
+#   - 语义合并双方逻辑 (绝不 git checkout --theirs/ours 一边倒, 易丢代码)
+#   - git add <冲突文件>
+#   - git commit (merge commit, msg: "merge: resolve conflict in <files>")
+#   - continue B.5
+
+# B.4d 解不了 (跨 owner / 复杂 cpp / 语义不清):
+git merge --abort                                       # 撤销 merge 保护代码不丢
+# 回汇 GM 升级 (ADR-005 §3.2):
+#   "Wave NN 遇 conflict 升 GM: 冲突文件 X (跨 owner persona Y), 我无法解."
+# GM 派回原 owner 或 GM 介入手动 merge
 # B.5 本地 verify (pre-push hook auto: cmake build + ctest + 5 grep + SEGFAULT retry x3)
 git push origin worktree-agent-<id>                   # B.6 推送
 gh pr create --title "..." --body "<cite + 决策>"     # B.7 PR
@@ -84,7 +105,8 @@ gh pr merge <pr_num> --auto --squash --delete-branch   # B.8 auto-merge (等 CI 
 | push 后 PR 没创建 | 派同 persona 新 wave 重做 gh pr create (commit 在 remote branch 可恢复) |
 | PR auto-merge fail (CI fail) | GitHub Issue 通过 notify-on-main-failure 提醒 + GM 视情 admin merge 或回炉 |
 | worktree 被自动 cleanup, push 未发生 | doc/code 丢失, 派新 wave 重做 (老板 verbatim "代码不能丢" 必修教训) |
-| Merge conflict 2 次 | 升 GM 介入 (ADR-005 §3.2) |
+| Merge conflict (B.4 触发) | sub-agent 自己语义合并 (B.4c) 或 git merge --abort + 升 GM (B.4d) — **禁 git checkout --theirs/ours 一边倒** |
+| Merge conflict 2 次 | 升 GM 介入 (ADR-005 §3.2), 派回原 owner |
 
 ### E. 自动化已落 (老板 5/29 verbatim 全 record)
 
