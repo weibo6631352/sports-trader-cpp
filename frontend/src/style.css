@@ -419,7 +419,8 @@ body {
 
 .event-columns {
   display: flex;
-  overflow-x: auto;        /* 多盘口时横向滚动 */
+  width: 100%;              /* 充满赛事区块宽度, 不留空白 */
+  overflow-x: auto;         /* 盘口数极多时可横向滚动 */
   scrollbar-width: thin;
 }
 
@@ -429,12 +430,13 @@ body {
    ============================================================ */
 
 .cond-col {
-  flex: 1 0 220px;         /* 最小 220px, 可伸展 */
-  max-width: 320px;
+  flex: 1 1 220px;          /* grow+shrink: 均等分配宽度, 最小 220px */
+  min-width: 220px;         /* 防止 flex-shrink 过头压扁列 */
+  max-width: 480px;         /* 单盘口时不过宽; 多盘口时自然分摊 */
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  position: relative;      /* 供 reject-dot 绝对定位 */
+  position: relative;       /* 供 reject-dot 绝对定位 */
 }
 
 .cond-col:last-child { border-right: none; }

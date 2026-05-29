@@ -176,9 +176,20 @@ async function refreshSparkline() {
 // ---------- 数据组装: 赛事分组卡 (v5 核心) ----------
 
 async function refreshMarketGrid() {
-  // 1. positions
-  const posData = await safeGet(fetchPositions, STUB_POSITIONS);
+  // 1. positions + rejects + attribution 并发拉取
+  //    attribution 在此并发拉 (不依赖 cache.attribution 时序),
+  //    保证首次渲染即能发现所有盘口 (含无持仓但有 PnL 记录的 total/spread)
+  const [posData, attrData, rejectsData] = await Promise.all([
+    safeGet(fetchPositions, STUB_POSITIONS),
+    safeGet(fetchPnlAttribution, STUB_PNL_ATTRIBUTION),
+    safeGet(fetchRiskRejects, STUB_RISK_REJECTS),
+  ]);
   cache.positions = posData;
+  // 写入 attribution 缓存 (供顶部 PnL 等共用)
+  if (attrData) cache.attribution = attrData;
+  // 写入 rejects 缓存
+  if (rejectsData) cache.rejects = rejectsData;
+
   const positions = posData ? (posData.positions || []) : [];
 
   // 2. 按 market_id 分组 positions
@@ -189,23 +200,28 @@ async function refreshMarketGrid() {
   }
 
   // 3. attribution.per_market → per condition PnL
+  //    使用当次并发拉到的 attrData (不走 cache, 避免时序依赖)
   const pmPnlMap = {};
-  if (cache.attribution && cache.attribution.per_market) {
-    for (const pm of cache.attribution.per_market) {
+  const localAttr = attrData || cache.attribution;
+  if (localAttr && localAttr.per_market) {
+    for (const pm of localAttr.per_market) {
       pmPnlMap[pm.market_id] = Number(pm.net_pnl);
     }
   }
 
   // 4. rejects 按 market_id 分组
+  //    使用当次并发拉到的 rejectsData (不走 cache)
   const rejectMap = {};
-  if (cache.rejects && cache.rejects.rejects) {
-    for (const r of cache.rejects.rejects) {
+  const localRejects = rejectsData || cache.rejects;
+  if (localRejects && localRejects.rejects) {
+    for (const r of localRejects.rejects) {
       if (!rejectMap[r.market_id]) rejectMap[r.market_id] = [];
       rejectMap[r.market_id].push(r);
     }
   }
 
-  // 5. 市场集合 (来自 positions + rejects + attribution)
+  // 5. 市场集合 (来自 positions + rejects + attribution, 三者并集)
+  //    关键: 无持仓但有 attribution 记录的盘口 (如 total/spread) 必须进集合
   const allConditionIds = new Set([
     ...Object.keys(posMap),
     ...Object.keys(rejectMap),

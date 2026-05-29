@@ -45,12 +45,13 @@ export const STUB_STATUS = {
   as_of_ts: NOW_NS,
 };
 
-// v5: 5 个盘口 positions
+// v5: 5 条持仓记录 — 对齐后端 DemoStateProvider.positions()
+// LAL-BOS 三盘口 (ml/total/spread) 全部有持仓, 与后端 demo 数据保持一致
 export const STUB_POSITIONS = {
   mode: 'paper',
   as_of_ts: NOW_NS,
   positions: [
-    // LAL-BOS 胜负盘 (有持仓)
+    // LAL-BOS 胜负盘 — token0 LAL 多头
     {
       market_id: 'nba-lal-bos-ml',
       outcome: 'LAL',
@@ -59,8 +60,9 @@ export const STUB_POSITIONS = {
       mark_price: 0.65,
       pnl_realized: 45,
       pnl_unrealized: 45,
-      as_of_ts: NOW_NS - 5.8e10,
+      as_of_ts: NOW_NS - 6e10,
     },
+    // LAL-BOS 胜负盘 — token1 BOS 空头
     {
       market_id: 'nba-lal-bos-ml',
       outcome: 'BOS',
@@ -69,11 +71,31 @@ export const STUB_POSITIONS = {
       mark_price: 0.35,
       pnl_realized: -12.5,
       pnl_unrealized: 24,
-      as_of_ts: NOW_NS - 2.8e10,
+      as_of_ts: NOW_NS - 3e10,
     },
-    // LAL-BOS 大小盘 (无持仓 — 只有 attribution 里有)
-    // LAL-BOS 让分盘 (无持仓)
-    // ARS-CHE 大小盘
+    // LAL-BOS 大小盘 — OVER_220.5 多头 (对齐后端 demo)
+    {
+      market_id: 'nba-lal-bos-total',
+      outcome: 'OVER_220.5',
+      net_qty: 900,
+      avg_entry_price: 0.50,
+      mark_price: 0.52,
+      pnl_realized: 18,
+      pnl_unrealized: 18,
+      as_of_ts: NOW_NS - 2e10,
+    },
+    // LAL-BOS 让分盘 — LAL_-5.5 多头 (对齐后端 demo)
+    {
+      market_id: 'nba-lal-bos-spread',
+      outcome: 'LAL_-5.5',
+      net_qty: 600,
+      avg_entry_price: 0.47,
+      mark_price: 0.49,
+      pnl_realized: 12,
+      pnl_unrealized: 12,
+      as_of_ts: NOW_NS - 1.5e10,
+    },
+    // ARS-CHE 大小盘 — OVER_2.5 多头
     {
       market_id: 'epl-ars-che-total',
       outcome: 'OVER_2.5',
@@ -82,10 +104,9 @@ export const STUB_POSITIONS = {
       mark_price: 0.74,
       pnl_realized: 110,
       pnl_unrealized: 66,
-      as_of_ts: NOW_NS - 9e9,
+      as_of_ts: NOW_NS - 1e10,
     },
-    // KC-BUF 让分盘 (无持仓)
-    // NYY-BOS 胜负盘 (无持仓)
+    // KC-BUF 让分盘 / NYY-BOS 胜负盘: 只有 attribution 记录, 无持仓行
   ],
 };
 

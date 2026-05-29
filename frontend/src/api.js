@@ -122,8 +122,9 @@ export const fetchMarket = (marketId)     => apiFetch(`/api/v1/market/${marketId
 /**
  * fetchBook — 返回 BinaryMarketBookView (双边 book_pair)
  * 字段: condition_id, cross_spread, token0{...}, token1{...}
+ * 路由: /api/v1/book_pair/{conditionId} (ADR-040 显式端点)
  */
-export const fetchBook   = (conditionId)  => apiFetch(`/api/v1/book/${conditionId}`);
+export const fetchBook   = (conditionId)  => apiFetch(`/api/v1/book_pair/${conditionId}`);
 
 // ---------- Score / Quote (per market) ----------
 
