@@ -5,6 +5,10 @@
 //   laozhou-trade-orchestrator-cpp-v0.5.md §18 (ExecutionMode.Paper 4 接口)
 //   laohan-riskmanager-design-v0.3.1.md (RiskGateway::evaluate 上游, signer 在 gate 后)
 //
+// Wave 72 P0: to_sign_request() transformer 落在 transformer.hpp (同目录)
+//   理由: signer_iface.hpp 被 stcpp_signer_paper 链 (不链 libsodium), 不能引 signer_v52.hpp.
+//   用法: #include "stcpp/signer/transformer.hpp" (包含 to_sign_request inline noexcept)
+//
 // 红线:
 //   R-7  Live / Paper / Backtest 三 binary 物理隔离; 本文件只放 abstract 接口,
 //        实现走 src/stcpp/signer/{paper,live,backtest}/ 独立 CMake target.
