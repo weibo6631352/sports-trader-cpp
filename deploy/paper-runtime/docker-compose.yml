@@ -1,0 +1,108 @@
+# deploy/paper-runtime/docker-compose.yml
+# owner: 老吴 (linux-sre-devops, A-unit, #10)
+# last_review: 2026-05-29
+#
+# 用途: Frankfurt eu-central-1 本机运行 stcpp_debug_server (ADR-038 + ADR-013 v2)
+#   - 容器绑定 127.0.0.1:8080 (ADR-038 §5 安全默认, 不暴露公网)
+#   - 远程访问: ssh -L 8080:127.0.0.1:8080 ubuntu@<frankfurt-ip> -N
+#   - Prometheus node-exporter metrics: :9100 (localhost scrape by Prometheus)
+#
+# 使用:
+#   # 构建 (首次 / 代码变更后)
+#   docker compose -f deploy/paper-runtime/docker-compose.yml build
+#
+#   # 启动 (后台)
+#   docker compose -f deploy/paper-runtime/docker-compose.yml up -d
+#
+#   # 查看日志
+#   docker compose -f deploy/paper-runtime/docker-compose.yml logs -f debug-server
+#
+#   # 停止
+#   docker compose -f deploy/paper-runtime/docker-compose.yml down
+#
+# 凭证: /etc/stcpp/paper.env (由 secret manager 预写, chmod 600, 不入 git)
+# 格式: KEY=value (参考 deploy/paper-runtime/.env.example)
+
+name: stcpp-paper-runtime
+
+services:
+  # ---------------------------------------------------------------------------
+  # stcpp_debug_server: 观测/调试 API + frontend 看板 (C++ 托管, 无 Node 运行时)
+  # ---------------------------------------------------------------------------
+  debug-server:
+    build:
+      context: ../..             # 仓库根 (CMakeLists.txt + frontend/ + src/ 都在这里)
+      dockerfile: deploy/paper-runtime/Dockerfile.debug-server
+      args:
+        BUILD_TYPE: Release
+        STCPP_EXEC_MODE: paper   # 编译期常量 → STCPP_EXEC_MODE_STR="paper"
+    image: stcpp-debug-server:latest
+    container_name: stcpp-debug-server
+
+    restart: unless-stopped
+
+    # ADR-038 §5: 只绑 127.0.0.1, 禁止 0.0.0.0
+    # 远程访问: ssh -L 8080:127.0.0.1:8080 ubuntu@<frankfurt-ip> -N
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    # 凭证: /etc/stcpp/paper.env (host 上由 secret manager 写入)
+    # 格式: KEY=value, chmod 600
+    env_file:
+      - /etc/stcpp/paper.env
+
+    environment:
+      # PAPER_MODE=1 硬 override (R-11 red-line, 即使 env_file 漏写也保险)
+      PAPER_MODE: "1"
+      TZ: Europe/Berlin
+
+    volumes:
+      # data + logs 持久化到 host (日志 → journald/Loki 采集)
+      - stcpp-data:/app/data
+      - stcpp-logs:/app/logs
+      # 配置文件 (只读挂载, 无 secret)
+      - /etc/stcpp/paper.toml:/app/config/paper.toml:ro
+
+    # ----------------------------------------------------
+    # Healthcheck: liveness 用 /healthz
+    #   interval=30s: 每 30s 探一次
+    #   timeout=5s:   探针超时
+    #   start_period=30s: 容器启动宽限期 (binary 启动 + WSS 握手)
+    #   retries=3:    连续 3 次失败才标 unhealthy
+    # ----------------------------------------------------
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+    # ----------------------------------------------------
+    # Readiness probe (外部 check, 非 docker 原生 — 由 provision 脚本执行):
+    #   curl http://localhost:8080/status | jq '.data_source'
+    #   data_source != "stub-empty" → ready (接到真实数据源)
+    # ----------------------------------------------------
+
+    # 资源限制 (Frankfurt t3.medium 2 vCPU / 4GB RAM)
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"      # debug server 让出 1.5 vCPU 给 hot path
+          memory: 512M
+        reservations:
+          cpus: "0.1"
+          memory: 128M
+
+    logging:
+      driver: journald
+      options:
+        tag: stcpp-debug-server
+
+# ---------------------------------------------------------------------------
+# volumes (named, 跨 compose down 持久化)
+# ---------------------------------------------------------------------------
+volumes:
+  stcpp-data:
+    driver: local
+  stcpp-logs:
+    driver: local

@@ -1,0 +1,102 @@
+# stcpp-debug-server.service — systemd unit for stcpp_debug_server (Frankfurt eu-central-1)
+# owner: 老吴 (linux-sre-devops, A-unit, #10)
+# last_review: 2026-05-29
+#
+# deploy path: /etc/systemd/system/stcpp-debug-server.service
+# manage:      systemctl {start|stop|restart|status|reload} stcpp-debug-server
+# logs:        journalctl -u stcpp-debug-server -f
+#
+# 关联:
+#   ADR-038 §5: 默认 127.0.0.1, 不开 0.0.0.0; 远程访问走 SSH 隧道
+#   ADR-013 v2: Frankfurt eu-central-1 目标部署地
+#   CLAUDE.md R-11: PAPER_MODE=1 强制 (env override)
+#   CLAUDE.md R-12: stcpp_debug_server 独立进程/线程, 不阻塞 hot path
+#
+# 远程访问方式 (ADR-038 §5 SSH 隧道, 不开公网端口):
+#   ssh -L 8080:127.0.0.1:8080 ubuntu@<frankfurt-ip> -N
+#   浏览器访问: http://localhost:8080/
+#   API 访问:   curl http://localhost:8080/healthz
+#
+# 凭证管理:
+#   生产: AWS SSM Parameter Store → 启动前写入 /etc/stcpp/paper.env (chmod 600)
+#   备用: systemd-creds (systemd v250+ 支持)
+#   禁止: 私钥明文落 .env → git (CLAUDE.md R-11 red-line)
+
+[Unit]
+Description=stcpp debug server — 观测/调试 API (ADR-038) + frontend 看板 (paper mode)
+Documentation=https://github.com/wangweibo/sports-trader-cpp/docs/ADR/2026-05-29-observability-debug-api.md
+After=network-online.target
+Wants=network-online.target
+# Prometheus node-exporter 同机可选依赖
+Wants=node-exporter.service
+
+[Service]
+Type=simple
+User=stcpp
+Group=stcpp
+
+WorkingDirectory=/opt/stcpp
+
+# 凭证文件 — secret manager 在启动前写入, 本 unit 不含任何 secret
+# 格式: KEY=value (参见 .env.example, 不入 git)
+# chmod 600 /etc/stcpp/paper.env 后才能 start service
+EnvironmentFile=-/etc/stcpp/paper.env
+
+# PAPER_MODE=1: 硬 override, 即使 .env 漏写也保险 (R-11 red-line)
+Environment=PAPER_MODE=1
+Environment=LOG_DIR=/var/log/stcpp
+Environment=DATA_DIR=/opt/stcpp/data
+
+# CLI: --host 127.0.0.1 (ADR-038 §5 安全默认, 不开 0.0.0.0)
+#      --port 8080       (frontend BASE_URL 对齐)
+#      --frontend /opt/stcpp/frontend/dist  (cpp-httplib 静态文件托管)
+#      --real 可选: paper runtime 联动时接真实 OrderBook snapshot hub;
+#                  standalone 模式去掉 --real, 使用 DemoStateProvider
+ExecStart=/opt/stcpp/bin/stcpp_debug_server \
+    --host 127.0.0.1 \
+    --port 8080 \
+    --frontend /opt/stcpp/frontend/dist
+
+# 优雅重启: SIGHUP → server.stop() + 重新绑定端口 (httplib 会处理)
+ExecReload=/bin/kill -HUP $MAINPID
+
+# 崩溃重启策略: 最多 5 次 / 60s, 超出后 systemd 放弃 (防止抖动循环)
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=60s
+StartLimitBurst=5
+
+# 文件描述符: WSS(2) + REST server accept + debug REST endpoint + Prometheus
+LimitNOFILE=65536
+
+# 日志: journal → promtail → Loki (Sprint-3 小郑观测栈)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=stcpp-debug-server
+
+# ---------------------------------------------------------------------------
+# Security hardening (非 root 运行 + namespace 隔离)
+# ---------------------------------------------------------------------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+# 写权限只开放 data + log 目录
+ReadWritePaths=/opt/stcpp/data /var/log/stcpp
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+# 禁止访问 /proc 其他进程 (防信息泄漏)
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=false   # false: cpp-httplib JIT 无需, 但 sanitizer build 需要 false
+
+# CPU affinity (ADR-015 cite: debug server 用 vCPU6 独立线程)
+# t3.medium 2 vCPU → pin to CPU 1 (CPU 0 留给 hot-path 交易线程)
+# standalone 部署 (无 paper_runtime) 时 pin 0 即可
+CPUAffinity=1
+
+[Install]
+WantedBy=multi-user.target
