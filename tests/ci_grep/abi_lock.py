@@ -163,13 +163,23 @@ def check_struct_keyword_changes(repo_root: Path, changed_files: list[str]) -> l
 
     v1.7: scan diff for struct/enum definition changes in ABI_LOCKED_STRUCT_KEYWORDS.
     Returns matched keywords found in added lines of the diff.
+
+    v1.7.1 fix: skip .md / .yml / .yaml / .txt / .json files — documentation
+    mentioning ABI struct names should not trigger Rule 4 (false positive).
+    Only .cpp / .hpp / .h / CMakeLists.txt are ABI-relevant.
     """
+    # Filter to only source/build files (exclude docs, configs, workflows)
+    SOURCE_EXTS = {".cpp", ".hpp", ".h", ".cc", ".cxx", ".c"}
+    cpp_files = [
+        f for f in changed_files
+        if Path(f).suffix in SOURCE_EXTS or Path(f).name == "CMakeLists.txt"
+    ]
     triggered: list[str] = []
-    if not changed_files:
+    if not cpp_files:
         return triggered
     try:
         result = subprocess.run(
-            ["git", "diff", "origin/main...HEAD", "--", *changed_files],
+            ["git", "diff", "origin/main...HEAD", "--", *cpp_files],
             capture_output=True,
             text=True,
             cwd=repo_root,
