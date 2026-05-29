@@ -45,7 +45,8 @@ constexpr std::int64_t kFutureGuardNs = 5'000'000'000LL;
 std::size_t FindKey(std::string_view body, std::string_view key) noexcept {
     // Search for "key" (quoted) in body
     char needle[64];
-    if (key.size() + 2 >= sizeof(needle)) return std::string_view::npos;
+    if (key.size() + 2 >= sizeof(needle))
+        return std::string_view::npos;
     needle[0] = '"';
     std::copy(key.begin(), key.end(), needle + 1);
     needle[key.size() + 1] = '"';
@@ -53,105 +54,125 @@ std::size_t FindKey(std::string_view body, std::string_view key) noexcept {
 }
 
 std::size_t SkipColonSpace(std::string_view body, std::size_t pos) noexcept {
-    while (pos < body.size() &&
-           (body[pos] == ':' || body[pos] == ' ' || body[pos] == '\t'))
+    while (pos < body.size() && (body[pos] == ':' || body[pos] == ' ' || body[pos] == '\t'))
         ++pos;
     return pos;
 }
 
-// Extract uint64 from possibly-quoted numeric string (老李 spec §2.2: timestamp is string)
-bool ExtractInt64OrQuotedInt64(std::string_view body, std::string_view key,
-                               std::int64_t& out) noexcept {
+// Extract int64 from possibly-quoted numeric string (老李 spec §2.2: timestamp is string).
+// Security: uses std::from_chars for overflow-safe integer parsing (P1 fix — 小白 audit §1.3-A).
+// from_chars natively returns std::errc::result_out_of_range on overflow; no UB possible.
+bool ExtractInt64OrQuotedInt64(std::string_view body, std::string_view key, std::int64_t& out) noexcept {
     std::size_t pk = FindKey(body, key);
-    if (pk == std::string_view::npos) return false;
+    if (pk == std::string_view::npos)
+        return false;
     std::size_t pos = SkipColonSpace(body, pk + key.size() + 2);
-    if (pos >= body.size()) return false;
+    if (pos >= body.size())
+        return false;
     bool quoted = (body[pos] == '"');
-    if (quoted) ++pos;
-    if (pos >= body.size()) return false;
-    std::int64_t sign = 1;
-    if (body[pos] == '-') { sign = -1; ++pos; }
-    if (pos >= body.size() || !std::isdigit(static_cast<unsigned char>(body[pos]))) return false;
-    std::int64_t v = 0;
-    while (pos < body.size() && std::isdigit(static_cast<unsigned char>(body[pos]))) {
-        v = v * 10 + (body[pos] - '0');
+    if (quoted)
         ++pos;
-    }
-    out = sign * v;
-    return true;
+    if (pos >= body.size())
+        return false;
+    // Locate end of digit run (allow leading '-')
+    std::size_t start = pos;
+    if (pos < body.size() && body[pos] == '-')
+        ++pos;
+    if (pos >= body.size() || !std::isdigit(static_cast<unsigned char>(body[pos])))
+        return false;
+    std::size_t digit_end = pos;
+    while (digit_end < body.size() && std::isdigit(static_cast<unsigned char>(body[digit_end])))
+        ++digit_end;
+    // Hard cap: 20 chars covers '-' + 19 digits (INT64_MAX is 19 digits).
+    // Any longer input is guaranteed to overflow — drop immediately.
+    if (digit_end - start > 20)
+        return false;
+    auto [ptr, ec] = std::from_chars(body.data() + start, body.data() + digit_end, out);
+    return ec == std::errc{};
 }
 
 // Extract string field value (content between quotes after "key":)
 // Returns empty view if not found
 std::string_view ExtractStringField(std::string_view body, std::string_view key) noexcept {
     std::size_t pk = FindKey(body, key);
-    if (pk == std::string_view::npos) return {};
+    if (pk == std::string_view::npos)
+        return {};
     std::size_t pos = SkipColonSpace(body, pk + key.size() + 2);
-    if (pos >= body.size() || body[pos] != '"') return {};
+    if (pos >= body.size() || body[pos] != '"')
+        return {};
     ++pos;
     std::size_t end = body.find('"', pos);
-    if (end == std::string_view::npos) return {};
+    if (end == std::string_view::npos)
+        return {};
     return body.substr(pos, end - pos);
 }
 
-// Extract decimal string as bps (price/size: "0.55" → 5500 bps)
-// P-02: must use from_chars, not atof (locale-dependent)
-bool ExtractDecimalStringAsBps(std::string_view body, std::string_view key,
-                               std::uint32_t& out_bps) noexcept {
-    std::string_view sv = ExtractStringField(body, key);
-    if (sv.empty()) {
-        // try unquoted
-        std::size_t pk = FindKey(body, key);
-        if (pk == std::string_view::npos) return false;
-        std::size_t pos = SkipColonSpace(body, pk + key.size() + 2);
-        if (pos >= body.size()) return false;
-        char buf[32];
-        std::size_t n = 0;
-        while (pos < body.size() && n + 1 < sizeof(buf) &&
-               (std::isdigit(static_cast<unsigned char>(body[pos])) || body[pos] == '.' ||
-                body[pos] == '-' || body[pos] == '+' || body[pos] == 'e' || body[pos] == 'E')) {
-            buf[n++] = body[pos++];
-        }
-        if (n == 0) return false;
-        buf[n] = '\0';
-        char* ep = nullptr;
-        double v = std::strtod(buf, &ep);
-        if (ep == buf) return false;
-        if (v < 0) v = 0;
-        if (v > 1.0) v = 1.0;
+// Extract decimal string as bps (price/size: "0.55" → 5500 bps).
+// P-02 compliance: uses std::from_chars<double> — locale-independent, no strtod.
+// (Previous implementation used strtod despite the P-02 note; corrected here — 小白 audit §1.3-A.)
+// Cap: raw string ≤ 31 chars before parsing; values outside [0,1] clamped to [0,1].
+bool ExtractDecimalStringAsBps(std::string_view body, std::string_view key, std::uint32_t& out_bps) noexcept {
+    // Helper lambda: parse a string_view decimal with from_chars<double> and clamp to bps.
+    auto ParseBps = [&](std::string_view raw) -> bool {
+        if (raw.empty() || raw.size() > 31)
+            return false;
+        double v{};
+        auto [ptr, ec] = std::from_chars(raw.data(), raw.data() + raw.size(), v);
+        if (ec != std::errc{} || ptr == raw.data())
+            return false;
+        if (v < 0.0)
+            v = 0.0;
+        if (v > 1.0)
+            v = 1.0;
         out_bps = static_cast<std::uint32_t>(v * 10000.0 + 0.5);
         return true;
-    }
-    // from_chars path for quoted string (P-02 compliance)
-    char buf[32];
-    if (sv.size() >= sizeof(buf)) return false;
-    std::copy(sv.begin(), sv.end(), buf);
-    buf[sv.size()] = '\0';
-    char* ep = nullptr;
-    double v = std::strtod(buf, &ep);
-    if (ep == buf) return false;
-    if (v < 0) v = 0;
-    if (v > 1.0) v = 1.0;
-    out_bps = static_cast<std::uint32_t>(v * 10000.0 + 0.5);
-    return true;
-}
+    };
 
-// Extract uint64 sequence_no (optional field)
-bool ExtractUint64(std::string_view body, std::string_view key, std::uint64_t& out) noexcept {
+    std::string_view sv = ExtractStringField(body, key);
+    if (!sv.empty())
+        return ParseBps(sv);
+
+    // Unquoted fallback: scan digits/dot/sign/exponent up to 31 chars
     std::size_t pk = FindKey(body, key);
-    if (pk == std::string_view::npos) return false;
+    if (pk == std::string_view::npos)
+        return false;
     std::size_t pos = SkipColonSpace(body, pk + key.size() + 2);
-    if (pos >= body.size()) return false;
-    bool quoted = (body[pos] == '"');
-    if (quoted) ++pos;
-    if (pos >= body.size() || !std::isdigit(static_cast<unsigned char>(body[pos]))) return false;
-    std::uint64_t v = 0;
-    while (pos < body.size() && std::isdigit(static_cast<unsigned char>(body[pos]))) {
-        v = v * 10 + static_cast<std::uint64_t>(body[pos] - '0');
+    if (pos >= body.size())
+        return false;
+    std::size_t start = pos;
+    while (pos < body.size() && pos - start < 32 &&
+           (std::isdigit(static_cast<unsigned char>(body[pos])) || body[pos] == '.' || body[pos] == '-' ||
+            body[pos] == '+' || body[pos] == 'e' || body[pos] == 'E')) {
         ++pos;
     }
-    out = v;
-    return true;
+    if (pos == start)
+        return false;
+    return ParseBps(body.substr(start, pos - start));
+}
+
+// Extract uint64 sequence_no (optional field).
+// Security: uses std::from_chars for overflow-safe parsing (P1 fix — 小白 audit §1.3-A).
+// UINT64_MAX is 20 digits; hard cap at 20 drops any longer input before from_chars call.
+bool ExtractUint64(std::string_view body, std::string_view key, std::uint64_t& out) noexcept {
+    std::size_t pk = FindKey(body, key);
+    if (pk == std::string_view::npos)
+        return false;
+    std::size_t pos = SkipColonSpace(body, pk + key.size() + 2);
+    if (pos >= body.size())
+        return false;
+    bool quoted = (body[pos] == '"');
+    if (quoted)
+        ++pos;
+    if (pos >= body.size() || !std::isdigit(static_cast<unsigned char>(body[pos])))
+        return false;
+    std::size_t start = pos;
+    while (pos < body.size() && std::isdigit(static_cast<unsigned char>(body[pos])))
+        ++pos;
+    // UINT64_MAX = 18446744073709551615 (20 digits); anything longer overflows.
+    if (pos - start > 20)
+        return false;
+    auto [ptr, ec] = std::from_chars(body.data() + start, body.data() + pos, out);
+    return ec == std::errc{};
 }
 
 // Fill R-20 4-ts from frame timestamp field
@@ -160,13 +181,14 @@ bool ExtractUint64(std::string_view body, std::string_view key, std::uint64_t& o
 bool FillBaseTs(std::string_view body, std::int64_t recv_ts_ns, FourTs& ts) noexcept {
     std::int64_t ts_ms = 0;
     // timestamp may be int or quoted string (老李 spec §2.2)
-    if (!ExtractInt64OrQuotedInt64(body, "timestamp", ts_ms)) return false;
+    if (!ExtractInt64OrQuotedInt64(body, "timestamp", ts_ms))
+        return false;
     // P-03: ms × 1e6 = ns (not s × 1e9)
     ts.data_source_ts_ns = ts_ms * kMsToNs;
-    ts.event_ts_ns       = ts.data_source_ts_ns;
-    ts.ingestion_ts_ns   = recv_ts_ns;
-    ts.as_of_ts_ns       = recv_ts_ns;
-    ts.ds_origin         = DataSourceTsOrigin::kUpstreamPayload;
+    ts.event_ts_ns = ts.data_source_ts_ns;
+    ts.ingestion_ts_ns = recv_ts_ns;
+    ts.as_of_ts_ns = recv_ts_ns;
+    ts.ds_origin = DataSourceTsOrigin::kUpstreamPayload;
     return true;
 }
 
@@ -181,12 +203,11 @@ std::string_view ExtractEventType(std::string_view body) noexcept {
 // Constructor / Destructor
 // ===========================================================================
 
-PolymarketCLOBSubscriber::PolymarketCLOBSubscriber(
-    std::unique_ptr<IWssTransport>  market_transport,
-    std::unique_ptr<IWssTransport>  user_transport,
-    std::shared_ptr<ISpscEventSink> market_sink,
-    std::shared_ptr<ISpscEventSink> user_sink,
-    PolymarketCLOBSubscriberConfig  cfg)
+PolymarketCLOBSubscriber::PolymarketCLOBSubscriber(std::unique_ptr<IWssTransport> market_transport,
+                                                   std::unique_ptr<IWssTransport> user_transport,
+                                                   std::shared_ptr<ISpscEventSink> market_sink,
+                                                   std::shared_ptr<ISpscEventSink> user_sink,
+                                                   PolymarketCLOBSubscriberConfig cfg)
     : market_transport_(std::move(market_transport)),
       user_transport_(std::move(user_transport)),
       market_sink_(std::move(market_sink)),
@@ -201,21 +222,20 @@ PolymarketCLOBSubscriber::PolymarketCLOBSubscriber(
         market_transport_->SetOnTextFrame(
             [this](std::string_view p, std::int64_t ts) { OnMarketFrame(p, ts); });
         market_transport_->SetOnConnected([this]() { OnMarketConnected(); });
-        market_transport_->SetOnDisconnected(
-            [this](std::string_view r) { OnMarketDisconnected(r); });
+        market_transport_->SetOnDisconnected([this](std::string_view r) { OnMarketDisconnected(r); });
     }
     if (user_transport_) {
-        user_transport_->SetOnTextFrame(
-            [this](std::string_view p, std::int64_t ts) { OnUserFrame(p, ts); });
+        user_transport_->SetOnTextFrame([this](std::string_view p, std::int64_t ts) { OnUserFrame(p, ts); });
         user_transport_->SetOnConnected([this]() { OnUserConnected(); });
-        user_transport_->SetOnDisconnected(
-            [this](std::string_view r) { OnUserDisconnected(r); });
+        user_transport_->SetOnDisconnected([this](std::string_view r) { OnUserDisconnected(r); });
     }
     // Pre-load user condition_ids from config (for reconnect replay)
     user_condition_ids_ = cfg_.initial_user_condition_ids;
 }
 
-PolymarketCLOBSubscriber::~PolymarketCLOBSubscriber() { Stop(); }
+PolymarketCLOBSubscriber::~PolymarketCLOBSubscriber() {
+    Stop();
+}
 
 // ===========================================================================
 // Start / Stop
@@ -235,8 +255,10 @@ bool PolymarketCLOBSubscriber::Start() {
 }
 
 void PolymarketCLOBSubscriber::Stop() noexcept {
-    if (market_transport_) market_transport_->Close();
-    if (user_transport_)   user_transport_->Close();
+    if (market_transport_)
+        market_transport_->Close();
+    if (user_transport_)
+        user_transport_->Close();
     market_state_.store(WssTransportState::kDisconnected);
     user_state_.store(WssTransportState::kDisconnected);
 }
@@ -245,20 +267,20 @@ void PolymarketCLOBSubscriber::Stop() noexcept {
 // Dynamic subscribe
 // ===========================================================================
 
-bool PolymarketCLOBSubscriber::SubscribeMarketTokens(
-    std::span<const std::string> token_ids) {
-    if (!market_transport_ || token_ids.empty()) return false;
+bool PolymarketCLOBSubscriber::SubscribeMarketTokens(std::span<const std::string> token_ids) {
+    if (!market_transport_ || token_ids.empty())
+        return false;
     std::string frame = MakeMarketSubscribeFrame(token_ids);
     return market_transport_->AsyncSendText(frame);
 }
 
-bool PolymarketCLOBSubscriber::SubscribeUserMarkets(
-    std::span<const std::string> condition_ids) {
-    if (!user_transport_ || condition_ids.empty()) return false;
+bool PolymarketCLOBSubscriber::SubscribeUserMarkets(std::span<const std::string> condition_ids) {
+    if (!user_transport_ || condition_ids.empty())
+        return false;
     // Append to known list for reconnect replay
     for (const auto& cid : condition_ids) {
-        if (std::find(user_condition_ids_.begin(), user_condition_ids_.end(), cid)
-            == user_condition_ids_.end()) {
+        if (std::find(user_condition_ids_.begin(), user_condition_ids_.end(), cid) ==
+            user_condition_ids_.end()) {
             user_condition_ids_.push_back(cid);
         }
     }
@@ -271,35 +293,39 @@ bool PolymarketCLOBSubscriber::SubscribeUserMarkets(
 // ===========================================================================
 
 void PolymarketCLOBSubscriber::TickMarketHeartbeatNow() {
-    if (market_transport_) market_transport_->AsyncSendText(cfg_.heartbeat_ping_text);
+    if (market_transport_)
+        market_transport_->AsyncSendText(cfg_.heartbeat_ping_text);
     last_market_ping_ts_ns_.store(NowNs(), std::memory_order_relaxed);
     market_metrics_.heartbeat_pings_sent_total.fetch_add(1, std::memory_order_relaxed);
 }
 
 void PolymarketCLOBSubscriber::TickUserHeartbeatNow() {
-    if (user_transport_) user_transport_->AsyncSendText(cfg_.heartbeat_ping_text);
+    if (user_transport_)
+        user_transport_->AsyncSendText(cfg_.heartbeat_ping_text);
     last_user_ping_ts_ns_.store(NowNs(), std::memory_order_relaxed);
     user_metrics_.heartbeat_pings_sent_total.fetch_add(1, std::memory_order_relaxed);
 }
 
 void PolymarketCLOBSubscriber::CheckMarketHeartbeatTimeoutNow() {
-    const std::int64_t now   = NowNs();
-    const std::int64_t last  = last_market_msg_ts_ns_.load(std::memory_order_relaxed);
+    const std::int64_t now = NowNs();
+    const std::int64_t last = last_market_msg_ts_ns_.load(std::memory_order_relaxed);
     const std::int64_t to_ns = cfg_.heartbeat_timeout.count() * kMsToNs;
     if (last != 0 && now - last > to_ns) {
         market_metrics_.heartbeat_timeouts_total.fetch_add(1, std::memory_order_relaxed);
-        if (market_transport_) market_transport_->Close();
+        if (market_transport_)
+            market_transport_->Close();
     }
 }
 
 void PolymarketCLOBSubscriber::CheckUserHeartbeatTimeoutNow() {
     // P-04: user channel 静默不等于健康 — 靠 10s PING 探活
-    const std::int64_t now   = NowNs();
-    const std::int64_t last  = last_user_msg_ts_ns_.load(std::memory_order_relaxed);
+    const std::int64_t now = NowNs();
+    const std::int64_t last = last_user_msg_ts_ns_.load(std::memory_order_relaxed);
     const std::int64_t to_ns = cfg_.heartbeat_timeout.count() * kMsToNs;
     if (last != 0 && now - last > to_ns) {
         user_metrics_.heartbeat_timeouts_total.fetch_add(1, std::memory_order_relaxed);
-        if (user_transport_) user_transport_->Close();
+        if (user_transport_)
+            user_transport_->Close();
     }
 }
 
@@ -309,8 +335,7 @@ void PolymarketCLOBSubscriber::CheckUserHeartbeatTimeoutNow() {
 
 void PolymarketCLOBSubscriber::OnMarketConnected() {
     market_state_.store(WssTransportState::kConnected);
-    market_metrics_.state.store(
-        static_cast<std::uint8_t>(WssTransportState::kConnected));
+    market_metrics_.state.store(static_cast<std::uint8_t>(WssTransportState::kConnected));
     market_reconnect_attempt_.store(0);
 
     // P-08: 重连后必须重发 subscribe payload
@@ -326,15 +351,15 @@ void PolymarketCLOBSubscriber::OnMarketConnected() {
 
 void PolymarketCLOBSubscriber::OnMarketDisconnected(std::string_view /*reason*/) {
     market_state_.store(WssTransportState::kReconnecting);
-    market_metrics_.state.store(
-        static_cast<std::uint8_t>(WssTransportState::kReconnecting));
+    market_metrics_.state.store(static_cast<std::uint8_t>(WssTransportState::kReconnecting));
     ScheduleMarketReconnect();
 }
 
 void PolymarketCLOBSubscriber::ScheduleMarketReconnect() {
     market_reconnect_attempt_.fetch_add(1, std::memory_order_relaxed);
     market_metrics_.reconnect_attempts_total.fetch_add(1, std::memory_order_relaxed);
-    if (market_transport_) market_transport_->AsyncConnect(cfg_.market_url);
+    if (market_transport_)
+        market_transport_->AsyncConnect(cfg_.market_url);
 }
 
 // ===========================================================================
@@ -343,8 +368,7 @@ void PolymarketCLOBSubscriber::ScheduleMarketReconnect() {
 
 void PolymarketCLOBSubscriber::OnUserConnected() {
     user_state_.store(WssTransportState::kConnected);
-    user_metrics_.state.store(
-        static_cast<std::uint8_t>(WssTransportState::kConnected));
+    user_metrics_.state.store(static_cast<std::uint8_t>(WssTransportState::kConnected));
     user_reconnect_attempt_.store(0);
 
     // P-08: 重发 user subscribe payload (含 auth + condition_ids)
@@ -356,28 +380,28 @@ void PolymarketCLOBSubscriber::OnUserConnected() {
 
 void PolymarketCLOBSubscriber::OnUserDisconnected(std::string_view /*reason*/) {
     user_state_.store(WssTransportState::kReconnecting);
-    user_metrics_.state.store(
-        static_cast<std::uint8_t>(WssTransportState::kReconnecting));
+    user_metrics_.state.store(static_cast<std::uint8_t>(WssTransportState::kReconnecting));
     ScheduleUserReconnect();
 }
 
 void PolymarketCLOBSubscriber::ScheduleUserReconnect() {
     user_reconnect_attempt_.fetch_add(1, std::memory_order_relaxed);
     user_metrics_.reconnect_attempts_total.fetch_add(1, std::memory_order_relaxed);
-    if (user_transport_) user_transport_->AsyncConnect(cfg_.user_url);
+    if (user_transport_)
+        user_transport_->AsyncConnect(cfg_.user_url);
 }
 
 // ===========================================================================
 // Market channel — frame dispatch
 // ===========================================================================
 
-void PolymarketCLOBSubscriber::OnMarketFrame(std::string_view payload,
-                                              std::int64_t recv_ts_ns) {
+void PolymarketCLOBSubscriber::OnMarketFrame(std::string_view payload, std::int64_t recv_ts_ns) {
     market_metrics_.frames_received_total.fetch_add(1, std::memory_order_relaxed);
     last_market_msg_ts_ns_.store(recv_ts_ns, std::memory_order_relaxed);
     market_metrics_.last_msg_ts_ns.store(recv_ts_ns, std::memory_order_relaxed);
 
-    if (payload == "PONG" || payload == "pong") return;
+    if (payload == "PONG" || payload == "pong")
+        return;
 
     // Route by event_type field (CLOB market channel)
     WssEvent ev{};
@@ -406,8 +430,8 @@ void PolymarketCLOBSubscriber::OnMarketFrame(std::string_view payload,
         return;
     }
 
-    market_metrics_.by_topic_frames[static_cast<std::size_t>(ev.topic)].fetch_add(
-        1, std::memory_order_relaxed);
+    market_metrics_.by_topic_frames[static_cast<std::size_t>(ev.topic)].fetch_add(1,
+                                                                                  std::memory_order_relaxed);
     if (!market_sink_->TryPush(ev)) {
         market_metrics_.frames_dropped_total.fetch_add(1, std::memory_order_relaxed);
     }
@@ -417,20 +441,22 @@ void PolymarketCLOBSubscriber::OnMarketFrame(std::string_view payload,
 // Market channel — parsers
 // ===========================================================================
 
-bool PolymarketCLOBSubscriber::ParseBook(std::string_view body, std::int64_t recv_ts_ns,
-                                          WssEvent& ev) {
+bool PolymarketCLOBSubscriber::ParseBook(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev) {
     auto& b = ev.payload.book;
     b.topic = SubTopic::kBook;
-    if (!FillBaseTs(body, recv_ts_ns, b.ts)) return false;
+    if (!FillBaseTs(body, recv_ts_ns, b.ts))
+        return false;
 
     // R-20 future guard: data_source_ts > ingestion_ts + 5s → reject
-    if (b.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs) return false;
-    if (!b.ts.IsMonotonic()) return false;
+    if (b.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs)
+        return false;
+    if (!b.ts.IsMonotonic())
+        return false;
 
     // asset_id → token_id_yes (uint256 decimal string, store as string_view hash)
     // v0.1: store condition_id truncated (full string storage W10)
     std::string_view asset_id = ExtractStringField(body, "asset_id");
-    std::string_view market   = ExtractStringField(body, "market");
+    std::string_view market = ExtractStringField(body, "market");
     (void)asset_id;
     (void)market;
 
@@ -453,18 +479,21 @@ bool PolymarketCLOBSubscriber::ParseBook(std::string_view body, std::int64_t rec
     }
 
     ExtractDecimalStringAsBps(body, "last_trade_price", b.last_trade_price_bps);
-    ExtractDecimalStringAsBps(body, "tick_size",        b.tick_size_bps);
+    ExtractDecimalStringAsBps(body, "tick_size", b.tick_size_bps);
 
     return true;
 }
 
-bool PolymarketCLOBSubscriber::ParsePriceChange(std::string_view body,
-                                                  std::int64_t recv_ts_ns, WssEvent& ev) {
+bool PolymarketCLOBSubscriber::ParsePriceChange(std::string_view body, std::int64_t recv_ts_ns,
+                                                WssEvent& ev) {
     auto& b = ev.payload.book;
     b.topic = SubTopic::kPriceChange;
-    if (!FillBaseTs(body, recv_ts_ns, b.ts)) return false;
-    if (b.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs) return false;
-    if (!b.ts.IsMonotonic()) return false;
+    if (!FillBaseTs(body, recv_ts_ns, b.ts))
+        return false;
+    if (b.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs)
+        return false;
+    if (!b.ts.IsMonotonic())
+        return false;
 
     std::string_view asset_id = ExtractStringField(body, "asset_id");
 
@@ -485,12 +514,14 @@ bool PolymarketCLOBSubscriber::ParsePriceChange(std::string_view body,
     return true;
 }
 
-bool PolymarketCLOBSubscriber::ParseLastTrade(std::string_view body, std::int64_t recv_ts_ns,
-                                               WssEvent& ev) {
+bool PolymarketCLOBSubscriber::ParseLastTrade(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev) {
     auto& t = ev.payload.trade;
-    if (!FillBaseTs(body, recv_ts_ns, t.ts)) return false;
-    if (t.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs) return false;
-    if (!t.ts.IsMonotonic()) return false;
+    if (!FillBaseTs(body, recv_ts_ns, t.ts))
+        return false;
+    if (t.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs)
+        return false;
+    if (!t.ts.IsMonotonic())
+        return false;
 
     // price / size are string decimal on wire (老李 spec §2.2 P-02)
     ExtractDecimalStringAsBps(body, "price", t.price_bps);
@@ -502,12 +533,14 @@ bool PolymarketCLOBSubscriber::ParseLastTrade(std::string_view body, std::int64_
     return true;
 }
 
-bool PolymarketCLOBSubscriber::ParseTickChange(std::string_view body, std::int64_t recv_ts_ns,
-                                                WssEvent& ev) {
+bool PolymarketCLOBSubscriber::ParseTickChange(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev) {
     auto& ti = ev.payload.tick;
-    if (!FillBaseTs(body, recv_ts_ns, ti.ts)) return false;
-    if (ti.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs) return false;
-    if (!ti.ts.IsMonotonic()) return false;
+    if (!FillBaseTs(body, recv_ts_ns, ti.ts))
+        return false;
+    if (ti.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs)
+        return false;
+    if (!ti.ts.IsMonotonic())
+        return false;
 
     // tick_size: new value in tick_size_change event
     ExtractDecimalStringAsBps(body, "tick_size", ti.new_tick_bps);
@@ -519,13 +552,13 @@ bool PolymarketCLOBSubscriber::ParseTickChange(std::string_view body, std::int64
 // User channel — frame dispatch
 // ===========================================================================
 
-void PolymarketCLOBSubscriber::OnUserFrame(std::string_view payload,
-                                            std::int64_t recv_ts_ns) {
+void PolymarketCLOBSubscriber::OnUserFrame(std::string_view payload, std::int64_t recv_ts_ns) {
     user_metrics_.frames_received_total.fetch_add(1, std::memory_order_relaxed);
     last_user_msg_ts_ns_.store(recv_ts_ns, std::memory_order_relaxed);
     user_metrics_.last_msg_ts_ns.store(recv_ts_ns, std::memory_order_relaxed);
 
-    if (payload == "PONG" || payload == "pong") return;
+    if (payload == "PONG" || payload == "pong")
+        return;
 
     WssEvent ev{};
     bool ok = false;
@@ -546,8 +579,7 @@ void PolymarketCLOBSubscriber::OnUserFrame(std::string_view payload,
         return;
     }
 
-    user_metrics_.by_topic_frames[static_cast<std::size_t>(ev.topic)].fetch_add(
-        1, std::memory_order_relaxed);
+    user_metrics_.by_topic_frames[static_cast<std::size_t>(ev.topic)].fetch_add(1, std::memory_order_relaxed);
     if (!user_sink_->TryPush(ev)) {
         user_metrics_.frames_dropped_total.fetch_add(1, std::memory_order_relaxed);
     }
@@ -557,13 +589,15 @@ void PolymarketCLOBSubscriber::OnUserFrame(std::string_view payload,
 // User channel — parsers
 // ===========================================================================
 
-bool PolymarketCLOBSubscriber::ParseTrade(std::string_view body, std::int64_t recv_ts_ns,
-                                           WssEvent& ev) {
+bool PolymarketCLOBSubscriber::ParseTrade(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev) {
     ev.topic = SubTopic::kLastTradePrice;  // reuse trade payload slot
     auto& t = ev.payload.trade;
-    if (!FillBaseTs(body, recv_ts_ns, t.ts)) return false;
-    if (t.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs) return false;
-    if (!t.ts.IsMonotonic()) return false;
+    if (!FillBaseTs(body, recv_ts_ns, t.ts))
+        return false;
+    if (t.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs)
+        return false;
+    if (!t.ts.IsMonotonic())
+        return false;
 
     ExtractDecimalStringAsBps(body, "price", t.price_bps);
     std::int64_t sz = 0;
@@ -574,13 +608,15 @@ bool PolymarketCLOBSubscriber::ParseTrade(std::string_view body, std::int64_t re
     return true;
 }
 
-bool PolymarketCLOBSubscriber::ParseOrder(std::string_view body, std::int64_t recv_ts_ns,
-                                           WssEvent& ev) {
+bool PolymarketCLOBSubscriber::ParseOrder(std::string_view body, std::int64_t recv_ts_ns, WssEvent& ev) {
     ev.topic = SubTopic::kOutcomes;  // reuse outcomes payload slot for order status
     auto& o = ev.payload.outcomes;
-    if (!FillBaseTs(body, recv_ts_ns, o.ts)) return false;
-    if (o.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs) return false;
-    if (!o.ts.IsMonotonic()) return false;
+    if (!FillBaseTs(body, recv_ts_ns, o.ts))
+        return false;
+    if (o.ts.data_source_ts_ns > recv_ts_ns + kFutureGuardNs)
+        return false;
+    if (!o.ts.IsMonotonic())
+        return false;
 
     // status → resolution_status mapping
     std::string_view status = ExtractStringField(body, "status");
@@ -597,8 +633,7 @@ bool PolymarketCLOBSubscriber::ParseOrder(std::string_view body, std::int64_t re
 // Subscribe frame builders
 // ===========================================================================
 
-std::string PolymarketCLOBSubscriber::MakeMarketSubscribeFrame(
-    std::span<const std::string> token_ids) const {
+std::string PolymarketCLOBSubscriber::MakeMarketSubscribeFrame(std::span<const std::string> token_ids) const {
     // 老李 spec §2.1: {"type":"Market","assets_ids":["tok1","tok2",...]}
     // P-01: 双 token 必须同时列入 (调用方保证)
     // "type" 字段: 大写 "Market" (P-01 注意: 小写不识别)
@@ -607,7 +642,8 @@ std::string PolymarketCLOBSubscriber::MakeMarketSubscribeFrame(
     out.append(R"({"type":"Market","assets_ids":[)");
     bool first = true;
     for (const auto& tid : token_ids) {
-        if (!first) out.push_back(',');
+        if (!first)
+            out.push_back(',');
         out.push_back('"');
         out.append(tid);
         out.push_back('"');
@@ -633,7 +669,8 @@ std::string PolymarketCLOBSubscriber::MakeUserSubscribeFrame(
     out.append(R"("},"markets":[)");
     bool first = true;
     for (const auto& cid : condition_ids) {
-        if (!first) out.push_back(',');
+        if (!first)
+            out.push_back(',');
         out.push_back('"');
         out.append(cid);
         out.push_back('"');
@@ -647,9 +684,9 @@ std::string PolymarketCLOBSubscriber::MakeUserSubscribeFrame(
 // Sequence_no gap detection (老李 spec §4)
 // ===========================================================================
 
-bool PolymarketCLOBSubscriber::CheckSequenceGap(std::string_view token_id,
-                                                 std::uint64_t seq) noexcept {
-    if (seq == 0) return true;  // no sequence_no present or 0 = ignore
+bool PolymarketCLOBSubscriber::CheckSequenceGap(std::string_view token_id, std::uint64_t seq) noexcept {
+    if (seq == 0)
+        return true;  // no sequence_no present or 0 = ignore
     auto it = token_seq_map_.find(std::string(token_id));
     if (it == token_seq_map_.end()) {
         // first time seeing this token: establish baseline
