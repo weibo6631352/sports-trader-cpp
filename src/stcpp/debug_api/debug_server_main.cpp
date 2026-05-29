@@ -36,6 +36,8 @@
 #include <string>
 #include <thread>
 
+#include "stcpp/data/score_snapshot_store.hpp"  // ScoreSnapshotStore (小段, 集成 ③)
+
 #include "src/stcpp/debug_api/demo_state_provider.hpp"
 #include "src/stcpp/debug_api/real_state_provider.hpp"
 #include "src/stcpp/debug_api/server.hpp"
@@ -117,23 +119,34 @@ int main(int argc, char** argv) {
     StubStateProvider stub{mode};
     DemoStateProvider demo{mode};
 
-    // hub 和 real_provider 用 unique_ptr 管理, 避免在 --real 未激活时有效载荷
+    // hub / score_store / real_provider 用 unique_ptr 管理
     std::unique_ptr<stcpp::polymarket::clob_wss::OrderBookSnapshotHub> hub_owned;
+    std::unique_ptr<stcpp::data::ScoreSnapshotStore> score_store_owned;
     std::unique_ptr<RealStateProvider> real_provider;
 
     const char* data_label = "demo";
     if (empty) {
         data_label = "stub-empty";
     } else if (real) {
-        data_label = "mixed";
-        // 构造独立 hub (standalone 模式, 无 WSS vCPU0 接入 → hub 为空 → book 回落 Demo)
-        // 生产中 hub 由 WSS event loop 所在进程传入; 此处 standalone 验证路径正确
+        data_label = "real";
+        // 构造独立 hub (standalone 模式, hub 为空 → book 回落 Demo)
         hub_owned = std::make_unique<stcpp::polymarket::clob_wss::OrderBookSnapshotHub>();
+        // ScoreSnapshotStore (小段): standalone 空 store, 无 live feed → score 回落 Demo
+        // 生产接入时由 Goalserve 采集线程 Publish() 写入
+        score_store_owned = std::make_unique<stcpp::data::ScoreSnapshotStore>();
+
+        // SizingConfig: 可配置 demo 输入 (计算路径走真实 SizingCalculator, ADR-042)
+        SizingConfig sizing_cfg;
+        // RiskConfig: 默认 cap 参数 (per_order=10k, per_outcome=25k, market=50k)
+        stcpp::risk::RiskConfig risk_cfg;
+
         // snap=nullptr: 无 RiskGateway 注入 → risk_rejects 回落 Demo
         // token_map 为空: book_pair 回落 Demo (standalone 无市场目录)
-        real_provider = std::make_unique<RealStateProvider>(*hub_owned,
-                                                            /*snap=*/nullptr,
-                                                            /*token_map=*/MarketTokenMap{}, mode);
+        real_provider =
+            std::make_unique<RealStateProvider>(*hub_owned,
+                                                /*snap=*/nullptr,
+                                                /*score_store=*/score_store_owned.get(),
+                                                /*token_map=*/MarketTokenMap{}, sizing_cfg, risk_cfg, mode);
     }
 
     const StateProvider* provider = nullptr;
@@ -160,9 +173,13 @@ int main(int argc, char** argv) {
     std::printf("[debug_server] 观测/调试 API @ http://%s:%u  (mode=%s, data=%s)\n", host.c_str(),
                 static_cast<unsigned>(port), STCPP_EXEC_MODE_STR, data_label);
     if (real) {
-        std::printf("[debug_server] --real 模式: book/risk_rejects=真实快照(hub/snap), 其余=demo\n");
-        std::printf("[debug_server]   standalone 启动: hub 空 → book/rejects 自动回落 demo\n");
-        std::printf("[debug_server]   生产接入: 外部 vCPU0 Publish() 到 hub 后自动生效\n");
+        std::printf(
+            "[debug_server] --real 模式: book/rejects=真实快照, score=ScoreSnapshotStore, "
+            "quote=SizingCalculator\n");
+        std::printf(
+            "[debug_server]   score: ScoreSnapshotStore (空 → 回落 demo; Goalserve feed Publish 后生效)\n");
+        std::printf("[debug_server]   quote: SizingCalculator 真实 Kelly 计算 (demo 输入, 非 hardcode)\n");
+        std::printf("[debug_server]   standalone 启动: hub/store 空 → book/score 自动回落 demo\n");
     }
     std::printf("[debug_server] endpoints: /healthz /version /status /metrics\n");
     std::printf(

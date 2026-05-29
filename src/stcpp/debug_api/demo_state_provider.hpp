@@ -279,11 +279,24 @@ public:
     }
 
     // ---- /api/v1/quote/{condition_id} ----
+    // Demo: 量化 kelly_fraction/suggested_notional 为 hardcode 代表性值。
+    // --real 模式下 RealStateProvider 接 SizingCalculator 做真实计算。
+    // AI provenance 字段: advisory=true (ML-R2), model_id="demo-fv-v0" (小邓 spec §3.4)
     QuoteParams quote_params(const std::string& condition_id) const override {
+        const std::int64_t now = now_ns();
         QuoteParams q;
         q.found = true;
         q.market_id = condition_id;
-        q.as_of_ts_ns = now_ns();
+        q.as_of_ts_ns = now;
+
+        // ---- AI provenance (小邓 spec v1 §3.2; Demo 填代表性值) ----
+        q.model_id = "demo-fv-v0";  // 占位模型标识
+        q.model_kind = "stub";      // "stub" = 占位, 看板灰显 (XD-4)
+        q.spec_version = "ml-feature-spec-v0.1";
+        q.model_calibrated = false;                 // Stub 无校准 (XD-4)
+        q.predict_ok = true;                        // Demo: 推理视为成功
+        q.advisory = true;                          // ML-R2: paper 期恒 true
+        q.model_as_of_ts_ns = now - 500'000'000LL;  // 模拟 feature PIT 锚 (500ms 前)
 
         // 各盘口代表性 fair/edge/Kelly (演示"同赛事不同盘口各自报价")
         if (condition_id == "nba-lal-bos-ml") {
@@ -294,6 +307,9 @@ public:
             q.suggested_notional = 850.0;
             q.signal_strength = 0.71;
             q.model_conf = 0.62;
+            q.model_confidence = 0.62;  // alias: 与 model_conf 同值
+            q.fair_ci_lower = 0.631;
+            q.fair_ci_upper = 0.688;
         } else if (condition_id == "nba-lal-bos-total") {
             // 大小盘: Over 220.5 略有优势
             q.fair_value = 0.535;
@@ -303,6 +319,9 @@ public:
             q.suggested_notional = 560.0;
             q.signal_strength = 0.58;
             q.model_conf = 0.54;
+            q.model_confidence = 0.54;
+            q.fair_ci_lower = 0.510;
+            q.fair_ci_upper = 0.558;
         } else if (condition_id == "nba-lal-bos-spread") {
             // 让分盘: LAL -5.5 接近中性
             q.fair_value = 0.502;
@@ -312,6 +331,9 @@ public:
             q.suggested_notional = 420.0;
             q.signal_strength = 0.50;
             q.model_conf = 0.48;
+            q.model_confidence = 0.48;
+            q.fair_ci_lower = 0.479;
+            q.fair_ci_upper = 0.524;
         } else {
             // 其余盘口通用 demo 数值
             q.fair_value = 0.662;
@@ -321,6 +343,9 @@ public:
             q.suggested_notional = 850.0;
             q.signal_strength = 0.71;
             q.model_conf = 0.62;
+            q.model_confidence = 0.62;
+            q.fair_ci_lower = 0.631;
+            q.fair_ci_upper = 0.688;
         }
         return q;
     }
