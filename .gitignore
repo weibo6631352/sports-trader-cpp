@@ -28,3 +28,6 @@ __pycache__/
 # Claude Code 本地配置 (不入 git; 团队共享走 .mcp.json)
 .claude/settings.local.json
 
+
+.claire/
+Testing/
