@@ -104,8 +104,10 @@ TEST(ModelFeatureSpec, ExtractGameRowFields) {
     // PIT 锚 = game.as_of_ts.
     EXPECT_EQ(fv.as_of_ts_ns, 4'000);
 
-    auto at = [&](MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
-    EXPECT_FLOAT_EQ(at(MlFeature::g_score_diff), 7.0f);   // 58 - 51
+    auto at = [&](MlFeature f) {
+        return fv.values[static_cast<std::size_t>(f)];
+    };
+    EXPECT_FLOAT_EQ(at(MlFeature::g_score_diff), 7.0f);  // 58 - 51
     EXPECT_FLOAT_EQ(at(MlFeature::g_score_total), 109.0f);
     EXPECT_FLOAT_EQ(at(MlFeature::g_period), 3.0f);
     EXPECT_FLOAT_EQ(at(MlFeature::g_elapsed_sec), 240.0f);
@@ -128,7 +130,9 @@ TEST(ModelFeatureSpec, ExtractBookRowFields) {
     std::vector<float> out(kMlFeatureCount, std::numeric_limits<float>::quiet_NaN());
     stcpp::ml::extract_from_book_row(b, out);
 
-    auto at = [&](MlFeature f) { return out[static_cast<std::size_t>(f)]; };
+    auto at = [&](MlFeature f) {
+        return out[static_cast<std::size_t>(f)];
+    };
     EXPECT_FLOAT_EQ(at(MlFeature::b_mid), 0.63f);
     EXPECT_FLOAT_EQ(at(MlFeature::b_microprice), 0.628f);
     EXPECT_FLOAT_EQ(at(MlFeature::b_best_bid), 0.62f);
@@ -145,7 +149,9 @@ TEST(ModelFeatureSpec, ExtractJoinedPitTakesLaterAsOf) {
     ASSERT_EQ(fv.size(), kMlFeatureCount);
     EXPECT_EQ(fv.as_of_ts_ns, 5'000);  // PIT: 取较晚
 
-    auto at = [&](MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
+    auto at = [&](MlFeature f) {
+        return fv.values[static_cast<std::size_t>(f)];
+    };
     // cross feature: x_devig_minus_mid = devig - mid (两者都 finite).
     const float cross = at(MlFeature::x_devig_minus_mid);
     EXPECT_FALSE(std::isnan(cross));
@@ -156,7 +162,9 @@ TEST(ModelFeatureSpec, ExtractJoinedPitTakesLaterAsOf) {
 TEST(ModelFeatureSpec, CrossFeatureNaNWhenBookMissing) {
     const auto g = make_game_row();
     FeatureVector fv = stcpp::ml::extract_game_only(g);
-    auto at = [&](MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
+    auto at = [&](MlFeature f) {
+        return fv.values[static_cast<std::size_t>(f)];
+    };
     // book mid NaN → cross NaN.
     EXPECT_TRUE(std::isnan(at(MlFeature::x_devig_minus_mid)));
     EXPECT_TRUE(std::isnan(at(MlFeature::x_microprice_minus_mid)));
@@ -164,9 +172,12 @@ TEST(ModelFeatureSpec, CrossFeatureNaNWhenBookMissing) {
 
 TEST(ModelFeatureSpec, NoBookmakerOddsGivesNaNDevig) {
     auto g = make_game_row();
-    for (auto& s : g.bm_slots) s = BookmakerOddsOptional{};  // 全缺失
+    for (auto& s : g.bm_slots)
+        s = BookmakerOddsOptional{};  // 全缺失
     FeatureVector fv = stcpp::ml::extract_game_only(g);
-    auto at = [&](MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
+    auto at = [&](MlFeature f) {
+        return fv.values[static_cast<std::size_t>(f)];
+    };
     EXPECT_TRUE(std::isnan(at(MlFeature::g_bm_devig_p_yes)));
     EXPECT_TRUE(std::isnan(at(MlFeature::g_bm_overround_avg)));
     EXPECT_FLOAT_EQ(at(MlFeature::g_valid_bm_count), 0.0f);

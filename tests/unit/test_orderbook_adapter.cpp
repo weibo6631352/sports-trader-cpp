@@ -18,13 +18,13 @@
 //   microprice / imbalance = NaN (size_usdc 未知, v0.1 无 L2)
 //
 
-#include <gtest/gtest.h>
-
 #include <array>
 #include <cmath>
 #include <limits>
 #include <memory>
 #include <string>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/data/feature_store_contract.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
@@ -41,44 +41,42 @@ namespace {
 constexpr std::int64_t kMsToNs = 1'000'000LL;
 
 // Build a WssEvent kBook with given timestamp_ms and mid_bps
-WssEvent MakeBookEvent(std::int64_t timestamp_ms, std::uint32_t mid_bps,
-                       std::uint32_t tick_size_bps = 100u,
+WssEvent MakeBookEvent(std::int64_t timestamp_ms, std::uint32_t mid_bps, std::uint32_t tick_size_bps = 100u,
                        std::int64_t recv_ts_ns = 0) {
     WssEvent ev;
     ev.topic = SubTopic::kBook;
     auto& b = ev.payload.book;
-    b.topic        = SubTopic::kBook;
-    b.is_snapshot  = 1;
-    b.mid_bps      = mid_bps;
+    b.topic = SubTopic::kBook;
+    b.is_snapshot = 1;
+    b.mid_bps = mid_bps;
     b.tick_size_bps = tick_size_bps;
-    b.spread_bps   = static_cast<std::uint32_t>(tick_size_bps);  // 1 tick spread
+    b.spread_bps = static_cast<std::uint32_t>(tick_size_bps);  // 1 tick spread
     // R-20: data_source_ts = timestamp_ms * 1e6
     std::int64_t ds_ns = timestamp_ms * kMsToNs;
     std::int64_t ingest = (recv_ts_ns > ds_ns) ? recv_ts_ns : ds_ns + 1'000'000LL;
-    b.ts.event_ts_ns       = ds_ns;
+    b.ts.event_ts_ns = ds_ns;
     b.ts.data_source_ts_ns = ds_ns;
-    b.ts.ingestion_ts_ns   = ingest;
-    b.ts.as_of_ts_ns       = ingest;
-    b.ts.ds_origin         = DataSourceTsOrigin::kUpstreamPayload;
+    b.ts.ingestion_ts_ns = ingest;
+    b.ts.as_of_ts_ns = ingest;
+    b.ts.ds_origin = DataSourceTsOrigin::kUpstreamPayload;
     return ev;
 }
 
 // Build a WssEvent kPriceChange
-WssEvent MakePriceChangeEvent(std::int64_t timestamp_ms, std::uint32_t mid_bps,
-                               std::int64_t recv_ts_ns = 0) {
+WssEvent MakePriceChangeEvent(std::int64_t timestamp_ms, std::uint32_t mid_bps, std::int64_t recv_ts_ns = 0) {
     WssEvent ev;
     ev.topic = SubTopic::kPriceChange;
     auto& b = ev.payload.book;
-    b.topic        = SubTopic::kPriceChange;
-    b.is_snapshot  = 0;
-    b.mid_bps      = mid_bps;
+    b.topic = SubTopic::kPriceChange;
+    b.is_snapshot = 0;
+    b.mid_bps = mid_bps;
     std::int64_t ds_ns = timestamp_ms * kMsToNs;
     std::int64_t ingest = (recv_ts_ns > ds_ns) ? recv_ts_ns : ds_ns + 1'000'000LL;
-    b.ts.event_ts_ns       = ds_ns;
+    b.ts.event_ts_ns = ds_ns;
     b.ts.data_source_ts_ns = ds_ns;
-    b.ts.ingestion_ts_ns   = ingest;
-    b.ts.as_of_ts_ns       = ingest;
-    b.ts.ds_origin         = DataSourceTsOrigin::kUpstreamPayload;
+    b.ts.ingestion_ts_ns = ingest;
+    b.ts.as_of_ts_ns = ingest;
+    b.ts.ds_origin = DataSourceTsOrigin::kUpstreamPayload;
     return ev;
 }
 
@@ -103,13 +101,13 @@ TEST(OrderBookAdapter, T1_SnapshotFourTs) {
     ASSERT_TRUE(ok) << "snapshot event should be accepted";
 
     // R-20 4-ts monotonic chain on snap
-    EXPECT_LE(snap.ts.event_ts_ns,       snap.ts.data_source_ts_ns) << "event_ts <= data_source_ts";
-    EXPECT_LE(snap.ts.data_source_ts_ns, snap.ts.ingestion_ts_ns)   << "ds_ts <= ingestion_ts";
-    EXPECT_LE(snap.ts.ingestion_ts_ns,   snap.ts.as_of_ts_ns)       << "ingestion_ts <= as_of_ts";
+    EXPECT_LE(snap.ts.event_ts_ns, snap.ts.data_source_ts_ns) << "event_ts <= data_source_ts";
+    EXPECT_LE(snap.ts.data_source_ts_ns, snap.ts.ingestion_ts_ns) << "ds_ts <= ingestion_ts";
+    EXPECT_LE(snap.ts.ingestion_ts_ns, snap.ts.as_of_ts_ns) << "ingestion_ts <= as_of_ts";
 
     // data_source_ts = timestamp_ms * 1e6 (R-20 P-03)
     EXPECT_EQ(snap.ts.data_source_ts_ns, kDsNs);
-    EXPECT_EQ(snap.ts.ingestion_ts_ns,   kRecv);
+    EXPECT_EQ(snap.ts.ingestion_ts_ns, kRecv);
 
     // Snapshot state should be kLive
     EXPECT_EQ(adapter.GetSnapshotState(token_id), AdapterSnapshotState::kLive);
@@ -194,13 +192,13 @@ TEST(OrderBookAdapter, T4_TsViolationRejected) {
     WssEvent ev;
     ev.topic = SubTopic::kBook;
     auto& b = ev.payload.book;
-    b.topic       = SubTopic::kBook;
+    b.topic = SubTopic::kBook;
     b.is_snapshot = 1;
-    b.mid_bps     = 5000u;
-    b.ts.event_ts_ns       = 2'000'000'000'000LL;  // future event_ts
+    b.mid_bps = 5000u;
+    b.ts.event_ts_ns = 2'000'000'000'000LL;        // future event_ts
     b.ts.data_source_ts_ns = 1'000'000'000'000LL;  // data_source_ts < event_ts → VIOLATION
-    b.ts.ingestion_ts_ns   = 3'000'000'000'000LL;
-    b.ts.as_of_ts_ns       = 3'000'000'000'000LL;
+    b.ts.ingestion_ts_ns = 3'000'000'000'000LL;
+    b.ts.as_of_ts_ns = 3'000'000'000'000LL;
 
     OrderBookSnapshot snap;
     FeatureStoreBookRow row;
@@ -235,8 +233,7 @@ TEST(OrderBookAdapter, T5_ResetToken) {
     WssEvent delta_ev = MakePriceChangeEvent(kTs1Ms + 1000LL, 5100u);
     OrderBookSnapshot snap2;
     FeatureStoreBookRow row2;
-    bool ok = adapter.OnEvent(delta_ev, token_id, (kTs1Ms + 1000LL) * kMsToNs + 1'000'000LL,
-                              snap2, row2);
+    bool ok = adapter.OnEvent(delta_ev, token_id, (kTs1Ms + 1000LL) * kMsToNs + 1'000'000LL, snap2, row2);
     EXPECT_FALSE(ok) << "delta after ResetToken must be rejected (P-05)";
 }
 
@@ -259,11 +256,11 @@ TEST(OrderBookAdapter, T6_InjectMetadata) {
 
     // Inject
     OrderBookAdapter::InjectMetadata(row,
-        "0xabc123",   // market_id
-        "YES",        // token_side
-        "Basketball", // sport
-        20000,        // event_date_epoch_days (2024-10-18 approx)
-        "Moneyline"   // market_type
+                                     "0xabc123",    // market_id
+                                     "YES",         // token_side
+                                     "Basketball",  // sport
+                                     20000,         // event_date_epoch_days (2024-10-18 approx)
+                                     "Moneyline"    // market_type
     );
 
     EXPECT_EQ(row.market_id, "0xabc123");
@@ -274,8 +271,7 @@ TEST(OrderBookAdapter, T6_InjectMetadata) {
 
     // validate_book_row should now pass (as_of_ts placeholder = ingestion, supply now >= as_of)
     auto vr = validate_book_row(row, row.as_of_ts_ns + 1LL);
-    EXPECT_TRUE(vr.valid) << "validate_book_row must pass after InjectMetadata: "
-                          << vr.error_msg;
+    EXPECT_TRUE(vr.valid) << "validate_book_row must pass after InjectMetadata: " << vr.error_msg;
 }
 
 // ============================================================================
@@ -284,12 +280,9 @@ TEST(OrderBookAdapter, T6_InjectMetadata) {
 // ============================================================================
 TEST(OrderBookAdapter, T7_DepthConstantSSOT) {
     // Both constants come from their respective headers; adapter must not define its own
-    static_assert(kBookDepthLevels == 5u,
-                  "kBookDepthLevels SSOT must be 5 (orderbook.hpp)");
-    static_assert(kOrderBookLevels == 5u,
-                  "kOrderBookLevels SSOT must be 5 (feature_store_contract.hpp)");
-    static_assert(kBookDepthLevels == kOrderBookLevels,
-                  "kBookDepthLevels and kOrderBookLevels must match");
+    static_assert(kBookDepthLevels == 5u, "kBookDepthLevels SSOT must be 5 (orderbook.hpp)");
+    static_assert(kOrderBookLevels == 5u, "kOrderBookLevels SSOT must be 5 (feature_store_contract.hpp)");
+    static_assert(kBookDepthLevels == kOrderBookLevels, "kBookDepthLevels and kOrderBookLevels must match");
 
     EXPECT_EQ(kBookDepthLevels, 5u);
     EXPECT_EQ(kOrderBookLevels, 5u);
@@ -303,8 +296,8 @@ TEST(OrderBookAdapter, T8_BookRowTsChainOk) {
     OrderBookAdapter adapter;
     const std::string token_id = "tok_tscheck_008";
 
-    constexpr std::int64_t kTsMs   = 1'748'400'008'000LL;
-    constexpr std::int64_t kDsNs   = kTsMs * kMsToNs;
+    constexpr std::int64_t kTsMs = 1'748'400'008'000LL;
+    constexpr std::int64_t kDsNs = kTsMs * kMsToNs;
     constexpr std::int64_t kRecvNs = kDsNs + 100'000'000LL;
 
     WssEvent ev = MakeBookEvent(kTsMs, 5000u, 100u, kRecvNs);
@@ -316,19 +309,15 @@ TEST(OrderBookAdapter, T8_BookRowTsChainOk) {
     OrderBookAdapter::InjectMetadata(row, "market-001", "NO", "Soccer", 19900, "Totals");
 
     // ts_chain_ok must pass
-    EXPECT_TRUE(row.ts_chain_ok())
-        << "FeatureStoreBookRow::ts_chain_ok() must be true after adapter fill";
+    EXPECT_TRUE(row.ts_chain_ok()) << "FeatureStoreBookRow::ts_chain_ok() must be true after adapter fill";
 
     // pit_ok: as_of_ts_ns == ingestion_ts_ns (placeholder); supply now >= as_of
     std::int64_t now_ns = row.as_of_ts_ns + 1'000'000LL;
-    EXPECT_TRUE(row.pit_ok(now_ns))
-        << "FeatureStoreBookRow::pit_ok(now_ns) must be true";
+    EXPECT_TRUE(row.pit_ok(now_ns)) << "FeatureStoreBookRow::pit_ok(now_ns) must be true";
 
     // data_source_ts_ns must equal kDsNs (R-20 P-03)
-    EXPECT_EQ(row.data_source_ts_ns, kDsNs)
-        << "data_source_ts_ns must equal WSS timestamp_ms * 1e6 (R-20)";
+    EXPECT_EQ(row.data_source_ts_ns, kDsNs) << "data_source_ts_ns must equal WSS timestamp_ms * 1e6 (R-20)";
 
     // ingestion_ts_ns must equal kRecvNs
-    EXPECT_EQ(row.ingestion_ts_ns, kRecvNs)
-        << "ingestion_ts_ns must equal recv_ts_ns";
+    EXPECT_EQ(row.ingestion_ts_ns, kRecvNs) << "ingestion_ts_ns must equal recv_ts_ns";
 }
