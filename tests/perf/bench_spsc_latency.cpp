@@ -84,9 +84,10 @@ void BM_SPSC_PushPop_SameThread(benchmark::State& state) {
     std::int64_t in = 1;
 
     for (auto _ : state) {
-        const bool pushed = q.push(in++);
+        // Wave 81 fix: use non-const to avoid deprecated DoNotOptimize(const T&) in GBM v1.8
+        bool pushed = q.push(in++);
         benchmark::DoNotOptimize(pushed);
-        const bool popped = q.pop(v);
+        bool popped = q.pop(v);
         benchmark::DoNotOptimize(popped);
         benchmark::DoNotOptimize(v);
     }

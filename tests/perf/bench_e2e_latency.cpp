@@ -75,9 +75,10 @@ struct E2EFixture {
     std::unique_ptr<risk::RiskGateway> rm;
     signer::paper::VirtualNonceProvider nonce{0};
     signer::paper::VirtualGasEstimator gas;
-    signer::paper::VirtualConfirmWatcher confirm{0xCAFE'BEEF_ULL};
+    // Wave 81 fix: _ULL suffix is UDL (undefined), use plain ULL suffix
+    signer::paper::VirtualConfirmWatcher confirm{0xCAFEBEEFULL};
     signer::paper::PaperSigner signer{nullptr, nullptr, nullptr};
-    execution::VirtualMatcher matcher{0xE2E_SEED_ULL};
+    execution::VirtualMatcher matcher{0xE2E5EED1ULL};
     MockPosition pos;
 
     E2EFixture() {
@@ -105,6 +106,7 @@ struct E2EFixture {
 
     // 单笔 E2E 调用 (inline, 不跑 SPSC 线程; small stone join W6 后改)
     void run_one(benchmark::State& state, std::int64_t seq) {
+        (void)state;  // Wave 81 fix: state passed for API compatibility, not used inside run_one
         const auto ts = MakeFreshTs();
 
         // [1] WSS recv mock → intent 构造
@@ -113,11 +115,12 @@ struct E2EFixture {
         intent.data_source_ts_ns = ts.ds;
         intent.ingestion_ts_ns = ts.ig;
         intent.as_of_ts_ns = ts.ao;
-        intent.market_id = "mkt_e2e";
+        // Wave 81 fix: market_id → condition_id (ABI break #1), is_buy → side (ABI break #4)
+        intent.condition_id = "mkt_e2e";
         intent.strategy_id = "strat_e2e";
         intent.signal_id = "e2e_" + std::to_string(seq);
         intent.feature_snapshot_id = "fs_e2e";
-        intent.is_buy = true;
+        intent.side = risk::Side::Buy;
         intent.price = 0.55;
         intent.size_usdc = 500;
         intent.book_depth_l1_usdc = 5'000.0;
@@ -216,9 +219,10 @@ void BM_E2E_LowerGuard(benchmark::State& state) {
         it.data_source_ts_ns = ts.ds;
         it.ingestion_ts_ns = ts.ig;
         it.as_of_ts_ns = ts.ao;
-        it.market_id = "mkt_lg";
+        // Wave 81 fix: market_id → condition_id (ABI break #1), is_buy → side (ABI break #4)
+        it.condition_id = "mkt_lg";
         it.strategy_id = "s";
-        it.is_buy = true;
+        it.side = risk::Side::Buy;
         it.signal_id = "lg_" + std::to_string(++seq);
         it.feature_snapshot_id = "fs";
         it.price = 0.55;
