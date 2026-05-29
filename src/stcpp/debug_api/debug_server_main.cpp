@@ -11,13 +11,18 @@
 //   前端走 Vite dev server; CORS 头已注入, 支持跨域访问。
 //
 // CLI:
-//   stcpp_debug_server [--port N] [--host ADDR] [--empty] [--real]
+//   stcpp_debug_server [--port N] [--host ADDR] [--empty] [--real] [--replay]
 //     --port N        监听端口 (默认 8080; 对齐 frontend BASE_URL)
 //     --host ADDR     绑定地址 (默认 127.0.0.1; ADR-038 §5 安全默认, 远程走 SSH 隧道)
 //     --empty         用 StubStateProvider (全空, 各 endpoint 返回结构合法的空值);
 //                     默认用 DemoStateProvider (代表性演示数据, 看板全面板可渲染)
 //     --real          用 RealStateProvider (book/rejects 接真实快照, 其余委托 Demo;
 //                     data_source="mixed"; 启动时 hub/snap 均空 → 回落 Demo 优雅降级)
+//     --replay        与 --real 配合: 启动 ReplayDriver 后台线程持续向 hub Publish
+//                     kSynthetic 合成事件 (12 个 demo token, 各盘口 book 实时流动).
+//                     不带 --replay 时维持现状 (hub 空 → book 回落 Demo).
+//                     R-12: replay 线程独立, hub Publish 原子无阻塞.
+//                     R-20: 合成事件 4-ts 全来自 ReplayDriver (非 now() 替代).
 //
 // 安全: 默认 127.0.0.1 only; 只读 endpoint; 黑名单字段 (私钥/签名字节) 物理不在 schema 中。
 // 模式: build-time STCPP_EXEC_MODE_STR 决定 mode 字段 (paper/live/backtest)。
@@ -28,10 +33,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
+#include <vector>
 
+#include "stcpp/backtest/replay_driver.hpp"     // ReplayDriver (kSynthetic 模式)
 #include "stcpp/data/score_snapshot_store.hpp"  // ScoreSnapshotStore (小段, 集成 ③)
 
 #include "src/stcpp/debug_api/demo_state_provider.hpp"
@@ -67,6 +75,7 @@ int main(int argc, char** argv) {
     std::string host = "127.0.0.1";
     bool empty = false;
     bool real = false;
+    bool replay = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -78,14 +87,18 @@ int main(int argc, char** argv) {
             empty = true;
         } else if (a == "--real") {
             real = true;
+        } else if (a == "--replay") {
+            replay = true;
         } else if (a == "--help" || a == "-h") {
             std::printf(
-                "usage: stcpp_debug_server [--port N] [--host ADDR] [--empty] [--real]\n"
+                "usage: stcpp_debug_server [--port N] [--host ADDR] [--empty] [--real] [--replay]\n"
                 "  --port N        listen port (default 8080)\n"
                 "  --host ADDR     bind address (default 127.0.0.1)\n"
                 "  --empty         use empty StubStateProvider (default: DemoStateProvider)\n"
                 "  --real          use RealStateProvider (book/rejects=real, rest=demo;\n"
                 "                  hub/snap empty at start → graceful fallback to demo)\n"
+                "  --replay        with --real: start ReplayDriver background threads feeding hub\n"
+                "                  with kSynthetic events (12 demo tokens, all books live-flowing)\n"
                 "  (frontend served by Vite dev server, not this process)\n");
             return 0;
         } else {
@@ -97,6 +110,12 @@ int main(int argc, char** argv) {
     // --empty 和 --real 不可同时使用
     if (empty && real) {
         std::fprintf(stderr, "[debug_server] error: --empty and --real are mutually exclusive\n");
+        return 2;
+    }
+
+    // --replay 必须与 --real 配合
+    if (replay && !real) {
+        std::fprintf(stderr, "[debug_server] error: --replay requires --real\n");
         return 2;
     }
 
@@ -113,11 +132,15 @@ int main(int argc, char** argv) {
     std::unique_ptr<stcpp::data::ScoreSnapshotStore> score_store_owned;
     std::unique_ptr<RealStateProvider> real_provider;
 
+    // --replay 模式: per-token ReplayDriver 后台线程列表 (RAII — 析构时 Stop()+join)
+    // R-12: 各 driver 独立线程, hub.Publish() 原子无阻塞
+    std::vector<std::unique_ptr<stcpp::backtest::ReplayDriver>> replay_drivers;
+
     const char* data_label = "demo";
     if (empty) {
         data_label = "stub-empty";
     } else if (real) {
-        data_label = "real";
+        data_label = replay ? "real+replay" : "real";
         // 构造独立 hub (standalone 模式, hub 为空 → book 回落 Demo)
         hub_owned = std::make_unique<stcpp::polymarket::clob_wss::OrderBookSnapshotHub>();
         // ScoreSnapshotStore (小段): standalone 空 store, 无 live feed → score 回落 Demo
@@ -129,13 +152,88 @@ int main(int argc, char** argv) {
         // RiskConfig: 默认 cap 参数 (per_order=10k, per_outcome=25k, market=50k)
         stcpp::risk::RiskConfig risk_cfg;
 
+        // --replay 模式: 构建 MarketTokenMap 并启动 per-token ReplayDriver 后台线程
+        // token_map: condition_id → (token0_id, token1_id) 与 DemoStateProvider::derive_token_ids() 对齐
+        // R-20: 各 driver 的合成事件 4-ts 来自 SyntheticConfig (非 now() 替代 data_source_ts)
+        MarketTokenMap token_map;
+        if (replay) {
+            // 6 个盘口, 12 个 token — 与 DemoStateProvider kMap 完全对齐
+            token_map = {
+                {"nba-lal-bos-ml", {"tok-lal-ml-0", "tok-bos-ml-1"}},
+                {"nba-lal-bos-total", {"tok-over220-0", "tok-under220-1"}},
+                {"nba-lal-bos-spread", {"tok-lal-spd-0", "tok-bos-spd-1"}},
+                {"epl-ars-che-total", {"tok-ars-001", "tok-che-001"}},
+                {"nfl-kc-buf-spread", {"tok-kc-001", "tok-buf-001"}},
+                {"mlb-nyy-bos-ml", {"tok-nyy-001", "tok-bos-nyy-001"}},
+            };
+
+            // 每个 token 独立 ReplayDriver (kSynthetic), 各有不同相位/振幅/中间价
+            // 使 各盘口 book 动态独立、可视觉区分. 相位偏移通过 base_event_ts_ns 偏移实现.
+            // tick_sleep_ns = 200ms (5 Hz), 各盘口双边共享 hub 无竞争 (SWMR R-12).
+            struct TokenCfg {
+                const char* token_id;
+                double mid_center;
+                double amplitude;
+                double spread;
+                double base_size;
+                std::int64_t phase_period_ticks;
+                std::int64_t base_ts_offset_ns;  // 相位偏移 (互相错开初始角)
+            };
+            static const TokenCfg kTokenCfgs[] = {
+                // nba-lal-bos-ml
+                {"tok-lal-ml-0", 0.620, 0.040, 0.020, 1200.0, 20, 0LL},
+                {"tok-bos-ml-1", 0.380, 0.040, 0.020, 1100.0, 22, 1'000'000'000LL},
+                // nba-lal-bos-total
+                {"tok-over220-0", 0.520, 0.030, 0.018, 900.0, 18, 2'000'000'000LL},
+                {"tok-under220-1", 0.480, 0.030, 0.018, 850.0, 24, 3'000'000'000LL},
+                // nba-lal-bos-spread
+                {"tok-lal-spd-0", 0.490, 0.035, 0.022, 700.0, 16, 4'000'000'000LL},
+                {"tok-bos-spd-1", 0.510, 0.035, 0.022, 680.0, 19, 5'000'000'000LL},
+                // epl-ars-che-total
+                {"tok-ars-001", 0.550, 0.045, 0.025, 1500.0, 25, 6'000'000'000LL},
+                {"tok-che-001", 0.450, 0.045, 0.025, 1400.0, 21, 7'000'000'000LL},
+                // nfl-kc-buf-spread
+                {"tok-kc-001", 0.580, 0.050, 0.028, 2000.0, 30, 8'000'000'000LL},
+                {"tok-buf-001", 0.420, 0.050, 0.028, 1900.0, 28, 9'000'000'000LL},
+                // mlb-nyy-bos-ml
+                {"tok-nyy-001", 0.600, 0.038, 0.021, 1000.0, 17, 10'000'000'000LL},
+                {"tok-bos-nyy-001", 0.400, 0.038, 0.021, 980.0, 23, 11'000'000'000LL},
+            };
+
+            // 单个线程 tick_sleep_ns: 200ms → 5 Hz per token, 所有线程合计约 60 Hz
+            // n_ticks: 极大值, 依靠 Stop() 信号提前退出
+            constexpr std::int64_t kTickSleepNs = 200'000'000LL;  // 200ms
+            constexpr std::int64_t kMaxTicks = std::numeric_limits<std::int64_t>::max() / 2;
+            // base_event_ts_ns 公共基准 (R-20: 合成事件 event_ts 起点)
+            constexpr std::int64_t kBaseEventTs = 1'700'000'000LL * 1'000'000'000LL;  // 2023-11-14
+
+            replay_drivers.reserve(sizeof(kTokenCfgs) / sizeof(kTokenCfgs[0]));
+            for (const auto& tc : kTokenCfgs) {
+                stcpp::backtest::SyntheticConfig cfg;
+                cfg.mid_center = tc.mid_center;
+                cfg.amplitude = tc.amplitude;
+                cfg.spread = tc.spread;
+                cfg.base_size = tc.base_size;
+                cfg.tick = 0.01;
+                cfg.base_event_ts_ns = kBaseEventTs + tc.base_ts_offset_ns;
+                cfg.tick_interval_ns = 100'000'000LL;  // 100ms event_ts 步长 (R-20 合成 ts)
+                cfg.phase_period_ticks = tc.phase_period_ticks;
+
+                auto drv = std::make_unique<stcpp::backtest::ReplayDriver>(
+                    *hub_owned, std::string(tc.token_id), std::move(cfg));
+                drv->RunAsync(kMaxTicks, kTickSleepNs);
+                replay_drivers.push_back(std::move(drv));
+            }
+            std::printf("[debug_server] --replay: 启动 %zu ReplayDriver 线程 (12 demo token, 5Hz/token)\n",
+                        replay_drivers.size());
+        }
+
         // snap=nullptr: 无 RiskGateway 注入 → risk_rejects 回落 Demo
-        // token_map 为空: book_pair 回落 Demo (standalone 无市场目录)
-        real_provider =
-            std::make_unique<RealStateProvider>(*hub_owned,
-                                                /*snap=*/nullptr,
-                                                /*score_store=*/score_store_owned.get(),
-                                                /*token_map=*/MarketTokenMap{}, sizing_cfg, risk_cfg, mode);
+        real_provider = std::make_unique<RealStateProvider>(*hub_owned,
+                                                            /*snap=*/nullptr,
+                                                            /*score_store=*/score_store_owned.get(),
+                                                            /*token_map=*/std::move(token_map), sizing_cfg,
+                                                            risk_cfg, mode);
     }
 
     const StateProvider* provider = nullptr;
@@ -168,7 +266,15 @@ int main(int argc, char** argv) {
         std::printf(
             "[debug_server]   score: ScoreSnapshotStore (空 → 回落 demo; Goalserve feed Publish 后生效)\n");
         std::printf("[debug_server]   quote: SizingCalculator 真实 Kelly 计算 (demo 输入, 非 hardcode)\n");
-        std::printf("[debug_server]   standalone 启动: hub/store 空 → book/score 自动回落 demo\n");
+        if (replay) {
+            std::printf(
+                "[debug_server]   --replay: ReplayDriver kSynthetic, 12 token, 5Hz/token\n"
+                "[debug_server]             book_pair best_bid/ask/imbalance/seq 实时流动\n"
+                "[debug_server]             R-12: 独立后台线程, hub Publish 原子无阻塞\n"
+                "[debug_server]             R-20: 4-ts 来自合成事件 (非 now() 替代 data_source_ts)\n");
+        } else {
+            std::printf("[debug_server]   standalone 启动: hub/store 空 → book/score 自动回落 demo\n");
+        }
     }
     std::printf("[debug_server] endpoints: /healthz /version /status /metrics\n");
     std::printf(
@@ -184,6 +290,18 @@ int main(int argc, char** argv) {
 
     std::printf("\n[debug_server] 收到停止信号, 关闭 server...\n");
     server.stop();
+
+    // 停止所有 ReplayDriver 后台线程 (Stop() 内含 WaitDone()/join, RAII 保证无泄漏)
+    // R-12: Stop() 发信号后线程在当前 tick 完成后退出, 无强杀
+    if (!replay_drivers.empty()) {
+        std::printf("[debug_server] 停止 %zu ReplayDriver 线程...\n", replay_drivers.size());
+        for (auto& drv : replay_drivers) {
+            drv->Stop();  // 发停止信号 + join
+        }
+        replay_drivers.clear();
+        std::printf("[debug_server] ReplayDriver 线程已全部停止\n");
+    }
+
     std::printf("[debug_server] 已停止\n");
     return 0;
 }

@@ -133,6 +133,7 @@ target_link_libraries(stcpp_debug_server PRIVATE
     stcpp_risk
     stcpp_sizing
     stcpp_data_score_store
+    stcpp_backtest          # ReplayDriver (--replay 模式, kSynthetic hub feed)
 )
 target_include_directories(stcpp_debug_server PRIVATE
     ${CMAKE_SOURCE_DIR}
