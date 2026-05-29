@@ -537,7 +537,9 @@ export function EventGrid() {
         when={groups().length > 0}
         fallback={
           <div class="no-data grid-placeholder">
-            {state.positions == null ? '加载市场数据...' : '无市场数据 (positions 为空)'}
+            {state.positions == null
+              ? '加载市场数据...'
+              : '等待持仓建立 / 后端未接入 · 点 ⚙ 检查'}
           </div>
         }
       >

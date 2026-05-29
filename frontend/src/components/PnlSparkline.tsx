@@ -6,7 +6,7 @@
 
 import { Show } from 'solid-js';
 import { state } from '../store';
-import { fmtTs, fmtUsdc } from '../api';
+import { fmtTs, fmtUsdc, isEndpointFailingPrefix } from '../api';
 import type { PnlTimeseries } from '../types';
 
 function SparklineSvg(props: { data: PnlTimeseries }) {
@@ -96,11 +96,18 @@ function SparklineSvg(props: { data: PnlTimeseries }) {
 export function PnlSparkline() {
   const data = () => state.timeseries;
 
+  const sparkFallbackText = () => {
+    if (isEndpointFailingPrefix('/api/v1/pnl/timeseries')) {
+      return 'PnL 曲线拉取失败 — 点 ⚙ 确认 API Base, 或等待自动重试 (每 15s)';
+    }
+    return 'PnL 曲线加载中...';
+  };
+
   return (
     <div id="pnl-sparkline-wrap">
       <Show
         when={data() && (data()!.buckets?.length ?? 0) >= 2}
-        fallback={<div class="no-data spark-placeholder">PnL 曲线加载中...</div>}
+        fallback={<div class="no-data spark-placeholder">{sparkFallbackText()}</div>}
       >
         <SparklineSvg data={data()!} />
       </Show>

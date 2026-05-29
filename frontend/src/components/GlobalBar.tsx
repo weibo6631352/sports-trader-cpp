@@ -7,7 +7,7 @@
 import { createSignal, For, Show } from 'solid-js';
 import { state } from '../store';
 import {
-  fmtUsdc, fmtUptime, modeBadge, isEndpointFailing,
+  fmtUsdc, fmtUptime, modeBadge, isEndpointFailing, failingEndpointsSummary,
 } from '../api';
 
 export function GlobalBar() {
@@ -33,9 +33,16 @@ export function GlobalBar() {
 
   const stateText = () => {
     if (!state.status) {
-      return isEndpointFailing('/status') ? 'API OFFLINE' : '连接中...';
+      return isEndpointFailing('/status') ? '后端未连接' : '连接中...';
     }
     return s().state ?? '—';
+  };
+
+  const stateTitle = () => {
+    if (!state.status && isEndpointFailing('/status')) {
+      return '后端未连接 · 请检查 8080 或点 ⚙ 改 API Base';
+    }
+    return undefined;
   };
 
   const uptimeSec = () => Number(h().uptime_sec ?? s().uptime_sec ?? 0);
@@ -70,6 +77,11 @@ export function GlobalBar() {
   const hasApiErr = () =>
     isEndpointFailing('/status') || isEndpointFailing('/api/v1/positions');
 
+  const apiErrTooltip = () => {
+    const summary = failingEndpointsSummary(3);
+    return summary ? `失败端点:\n${summary}` : 'API 异常';
+  };
+
   function saveApiBase() {
     const v = apiBaseInput().trim();
     if (v) {
@@ -90,7 +102,7 @@ export function GlobalBar() {
       {/* 顶部常驻条 */}
       <div class="top-bar">
         <span class={`badge ${modeInfo().cls}`}>{modeInfo().text}</span>
-        <span class={`state-label ${stateClass()}`}>{stateText()}</span>
+        <span class={`state-label ${stateClass()}`} title={stateTitle()}>{stateText()}</span>
         <span class="top-sep">|</span>
         <span class="top-label">净PnL</span>
         <span class={`top-pnl ${netPnl() != null ? (netPnl()! >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`}>
@@ -133,7 +145,7 @@ export function GlobalBar() {
           {rmRejects() != null ? String(rmRejects()) : '—'}
         </span>
         <Show when={hasApiErr()}>
-          <span class="api-err-chip">API 异常</span>
+          <span class="api-err-chip" title={apiErrTooltip()}>API 异常</span>
         </Show>
         <div class="top-right">
           <button class="icon-btn" title="API 配置" onClick={() => setSettingsOpen((v) => !v)}>

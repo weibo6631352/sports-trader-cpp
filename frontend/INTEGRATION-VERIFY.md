@@ -145,8 +145,40 @@ npm run preview  # 预览 dist/
 
 ---
 
+## 小尤 v5.2 UX 验收 P0 修复 (2026-05-29)
+
+关联报告: docs/RESEARCH/xiaoyou-solidjs-v52-ux-review.md
+
+### P0-A: 占位符缺"下一步"指引 — 已修
+
+| 组件 | 修改前 | 修改后 |
+|------|--------|--------|
+| GlobalBar stateText | "API OFFLINE" | "后端未连接" + title tooltip "后端未连接 · 请检查 8080 或点 ⚙ 改 API Base" |
+| EventGrid fallback | "无市场数据 (positions 为空)" | "等待持仓建立 / 后端未接入 · 点 ⚙ 检查" |
+| PnlSparkline fallback | "PnL 曲线加载中..." (永远显示) | 加载中 vs 失败两态: failCount≥3 时改为 "PnL 曲线拉取失败 — 点 ⚙ 确认 API Base, 或等待自动重试 (每 15s)" |
+
+### P0-B: fetchErrorMap 错误未暴露 endpoint — 已修
+
+- api.ts 新增 `failingEndpointsSummary(threshold)`: 遍历 fetchErrorMap, 返回所有 failCount≥threshold 的 path + failCount 文本
+- api.ts 新增 `isEndpointFailingPrefix(prefix)`: 前缀匹配, 用于带 query string 的 endpoint
+- GlobalBar "API 异常" chip 新增 `title={apiErrTooltip()}`, tooltip 格式: "失败端点:\n/path (连续失败 N 次)\n..."
+
+### P1-B: .mini-col-lbl 字号 9px → 10px — 已修
+
+style.css `.mini-col-lbl { font-size: 9px }` → `10px`, 对齐三档下限 (R3).
+
+### 构建验证
+
+```
+tsc --noEmit → 0 errors  PASS
+vite build   → 16 modules transformed, 52.87 kB  PASS
+```
+
+---
+
 ## 遗留事项 (下一 sprint)
 
 - 浏览器截图验证: 留给小宫 #48 dogfood 轮次
 - 单盘口赛事无 positions/rejects/attribution 时也应展示 (需后端 /api/v1/markets list endpoint)
+- P1-A/P1-C/P1-D/P1-E: 本 sprint backlog (P1-B 已完成)
 - P2-01/P2-02/P2-04/P2-05/P2-06: 下一 sprint backlog

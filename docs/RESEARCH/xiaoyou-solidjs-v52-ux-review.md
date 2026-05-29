@@ -408,6 +408,23 @@ P0 完成后本报告自动升级为"通过"状态, 无需重新打分, 小苏�
 
 ---
 
+## §6 P0 修复确认 (2026-05-29 小苏)
+
+**P0-A 和 P0-B 均已完成, 验收状态升为: 通过**
+
+修改文件:
+- `frontend/src/api.ts`: 新增 `failingEndpointsSummary()` (遍历 fetchErrorMap 返回失败 endpoint 列表) + `isEndpointFailingPrefix()` (前缀匹配用于带 query string 的 path)
+- `frontend/src/components/GlobalBar.tsx`: stateText "API OFFLINE" → "后端未连接", 加 title tooltip "后端未连接 · 请检查 8080 或点 ⚙ 改 API Base"; "API 异常" chip 加 `title={apiErrTooltip()}`, tooltip 列出失败 endpoint 路径 + failCount
+- `frontend/src/components/EventGrid.tsx`: fallback "无市场数据 (positions 为空)" → "等待持仓建立 / 后端未接入 · 点 ⚙ 检查"
+- `frontend/src/components/PnlSparkline.tsx`: fallback 区分加载中 vs 拉取失败 (isEndpointFailingPrefix 判断 failCount≥3)
+- `frontend/src/style.css`: `.mini-col-lbl font-size: 9px` → `10px` (P1-B 同步完成)
+
+构建验证: `tsc --noEmit` 0 errors, `vite build` 通过.
+
+D3 错误可读性: 6/10 → 预期升 7/10 (P0-A/B 补全"三件套"第 3 件下一步指引 + 失败 endpoint 可见)
+
+---
+
 **附: 评分摘要**
 
 | 维度 | 得分 | 阈值 | 状态 |

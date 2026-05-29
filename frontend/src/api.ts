@@ -60,11 +60,30 @@ export function isEndpointFailing(path: string): boolean {
   return e != null && e.failCount >= 3;
 }
 
+/** 前缀匹配版: 匹配 path 开头的任意 key (用于带 query string 的 endpoint) */
+export function isEndpointFailingPrefix(prefix: string): boolean {
+  for (const [key, v] of fetchErrorMap) {
+    if (key.startsWith(prefix) && v.failCount >= 3) return true;
+  }
+  return false;
+}
+
 export function anyEndpointFailing(): boolean {
   for (const [, v] of fetchErrorMap) {
     if (v.failCount >= 1) return true;
   }
   return false;
+}
+
+/** 返回所有连续失败 (failCount >= threshold) 的 endpoint 路径 + failCount, 供 tooltip 显示 */
+export function failingEndpointsSummary(threshold = 3): string {
+  const lines: string[] = [];
+  for (const [path, v] of fetchErrorMap) {
+    if (v.failCount >= threshold) {
+      lines.push(`${path} (连续失败 ${v.failCount} 次)`);
+    }
+  }
+  return lines.length > 0 ? lines.join('\n') : '';
 }
 
 // ---------- 通用 fetch wrapper ----------
