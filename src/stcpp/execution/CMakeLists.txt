@@ -16,5 +16,16 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     target_compile_definitions(stcpp_execution_paper PRIVATE
         STCPP_EXEC_MODE_paper=1
     )
-    target_link_libraries(stcpp_execution_paper PUBLIC stcpp_infra_wal)
+    # Wave 3: MatchWithBook() 依赖 stcpp_microstructure (FillRateModel::compute_from_clob_book)
+    target_link_libraries(stcpp_execution_paper PUBLIC
+        stcpp_infra_wal
+        stcpp_microstructure
+    )
+    # Wave 3: virtual_matcher.cpp 经 FillRateModel::compute_from_clob_book 间接拉入
+    # microstructure header (header-only nlohmann_json 宏展开 double-promotion).
+    # 与 microstructure target 同根因同处置 (ADR-010 §3.2 三方库豁免).
+    # 三方库豁免: nlohmann_json (ADR-010 §3.2 — header-only JSON 宏展开 double-promotion)
+    target_compile_options(stcpp_execution_paper PRIVATE
+        -Wno-double-promotion
+    )
 endif()

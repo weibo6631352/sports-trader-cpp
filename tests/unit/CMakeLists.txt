@@ -147,6 +147,40 @@ gtest_discover_tests(test_risk_gateway
     PROPERTIES LABELS "unit;risk;w4"
 )
 
+# 老沈 Wave 3 P0: RiskGateway Wave 3 缺口单测
+#   D1: DD -3% 软熔断 / -5% 硬 kill 分层 (GM §9 裁决 #1) — 7 case
+#   D2+D3: TS_V2_MISSING/STALE/FUTURE + INVALID_BYTES32_FORMAT — 8 case
+#   D4: fee estimate net_edge 校验 (R-fee-2) — 5 case
+#   D5: emit_audit_ 透传 timestamp_ms/metadata/builder — 5 case
+#   enum 确认 (非强 freeze, 待老郭架构评审 ack) — 1 case
+#   组合短路顺序 — 2 case
+# cite: laoshen-rm-v0.5-field-freeze-spec-v1.md §6 delta D1-D5
+#       laolei-2026-drive-directive-paper-profit-v1.md §9 裁决 #1
+add_executable(test_risk_gateway_wave3
+    test_risk_gateway_wave3.cpp
+)
+target_link_libraries(test_risk_gateway_wave3 PRIVATE
+    GTest::gtest_main
+    stcpp_risk
+)
+target_compile_options(test_risk_gateway_wave3 PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_risk_gateway_wave3 PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_risk_gateway_wave3 PRIVATE cxx_std_20)
+target_compile_definitions(test_risk_gateway_wave3 PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_risk_gateway_wave3
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;risk;wave3;dd-soft;ts-v2;fee-estimate;audit-v14;p0"
+)
+
 # 小段 Sprint-2 W4 Wave 19: Goalserve client v0.1 stub
 #   T1 URL builder 5 host x 8 sport 40 combos
 #   T2 TimeStatus 11 enum 闭合 (0-9 + 99)
@@ -339,6 +373,40 @@ gtest_discover_tests(test_fill_rate_model
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;microstructure;w4"
 )
+
+# 小袁 Wave 3: FillRateModel v0.2 (compute_from_clob_book) + VirtualMatcher Mode A (MatchWithBook)
+#   ClobFill T01-T10: queue position fill probability (真实 CLOB depth)
+#   MatchWithBook T11-T18: Mode A paper 撮合 (R-11 PaperAudit / R-20 4 ts / 部分成交 / slippage)
+#   T19-T20: 纯函数确定性 + sum_penalties 公式校验
+# R-7 paper mode only (MatchWithBook 依赖 stcpp_execution_paper)
+if(STCPP_EXEC_MODE STREQUAL "paper")
+    add_executable(test_fill_rate_model_v2
+        test_fill_rate_model_v2.cpp
+    )
+    target_link_libraries(test_fill_rate_model_v2 PRIVATE
+        GTest::gtest_main
+        stcpp_execution_paper
+        stcpp_microstructure
+        stcpp_infra_wal
+    )
+    target_compile_options(test_fill_rate_model_v2 PRIVATE
+        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    )
+    target_include_directories(test_fill_rate_model_v2 PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(test_fill_rate_model_v2 PRIVATE cxx_std_20)
+    target_compile_definitions(test_fill_rate_model_v2 PRIVATE
+        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    )
+    gtest_discover_tests(test_fill_rate_model_v2
+        DISCOVERY_TIMEOUT 30
+        PROPERTIES LABELS "unit;microstructure;clob;mode-a;wave3"
+    )
+endif()
 
 # 小卢 W4 Wave 19: LiveSection 5 enum 分类 (老李 GM 逆向反推)
 add_executable(test_live_section_classifier
@@ -974,4 +1042,44 @@ target_compile_definitions(test_position_ledger_w76 PRIVATE
 gtest_discover_tests(test_position_ledger_w76
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;risk;position-ledger;state-machine;adr027;wave76;w9"
+)
+
+# 老陈 A-NET-01 Wave 3: 出站序列化 + 背压队列 单测
+#   T1:  OutboundBuffer reset O(1) + append 正确性
+#   T2:  OutboundBuffer 容量边界 (4096B 满 → false, 不越界)
+#   T3:  SerializeSignedOrder BUY 正确性 (price/size 换算 + compact JSON)
+#   T3b: SerializeSignedOrder SELL
+#   T4:  HMAC bug #3 — signatureType 必须整数 1 (非字符串)
+#   T5:  OutboundSubmitQueue 背压 drop (满 256 → false + drop_count++)
+#   T6:  OutboundSubmitQueue FIFO 顺序
+#   T7:  SerializeCancelAll → "{}"
+#   T8:  paper mode 空 signature + 大 token_id (uint256 77位)
+#   T9:  price/size 最小精度 (1 bps / 1 micro)
+#   T10: buffer reset 后可重复使用
+# 红线: R-12 (不进 event loop), zero-alloc, HMAC bug #3
+add_executable(test_outbound_serializer
+    test_outbound_serializer.cpp
+)
+target_link_libraries(test_outbound_serializer PRIVATE
+    GTest::gtest_main
+    stcpp_net_outbound
+    stcpp_infra_wal
+    stcpp_infra_spsc
+)
+target_compile_options(test_outbound_serializer PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_outbound_serializer PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_outbound_serializer PRIVATE cxx_std_20)
+target_compile_definitions(test_outbound_serializer PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_outbound_serializer
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;net;outbound;serializer;backpressure;a-net-01;wave3"
 )

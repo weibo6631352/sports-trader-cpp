@@ -82,10 +82,16 @@ enum class InvalidIntentSubReason : std::uint8_t {
     MISSING_CONDITION_ID = 10,     // intent.condition_id.empty() (原 MISSING_MARKET_ID)
     INVALID_TOKEN_ID_FORMAT = 11,  // token_id 含非数字字符 (uint256 string 格式校验)
     BOOK_TOKEN_ID_MISMATCH = 12,   // R8.4: book_snapshot_ts 对应 token 与 intent.token_id 不一致
-    // v0.6 新增 (老孙 Wave 104 P0, laosun-w10-w1 spec-10):
-    TS_V2_MISSING = 13,  // intent.timestamp_ms == 0 (V2 CLOB 必须非零)
-    // v0.6 新增: bytes32 hex 格式校验 (spec-9):
-    INVALID_BYTES32_FORMAT = 14,  // metadata or builder: 非 ^0x[0-9a-f]{64}$ (66 chars)
+    // v0.6 新增 (老孙 Wave 104 P0, laosun-w10-w1 spec-10 + laohan-rm-v0.5-integration-spec §7.2):
+    // SSOT: laohan-rm-v0.5-integration-spec-v1.md §7.2 表 (R3.6/R3.7/R3.8/R3.9)
+    // ABI 注意: 13-16 编号已与 laohan spec §7.2 对齐。
+    // 若 WAL 存在 v0.6 前 INVALID_BYTES32_FORMAT=14 的历史记录, 需 migration (老唐 replay)
+    // 编号变更须老郭架构评审 ack (ADR-029 ABI 变更流程) — 标注待 review
+    TS_V2_MISSING = 13,  // intent.timestamp_ms == 0 (V2 CLOB 必须非零)     [R3.6]
+    TS_V2_STALE = 14,    // timestamp_ms < now_ms - 60_000 (60s 窗口)       [R3.7] ← Wave 3 新增
+    TS_V2_FUTURE = 15,   // timestamp_ms > now_ms + 5_000 (5s 漂移容忍)     [R3.8] ← Wave 3 新增
+    INVALID_BYTES32_FORMAT =
+        16,  // metadata 或 builder: 非 ^0x[0-9a-f]{64}$ 66chars [R3.9/R3.10] ← 从 14 移到 16
 };
 
 struct RejectDetail {
