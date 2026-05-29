@@ -41,9 +41,12 @@
 
 #include "stcpp/backtest/replay_driver.hpp"     // ReplayDriver (kSynthetic 模式)
 #include "stcpp/data/score_snapshot_store.hpp"  // ScoreSnapshotStore (小段, 集成 ③)
+#include "stcpp/risk/ledger_snapshot_hub.hpp"   // LedgerSnapshotHub (集成 ④)
+#include "stcpp/sizing/quote_snapshot_hub.hpp"  // QuoteSnapshotHub (集成 ④)
 
 #include "src/stcpp/debug_api/demo_state_provider.hpp"
 #include "src/stcpp/debug_api/real_state_provider.hpp"
+#include "src/stcpp/debug_api/replay_feed_coordinator.hpp"  // ReplayFeedCoordinator (集成 ④)
 #include "src/stcpp/debug_api/server.hpp"
 #include "src/stcpp/debug_api/state_provider.hpp"
 
@@ -132,6 +135,11 @@ int main(int argc, char** argv) {
     std::unique_ptr<stcpp::data::ScoreSnapshotStore> score_store_owned;
     std::unique_ptr<RealStateProvider> real_provider;
 
+    // 集成 ④: LedgerSnapshotHub + QuoteSnapshotHub (--replay 时由 ReplayFeedCoordinator Publish)
+    std::unique_ptr<stcpp::risk::LedgerSnapshotHub> ledger_hub_owned;
+    std::unique_ptr<stcpp::sizing::QuoteSnapshotHub> quote_hub_owned;
+    std::unique_ptr<ReplayFeedCoordinator> feed_coordinator;
+
     // --replay 模式: per-token ReplayDriver 后台线程列表 (RAII — 析构时 Stop()+join)
     // R-12: 各 driver 独立线程, hub.Publish() 原子无阻塞
     std::vector<std::unique_ptr<stcpp::backtest::ReplayDriver>> replay_drivers;
@@ -146,6 +154,10 @@ int main(int argc, char** argv) {
         // ScoreSnapshotStore (小段): standalone 空 store, 无 live feed → score 回落 Demo
         // 生产接入时由 Goalserve 采集线程 Publish() 写入
         score_store_owned = std::make_unique<stcpp::data::ScoreSnapshotStore>();
+        // 集成 ④: LedgerSnapshotHub + QuoteSnapshotHub
+        // --replay 时由 ReplayFeedCoordinator Publish; 无 replay 时空 hub → 回落 Demo
+        ledger_hub_owned = std::make_unique<stcpp::risk::LedgerSnapshotHub>();
+        quote_hub_owned = std::make_unique<stcpp::sizing::QuoteSnapshotHub>();
 
         // SizingConfig: 可配置 demo 输入 (计算路径走真实 SizingCalculator, ADR-042)
         SizingConfig sizing_cfg;
@@ -226,14 +238,39 @@ int main(int argc, char** argv) {
             }
             std::printf("[debug_server] --replay: 启动 %zu ReplayDriver 线程 (12 demo token, 5Hz/token)\n",
                         replay_drivers.size());
+
+            // 集成 ④: 构造 ReplayFeedCoordinator — 从 book hub 派生 LedgerFeatures + QuoteFeatures
+            // MarketFeedEntry: 6 个盘口, 与 token_map 对齐; avg_entry_price ≈ mid_center - 0.01
+            // net_qty: 代表性演示仓位 (USDC; 正=多头)
+            // tick_sleep_ns: 200ms (与 ReplayDriver 同频, 5Hz)
+            // R-12: coordinator 独立线程, hub.Read()/Publish() 均原子无阻塞
+            // R-11: LedgerFeatures.mode = kPaper (coordinator 内部固定)
+            // R-20: 4-ts 透传 OrderBookFeatures (data_source_ts 来自合成链路)
+            std::vector<MarketFeedEntry> feed_entries = {
+                {"nba-lal-bos-ml", "tok-lal-ml-0", 0.610, 1500.0, "LAL"},
+                {"nba-lal-bos-total", "tok-over220-0", 0.510, 900.0, "OVER_220.5"},
+                {"nba-lal-bos-spread", "tok-lal-spd-0", 0.480, 600.0, "LAL_-5.5"},
+                {"epl-ars-che-total", "tok-ars-001", 0.540, 2200.0, "OVER_2.5"},
+                {"nfl-kc-buf-spread", "tok-kc-001", 0.570, 1000.0, "KC_-3.5"},
+                {"mlb-nyy-bos-ml", "tok-nyy-001", 0.590, 1200.0, "NYY"},
+            };
+            feed_coordinator = std::make_unique<ReplayFeedCoordinator>(
+                *hub_owned, *ledger_hub_owned, *quote_hub_owned, std::move(feed_entries), risk_cfg,
+                /*tick_sleep_ns=*/200'000'000LL);
+            feed_coordinator->Start();
+            std::printf(
+                "[debug_server] --replay: ReplayFeedCoordinator 启动 (6 盘口, 200ms/tick)\n"
+                "[debug_server]           positions/pnl/quote 随 book microprice 实时流动\n");
         }
 
         // snap=nullptr: 无 RiskGateway 注入 → risk_rejects 回落 Demo
-        real_provider = std::make_unique<RealStateProvider>(*hub_owned,
-                                                            /*snap=*/nullptr,
-                                                            /*score_store=*/score_store_owned.get(),
-                                                            /*token_map=*/std::move(token_map), sizing_cfg,
-                                                            risk_cfg, mode);
+        real_provider = std::make_unique<RealStateProvider>(
+            *hub_owned,
+            /*snap=*/nullptr,
+            /*score_store=*/score_store_owned.get(),
+            /*token_map=*/std::move(token_map), sizing_cfg, risk_cfg, mode,
+            /*ledger_hub=*/ledger_hub_owned.get(),  // 集成 ④: positions/pnl hub
+            /*quote_hub=*/quote_hub_owned.get());   // 集成 ④: quote hub
     }
 
     const StateProvider* provider = nullptr;
@@ -290,6 +327,14 @@ int main(int argc, char** argv) {
 
     std::printf("\n[debug_server] 收到停止信号, 关闭 server...\n");
     server.stop();
+
+    // 停止 ReplayFeedCoordinator (集成 ④; 先于 ReplayDriver 停止, 避免 hub 被写但读端已消失)
+    // RAII: Stop() 内含 join, 析构也会调用 Stop()
+    if (feed_coordinator) {
+        std::printf("[debug_server] 停止 ReplayFeedCoordinator...\n");
+        feed_coordinator->Stop();
+        std::printf("[debug_server] ReplayFeedCoordinator 已停止\n");
+    }
 
     // 停止所有 ReplayDriver 后台线程 (Stop() 内含 WaitDone()/join, RAII 保证无泄漏)
     // R-12: Stop() 发信号后线程在当前 tick 完成后退出, 无强杀
