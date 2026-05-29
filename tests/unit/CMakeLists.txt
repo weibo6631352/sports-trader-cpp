@@ -1013,6 +1013,38 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     )
 endif()
 
+# 小冯 ADR-037: OrderBookAdapter v0.1 — vendor-agnostic full-depth orderbook adapter
+#   T1: snapshot → vendor-agnostic features (microprice / spread / imbalance)
+#   T2: delta before snapshot → drop (reconnect chaos 健壮性)
+#   T3: snapshot → delta upsert → mid shift (增量更新正确性)
+#   T4: OnTransportReset → 全部 token 重置等待 snapshot (断连)
+#   T5: R-20 4-ts 透传 (data_source_ts 不是本地 now())
+# ADR-037 cite: 2026-05-29-data-model-strategy-vendor-agnostic.md
+add_executable(test_orderbook_adapter
+    test_orderbook_adapter.cpp
+)
+target_link_libraries(test_orderbook_adapter PRIVATE
+    GTest::gtest_main
+    stcpp_polymarket_clob_wss
+)
+target_compile_options(test_orderbook_adapter PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_orderbook_adapter PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_orderbook_adapter PRIVATE cxx_std_20)
+target_compile_definitions(test_orderbook_adapter PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_orderbook_adapter
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;polymarket;orderbook;adapter;adr037;vendor-agnostic"
+)
+
 # 老沈 Wave 76 W9 W4: PositionLedger read API + StateMachine cpp (ADR-027 Enforce-1)
 #   TC-01: 快照一致性 (read 不锁 hot path)
 #   TC-02: CAS 幂等 (try_transition RUNNING->DRAIN 2次, 1成1fail)
