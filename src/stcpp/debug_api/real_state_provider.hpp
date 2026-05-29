@@ -88,7 +88,7 @@ struct SizingConfig {
     double demo_edge_ci_lower{0.018};
     // 入场价 (demo: 0.636 ≈ fair - edge_bps/10000; 真实接入时由 book microprice 提供)
     double demo_price{0.636};
-    // bankroll (USDC; demo: 100,000; 真实接入时由 PositionLedger 提供)
+    // bankroll (USDC; demo: 100,000; 真实接入时由账本快照提供)
     double demo_bankroll_usdc{100'000.0};
     // fill_rate (demo: 0.85; 真实接入时由 FillRateModel 提供)
     double demo_fill_rate{0.85};
@@ -189,7 +189,7 @@ public:
         in.buy_yes = (in.fair_value > in.price);  // 方向: fair > price → buy YES
         // edge_bps (展示用, 不进 gating)
         in.edge_bps = std::abs(in.fair_value - in.price) * 10'000.0;
-        // 当前敞口 (standalone demo: 0; 真实接入时由 PositionLedger 提供)
+        // 当前敞口 (standalone demo: 0; 真实接入时由账本快照注入)
         in.current_token_exposure_usdc = 0.0;
         in.current_condition_exposure_usdc = 0.0;
 
