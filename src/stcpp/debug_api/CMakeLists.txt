@@ -91,7 +91,8 @@ target_compile_definitions(stcpp_debug_api PRIVATE
     STCPP_EXEC_MODE_STR="${STCPP_EXEC_MODE}"
 )
 
-# cpp-httplib warning suppression (third-party header-only)
+# 三方库豁免: cpp-httplib (ADR-010 §3.2 — header-only v0.16.3 宏展开 / vsnprintf 格式 / cast 警告)
+# 三方库豁免: boost (ADR-010 §3.2 — Asio 可选依赖, shadow 警告)
 target_compile_options(stcpp_debug_api PRIVATE
     -Wno-old-style-cast
     -Wno-cast-align

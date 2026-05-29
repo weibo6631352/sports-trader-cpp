@@ -70,7 +70,7 @@ Result<OrderAck> PaperPolymarketClient::SubmitOrder(const SignedOrder& order) no
         return r;
     }
 
-    // HMAC bug #3 enforce: paper 也防 caller 误传 sigType=2 (live 用 sigType=1)
+    // HMAC bug #3 enforce: paper 也防 caller 误传错误 sigType (live 必须 sigType=1, Magic 1-of-1 Safe)
     if (order.signature_type != 1u) {
         OrderAck ack;
         ack.ts              = order.ts;

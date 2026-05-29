@@ -59,6 +59,7 @@ if(STCPP_BUILD_CLI)
     # ADR-010 §4: 禁止新增 -Wno-* 抑制。已删 -Wno-sign-conversion -Wno-conversion -Wno-shadow (W7 Wave 33 小宋).
     # 若 cli source 仍有上述 warning 请 @老沈 在独立 PR 修真 source.
     # grandfather 保留 (ADR-010 §2.2): double-promotion / old-style-cast / cast-align
+    # 三方库豁免: libsodium (ADR-010 §3.2 — sodium.h 宏展开 cast/promotion 警告)
     target_compile_options(stcpp_cli_three_sig PRIVATE
         -Wno-double-promotion -Wno-old-style-cast -Wno-cast-align
     )
@@ -82,6 +83,7 @@ if(STCPP_BUILD_CLI)
     # ADR-010 §4: 禁止新增 -Wno-* 抑制。已删 -Wno-sign-conversion -Wno-conversion -Wno-shadow (W7 Wave 33 小宋).
     # 若 cli source 仍有上述 warning 请 @老沈 在独立 PR 修真 source.
     # grandfather 保留 (ADR-010 §2.2): double-promotion / old-style-cast / cast-align
+    # 三方库豁免: libsodium (ADR-010 §3.2 — sodium.h 宏展开 cast/promotion 警告)
     target_compile_options(stcpp_cli_strategy_unlock PRIVATE
         -Wno-double-promotion -Wno-old-style-cast -Wno-cast-align
     )

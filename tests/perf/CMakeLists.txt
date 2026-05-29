@@ -30,12 +30,13 @@ FetchContent_MakeAvailable(benchmark)
 #     顶层 -Werror -Wformat=2 -Wformat-nonliteral 会卡 benchmark/src/colorprint.cc vsnprintf.
 foreach(_bm_target benchmark benchmark_main)
     if(TARGET ${_bm_target})
+        # 三方库豁免: google-benchmark (ADR-010 §3.2 — colorprint.cc vsnprintf 格式 + 内部宏 cast)
         target_compile_options(${_bm_target} PRIVATE
             -Wno-double-promotion   # ADR-010 grandfather: benchmark 浮点宏
             -Wno-old-style-cast     # ADR-010 grandfather: benchmark 宏展开
             -Wno-cast-align         # ADR-010 grandfather: benchmark 内部转型
-            -Wno-format-nonliteral  # benchmark colorprint.cc vsnprintf
-            -Wno-error
+            -Wno-format-nonliteral  # 三方库豁免: google-benchmark colorprint.cc vsnprintf
+            -Wno-error              # 三方库豁免: google-benchmark 内部 warning 非 error
         )
     endif()
 endforeach()

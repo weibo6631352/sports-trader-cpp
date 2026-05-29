@@ -24,11 +24,19 @@ endif()
 message(STATUS "stcpp build: STCPP_EXEC_MODE = ${STCPP_EXEC_MODE}")
 
 # 编译选项 (老高 v1 §8 + 老何 footgun)
+# Wave 75 fix: -Wnon-virtual-dtor / -Wold-style-cast / -Wcast-align 仅 C++ 有效
+# 用 generator expression 限制到 C++ 编译单元, 避免 BLAKE3 C 源文件报错 (Linux GCC cc1 -Werror)
 add_compile_options(
     -Wall -Wextra -Werror
-    -Wshadow -Wnon-virtual-dtor -Wcast-align -Wold-style-cast
-    -Wconversion -Wsign-conversion -Wnull-dereference -Wdouble-promotion
-    -Wformat=2
+    $<$<COMPILE_LANGUAGE:CXX>:-Wshadow>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wnon-virtual-dtor>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wcast-align>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wold-style-cast>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wconversion>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wsign-conversion>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wnull-dereference>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wdouble-promotion>
+    $<$<COMPILE_LANGUAGE:CXX>:-Wformat=2>
     -fno-omit-frame-pointer
 )
 
