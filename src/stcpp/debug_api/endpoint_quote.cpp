@@ -51,10 +51,32 @@ void register_quote(httplib::Server& svr, const HttpServer& hs) {
             body += json::num(q.suggested_notional);
             body += ",\"signal_strength\":";
             body += json::num(q.signal_strength);
+            // DEPRECATED: model_conf — 保留向后兼容 alias (G-FREEZE-W; 值 = model_confidence)
             body += ",\"model_conf\":";
             body += json::num(q.model_conf);
             body += ",\"quote_as_of_ts\":";
             body += json::i64(q.as_of_ts_ns);
+            // ---- ML provenance (小邓 spec v1 §3.3; G-FREEZE-W append-only) ----
+            body += ",\"model_id\":";
+            body += json::str(q.model_id);
+            body += ",\"model_kind\":";
+            body += json::str(q.model_kind);
+            body += ",\"spec_version\":";
+            body += json::str(q.spec_version);
+            body += ",\"model_confidence\":";
+            body += json::num(q.model_confidence);
+            body += ",\"model_calibrated\":";
+            body += json::boolean(q.model_calibrated);
+            body += ",\"fair_ci_lower\":";
+            body += json::num(q.fair_ci_lower);
+            body += ",\"fair_ci_upper\":";
+            body += json::num(q.fair_ci_upper);
+            body += ",\"predict_ok\":";
+            body += json::boolean(q.predict_ok);
+            body += ",\"model_as_of_ts\":";
+            body += json::i64(q.model_as_of_ts_ns);
+            body += ",\"advisory\":";
+            body += json::boolean(q.advisory);
         }
 
         body += '}';
