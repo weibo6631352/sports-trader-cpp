@@ -80,6 +80,10 @@ set(EXTRA_LIBS_test_sizing_calculator     stcpp_sizing stcpp_risk)
 set(EXTRA_LIBS_test_sizing_rm_consistency stcpp_sizing stcpp_risk)
 # 小肖 ReplayDriver: replay→hub→Read 端对端路径验证
 set(EXTRA_LIBS_test_replay_driver         stcpp_backtest stcpp_orderbook_snapshot_hub)
+# 小石 LedgerSnapshotHub: per-market double-buffer 持仓/PnL 只读快照 (R-11/R-12/R-20)
+set(EXTRA_LIBS_test_ledger_snapshot_hub   stcpp_ledger_snapshot_hub)
+# 小石 QuoteSnapshotHub: per-market double-buffer 量化报价只读快照 (R-12/R-20 + ML provenance)
+set(EXTRA_LIBS_test_quote_snapshot_hub    stcpp_quote_snapshot_hub)
 
 # --- 追加 compile_definitions 映射 ---
 # (仅列出 STCPP_EXEC_MODE_* 以外的额外 define)
@@ -170,6 +174,10 @@ set(LABELS_test_orderbook_adapter          "unit;polymarket;clob-wss;orderbook-a
 set(LABELS_test_orderbook_snapshot_hub     "unit;polymarket;clob-wss;snapshot-hub;double-buffer;r-12;r-20;v0.1")
 # 小肖 ReplayDriver v0.1
 set(LABELS_test_replay_driver              "unit;backtest;replay-driver;r-12;r-20;synthetic;historical;e2e")
+# 小石 LedgerSnapshotHub v0.1
+set(LABELS_test_ledger_snapshot_hub        "unit;risk;ledger;double-buffer;r-11;r-12;r-20;xiaoshi")
+# 小石 QuoteSnapshotHub v0.1
+set(LABELS_test_quote_snapshot_hub         "unit;sizing;quote;double-buffer;r-12;r-20;ml-provenance;xiaoshi")
 
 # ============================================================================
 # §3  核心辅助宏: stcpp_add_unit_test(<target> <source>)

@@ -26,6 +26,32 @@ add_library(stcpp_sizing STATIC
     sizing_calculator.cpp
 )
 
+# ---------------------------------------------------------------------------
+# stcpp_quote_snapshot_hub — per-market double-buffer 量化报价只读快照发布器
+#
+# Owner: 小石 (#41, data-structures-expert, G-LEDGER-OWNER)
+# 独立 target: 仅依赖标准库
+# 零反向依赖 (R-12): 不 link RM / signer / exec / debug_api
+# R-20: 4-ts 透传; ML provenance 字段对应 QuoteParams
+#
+# root 集成说明 (给集成方 — 不编辑 root CMakeLists.txt):
+#   本 target 已在 src/stcpp/sizing/CMakeLists.txt 中定义.
+#   root CMakeLists.txt 已 add_subdirectory(src/stcpp/sizing).
+#   → 无需修改 root CMakeLists.txt, 直接可用 stcpp_quote_snapshot_hub target.
+# ---------------------------------------------------------------------------
+add_library(stcpp_quote_snapshot_hub STATIC
+    quote_snapshot_hub.cpp
+)
+
+target_include_directories(stcpp_quote_snapshot_hub
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_features(stcpp_quote_snapshot_hub PUBLIC cxx_std_20)
+
+# 零反向依赖: 纯头文件 + 标准库 (R-12: 不 link RM / signer / exec / debug_api)
+# target_link_libraries 省略: 无外部依赖 (纯标准库)
+
 target_include_directories(stcpp_sizing
     PUBLIC ${CMAKE_SOURCE_DIR}/include
 )

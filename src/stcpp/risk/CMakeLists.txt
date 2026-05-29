@@ -13,6 +13,39 @@ add_library(stcpp_risk STATIC
     position_ledger.cpp
 )
 
+# ---------------------------------------------------------------------------
+# stcpp_ledger_snapshot_hub — per-market double-buffer 持仓/PnL 只读快照发布器
+#
+# Owner: 小石 (#41, data-structures-expert, G-LEDGER-OWNER)
+# 独立 target: 仅依赖标准库
+# 零反向依赖 (R-12): 不 link RM / signer / exec / debug_api
+# R-11: LedgerFeatures.mode 区分 paper/live/backtest
+# R-20: 4-ts 透传 (来自 VirtualFill.as_of_ts_ns)
+#
+# root 集成说明 (给集成方 — 不编辑 root CMakeLists.txt):
+#   本 target 已在 src/stcpp/risk/CMakeLists.txt 中定义.
+#   root CMakeLists.txt 已 add_subdirectory(src/stcpp/risk).
+#   → 无需修改 root CMakeLists.txt, 直接可用 stcpp_ledger_snapshot_hub target.
+#   tests/unit/CMakeLists.txt EXTRA_LIBS 映射表补:
+#     set(EXTRA_LIBS_test_ledger_snapshot_hub  stcpp_ledger_snapshot_hub)
+#     set(EXTRA_LIBS_test_quote_snapshot_hub   stcpp_quote_snapshot_hub)
+#   LABELS 映射:
+#     set(LABELS_test_ledger_snapshot_hub  "unit;risk;ledger;double-buffer;r-11;r-12;r-20;xiaoshi")
+#     set(LABELS_test_quote_snapshot_hub   "unit;sizing;quote;double-buffer;r-12;r-20;xiaoshi")
+# ---------------------------------------------------------------------------
+add_library(stcpp_ledger_snapshot_hub STATIC
+    ledger_snapshot_hub.cpp
+)
+
+target_include_directories(stcpp_ledger_snapshot_hub
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_features(stcpp_ledger_snapshot_hub PUBLIC cxx_std_20)
+
+# 零反向依赖: 纯头文件 + 标准库 (R-12: 不 link RM / signer / exec / debug_api)
+# target_link_libraries 省略: 无外部依赖 (纯标准库)
+
 target_include_directories(stcpp_risk
     PUBLIC ${CMAKE_SOURCE_DIR}/include
 )
