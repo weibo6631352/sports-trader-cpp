@@ -252,6 +252,19 @@ public:
     }
 
     const char* data_source() const override { return "fake"; }
+
+    // 小冯 live-schema 新增纯虚 events() — FakeProvider 补 stub (Event 实体列表)
+    std::vector<stcpp::debug_api::EventInfo> events() const override {
+        std::vector<stcpp::debug_api::EventInfo> v;
+        stcpp::debug_api::EventInfo e;
+        e.event_id = "fake-evt-1";
+        e.slug = "fake-event";
+        e.title = "Fake Event";
+        e.sport = "basketball";
+        e.condition_ids = {"fake-cond-1"};
+        v.push_back(e);
+        return v;
+    }
 };
 
 httplib::Client make_client(std::uint16_t port) {
