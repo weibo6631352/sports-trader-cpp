@@ -41,12 +41,14 @@ from pathlib import Path
 # 常量                                                                          #
 # --------------------------------------------------------------------------- #
 
-# ADR-010 §2.2 tests/ 下 4 项 grandfather (允许)
+# ADR-010 §2.2 tests/ 下 5 项 grandfather (允许)
+# Wave 81 新增: -Wno-unused-result (test_single_instance.cpp POSIX fork/pipe read/write)
 GRANDFATHER_WNO = {
     "-Wno-double-promotion",
     "-Wno-old-style-cast",
     "-Wno-cast-align",
     "-Wno-invalid-offsetof",
+    "-Wno-unused-result",  # Wave 81: POSIX read/write in fork/pipe tests (GCC 13 strict)
 }
 
 # tests/ 下"待清"4 项 (小宋 W7 清理队列, INFO 不 FAIL)

@@ -477,7 +477,10 @@ target_link_libraries(test_single_instance PRIVATE
 target_compile_options(test_single_instance PRIVATE
     -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
     -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    # Wave 81 fix: POSIX read/write in fork/pipe sync — GCC 13 warn_unused_result strict
+    # even with explicit (void) cast. ADR-010 §2.2 grandfather: test-only POSIX IO.
+    -Wno-unused-result)
 target_include_directories(test_single_instance PRIVATE
     ${CMAKE_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}/include
