@@ -730,16 +730,14 @@ int main(int argc, char** argv) {
         paper_loop_cfg);
     // ---- paper loop 对象构造完成; Start() 在 WSS 建立后调用 (Step 4b) ----
 
-    SizingConfig sizing_cfg;
     stcpp::risk::RiskConfig risk_cfg;
 
-    auto real_provider =
-        std::make_unique<RealStateProvider>(*hub_owned,
-                                            /*snap=*/paper_rm_snap.get(),
-                                            /*score_store=*/score_store_owned.get(),
-                                            /*token_map=*/token_map, sizing_cfg, risk_cfg, mode,
-                                            /*ledger_hub=*/ledger_hub_owned.get(),
-                                            /*quote_hub=*/quote_hub_owned.get());
+    auto real_provider = std::make_unique<RealStateProvider>(*hub_owned,
+                                                             /*snap=*/paper_rm_snap.get(),
+                                                             /*score_store=*/score_store_owned.get(),
+                                                             /*token_map=*/token_map, risk_cfg, mode,
+                                                             /*ledger_hub=*/ledger_hub_owned.get(),
+                                                             /*quote_hub=*/quote_hub_owned.get());
 
     // Inject EventInfo (G-FREEZE-W 只增: set_events 非热路径, 启动时调用一次)
     real_provider->set_events(std::move(event_infos));
