@@ -124,16 +124,20 @@ target_link_libraries(stcpp_debug_api PUBLIC Threads::Threads)
 # --real 依赖:
 #   stcpp_orderbook_snapshot_hub — per-token double-buffer (小冯, 零反向依赖)
 #   stcpp_risk                   — RmDebugSnapshot + attach/detach free functions (老沈)
+#   stcpp_ledger_snapshot_hub    — LedgerSnapshotHub positions/pnl hub (小石, 集成 ④)
 #   stcpp_sizing                 — SizingCalculator 真实 Kelly 计算 (小袁, ADR-042, 集成 ③)
+#   stcpp_quote_snapshot_hub     — QuoteSnapshotHub quote hub (小石, 集成 ④)
 #   stcpp_data_score_store       — ScoreSnapshotStore live feed 比分快照 (小段, 集成 ③)
 add_executable(stcpp_debug_server debug_server_main.cpp)
 target_link_libraries(stcpp_debug_server PRIVATE
     stcpp_debug_api
     stcpp_orderbook_snapshot_hub
     stcpp_risk
+    stcpp_ledger_snapshot_hub   # 集成 ④: positions/pnl hub (小石)
     stcpp_sizing
+    stcpp_quote_snapshot_hub    # 集成 ④: quote hub (小石)
     stcpp_data_score_store
-    stcpp_backtest          # ReplayDriver (--replay 模式, kSynthetic hub feed)
+    stcpp_backtest              # ReplayDriver (--replay 模式, kSynthetic hub feed)
 )
 target_include_directories(stcpp_debug_server PRIVATE
     ${CMAKE_SOURCE_DIR}

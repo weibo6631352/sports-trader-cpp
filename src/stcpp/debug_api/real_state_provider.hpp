@@ -3,15 +3,22 @@
 // Owner: 小卢 (senior-ic-pool)
 // last_review: 2026-05-29
 //
-// 设计概述 (集成 ③ 更新):
+// 设计概述 (集成 ④ 更新 — 小肖 replay-full-flow):
 //   真实接入路径:
 //     1. OrderBookSnapshotHub (小冯) — per-token double-buffer, book()/book_pair()
 //     2. RmDebugSnapshot (老沈)       — lock-free ring, risk_rejects()
 //     3. SizingCalculator (小袁)      — Kelly/notional 真实计算, quote_params()
 //     4. ScoreSnapshotStore (小段)    — live feed 比分快照, score()
+//     5. LedgerSnapshotHub (小石)     — positions()/pnl_attribution() 读 hub 快照
+//        (--replay 时由 ReplayFeedCoordinator 派生并 Publish; 无数据回落 Demo)
+//     6. QuoteSnapshotHub (小石)      — quote_params() 读 hub 快照
+//        (--replay 时由 ReplayFeedCoordinator 派生 SizingCalculator 真算; 无数据回落 Demo)
 //
-//   其余方法 (positions/pnl/gate/metrics/market) 委托 DemoStateProvider,
-//   data_source() 返回 "real" (score/quote 已接真实计算路径)。
+//   优先级: hub 有数据 → hub 快照; hub 无数据 → SizingCalculator demo 计算 → Demo fallback
+//
+//   R-12 合规: 全路径只读原子快照, 无持锁 > 100us
+//   R-11 合规: LedgerFeatures.mode 由写端填入; response 顶层 mode 字段来此
+//   R-20 合规: 4-ts 严格透传 hub 快照 (data_source_ts 来自合成链路, 非 now())
 //
 // quote_params() 真实计算 (SizingCalculator, ADR-042):
 //   输入: fair_value/edge_ci_lower/price/bankroll/RiskConfig (可配置 demo 输入, 计算路径真实)
@@ -57,9 +64,11 @@
 
 #include "stcpp/data/score_snapshot_store.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
-#include "stcpp/risk/risk_gateway.hpp"  // RiskConfig (SizingCalculator cap 注入源)
+#include "stcpp/risk/ledger_snapshot_hub.hpp"  // LedgerSnapshotHub (集成 ④)
+#include "stcpp/risk/risk_gateway.hpp"         // RiskConfig (SizingCalculator cap 注入源)
 #include "stcpp/risk/rm_debug_snapshot.hpp"
-#include "stcpp/sizing/sizing_calculator.hpp"  // SizingCalculator (Kelly 真实计算, ADR-042)
+#include "stcpp/sizing/quote_snapshot_hub.hpp"  // QuoteSnapshotHub (集成 ④)
+#include "stcpp/sizing/sizing_calculator.hpp"   // SizingCalculator (Kelly 真实计算, ADR-042)
 
 #include "src/stcpp/debug_api/demo_state_provider.hpp"
 #include "src/stcpp/debug_api/state_provider.hpp"
@@ -103,18 +112,24 @@ class RealStateProvider final : public StateProvider {
 public:
     // -------------------------------------------------------------------------
     // 构造
-    //   hub:        已初始化的 OrderBookSnapshotHub (caller 保证生命周期长于本对象)
-    //   snap:       已 attach 的 RmDebugSnapshot* (可为 nullptr; nullptr → risk_rejects 回落 Demo)
+    //   hub:         已初始化的 OrderBookSnapshotHub (caller 保证生命周期长于本对象)
+    //   snap:        已 attach 的 RmDebugSnapshot* (可为 nullptr; nullptr → risk_rejects 回落 Demo)
     //   score_store: ScoreSnapshotStore* (可为 nullptr; nullptr → score 回落 Demo)
-    //   tokens:     condition_id → (token0_id, token1_id) (可为空; 空 → book_pair 回落 Demo)
-    //   sizing_cfg: SizingCalculator 输入参数 (demo 值, 计算路径真实)
-    //   risk_cfg:   RiskConfig (cap 注入源, 禁复制字面量; 老韩 §3 强制)
-    //   m:          运行模式 (build-time 锁定)
+    //   tokens:      condition_id → (token0_id, token1_id) (可为空; 空 → book_pair 回落 Demo)
+    //   sizing_cfg:  SizingCalculator 输入参数 (demo 值, 计算路径真实)
+    //   risk_cfg:    RiskConfig (cap 注入源, 禁复制字面量; 老韩 §3 强制)
+    //   m:           运行模式 (build-time 锁定)
+    //   ledger_hub:  LedgerSnapshotHub* (可为 nullptr; nullptr → positions/pnl 回落 Demo)
+    //                --replay 时由 ReplayFeedCoordinator Publish; 无数据回落 Demo (集成 ④)
+    //   quote_hub:   QuoteSnapshotHub*  (可为 nullptr; nullptr → quote_params 回落 Demo/SizingCalc)
+    //                --replay 时由 ReplayFeedCoordinator Publish (集成 ④)
     // -------------------------------------------------------------------------
     explicit RealStateProvider(const polymarket::clob_wss::OrderBookSnapshotHub& hub,
                                const risk::RmDebugSnapshot* snap, const data::ScoreSnapshotStore* score_store,
                                MarketTokenMap tokens, SizingConfig sizing_cfg = {},
-                               risk::RiskConfig risk_cfg = {}, ExecMode m = ExecMode::Paper)
+                               risk::RiskConfig risk_cfg = {}, ExecMode m = ExecMode::Paper,
+                               const risk::LedgerSnapshotHub* ledger_hub = nullptr,
+                               const sizing::QuoteSnapshotHub* quote_hub = nullptr)
         : hub_(hub),
           snap_(snap),
           score_store_(score_store),
@@ -122,7 +137,9 @@ public:
           sizing_cfg_(sizing_cfg),
           risk_cfg_(risk_cfg),
           demo_(m),
-          mode_(m) {}
+          mode_(m),
+          ledger_hub_(ledger_hub),
+          quote_hub_(quote_hub) {}
 
     RealStateProvider(const RealStateProvider&) = delete;
     RealStateProvider& operator=(const RealStateProvider&) = delete;
@@ -133,14 +150,86 @@ public:
     // ---- 运行模式 ----
     ExecMode mode() const override { return mode_; }
 
-    // ---- 委托 Demo (尚无真实源) ----
-    std::vector<HoldingView> positions() const override { return demo_.positions(); }
+    // ---- positions — 读 LedgerSnapshotHub (集成 ④); 无数据回落 Demo ----
+    // LedgerFeatures → HoldingView 映射依据 ledger_snapshot_hub.hpp 末尾注释
+    // R-12: hub_.Read() 原子 acquire, 无持锁
+    // R-20: as_of_ts_ns 来自 LedgerFeatures.as_of_ts_ns (上游链路)
+    std::vector<HoldingView> positions() const override {
+        if (ledger_hub_ == nullptr) {
+            return demo_.positions();
+        }
+        // 遍历 token_map_ 的所有 condition_id (market_key), 从 ledger_hub_ 读快照
+        std::vector<HoldingView> out;
+        out.reserve(token_map_.size());
+        bool any_valid = false;
+        for (const auto& [cond_id, _] : token_map_) {
+            const auto opt = ledger_hub_->Read(cond_id);
+            if (!opt.has_value() || !opt->valid) {
+                continue;
+            }
+            const auto& lf = *opt;
+            HoldingView hv;
+            hv.market_id = cond_id;
+            // outcome: 用 DemoStateProvider 的 derive_outcomes 语义; 此处简化为空 (debug 可接受)
+            hv.outcome = derive_outcome_label(cond_id);
+            hv.net_qty = lf.net_qty;
+            hv.avg_entry_price = lf.avg_entry_price;
+            hv.mark_price = lf.mark_price;
+            hv.pnl_realized = lf.pnl_realized;
+            hv.pnl_unrealized = lf.pnl_unrealized;
+            hv.as_of_ts_ns = lf.as_of_ts_ns;
+            out.push_back(std::move(hv));
+            any_valid = true;
+        }
+        if (!any_valid) {
+            // hub 空 (ReplayDriver 尚未喂第一帧) → 回落 Demo
+            return demo_.positions();
+        }
+        return out;
+    }
 
     std::vector<PnlBucket> pnl_timeseries(std::int64_t w, std::int64_t b) const override {
         return demo_.pnl_timeseries(w, b);
     }
 
-    PnlAttribution pnl_attribution() const override { return demo_.pnl_attribution(); }
+    // ---- pnl_attribution — 读 LedgerSnapshotHub (集成 ④); 无数据回落 Demo ----
+    // 聚合所有 market_key 的 LedgerFeatures → PnlAttribution
+    // R-12: 全程只读原子快照; R-20: as_of_ts_ns 取最大 (最新帧)
+    PnlAttribution pnl_attribution() const override {
+        if (ledger_hub_ == nullptr) {
+            return demo_.pnl_attribution();
+        }
+        PnlAttribution attr;
+        attr.as_of_ts_ns = 0;
+        double gross = 0.0;
+        double fee = 0.0;
+        bool any_valid = false;
+        for (const auto& [cond_id, _] : token_map_) {
+            const auto opt = ledger_hub_->Read(cond_id);
+            if (!opt.has_value() || !opt->valid) {
+                continue;
+            }
+            const auto& lf = *opt;
+            gross += lf.pnl_gross;
+            fee -= lf.pnl_fee;  // fee 字段约定为正数 (已付); PnlAttribution.fee 为负 (扣减)
+            attr.as_of_ts_ns = std::max(attr.as_of_ts_ns, lf.as_of_ts_ns);
+            PnlPerMarket pm;
+            pm.market_id = cond_id;
+            pm.net_pnl = lf.pnl_net();  // pnl_gross - pnl_fee
+            attr.per_market.push_back(std::move(pm));
+            any_valid = true;
+        }
+        if (!any_valid) {
+            return demo_.pnl_attribution();
+        }
+        attr.gross = gross;
+        attr.fee = fee;
+        attr.gas = 0.0;          // 无 gas 数据源
+        attr.slippage = 0.0;     // 无 slippage 数据源
+        attr.spread = 0.0;       // 无 spread 数据源
+        attr.net = gross + fee;  // net = gross - |fee| (fee 已为负)
+        return attr;
+    }
 
     PaperGate paper_gate() const override { return demo_.paper_gate(); }
 
@@ -188,13 +277,22 @@ public:
         return demo_.score(event_id);
     }
 
-    // ---- quote_params — 接 SizingCalculator 真实计算 (ADR-042) ----
-    // 输入: demo/可配置 fair_value/edge_ci_lower/price/bankroll (SizingConfig)
-    // 计算: SizingCalculator::compute() → kelly_fraction/suggested_notional/net_ci_edge
-    // 守 5 cap 链 + CI gating (sizing_calculator.hpp §4)
-    // valid=false → 回落 DemoStateProvider.quote_params()
-    // AI provenance: advisory=true (ML-R2), model_id="demo-fv-v0" (demo 输入标记)
+    // ---- quote_params — 优先读 QuoteSnapshotHub (集成 ④); 无数据 → SizingCalculator → Demo ----
+    // 优先级: QuoteSnapshotHub (--replay 时 ReplayFeedCoordinator Publish 的真算结果)
+    //         → SizingCalculator demo 输入真算
+    //         → Demo fallback
+    // R-12: hub_.Read() 原子 acquire, 无持锁
+    // R-20: as_of_ts_ns 来自 QuoteFeatures.as_of_ts_ns (上游链路)
     QuoteParams quote_params(const std::string& condition_id) const override {
+        // 1. 优先从 QuoteSnapshotHub 读 (集成 ④)
+        if (quote_hub_ != nullptr) {
+            const auto opt = quote_hub_->Read(condition_id);
+            if (opt.has_value() && opt->valid) {
+                return to_quote_params(condition_id, *opt);
+            }
+            // hub 有注册但 valid=false (尚未 Publish) → 继续尝试 SizingCalculator
+        }
+        // 2. SizingCalculator demo 输入真算 (原有逻辑)
         // 构造 SizingInput (demo 输入值, 计算路径走真实 SizingCalculator)
         sizing::SizingInput in;
         in.fair_value = sizing_cfg_.demo_fair_value;
@@ -355,9 +453,10 @@ public:
         return bv;
     }
 
-    // ---- data_source — "real": book/rejects/score/quote 已接真实路径, 其余 demo ----
+    // ---- data_source — "real": book/rejects/score/quote/positions/pnl 已接真实路径 ----
     // score: ScoreSnapshotStore live feed (无 feed → 回落 demo)
-    // quote: SizingCalculator 真实 Kelly 计算 (demo 输入, 非 hardcode)
+    // quote: QuoteSnapshotHub (--replay) → SizingCalculator (demo 输入) → Demo
+    // positions/pnl: LedgerSnapshotHub (--replay) → Demo
     const char* data_source() const override { return "real"; }
 
 private:
@@ -369,6 +468,8 @@ private:
     risk::RiskConfig risk_cfg_;  // cap 注入源 (禁复制字面量, 老韩 §3)
     DemoStateProvider demo_;
     ExecMode mode_;
+    const risk::LedgerSnapshotHub* ledger_hub_{nullptr};  // nullable; nullptr → 回落 Demo (集成 ④)
+    const sizing::QuoteSnapshotHub* quote_hub_{nullptr};  // nullable; nullptr → 回落 Demo (集成 ④)
 
     // -----------------------------------------------------------------------
     // to_book_snapshot — OrderBookFeatures → BookSnapshot
@@ -435,6 +536,83 @@ private:
 
     // NaN/inf 安全转换: 无效数值置 0 避免 JSON 非法输出
     static double nan_to_zero(double v) noexcept { return (std::isfinite(v)) ? v : 0.0; }
+
+    // -----------------------------------------------------------------------
+    // to_quote_params — QuoteFeatures → QuoteParams (集成 ④)
+    //
+    // 映射依据 quote_snapshot_hub.hpp 末尾"映射说明"注释。
+    // R-20: as_of_ts_ns 来自 QuoteFeatures.as_of_ts_ns (上游链路, 非 now())。
+    // -----------------------------------------------------------------------
+    static QuoteParams to_quote_params(const std::string& condition_id,
+                                       const sizing::QuoteFeatures& qf) noexcept {
+        QuoteParams q;
+        q.found = qf.valid;
+        q.market_id = condition_id;
+        q.as_of_ts_ns = qf.as_of_ts_ns;
+
+        q.fair_value = qf.fair_value;
+        q.market_mid = qf.market_mid;
+        q.edge_bps = qf.edge_bps;
+        q.kelly_fraction = qf.kelly_fraction;
+        q.suggested_notional = qf.suggested_notional;
+        q.signal_strength = qf.signal_strength;
+
+        // model_confidence → model_conf (deprecated alias, G-FREEZE-W)
+        q.model_confidence = qf.model_confidence;
+        q.model_conf = qf.model_confidence;
+
+        // char[] → std::string (QuoteFeatures POD; 保证 nul 终止)
+        q.model_id = std::string(qf.model_id);
+        q.spec_version = std::string(qf.spec_version);
+
+        // ModelKindTag → string
+        switch (qf.model_kind) {
+            case sizing::ModelKindTag::kOnnx:
+                q.model_kind = "onnx";
+                break;
+            case sizing::ModelKindTag::kTreelite:
+                q.model_kind = "treelite";
+                break;
+            default:
+                q.model_kind = "stub";
+                break;
+        }
+        q.model_calibrated = qf.model_calibrated;
+        q.fair_ci_lower = qf.fair_ci_lower;
+        q.fair_ci_upper = qf.fair_ci_upper;
+        q.predict_ok = qf.predict_ok;
+        q.model_as_of_ts_ns = qf.model_as_of_ts_ns;
+        q.advisory = qf.advisory;
+        return q;
+    }
+
+    // -----------------------------------------------------------------------
+    // derive_outcome_label — condition_id → outcome label (简化版; debug 用途)
+    //
+    // 与 DemoStateProvider::derive_outcomes() 对齐: 提取 primary token outcome。
+    // 生产接入后改读 LedgerFeatures.market_key 附带的 outcome 字段。
+    // -----------------------------------------------------------------------
+    static std::string derive_outcome_label(const std::string& cond_id) {
+        if (cond_id.find("nba-lal-bos-ml") != std::string::npos) {
+            return "LAL";
+        }
+        if (cond_id.find("nba-lal-bos-total") != std::string::npos) {
+            return "OVER_220.5";
+        }
+        if (cond_id.find("nba-lal-bos-spread") != std::string::npos) {
+            return "LAL_-5.5";
+        }
+        if (cond_id.find("epl-ars-che") != std::string::npos) {
+            return "OVER_2.5";
+        }
+        if (cond_id.find("nfl-kc-buf") != std::string::npos) {
+            return "KC_-3.5";
+        }
+        if (cond_id.find("mlb-nyy-bos") != std::string::npos) {
+            return "NYY";
+        }
+        return "YES";  // 默认
+    }
 };
 
 }  // namespace stcpp::debug_api
