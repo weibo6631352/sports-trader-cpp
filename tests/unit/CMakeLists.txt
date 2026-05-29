@@ -1,8 +1,10 @@
 # tests/unit/CMakeLists.txt — gtest 单测
-# Sprint-2 W3 Wave 18:
-#   - 小肖 SlippageModel 7 case
-#   - 小宋 RM 21 reject enum coverage placeholder
-#   - 老王 WAL framework skeleton (path prefix + PIT + header layout + sync p99)
+#
+# ADR-039 §9 F2: CMake 测试自动发现重构 (老吴, 2026-05-29)
+#   - file(GLOB CONFIGURE_DEPENDS "test_*.cpp") + foreach 循环统一注册
+#   - per-test 特殊 link 依赖 / 编译宏 / 超时 / label 通过映射表注入
+#   - 新增测试只需新建 test_xxx.cpp，不需要修改本文件
+#   - 并行 worktree 不再在此冲突 (ADR-039 §10 §13 F2)
 #
 # GoogleTest / GoogleTest FetchContent + GoogleTest module 由顶层 tests/CMakeLists.txt 提供
 # (避免子目录重复 FetchContent 拉 git)
@@ -16,1377 +18,310 @@
 #     -Wno-cast-align        — gtest mock 对象转型触发
 #     -Wno-invalid-offsetof  — WAL/audit/ml/position TU #include .cpp 模板实例化触发 (仅相关 target)
 
-add_executable(test_slippage_model
-    test_slippage_model.cpp
-)
-target_link_libraries(test_slippage_model PRIVATE GTest::gtest_main)
-target_compile_options(test_slippage_model PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_slippage_model PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_slippage_model PRIVATE cxx_std_20)
-target_compile_definitions(test_slippage_model PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_slippage_model
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit"
-)
-
-# 小宋: RM 21 reject enum coverage (W3 placeholder, W4+ owner 切真 RM)
-add_executable(stcpp_test_unit_risk
-    risk_enum_coverage_test.cpp
-)
-target_link_libraries(stcpp_test_unit_risk PRIVATE GTest::gtest_main)
-target_compile_options(stcpp_test_unit_risk PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(stcpp_test_unit_risk PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(stcpp_test_unit_risk PRIVATE cxx_std_20)
-target_compile_definitions(stcpp_test_unit_risk PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(stcpp_test_unit_risk
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;risk;w3-placeholder"
-)
-
-# 老王: WAL framework skeleton (派单 §7)
-#   T1 R-11 path prefix abort (death test)
-#   T2 R-20 PIT assert chain (5 violation case)
-#   T3 同步 Append p99 ≤ 6us (gtest 兜底, GoogleBench W4)
-#   T4 header v2 64B + offset (老唐 v1.1 §2.x 对齐)
-add_executable(test_wal_writer
-    test_wal_writer.cpp
-)
-target_link_libraries(test_wal_writer PRIVATE GTest::gtest_main)
-target_include_directories(test_wal_writer PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_wal_writer PRIVATE cxx_std_20)
-target_compile_definitions(test_wal_writer PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-# 测试 TU 自带 #include wal_writer.cpp 做模板实例化 — 关 offsetof 警告 + 重复 macro 警告
-target_compile_options(test_wal_writer PRIVATE
-    -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
+# ============================================================================
+# §1  公共 -Wno grandfather (ADR-010 §2.2, 全 unit test target 适用)
+# ============================================================================
+set(_STCPP_UNIT_COMMON_OPTS
     -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
     -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
     -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
 )
-gtest_discover_tests(test_wal_writer
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;wal;w3"
-)
 
-# 老唐: AuditEmitter v0.1 (派单 W4 Wave 19)
-#   A1 12 AET emit  A2 hash chain 3-record  A3 4 ts PIT  A4 reject invariant
-#   A5 concept + 实例化  A6 misuse 拒绝  A7 decision_ts < as_of 拒绝
-add_executable(test_audit_emitter
-    test_audit_emitter.cpp
-)
-# GM 错 #11 hotfix (W6 W2): test_audit_emitter 需链 stcpp_observability_audit 才能拿 blake3.h include 路径
-target_link_libraries(test_audit_emitter PRIVATE GTest::gtest_main stcpp_observability_audit)
-target_include_directories(test_audit_emitter PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_audit_emitter PRIVATE cxx_std_20)
-target_compile_definitions(test_audit_emitter PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-# TU 内 #include audit_emitter.cpp 做模板实例化 — 关 offsetof 警告
-target_compile_options(test_audit_emitter PRIVATE
-    -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-gtest_discover_tests(test_audit_emitter
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;audit;w4"
-)
+# ============================================================================
+# §2  映射表: per-test 特殊属性
+#
+#   EXTRA_LIBS_<target>   — 追加链接库 (空 = 仅 GTest::gtest_main)
+#   EXTRA_DEFS_<target>   — 追加 compile_definitions (STCPP_EXEC_MODE_* 已在循环中统一注入)
+#   EXTRA_OPTS_<target>   — 追加 compile_options (在公共 grandfather 之外)
+#   TIMEOUT_<target>      — gtest_discover_tests DISCOVERY_TIMEOUT (默认 30)
+#   LABELS_<target>       — gtest_discover_tests PROPERTIES LABELS (默认 "unit")
+# ============================================================================
 
-# 老韩 Sprint-2 W4 Wave 19: RiskGateway v0.1 真实现单测
-#   - 21 reject enum × ≥ 1 case (跑真 RM, 不走 mock fixture)
-#   - INVALID_INTENT × 9 sub_reason (R-20 4 ts PIT + 字段)
-#   - 状态机 5 态转移 (SAFE_MODE / DRAIN / HALTED / RUNNING / WARNING)
-#   - SlippageModel 联动 (depth / fill_rate / slippage_bps)
-#   - WAL emit 联动 (InMemoryEmitter mock; W5 接老唐 obs::AuditEmitter)
-add_executable(test_risk_gateway
-    test_risk_gateway.cpp
-)
-target_link_libraries(test_risk_gateway PRIVATE
-    GTest::gtest_main
-    stcpp_risk
-)
-target_compile_options(test_risk_gateway PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_risk_gateway PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_risk_gateway PRIVATE cxx_std_20)
-target_compile_definitions(test_risk_gateway PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_risk_gateway
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;risk;w4"
-)
+# --- 链接库映射 ---
+set(EXTRA_LIBS_test_audit_emitter       stcpp_observability_audit)
+set(EXTRA_LIBS_test_risk_gateway        stcpp_risk)
+set(EXTRA_LIBS_test_risk_gateway_wave3  stcpp_risk)
+set(EXTRA_LIBS_test_goalserve_client    stcpp_data_goalserve)
+set(EXTRA_LIBS_test_paper_signer        stcpp_signer_paper stcpp_infra_wal)
+set(EXTRA_LIBS_test_virtual_matcher     stcpp_execution_paper stcpp_infra_wal)
+set(EXTRA_LIBS_test_p0_01_signal        stcpp_strategy)
+set(EXTRA_LIBS_test_p0_01_goalserve_devig stcpp_strategy)
+set(EXTRA_LIBS_test_gate_evaluator      stcpp_stats)
+set(EXTRA_LIBS_test_fill_rate_model     stcpp_microstructure stcpp_data_goalserve)
+set(EXTRA_LIBS_test_live_section_classifier stcpp_strategy)
+set(EXTRA_LIBS_test_pm_client_abi       stcpp_infra_wal)
+set(EXTRA_LIBS_test_fair_value_model    stcpp_ml_inference)
+set(EXTRA_LIBS_test_single_instance     stcpp_process_lock_test)
+set(EXTRA_LIBS_test_position_ledger     stcpp_infra_wal stcpp_process_lock_test)
+set(EXTRA_LIBS_test_pm_wss_subscriber   stcpp_polymarket_wss)
+set(EXTRA_LIBS_test_clob_subscriber     stcpp_polymarket_clob_wss)
+set(EXTRA_LIBS_test_ingest_raw          stcpp_ingest_raw_writer stcpp_infra_wal)
+set(EXTRA_LIBS_test_spsc_queue          stcpp_infra_spsc)
+set(EXTRA_LIBS_test_goalserve_schema    stcpp_data_contract)
+set(EXTRA_LIBS_test_blake3_audit        stcpp_observability_audit)
+set(EXTRA_LIBS_test_audit_schema_v13    stcpp_observability_audit)
+set(EXTRA_LIBS_test_audit_schema_v14    stcpp_observability_audit)
+set(EXTRA_LIBS_test_position_ledger_w76 stcpp_risk)
+set(EXTRA_LIBS_test_outbound_serializer stcpp_net_outbound stcpp_infra_wal stcpp_infra_spsc)
+set(EXTRA_LIBS_test_goalserve_adapter   stcpp_data_contract)
+set(EXTRA_LIBS_test_fair_value_estimator stcpp_pricing)
+set(EXTRA_LIBS_test_backtest_types      stcpp_backtest)
+set(EXTRA_LIBS_test_backtest_walk_forward stcpp_backtest)
+set(EXTRA_LIBS_test_backtest_metrics    stcpp_backtest)
+set(EXTRA_LIBS_test_backtest_stats      stcpp_backtest)
+set(EXTRA_LIBS_test_backtest_event_replayer stcpp_backtest stcpp_microstructure)
+set(EXTRA_LIBS_test_feature_store_contract stcpp_data_contract)
+set(EXTRA_LIBS_test_orderbook_adapter   stcpp_polymarket_clob_wss)
 
-# 老沈 Wave 3 P0: RiskGateway Wave 3 缺口单测
-#   D1: DD -3% 软熔断 / -5% 硬 kill 分层 (GM §9 裁决 #1) — 7 case
-#   D2+D3: TS_V2_MISSING/STALE/FUTURE + INVALID_BYTES32_FORMAT — 8 case
-#   D4: fee estimate net_edge 校验 (R-fee-2) — 5 case
-#   D5: emit_audit_ 透传 timestamp_ms/metadata/builder — 5 case
-#   enum 确认 (非强 freeze, 待老郭架构评审 ack) — 1 case
-#   组合短路顺序 — 2 case
-# cite: laoshen-rm-v0.5-field-freeze-spec-v1.md §6 delta D1-D5
-#       laolei-2026-drive-directive-paper-profit-v1.md §9 裁决 #1
-add_executable(test_risk_gateway_wave3
-    test_risk_gateway_wave3.cpp
+# --- 追加 compile_definitions 映射 ---
+# (仅列出 STCPP_EXEC_MODE_* 以外的额外 define)
+set(EXTRA_DEFS_test_blake3_audit        BLAKE3_REAL=1)
+set(EXTRA_DEFS_test_audit_schema_v13    BLAKE3_REAL=1)
+set(EXTRA_DEFS_test_audit_schema_v14    BLAKE3_REAL=1)
+set(EXTRA_DEFS_test_single_instance
+    STCPP_PID_DIR="/tmp/stcpp_test"
+    STCPP_BUILD_COMMIT="test-build"
 )
-target_link_libraries(test_risk_gateway_wave3 PRIVATE
-    GTest::gtest_main
-    stcpp_risk
+set(EXTRA_DEFS_test_position_ledger
+    STCPP_POSITION_WAL_PREFIX="/var/lib/stcpp/paper/position"
+    STCPP_PID_DIR="/tmp/stcpp_test"
+    STCPP_BUILD_COMMIT="test-build"
 )
-target_compile_options(test_risk_gateway_wave3 PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_risk_gateway_wave3 PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_risk_gateway_wave3 PRIVATE cxx_std_20)
-target_compile_definitions(test_risk_gateway_wave3 PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_risk_gateway_wave3
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;risk;wave3;dd-soft;ts-v2;fee-estimate;audit-v14;p0"
-)
+set(EXTRA_DEFS_test_ingest_raw          STCPP_INGEST_RAW_WAL_PREFIX="/var/lib/stcpp/ingest/paper")
 
-# 小段 Sprint-2 W4 Wave 19: Goalserve client v0.1 stub
-#   T1 URL builder 5 host x 8 sport 40 combos
-#   T2 TimeStatus 11 enum 闭合 (0-9 + 99)
-#   T3 GameRecord/OddsRecord 4 ts 不等式 (R-20)
-#   T4 ts 增量 round-trip
-#   T5 sport 命名陷阱 (basket vs bsktbl, amfootball, tennis_scores, soccernew)
-#   T6 ParseLastUpdateNs 两种格式 ("dd.MM.yyyy HH:mm" + ISO 8601)
-#   T7 NowIngestionNs 单调 + TsMsToNs 精度
-#   T8 Stub Fetch 4-ts 自然成立
-add_executable(test_goalserve_client
-    test_goalserve_client.cpp
-)
-target_link_libraries(test_goalserve_client PRIVATE
-    GTest::gtest_main
-    stcpp_data_goalserve
-)
-target_include_directories(test_goalserve_client PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_goalserve_client PRIVATE cxx_std_20)
-target_compile_options(test_goalserve_client PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_compile_definitions(test_goalserve_client PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_goalserve_client
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;goalserve;w4"
-)
+# --- 追加 compile_options 映射 ---
+# (在公共 grandfather 3 项之外追加)
+set(EXTRA_OPTS_test_wal_writer          -Wno-invalid-offsetof)
+set(EXTRA_OPTS_test_audit_emitter       -Wno-invalid-offsetof)
+set(EXTRA_OPTS_test_ml_hook             -Wno-invalid-offsetof)
+set(EXTRA_OPTS_test_pm_client_abi       -Wno-invalid-offsetof)
+set(EXTRA_OPTS_test_position_ledger     -Wno-invalid-offsetof)
+set(EXTRA_OPTS_test_blake3_audit        -Wno-invalid-offsetof)
+set(EXTRA_OPTS_test_audit_schema_v13    -Wno-invalid-offsetof)
+set(EXTRA_OPTS_test_audit_schema_v14    -Wno-invalid-offsetof)
+# backtest group: -Wno-conversion (size_t → double 统计计算)
+set(EXTRA_OPTS_test_backtest_types          -Wno-conversion)
+set(EXTRA_OPTS_test_backtest_walk_forward   -Wno-conversion)
+set(EXTRA_OPTS_test_backtest_metrics        -Wno-conversion)
+set(EXTRA_OPTS_test_backtest_stats          -Wno-conversion)
+set(EXTRA_OPTS_test_backtest_event_replayer -Wno-conversion)
 
-# 小蒋 W4 Wave 19: paper engine signer 3 mock + ExecutionContext (R-7 双调 abort)
-add_executable(test_paper_signer
-    test_paper_signer.cpp
-)
-target_link_libraries(test_paper_signer PRIVATE
-    GTest::gtest_main
-    stcpp_signer_paper
-    stcpp_infra_wal
-)
-target_compile_options(test_paper_signer PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_paper_signer PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_paper_signer PRIVATE cxx_std_20)
-target_compile_definitions(test_paper_signer PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_paper_signer
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;paper;signer;w4"
-)
+# --- DISCOVERY_TIMEOUT 映射 (默认 30) ---
+set(TIMEOUT_test_spsc_queue         60)
+set(TIMEOUT_test_signer_v53_pit     60)
+set(TIMEOUT_test_signer_v62         60)
+set(TIMEOUT_test_backtest_metrics   60)
 
-# 小蒋 W4 Wave 19: VirtualMatcher Mode A++ Bernoulli + R-11 PaperAudit 硬绑
-add_executable(test_virtual_matcher
-    test_virtual_matcher.cpp
-)
-target_link_libraries(test_virtual_matcher PRIVATE
-    GTest::gtest_main
-    stcpp_execution_paper
-    stcpp_infra_wal
-)
-target_compile_options(test_virtual_matcher PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_virtual_matcher PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_virtual_matcher PRIVATE cxx_std_20)
-target_compile_definitions(test_virtual_matcher PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_virtual_matcher
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;paper;matcher;w4"
-)
+# --- LABELS 映射 (默认 "unit") ---
+set(LABELS_test_slippage_model             "unit")
+set(LABELS_test_wal_writer                 "unit;wal;w3")
+set(LABELS_test_audit_emitter              "unit;audit;w4")
+set(LABELS_test_risk_gateway               "unit;risk;w4")
+set(LABELS_test_risk_gateway_wave3         "unit;risk;wave3;dd-soft;ts-v2;fee-estimate;audit-v14;p0")
+set(LABELS_test_goalserve_client           "unit;goalserve;w4")
+set(LABELS_test_paper_signer               "unit;paper;signer;w4")
+set(LABELS_test_virtual_matcher            "unit;paper;matcher;w4")
+set(LABELS_test_p0_01_signal               "unit;signal;strategy;w4")
+set(LABELS_test_p0_01_goalserve_devig      "unit;signal;strategy;adr-008;w6")
+set(LABELS_test_gate_evaluator             "unit;stats;gate;w4")
+set(LABELS_test_fill_rate_model            "unit;microstructure;w4")
+set(LABELS_test_fill_rate_model_v2         "unit;microstructure;clob;mode-a;wave3")
+set(LABELS_test_live_section_classifier    "unit;signal;strategy;w4")
+set(LABELS_test_pm_client_abi              "unit;polymarket;abi-lock;w6")
+set(LABELS_test_paper_pm_client            "unit;polymarket;paper;w5")
+set(LABELS_test_ml_hook                    "unit;ml;w4")
+set(LABELS_test_fair_value_model           "unit;ml;adr037")
+set(LABELS_test_single_instance            "unit;process;single-instance;w5;w6")
+set(LABELS_test_position_ledger            "unit;wal;position;w6;p0")
+set(LABELS_test_pm_wss_subscriber          "unit;polymarket;wss;w5")
+set(LABELS_test_clob_subscriber            "unit;polymarket;clob-wss;adr027;wave79;w9")
+set(LABELS_test_ingest_raw                 "unit;wal;ingest-raw;ds-01;w6")
+set(LABELS_test_spsc_queue                 "unit;spsc;lock-free;w6")
+set(LABELS_test_goalserve_schema           "unit;goalserve;schema;data-contract;adr-008;w6")
+set(LABELS_test_strategy_unlock            "unit;risk;three-sig;strategy-unlock;w6;smell-4")
+set(LABELS_test_blake3_audit               "unit;audit;blake3;w6;m1-a06;smell-a;smell-2")
+set(LABELS_test_audit_schema_v13           "unit;audit;schema-v13;token_id;outcome;side;migration;adr027;w9")
+set(LABELS_test_audit_schema_v14           "unit;audit;schema-v14;timestamp_ms;metadata;builder;pUSD;migration;adr027;wave98;w10")
+set(LABELS_test_signer_v52                 "unit;signer;v52;ed25519;ipc;w6")
+set(LABELS_test_signer_v53_pit             "unit;signer;v53;token_id;side;adr027;w9")
+set(LABELS_test_signer_v62                 "unit;signer;v62;transformer;adr027;wave104;w10")
+set(LABELS_test_position_ledger_w76        "unit;risk;position-ledger;state-machine;adr027;wave76;w9")
+set(LABELS_test_outbound_serializer        "unit;net;outbound;serializer;backpressure;a-net-01;wave3")
+set(LABELS_test_goalserve_adapter          "unit;goalserve;adapter;vendor-agnostic;adr-037")
+set(LABELS_test_fair_value_estimator       "unit;pricing;fair-value;numerical;adr-037")
+set(LABELS_test_backtest_types             "unit;backtest;types;r20;pit;backtest-v0.2")
+set(LABELS_test_backtest_walk_forward      "unit;backtest;walk-forward;guard;purged-kfold;backtest-v0.2")
+set(LABELS_test_backtest_metrics           "unit;backtest;metrics;sharpe;mdd;bootstrap;backtest-v0.2")
+set(LABELS_test_backtest_stats             "unit;backtest;stats;bonferroni;dsr;overfitting;backtest-v0.2")
+set(LABELS_test_backtest_event_replayer    "unit;backtest;event-replayer;ledger;fill-rate;br1;br5;backtest-v0.2")
+set(LABELS_test_feature_store_contract     "unit;feature-store;data-contract;adr-037;vendor-agnostic;pit")
+set(LABELS_test_orderbook_adapter          "unit;polymarket;clob-wss;orderbook-adapter;r-20;r-12;v0.1")
 
-# 小卢 W4 Wave 19: P0-01 Pinnacle no-vig signal (小程 spec v0.1 实施)
-add_executable(test_p0_01_signal
-    test_p0_01_signal.cpp
-)
-target_link_libraries(test_p0_01_signal PRIVATE
-    GTest::gtest_main
-    stcpp_strategy
-)
-target_compile_options(test_p0_01_signal PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_p0_01_signal PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_p0_01_signal PRIVATE cxx_std_20)
-target_compile_definitions(test_p0_01_signal PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_p0_01_signal
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;signal;strategy;w4"
-)
+# ============================================================================
+# §3  核心辅助宏: stcpp_add_unit_test(<target> <source>)
+#     注册一个 unit test target, 应用公共配置 + 从映射表注入特殊属性
+# ============================================================================
+macro(stcpp_add_unit_test _target _source)
+    add_executable(${_target} ${_source})
 
-# 小卢 W6 Wave 28: P0-01 Goalserve multiplicative de-vig (ADR-008 实施)
-#   T1: 公式 paper case (3 家 mock odds)
-#   T2: 8-9 家完整 case (与 Pinnacle no-vig 结果差异 < 2%)
-#   T3: < 3 家 fallback (valid=false, 信号不触发)
-#   T4: 5 触发条件不变 (R-20 + 5 cond + size clip, 与 W4 25 测试逻辑等价)
-#   T5: feature_snapshot_id ABI 不动 (小邓 ML column index 4/5 锁死)
-add_executable(test_p0_01_goalserve_devig
-    test_p0_01_goalserve_devig.cpp
-)
-target_link_libraries(test_p0_01_goalserve_devig PRIVATE
-    GTest::gtest_main
-    stcpp_strategy
-)
-target_compile_options(test_p0_01_goalserve_devig PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_p0_01_goalserve_devig PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_p0_01_goalserve_devig PRIVATE cxx_std_20)
-target_compile_definitions(test_p0_01_goalserve_devig PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_p0_01_goalserve_devig
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;signal;strategy;adr-008;w6"
-)
-
-# 小董 W4 Wave 20: M4.5 7 hard gate statistical framework v1
-#   G1-G7 × pass/fail (14 核心) + boundary (50/49, 8.0/8.01%) + NaN/Inf + bootstrap 确定性 + PIT
-add_executable(test_gate_evaluator
-    test_gate_evaluator.cpp
-)
-target_link_libraries(test_gate_evaluator PRIVATE
-    GTest::gtest_main
-    stcpp_stats
-)
-target_compile_options(test_gate_evaluator PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_gate_evaluator PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_gate_evaluator PRIVATE cxx_std_20)
-target_compile_definitions(test_gate_evaluator PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_gate_evaluator
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;stats;gate;w4"
-)
-
-# 小袁 W4 Wave 20: FillRateModel v0.1 + 8 sport profile + Microprobe 20 测试
-add_executable(test_fill_rate_model
-    test_fill_rate_model.cpp
-)
-target_link_libraries(test_fill_rate_model PRIVATE
-    GTest::gtest_main
-    stcpp_microstructure
-    stcpp_data_goalserve
-)
-target_compile_options(test_fill_rate_model PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_fill_rate_model PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_fill_rate_model PRIVATE cxx_std_20)
-target_compile_definitions(test_fill_rate_model PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_fill_rate_model
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;microstructure;w4"
-)
-
-# 小袁 Wave 3: FillRateModel v0.2 (compute_from_clob_book) + VirtualMatcher Mode A (MatchWithBook)
-#   ClobFill T01-T10: queue position fill probability (真实 CLOB depth)
-#   MatchWithBook T11-T18: Mode A paper 撮合 (R-11 PaperAudit / R-20 4 ts / 部分成交 / slippage)
-#   T19-T20: 纯函数确定性 + sum_penalties 公式校验
-# R-7 paper mode only (MatchWithBook 依赖 stcpp_execution_paper)
-if(STCPP_EXEC_MODE STREQUAL "paper")
-    add_executable(test_fill_rate_model_v2
-        test_fill_rate_model_v2.cpp
-    )
-    target_link_libraries(test_fill_rate_model_v2 PRIVATE
+    # 公共链接: GTest::gtest_main + 特殊库
+    target_link_libraries(${_target} PRIVATE
         GTest::gtest_main
+        ${EXTRA_LIBS_${_target}}
+    )
+
+    # 公共 include 路径
+    target_include_directories(${_target} PRIVATE
+        ${CMAKE_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/include
+    )
+
+    # C++20 标准
+    target_compile_features(${_target} PRIVATE cxx_std_20)
+
+    # 公共 define + 特殊 define
+    target_compile_definitions(${_target} PRIVATE
+        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+        ${EXTRA_DEFS_${_target}}
+    )
+
+    # 公共 grandfather 选项 + 特殊选项
+    target_compile_options(${_target} PRIVATE
+        ${_STCPP_UNIT_COMMON_OPTS}
+        ${EXTRA_OPTS_${_target}}
+    )
+
+    # DISCOVERY_TIMEOUT: 优先映射表, 否则默认 30
+    if(DEFINED TIMEOUT_${_target})
+        set(_timeout ${TIMEOUT_${_target}})
+    else()
+        set(_timeout 30)
+    endif()
+
+    # LABELS: 优先映射表, 否则默认 "unit"
+    if(DEFINED LABELS_${_target})
+        set(_labels "${LABELS_${_target}}")
+    else()
+        set(_labels "unit")
+    endif()
+
+    gtest_discover_tests(${_target}
+        DISCOVERY_TIMEOUT ${_timeout}
+        PROPERTIES LABELS "${_labels}"
+    )
+endmacro()
+
+# ============================================================================
+# §4  legacy 异常 target: stcpp_test_unit_risk
+#     target 名与 source 名均非 test_*.cpp 规范, 单独注册
+#     标签 "unit;risk;w3-placeholder" 同原来
+# ============================================================================
+set(LABELS_stcpp_test_unit_risk "unit;risk;w3-placeholder")
+stcpp_add_unit_test(stcpp_test_unit_risk risk_enum_coverage_test.cpp)
+
+# ============================================================================
+# §5  无条件 test_*.cpp 自动发现 + 注册
+#     (条件编译 target 排除在此列表之外, 在 §6 各条件块中单独处理)
+# ============================================================================
+
+# 条件编译 target 文件名集合 (用于从 GLOB 中排除, 避免在不满足条件时尝试注册)
+set(_STCPP_CONDITIONAL_SRCS
+    test_fill_rate_model_v2.cpp     # paper only
+    test_paper_pm_client.cpp        # paper only
+    test_ml_hook.cpp                # paper|backtest only
+    test_signer_v52.cpp             # paper only
+    test_signer_v53_pit.cpp         # paper only
+    test_signer_v62.cpp             # paper only
+    test_strategy_unlock.cpp        # STCPP_BUILD_CLI only
+    # deferred / not-yet-buildable stubs (target library not yet implemented):
+    test_parquet_writer_stub.cpp    # W7+ HC-06 deferred; stcpp_data_parquet not yet built
+)
+
+file(GLOB _ALL_UNIT_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp")
+
+foreach(_src ${_ALL_UNIT_SRCS})
+    get_filename_component(_fname "${_src}" NAME)
+    get_filename_component(_stem  "${_src}" NAME_WE)  # stem = test_xxx
+
+    # 跳过条件编译 target (由 §6 各条件块处理)
+    if(_fname IN_LIST _STCPP_CONDITIONAL_SRCS)
+        continue()
+    endif()
+
+    stcpp_add_unit_test(${_stem} ${_fname})
+endforeach()
+
+# ============================================================================
+# §6  条件编译 target (EXEC_MODE guard / BUILD_CLI guard)
+# ============================================================================
+
+# --- paper only ---
+if(STCPP_EXEC_MODE STREQUAL "paper")
+
+    # 小袁 Wave 3: FillRateModel v0.2 (compute_from_clob_book) + VirtualMatcher Mode A
+    set(EXTRA_LIBS_test_fill_rate_model_v2
         stcpp_execution_paper
         stcpp_microstructure
         stcpp_infra_wal
     )
-    target_compile_options(test_fill_rate_model_v2 PRIVATE
-        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    )
-    target_include_directories(test_fill_rate_model_v2 PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    target_compile_features(test_fill_rate_model_v2 PRIVATE cxx_std_20)
-    target_compile_definitions(test_fill_rate_model_v2 PRIVATE
-        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    )
-    gtest_discover_tests(test_fill_rate_model_v2
-        DISCOVERY_TIMEOUT 30
-        PROPERTIES LABELS "unit;microstructure;clob;mode-a;wave3"
-    )
-endif()
+    stcpp_add_unit_test(test_fill_rate_model_v2 test_fill_rate_model_v2.cpp)
 
-# 小卢 W4 Wave 19: LiveSection 5 enum 分类 (老李 GM 逆向反推)
-add_executable(test_live_section_classifier
-    test_live_section_classifier.cpp
-)
-target_link_libraries(test_live_section_classifier PRIVATE
-    GTest::gtest_main
-    stcpp_strategy
-)
-target_compile_options(test_live_section_classifier PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_live_section_classifier PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_live_section_classifier PRIVATE cxx_std_20)
-target_compile_definitions(test_live_section_classifier PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_live_section_classifier
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;signal;strategy;w4"
-)
-
-# 老李 W6 Wave 29: IPolymarketClient ABI lock (Smell #C handshake)
-#   T1: 14 接口 ABI hash 表 (与 handshake 文档 §2 一致)
-#   T2: TimestampQuad sizeof=40 + 5 offsetof; SignedOrder/OrderAck 字段存在性
-#   T3: PMErrorKind 10 值 + OrderStatus 7 值不变
-#   T4: TimestampQuad 4 ts PIT chain 语义 + DataSourceTsSource 4 值锁定
-# paper + live 双 mode 都链 (ABI lock 是共享 core, R-7 不影响本测试)
-add_executable(test_pm_client_abi
-    test_pm_client_abi.cpp
-)
-target_link_libraries(test_pm_client_abi PRIVATE
-    GTest::gtest_main
-    stcpp_infra_wal
-)
-target_compile_options(test_pm_client_abi PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    -Wno-invalid-offsetof
-)
-target_include_directories(test_pm_client_abi PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_pm_client_abi PRIVATE cxx_std_20)
-target_compile_definitions(test_pm_client_abi PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_pm_client_abi
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;polymarket;abi-lock;w6"
-)
-
-# 老李 W5 Wave 24: PaperPolymarketClient v0.1 (14 接口 paper mock, R-7/R-11/R-20 enforce)
-# 仅 paper mode link (R-7 物理隔离, live mode 此 target 不存在)
-if(STCPP_EXEC_MODE STREQUAL "paper")
-    add_executable(test_paper_pm_client
-        test_paper_pm_client.cpp
-    )
-    target_link_libraries(test_paper_pm_client PRIVATE
-        GTest::gtest_main
+    # 老李 W5 Wave 24: PaperPolymarketClient v0.1 (14 接口 paper mock, R-7/R-11/R-20 enforce)
+    set(EXTRA_LIBS_test_paper_pm_client
         stcpp_polymarket_paper
         stcpp_infra_wal
     )
-    target_compile_options(test_paper_pm_client PRIVATE
-        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-        -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-    target_include_directories(test_paper_pm_client PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/include
+    stcpp_add_unit_test(test_paper_pm_client test_paper_pm_client.cpp)
+
+    # 老孙 W6 Wave 30: signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
+    set(EXTRA_LIBS_test_signer_v52
+        stcpp_signer_v52_paper
+        stcpp_infra_wal
     )
-    target_compile_features(test_paper_pm_client PRIVATE cxx_std_20)
-    target_compile_definitions(test_paper_pm_client PRIVATE
-        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    stcpp_add_unit_test(test_signer_v52 test_signer_v52.cpp)
+
+    # 老孙 W9 Wave 58: signer v5.3 新增 7 ctest
+    set(EXTRA_LIBS_test_signer_v53_pit
+        stcpp_signer_v52_paper
+        stcpp_infra_wal
     )
-    gtest_discover_tests(test_paper_pm_client
-        DISCOVERY_TIMEOUT 30
-        PROPERTIES LABELS "unit;polymarket;paper;w5"
+    stcpp_add_unit_test(test_signer_v53_pit test_signer_v53_pit.cpp)
+
+    # 老孙 Wave 104 P0: SignerV62 v6.2 + transformer_v62 5 ctest
+    set(EXTRA_LIBS_test_signer_v62
+        stcpp_signer_v62_paper
+        stcpp_signer_v52_paper
+        stcpp_infra_wal
     )
+    # STCPP_CLOB_V2=1 追加 define
+    list(APPEND EXTRA_DEFS_test_signer_v62 STCPP_CLOB_V2=1)
+    stcpp_add_unit_test(test_signer_v62 test_signer_v62.cpp)
+
 endif()
 
-# 小邓 W4 Wave 20: MLDataHook v0.1 (FeatureSnapshot + TrainingLabel + 4 stage join)
-# stcpp_ml lib R-7 guard: 仅 paper / backtest 模式编译 (含 VirtualFill)
+# --- paper OR backtest ---
 if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
-    add_executable(test_ml_hook
-        test_ml_hook.cpp
-    )
-    target_link_libraries(test_ml_hook PRIVATE
-        GTest::gtest_main
+
+    # 小邓 W4 Wave 20: MLDataHook v0.1 (FeatureSnapshot + TrainingLabel + 4 stage join)
+    set(EXTRA_LIBS_test_ml_hook
         stcpp_ml
         stcpp_infra_wal
         stcpp_risk
         stcpp_execution_paper
         stcpp_strategy
     )
-    target_include_directories(test_ml_hook PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    target_compile_features(test_ml_hook PRIVATE cxx_std_20)
-    target_compile_definitions(test_ml_hook PRIVATE
-        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    )
-    # TU 内 #include hook.cpp 模板实例化 — 关 offsetof / cast 警告同 audit_emitter 模式
-    target_compile_options(test_ml_hook PRIVATE
-        -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
-        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    )
-    gtest_discover_tests(test_ml_hook
-        DISCOVERY_TIMEOUT 30
-        PROPERTIES LABELS "unit;ml;w4"
-    )
+    stcpp_add_unit_test(test_ml_hook test_ml_hook.cpp)
+
 endif()
 
-# 小邓 ADR-037: FairValueModel 推理骨架 + feature 抽取契约
-# stcpp_ml_inference 三 mode 均编译 (不含 VirtualFill), 故本 target 无 EXEC_MODE guard.
-add_executable(test_fair_value_model
-    test_fair_value_model.cpp
-)
-target_link_libraries(test_fair_value_model PRIVATE
-    GTest::gtest_main
-    stcpp_ml_inference
-)
-target_include_directories(test_fair_value_model PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_fair_value_model PRIVATE cxx_std_20)
-target_compile_definitions(test_fair_value_model PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-target_compile_options(test_fair_value_model PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-gtest_discover_tests(test_fair_value_model
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;ml;adr037"
-)
-
-# 小卢 W5 Wave 25: SingleInstanceLock 7 用例 (laozhou-single-instance-spec-v1.md §3.1)
-#   T1 acquire→release→reacquire  T2 双进程 child 失败  T3 kill-9 后 reacquire
-#   T4 paper/live/backtest 物理隔离  T5 PID file 内容格式  T6 SIGTERM unlink  T7 race 1-wins
-# 小卢 W6 Wave 30: FdGuard T8 RAII lifecycle; T9 SIGTERM handler close fd (非死代码, P1-03)
-#   stcpp_process_lock_test: STCPP_TEST_BUILD=1, path_for() 用 /tmp/stcpp_test_<PID>
-#   保证 ctest -j 8 并发进程间 PID file 物理隔离 (R-7 仅约束生产 binary)
-add_executable(test_single_instance
-    test_single_instance.cpp
-)
-target_link_libraries(test_single_instance PRIVATE
-    GTest::gtest_main
-    stcpp_process_lock_test
-)
-target_compile_options(test_single_instance PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_single_instance PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_single_instance PRIVATE cxx_std_20)
-target_compile_definitions(test_single_instance PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    STCPP_PID_DIR="/tmp/stcpp_test"
-    STCPP_BUILD_COMMIT="test-build"
-)
-gtest_discover_tests(test_single_instance
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;process;single-instance;w5;w6"
-)
-
-# 老王 W6 Wave 28: Position WAL P0 (老韩 Smell-3 升级, GM Wave 27 拍板)
-#   T1 apply_fill → query_position 单笔正确
-#   T2 多笔 fill → position_total 累加 + entry_avg_price 加权均值
-#   T3 WAL 落盘 → restore_from_wal 状态完全恢复 (老韩 #3 P0 核心: 崩溃重启)
-#   T4 R-20 4 ts 透传 + PIT chain assert + violation 拒收
-#   T5 4 wal kind 物理隔离 (paper position.wal 不出现在 live, R-11)
-#   T6 circuit_breaker_state 与 RM evaluate 联动 mock (R-1)
-#   T7 跨进程 SingleInstanceLock 防多开协同 (小卢 W5-A-09)
-#   + ABI layout 152B + WalRecord concept 满足 + serialize roundtrip
-add_executable(test_position_ledger
-    test_position_ledger.cpp
-)
-target_link_libraries(test_position_ledger PRIVATE
-    GTest::gtest_main
-    stcpp_infra_wal
-    stcpp_process_lock_test
-)
-target_compile_options(test_position_ledger PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    -Wno-invalid-offsetof
-)
-target_include_directories(test_position_ledger PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_position_ledger PRIVATE cxx_std_20)
-target_compile_definitions(test_position_ledger PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    STCPP_POSITION_WAL_PREFIX="/var/lib/stcpp/paper/position"
-    STCPP_PID_DIR="/tmp/stcpp_test"
-    STCPP_BUILD_COMMIT="test-build"
-)
-gtest_discover_tests(test_position_ledger
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;wal;position;w6;p0"
-)
-
-# 小冯 W5 Wave 24: PM WSS subscriber v0.1 (8 sub topic + reconnect + heartbeat + back-pressure)
-#   T1  8 sub topic × 各 1 case (parse 4 ts)
-#   T2  reconnect (transport disconnect → AsyncConnect 再调)
-#   T3  heartbeat 超时 (now - last_msg_ts > heartbeat_timeout → Close + reconnect)
-#   T4  back-pressure (SPSC 满 → drop + metrics_.frames_dropped_total)
-#   T5  R-20 4 ts 不等式 enforce (event ≤ ds ≤ ingest ≤ as_of)
-#   T6  subscribe frame 构造校验 (公开免鉴权, action subscribe)
-#   T7  by_topic counter 各 +1
-#   T8  parse error counter (非 JSON / unknown topic)
-#   +   R-33 默认 URL 第 5 host, PONG 不入队
-add_executable(test_pm_wss_subscriber
-    test_pm_wss_subscriber.cpp
-)
-target_link_libraries(test_pm_wss_subscriber PRIVATE
-    GTest::gtest_main
-    stcpp_polymarket_wss
-)
-target_compile_options(test_pm_wss_subscriber PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_pm_wss_subscriber PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_pm_wss_subscriber PRIVATE cxx_std_20)
-target_compile_definitions(test_pm_wss_subscriber PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_pm_wss_subscriber
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;polymarket;wss;w5"
-)
-
-# 小冯 Wave 79 (W9 W3): PolymarketCLOBSubscriber 3 ctest
-#   T1: subscribe payload 双 token (assets_ids array, "Market" 大写 M, P-01/P-02)
-#   T2: book event parse + 4-ts 填充 (R-20 data_source_ts=timestamp×1e6, P-03, future-guard)
-#   T3: reconnect on disconnect (P-08 重发订阅 + heartbeat timeout, §5.1/§5.2)
-# ADR-027 cite: laoli-w9-wss-subscriber-impl-spec-v1.md / ADR-027 Enforce-1
-add_executable(test_clob_subscriber
-    test_clob_subscriber.cpp
-)
-target_link_libraries(test_clob_subscriber PRIVATE
-    GTest::gtest_main
-    stcpp_polymarket_clob_wss
-)
-target_compile_options(test_clob_subscriber PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_clob_subscriber PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_clob_subscriber PRIVATE cxx_std_20)
-target_compile_definitions(test_clob_subscriber PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_clob_subscriber
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;polymarket;clob-wss;adr027;wave79;w9"
-)
-
-# 小冯 W6 Wave 29: IngestRaw WAL 第 5 WAL (DS-01 解锁)
-#   T1: PM_WSS frame 落 paper.ingest_raw.wal (Tier 1 Accepted)
-#   T2: 5 source_kind 各 1 case (PM_WSS + 4 GS_*)
-#   T3: ring 满 fallback Tier 2 (不丢 metadata, R-12 不阻塞)
-#   T4: R-20 4 ts UPSTREAM_PAYLOAD 优先 (data_source_ts=0 fallback + PIT reject)
-#   T5: paper/live build 物理隔离 (R-11 / R-7)
-#   T6: payload_blob 16KB 边界 (truncate vs reject)
-#   T7: ML 训练读 ingest_raw.wal — WalRecord concept + serialize 还原
-add_executable(test_ingest_raw
-    test_ingest_raw.cpp
-)
-target_link_libraries(test_ingest_raw PRIVATE
-    GTest::gtest_main
-    stcpp_ingest_raw_writer
-    stcpp_infra_wal
-)
-target_compile_options(test_ingest_raw PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_ingest_raw PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_ingest_raw PRIVATE cxx_std_20)
-target_compile_definitions(test_ingest_raw PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    STCPP_INGEST_RAW_WAL_PREFIX="/var/lib/stcpp/ingest/paper"
-)
-gtest_discover_tests(test_ingest_raw
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;wal;ingest-raw;ds-01;w6"
-)
-
-# 小石 W6 Wave 28: SPSC/MPMC ring framework v0.1 (P0 偏离 #4 修复)
-#   T1: 单线程 FIFO 顺序
-#   T2: 跨线程 SPSC 1000 笔不丢
-#   T3: queue 满 try_push 返 false (R-12 back-pressure)
-#   T4: 2^n + cache-line align (static_assert + layout)
-#   T5: FillQueue 双 SPSC fanout — Position + ML 2-consumer
-#   T6: latency bench (单 push p99 < 100ns)
-#   T7 (bonus): drop_count 累加准确性
-add_executable(test_spsc_queue
-    test_spsc_queue.cpp
-)
-target_link_libraries(test_spsc_queue PRIVATE
-    GTest::gtest_main
-    stcpp_infra_spsc
-)
-target_compile_options(test_spsc_queue PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_spsc_queue PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_spsc_queue PRIVATE cxx_std_20)
-target_compile_definitions(test_spsc_queue PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_spsc_queue
-    DISCOVERY_TIMEOUT 60
-    PROPERTIES LABELS "unit;spsc;lock-free;w6"
-)
-
-# 小段 W6 Wave 29: Goalserve schema v0.1 + data-contract (D-W5-03/05 解锁)
-#   T1: URL builder 8 sport × 5 host 40 combos (BuildUrlFromSchema 路径)
-#   T2: TimeStatus 11 enum 闭合 (schema 层语义)
-#   T3: validate_payload PM_WSS 字段校验
-#   T4: validate_payload GS_OddsFeed 字段校验
-#   T5: 8-9 家 bookmaker ABI 锁 (ADR-008)
-#   T6: 4 ts 字段位置正确性 (各 payload type)
-add_executable(test_goalserve_schema
-    test_goalserve_schema.cpp
-)
-target_link_libraries(test_goalserve_schema PRIVATE
-    GTest::gtest_main
-    stcpp_data_contract
-)
-target_compile_options(test_goalserve_schema PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_goalserve_schema PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_goalserve_schema PRIVATE cxx_std_20)
-target_compile_definitions(test_goalserve_schema PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_goalserve_schema
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;goalserve;schema;data-contract;adr-008;w6"
-)
-
-# 老沈 W6 Wave 29: STRATEGY_DECAYED 三签解锁 (Smell #4 M2 前必交)
-#   T1: 正确 3 签 → OK
-#   T2: 单签 (normal mode) → LAOHAN_FAILED
-#   T3: 2 签缺 laotang → LAOTANG_FAILED
-#   T4: 错签 pubkey mismatch → BAD_SIGNATURE / LAOTANG_FAILED
-#   T5: 过期签 timestamp > 1h → EXPIRED
-#   T6: audit chain 3 audit_id 唯一性
-#   T7: 观察期 STRATEGY_DECAYED re-trigger (RM evaluate mock)
-#   T8: emergency override 单签 → OK
-# GM 错 #11 修 (2026-06-01): STCPP_BUILD_CLI guard, 默认 OFF
-# 老沈 W7 改 FetchContent libsodium source (不走 vcpkg)
+# --- STCPP_BUILD_CLI guard ---
 if(STCPP_BUILD_CLI)
-    add_executable(test_strategy_unlock
-        test_strategy_unlock.cpp
-    )
-    target_link_libraries(test_strategy_unlock PRIVATE
-        GTest::gtest_main
+
+    # 老沈 W6 Wave 29: STRATEGY_DECAYED 三签解锁
+    set(EXTRA_LIBS_test_strategy_unlock
         stcpp_risk
         stcpp_cli_three_sig
     )
-    target_compile_options(test_strategy_unlock PRIVATE
-        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    )
-    target_include_directories(test_strategy_unlock PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    target_compile_features(test_strategy_unlock PRIVATE cxx_std_20)
-    target_compile_definitions(test_strategy_unlock PRIVATE
-        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    )
-    gtest_discover_tests(test_strategy_unlock
-        DISCOVERY_TIMEOUT 30
-        PROPERTIES LABELS "unit;risk;three-sig;strategy-unlock;w6;smell-4"
-    )
+    stcpp_add_unit_test(test_strategy_unlock test_strategy_unlock.cpp)
+
 endif()
-
-# 老唐 W6 Wave 29: BLAKE3 真实现 + AuditEmitter pool (老周 Smell #A + 老韩 Smell #2)
-#   T1: BLAKE3 hash 一致性 (同输入同输出, 不同输入不同输出, 非零)
-#   T2: hash_chain 串联 3 record (chain 单调推进, 本地重算验证)
-#   T3: chain verify 篡改检测 (M1-A06 必过)
-#   T4: 5 emitter pool 各自独立 ring + 全局 chain 串联 (老周 Smell #A)
-#   T5: build-time switch (BLAKE3_REAL=1 必定义; BLAKE3_STUB 禁止)
-add_executable(test_blake3_audit
-    test_blake3_audit.cpp
-)
-target_link_libraries(test_blake3_audit PRIVATE
-    GTest::gtest_main
-    stcpp_observability_audit
-)
-target_compile_options(test_blake3_audit PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    -Wno-invalid-offsetof
-)
-target_include_directories(test_blake3_audit PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_blake3_audit PRIVATE cxx_std_20)
-# R-7: paper/live build 都注入 BLAKE3_REAL=1 (M1-A06 前置条件, 老韩 Smell #2)
-target_compile_definitions(test_blake3_audit PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    BLAKE3_REAL=1
-)
-gtest_discover_tests(test_blake3_audit
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;audit;blake3;w6;m1-a06;smell-a;smell-2"
-)
-
-# 老唐 W9 Wave 65: audit schema v1.3 cpp — 5 ctest (ADR-027 Enforce-1)
-#   T1: AuditEvent v1.3 含 token_id round-trip (serialize → deserialize)
-#   T2: outcome enum 序列化 (0-6 全 enum, uint8 round-trip)
-#   T3: side enum 序列化 (0/1 Buy/Sell round-trip, is_buy v1.2 compat)
-#   T4: BLAKE3 chain 新字段不破 hash 链 (T2_Chain_RecomputeMatches 仍 PASS)
-#   T5: schema v1.2 → v1.3 migration (旧 log read 加 default 字段)
-# cite: ADR-027 Enforce-1 / polymarket_ssot §3 §6 / handshake §3
-add_executable(test_audit_schema_v13
-    test_audit_schema_v13.cpp
-)
-target_link_libraries(test_audit_schema_v13 PRIVATE
-    GTest::gtest_main
-    stcpp_observability_audit
-)
-target_compile_options(test_audit_schema_v13 PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
-)
-target_include_directories(test_audit_schema_v13 PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_audit_schema_v13 PRIVATE cxx_std_20)
-# R-7: BLAKE3_REAL=1 (T4 chain 验证依赖真 BLAKE3)
-target_compile_definitions(test_audit_schema_v13 PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    BLAKE3_REAL=1
-)
-gtest_discover_tests(test_audit_schema_v13
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;audit;schema-v13;token_id;outcome;side;migration;adr027;w9"
-)
-
-# 老唐 W10 Wave 98: audit schema v1.4 cpp — 5 ctest (ADR-027 Enforce-1, ADR-029+032)
-#   T1: timestamp_ms + size_pUSD_micro round-trip (V2 字段 + pUSD rename)
-#   T2: metadata + builder bytes32 hex round-trip (V2 EIP-712 字段)
-#   T3: BLAKE3 chain V2 新字段不破 hash 链 (3 record, chain verify PASS)
-#   T4: schema v1.3 → v1.4 migration (apply_v13_migration: V2 字段默认值填充)
-#   T5: schema v1.2 → v1.4 full migration (apply_v12_migration: 全链 migration)
-# cite: ADR-027 Enforce-1 / signer_spec §2.1 §8.1 / polymarket_ssot §3.1 §3.4
-add_executable(test_audit_schema_v14
-    test_audit_schema_v14.cpp
-)
-target_link_libraries(test_audit_schema_v14 PRIVATE
-    GTest::gtest_main
-    stcpp_observability_audit
-)
-target_compile_options(test_audit_schema_v14 PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
-)
-target_include_directories(test_audit_schema_v14 PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_audit_schema_v14 PRIVATE cxx_std_20)
-# R-7: BLAKE3_REAL=1 (T3 chain 验证依赖真 BLAKE3)
-target_compile_definitions(test_audit_schema_v14 PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    BLAKE3_REAL=1
-)
-gtest_discover_tests(test_audit_schema_v14
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;audit;schema-v14;timestamp_ms;metadata;builder;pUSD;migration;adr027;wave98;w10"
-)
-
-# 老孙 W6 Wave 30: signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
-#   T1-T8 + Bonus_R11 + Bonus_R20: 10 test targets
-# R-7 物理隔离: paper mode only; libsodium homebrew prebuilt
-if(STCPP_EXEC_MODE STREQUAL "paper")
-    add_executable(test_signer_v52
-        test_signer_v52.cpp
-    )
-    # stcpp_signer_v52_paper PUBLIC-links stcpp_signer_v52_sodium (INTERFACE),
-    # which carries sodium include dir + lib + STCPP_SIGNER_V52_LIBSODIUM define.
-    target_link_libraries(test_signer_v52 PRIVATE
-        GTest::gtest_main
-        stcpp_signer_v52_paper
-        stcpp_infra_wal
-    )
-    target_compile_options(test_signer_v52 PRIVATE
-        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    )
-    target_include_directories(test_signer_v52 PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    target_compile_features(test_signer_v52 PRIVATE cxx_std_20)
-    target_compile_definitions(test_signer_v52 PRIVATE
-        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    )
-    gtest_discover_tests(test_signer_v52
-        DISCOVERY_TIMEOUT 30
-        PROPERTIES LABELS "unit;signer;v52;ed25519;ipc;w6"
-    )
-
-    # 老孙 W9 Wave 58: signer v5.3 新增 7 ctest (T1-T7)
-    #   T1: token_id ABI binding (EIP-712 Order.tokenId)
-    #   T2: side 0/1 round-trip + side=2 拒签
-    #   T3: HMAC bug 4 反陷阱 (sigType=1 accept; sigType=2 reject — v5.3 修正)
-    #   T4: SecureBuffer<64> sodium_memzero 维持
-    #   T5: paper/live 共用 stcpp_crypto_ed25519
-    #   T6: v5.1 cases migration (旧行为不回退)
-    #   T7: P99 < 8us hot path (100k 次 CLOCK_MONOTONIC_RAW)
-    # ADR-027 Enforce-1 cite: SSOT §3.5 + handshake §84
-    add_executable(test_signer_v53_pit
-        test_signer_v53_pit.cpp
-    )
-    target_link_libraries(test_signer_v53_pit PRIVATE
-        GTest::gtest_main
-        stcpp_signer_v52_paper
-        stcpp_infra_wal
-    )
-    target_compile_options(test_signer_v53_pit PRIVATE
-        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    )
-    target_include_directories(test_signer_v53_pit PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    target_compile_features(test_signer_v53_pit PRIVATE cxx_std_20)
-    target_compile_definitions(test_signer_v53_pit PRIVATE
-        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    )
-    gtest_discover_tests(test_signer_v53_pit
-        DISCOVERY_TIMEOUT 60
-        PROPERTIES LABELS "unit;signer;v53;token_id;side;adr027;w9"
-    )
-endif()
-
-# 老孙 Wave 104 P0: SignerV62 v6.2 + transformer_v62 5 ctest (T1-T5)
-#   T1: V2 ABI alignment (OrderIntent v0.6 → SignV62Request byte-equal)
-#   T2: spec-9 metadata/builder 格式错 → reject InvalidBytes32
-#   T3: spec-10 timestamp_ms=0 → reject TsV2Missing
-#   T4: V1 v5.3 共存 (paper mode V2; V1 backtest 历史兼容)
-#   T5: P99 < 10us hot path (100k 次 transformer + sign)
-# ADR-027 cite: laosun-w10-w1 spec + Wave 97 spec-9/10 + audit v1.4
-# R-7 paper mode only (paper + live 必 STCPP_CLOB_V2)
-if(STCPP_EXEC_MODE STREQUAL "paper")
-    add_executable(test_signer_v62
-        test_signer_v62.cpp
-    )
-    target_link_libraries(test_signer_v62 PRIVATE
-        GTest::gtest_main
-        stcpp_signer_v62_paper
-        stcpp_signer_v52_paper
-        stcpp_infra_wal
-    )
-    target_compile_options(test_signer_v62 PRIVATE
-        -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-        -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-        -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-    )
-    target_include_directories(test_signer_v62 PRIVATE
-        ${CMAKE_SOURCE_DIR}
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    target_compile_features(test_signer_v62 PRIVATE cxx_std_20)
-    target_compile_definitions(test_signer_v62 PRIVATE
-        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-        STCPP_CLOB_V2=1
-    )
-    gtest_discover_tests(test_signer_v62
-        DISCOVERY_TIMEOUT 60
-        PROPERTIES LABELS "unit;signer;v62;transformer;adr027;wave104;w10"
-    )
-endif()
-
-# 老沈 Wave 76 W9 W4: PositionLedger read API + StateMachine cpp (ADR-027 Enforce-1)
-#   TC-01: 快照一致性 (read 不锁 hot path)
-#   TC-02: CAS 幂等 (try_transition RUNNING->DRAIN 2次, 1成1fail)
-#   TC-03: DRAIN 平仓放行 (is_close+Sell)
-#   TC-04: reject ring tail_copy (HALTED reject, audit_id 非零)
-# cite: ADR-027 Enforce-1 / polymarket_ssot §2.3 §3.3 / handshake §3
-add_executable(test_position_ledger_w76
-    test_position_ledger_w76.cpp
-)
-target_link_libraries(test_position_ledger_w76 PRIVATE
-    GTest::gtest_main
-    stcpp_risk
-)
-target_compile_options(test_position_ledger_w76 PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_position_ledger_w76 PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_position_ledger_w76 PRIVATE cxx_std_20)
-target_compile_definitions(test_position_ledger_w76 PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_position_ledger_w76
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;risk;position-ledger;state-machine;adr027;wave76;w9"
-)
-
-# 老陈 A-NET-01 Wave 3: 出站序列化 + 背压队列 单测
-#   T1:  OutboundBuffer reset O(1) + append 正确性
-#   T2:  OutboundBuffer 容量边界 (4096B 满 → false, 不越界)
-#   T3:  SerializeSignedOrder BUY 正确性 (price/size 换算 + compact JSON)
-#   T3b: SerializeSignedOrder SELL
-#   T4:  HMAC bug #3 — signatureType 必须整数 1 (非字符串)
-#   T5:  OutboundSubmitQueue 背压 drop (满 256 → false + drop_count++)
-#   T6:  OutboundSubmitQueue FIFO 顺序
-#   T7:  SerializeCancelAll → "{}"
-#   T8:  paper mode 空 signature + 大 token_id (uint256 77位)
-#   T9:  price/size 最小精度 (1 bps / 1 micro)
-#   T10: buffer reset 后可重复使用
-# 红线: R-12 (不进 event loop), zero-alloc, HMAC bug #3
-add_executable(test_outbound_serializer
-    test_outbound_serializer.cpp
-)
-target_link_libraries(test_outbound_serializer PRIVATE
-    GTest::gtest_main
-    stcpp_net_outbound
-    stcpp_infra_wal
-    stcpp_infra_spsc
-)
-target_compile_options(test_outbound_serializer PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_outbound_serializer PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_outbound_serializer PRIVATE cxx_std_20)
-target_compile_definitions(test_outbound_serializer PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_outbound_serializer
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;net;outbound;serializer;backpressure;a-net-01;wave3"
-)
-
-# 小段 ADR-037: Goalserve vendor-agnostic adapter schema v0.1 ctest
-#   T1: InfoKind / VendorId / GameEventType enum 闭合
-#   T2: R-20 四时间戳契约 — GameScoreRecord / OddsQuoteRecord / GameStatsRecord / GameEventRecord
-#   T3: 时间戳转换 helper — NetTicksToEpochNs / InplayTsMsToNs / PregameTsSecToNs
-#   T4: OddsQuoteRecord.IsValid() 逻辑 (value > 1.0 + suspend + R-20)
-#   T5: MapGoalserveEventType — 8 种 + VAR variants + Other
-#   T6: AdaptBatch 四类 record 共存 + data_source_ts monotonic
-#   T7: 3-way soccer 1x2 — Home/Draw/Away 三个独立 OddsQuoteRecord
-#   T8: .NET ticks 边界 (epoch offset / 负值 / 典型值)
-add_executable(test_goalserve_adapter
-    test_goalserve_adapter.cpp
-)
-target_link_libraries(test_goalserve_adapter PRIVATE
-    GTest::gtest_main
-    stcpp_data_contract
-)
-target_compile_options(test_goalserve_adapter PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_goalserve_adapter PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_goalserve_adapter PRIVATE cxx_std_20)
-target_compile_definitions(test_goalserve_adapter PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_goalserve_adapter
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;goalserve;adapter;vendor-agnostic;adr-037"
-)
-
-# 小肖 ADR-037 配套: FairValueEstimator v0.1 — 自估 fair-value 定价模型单测
-#   T01: 归一性 — sum(probs) = 1.0 (± 1e-12)
-#   T02: 边界 clamp — 极端比分差 probs ∈ (kProbEps, kProbMax)
-#   T03: 单调性 — home leads → p_yes > 0.5, 时钟越靠后领先优势越大
-#   T04: NaN 防护 — elapsed_sec=-1 → valid=true, probs finite
-#   T05: 赛前先验 — NotStarted 0:0 → p_yes ≈ 0.5
-#   T06: 时钟效应单调性 — 同领先, 越晚时钟 p_yes 越高
-#   T07: 订单簿混合 — microprice 有效时 book_blend=0.20, 拉扯先验
-#   T08: nullptr book_row → book_blend=0, 纯先验
-#   T09: NaN/Inf/0/1 microprice → 退化纯先验
-#   T10: safe_sigmoid 精度 (sigmoid(0)=0.5, sigmoid(ln3)=0.75)
-#   T11: normalize2 极端输入 (NaN/Inf/very small)
-#   T12: clamp_prob 边界 (0.0/1.0/NaN/Inf)
-#   T13: FairValueEstimator facade 正常运行
-#   T14: IFairValueModel 多态替换
-#   T15: total_game_seconds 运动映射
-add_executable(test_fair_value_estimator
-    test_fair_value_estimator.cpp
-)
-target_link_libraries(test_fair_value_estimator PRIVATE
-    GTest::gtest_main
-    stcpp_pricing
-)
-target_compile_options(test_fair_value_estimator PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_include_directories(test_fair_value_estimator PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_fair_value_estimator PRIVATE cxx_std_20)
-target_compile_definitions(test_fair_value_estimator PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_fair_value_estimator
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;pricing;fair-value;numerical;adr-037"
-)
-
-# ============================================================================
-# 小蒋 backtest framework v0.2 — 4 unit test targets
-#   test_backtest_types:          R-20 4 ts / net_edge 公式 / realized_pnl (10 case)
-#   test_backtest_walk_forward:   WalkForwardSplitter / DataAccessGuard / PurgedKFold (10 case)
-#   test_backtest_metrics:        MetricsComputer + StationaryBootstrap (14 case)
-#   test_backtest_stats:          Bonferroni + DSR + 过拟合检测 (10 case)
-#   test_backtest_event_replayer: EventReplayer + BacktestLedger (10 case)
-# BR-1 红线: link stcpp_backtest (链入 stcpp_microstructure via PUBLIC propagation)
-# BR-5 红线: stcpp_backtest 链 stcpp_microstructure (FillRateModel 复用)
-# ADR-010 grandfather: -Wno-double-promotion / -Wno-old-style-cast / -Wno-cast-align
-#                      -Wno-conversion (size_t → double 统计计算)
-# ============================================================================
-
-add_executable(test_backtest_types
-    test_backtest_types.cpp
-)
-target_link_libraries(test_backtest_types PRIVATE GTest::gtest_main stcpp_backtest)
-target_compile_options(test_backtest_types PRIVATE
-    -Wno-double-promotion
-    -Wno-old-style-cast
-    -Wno-cast-align
-    -Wno-conversion
-)
-target_include_directories(test_backtest_types PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_backtest_types PRIVATE cxx_std_20)
-target_compile_definitions(test_backtest_types PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_backtest_types
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;backtest;types;r20;pit;backtest-v0.2"
-)
-
-add_executable(test_backtest_walk_forward
-    test_backtest_walk_forward.cpp
-)
-target_link_libraries(test_backtest_walk_forward PRIVATE GTest::gtest_main stcpp_backtest)
-target_compile_options(test_backtest_walk_forward PRIVATE
-    -Wno-double-promotion
-    -Wno-old-style-cast
-    -Wno-cast-align
-    -Wno-conversion
-)
-target_include_directories(test_backtest_walk_forward PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_backtest_walk_forward PRIVATE cxx_std_20)
-target_compile_definitions(test_backtest_walk_forward PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_backtest_walk_forward
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;backtest;walk-forward;guard;purged-kfold;backtest-v0.2"
-)
-
-add_executable(test_backtest_metrics
-    test_backtest_metrics.cpp
-)
-target_link_libraries(test_backtest_metrics PRIVATE GTest::gtest_main stcpp_backtest)
-target_compile_options(test_backtest_metrics PRIVATE
-    -Wno-double-promotion
-    -Wno-old-style-cast
-    -Wno-cast-align
-    -Wno-conversion
-)
-target_include_directories(test_backtest_metrics PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_backtest_metrics PRIVATE cxx_std_20)
-target_compile_definitions(test_backtest_metrics PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_backtest_metrics
-    DISCOVERY_TIMEOUT 60
-    PROPERTIES LABELS "unit;backtest;metrics;sharpe;mdd;bootstrap;backtest-v0.2"
-)
-
-add_executable(test_backtest_stats
-    test_backtest_stats.cpp
-)
-target_link_libraries(test_backtest_stats PRIVATE GTest::gtest_main stcpp_backtest)
-target_compile_options(test_backtest_stats PRIVATE
-    -Wno-double-promotion
-    -Wno-old-style-cast
-    -Wno-cast-align
-    -Wno-conversion
-)
-target_include_directories(test_backtest_stats PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_backtest_stats PRIVATE cxx_std_20)
-target_compile_definitions(test_backtest_stats PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_backtest_stats
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;backtest;stats;bonferroni;dsr;overfitting;backtest-v0.2"
-)
-
-add_executable(test_backtest_event_replayer
-    test_backtest_event_replayer.cpp
-)
-target_link_libraries(test_backtest_event_replayer PRIVATE
-    GTest::gtest_main
-    stcpp_backtest
-    stcpp_microstructure
-)
-target_compile_options(test_backtest_event_replayer PRIVATE
-    -Wno-double-promotion
-    -Wno-old-style-cast
-    -Wno-cast-align
-    -Wno-conversion
-)
-target_include_directories(test_backtest_event_replayer PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_backtest_event_replayer PRIVATE cxx_std_20)
-target_compile_definitions(test_backtest_event_replayer PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_backtest_event_replayer
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;backtest;event-replayer;ledger;fill-rate;br1;br5;backtest-v0.2"
-)
-
-# ============================================================================
-
-# 小田 ADR-037: Feature Store Consumer Contract v1.0
-#   T1:  FeatureStoreGameRow R-20 4 ts chain ok + 4 violations
-#   T2:  FeatureStoreGameRow PIT ok / violation (as_of_ts <= now_ns)
-#   T3:  from_game_record() — 4 ts 透传 + event_date 计算 + as_of_ts override
-#   T4:  Bookmaker slots NaN 语义 (is_present / valid_bm_count)
-#   T5:  FeatureStoreBookRow R-20 4 ts chain + PIT
-#   T6:  BookRow level_valid NaN 语义 (空 level != 0, out-of-bounds)
-#   T7:  validate_game_row 全路径 (valid/ts_viol/pit_viol/no_match_id/no_sport/fallback_origin)
-#   T8:  validate_book_row 全路径 (valid YES/NO/ts_viol/pit_viol/no_market_id/bad_side)
-#   T9:  kFeatureStoreSchemaVersion ABI 字符串稳定
-#   T10: kOrderBookLevels / kNumBookmakers compile-time ABI 锁
-# vendor-agnostic: 不硬编码 Goalserve/Polymarket; 消费契约供小段/小冯 adapter 对齐
-add_executable(test_feature_store_contract
-    test_feature_store_contract.cpp
-)
-target_link_libraries(test_feature_store_contract PRIVATE
-    GTest::gtest_main
-    stcpp_data_contract
-)
-target_compile_options(test_feature_store_contract PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_feature_store_contract PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_feature_store_contract PRIVATE cxx_std_20)
-target_compile_definitions(test_feature_store_contract PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_feature_store_contract
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;feature-store;data-contract;adr-037;vendor-agnostic;pit"
-)
-
-# 小冯 OrderBookAdapter v0.1 — snapshot/delta 状态机 + R-20 4-ts + FeatureStoreBookRow
-#   v0.1: 单档合成; 完整 L2 多档待 W10 simdjson (@老李)
-#   T1: snapshot 4-ts chain (R-20) + state transition
-#   T2: delta rejected before snapshot (P-05)
-#   T3: delta accepted after snapshot
-#   T4: R-20 ts violation rejected + counter
-#   T5: ResetToken clears state
-#   T6: InjectMetadata consumer fields
-#   T7: kBookDepthLevels SSOT == kOrderBookLevels == 5
-#   T8: FeatureStoreBookRow ts_chain_ok() after adapter fill
-add_executable(test_orderbook_adapter
-    test_orderbook_adapter.cpp
-)
-target_link_libraries(test_orderbook_adapter PRIVATE
-    GTest::gtest_main
-    stcpp_polymarket_clob_wss
-)
-target_compile_options(test_orderbook_adapter PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
-)
-target_include_directories(test_orderbook_adapter PRIVATE
-    ${CMAKE_SOURCE_DIR}
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_orderbook_adapter PRIVATE cxx_std_20)
-target_compile_definitions(test_orderbook_adapter PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-gtest_discover_tests(test_orderbook_adapter
-    DISCOVERY_TIMEOUT 30
-    PROPERTIES LABELS "unit;polymarket;clob-wss;orderbook-adapter;r-20;r-12;v0.1"
-)
