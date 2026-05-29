@@ -164,6 +164,12 @@ public:
         m.max_staleness_ms = 38.0;
         m.feed_gap_total = 0;
         m.price_drift_bps = 2.1;
+        // 订阅计数 demo 值 (GAP-01/02/03; 代表性: 6 盘口 × 双 token = 12 token)
+        // 6 盘口: nba-lal-bos-(ml/total/spread) + epl-ars-che-total + nfl-kc-buf-spread + mlb-nyy-bos-ml
+        m.subscribed_tokens_total = 12;
+        m.subscribed_markets_total = 6;
+        m.subscribed_user_conditions = 3;
+        m.wss_last_disconnect_ts_ns = 0;  // demo: 从未断连
         return m;
     }
 

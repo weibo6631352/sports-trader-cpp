@@ -102,6 +102,20 @@ void register_metrics(httplib::Server& svr, const HttpServer& hs) {
         metric_line(out, "stcpp_price_drift_bps", "gauge", "Price drift vs reference basis points",
                     ml + " " + json::num(m.price_drift_bps));
 
+        // ---- 订阅计数 (GAP-01/02/03, 低基数 mode label only; ADR-038 §3) ----
+        // stcpp_subscribed_tokens_total   — hub_.token_count() (per-token slot 数)
+        // stcpp_subscribed_markets_total  — tokens / 2 (双 token 规则, 老李 spec §2.1)
+        // stcpp_subscribed_user_conditions_total — user channel condition_id 数
+        metric_line(out, "stcpp_subscribed_tokens_total", "gauge",
+                    "Number of subscribed CLOB market tokens (hub token_count)",
+                    ml + " " + json::i64(m.subscribed_tokens_total));
+        metric_line(out, "stcpp_subscribed_markets_total", "gauge",
+                    "Number of subscribed markets (subscribed_tokens / 2, binary market rule)",
+                    ml + " " + json::i64(m.subscribed_markets_total));
+        metric_line(out, "stcpp_subscribed_user_conditions_total", "gauge",
+                    "Number of subscribed user channel condition_ids",
+                    ml + " " + json::i64(m.subscribed_user_conditions));
+
         res.set_content(out, "text/plain; version=0.0.4; charset=utf-8");
         res.status = 200;
     });
