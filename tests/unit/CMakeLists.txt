@@ -75,6 +75,7 @@ set(EXTRA_LIBS_test_backtest_event_replayer stcpp_backtest stcpp_microstructure)
 set(EXTRA_LIBS_test_feature_store_contract stcpp_data_contract)
 set(EXTRA_LIBS_test_orderbook_adapter   stcpp_polymarket_clob_wss)
 set(EXTRA_LIBS_test_orderbook_snapshot_hub stcpp_orderbook_snapshot_hub)
+set(EXTRA_LIBS_test_score_snapshot_store  stcpp_data_inplay_parser stcpp_data_score_store)
 
 # --- 追加 compile_definitions 映射 ---
 # (仅列出 STCPP_EXEC_MODE_* 以外的额外 define)
