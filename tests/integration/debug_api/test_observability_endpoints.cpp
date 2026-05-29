@@ -168,6 +168,41 @@ public:
         b.ts.as_of_ts_ns = 1700000000000000001LL;
         return b;
     }
+
+    // 前端 v3 盯盘新增 (ADR-038 增量)
+    stcpp::debug_api::EventScore score(const std::string& eid) const override {
+        stcpp::debug_api::EventScore s;
+        s.found = true;
+        s.event_id = eid;
+        s.sport = "basketball";
+        s.status = "inplay";
+        s.period = "Q2";
+        s.clock_sec = 300;
+        s.home = "LAL";
+        s.away = "BOS";
+        s.home_score = 52;
+        s.away_score = 49;
+        s.ts.event_ts_ns = 1700000000000000000LL;
+        s.ts.as_of_ts_ns = 1700000000000000001LL;
+        return s;
+    }
+
+    stcpp::debug_api::QuoteParams quote_params(const std::string& cid) const override {
+        stcpp::debug_api::QuoteParams q;
+        q.found = true;
+        q.market_id = cid;
+        q.fair_value = 0.662;
+        q.market_mid = 0.648;
+        q.edge_bps = 21.6;
+        q.kelly_fraction = 0.042;
+        q.suggested_notional = 850.0;
+        q.signal_strength = 0.71;
+        q.model_conf = 0.62;
+        q.as_of_ts_ns = 1700000000000000000LL;
+        return q;
+    }
+
+    const char* data_source() const override { return "fake"; }
 };
 
 httplib::Client make_client(std::uint16_t port) {
