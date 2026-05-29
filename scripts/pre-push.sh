@@ -202,10 +202,11 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 4. Python grep checks (5 项红线 — 与远端 CI 一致)
+# 4. Python grep checks (6 项红线 — 与远端 CI 一致)
 #    PR_BODY 走本次 push 范围派生 (见顶部 derive_pr_body), 非硬编码 N/A.
+#    4f secret_blacklist (小白审计 §5) Wave 新增.
 # ---------------------------------------------------------------------------
-echo "[pre-push] 4/5 Python grep checks (5 项)..."
+echo "[pre-push] 4/5 Python grep checks (6 项)..."
 
 PYTHON_BIN=""
 for candidate in python3 python; do
@@ -256,6 +257,14 @@ else
     if [ -f "tests/ci_grep/worktree_commit_check.py" ]; then
         if ! "$PYTHON_BIN" tests/ci_grep/worktree_commit_check.py 2>&1 | tail -3; then
             echo "[pre-push]   FAIL: worktree_commit_check.py"
+            GREP_FAIL=1
+        fi
+    fi
+
+    # 4f. secret / 凭证 / TLS insecure 反模式 (小白审计 §5, 5 条 G1-G5)
+    if [ -f "tests/ci_grep/secret_blacklist.py" ]; then
+        if ! "$PYTHON_BIN" tests/ci_grep/secret_blacklist.py 2>&1 | tail -3; then
+            echo "[pre-push]   FAIL: secret_blacklist.py"
             GREP_FAIL=1
         fi
     fi

@@ -113,11 +113,46 @@ _STATIC_ASSERT_VALUE_RE = re.compile(
 )
 
 
+def _diff_range(repo_root: Path) -> str:
+    """Resolve the diff range for the *full feature branch*, not just last commit.
+
+    老高 follow-up (worktree-diff-range): 旧逻辑用 HEAD~1...HEAD 只看最后一条 commit,
+    多 commit feature 分支里早先 commit 改了 ABI struct 会漏检 (假阴性). 改用 feature
+    diff 区间:
+
+      1. origin/main 可解析 → merge-base(origin/main, HEAD)...HEAD (整个 feature diff)
+         (与本脚本 check_struct_keyword_changes 已用的 origin/main...HEAD 对齐)
+      2. origin/main 不可解析 (本地无 remote / detached) → 回退 HEAD~1...HEAD (保守, 至少
+         看最后一条 commit, 不放空)
+
+    返回 git diff 可用的 range 字符串 (如 "abc123...HEAD" 或 "HEAD~1...HEAD").
+    """
+    try:
+        if subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", "origin/main^{commit}"],
+            capture_output=True, text=True, cwd=repo_root, timeout=10,
+        ).returncode == 0:
+            mb = subprocess.run(
+                ["git", "merge-base", "origin/main", "HEAD"],
+                capture_output=True, text=True, cwd=repo_root, timeout=10,
+            )
+            base = mb.stdout.strip()
+            if mb.returncode == 0 and base:
+                return f"{base}...HEAD"
+    except (subprocess.SubprocessError, FileNotFoundError):
+        pass
+    return "HEAD~1...HEAD"
+
+
 def get_changed_files(repo_root: Path) -> list[str]:
-    """Return list of changed files relative to repo root via git."""
+    """Return list of changed files relative to repo root via git.
+
+    老高 follow-up: 用 _diff_range (整个 feature diff) 而非 HEAD~1, 防多 commit 分支漏检.
+    """
+    diff_range = _diff_range(repo_root)
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", "HEAD~1...HEAD"],
+            ["git", "diff", "--name-only", diff_range],
             capture_output=True,
             text=True,
             cwd=repo_root,
@@ -138,10 +173,13 @@ def get_changed_files(repo_root: Path) -> list[str]:
 
 
 def check_static_assert_changes(repo_root: Path, changed_files: list[str]) -> bool:
-    """Return True if any ABI-locked file has static_assert value changes in diff."""
+    """Return True if any ABI-locked file has static_assert value changes in diff.
+
+    老高 follow-up: diff range 用 _diff_range (整个 feature diff) 而非 HEAD~1.
+    """
     try:
         result = subprocess.run(
-            ["git", "diff", "HEAD~1...HEAD", "--", *changed_files],
+            ["git", "diff", _diff_range(repo_root), "--", *changed_files],
             capture_output=True,
             text=True,
             cwd=repo_root,
@@ -179,7 +217,7 @@ def check_struct_keyword_changes(repo_root: Path, changed_files: list[str]) -> l
         return triggered
     try:
         result = subprocess.run(
-            ["git", "diff", "origin/main...HEAD", "--", *cpp_files],
+            ["git", "diff", _diff_range(repo_root), "--", *cpp_files],
             capture_output=True,
             text=True,
             cwd=repo_root,
@@ -237,7 +275,7 @@ def main() -> int:
     for cmake_file in changed_cmake_files:
         try:
             result = subprocess.run(
-                ["git", "diff", "HEAD~1...HEAD", "--", cmake_file],
+                ["git", "diff", _diff_range(repo_root), "--", cmake_file],
                 capture_output=True,
                 text=True,
                 cwd=repo_root,
