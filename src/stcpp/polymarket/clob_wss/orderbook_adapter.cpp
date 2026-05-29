@@ -156,10 +156,11 @@ void OrderBookAdapter::ApplySnapshot(TokenState& st, const WssEvent& ev, std::in
         st.tick_size = BpsToPrice(b.tick_size_bps);
     }
 
-    // R-20 ts
+    // R-20 ts (P0-2 fix): ingestion_ts = max(local_recv, data_source_ts)
+    // 跨洋部署本地时钟可能落后服务端 10-30ms，直接用 recv_ts_ns 会产生倒挂。
     st.last_event_ts_ns = b.ts.event_ts_ns;
     st.last_data_source_ts_ns = b.ts.data_source_ts_ns;
-    st.last_ingestion_ts_ns = recv_ts_ns;
+    st.last_ingestion_ts_ns = (recv_ts_ns >= b.ts.data_source_ts_ns) ? recv_ts_ns : b.ts.data_source_ts_ns;
 
     // last_trade_ts: use data_source_ts as best proxy (R-20 compatible)
     if (b.last_trade_price_bps > 0) {
@@ -210,10 +211,10 @@ void OrderBookAdapter::ApplySnapshot(TokenState& st, const WssEvent& ev, std::in
 void OrderBookAdapter::ApplyDelta(TokenState& st, const WssEvent& ev, std::int64_t recv_ts_ns) noexcept {
     const auto& b = ev.payload.book;
 
-    // R-20 ts update
+    // R-20 ts update (P0-2 fix): ingestion_ts = max(local_recv, data_source_ts)
     st.last_event_ts_ns = b.ts.event_ts_ns;
     st.last_data_source_ts_ns = b.ts.data_source_ts_ns;
-    st.last_ingestion_ts_ns = recv_ts_ns;
+    st.last_ingestion_ts_ns = (recv_ts_ns >= b.ts.data_source_ts_ns) ? recv_ts_ns : b.ts.data_source_ts_ns;
 
     // Update tick_size if present
     if (b.tick_size_bps > 0) {

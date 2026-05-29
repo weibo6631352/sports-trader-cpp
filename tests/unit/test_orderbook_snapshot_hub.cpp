@@ -455,3 +455,115 @@ TEST(OrderBookSnapshotHub, T16_BestBidAskHelpers) {
     EXPECT_DOUBLE_EQ(f.best_bid_size(), 1000.0);
     EXPECT_DOUBLE_EQ(f.best_ask_size(), 1200.0);
 }
+
+// ---------------------------------------------------------------------------
+// T17: OldestEventTsNs — P1-4 staleness 计算 (BUG-8 / P0-2 配套)
+// ---------------------------------------------------------------------------
+TEST(OrderBookSnapshotHub, T17_OldestEventTsNs_Empty) {
+    OrderBookSnapshotHub hub;
+    // 未发布任何 token → 返回 0 (无数据不是 stale)
+    EXPECT_EQ(hub.OldestEventTsNs(), 0);
+}
+
+TEST(OrderBookSnapshotHub, T17_OldestEventTsNs_Single) {
+    OrderBookSnapshotHub hub;
+    OrderBookFeatures f = MakeFeatures(0.50, 0.52);
+    // event_ts_ns = kTs1 = 1'000'000'000
+    EXPECT_EQ(f.event_ts_ns, kTs1);
+    hub.Publish("tok-single", f);
+    EXPECT_EQ(hub.OldestEventTsNs(), kTs1);
+}
+
+TEST(OrderBookSnapshotHub, T17_OldestEventTsNs_MultiToken) {
+    OrderBookSnapshotHub hub;
+
+    // token-a: event_ts = 1000ns (最旧)
+    OrderBookFeatures fa{};
+    fa.valid = true;
+    fa.event_ts_ns = 1000;
+    fa.data_source_ts_ns = 1100;
+    fa.ingestion_ts_ns = 1200;
+    fa.as_of_ts_ns = 1300;
+    hub.Publish("tok-old", fa);
+
+    // token-b: event_ts = 5000ns (较新)
+    OrderBookFeatures fb{};
+    fb.valid = true;
+    fb.event_ts_ns = 5000;
+    fb.data_source_ts_ns = 5100;
+    fb.ingestion_ts_ns = 5200;
+    fb.as_of_ts_ns = 5300;
+    hub.Publish("tok-new", fb);
+
+    // 应返回最小值 (最老数据)
+    EXPECT_EQ(hub.OldestEventTsNs(), 1000);
+}
+
+TEST(OrderBookSnapshotHub, T17_OldestEventTsNs_ZeroEventTsSkipped) {
+    OrderBookSnapshotHub hub;
+    // event_ts_ns = 0 的 slot (有效但未初始化 ts) 应被跳过
+    OrderBookFeatures f0{};
+    f0.valid = false;
+    f0.event_ts_ns = 0;  // 未发布真实数据 (ResetToken 后状态)
+    hub.Publish("tok-zero", f0);
+
+    OrderBookFeatures f1{};
+    f1.valid = true;
+    f1.event_ts_ns = 2000;
+    f1.data_source_ts_ns = 2100;
+    f1.ingestion_ts_ns = 2200;
+    f1.as_of_ts_ns = 2300;
+    hub.Publish("tok-real", f1);
+
+    // event_ts=0 被跳过, 返回 2000
+    EXPECT_EQ(hub.OldestEventTsNs(), 2000);
+}
+
+// ---------------------------------------------------------------------------
+// T18: R-20 倒挂防护 — OrderBookFeatures ts_chain_ok 在 ingestion < data_source 时失败
+//   验证倒挂 scenario (BUG-8 根因复现: data_source_ts > ingestion_ts)
+//   以及 max(recv, data_source) 修法后 ts_chain_ok 通过
+// ---------------------------------------------------------------------------
+TEST(OrderBookSnapshotHub, T18_R20_ClockSkewScenario) {
+    // 模拟跨洋场景: Polymarket 服务端时钟领先本地 21ms
+    // data_source_ts = 1780089249571000000 ns (Spain BUG-8 真实数据)
+    // recv_ts_ns     = 1780089249549879000 ns (本地接收时刻, 落后 21.12ms)
+    const std::int64_t data_source_ts = 1780089249571000000LL;
+    const std::int64_t recv_ts_ns = 1780089249549879000LL;  // 落后 21ms
+
+    // 未修: 直接用 recv_ts_ns → 倒挂
+    {
+        OrderBookFeatures f{};
+        f.event_ts_ns = data_source_ts;
+        f.data_source_ts_ns = data_source_ts;
+        f.ingestion_ts_ns = recv_ts_ns;  // BUG: < data_source_ts
+        f.as_of_ts_ns = recv_ts_ns + 1;
+        EXPECT_FALSE(f.ts_chain_ok()) << "未修前应倒挂 (data_source > ingestion)";
+    }
+
+    // 已修: ingestion_ts = max(recv, data_source) → 单调链恢复
+    {
+        const std::int64_t ingestion_ts = (recv_ts_ns >= data_source_ts) ? recv_ts_ns : data_source_ts;
+        OrderBookFeatures f{};
+        f.event_ts_ns = data_source_ts;
+        f.data_source_ts_ns = data_source_ts;
+        f.ingestion_ts_ns = ingestion_ts;  // FIX: = data_source_ts (recv < data_source)
+        f.as_of_ts_ns = ingestion_ts;
+        EXPECT_TRUE(f.ts_chain_ok()) << "修后 ingestion >= data_source, 单调链应通过";
+        // 验证 ingestion_ts == data_source_ts (recv 落后时取 data_source)
+        EXPECT_EQ(ingestion_ts, data_source_ts);
+    }
+
+    // 正常场景: recv 领先 data_source (无跨洋偏差) → max() 返回 recv
+    {
+        const std::int64_t recv_normal = data_source_ts + 5'000'000LL;  // recv 领先 5ms
+        const std::int64_t ingestion_ts = (recv_normal >= data_source_ts) ? recv_normal : data_source_ts;
+        EXPECT_EQ(ingestion_ts, recv_normal);
+        OrderBookFeatures f{};
+        f.event_ts_ns = data_source_ts;
+        f.data_source_ts_ns = data_source_ts;
+        f.ingestion_ts_ns = ingestion_ts;
+        f.as_of_ts_ns = ingestion_ts;
+        EXPECT_TRUE(f.ts_chain_ok());
+    }
+}

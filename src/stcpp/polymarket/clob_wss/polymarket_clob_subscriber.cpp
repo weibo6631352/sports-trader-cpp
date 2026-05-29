@@ -178,6 +178,11 @@ bool ExtractUint64(std::string_view body, std::string_view key, std::uint64_t& o
 // Fill R-20 4-ts from frame timestamp field
 // R-20: data_source_ts = timestamp_ms × 1e6. event_ts = data_source_ts.
 // Returns false if timestamp absent (P-03: must drop, not fallback now())
+//
+// P0-2 fix: ingestion_ts = max(local_recv, data_source_ts)
+// 跨洋部署时本地时钟可能落后 Polymarket 服务端时钟 10-30ms，
+// 导致 recv_ts_ns < data_source_ts_ns (R-20 单调链倒挂)。
+// 修法: ingestion_ts 取两者之大，承认时钟偏差，保证 R-20 单调链不破。
 bool FillBaseTs(std::string_view body, std::int64_t recv_ts_ns, FourTs& ts) noexcept {
     std::int64_t ts_ms = 0;
     // timestamp may be int or quoted string (老李 spec §2.2)
@@ -186,8 +191,9 @@ bool FillBaseTs(std::string_view body, std::int64_t recv_ts_ns, FourTs& ts) noex
     // P-03: ms × 1e6 = ns (not s × 1e9)
     ts.data_source_ts_ns = ts_ms * kMsToNs;
     ts.event_ts_ns = ts.data_source_ts_ns;
-    ts.ingestion_ts_ns = recv_ts_ns;
-    ts.as_of_ts_ns = recv_ts_ns;
+    // P0-2: ingestion_ts = max(local_recv, data_source_ts) — 防跨洋时钟偏差倒挂
+    ts.ingestion_ts_ns = (recv_ts_ns >= ts.data_source_ts_ns) ? recv_ts_ns : ts.data_source_ts_ns;
+    ts.as_of_ts_ns = ts.ingestion_ts_ns;
     ts.ds_origin = DataSourceTsOrigin::kUpstreamPayload;
     return true;
 }

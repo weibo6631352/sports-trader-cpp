@@ -520,3 +520,99 @@ TEST(PolymarketCLOBSubscriber, T5_OversizedFrameHandling) {
             << "T5c: empty frame must not produce WssEvent";
     }
 }
+
+// ============================================================================
+// T6: R-20 P0-2 跨洋时钟偏差修复 — ingestion_ts = max(local_recv, data_source_ts)
+// ============================================================================
+// BUG-8 根因: 跨洋部署时本地时钟落后 Polymarket 服务端时钟 10-30ms,
+//   导致 recv_ts_ns < data_source_ts_ns (R-20 单调链倒挂)。
+//
+// 修法验证:
+//   T6a: recv < data_source (跨洋偏差) → ingestion_ts = data_source_ts, 单调链成立
+//   T6b: recv >= data_source (正常/recv 领先) → ingestion_ts = recv_ts, 行为与修前相同
+//   T6c: BUG-8 真实数据复现 (Spain: diff=-21.12ms) → 修后单调链成立
+// ============================================================================
+TEST(PolymarketCLOBSubscriber, T6_R20_ClockSkewFix) {
+    // T6a: recv 落后 data_source 21ms (跨洋偏差场景)
+    // 修后 ingestion_ts 应等于 data_source_ts，单调链不破
+    {
+        TestFixture fx;
+        ASSERT_TRUE(fx.sub->Start());
+
+        // data_source_ts = 1748390400000ms → ns
+        constexpr std::int64_t kTsMs = 1'748'390'400'000LL;
+        constexpr std::int64_t kDsNs = kTsMs * 1'000'000LL;
+        // recv 落后 21ms (跨洋场景)
+        constexpr std::int64_t kRecvBehind = kDsNs - 21'000'000LL;
+
+        const std::string book_frame =
+            R"({"event_type":"book","market":"0xm","asset_id":"tok-skew",)"
+            R"("timestamp":1748390400000,"hash":"x",)"
+            R"("bids":[{"price":"0.55","size":"100.0"}],"asks":[{"price":"0.56","size":"80.0"}]})";
+
+        fx.market_tp->Inject(book_frame, kRecvBehind);
+
+        // 期望: frame 被接受 (时钟偏差在 5s future guard 之内)
+        ASSERT_GE(fx.market_sink->events_.size(), 1u) << "T6a: book frame must be accepted";
+
+        const FourTs& ts = fx.market_sink->events_.back().payload.book.ts;
+        // R-20 单调链必须成立
+        EXPECT_LE(ts.event_ts_ns, ts.data_source_ts_ns) << "T6a: event_ts <= data_source_ts";
+        EXPECT_LE(ts.data_source_ts_ns, ts.ingestion_ts_ns)
+            << "T6a: data_source_ts <= ingestion_ts (修后不倒挂)";
+        EXPECT_LE(ts.ingestion_ts_ns, ts.as_of_ts_ns) << "T6a: ingestion_ts <= as_of_ts";
+        EXPECT_TRUE(ts.IsMonotonic()) << "T6a: FourTs::IsMonotonic() 必须通过";
+        // ingestion_ts = max(recv, ds) = ds (因为 recv < ds)
+        EXPECT_EQ(ts.ingestion_ts_ns, kDsNs) << "T6a: recv < ds → ingestion_ts = data_source_ts";
+    }
+
+    // T6b: recv 领先 data_source 50ms (正常 RTT 场景) → ingestion_ts = recv_ts
+    {
+        TestFixture fx;
+        ASSERT_TRUE(fx.sub->Start());
+
+        constexpr std::int64_t kTsMs = 1'748'390'400'001LL;
+        constexpr std::int64_t kDsNs = kTsMs * 1'000'000LL;
+        constexpr std::int64_t kRecvAhead = kDsNs + 50'000'000LL;  // recv 领先 50ms
+
+        const std::string book_frame =
+            R"({"event_type":"book","market":"0xm","asset_id":"tok-normal",)"
+            R"("timestamp":1748390400001,"hash":"x",)"
+            R"("bids":[{"price":"0.55","size":"100.0"}],"asks":[{"price":"0.56","size":"80.0"}]})";
+
+        fx.market_tp->Inject(book_frame, kRecvAhead);
+        ASSERT_GE(fx.market_sink->events_.size(), 1u) << "T6b: book frame must be accepted";
+
+        const FourTs& ts = fx.market_sink->events_.back().payload.book.ts;
+        EXPECT_TRUE(ts.IsMonotonic()) << "T6b: FourTs::IsMonotonic() 必须通过";
+        // recv >= ds → ingestion_ts = recv (与修前一致)
+        EXPECT_EQ(ts.ingestion_ts_ns, kRecvAhead) << "T6b: recv >= ds → ingestion_ts = recv_ts";
+    }
+
+    // T6c: BUG-8 Spain 真实数据 (data_source=1780089249571ms, diff=-21.12ms)
+    {
+        TestFixture fx;
+        ASSERT_TRUE(fx.sub->Start());
+
+        // Spain BUG-8: data_source_ts = 1780089249571000000 ns (1780089249571ms)
+        // ingestion_ts (修前) = 1780089249549879000 ns (落后 21.12ms)
+        constexpr std::int64_t kSpainTsMs = 1'780'089'249'571LL;
+        constexpr std::int64_t kSpainDsNs = kSpainTsMs * 1'000'000LL;     // 1780089249571000000
+        constexpr std::int64_t kSpainRecvNs = kSpainDsNs - 21'121'000LL;  // 落后 21.121ms
+
+        // 构造包含 Spain timestamp 的 book frame
+        const std::string spain_frame =
+            R"({"event_type":"book","market":"0xspain","asset_id":"tok-spain",)"
+            R"("timestamp":1780089249571,"hash":"x",)"
+            R"("bids":[{"price":"0.169","size":"50.0"}],"asks":[{"price":"0.171","size":"60.0"}]})";
+
+        fx.market_tp->Inject(spain_frame, kSpainRecvNs);
+        ASSERT_GE(fx.market_sink->events_.size(), 1u) << "T6c: Spain frame must be accepted";
+
+        const FourTs& ts = fx.market_sink->events_.back().payload.book.ts;
+        EXPECT_EQ(ts.data_source_ts_ns, kSpainDsNs) << "T6c: data_source_ts 正确";
+        EXPECT_TRUE(ts.IsMonotonic()) << "T6c: Spain BUG-8 修后单调链必须成立";
+        EXPECT_GE(ts.ingestion_ts_ns, ts.data_source_ts_ns)
+            << "T6c: ingestion_ts >= data_source_ts (不再倒挂)";
+    }
+}
