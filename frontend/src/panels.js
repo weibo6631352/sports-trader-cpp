@@ -87,19 +87,19 @@ export function renderPositions(data) {
     .map((p) => {
       const pnlTotal = Number(p.pnl_realized) + Number(p.pnl_unrealized);
       const pnlClass = pnlTotal >= 0 ? 'pnl-pos' : 'pnl-neg';
-      const markVsAvg = Number(p.mark_price) - Number(p.avg_fill_price);
+      const markVsAvg = Number(p.mark_price) - Number(p.avg_entry_price);
       return `
       <tr>
         <td class="mono">${p.market_id}</td>
         <td><span class="outcome-badge outcome-${(p.outcome || '').toLowerCase()}">${p.outcome}</span></td>
-        <td class="num">${Number(p.size).toLocaleString()}</td>
-        <td class="num">${Number(p.avg_fill_price).toFixed(4)}</td>
+        <td class="num">${Number(p.net_qty).toLocaleString()}</td>
+        <td class="num">${Number(p.avg_entry_price).toFixed(4)}</td>
         <td class="num">${Number(p.mark_price).toFixed(4)}</td>
         <td class="num ${markVsAvg >= 0 ? 'pnl-pos' : 'pnl-neg'}">${markVsAvg >= 0 ? '+' : ''}${markVsAvg.toFixed(4)}</td>
         <td class="num">${fmtUsdc(p.pnl_realized)}</td>
         <td class="num">${fmtUsdc(p.pnl_unrealized)}</td>
         <td class="num ${pnlClass}">${fmtUsdc(pnlTotal)}</td>
-        <td class="ts">${fmtTs(p.ingestion_ts)}</td>
+        <td class="ts">${fmtTs(p.as_of_ts)}</td>
       </tr>`;
     })
     .join('');
@@ -116,7 +116,7 @@ export function renderPositions(data) {
             <th>Market ID</th><th>方向</th><th>数量</th>
             <th>均价</th><th>Mark</th><th>差价</th>
             <th>已实现</th><th>未实现</th><th>合计 PnL</th>
-            <th>ingestion_ts</th>
+            <th>as_of_ts</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -213,20 +213,23 @@ export function renderPnlCurve(data) {
 
 export function renderPnlAttribution(data) {
   if (!data) return noData('PnL 归因');
-  const wf = data.waterfall || [];
-  if (wf.length === 0) return `<div class="no-data">暂无瀑布数据</div>`;
+  // 后端 waterfall 是 object {gross,fee,gas,slippage,spread,net}, 不是 array
+  const wfObj = data.waterfall || {};
+  const hasData = Object.keys(wfObj).length > 0;
+  if (!hasData) return `<div class="no-data">暂无瀑布数据</div>`;
 
-  const gross = Number(wf[0]?.value || 0);
-  const net = Number(wf[wf.length - 1]?.value || 0);
+  // 固定顺序: gross→fee→gas→slippage→spread→net (net 为合计行)
+  const WF_ORDER = ['gross', 'fee', 'gas', 'slippage', 'spread', 'net'];
+  const gross = Number(wfObj.gross || 0);
 
-  const bars = wf.map((item) => {
-    const v = Number(item.value);
+  const bars = WF_ORDER.map((key) => {
+    const v = Number(wfObj[key] ?? 0);
     const pct = gross !== 0 ? Math.abs(v / gross) * 100 : 0;
-    const isNet = item.label === 'net_pnl';
+    const isNet = key === 'net';
     const positive = v >= 0;
     return `
       <div class="wf-row">
-        <div class="wf-label">${item.label}</div>
+        <div class="wf-label">${key}</div>
         <div class="wf-bar-wrap">
           <div class="wf-bar ${isNet ? 'wf-net' : positive ? 'wf-pos' : 'wf-neg'}"
                style="width:${Math.min(pct, 100).toFixed(1)}%"></div>
@@ -273,14 +276,13 @@ export function renderRiskRejects(data) {
     .map(
       (r) => `
       <tr>
-        <td class="mono">${r.reject_id}</td>
+        <td class="mono">${r.intent_ref}</td>
         <td class="mono">${r.market_id}</td>
         <td><span class="reason-code">${r.reason_code}</span></td>
         <td>${r.side}</td>
         <td class="num">${Number(r.size).toLocaleString()}</td>
         <td class="num">${Number(r.price).toFixed(4)}</td>
-        <td class="ts">${fmtTs(r.event_ts)}</td>
-        <td class="ts">${fmtTs(r.ingestion_ts)}</td>
+        <td class="ts">${fmtTs(r.rejected_ts)}</td>
       </tr>`
     )
     .join('');
@@ -294,9 +296,9 @@ export function renderRiskRejects(data) {
       <table class="data-table">
         <thead>
           <tr>
-            <th>Reject ID</th><th>Market ID</th><th>原因码</th>
+            <th>Intent Ref</th><th>Market ID</th><th>原因码</th>
             <th>方向</th><th>数量</th><th>价格</th>
-            <th>event_ts</th><th>ingestion_ts</th>
+            <th>rejected_ts</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -311,7 +313,7 @@ export function renderGatePaper(data) {
 
   const items = [
     { label: '成交笔数', value: Number(data.n_trades).toLocaleString() },
-    { label: '盈利日占比', value: fmtPct(data.positive_days_ratio) },
+    { label: '盈利日占比', value: fmtPct(data.positive_day_ratio) },
     { label: 'Sharpe', value: `${Number(data.sharpe).toFixed(3)} ± ${Number(data.sharpe_se).toFixed(3)}` },
     { label: 'p-value', value: Number(data.p_value).toFixed(4) },
     { label: '胜率 (hit_rate)', value: fmtPct(data.hit_rate) },
@@ -408,7 +410,10 @@ export function renderBook(data) {
       </div>
     </div>
     <div class="panel-footer">
-      event_ts ${fmtTs(data.event_ts)} &nbsp; ingestion_ts ${fmtTs(data.ingestion_ts)}
+      event_ts ${fmtTs(data.event_ts)} &nbsp;
+      data_source_ts ${fmtTs(data.data_source_ts)} &nbsp;
+      ingestion_ts ${fmtTs(data.ingestion_ts)} &nbsp;
+      book_as_of_ts ${fmtTs(data.book_as_of_ts)}
     </div>`;
 }
 
