@@ -1,0 +1,57 @@
+name: Auto cleanup workflow runs
+
+# 老板 2026-05-29 verbatim "有没有更好的机制 不需要干预的" 触发
+# 自动清理策略 (ADR-032 §3 策略 3 衍生 + ADR-033 候选):
+#   - failure runs > 1 天     → 自动删 (减噪音)
+#   - 任何 runs > 7 天        → 自动删 (retention)
+#   - keep_minimum_runs = 5   → 防全删
+#
+# 触发: 每周一 03:00 UTC 自动 + 手动 workflow_dispatch
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  cleanup-failures:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete failed runs > 1 day
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ONE_DAY_AGO=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)
+          gh run list --repo ${{ github.repository }} \
+            --status failure \
+            --limit 200 \
+            --json databaseId,createdAt \
+            --jq ".[] | select(.createdAt < \"$ONE_DAY_AGO\") | .databaseId" | \
+          while read run_id; do
+            gh run delete --repo ${{ github.repository }} "$run_id" || true
+          done
+
+  cleanup-old:
+    runs-on: ubuntu-latest
+    needs: cleanup-failures
+    steps:
+      - name: Delete all runs > 7 days (keep min 5)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SEVEN_DAYS_AGO=$(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ)
+          TOTAL=$(gh run list --repo ${{ github.repository }} --limit 200 --json databaseId --jq 'length')
+          if [ "$TOTAL" -le 5 ]; then
+            echo "Total $TOTAL <= 5, skip cleanup"
+            exit 0
+          fi
+          gh run list --repo ${{ github.repository }} \
+            --limit 200 \
+            --json databaseId,createdAt \
+            --jq ".[] | select(.createdAt < \"$SEVEN_DAYS_AGO\") | .databaseId" | \
+          while read run_id; do
+            gh run delete --repo ${{ github.repository }} "$run_id" || true
+          done
