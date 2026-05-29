@@ -1,5 +1,9 @@
 name: PR Checks
 # 老高 v1.7 (W9 Wave 60) — v1.5 + 3 新 Python grep job + abi_lock v1.7 struct + ADR-027
+# Wave 89 cite: ADR-032 §3 本地优先策略已实施 — pre-push hook 本地跑 95% 检查.
+#   远端 CI 仍保留 (Linux specific verify); sub-agent 不等远端 (ADR-032 §3 策略 3).
+#   本文件 v2 精简计划 (ADR-032 §3 策略 2) 见 Wave 89 PR #17 — 移除 17 grep job 后续推进.
+#
 # 红线: PR <= 8 min, 命中即 reject
 # 改本文件: 老高 + 老郭 + 老雷 三方任一签字, PR 描述带 "spec by 老郭" 走 ADR-005 派单
 #

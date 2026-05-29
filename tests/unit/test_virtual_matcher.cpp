@@ -6,6 +6,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 
 #include "stcpp/execution/virtual_matcher.hpp"

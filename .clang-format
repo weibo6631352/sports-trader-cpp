@@ -1,5 +1,6 @@
 # clang-format (老高 v1 §1 命名 + §3 头文件 + §5 性能反模式 — 风格层面)
-# 公司 C++20 ground-up. clang-format 19+ 兼容.
+# 公司 C++20 ground-up. 本地 clang-format 22+ (brew llvm 22.1.6).
+# CI pin clang-format-19 (ADR-032 §3 策略 2 pr.yml v2). 22 与 19 格式兼容 (Wave 74 验证).
 
 BasedOnStyle: Google
 Language: Cpp
