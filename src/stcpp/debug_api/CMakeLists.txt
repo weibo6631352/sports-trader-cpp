@@ -158,6 +158,7 @@ target_link_libraries(stcpp_debug_server PRIVATE
     stcpp_sizing
     stcpp_quote_snapshot_hub    # 集成 ④: quote hub (小石)
     stcpp_data_score_store
+    stcpp_data_inplay_feed      # --score-live: InplayFeedThread (小段 W5, POSIX+zlib)
     stcpp_backtest              # ReplayDriver (--replay 模式, kSynthetic hub feed)
 )
 

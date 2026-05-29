@@ -110,3 +110,35 @@ find_package(Threads REQUIRED)
 target_link_libraries(stcpp_data_score_store
     PUBLIC Threads::Threads
 )
+
+# ---------------------------------------------------------------------------
+# stcpp_data_inplay_feed: InplayFeedThread (小段 W5 live 接入)
+#
+# 真实 HTTP GET inplay.goalserve.com/inplay-<sport>.gz
+#   → gzip 解压 (zlib) → InplayScoreParser → ScoreSnapshotStore::Publish
+# POSIX socket (无 cpp-httplib, 避免与 debug_api 实例冲突)
+# 代理: http_proxy / HTTP_PROXY 环境变量 (CONNECT 隧道)
+# R-12: 独立 std::thread per sport, 绝不在 WSS event loop 调用
+# R-20: data_source_ts = updated_ts (ms) × 1e6; event_ts = start_ts (sec) × 1e9
+# ---------------------------------------------------------------------------
+add_library(stcpp_data_inplay_feed STATIC
+    inplay_feed_thread.cpp
+)
+
+target_include_directories(stcpp_data_inplay_feed
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+           ${CMAKE_SOURCE_DIR}/src   # state_provider.hpp
+)
+
+target_compile_features(stcpp_data_inplay_feed PUBLIC cxx_std_20)
+
+# zlib (gzip 解压)
+find_package(ZLIB REQUIRED)
+
+target_link_libraries(stcpp_data_inplay_feed
+    PUBLIC
+        stcpp_data_score_store      # ScoreSnapshotStore
+        stcpp_data_inplay_parser    # InplayScoreParser
+        ZLIB::ZLIB                  # gzip inflate
+        Threads::Threads
+)

@@ -51,7 +51,8 @@
 #include <thread>
 #include <vector>
 
-#include "stcpp/backtest/replay_driver.hpp"     // ReplayDriver (kSynthetic 模式)
+#include "stcpp/backtest/replay_driver.hpp"        // ReplayDriver (kSynthetic 模式)
+#include "stcpp/data/inplay_feed_thread.hpp"      // InplayFeedThread (--score-live, 小段 W5)
 #include "stcpp/data/score_snapshot_store.hpp"  // ScoreSnapshotStore (小段, 集成 ③)
 #include "stcpp/risk/ledger_snapshot_hub.hpp"   // LedgerSnapshotHub (集成 ④)
 #include "stcpp/sizing/quote_snapshot_hub.hpp"  // QuoteSnapshotHub (集成 ④)
@@ -276,6 +277,7 @@ int main(int argc, char** argv) {
     bool replay = false;
     bool live = false;
     bool live_verbose = false;
+    bool score_live = false;  // --score-live: 启动 InplayFeedThread (小段 W5)
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -291,6 +293,8 @@ int main(int argc, char** argv) {
             replay = true;
         } else if (a == "--live") {
             live = true;
+        } else if (a == "--score-live") {
+            score_live = true;
         } else if (a == "--live-verbose") {
             live_verbose = true;
         } else if (a == "--help" || a == "-h") {
@@ -307,6 +311,8 @@ int main(int argc, char** argv) {
                 "                  markets via gamma API, feed true book data into hub.\n"
                 "                  Reads HTTPS_PROXY/HTTP_PROXY env vars for proxy config.\n"
                 "                  Mutually exclusive with --replay.\n"
+                "  --score-live    with --real: start InplayFeedThread (Goalserve inplay HTTP poll)\n"
+                "                  soccer/basketball/tennis ~1s; R-12 independent threads; R-20 ts.\n"
                 "  --live-verbose  extra WSS/parser debug logging (implies --live)\n"
                 "  (frontend served by Vite dev server, not this process)\n");
             return 0;
@@ -336,6 +342,12 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[debug_server] error: --live requires --real\n");
         return 2;
     }
+    // --score-live 必须与 --real 配合
+    if (score_live && !real) {
+        std::fprintf(stderr, "[debug_server] error: --score-live requires --real\n");
+        return 2;
+    }
+
     if (live && replay) {
         std::fprintf(stderr, "[debug_server] error: --live and --replay are mutually exclusive\n");
         return 2;
@@ -353,6 +365,8 @@ int main(int argc, char** argv) {
     std::unique_ptr<stcpp::polymarket::clob_wss::OrderBookSnapshotHub> hub_owned;
     std::unique_ptr<stcpp::data::ScoreSnapshotStore> score_store_owned;
     std::unique_ptr<RealStateProvider> real_provider;
+    // --score-live: InplayFeedThread (小段 W5; 独立采集线程, R-12 合规)
+    std::unique_ptr<stcpp::data::InplayFeedThread> inplay_feed;
 
     // 集成 ④: LedgerSnapshotHub + QuoteSnapshotHub (--replay 时由 ReplayFeedCoordinator Publish)
     std::unique_ptr<stcpp::risk::LedgerSnapshotHub> ledger_hub_owned;
@@ -378,6 +392,20 @@ int main(int argc, char** argv) {
         // ScoreSnapshotStore (小段): standalone 空 store, 无 live feed → score 回落 Demo
         // 生产接入时由 Goalserve 采集线程 Publish() 写入
         score_store_owned = std::make_unique<stcpp::data::ScoreSnapshotStore>();
+        // --score-live: 启动 InplayFeedThread (小段 W5)
+        // R-12: 独立线程; R-20: data_source_ts=updated_ts, event_ts=start_ts
+        if (score_live) {
+            stcpp::data::InplayFeedConfig feed_cfg;
+            feed_cfg.sports = {
+                stcpp::data::goalserve::GoalserveSport::Soccer,
+                stcpp::data::goalserve::GoalserveSport::Basketball,
+                stcpp::data::goalserve::GoalserveSport::Tennis,
+            };
+            inplay_feed = std::make_unique<stcpp::data::InplayFeedThread>(*score_store_owned, feed_cfg);
+            inplay_feed->Start();
+            std::printf("[debug_server] --score-live: InplayFeedThread 启动 (soccer/basketball/tennis)\n");
+        }
+
         // 集成 ④: LedgerSnapshotHub + QuoteSnapshotHub
         // --replay 时由 ReplayFeedCoordinator Publish; 无 replay 时空 hub → 回落 Demo
         ledger_hub_owned = std::make_unique<stcpp::risk::LedgerSnapshotHub>();
@@ -646,6 +674,13 @@ int main(int argc, char** argv) {
 
     std::printf("\n[debug_server] 收到停止信号, 关闭 server...\n");
     server.stop();
+
+    // 停止 InplayFeedThread (--score-live; 先于 store 析构)
+    if (inplay_feed) {
+        std::printf("[debug_server] 停止 InplayFeedThread...\n");
+        inplay_feed->Stop();
+        std::printf("[debug_server] InplayFeedThread 已停止\n");
+    }
 
     // 停止 ReplayFeedCoordinator (集成 ④; 先于 ReplayDriver 停止, 避免 hub 被写但读端已消失)
     // RAII: Stop() 内含 join, 析构也会调用 Stop()
