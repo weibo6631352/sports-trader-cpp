@@ -69,3 +69,9 @@ add_subdirectory(unit)
 add_subdirectory(sim)
 # W5 Wave 24 (小宋): integration test framework v0.1 (paper E2E + audit chain + R-11 pollution)
 add_subdirectory(integration)
+# E-03 chaos test framework (小宋 W10W3): FaultProvider + 5 类故障注入矩阵
+# CTest labels: chaos_smoke / chaos_full / paper_runtime_gate
+add_subdirectory(chaos)
+# E-04 replay test framework (小宋 W11W1): audit chain replay + R-11 + R-20 4 ts
+# CTest labels: replay_gate / paper_runtime_gate
+add_subdirectory(replay)
