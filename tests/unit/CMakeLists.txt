@@ -566,6 +566,36 @@ gtest_discover_tests(test_pm_wss_subscriber
     PROPERTIES LABELS "unit;polymarket;wss;w5"
 )
 
+# 小冯 Wave 79 (W9 W3): PolymarketCLOBSubscriber 3 ctest
+#   T1: subscribe payload 双 token (assets_ids array, "Market" 大写 M, P-01/P-02)
+#   T2: book event parse + 4-ts 填充 (R-20 data_source_ts=timestamp×1e6, P-03, future-guard)
+#   T3: reconnect on disconnect (P-08 重发订阅 + heartbeat timeout, §5.1/§5.2)
+# ADR-027 cite: laoli-w9-wss-subscriber-impl-spec-v1.md / ADR-027 Enforce-1
+add_executable(test_clob_subscriber
+    test_clob_subscriber.cpp
+)
+target_link_libraries(test_clob_subscriber PRIVATE
+    GTest::gtest_main
+    stcpp_polymarket_clob_wss
+)
+target_compile_options(test_clob_subscriber PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_clob_subscriber PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_clob_subscriber PRIVATE cxx_std_20)
+target_compile_definitions(test_clob_subscriber PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_clob_subscriber
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;polymarket;clob-wss;adr027;wave79;w9"
+)
+
 # 小冯 W6 Wave 29: IngestRaw WAL 第 5 WAL (DS-01 解锁)
 #   T1: PM_WSS frame 落 paper.ingest_raw.wal (Tier 1 Accepted)
 #   T2: 5 source_kind 各 1 case (PM_WSS + 4 GS_*)
