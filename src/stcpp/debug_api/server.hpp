@@ -7,6 +7,12 @@
 //   ADR-015 (vCPU 分工; API server 独立 vCPU6)
 //   R-12 (独立 std::thread; 不占 vCPU0/1/2)
 //   R-20 (start_time_ 用于 uptime_sec; as_of_ts = now() epoch ns)
+//
+// 前端静态资源托管 (feat/xiaolu-cpp-serve-frontend):
+//   cpp-httplib set_mount_point("/", frontend_dir) 把 frontend/dist 挂到根路径。
+//   优先级: API handler 先注册, set_mount_point 后调用; cpp-httplib 已注册的精确/regex
+//   handler 优先于 mount point 静态文件 — /api/v1/* /healthz /status /version /metrics 不受影响。
+//   frontend_dir 为空或目录不存在 → 跳过挂载 (API 仍正常, 不崩)。
 
 #pragma once
 
@@ -44,8 +50,14 @@ public:
     //   返回结构合法的空/0 值。各模块 owner 提供真实 double-buffer snapshot 后,
     //   由 main 注入。HttpServer 只持 const 句柄, 不拥有生命周期 (caller 保证 outlive)。
     // bind: 安全默认 "127.0.0.1" (ADR-038 §5 / 小白 §2). 远程走 SSH 隧道, 不开 0.0.0.0。
+    // frontend_dir: 前端构建产物目录 (挂载到 "/" 根路径).
+    //   空串/nullptr → 不挂载 (API 仍正常).
+    //   目录不存在 → 打印 warn + 跳过挂载 (不 abort).
+    //   cpp-httplib handler 优先于 mount point:
+    //     API handler 在 register_handlers() 先注册, set_mount_point 后调用,
+    //     两者顺序均可 — httplib 内部已注册的精确/regex route 始终比 mount point 优先匹配.
     explicit HttpServer(uint16_t port, const StateProvider* provider = nullptr,
-                        const char* bind_addr = "127.0.0.1");
+                        const char* bind_addr = "127.0.0.1", std::string frontend_dir = {});
 
     // 禁止拷贝/移动 (httplib::Server 不可拷贝; thread 不可拷贝)
     HttpServer(const HttpServer&) = delete;
@@ -78,11 +90,15 @@ private:
     // 注册所有 endpoint handler 到 server_
     void register_handlers();
 
+    // 挂载前端静态目录 (API handler 注册之后调用; 目录不存在则 warn + 跳过)
+    void maybe_mount_frontend();
+
     httplib::Server server_;
     std::thread server_thread_;
     std::atomic<bool> running_{false};
     uint16_t port_;
     std::string bind_addr_;
+    std::string frontend_dir_;  // 空串 → 不挂载
 
     // 缺省 stub provider (caller 未注入时使用); provider_ 指向它或外部注入的实现
     StubStateProvider default_provider_;

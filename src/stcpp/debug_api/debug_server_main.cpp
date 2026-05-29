@@ -11,13 +11,17 @@
 //   这是"能看到任何已经开发的功能状态"的后端落地点。
 //
 // CLI:
-//   stcpp_debug_server [--port N] [--host ADDR] [--empty] [--real]
-//     --port N     监听端口 (默认 8080; 对齐 frontend BASE_URL)
-//     --host ADDR  绑定地址 (默认 127.0.0.1; ADR-038 §5 安全默认, 远程走 SSH 隧道)
-//     --empty      用 StubStateProvider (全空, 各 endpoint 返回结构合法的空值);
-//                  默认用 DemoStateProvider (代表性演示数据, 看板全面板可渲染)
-//     --real       用 RealStateProvider (book/rejects 接真实快照, 其余委托 Demo;
-//                  data_source="mixed"; 启动时 hub/snap 均空 → 回落 Demo 优雅降级)
+//   stcpp_debug_server [--port N] [--host ADDR] [--empty] [--real] [--frontend DIR]
+//     --port N        监听端口 (默认 8080; 对齐 frontend BASE_URL)
+//     --host ADDR     绑定地址 (默认 127.0.0.1; ADR-038 §5 安全默认, 远程走 SSH 隧道)
+//     --empty         用 StubStateProvider (全空, 各 endpoint 返回结构合法的空值);
+//                     默认用 DemoStateProvider (代表性演示数据, 看板全面板可渲染)
+//     --real          用 RealStateProvider (book/rejects 接真实快照, 其余委托 Demo;
+//                     data_source="mixed"; 启动时 hub/snap 均空 → 回落 Demo 优雅降级)
+//     --frontend DIR  前端构建产物目录 (默认 "frontend/dist", 相对 CWD; 也可绝对路径).
+//                     cpp-httplib set_mount_point("/", DIR) 挂载; API handler 优先.
+//                     目录不存在 → warn + 跳过 (API 仍正常, 不 abort).
+//                     同源收益: 看板与 API 同在 :PORT, 无跨域.
 //
 // 安全: 默认 127.0.0.1 only; 只读 endpoint; 黑名单字段 (私钥/签名字节) 物理不在 schema 中。
 // 模式: build-time STCPP_EXEC_MODE_STR 决定 mode 字段 (paper/live/backtest)。
@@ -65,6 +69,8 @@ int main(int argc, char** argv) {
     std::string host = "127.0.0.1";
     bool empty = false;
     bool real = false;
+    // 默认 "frontend/dist" (相对 CWD); 用户可传绝对路径或相对路径
+    std::string frontend_dir = "frontend/dist";
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -76,14 +82,20 @@ int main(int argc, char** argv) {
             empty = true;
         } else if (a == "--real") {
             real = true;
+        } else if (a == "--frontend" && i + 1 < argc) {
+            frontend_dir = argv[++i];
         } else if (a == "--help" || a == "-h") {
             std::printf(
-                "usage: stcpp_debug_server [--port N] [--host ADDR] [--empty] [--real]\n"
-                "  --port N     listen port (default 8080)\n"
-                "  --host ADDR  bind address (default 127.0.0.1)\n"
-                "  --empty      use empty StubStateProvider (default: DemoStateProvider)\n"
-                "  --real       use RealStateProvider (book/rejects=real, rest=demo;\n"
-                "               hub/snap empty at start → graceful fallback to demo)\n");
+                "usage: stcpp_debug_server [--port N] [--host ADDR] [--empty] [--real]"
+                " [--frontend DIR]\n"
+                "  --port N        listen port (default 8080)\n"
+                "  --host ADDR     bind address (default 127.0.0.1)\n"
+                "  --empty         use empty StubStateProvider (default: DemoStateProvider)\n"
+                "  --real          use RealStateProvider (book/rejects=real, rest=demo;\n"
+                "                  hub/snap empty at start → graceful fallback to demo)\n"
+                "  --frontend DIR  frontend build dir (default: frontend/dist, relative to CWD)\n"
+                "                  cpp-httplib mount_point(\"/\", DIR); API handlers take priority\n"
+                "                  dir missing → warn + skip mount (API still works)\n");
             return 0;
         } else {
             std::fprintf(stderr, "[debug_server] unknown arg: %s (try --help)\n", a.c_str());
@@ -133,7 +145,7 @@ int main(int argc, char** argv) {
         provider = &demo;
     }
 
-    HttpServer server{port, provider, host.c_str()};
+    HttpServer server{port, provider, host.c_str(), frontend_dir};
     server.start();
 
     if (!server.is_running()) {
@@ -156,7 +168,10 @@ int main(int argc, char** argv) {
     std::printf(
         "[debug_server]            /api/v1/{positions,pnl/timeseries,pnl/attribution,"
         "risk/rejects,gate/paper,market/<id>,book/<id>}\n");
-    std::printf("[debug_server] 看板: cd frontend && python3 serve.py  → http://127.0.0.1:3000/\n");
+    // 同源看板 banner (C++ 托管, 零 Node/Python 运行时)
+    std::printf("[debug_server] 看板: http://%s:%u/ (C++ 托管, 无需 npm)\n", host.c_str(),
+                static_cast<unsigned>(port));
+    std::printf("[debug_server]   前端目录: %s\n", frontend_dir.c_str());
     std::printf("[debug_server] Ctrl-C 停止\n");
     std::fflush(stdout);
 
