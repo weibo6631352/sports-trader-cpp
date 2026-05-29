@@ -1,12 +1,15 @@
 /**
- * stub.js — v3 单屏盯盘终端 本地 stub 数据
+ * stub.js — v4 单屏盯盘终端 本地 stub 数据
  * owner: 小苏
  * last_review: 2026-05-29
  *
  * 结构与后端真实 wire JSON 对齐 (curl 验证 2026-05-29):
  *   /status          → 含 data_source: "demo"|"live"
- *   /api/v1/market   → 含 event_id, outcome, active/closed/resolved/accepting_orders
- *   /api/v1/book     → best_bid/ask + bids[]/asks[], 4 时间戳 book_as_of_ts
+ *   /api/v1/market   → 含 condition_id, tokens[], slug, polymarket_url,
+ *                      event_id, tick_size/fee_rate/neg_risk/neg_risk_market_id,
+ *                      active/closed/resolved/accepting_orders
+ *   /api/v1/book     → BinaryMarketBookView: condition_id, cross_spread,
+ *                      token0{...}/token1{...} 各含完整单边 book
  *   /api/v1/score    → found, event_id, sport, status, period, clock_sec,
  *                      home/away/home_score/away_score, source,
  *                      event_ts/data_source_ts/ingestion_ts/score_as_of_ts
@@ -181,60 +184,82 @@ export const STUB_GATE_PAPER = {
   confirm_pass: false,
 };
 
+// v4: market 现含 condition_id / tokens[] / slug / polymarket_url / neg_risk_market_id
 export const STUB_MARKET = {
   mode: 'paper',
   as_of_ts: NOW_NS,
   found: true,
+  condition_id: 'nba-lal-bos-ml',
   market_id: 'nba-lal-bos-ml',
-  outcome: 'LAL',            // v3: outcome 字段
   tick_size: 0.01,
   fee_rate: 0.02,
   neg_risk: false,
+  neg_risk_market_id: '',
   accepting_orders: true,
   active: true,
   closed: false,
   resolved: false,
   source: 'polymarket',
-  event_id: 'nba-lal-bos-2026-05-29',   // v3: event_id 字段 (拉比分用)
+  event_id: 'nba-lal-bos-2026-05-29',
+  slug: 'nba-lal-bos-2026-05-29',
+  polymarket_url: 'https://polymarket.com/event/nba-lal-bos-2026-05-29',
+  tokens: [
+    { token_id: 'tok-lal-001', outcome: 'LAL', price: 0.65, winner: false },
+    { token_id: 'tok-bos-001', outcome: 'BOS', price: 0.35, winner: false },
+  ],
 };
+
+// v4: BinaryMarketBookView — 双边 book
+function makeHalfBook(tokenId, outcome, bid, ask, imbalance, seqOffset) {
+  return {
+    found: true,
+    token_id: tokenId,
+    condition_id: 'nba-lal-bos-ml',
+    outcome,
+    market_id: 'nba-lal-bos-ml',
+    best_bid: bid,
+    best_ask: ask,
+    microprice: parseFloat(((bid + ask) / 2).toFixed(4)),
+    spread: parseFloat((ask - bid).toFixed(4)),
+    imbalance,
+    sequence_no: 88421 + seqOffset,
+    gap_count: 0,
+    wss_state: 'CONNECTED',
+    source: 'polymarket',
+    event_ts: NOW_NS - 1e8,
+    data_source_ts: NOW_NS - 9e7,
+    ingestion_ts: NOW_NS - 8e7,
+    book_as_of_ts: NOW_NS,
+    bids: [
+      { price: bid,              size: 3200 },
+      { price: bid - 0.006,      size: 1800 },
+      { price: bid - 0.014,      size: 900  },
+      { price: bid - 0.024,      size: 400  },
+    ],
+    asks: [
+      { price: ask,              size: 2700 },
+      { price: ask + 0.006,      size: 1500 },
+      { price: ask + 0.014,      size: 600  },
+      { price: ask + 0.024,      size: 300  },
+    ],
+  };
+}
 
 export const STUB_BOOK = {
   mode: 'paper',
   as_of_ts: NOW_NS,
   found: true,
-  market_id: 'nba-lal-bos-ml',
   condition_id: 'nba-lal-bos-ml',
-  best_bid: 0.644,
-  best_ask: 0.656,
-  microprice: 0.648,
-  spread: 0.012,
-  imbalance: 0.23,
-  sequence_no: 88421,
-  gap_count: 0,
-  wss_state: 'CONNECTED',
-  source: 'polymarket',
+  cross_spread: 0.012,
   event_ts: NOW_NS - 1e8,
   data_source_ts: NOW_NS - 9e7,
   ingestion_ts: NOW_NS - 8e7,
-  book_as_of_ts: NOW_NS,
-  bids: [
-    { price: 0.644, size: 3200 },
-    { price: 0.638, size: 1800 },
-    { price: 0.63, size: 900 },
-    { price: 0.62, size: 400 },
-  ],
-  asks: [
-    { price: 0.656, size: 2700 },
-    { price: 0.662, size: 1500 },
-    { price: 0.67, size: 600 },
-    { price: 0.68, size: 300 },
-  ],
+  as_of_ts_ns: NOW_NS,
+  token0: makeHalfBook('tok-lal-001', 'LAL', 0.644, 0.656,  0.23, 0),
+  token1: makeHalfBook('tok-bos-001', 'BOS', 0.344, 0.356, -0.23, 1),
 };
 
 // v3 新增: 比分/赛况 stub
-// wire 字段: found, event_id, sport, status, period, clock_sec,
-//            home, away, home_score, away_score, source,
-//            event_ts, data_source_ts, ingestion_ts, score_as_of_ts
 export const STUB_SCORE = {
   mode: 'paper',
   as_of_ts: NOW_NS,
@@ -256,9 +281,6 @@ export const STUB_SCORE = {
 };
 
 // v3 新增: 量化参数 stub
-// wire 字段: found, market_id, fair_value, market_mid, edge_bps,
-//            kelly_fraction, suggested_notional, signal_strength, model_conf,
-//            quote_as_of_ts
 export const STUB_QUOTE = {
   mode: 'paper',
   as_of_ts: NOW_NS,

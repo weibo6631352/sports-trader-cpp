@@ -3,39 +3,44 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>sports-trader-cpp — 单屏盯盘终端 v3</title>
+  <title>sports-trader-cpp — 单屏盯盘终端 v4</title>
   <link rel="stylesheet" href="src/style.css" />
 </head>
 <body>
 <div id="app">
 
-  <!-- DEMO 横幅 (data_source==demo 时强制显示, 不可关闭, 老钱红线 P0) -->
+  <!-- DEMO 横幅 (data_source !== 'live' 时强制显示, 不可关闭, 老钱红线 P0) -->
+  <!-- P0-01: 改黄系 (框架禁橙) -->
   <div id="demo-banner" class="hidden">
     演示数据 · 非实盘 — 所有量化参数仅供参考, 不触发下单
   </div>
 
   <!-- 顶部常驻条 -->
+  <!-- P1-01: 净PnL 移到 state 之后 (操作员第二眼即命中最关键数字) -->
   <div class="top-bar">
     <span id="top-mode-badge"></span>
     <span id="top-state"></span>
+    <span class="top-sep">|</span>
+    <span class="top-label">净PnL</span>
+    <span id="top-pnl" class="top-pnl">—</span>
+    <span class="top-sep">|</span>
     <span id="top-uptime" class="top-dim"></span>
     <span class="top-sep">|</span>
     <span class="top-label">WSS</span>
     <span id="top-wss"></span>
-    <span class="top-sep">|</span>
-    <span class="top-label">净PnL</span>
-    <span id="top-pnl" class="top-pnl">—</span>
     <span class="top-sep">|</span>
     <span id="top-gate"></span>
     <span class="top-sep">|</span>
     <span class="top-label">p99</span>
     <span id="top-p99" class="top-dim">—</span>
     <span class="top-sep">|</span>
-    <span class="top-label">staleness</span>
+    <span class="top-label">数据延迟</span>
     <span id="top-staleness" class="top-dim">—</span>
     <span class="top-sep">|</span>
     <span class="top-label">拒单/60s</span>
     <span id="top-rejects" class="top-dim">—</span>
+    <!-- P0-03: API 异常 indicator -->
+    <span id="top-api-err"></span>
     <div class="top-right">
       <button class="icon-btn" id="settings-btn" title="API 配置">&#9881;</button>
     </div>
@@ -45,7 +50,7 @@
   <div id="settings-panel" class="hidden">
     <div class="settings-row">
       <label>API Base</label>
-      <input id="api-base-input" type="text" placeholder="http://127.0.0.1:8092" />
+      <input id="api-base-input" type="text" placeholder="http://127.0.0.1:8080" />
       <button class="btn-primary" id="api-base-save">保存并刷新</button>
     </div>
     <div class="settings-hint">默认 127.0.0.1:8080. 加 ?stub=1 使用 mock 数据.</div>
@@ -56,7 +61,7 @@
     STUB 模式 — 本地 mock 数据 (URL 含 ?stub=1). 移除参数后连接真实 API.
   </div>
 
-  <!-- 全局 PnL 曲线 (窄条 sparkline) -->
+  <!-- 全局 PnL 曲线 (窄条 sparkline, P2-03: 含时间范围标注) -->
   <div id="pnl-sparkline-wrap">
     <div id="pnl-sparkline"><div class="no-data spark-placeholder">PnL 曲线加载中...</div></div>
   </div>

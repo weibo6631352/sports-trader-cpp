@@ -1,22 +1,23 @@
 /**
- * app.js — v3 单屏盯盘终端 主入口
+ * app.js — v4 单屏盯盘终端 主入口
  * owner: 小苏
  * last_review: 2026-05-29
  *
  * 布局: 顶部常驻条 + PnL sparkline + market 卡片网格 + 底部折叠区
- * 删除: 5 tab 导航
  *
- * 轮询分层 (决议 §4):
+ * v4 变更:
+ *  - 双边订单簿: fetchBook 按 condition_id (优先 market.condition_id, fallback market_id)
+ *  - P0-02: demo fail-safe (data_source !== 'live')
+ *  - P0-03: safeGet 区分失败类型, 写 fetchErrorMap; 顶部条增 apiErr slot
+ *  - 顶部条 apiErr span 新增
+ *
+ * 轮询分层:
  *   status/positions:          5s
  *   book/score/quote per-mkt:  5s (仅可见卡)
  *   rejects:                   5s
  *   timeseries/attribution:    15s
  *   metrics:                   30s (折叠时暂停)
  *   market info:               60s
- *
- * 数据组装 (决议 §3):
- *   positions → market 集合 → 并发拉 market/book/score/quote
- *   rejects/attribution.per_market 按 market_id 分组挂上
  */
 
 import {
@@ -63,7 +64,6 @@ import {
 
 const USE_STUB = new URLSearchParams(location.search).get('stub') === '1';
 
-// 缓存: 各 market 的上次数据 (用于增量更新)
 const cache = {
   healthz: null,
   status: null,
@@ -80,13 +80,20 @@ const cache = {
 // ---------- DOM 引用 ----------
 const $ = (id) => document.getElementById(id);
 
-// ---------- stub fallback ----------
+// ---------- stub fallback (P0-03: 区分 null 来源) ----------
 
+/**
+ * safeGet:
+ *  - USE_STUB: 直接返回 stubData
+ *  - 正常: apiFn() 成功 → 返回数据 (可为 null = 404/found:false)
+ *           apiFn() throw → 返回 null (fetchErrorMap 已在 apiFetch 内记录)
+ */
 async function safeGet(apiFn, stubData) {
   if (USE_STUB) return stubData;
   try {
     return await apiFn();
   } catch {
+    // fetchErrorMap 已由 apiFetch 记录失败
     return null;
   }
 }
@@ -112,7 +119,7 @@ function applyTopBar() {
     cache.gate,
   );
 
-  // DEMO 横幅 (老钱红线 P0)
+  // P0-02: fail-safe — isDemo = data_source !== 'live'
   const demoBanner = $('demo-banner');
   if (demoBanner) {
     if (result.isDemo) {
@@ -140,6 +147,9 @@ function applyTopBar() {
   if (topStaleness) topStaleness.innerHTML = result.staleness;
   const topRejects = $('top-rejects');
   if (topRejects) topRejects.innerHTML = result.rejects;
+  // P0-03: API 异常 indicator
+  const topApiErr = $('top-api-err');
+  if (topApiErr) topApiErr.innerHTML = result.apiErr || '';
 }
 
 // ---------- PnL sparkline ----------
@@ -153,25 +163,21 @@ async function refreshSparkline() {
 
 // ---------- 数据组装: market 卡片网格 ----------
 
-/**
- * 从 positions 推断 market 集合, 并发拉取每个 market 的
- * market-info / book / score / quote, 然后组装卡片
- */
 async function refreshMarketGrid() {
-  // 1. 拉 positions (基础)
+  // 1. positions
   const posData = await safeGet(fetchPositions, STUB_POSITIONS);
   cache.positions = posData;
 
   const positions = posData ? (posData.positions || []) : [];
 
-  // 2. 按 market_id 分组 pos rows
+  // 2. 按 market_id 分组
   const posMap = {};
   for (const p of positions) {
     if (!posMap[p.market_id]) posMap[p.market_id] = [];
     posMap[p.market_id].push(p);
   }
 
-  // 3. attribution.per_market 分组 (已缓存)
+  // 3. attribution.per_market
   const pmPnlMap = {};
   if (cache.attribution && cache.attribution.per_market) {
     for (const pm of cache.attribution.per_market) {
@@ -179,7 +185,7 @@ async function refreshMarketGrid() {
     }
   }
 
-  // 4. rejects 按 market_id 分组 (已缓存)
+  // 4. rejects 按 market_id 分组
   const rejectMap = {};
   if (cache.rejects && cache.rejects.rejects) {
     for (const r of cache.rejects.rejects) {
@@ -188,7 +194,7 @@ async function refreshMarketGrid() {
     }
   }
 
-  // 5. market 集合 = positions 中出现的 + rejects 中出现的 + attribution 中出现的
+  // 5. 市场集合
   const allMarketIds = new Set([
     ...Object.keys(posMap),
     ...Object.keys(rejectMap),
@@ -201,34 +207,35 @@ async function refreshMarketGrid() {
     return;
   }
 
-  const isDemoData = cache.status && cache.status.data_source === 'demo';
+  // P0-02: fail-safe — data_source !== 'live' 即为 demo
+  const isDemoData = !cache.status || cache.status.data_source !== 'live';
 
-  // 6. 并发拉取每个 market 的 market/book/score/quote
+  // 6. 并发拉取
   await Promise.all(
     [...allMarketIds].map(async (mktId) => {
-      // market info (60s 缓存: 如果已有则复用, market info 本轮不重拉 — 由 refreshMarketInfoSlow 处理)
       let market = cache.marketData[mktId] ? cache.marketData[mktId].market : null;
       if (!market) {
         market = await safeGet(() => fetchMarket(mktId), STUB_MARKET);
       }
 
-      // book (5s)
-      const book = await safeGet(() => fetchBook(mktId), STUB_BOOK);
+      // book: 优先用 condition_id (无则 fallback market_id)
+      const condId = (market && market.condition_id) || mktId;
+      const book = await safeGet(() => fetchBook(condId), STUB_BOOK);
 
-      // score: 需要 event_id (来自 market.event_id)
+      // score: 需要 event_id
       let score = null;
       if (market && market.event_id) {
         score = await safeGet(() => fetchScore(market.event_id), STUB_SCORE);
       }
 
-      // quote (5s)
-      const quote = await safeGet(() => fetchQuote(mktId), STUB_QUOTE);
+      // quote
+      const quote = await safeGet(() => fetchQuote(condId), STUB_QUOTE);
 
       cache.marketData[mktId] = { market, book, score, quote };
     })
   );
 
-  // 7. 组装 marketData 数组 (按 market_id 排序)
+  // 7. 组装数组
   const marketDataArr = [...allMarketIds].sort().map((mktId) => ({
     marketId: mktId,
     posRows: posMap[mktId] || [],
@@ -265,16 +272,14 @@ async function refreshMarketInfoSlow() {
 async function refreshRejects() {
   const data = await safeGet(fetchRiskRejects, STUB_RISK_REJECTS);
   cache.rejects = data;
-  // rejects 更新后顶部条的拒单计数依赖 status (rm_rejects_last_60s) 不依赖此, 无需 applyTopBar
 }
 
-// ---------- attribution + gate (影响顶部条) ----------
+// ---------- attribution + gate ----------
 
 async function refreshAttribution() {
   const data = await safeGet(fetchPnlAttribution, STUB_PNL_ATTRIBUTION);
   cache.attribution = data;
-  applyTopBar(); // 净PnL 来自 attribution
-
+  applyTopBar();
   const el = $('pnl-attr-panel');
   if (el) el.innerHTML = renderPnlAttribution(data);
 }
@@ -282,19 +287,18 @@ async function refreshAttribution() {
 async function refreshGate() {
   const data = await safeGet(fetchGatePaper, STUB_GATE_PAPER);
   cache.gate = data;
-  applyTopBar(); // PAPER-GATE 来自 gate
+  applyTopBar();
 }
 
-// ---------- metrics (折叠区, 折叠时暂停) ----------
+// ---------- metrics ----------
 
 async function refreshMetrics() {
   const details = $('secondary-details');
-  if (details && !details.open) return; // 折叠时暂停
+  if (details && !details.open) return;
 
   const text = USE_STUB ? STUB_METRICS_TEXT : await fetchMetrics();
   cache.metrics = text;
-  applyTopBar(); // p99/staleness 来自 metrics text
-
+  applyTopBar();
   const el = $('metrics-panel');
   if (el) el.innerHTML = renderMetrics(text);
 }
@@ -307,26 +311,13 @@ function every(fn, ms) {
 }
 
 function initPolling() {
-  // 顶部条 (status + healthz): 5s
   every(refreshTopBar, 5000);
-
-  // sparkline: 15s
   every(refreshSparkline, 15000);
-
-  // market 卡片网格 (positions + book + score + quote per-mkt): 5s
   every(refreshMarketGrid, 5000);
-
-  // rejects: 5s
   every(refreshRejects, 5000);
-
-  // attribution + gate: 15s
   every(refreshAttribution, 15000);
   every(refreshGate, 15000);
-
-  // market info (slow): 60s
   every(refreshMarketInfoSlow, 60000);
-
-  // metrics: 30s (折叠时暂停, 内部检测)
   every(refreshMetrics, 30000);
 }
 
