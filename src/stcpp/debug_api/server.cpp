@@ -93,6 +93,29 @@ void HttpServer::stop() {
 }
 
 void HttpServer::register_handlers() {
+    // CORS 响应头 — 对齐 ADR-038 §5 安全约束
+    //
+    // 选 Access-Control-Allow-Origin: * 而非 allow-list 的理由:
+    //   1. server 已绑 127.0.0.1 (ADR-038 §5), 远程强制走 SSH 隧道,
+    //      网络层已是安全边界, CORS 只是浏览器同源策略的补充约束。
+    //   2. 全部端点只读 (GET), 无 cookie / credential, W3C 规范允许 * + 无 credential。
+    //   3. Allow-list (127.0.0.1:3000 + localhost:3000) 在实际开发中反而脆:
+    //      本地看板端口可能随 dashboard 框架改变; * 简单稳定, 零维护成本。
+    //   4. 若未来引入写端点或 credential, 必须改为精确 allow-list (届时修此注释)。
+    //
+    // set_default_headers: 对所有响应 (含 preflight 204) 注入 CORS 头。
+    server_.set_default_headers({
+        {"Access-Control-Allow-Origin", "*"},
+        {"Access-Control-Allow-Methods", "GET, OPTIONS"},
+        {"Access-Control-Allow-Headers", "Content-Type"},
+    });
+
+    // preflight handler — 浏览器在非简单请求时发 OPTIONS 探针。
+    // GET + 无自定义请求头属"简单请求"不触发 preflight, 但显式处理更稳健:
+    // 避免某些浏览器对非标准 Content-Type 场景静默失败。
+    // 204 No Content 是 preflight 推荐响应码。
+    server_.Options(".*", [](const httplib::Request& /*req*/, httplib::Response& res) { res.status = 204; });
+
     register_healthz(server_, *this);
     register_version(server_);
     register_status(server_, *this);
