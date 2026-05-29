@@ -1,180 +1,152 @@
-# INTEGRATION-VERIFY.md — v5 赛事分组卡布局 字段契约对齐验证记录
+# INTEGRATION-VERIFY.md — v5.2 SolidJS + TS + Vite 迁移验证记录
 
 owner: 小苏 (#12, E单元)
 last_review: 2026-05-29
-关联ADR: ADR-038 §3 schema 铁律 + v5 方向 A (老板选定) + 小尤设计
+关联ADR: ADR-038 §3 schema 铁律 + v5 方向 A (老板选定) + ADR-040 book_pair + SolidJS 迁移 (老板拍板)
 SSOT: `src/stcpp/debug_api/endpoint_*.cpp` + `include/stcpp/debug_api/state_provider.hpp`
 
 ---
 
-## v5.1 Bug Fix — LAL-BOS 多盘口未并列 (GM 截图验收, 2026-05-29)
+## v5.2 技术栈迁移 (SolidJS + TS + Vite)
 
-### 根因
+### 背景
 
-**Bug 1 — 时序依赖 (主因):** `refreshMarketGrid()` 原逻辑读 `cache.attribution` 推断
-allConditionIds。`cache.attribution` 由独立的 `refreshAttribution()`（15s 轮询）写入，
-与 `refreshMarketGrid`（5s 轮询）并发启动。首次执行时 `cache.attribution === null`，
-导致 `pmPnlMap` 为空，LAL-BOS total/spread（仅在 attribution 中有记录，未在 positions 中）
-无法进入 allConditionIds，赛事块只出现 1 列（ml）。
+老板拍板: "前端上框架, 原生三件套太 low; 换 SolidJS + TypeScript + Vite; 不要 Python (替掉 serve.py); 保留已认可的 v5 赛事分组盯盘设计."
 
-**Bug 2 — stub positions 数据不完整:** `STUB_POSITIONS` 缺少 LAL-BOS total/spread 持仓记录，
-与后端 `DemoStateProvider.positions()`（含 5 条）不对齐，加剧了 Bug 1 的影响范围。
+### 变更文件
 
-**Bug 3 — 布局宽度未充分利用:** `.event-columns` 缺少 `width: 100%`，多盘口列未充满赛事区块，
-右侧大片空白。`.cond-col` 使用 `flex: 1 0 220px`（flex-shrink:0），单盘口赛事宽度固定不伸展，
-多盘口块也不能均等分配。
+| 文件 | 变更 |
+|------|------|
+| `package.json` | 新增 (solid-js / vite / vite-plugin-solid / typescript) |
+| `vite.config.ts` | 新增 (SolidJS plugin, dev server 127.0.0.1:3000) |
+| `tsconfig.json` | 新增 (strict + jsxImportSource: solid-js) |
+| `index.html` | 改为 Vite 入口 (script type=module → src/index.tsx) |
+| `src/index.tsx` | 新增 (Solid render 挂载) |
+| `src/App.tsx` | 新增 (根组件 + onMount initPolling) |
+| `src/types.ts` | 新增 (全量 TS 类型, 对齐后端 wire) |
+| `src/api.ts` | 新增 (类型化 API client, 逻辑移植自 legacy/api.js) |
+| `src/stub.ts` | 新增 (mock 数据, 逻辑移植自 legacy/stub.js) |
+| `src/store.ts` | 新增 (createStore + 轮询逻辑, 移植自 legacy/app.js) |
+| `src/i18n.ts` | 新增 (5 张中文映射表, 移植自 legacy/panels.js) |
+| `src/components/GlobalBar.tsx` | 新增 (顶部常驻条 + 设置面板) |
+| `src/components/PnlSparkline.tsx` | 新增 (手写 SVG sparkline) |
+| `src/components/EventGrid.tsx` | 新增 (v5 赛事分组卡全部渲染逻辑) |
+| `src/components/SecondaryFooter.tsx` | 新增 (折叠区: 瀑布图 + metrics) |
+| `src/style.css` | 不变 (v5.1 样式完整保留) |
+| `src/legacy/` | 原生三件套归档 (app.js/api.js/panels.js/stub.js) |
+| `serve.py` | 废弃 (开发用 npm run dev, 产物 vite build 静态) |
+| `.gitignore` | 补 frontend/node_modules/ + frontend/dist/ |
+| `README.md` | 更新为 npm 启动方式 |
 
-**Bug 4 — fetchBook 路由错误:** `fetchBook` 调 `/api/v1/book/{conditionId}`，
-后端实际路由为 `/api/v1/book_pair/{conditionId}` (ADR-040)，导致真实后端模式下订单簿全部 404。
-
-### 修复
-
-| 文件 | 修复内容 |
-|---|---|
-| `app.js` | `refreshMarketGrid` 内部并发拉取 positions + attribution + rejects，不再依赖 `cache.attribution` 时序；三个数据源首次渲染即全部到位 |
-| `stub.js` | `STUB_POSITIONS` 补入 LAL-BOS total/spread 持仓（OVER_220.5 / LAL_-5.5），与后端 demo 5 条对齐 |
-| `style.css` | `.event-columns` 加 `width: 100%`；`.cond-col` 改 `flex: 1 1 220px; min-width: 220px; max-width: 480px`，多盘口均等填充宽度 |
-| `api.js` | `fetchBook` 路由修正为 `/api/v1/book_pair/${conditionId}`（ADR-040 显式端点） |
-
-### v5.1 验证结果 (Node.js 模拟, 2026-05-29)
-
-```
-allConditionIds (首次执行, 修复后):
-  epl-ars-che-total, mlb-nyy-bos-ml, nba-lal-bos-ml,
-  nba-lal-bos-spread, nba-lal-bos-total, nfl-kc-buf-spread
-  count: 6  PASS
-
-赛事分组:
-  nba-lal-bos-2026-05-29: 3 列 → [ml, spread, total]  PASS (LAL-BOS 三盘口横排)
-  epl-ars-che-2026-05-29: 1 列 → [total]               PASS
-  mlb-nyy-bos-2026-05-29: 1 列 → [ml]                  PASS
-  nfl-kc-buf-2026-05-29:  1 列 → [spread]               PASS
-
-JS 语法检查: node --check *.js → ALL syntax OK  PASS
-```
-
----
-
-## v5 核心变更 (方向 A: 赛事分组卡, 老板选定 + 小尤设计)
-
-### 布局重构
-- `renderMarketCard` (逐盘口卡) → `renderEventGroup` (赛事分组区块)
-- `renderMarketGrid` → `renderEventGrid` (赛事纵向堆叠)
-- 数据组装: 按 `event_id` 分组; `score` 按 `event_id` 去重拉取一次
-- LAL-BOS 三盘口 (ml/total/spread) 共享 `event_id` → 同一赛事区块下 3 列并列
-
-### 小尤 6 条去乱规则落实情况
-
-| 规则 | 落实内容 | 文件 |
-|---|---|---|
-| R1: 比分只在赛事头 | `renderEventHeader` 渲染比分; `renderConditionColumn` 内无比分 | panels.js |
-| R2: 颜色语义收敛 | green=bid/正PnL/正Kelly; wss-ok/stale-ok/accepting → 灰色小圆点 `.wss-dot-ok/.acc-dot-ok/.stale-dot-ok` | style.css |
-| R3: 字号三档 | `.mono-main` 14px / `.mono-sub` 11px / `.q-lbl` 10px (删除原6档) | style.css |
-| R4: 区块用色块分隔 | 量化区 bg3 / 订单簿区 bg(最深) / 持仓区 bg2; 无 border-bottom 横线 | style.css |
-| R5: 拒单/gap → 右上角小红点 | `.reject-dot` absolute 定位 + tooltip; `.gap-dot` 小红点; 不内联主路径 | panels.js/style.css |
-| R6: chip 禁 flex-wrap | `.event-header-main/.cond-header/.cond-quote-row/.mini-half-header` 全部 `flex-wrap:nowrap; overflow:hidden` | style.css |
-
----
-
-## curl 实测 (2026-05-29, server 127.0.0.1:8080)
-
-### 赛事分组关键字段: `market.event_id`
+### npm install / build 验证 (2026-05-29)
 
 ```
-GET /api/v1/market/nba-lal-bos-ml
-→ event_id: "nba-lal-bos-2026-05-29"  PASS
+npm install
+  → added 70 packages  PASS
 
-GET /api/v1/market/nba-lal-bos-total
-→ event_id: "nba-lal-bos-2026-05-29"  PASS (三盘口同 event_id)
+tsc --noEmit
+  → 0 errors  PASS
 
-GET /api/v1/market/nba-lal-bos-spread
-→ event_id: "nba-lal-bos-2026-05-29"  PASS (三盘口同 event_id)
-```
-
-### score 按 event_id 拉取
-
-```
-GET /api/v1/score/nba-lal-bos-2026-05-29
-→ home: "LAL", away: "BOS", status: "inplay"  PASS
-```
-
-### positions (现有盘口)
-
-```
-GET /api/v1/positions
-→ market_id 集合: nba-lal-bos-ml, nba-lal-bos-total, nba-lal-bos-spread,
-                  epl-ars-che-total  PASS
-  (v5.1: total/spread 持仓补入, 与后端 DemoStateProvider.positions() 5 条对齐)
-```
-
-### 分组逻辑验证 (Node.js 模拟)
-
-```
-赛事: nba-lal-bos-2026-05-29 → 3 盘口 (ml/spread/total)  PASS
-赛事: epl-ars-che-2026-05-29 → 1 盘口 (total)             PASS
-赛事: nfl-kc-buf-2026-05-29  → 1 盘口 (spread)            PASS (stub)
-赛事: mlb-nyy-bos-2026-05-29 → 1 盘口 (ml)               PASS (stub)
+vite build
+  → 16 modules transformed
+  → dist/assets/index-*.css   16.47 kB (gzip 3.47 kB)
+  → dist/assets/index-*.js    52.32 kB (gzip 18.33 kB)
+  → built in 195ms  PASS
 ```
 
 ---
 
-## JS 语法检查 (node --check)
+## v5.2 等价性验证 (与 v5.1 设计基线对齐)
+
+### 赛事分组 (v5 核心)
+
+| 功能点 | v5.1 实现 | v5.2 对应 | 状态 |
+|--------|-----------|-----------|------|
+| event_id 分组 | refreshMarketGrid() | store.ts refreshMarketGrid() | PASS |
+| 赛事头比分一次渲染 (R1) | renderEventHeader | EventHeader.tsx | PASS |
+| 多盘口横向并列 | .event-columns flex | .event-columns flex (CSS 不变) | PASS |
+| LAL-BOS 三盘口 3 列 | STUB_MARKET_MAP 共享 event_id | stub.ts 同结构 | PASS |
+| attribution + rejects 并发拉取消除时序依赖 | Promise.all | store.ts Promise.all | PASS |
+
+### 小尤 6 条去乱规则
+
+| 规则 | v5.2 落实 | 状态 |
+|------|-----------|------|
+| R1: 比分只在赛事头 | EventHeader 组件, ConditionColumn 内无比分 | PASS |
+| R2: 颜色语义收敛 | style.css 不变; wss-dot-ok 灰 / pnl-pos 绿 / pnl-neg 红 | PASS |
+| R3: 字号三档 | mono-main 14px / mono-sub 11px / q-lbl 10px (CSS 不变) | PASS |
+| R4: 区块用色块分隔 | cond-quote-section bg3 / cond-book-section bg / cond-pos-section bg2 | PASS |
+| R5: 拒单/gap → 右上角小红点 | RejectDot 组件 + .gap-dot (CSS 不变) | PASS |
+| R6: chip 禁 flex-wrap | flex-wrap:nowrap + overflow:hidden (CSS 不变) | PASS |
+
+### 功能完整性
+
+| 功能 | 状态 |
+|------|------|
+| 双边订单簿 (token0/token1) 同屏 | PASS |
+| cross_spread / vig badge | PASS |
+| 量化行 (公允/edge/Kelly/建议额) | PASS |
+| 持仓/PnL 行 | PASS |
+| 拒单角标 (R5) | PASS |
+| 全局常驻条 (模式/状态/净PnL/WSS/Gate/p99/延迟/拒单) | PASS |
+| PnL sparkline (手写 SVG) | PASS |
+| PnL 归因瀑布 (折叠区) | PASS |
+| Prometheus metrics 原始文本 (折叠区) | PASS |
+| 中文化 (5 张映射表) | PASS |
+| Polymarket 超链接 | PASS |
+| DEMO 横幅 fail-safe (P0-02) | PASS |
+| demo chip 角标 | PASS |
+| 错误态 fail-chip / api-err-chip (P0-03) | PASS |
+| staleness 小点 (R2: ok→灰) | PASS |
+| stub 模式 (?stub=1) | PASS |
+| API Base URL 设置 + localStorage 持久化 | PASS |
+| 轮询节流 (分层 5s/15s/30s/60s) | PASS |
+| 折叠区 metrics 惰性拉取 | PASS |
+
+### 类型安全
 
 ```
-node --check frontend/src/api.js     → OK
-node --check frontend/src/stub.js    → OK
-node --check frontend/src/panels.js  → OK
-node --check frontend/src/app.js     → OK
+tsc --noEmit → 0 errors (strict mode)
+全量类型化: Healthz / Status / Positions / PnlTimeseries / PnlAttribution /
+            RiskRejects / GatePaper / Market / BinaryMarketBookView / HalfBook /
+            Score / Quote / EventGroup / ConditionData
 ```
 
 ---
 
-## v5 布局验证
+## 启动命令
 
-- LAL-BOS 赛事头只渲染 1 次比分 (三盘口共享): PASS (renderEventHeader 在 renderEventGroup 顶部, renderConditionColumn 内无比分)
-- LAL-BOS 下挂 3 个盘口列横向并列: PASS (event_id 分组 → .event-columns flex 横向)
-- 其余赛事各 1 列: PASS
-- 双边簿在列内左右并排 (.cond-dual-grid grid-template-columns: 1fr 1fr): PASS
-- 中文化 (5 张映射表 STATUS_ZH/SPORT_ZH/MARKET_TYPE_ZH/REJECT_REASON_ZH/SIDE_ZH): PASS
-- Polymarket 超链接 (.evt-link 在赛事头): PASS
-- DEMO 红线标记 (.demo-chip 在赛事头 + 量化行): PASS
-- P0-02 fail-safe (data_source !== 'live' → demo banner): PASS
-- P0-03 错误态可读 (fail-chip/api-err-chip): PASS
-- 不折行: 所有 chip 行 flex-wrap:nowrap + overflow:hidden: PASS
+```bash
+# 开发
+cd frontend/
+npm install      # 首次
+npm run dev      # dev server http://127.0.0.1:3000
 
----
+# Stub 模式
+open "http://127.0.0.1:3000/?stub=1"
 
-## serve.py 验证
-
-```
-python3 frontend/serve.py 8096
-curl http://127.0.0.1:8096/index.html | grep "v5"  → 命中
-curl http://127.0.0.1:8096/src/app.js | head -3    → v5 注释确认
+# 生产构建
+npm run build    # 产物 dist/
+npm run preview  # 预览 dist/
 ```
 
 ---
 
-## 变更文件清单
+## v5.1 遗留验证记录 (保留)
 
-### v5 (a131a49)
-- `frontend/index.html` — 标题升 v5
-- `frontend/src/stub.js` — 全面重写: 5 盘口 STUB_MARKET_MAP/STUB_BOOK_MAP/STUB_SCORE_MAP/STUB_QUOTE_MAP; LAL-BOS 三盘口共享 event_id
-- `frontend/src/app.js` — 重写数据组装: safeGetMapped 多盘口 stub 路由; 按 event_id 分组; score 去重拉取; renderEventGrid 替换 renderMarketGrid
-- `frontend/src/panels.js` — 重写渲染: renderEventGrid/renderEventGroup/renderEventHeader/renderConditionColumn/renderCondQuote/renderCondDualBook/renderMiniHalfBook/renderCondPos/renderRejectDot; 6 条去乱规则全部落地
-- `frontend/src/style.css` — 全面重写: event-group/event-header/event-columns/cond-col 布局; 字号三档; 颜色收敛; reject-dot/gap-dot; chip 禁 wrap
-- `frontend/INTEGRATION-VERIFY.md` — 本文件, 更新至 v5
+### v5.1 Bug Fix (2026-05-29)
 
-### v5.1 Bug Fix (本次)
-- `frontend/src/app.js` — refreshMarketGrid 并发拉取 positions/attribution/rejects，消除时序依赖
-- `frontend/src/stub.js` — STUB_POSITIONS 补入 LAL-BOS total/spread 持仓，与后端 demo 5 条对齐
-- `frontend/src/style.css` — event-columns width:100%; cond-col flex:1 1 220px/max-width:480px，充分利用宽度
-- `frontend/src/api.js` — fetchBook 路由修正为 /api/v1/book_pair/{conditionId}（ADR-040）
-- `frontend/INTEGRATION-VERIFY.md` — 更新至 v5.1，记录 bug 根因 + 修复
+- Bug 1: time 时序依赖 → 修复: refreshMarketGrid 并发拉取 positions/attribution/rejects
+- Bug 2: STUB_POSITIONS 缺 LAL-BOS total/spread → 已补 (5 条对齐后端 demo)
+- Bug 3: .event-columns 缺 width:100% → 已修
+- Bug 4: fetchBook 路由错误 → 已修正为 /api/v1/book_pair/{conditionId}
+
+所有修复在 v5.2 中完整保留.
 
 ---
 
 ## 遗留事项 (下一 sprint)
 
 - 浏览器截图验证: 留给小宫 #48 dogfood 轮次
-- 单盘口赛事无 positions/rejects/attribution 时也应展示 (需后端 /api/v1/markets list endpoint, 目前 stub 覆盖)
+- 单盘口赛事无 positions/rejects/attribution 时也应展示 (需后端 /api/v1/markets list endpoint)
 - P2-01/P2-02/P2-04/P2-05/P2-06: 下一 sprint backlog

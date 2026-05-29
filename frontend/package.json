@@ -1,0 +1,19 @@
+{
+  "name": "sports-trader-cpp-frontend",
+  "version": "5.2.0",
+  "description": "sports-trader-cpp 单屏盯盘终端 v5 — SolidJS + TypeScript + Vite",
+  "private": true,
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "solid-js": "^1.8.17"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5",
+    "vite": "^5.2.11",
+    "vite-plugin-solid": "^2.10.2"
+  }
+}

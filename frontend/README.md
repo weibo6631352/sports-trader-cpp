@@ -1,124 +1,53 @@
-# sports-trader-cpp 观测/PnL 看板 v1
+# sports-trader-cpp 观测/PnL 看板 v5 — SolidJS + TypeScript + Vite
 
-**owner:** 小苏 (E 产品业务保障部)  
-**last_review:** 2026-05-29  
-**关联:** ADR-038 (观测 API), ADR-037 (本地优先)
+**owner:** 小苏 (E 产品业务保障部)
+**last_review:** 2026-05-29
+**关联:** ADR-038 (观测 API), ADR-037 (本地优先), ADR-040 (book_pair 端点)
 
 ---
 
-## 技术选型
+## 技术栈 (v5.2 — SolidJS + TS + Vite)
 
-纯静态 HTML + ES Module JavaScript, 零构建工具, 零 npm 依赖.  
-本地用 Python 标准库 `http.server` 或任意静态文件服务器跑起来即可.
-
-理由: ADR-037 本地优先 + 跨洋链路带宽紧, 不引入 node_modules / bundle step.
+- **框架:** SolidJS 1.8 (细粒度响应式, 无 VDOM, 运行时轻量)
+- **类型:** TypeScript 5.4 (strict mode, 全量类型化 API client)
+- **构建:** Vite 5.2 (dev server + production build)
+- **样式:** 原生 CSS (延续 v5 量化终端深色风格, 无组件库)
+- **无 Python:** serve.py 已废弃; 开发用 `vite dev`, 产物用 `vite build` 静态文件
 
 ---
 
 ## 本地启动
 
-### 方式 A — Python (推荐, 无需额外安装)
-
 ```bash
 cd frontend/
-python3 serve.py          # 默认 127.0.0.1:3000
-python3 serve.py 4000     # 自定义端口
+npm install          # 首次安装依赖
+npm run dev          # dev server: http://127.0.0.1:3000
 ```
 
-浏览器打开: http://127.0.0.1:3000/
-
-### 方式 B — Python 内置 (无 CORS header)
-
-```bash
-cd frontend/
-python3 -m http.server 3000 --bind 127.0.0.1
-```
-
-注意: 方式 B 没有自定义 CORS header, 如果 debug_api 端口不同会跨域报错.  
-建议使用方式 A.
-
-### 方式 C — npx serve (如有 Node)
-
-```bash
-cd frontend/
-npx serve -l 3000 --no-port-switching
-```
-
----
-
-## 连接 debug_api
-
-默认连 `http://127.0.0.1:8080` (对应 `src/stcpp/debug_api/` 后端).
-
-如需修改: 看板右上角点 **设置** 按钮, 修改 API Base URL 后保存.  
-设置持久化在 `localStorage`, 刷新后保留.
-
----
-
-## Stub 模式 (后端未启动时)
-
-URL 加 `?stub=1` 参数使用本地 mock 数据, 全面板可渲染:
+**Stub 模式 (后端未启动时):**
 
 ```
 http://127.0.0.1:3000/?stub=1
 ```
 
-stub 数据源: `src/stub.js`.  
-金额字段均为 JSON number (非 string), 对齐老高提示.
-
----
-
-## 面板说明
-
-| Tab | 面板 | API Endpoint | 轮询 |
-|-----|------|-------------|------|
-| PnL/持仓 | 持仓表格 | GET /api/v1/positions | 3s |
-| PnL/持仓 | 净 PnL 曲线 | GET /api/v1/pnl/timeseries | 10s |
-| PnL/持仓 | 盈亏归因瀑布 | GET /api/v1/pnl/attribution | 10s |
-| 风控/拒单 | RM 拒单流 | GET /api/v1/risk/rejects | 5s |
-| PAPER-GATE | GM-PAPER-G 门禁仪表 | GET /api/v1/gate/paper | 30s |
-| 订单簿 | 全深度订单簿 | GET /api/v1/book/{id} | 2s |
-| Metrics | Prometheus 原始文本 | GET /metrics | 15s |
-| 状态栏 (顶部常驻) | 系统状态 + WSS + 线程心跳 | GET /healthz + /status | 5s |
-
----
-
-## 空数据处理
-
-- API 返回 404 → 显示 "未接入"
-- API 返回 `has_data: false` → 显示 "未接入"
-- 网络不可达 → 显示 "未接入" (不崩溃)
-- 后端 stub 数据接口未实现时前端无报错
-
----
-
-## 4 时间戳字段
-
-对齐 ADR-038 R-20 契约 `event_ts / data_source_ts / ingestion_ts / as_of_ts`.  
-字段类型为 epoch_ns int64 (JSON number).  
-JS 中 Number 精度上限 2^53 ≈ 9×10^15, epoch_ns ≈ 1.7×10^18 超限, 精度损失约 1024ns.  
-显示层用 `Date` 转 ms 渲染, 1024ns 误差可接受.
-
----
-
-## 验证方式
+**连后端:**
 
 ```bash
-# 1. 启动 stub 模式验证前端渲染不报错
-cd frontend/
-python3 serve.py &
-open "http://127.0.0.1:3000/?stub=1"
-
-# 2. 在浏览器 DevTools Console 检查: 无 JS 错误, 无 TypeError
-# 3. 逐个切换 Tab 确认各面板正常渲染 (stub 数据填充)
-
-# 4. 如后端已启动, 去掉 ?stub=1 验证真实 API 连通性:
-open "http://127.0.0.1:3000/"
-
-# 5. curl 验证现有 stub endpoint
-curl -s http://127.0.0.1:8080/healthz | jq .
-curl -s http://127.0.0.1:8080/status  | jq .
+# 后端默认 127.0.0.1:8080 (CORS 已开)
+# 无需额外配置, 直接 npm run dev 即可
+# 或在看板右上角点设置按钮修改 API Base URL
 ```
+
+---
+
+## 生产构建
+
+```bash
+npm run build        # 产物输出到 dist/
+npm run preview      # 预览 dist/ (vite preview)
+```
+
+产物规模 (2026-05-29 实测): JS 约 52 kB / gzip 18 kB, CSS 约 16 kB / gzip 3 kB.
 
 ---
 
@@ -126,13 +55,80 @@ curl -s http://127.0.0.1:8080/status  | jq .
 
 ```
 frontend/
-├── index.html          # 单页入口, ES Module 引入
-├── serve.py            # 本地静态文件服务器 (Python 标准库)
-├── README.md           # 本文件
+├── index.html              # Vite 入口 HTML
+├── package.json            # npm 配置
+├── vite.config.ts          # Vite 配置
+├── tsconfig.json           # TypeScript 配置
+├── README.md               # 本文件
+├── INTEGRATION-VERIFY.md   # 字段契约对齐验证记录
+├── dist/                   # 产物 (gitignore)
+├── node_modules/           # 依赖 (gitignore)
 └── src/
-    ├── api.js          # ADR-038 API client + 工具函数
-    ├── stub.js         # 本地 mock 数据 (schema 与 API 对齐)
-    ├── panels.js       # 各面板 HTML 渲染函数
-    ├── app.js          # 主入口: 轮询 + DOM 管理 + tab 导航
-    └── style.css       # 深色量化终端风格样式
+    ├── index.tsx           # Solid 挂载入口
+    ├── App.tsx             # 根组件 + 轮询初始化
+    ├── api.ts              # ADR-038 类型化 API client
+    ├── stub.ts             # 本地 mock 数据
+    ├── store.ts            # Solid createStore 应用状态 + 轮询逻辑
+    ├── i18n.ts             # 中文映射表 (5 张)
+    ├── types.ts            # 所有 TS 类型定义 (对齐后端 wire)
+    ├── style.css           # 深色量化终端样式 (v5 延续)
+    ├── components/
+    │   ├── GlobalBar.tsx       # 顶部常驻条 + 设置面板
+    │   ├── PnlSparkline.tsx    # PnL 净值曲线 (手写 SVG)
+    │   ├── EventGrid.tsx       # 赛事分组网格 (v5 核心)
+    │   └── SecondaryFooter.tsx # 折叠次要区 (PnL 归因 + metrics)
+    └── legacy/             # 原生三件套归档 (v5.1 及之前, 不参与 build)
+        ├── app.js
+        ├── api.js
+        ├── panels.js
+        └── stub.js
 ```
+
+---
+
+## 面板说明
+
+| 区域 | 内容 | API Endpoint | 轮询 |
+|------|------|-------------|------|
+| 顶部常驻条 | 模式/状态/净PnL/WSS/Gate/p99/延迟/拒单 | /healthz + /status | 5s |
+| PnL sparkline | 净值曲线 (手写 SVG) | /api/v1/pnl/timeseries | 15s |
+| 赛事分组网格 | 赛事头比分 + 多盘口并列 (双边簿/量化/持仓) | /api/v1/positions + /market + /book_pair + /score + /quote | 5s |
+| 折叠区 | PnL 归因瀑布 + Prometheus 原始 metrics | /api/v1/pnl/attribution + /metrics | 15s/30s |
+
+---
+
+## 轮询分层
+
+| 数据 | 间隔 |
+|------|------|
+| status / healthz | 5s |
+| positions + attribution + rejects (market grid) | 5s |
+| book / score / quote (per-condition) | 5s (与 market grid 合并) |
+| sparkline (timeseries) | 15s |
+| attribution (单独) | 15s |
+| gate | 15s |
+| metrics | 30s (折叠时跳过) |
+| market info | 60s |
+
+---
+
+## 空数据处理
+
+- API 返回 404 → 显示 "未接入"
+- `found: false` / `has_data: false` → 显示 "未接入"
+- 网络不可达 → 显示占位符, 不崩溃
+- P0-03: 连续 3 次失败 → 顶部 "API 异常" 红色 chip
+
+---
+
+## DEMO fail-safe (P0-02)
+
+`data_source !== 'live'` 时强制显示黄色横幅 + 每盘口 [demo] 角标.
+不可关闭, 老钱红线.
+
+---
+
+## 4 时间戳字段
+
+对齐 ADR-038 R-20: `event_ts / data_source_ts / ingestion_ts / as_of_ts` (epoch_ns).
+JS Number 精度上限约 9e15, epoch_ns 约 1.7e18, 精度损失约 1024ns, 显示层可接受.
