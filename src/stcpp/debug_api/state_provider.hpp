@@ -82,6 +82,12 @@ struct PnlBucket {
 // ============================================================
 // /api/v1/pnl/attribution (gross→fee→gas→slippage→spread→net 瀑布)
 // ============================================================
+// 分市场净 PnL (attribution 面板右侧"分市场"列表; market_id vendor-agnostic)
+struct PnlPerMarket {
+    std::string market_id;
+    double net_pnl{0.0};
+};
+
 struct PnlAttribution {
     double gross{0.0};
     double fee{0.0};
@@ -90,15 +96,20 @@ struct PnlAttribution {
     double spread{0.0};
     double net{0.0};
     std::int64_t as_of_ts_ns{0};
+    std::vector<PnlPerMarket> per_market{};  // 可空; 缺省 = 不分市场
 };
 
 // ============================================================
 // /api/v1/risk/rejects (RM 拒单列表 + reason_code)
 // ============================================================
+// side/size/price 为 allowlist 安全字段 (订单意图摘要, 非签名字节/私钥; 小白 §1)。
 struct RiskRejectRow {
     std::string reason_code;  // RM 枚举字符串 (e.g. "MAX_POSITION_EXCEEDED")
     std::string market_id;
     std::string intent_ref;  // 内部引用 (非签名/私钥; allowlist 安全字段)
+    std::string side;        // "BUY" / "SELL" (allowlist)
+    double size{0.0};        // 被拒订单 size (USDC 名义)
+    double price{0.0};       // 被拒订单报价
     std::int64_t rejected_ts_ns{0};
 };
 
@@ -164,6 +175,12 @@ struct MarketInfo {
 // ============================================================
 // /api/v1/book/{condition_id} (microprice/spread/imbalance 后端算好)
 // ============================================================
+// 单档报价 (深度阶梯一档); price/size 均 double。
+struct BookLevel {
+    double price{0.0};
+    double size{0.0};
+};
+
 struct BookSnapshot {
     bool found{false};
     std::string market_id;
@@ -177,6 +194,9 @@ struct BookSnapshot {
     std::string wss_state{"unknown"};
     FourTs ts{};
     std::string source{"polymarket"};
+    // 深度阶梯 (best 在前; 可空 = 仅 L1 摘要)。前端深度条可视化消费。
+    std::vector<BookLevel> bids{};
+    std::vector<BookLevel> asks{};
 };
 
 // ============================================================

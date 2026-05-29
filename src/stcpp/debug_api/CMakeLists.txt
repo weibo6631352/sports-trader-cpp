@@ -109,4 +109,30 @@ target_compile_options(stcpp_debug_api PRIVATE
 find_package(Threads REQUIRED)
 target_link_libraries(stcpp_debug_api PUBLIC Threads::Threads)
 
+# ---------- stcpp_debug_server 可运行入口 (前端集成落地点) ----------
+# Owner: 老雷 (GM) 2026-05-29 — 让 frontend/ 看板连真后端 (非 ?stub=1 mock)。
+# 默认 DemoStateProvider (代表性数据, 全面板可渲染); --empty 用 StubStateProvider。
+# 只读 server, 127.0.0.1 默认 (ADR-038 §5)。在 debug_api/ 定义以保证 target 顺序正确
+# (root 在 bin/ 之后才 add_subdirectory(debug_api), bin/ 取不到本 target)。
+add_executable(stcpp_debug_server debug_server_main.cpp)
+target_link_libraries(stcpp_debug_server PRIVATE stcpp_debug_api)
+target_include_directories(stcpp_debug_server PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(stcpp_debug_server PRIVATE cxx_std_20)
+target_compile_definitions(stcpp_debug_server PRIVATE
+    STCPP_EXEC_MODE_STR="${STCPP_EXEC_MODE}"
+)
+# 三方库豁免: cpp-httplib (经 stcpp_debug_api PUBLIC SYSTEM include 传入)
+target_compile_options(stcpp_debug_server PRIVATE
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-sign-conversion
+    -Wno-conversion
+    -Wno-shadow
+    -Wno-double-promotion
+    -Wno-format-nonliteral
+)
+
 message(STATUS "stcpp_debug_api: cpp-httplib v0.16.3 (header-only) | mode=${STCPP_EXEC_MODE} | git=${STCPP_GIT_HASH_RAW}")

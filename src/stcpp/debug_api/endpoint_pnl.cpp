@@ -104,7 +104,20 @@ static void register_attribution(httplib::Server& svr, const HttpServer& hs) {
         body += json::num(a.spread);
         body += ",\"net\":";
         body += json::num(a.net);
-        body += "}}";
+        body += "}";
+        // 分市场净 PnL (可空; attribution 面板右侧"分市场"列表)
+        body += ",\"per_market\":[";
+        for (std::size_t i = 0; i < a.per_market.size(); ++i) {
+            if (i) {
+                body += ',';
+            }
+            body += "{\"market_id\":";
+            body += json::str(a.per_market[i].market_id);
+            body += ",\"net_pnl\":";
+            body += json::num(a.per_market[i].net_pnl);
+            body += '}';
+        }
+        body += "]}";
 
         res.set_content(body, "application/json; charset=utf-8");
         res.status = 200;

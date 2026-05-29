@@ -41,6 +41,12 @@ void register_risk(httplib::Server& svr, const HttpServer& hs) {
             body += json::str(r.market_id);
             body += ",\"intent_ref\":";
             body += json::str(r.intent_ref);
+            body += ",\"side\":";
+            body += json::str(r.side);
+            body += ",\"size\":";
+            body += json::num(r.size);
+            body += ",\"price\":";
+            body += json::num(r.price);
             body += ",\"rejected_ts\":";
             body += json::i64(r.rejected_ts_ns);
             body += '}';

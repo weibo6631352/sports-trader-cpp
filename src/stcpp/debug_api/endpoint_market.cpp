@@ -81,6 +81,9 @@ static void register_book(httplib::Server& svr, const HttpServer& hs) {
         body += json::boolean(b.found);
         body += ",\"market_id\":";
         body += json::str(b.market_id);
+        // condition_id 别名 (前端看板 header 用; = 请求的内部映射 id)
+        body += ",\"condition_id\":";
+        body += json::str(b.market_id);
         if (b.found) {
             body += ",\"best_bid\":";
             body += json::num(b.best_bid);
@@ -109,6 +112,30 @@ static void register_book(httplib::Server& svr, const HttpServer& hs) {
             body += json::i64(b.ts.ingestion_ts_ns);
             body += ",\"book_as_of_ts\":";
             body += json::i64(b.ts.as_of_ts_ns);
+            // 深度阶梯 (bids/asks; best 在前); 前端深度条可视化消费
+            body += ",\"bids\":[";
+            for (std::size_t i = 0; i < b.bids.size(); ++i) {
+                if (i) {
+                    body += ',';
+                }
+                body += "{\"price\":";
+                body += json::num(b.bids[i].price);
+                body += ",\"size\":";
+                body += json::num(b.bids[i].size);
+                body += '}';
+            }
+            body += "],\"asks\":[";
+            for (std::size_t i = 0; i < b.asks.size(); ++i) {
+                if (i) {
+                    body += ',';
+                }
+                body += "{\"price\":";
+                body += json::num(b.asks[i].price);
+                body += ",\"size\":";
+                body += json::num(b.asks[i].size);
+                body += '}';
+            }
+            body += "]";
         }
         body += '}';
 
