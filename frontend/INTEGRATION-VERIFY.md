@@ -181,10 +181,10 @@ tsc --noEmit → 0 errors (strict mode)
 
 ---
 
-## 启动命令
+## 启动命令 (标准 Vite 单一工作流)
 
 ```bash
-# 开发
+# 开发 (HMR, 连后端 8080 API, CORS)
 cd frontend/
 npm install      # 首次
 npm run dev      # dev server http://127.0.0.1:3000
@@ -192,9 +192,12 @@ npm run dev      # dev server http://127.0.0.1:3000
 # Stub 模式
 open "http://127.0.0.1:3000/?stub=1"
 
-# 生产构建
+# 看产物
 npm run build    # 产物 dist/
-npm run preview  # 预览 dist/
+npm run preview  # 标准 Vite 预览 dist/
+
+# 后端单独跑 (只管 API, 不托管前端)
+stcpp_debug_server --real --port 8080
 ```
 
 ---

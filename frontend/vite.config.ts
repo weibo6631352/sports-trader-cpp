@@ -3,9 +3,7 @@ import solidPlugin from 'vite-plugin-solid';
 
 export default defineConfig({
   plugins: [solidPlugin()],
-  // base: './' — 产物资源引用使用相对路径, 适配 C++ 在任意路径托管 dist/
-  // vite dev server 忽略此项, 不影响开发体验
-  base: './',
+  // base 默认 '/' — 标准 Vite 单一路径 (dev 3000 / preview 4173), C++ 不托管前端
   server: {
     port: 3000,
     host: '127.0.0.1',
