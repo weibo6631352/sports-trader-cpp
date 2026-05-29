@@ -7,10 +7,8 @@
 //   R-20: as_of_ts = std::chrono::system_clock::now() epoch_ns (debug endpoint 无上游 ts)
 //   ADR-015: API server 独立 vCPU; paper 阶段不强 pin
 //
-// 前端静态挂载 (feat/xiaolu-cpp-serve-frontend):
-//   register_handlers() 注册全部 API route 之后, maybe_mount_frontend() 调用
-//   server_.set_mount_point("/", frontend_dir_). cpp-httplib 内部: 已注册的精确/regex
-//   route 匹配优先于 mount point fallback — API 端点不受影响.
+// 纯 API server: 不托管前端静态资源。前端走独立 Vite dev server, 跨域调 API;
+//   CORS 头由 register_handlers() 统一注入 (Access-Control-Allow-Origin: *)。
 
 #include "src/stcpp/debug_api/server.hpp"
 
@@ -19,8 +17,6 @@
 #include <cstring>
 #include <stdexcept>
 #include <thread>
-
-#include <sys/stat.h>
 
 // Forward declarations for endpoint registration functions
 // 每个 endpoint_xxx.cpp 提供一个 register 函数, server.cpp 统一调用
@@ -55,11 +51,9 @@ static ExecMode mode_from_build() noexcept {
     return ExecMode::Paper;
 }
 
-HttpServer::HttpServer(uint16_t port, const StateProvider* provider, const char* bind_addr,
-                       std::string frontend_dir)
+HttpServer::HttpServer(uint16_t port, const StateProvider* provider, const char* bind_addr)
     : port_(port),
       bind_addr_(bind_addr ? bind_addr : "127.0.0.1"),
-      frontend_dir_(std::move(frontend_dir)),
       default_provider_(mode_from_build()),
       provider_(provider ? provider : &default_provider_),
       start_time_(std::chrono::steady_clock::now()) {}
@@ -147,38 +141,6 @@ void HttpServer::register_handlers() {
     // ADR-040: book_pair ({condition_id}) + book/token/{token_id}
     // 注意: register_book_pair 内 book/token/{token_id} 先注册 (更具体路由优先于 book/{id})
     register_book_pair(server_, *this);
-
-    // 前端静态挂载 — 必须在所有 API handler 注册完毕之后调用。
-    // cpp-httplib 优先级: 已注册的精确/regex route 总是优先于 mount point fallback,
-    // 与注册顺序无关; 但习惯上把 mount point 放最后以表意清晰。
-    maybe_mount_frontend();
-}
-
-void HttpServer::maybe_mount_frontend() {
-    if (frontend_dir_.empty()) {
-        return;  // 未指定, 跳过 (API-only 模式)
-    }
-
-    // 检查目录是否存在 (stat + S_ISDIR)
-    struct stat st{};
-    if (::stat(frontend_dir_.c_str(), &st) != 0 || !S_ISDIR(st.st_mode)) {
-        std::fprintf(stderr,
-                     "[debug_server] WARN: --frontend 目录不存在或非目录: %s "
-                     "(跳过静态挂载, API 仍正常)\n",
-                     frontend_dir_.c_str());
-        return;
-    }
-
-    // set_mount_point 返回 bool: false 表示 mount point 或 dir 非法
-    if (!server_.set_mount_point("/", frontend_dir_)) {
-        std::fprintf(stderr,
-                     "[debug_server] WARN: set_mount_point(\"/\", \"%s\") 失败 "
-                     "(跳过静态挂载, API 仍正常)\n",
-                     frontend_dir_.c_str());
-        return;
-    }
-
-    std::printf("[debug_server] 前端静态目录已挂载: %s → /\n", frontend_dir_.c_str());
 }
 
 }  // namespace stcpp::debug_api
