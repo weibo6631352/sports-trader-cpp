@@ -96,7 +96,7 @@ RiskDecisionInput MakeValidCtx(int i, AuditEventType type) {
         8, 9, 10, 11, 12, 13, 14, 15};
     in.market_id       = "mkt_chain_verify";
     in.strategy_id     = "strat_chain";
-    in.size_usdc       = 100 + i;
+    in.size_pUSD_micro = 100 + i;
     in.price           = 0.5 + 0.001 * i;
     in.is_buy          = (i % 2) == 0;
     in.event_type      = type;

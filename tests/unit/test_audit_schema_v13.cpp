@@ -82,7 +82,7 @@ static RiskDecisionInput make_v13_input(
     in.outcome         = outcome;
     in.side            = side;
     in.strategy_id     = "strat_v13_test";
-    in.size_usdc       = 2'000;
+    in.size_pUSD_micro = 2'000;
     in.price           = 0.60;
     in.is_buy          = (side == 0);
     in.event_type      = type;
@@ -350,22 +350,25 @@ TEST(AuditSchemaV13, T4_BLAKE3_Chain_NewFields_NotBreak) {
 }
 
 // =============================================================================
-// T5: schema v1.2 → v1.3 migration (旧 log read 加 default 字段)
+// T5: schema v1.2 → v1.4 migration (旧 log read 加 default 字段)
 // =============================================================================
 //
 // 模拟读取 v1.2 AuditRecord (schema_version=0x12, 含 is_buy:bool, 无 token_id/outcome/side)
-// apply_v12_migration() 后:
-//   - schema_version == kAuditSchemaV13
+// apply_v12_migration() 后 (v1.4 版一次到位):
+//   - schema_version == kAuditSchemaV14
 //   - token_id == "" (空, migration 默认值)
 //   - outcome == 0 (Yes, migration 默认值)
 //   - side: is_buy=true → side=0(Buy); is_buy=false → side=1(Sell)
+//   - timestamp_ms == 0, metadata == {}, builder == {} (v1.4 V2 字段默认)
 //
 // SSOT 来源 (老韩 W9 W2 §3.3):
 //   "读到 schema v1.2 header → 补填 token_id='', outcome=Outcome::Yes, side=(is_buy?Buy:Sell)"
+// v1.4 扩展: apply_v12_migration 同时填 V2 字段默认值
 
-TEST(AuditSchemaV13, T5_V12_To_V13_Migration) {
+TEST(AuditSchemaV13, T5_V12_To_V14_Migration) {
+    using stcpp::observability::kAuditSchemaV14;
     // --- 构造 v1.2 AuditRecord (手动设置 schema_version=0x12) ---
-    // 模拟磁盘上的旧格式: 含 is_buy 但无 token_id/outcome/side
+    // 模拟磁盘上的旧格式: 含 is_buy 但无 token_id/outcome/side/V2字段
 
     // Case A: v1.2 record, is_buy=true → migration 后 side=Buy(0)
     // condition_id 必须 ≤ kMarketIdMax-1=31 字节 (char[32] truncation)
@@ -387,8 +390,9 @@ TEST(AuditSchemaV13, T5_V12_To_V13_Migration) {
             << "T5-A: pre-migration token_id 必须全零 (value-init)";
         rec_v12.apply_v12_migration();
 
-        EXPECT_EQ(rec_v12.schema_version, kAuditSchemaV13)
-            << "T5-A: 迁移后 schema_version 应为 v1.3";
+        // v1.4: apply_v12_migration 升到 v1.4
+        EXPECT_EQ(rec_v12.schema_version, kAuditSchemaV14)
+            << "T5-A: 迁移后 schema_version 应为 v1.4";
         EXPECT_EQ(rec_v12.side, static_cast<std::uint8_t>(0))
             << "T5-A: is_buy=true → side=Buy(0)";
         EXPECT_EQ(rec_v12.outcome, static_cast<std::uint8_t>(0))
@@ -396,6 +400,10 @@ TEST(AuditSchemaV13, T5_V12_To_V13_Migration) {
         // apply_v12_migration 不写 token_id, 保持 array 零 → 空字符串
         EXPECT_EQ(rec_v12.token_id[0], '\0')
             << "T5-A: migration 后 token_id 仍为空字符串 (不写入, 保持 default)";
+        // v1.4 V2 字段默认值
+        EXPECT_EQ(rec_v12.timestamp_ms,  static_cast<std::int64_t>(0)) << "T5-A: timestamp_ms=0";
+        EXPECT_EQ(rec_v12.metadata[0],   '\0') << "T5-A: metadata 空";
+        EXPECT_EQ(rec_v12.builder[0],    '\0') << "T5-A: builder 空";
     }
 
     // Case B: v1.2 record, is_buy=false → migration 后 side=Sell(1)
@@ -412,8 +420,8 @@ TEST(AuditSchemaV13, T5_V12_To_V13_Migration) {
         EXPECT_EQ(rec_v12.token_id[0], '\0') << "T5-B: pre-migration token_id 全零";
         rec_v12.apply_v12_migration();
 
-        EXPECT_EQ(rec_v12.schema_version, kAuditSchemaV13)
-            << "T5-B: 迁移后 schema_version 应为 v1.3";
+        EXPECT_EQ(rec_v12.schema_version, kAuditSchemaV14)
+            << "T5-B: 迁移后 schema_version 应为 v1.4";
         EXPECT_EQ(rec_v12.side, static_cast<std::uint8_t>(1))
             << "T5-B: is_buy=false → side=Sell(1)";
         EXPECT_EQ(rec_v12.outcome, static_cast<std::uint8_t>(0))
@@ -422,24 +430,22 @@ TEST(AuditSchemaV13, T5_V12_To_V13_Migration) {
             << "T5-B: migration 后 token_id 仍为空字符串";
     }
 
-    // Case C: v1.3 record (schema_version=0x13) — apply_v12_migration 幂等
+    // Case C: v1.4 record (schema_version=0x14) round-trip
     {
-        AuditRecord rec_v13{};
-        rec_v13.schema_version = kAuditSchemaV13;
-        rec_v13.side    = 1;   // Sell
-        rec_v13.outcome = 2;   // Over
+        AuditRecord rec_v14{};
+        rec_v14.schema_version = kAuditSchemaV14;
+        rec_v14.side    = 1;   // Sell
+        rec_v14.outcome = 2;   // Over
         const char* tok = "99999999999";
-        std::memcpy(rec_v13.token_id.data(), tok, std::strlen(tok));
+        std::memcpy(rec_v14.token_id.data(), tok, std::strlen(tok));
 
-        // 再次 apply (幂等: schema_version 已是 v1.3, apply 不改 side/outcome)
-        // 实际上 apply_v12_migration 无条件执行; 调用方应在读取时先判断 schema_version
-        // 此处只验证: v1.3 record 序列化后字段完整保留
+        // 序列化后字段完整保留
         std::vector<std::byte> buf(AuditRecord::max_serialized_size());
-        ASSERT_EQ(rec_v13.serialize_into({buf.data(), buf.size()}), sizeof(AuditRecord));
+        ASSERT_EQ(rec_v14.serialize_into({buf.data(), buf.size()}), sizeof(AuditRecord));
         AuditRecord rec2{};
         std::memcpy(&rec2, buf.data(), sizeof(AuditRecord));
-        EXPECT_EQ(rec2.schema_version, kAuditSchemaV13)
-            << "T5-C: v1.3 round-trip schema_version";
+        EXPECT_EQ(rec2.schema_version, kAuditSchemaV14)
+            << "T5-C: v1.4 round-trip schema_version";
         EXPECT_EQ(rec2.side,    static_cast<std::uint8_t>(1)) << "T5-C: side=Sell 保留";
         EXPECT_EQ(rec2.outcome, static_cast<std::uint8_t>(2)) << "T5-C: outcome=Over 保留";
         EXPECT_STREQ(rec2.token_id.data(), tok) << "T5-C: token_id 保留";

@@ -51,7 +51,7 @@ static RiskDecisionInput make_input(int i = 0,
     in.audit_id_bytes = {static_cast<std::uint8_t>(i & 0xFF), 1, 2, 3,
                          4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15};
     in.market_id = "mkt_b3"; in.strategy_id = "b3_strat";
-    in.size_usdc = 100; in.price = 0.6; in.is_buy = true;
+    in.size_pUSD_micro = 100; in.price = 0.6; in.is_buy = true;
     in.event_type = t;
     in.reject_code = stcpp::risk::RejectCode::INTERNAL_ERROR;
     in.sub_reason = stcpp::risk::InvalidIntentSubReason::NONE;

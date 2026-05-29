@@ -1,14 +1,15 @@
-// stcpp/observability/audit_emitter.cpp — AuditEmitter v1.3 + AuditEmitterPool
+// stcpp/observability/audit_emitter.cpp — AuditEmitter v1.4 + AuditEmitterPool
 //
-// Owner: 老唐 (audit-expert, #38)  W9 Wave 65
+// Owner: 老唐 (audit-expert, #38)  W10 Wave 98
 // 落: laotang-audit-schema-v1.1.md §5
 //     老周 Smell #A (AuditEmitter pool 5 上游)
 //     老韩 Smell #2 (BLAKE3_REAL 替换 XOR stub)
 //     W7 Wave 33: friend 删 + emit_with_injected_chain public API (老高 H-07 / 老周 C-06)
 //     W9 Wave 65: v1.3 schema (token_id / outcome / side), build_record 写入新字段
+//     W10 Wave 98: v1.4 schema (timestamp_ms / metadata / builder + pUSD rename)
 //
 // cite:
-//   polymarket_ssot_cite: laoli-w8-polymarket-data-structure-ssot-v1.md §3 §6
+//   polymarket_ssot_cite: laoli-w9-w5-polymarket-market-research-update-v1.md §3.1 §3.4
 //   goalserve_ssot_cite:  N/A
 //   handshake_cite:       laoli-laoSun-handshake-v1.md §3 SignedOrder + Position ABI
 //   adr_cite:             ADR-027 Enforce-1
@@ -61,7 +62,7 @@ bool AuditEmitter::ts_chain_ok(const RiskDecisionInput& in) const noexcept {
 AuditRecord AuditEmitter::build_record(const RiskDecisionInput& in,
                                         AuditEventType type_override) const noexcept {
     AuditRecord r{};
-    r.schema_version = kAuditSchemaV13;  // v1.3 schema
+    r.schema_version = kAuditSchemaV14;  // v1.4 schema
     r.event_ts        = in.event_ts;
     r.data_source_ts  = in.data_source_ts;
     r.ingestion_ts    = in.ingestion_ts;
@@ -81,8 +82,9 @@ AuditRecord AuditEmitter::build_record(const RiskDecisionInput& in,
 
     copy_fixed(std::span<char>{r.strategy_id.data(), r.strategy_id.size()}, in.strategy_id);
 
-    r.size_usdc = in.size_usdc;
-    r.price     = in.price;
+    // v1.4: size_pUSD_micro (rename from size_usdc; USDC.e → pUSD)
+    r.size_pUSD_micro = in.size_pUSD_micro;
+    r.price           = in.price;
 
     // v1.3 新增: outcome + side
     r.outcome = in.outcome;
@@ -91,7 +93,12 @@ AuditRecord AuditEmitter::build_record(const RiskDecisionInput& in,
     // v1.2 compat: is_buy 从 side 推断 (side=0=Buy → is_buy=true; side=1=Sell → is_buy=false)
     r.is_buy  = (in.side == 0);
 
-    r.crc32c    = 0;   // framework 帧尾算
+    // v1.4 新增: V2 CLOB 字段 (cite: laosun-w10-w1-signer-v62-clob-v2-abi-spec-v1.md §2.1)
+    r.timestamp_ms = in.timestamp_ms;
+    copy_fixed(std::span<char>{r.metadata.data(), r.metadata.size()}, in.metadata);
+    copy_fixed(std::span<char>{r.builder.data(),  r.builder.size()},  in.builder);
+
+    r.crc32c = 0;   // framework 帧尾算
     return r;
 }
 

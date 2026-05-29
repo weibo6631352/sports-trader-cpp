@@ -804,6 +804,41 @@ gtest_discover_tests(test_audit_schema_v13
     PROPERTIES LABELS "unit;audit;schema-v13;token_id;outcome;side;migration;adr027;w9"
 )
 
+# 老唐 W10 Wave 98: audit schema v1.4 cpp — 5 ctest (ADR-027 Enforce-1, ADR-029+032)
+#   T1: timestamp_ms + size_pUSD_micro round-trip (V2 字段 + pUSD rename)
+#   T2: metadata + builder bytes32 hex round-trip (V2 EIP-712 字段)
+#   T3: BLAKE3 chain V2 新字段不破 hash 链 (3 record, chain verify PASS)
+#   T4: schema v1.3 → v1.4 migration (apply_v13_migration: V2 字段默认值填充)
+#   T5: schema v1.2 → v1.4 full migration (apply_v12_migration: 全链 migration)
+# cite: ADR-027 Enforce-1 / signer_spec §2.1 §8.1 / polymarket_ssot §3.1 §3.4
+add_executable(test_audit_schema_v14
+    test_audit_schema_v14.cpp
+)
+target_link_libraries(test_audit_schema_v14 PRIVATE
+    GTest::gtest_main
+    stcpp_observability_audit
+)
+target_compile_options(test_audit_schema_v14 PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+    -Wno-invalid-offsetof   # ADR-010 grandfather: TU #include .cpp 模板实例化
+)
+target_include_directories(test_audit_schema_v14 PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_audit_schema_v14 PRIVATE cxx_std_20)
+# R-7: BLAKE3_REAL=1 (T3 chain 验证依赖真 BLAKE3)
+target_compile_definitions(test_audit_schema_v14 PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+    BLAKE3_REAL=1
+)
+gtest_discover_tests(test_audit_schema_v14
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;audit;schema-v14;timestamp_ms;metadata;builder;pUSD;migration;adr027;wave98;w10"
+)
+
 # 老孙 W6 Wave 30: signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
 #   T1-T8 + Bonus_R11 + Bonus_R20: 10 test targets
 # R-7 物理隔离: paper mode only; libsodium homebrew prebuilt

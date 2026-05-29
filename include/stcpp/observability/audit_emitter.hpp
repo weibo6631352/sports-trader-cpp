@@ -1,4 +1,4 @@
-// stcpp/observability/audit_emitter.hpp — AuditEmitter v1.3 (W9 Wave 65)
+// stcpp/observability/audit_emitter.hpp — AuditEmitter v1.4 (W10 Wave 98)
 //
 // 落:
 //   laotang-audit-schema-v1.1.md §5 (emit_* API + hash chain owner)
@@ -8,6 +8,7 @@
 //   老韩 Smell #2 (W6 Wave 29): BLAKE3_REAL build-time enforce, stub 禁进 live
 //   laohan-w9-orderintent-v05-spec-v1.md §3.3 (AuditRecord v1.3 WAL schema bump)
 //   laosun-w9-signer-v53-abi-align-spec-v1.md §2 (token_id/outcome/side 新字段)
+//   laosun-w10-w1-signer-v62-clob-v2-abi-spec-v1.md §2.1 §8.1 (V2: timestamp_ms/metadata/builder + pUSD)
 //
 // v1.1 变更 (W6 Wave 29):
 //   1. 引入 blake3_hash.hpp — apply_hash_chain 切真 BLAKE3 (BLAKE3_REAL)
@@ -26,8 +27,15 @@
 //   9. build_record() 写入 token_id / outcome / side → AuditRecord v1.3
 //   10. v1.2 → v1.3 migration: 旧 audit log read 加 default 字段 (apply_v12_migration)
 //
+// v1.4 变更 (W10 Wave 98, 老唐):
+//   11. RiskDecisionInput: 新增 timestamp_ms / metadata / builder (V2 CLOB 字段)
+//   12. RiskDecisionInput: size_usdc → size_pUSD_micro (USDC.e → pUSD rename)
+//   13. build_record(): 写入 timestamp_ms / metadata / builder → AuditRecord v1.4
+//   14. v1.3 → v1.4 migration: apply_v13_migration() 补填 V2 字段默认值
+//   15. BLAKE3 chain 算法不变 (新字段进 payload, compute_payload_hash 接口不变)
+//
 // cite:
-//   polymarket_ssot_cite: laoli-w8-polymarket-data-structure-ssot-v1.md §3 §6
+//   polymarket_ssot_cite: laoli-w9-w5-polymarket-market-research-update-v1.md §3.1 §3.4
 //   goalserve_ssot_cite:  N/A
 //   handshake_cite:       laoli-laoSun-handshake-v1.md §3 SignedOrder + Position ABI
 //   adr_cite:             ADR-027 Enforce-1
@@ -60,9 +68,11 @@
 
 namespace stcpp::observability {
 
-// ---------- RiskDecisionInput (v1.3, W9 Wave 65) --------------------------------
+// ---------- RiskDecisionInput (v1.4, W10 Wave 98) --------------------------------
 //
 // v1.3 新增: token_id / outcome / side
+// v1.4 新增: timestamp_ms / metadata / builder (V2 CLOB 字段)
+// v1.4 rename: size_usdc → size_pUSD_micro (USDC.e → pUSD)
 // v1.2 兼容: market_id alias → condition_id; is_buy 保留 (migration 用)
 // BLAKE3 chain payload 不变 (新字段进 AuditRecord, chain 算法不改)
 
@@ -77,21 +87,25 @@ struct RiskDecisionInput {
     std::array<std::uint8_t, 16>     audit_id_bytes{};
 
     // v1.3: condition_id (正名); market_id 保留作 v1.2 call-site 兼容 alias
-    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 condition_id
+    // SSOT: laoli-w9-w5-polymarket-market-research-update-v1.md §3.1
     std::string_view                 condition_id;    // v1.3 正名
     std::string_view                 market_id;       // v1.2 alias → 同 condition_id (调用方选一)
 
     // v1.3 新增: token_id (uint256 decimal string, 无 0x 前缀)
-    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §3.3 token_id
+    // SSOT: laoli-w9-w5-polymarket-market-research-update-v1.md §3.1
     // handshake: laoli-laoSun-handshake-v1.md §3 SignedOrder.token_id
     std::string_view                 token_id;        // v1.3 新增
 
     std::string_view                 strategy_id;
-    std::int64_t                     size_usdc{0};
+
+    // v1.4: size_usdc → size_pUSD_micro (USDC.e → pUSD rename; micro = 1e-6 不变)
+    // cite: laosun-w10-w1-signer-v62-clob-v2-abi-spec-v1.md §2.2 §5.1
+    std::int64_t                     size_pUSD_micro{0};   // v1.4 rename
+
     double                           price{0.0};
 
     // v1.3 新增: outcome (Outcome enum 底层 uint8; 0=Yes,1=No,2=Over,3=Under,…)
-    // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §3.3 tokens[i].outcome
+    // SSOT: laoli-w9-w5-polymarket-market-research-update-v1.md §3.1
     std::uint8_t                     outcome{0};      // v1.3 新增, default=Yes(0)
 
     // v1.3 新增: side (Side enum 底层 uint8; 0=Buy,1=Sell)
@@ -100,6 +114,20 @@ struct RiskDecisionInput {
 
     // v1.2 compat: is_buy 保留; 写路径优先用 side; migration read 路径用 is_buy 推 side
     bool                             is_buy{true};
+
+    // v1.4 新增: timestamp_ms (V2 EIP-712 Order.timestamp, ms, 替代 nonce)
+    // cite: laosun-w10-w1-signer-v62-clob-v2-abi-spec-v1.md §2.1 timestamp_ms
+    std::int64_t                     timestamp_ms{0};        // v1.4 新增
+
+    // v1.4 新增: metadata (V2 EIP-712 Order.metadata, bytes32 hex string)
+    //   格式: "0x" + 64 hex chars (66 chars total); 不使用填 bytes32(0) hex
+    // cite: laosun-w10-w1-signer-v62-clob-v2-abi-spec-v1.md §2.1 metadata
+    std::string_view                 metadata;               // v1.4 新增; empty = 未设
+
+    // v1.4 新增: builder (V2 EIP-712 Order.builder, bytes32 hex optional)
+    //   格式: "0x" + 64 hex chars (66 chars total); 不使用填 bytes32(0) hex
+    // cite: laosun-w10-w1-signer-v62-clob-v2-abi-spec-v1.md §2.1 builder
+    std::string_view                 builder;                // v1.4 新增; empty = 未设
 
     AuditEventType                       event_type{AuditEventType::OrderApproved};
     stcpp::risk::RejectCode              reject_code{stcpp::risk::RejectCode::INTERNAL_ERROR};
