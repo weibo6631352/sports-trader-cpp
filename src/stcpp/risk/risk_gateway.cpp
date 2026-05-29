@@ -40,6 +40,7 @@
 #include <unordered_set>
 
 #include "stcpp/infra/wal/pit.hpp"
+#include "stcpp/risk/rm_debug_snapshot.hpp"
 
 namespace stcpp::risk {
 
@@ -200,6 +201,22 @@ void RiskGateway::set_market_active(std::string const& m, bool active) noexcept 
 void RiskGateway::clear_idempotency() noexcept {
     std::lock_guard<std::mutex> g(s_->mu);
     s_->seen_signal_ids.clear();
+}
+
+// 老沈 rm_debug_snapshot D1: 进程级全局 snapshot 指针 (单例)
+// 线程安全: atomic store (release in attach/detach) / acquire (in evaluate)
+// 生命周期: snap 必须比所有 RiskGateway 实例活得更长
+// 调用约定: start-up 阶段 attach (单次); 销毁前 detach
+namespace {
+std::atomic<RmDebugSnapshot*> g_rm_debug_snapshot{nullptr};
+}  // namespace
+
+void attach_rm_debug_snapshot(RmDebugSnapshot* snap) noexcept {
+    g_rm_debug_snapshot.store(snap, std::memory_order_release);
+}
+
+void detach_rm_debug_snapshot() noexcept {
+    g_rm_debug_snapshot.store(nullptr, std::memory_order_release);
 }
 
 // ---------- audit_id 生成 (ULID stub) ----------------------------------------
@@ -633,6 +650,16 @@ RiskDecision RiskGateway::evaluate(OrderIntent const& intent) noexcept {
         }
         if (d.reject != RejectCode::INVALID_INTENT)
             d.sub_reason = InvalidIntentSubReason::NONE;
+
+        // 老沈 rm_debug_snapshot D1: 一次 ring 写, 不持锁, 不分配, fail-open
+        // 红线: 仅在 REJECTED 确定后调用; 不反压热路径; p99 增量 < 1us
+        // 安全: build_reject_row 只读 allowlist 字段 (token_id/sig/nonce 不投影)
+        // 全局 singleton 指针: 热路径 acquire-load; attach 在 start-up release-store
+        auto* snap = g_rm_debug_snapshot.load(std::memory_order_acquire);
+        if (snap != nullptr) {
+            RejectRow row = build_reject_row(d, intent);
+            snap->push_reject(row);
+        }
     };
 
     if (check_state_(intent, d)) {
