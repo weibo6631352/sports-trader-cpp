@@ -1,0 +1,41 @@
+name: Claude PR Code Review
+
+# 自动 PR 代码评审 (ADR-039 §4 自动化)
+# 需 repo secret: ANTHROPIC_API_KEY (老板在 Settings → Secrets and variables → Actions 添加)
+# 未配 secret 时此 job 会 fail 但不阻塞 PR (人/agent 评审仍走 ADR-039 §5)
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  review:
+    # 跳过 draft + bot 自身提交, 避免无限循环
+    if: github.event.pull_request.draft == false && github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            自动评审本 PR (第一道, Sonnet 快速过). 重点:
+            1. 正确性 / 潜在 bug / 边界
+            2. 性能 (热路径零拖累, R-12)
+            3. 安全 (私钥/secret 绝不入 response/log; allowlist)
+            4. C++20 best practice
+            5. 遵守 CLAUDE.md 红线 + ADR (R-11 paper 隔离 / R-12 event loop / R-20 4 时间戳 / RM 不可绕过)
+            6. 提交质量 (是否全量 ctest / clang-format / -Wno-* 带 ADR-010 注释 / 契约变更是否追下游)
+            以 PR review comment 给建设性意见. 重大 ABI / 红线问题标 [BLOCKING].
+            Repository: ${{ github.repository }}  PR: #${{ github.event.pull_request.number }}
+          claude_args: |
+            --max-turns 5
+            --model claude-sonnet-4-6
