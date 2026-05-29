@@ -1083,3 +1083,37 @@ gtest_discover_tests(test_outbound_serializer
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;net;outbound;serializer;backpressure;a-net-01;wave3"
 )
+
+# 小段 ADR-037: Goalserve vendor-agnostic adapter schema v0.1 ctest
+#   T1: InfoKind / VendorId / GameEventType enum 闭合
+#   T2: R-20 四时间戳契约 — GameScoreRecord / OddsQuoteRecord / GameStatsRecord / GameEventRecord
+#   T3: 时间戳转换 helper — NetTicksToEpochNs / InplayTsMsToNs / PregameTsSecToNs
+#   T4: OddsQuoteRecord.IsValid() 逻辑 (value > 1.0 + suspend + R-20)
+#   T5: MapGoalserveEventType — 8 种 + VAR variants + Other
+#   T6: AdaptBatch 四类 record 共存 + data_source_ts monotonic
+#   T7: 3-way soccer 1x2 — Home/Draw/Away 三个独立 OddsQuoteRecord
+#   T8: .NET ticks 边界 (epoch offset / 负值 / 典型值)
+add_executable(test_goalserve_adapter
+    test_goalserve_adapter.cpp
+)
+target_link_libraries(test_goalserve_adapter PRIVATE
+    GTest::gtest_main
+    stcpp_data_contract
+)
+target_compile_options(test_goalserve_adapter PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_goalserve_adapter PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_goalserve_adapter PRIVATE cxx_std_20)
+target_compile_definitions(test_goalserve_adapter PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_goalserve_adapter
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;goalserve;adapter;vendor-agnostic;adr-037"
+)
