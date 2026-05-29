@@ -62,52 +62,70 @@ inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.1";
 // ---------------------------------------------------------------------------
 enum class MlFeature : std::uint8_t {
     // ---- game 侧 (Goalserve 归一化中间表示) ----
-    g_score_diff            = 0,   // home_total - away_total
-    g_score_total           = 1,   // home_total + away_total
-    g_period                = 2,   // 当前 period (0=未开始)
-    g_elapsed_sec           = 3,   // 当前节已用秒 (-1 -> NaN)
-    g_time_status           = 4,   // TimeStatus enum cast (NotStarted=0 ...)
-    g_bm_devig_p_yes        = 5,   // 跨 bookmaker de-vig 隐含 YES fair prob (均值)
-    g_bm_overround_avg      = 6,   // 跨 bookmaker overround 均值 (vig 强度)
-    g_valid_bm_count        = 7,   // 有效 bookmaker 报价家数 (信息量代理)
+    g_score_diff = 0,        // home_total - away_total
+    g_score_total = 1,       // home_total + away_total
+    g_period = 2,            // 当前 period (0=未开始)
+    g_elapsed_sec = 3,       // 当前节已用秒 (-1 -> NaN)
+    g_time_status = 4,       // TimeStatus enum cast (NotStarted=0 ...)
+    g_bm_devig_p_yes = 5,    // 跨 bookmaker de-vig 隐含 YES fair prob (均值)
+    g_bm_overround_avg = 6,  // 跨 bookmaker overround 均值 (vig 强度)
+    g_valid_bm_count = 7,    // 有效 bookmaker 报价家数 (信息量代理)
 
     // ---- book 侧 (Polymarket 归一化中间表示) ----
-    b_mid                   = 8,   // 订单簿 mid (dollar prob)
-    b_microprice            = 9,   // size-weighted microprice
-    b_imbalance             = 10,  // L1 imbalance (bid - ask) / (bid + ask)
-    b_spread_bps            = 11,  // (ask0 - bid0)/mid*10000
-    b_top3_depth_usdc       = 12,  // top-3 levels 总 USDC
-    b_best_bid              = 13,  // L1 best bid
-    b_best_ask              = 14,  // L1 best ask
-    b_book_levels_valid     = 15,  // 有效 (bid+ask) level 计数
+    b_mid = 8,                 // 订单簿 mid (dollar prob)
+    b_microprice = 9,          // size-weighted microprice
+    b_imbalance = 10,          // L1 imbalance (bid - ask) / (bid + ask)
+    b_spread_bps = 11,         // (ask0 - bid0)/mid*10000
+    b_top3_depth_usdc = 12,    // top-3 levels 总 USDC
+    b_best_bid = 13,           // L1 best bid
+    b_best_ask = 14,           // L1 best ask
+    b_book_levels_valid = 15,  // 有效 (bid+ask) level 计数
 
     // ---- cross (game/book join 派生) ----
-    x_devig_minus_mid       = 16,  // g_bm_devig_p_yes - b_mid (模型 / 市场偏离)
-    x_microprice_minus_mid  = 17,  // b_microprice - b_mid (短期方向压力)
+    x_devig_minus_mid = 16,       // g_bm_devig_p_yes - b_mid (模型 / 市场偏离)
+    x_microprice_minus_mid = 17,  // b_microprice - b_mid (短期方向压力)
 };
 
 inline constexpr std::size_t kMlFeatureCount = 18;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
-        case MlFeature::g_score_diff:           return "g_score_diff";
-        case MlFeature::g_score_total:          return "g_score_total";
-        case MlFeature::g_period:               return "g_period";
-        case MlFeature::g_elapsed_sec:          return "g_elapsed_sec";
-        case MlFeature::g_time_status:          return "g_time_status";
-        case MlFeature::g_bm_devig_p_yes:       return "g_bm_devig_p_yes";
-        case MlFeature::g_bm_overround_avg:     return "g_bm_overround_avg";
-        case MlFeature::g_valid_bm_count:       return "g_valid_bm_count";
-        case MlFeature::b_mid:                  return "b_mid";
-        case MlFeature::b_microprice:           return "b_microprice";
-        case MlFeature::b_imbalance:            return "b_imbalance";
-        case MlFeature::b_spread_bps:           return "b_spread_bps";
-        case MlFeature::b_top3_depth_usdc:      return "b_top3_depth_usdc";
-        case MlFeature::b_best_bid:             return "b_best_bid";
-        case MlFeature::b_best_ask:             return "b_best_ask";
-        case MlFeature::b_book_levels_valid:    return "b_book_levels_valid";
-        case MlFeature::x_devig_minus_mid:      return "x_devig_minus_mid";
-        case MlFeature::x_microprice_minus_mid: return "x_microprice_minus_mid";
+        case MlFeature::g_score_diff:
+            return "g_score_diff";
+        case MlFeature::g_score_total:
+            return "g_score_total";
+        case MlFeature::g_period:
+            return "g_period";
+        case MlFeature::g_elapsed_sec:
+            return "g_elapsed_sec";
+        case MlFeature::g_time_status:
+            return "g_time_status";
+        case MlFeature::g_bm_devig_p_yes:
+            return "g_bm_devig_p_yes";
+        case MlFeature::g_bm_overround_avg:
+            return "g_bm_overround_avg";
+        case MlFeature::g_valid_bm_count:
+            return "g_valid_bm_count";
+        case MlFeature::b_mid:
+            return "b_mid";
+        case MlFeature::b_microprice:
+            return "b_microprice";
+        case MlFeature::b_imbalance:
+            return "b_imbalance";
+        case MlFeature::b_spread_bps:
+            return "b_spread_bps";
+        case MlFeature::b_top3_depth_usdc:
+            return "b_top3_depth_usdc";
+        case MlFeature::b_best_bid:
+            return "b_best_bid";
+        case MlFeature::b_best_ask:
+            return "b_best_ask";
+        case MlFeature::b_book_levels_valid:
+            return "b_book_levels_valid";
+        case MlFeature::x_devig_minus_mid:
+            return "x_devig_minus_mid";
+        case MlFeature::x_microprice_minus_mid:
+            return "x_microprice_minus_mid";
     }
     return "unknown";
 }
@@ -116,7 +134,9 @@ namespace detail {
 
 inline constexpr float kNaNf = std::numeric_limits<float>::quiet_NaN();
 
-[[nodiscard]] inline bool is_finite_f(float v) noexcept { return v == v; }  // NaN != NaN
+[[nodiscard]] inline bool is_finite_f(float v) noexcept {
+    return v == v;
+}  // NaN != NaN
 
 // 单家 odds (decimal-style yes/no) → de-vig YES fair prob.
 //   隐含 p_yes_raw = 1/odds_yes, p_no_raw = 1/odds_no; overround = sum.
@@ -130,11 +150,13 @@ struct DevigOne {
 
 [[nodiscard]] inline DevigOne devig_one(double odds_yes, double odds_no) noexcept {
     DevigOne r;
-    if (!(odds_yes > 1.0) || !(odds_no > 1.0)) return r;  // decimal odds 必 > 1
+    if (!(odds_yes > 1.0) || !(odds_no > 1.0))
+        return r;  // decimal odds 必 > 1
     const double py = 1.0 / odds_yes;
     const double pn = 1.0 / odds_no;
     const double over = py + pn;
-    if (!(over > 0.0)) return r;
+    if (!(over > 0.0))
+        return r;
     r.fair_yes = py / over;
     r.overround = over;
     r.ok = true;
@@ -154,23 +176,21 @@ inline void extract_from_game_row(const stcpp::data::feature_store::FeatureStore
         out[static_cast<std::size_t>(f)] = v;
     };
 
-    put(MlFeature::g_score_diff,
-        static_cast<float>(g.score_home_total - g.score_away_total));
-    put(MlFeature::g_score_total,
-        static_cast<float>(g.score_home_total + g.score_away_total));
+    put(MlFeature::g_score_diff, static_cast<float>(g.score_home_total - g.score_away_total));
+    put(MlFeature::g_score_total, static_cast<float>(g.score_home_total + g.score_away_total));
     put(MlFeature::g_period, static_cast<float>(g.period));
-    put(MlFeature::g_elapsed_sec,
-        (g.elapsed_sec >= 0) ? static_cast<float>(g.elapsed_sec) : kNaNf);
-    put(MlFeature::g_time_status,
-        static_cast<float>(static_cast<std::uint8_t>(g.time_status)));
+    put(MlFeature::g_elapsed_sec, (g.elapsed_sec >= 0) ? static_cast<float>(g.elapsed_sec) : kNaNf);
+    put(MlFeature::g_time_status, static_cast<float>(static_cast<std::uint8_t>(g.time_status)));
 
     // 跨 bookmaker de-vig fair prob 均值 + overround 均值 (vendor-agnostic: 走归一化 bm_slots).
     double fair_sum = 0.0, over_sum = 0.0;
     std::size_t n = 0;
     for (const auto& sl : g.bm_slots) {
-        if (!sl.is_present()) continue;
+        if (!sl.is_present())
+            continue;
         const auto d = detail::devig_one(sl.odds_yes, sl.odds_no);
-        if (!d.ok) continue;
+        if (!d.ok)
+            continue;
         fair_sum += d.fair_yes;
         over_sum += d.overround;
         ++n;
@@ -209,8 +229,10 @@ inline void extract_from_book_row(const stcpp::data::feature_store::FeatureStore
 
     std::size_t valid_levels = 0;
     for (std::size_t i = 0; i < stcpp::data::feature_store::kOrderBookLevels; ++i) {
-        if (b.bid_level_valid(i)) ++valid_levels;
-        if (b.ask_level_valid(i)) ++valid_levels;
+        if (b.bid_level_valid(i))
+            ++valid_levels;
+        if (b.ask_level_valid(i))
+            ++valid_levels;
     }
     put(MlFeature::b_book_levels_valid, static_cast<float>(valid_levels));
 }
@@ -220,8 +242,8 @@ inline void extract_from_book_row(const stcpp::data::feature_store::FeatureStore
 //   out 中 g_bm_devig_p_yes / b_mid / b_microprice 必须已填; 任一 NaN → cross NaN.
 // ---------------------------------------------------------------------------
 inline void fill_cross_features(std::vector<float>& out) noexcept {
-    using detail::kNaNf;
     using detail::is_finite_f;
+    using detail::kNaNf;
     const float devig = out[static_cast<std::size_t>(MlFeature::g_bm_devig_p_yes)];
     const float mid = out[static_cast<std::size_t>(MlFeature::b_mid)];
     const float micro = out[static_cast<std::size_t>(MlFeature::b_microprice)];

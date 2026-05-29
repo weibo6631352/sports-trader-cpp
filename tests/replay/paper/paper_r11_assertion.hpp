@@ -27,17 +27,17 @@ namespace stcpp::test::replay {
 // ---------- R-11 WAL kind 校验结果 -------------------------------------------
 
 enum class R11ViolationKind : std::uint8_t {
-    None                    = 0,
-    DecisionNotPaperAudit   = 1,  // paper decision → wrong WAL kind
-    FillNotPaperAudit       = 2,  // paper fill → wrong WAL kind
-    LiveWalWritten          = 3,  // live WAL water-mark increased
-    PaperWalEmpty           = 4,  // paper_audit HWM not increased at finalize
+    None = 0,
+    DecisionNotPaperAudit = 1,  // paper decision → wrong WAL kind
+    FillNotPaperAudit = 2,      // paper fill → wrong WAL kind
+    LiveWalWritten = 3,         // live WAL water-mark increased
+    PaperWalEmpty = 4,          // paper_audit HWM not increased at finalize
 };
 
 struct R11Violation {
     R11ViolationKind kind{R11ViolationKind::None};
-    std::uint64_t    seq{0};
-    std::string      message;
+    std::uint64_t seq{0};
+    std::string message;
 };
 
 // ---------- PaperLedgerIsolationAssertion ------------------------------------
@@ -51,24 +51,19 @@ class PaperLedgerIsolationAssertion {
 public:
     using WriterT = stcpp::infra::wal::WalWriter<stcpp::observability::AuditRecord>;
 
-    explicit PaperLedgerIsolationAssertion(
-        WriterT* paper_audit_writer,
-        WriterT* risk_audit_writer,
-        WriterT* position_writer,
-        WriterT* shadow_audit_writer) noexcept
-        : paper_audit_writer_(paper_audit_writer)
-        , risk_audit_writer_(risk_audit_writer)
-        , position_writer_(position_writer)
-        , shadow_audit_writer_(shadow_audit_writer) {}
+    explicit PaperLedgerIsolationAssertion(WriterT* paper_audit_writer, WriterT* risk_audit_writer,
+                                           WriterT* position_writer, WriterT* shadow_audit_writer) noexcept
+        : paper_audit_writer_(paper_audit_writer),
+          risk_audit_writer_(risk_audit_writer),
+          position_writer_(position_writer),
+          shadow_audit_writer_(shadow_audit_writer) {}
 
     // spec §2.3.1: 在 replay 开始时注入 4 个 WalWriter 的 HighWatermark 基线
-    void set_baselines(std::uint64_t paper_audit_base,
-                       std::uint64_t risk_audit_base,
-                       std::uint64_t position_base,
-                       std::uint64_t shadow_audit_base) noexcept {
-        paper_audit_base_  = paper_audit_base;
-        risk_audit_base_   = risk_audit_base;
-        position_base_     = position_base;
+    void set_baselines(std::uint64_t paper_audit_base, std::uint64_t risk_audit_base,
+                       std::uint64_t position_base, std::uint64_t shadow_audit_base) noexcept {
+        paper_audit_base_ = paper_audit_base;
+        risk_audit_base_ = risk_audit_base;
+        position_base_ = position_base;
         shadow_audit_base_ = shadow_audit_base;
     }
 
@@ -76,11 +71,9 @@ public:
     bool on_decision_wal_kind(stcpp::infra::wal::WalKind kind, std::uint64_t seq) {
         ++decision_count_;
         if (kind != stcpp::infra::wal::WalKind::PaperAudit) {
-            violations_.push_back({
-                R11ViolationKind::DecisionNotPaperAudit,
-                seq,
-                "R-11: paper decision wal_kind != PaperAudit (seq=" + std::to_string(seq) + ")"
-            });
+            violations_.push_back(
+                {R11ViolationKind::DecisionNotPaperAudit, seq,
+                 "R-11: paper decision wal_kind != PaperAudit (seq=" + std::to_string(seq) + ")"});
             return false;
         }
         return true;
@@ -90,11 +83,9 @@ public:
     bool on_fill_wal_kind(stcpp::infra::wal::WalKind kind, std::uint64_t seq) {
         ++fill_count_;
         if (kind != stcpp::infra::wal::WalKind::PaperAudit) {
-            violations_.push_back({
-                R11ViolationKind::FillNotPaperAudit,
-                seq,
-                "R-11: paper fill wal_kind != PaperAudit (seq=" + std::to_string(seq) + ")"
-            });
+            violations_.push_back(
+                {R11ViolationKind::FillNotPaperAudit, seq,
+                 "R-11: paper fill wal_kind != PaperAudit (seq=" + std::to_string(seq) + ")"});
             return false;
         }
         return true;
@@ -106,39 +97,33 @@ public:
 
         // 3 live WAL 水位线不变
         if (risk_audit_writer_ && risk_audit_writer_->HighWatermark() != risk_audit_base_) {
-            violations_.push_back({
-                R11ViolationKind::LiveWalWritten, 0,
-                "R-11: paper replay 不得写 risk_audit WAL (delta=" +
-                std::to_string(risk_audit_writer_->HighWatermark() - risk_audit_base_) + ")"
-            });
+            violations_.push_back(
+                {R11ViolationKind::LiveWalWritten, 0,
+                 "R-11: paper replay 不得写 risk_audit WAL (delta=" +
+                     std::to_string(risk_audit_writer_->HighWatermark() - risk_audit_base_) + ")"});
             ok = false;
         }
         if (position_writer_ && position_writer_->HighWatermark() != position_base_) {
-            violations_.push_back({
-                R11ViolationKind::LiveWalWritten, 0,
-                "R-11: paper replay 不得写 position WAL (delta=" +
-                std::to_string(position_writer_->HighWatermark() - position_base_) + ")"
-            });
+            violations_.push_back({R11ViolationKind::LiveWalWritten, 0,
+                                   "R-11: paper replay 不得写 position WAL (delta=" +
+                                       std::to_string(position_writer_->HighWatermark() - position_base_) +
+                                       ")"});
             ok = false;
         }
         if (shadow_audit_writer_ && shadow_audit_writer_->HighWatermark() != shadow_audit_base_) {
-            violations_.push_back({
-                R11ViolationKind::LiveWalWritten, 0,
-                "R-11: paper replay 不得写 shadow_audit WAL (delta=" +
-                std::to_string(shadow_audit_writer_->HighWatermark() - shadow_audit_base_) + ")"
-            });
+            violations_.push_back(
+                {R11ViolationKind::LiveWalWritten, 0,
+                 "R-11: paper replay 不得写 shadow_audit WAL (delta=" +
+                     std::to_string(shadow_audit_writer_->HighWatermark() - shadow_audit_base_) + ")"});
             ok = false;
         }
 
         // paper_audit 必须有新增记录 (replay 实际产生了 audit)
-        if (paper_audit_writer_ &&
-            paper_audit_writer_->HighWatermark() <= paper_audit_base_) {
-            violations_.push_back({
-                R11ViolationKind::PaperWalEmpty, 0,
-                "R-11: paper replay 必须有 PaperAudit 写入 (HWM=" +
-                std::to_string(paper_audit_writer_->HighWatermark()) +
-                " <= base=" + std::to_string(paper_audit_base_) + ")"
-            });
+        if (paper_audit_writer_ && paper_audit_writer_->HighWatermark() <= paper_audit_base_) {
+            violations_.push_back({R11ViolationKind::PaperWalEmpty, 0,
+                                   "R-11: paper replay 必须有 PaperAudit 写入 (HWM=" +
+                                       std::to_string(paper_audit_writer_->HighWatermark()) +
+                                       " <= base=" + std::to_string(paper_audit_base_) + ")"});
             ok = false;
         }
 
@@ -146,12 +131,12 @@ public:
         return ok;
     }
 
-    [[nodiscard]] std::uint64_t violation_count()      const noexcept {
+    [[nodiscard]] std::uint64_t violation_count() const noexcept {
         return static_cast<std::uint64_t>(violations_.size());
     }
-    [[nodiscard]] std::uint64_t decision_count()       const noexcept { return decision_count_; }
-    [[nodiscard]] std::uint64_t fill_count()           const noexcept { return fill_count_; }
-    [[nodiscard]] bool          finalized()            const noexcept { return finalized_; }
+    [[nodiscard]] std::uint64_t decision_count() const noexcept { return decision_count_; }
+    [[nodiscard]] std::uint64_t fill_count() const noexcept { return fill_count_; }
+    [[nodiscard]] bool finalized() const noexcept { return finalized_; }
 
     // live WAL delta (老韩 RM 主权签字用: delta == 0 → 签字)
     [[nodiscard]] std::uint64_t finalized_live_wal_delta() const noexcept {
@@ -171,9 +156,7 @@ public:
         return delta;
     }
 
-    [[nodiscard]] const std::vector<R11Violation>& violations() const noexcept {
-        return violations_;
-    }
+    [[nodiscard]] const std::vector<R11Violation>& violations() const noexcept { return violations_; }
 
 private:
     WriterT* paper_audit_writer_{nullptr};
@@ -188,7 +171,7 @@ private:
 
     std::uint64_t decision_count_{0};
     std::uint64_t fill_count_{0};
-    bool          finalized_{false};
+    bool finalized_{false};
 
     std::vector<R11Violation> violations_;
 };

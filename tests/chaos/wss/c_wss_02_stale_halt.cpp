@@ -29,9 +29,9 @@ class CWss02Fixture : public ChaosE2EFixture {};
 TEST_F(CWss02Fixture, C_WSS_02_stale_threshold_halt_then_recover) {
     // 注入 35s 断连 (超过 30s stale 阈值)
     FaultConfig cfg;
-    cfg.kind                   = FaultKind::WssDisconnect;
+    cfg.kind = FaultKind::WssDisconnect;
     cfg.disconnect_duration_ms = 35'000;  // 35s > 30s threshold
-    cfg.reconnect_ok           = true;
+    cfg.reconnect_ok = true;
     InjectFault(cfg);
 
     EXPECT_TRUE(fault_state_.disconnected) << "C-WSS-02: WSS 断连已注入";
@@ -39,18 +39,18 @@ TEST_F(CWss02Fixture, C_WSS_02_stale_threshold_halt_then_recover) {
 
     // book_snapshot_ts > 60s ago → BOOK_TS_STALE reject (RM 60s threshold)
     // 35s 断连时 book 可能已 stale — 用 70s 保证超过 60s 阈值
-    std::uint64_t stale_rejected   = 0;
-    std::uint64_t approved_halted  = 0;
+    std::uint64_t stale_rejected = 0;
+    std::uint64_t approved_halted = 0;
     for (int i = 0; i < 5; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_wss02_halt_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_wss02_halt_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
         // 35s 断连后 book 已超 60s → BOOK_TS_STALE
-        b.event_ts_ns        = now - 70'000'000'000LL;  // 70s > 60s stale threshold
-        b.data_source_ts_ns  = now - 69'999'000'000LL;
-        b.ingestion_ts_ns    = now - 69'998'000'000LL;
+        b.event_ts_ns = now - 70'000'000'000LL;  // 70s > 60s stale threshold
+        b.data_source_ts_ns = now - 69'999'000'000LL;
+        b.ingestion_ts_ns = now - 69'998'000'000LL;
         auto out = RunOneE2E(b, "sig_wss02_halt_" + std::to_string(i));
         if (out.rm_decision.is_rejected()) {
             ++stale_rejected;
@@ -61,10 +61,8 @@ TEST_F(CWss02Fixture, C_WSS_02_stale_threshold_halt_then_recover) {
     }
 
     // C-WSS-02 核心断言
-    EXPECT_GE(stale_rejected, 1u)
-        << "C-WSS-02: 35s stale data → RM 拒单 (STALE_DATA / BOOK_TS_STALE)";
-    EXPECT_EQ(approved_halted, 0u)
-        << "C-WSS-02: 35s stale 期间 0 approved (系统应已 HALTED 或 WARN)";
+    EXPECT_GE(stale_rejected, 1u) << "C-WSS-02: 35s stale data → RM 拒单 (STALE_DATA / BOOK_TS_STALE)";
+    EXPECT_EQ(approved_halted, 0u) << "C-WSS-02: 35s stale 期间 0 approved (系统应已 HALTED 或 WARN)";
 
     // audit 计数 (STALE_DATA reject_code)
     const auto stale_count = audit_emitter_->reject_count(RejectCode::STALE_DATA);
@@ -73,8 +71,7 @@ TEST_F(CWss02Fixture, C_WSS_02_stale_threshold_halt_then_recover) {
         << "C-WSS-02: audit 含 STALE_DATA 或 INVALID_INTENT reject ≥ 1 条";
 
     // R-11: paper_audit HighWatermark 不回退
-    EXPECT_GE(paper_audit_->HighWatermark(), hwm_before)
-        << "R-11: 断连不回退 paper_audit WAL";
+    EXPECT_GE(paper_audit_->HighWatermark(), hwm_before) << "R-11: 断连不回退 paper_audit WAL";
 
     // 重连恢复
     SimulateWssReconnect();
@@ -85,14 +82,15 @@ TEST_F(CWss02Fixture, C_WSS_02_stale_threshold_halt_then_recover) {
     for (int i = 0; i < 5; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_wss02_recover_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_wss02_recover_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_wss02_recover_" + std::to_string(i));
-        if (out.rm_decision.is_approved()) ++post_reconnect_approved;
+        if (out.rm_decision.is_approved())
+            ++post_reconnect_approved;
     }
     EXPECT_GE(post_reconnect_approved, 1u)
         << "C-WSS-02: 重连后新鲜 book → RM 至少 1 笔 approved (恢复 RUNNING)";

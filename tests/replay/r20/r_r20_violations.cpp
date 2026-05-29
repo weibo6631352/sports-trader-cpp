@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include "stcpp/infra/wal/pit.hpp"
+
 #include "tests/replay/paper/r20_ts_assertion.hpp"
 
 namespace stcpp::test::replay {
@@ -24,8 +25,8 @@ TEST(R20ReplayViolations, R_R20_02_event_ts_zero_detected) {
 
     // 5 条正常事件
     for (int i = 0; i < 5; ++i) {
-        r20.on_event(static_cast<std::uint64_t>(i + 1),
-            now - 5'000'000, now - 4'000'000, now - 2'000'000, now);
+        r20.on_event(static_cast<std::uint64_t>(i + 1), now - 5'000'000, now - 4'000'000, now - 2'000'000,
+                     now);
     }
     EXPECT_EQ(r20.violation_count(), 0u) << "R-R20-02: 5 条正常 → 0 违例";
 
@@ -38,7 +39,10 @@ TEST(R20ReplayViolations, R_R20_02_event_ts_zero_detected) {
     // 定位到 seq=6
     bool found = false;
     for (const auto& v : r20.violations()) {
-        if (v.seq == kBadSeq) { found = true; break; }
+        if (v.seq == kBadSeq) {
+            found = true;
+            break;
+        }
     }
     EXPECT_TRUE(found) << "R-R20-02: 违例定位到 seq=" << kBadSeq;
 
@@ -58,16 +62,18 @@ TEST(R20ReplayViolations, R_R20_03_ds_lt_event_ts_detected) {
     constexpr std::uint64_t kBadSeq = 1;
     // data_source_ts < event_ts (违例)
     const bool ok = r20.on_event(kBadSeq,
-        now - 5'000'000,      // event_ts
-        now - 6'000'000,      // data_source_ts < event_ts ← 违例
-        now - 2'000'000,
-        now);
-    EXPECT_FALSE(ok)            << "R-R20-03: ds < event → on_event false";
+                                 now - 5'000'000,  // event_ts
+                                 now - 6'000'000,  // data_source_ts < event_ts ← 违例
+                                 now - 2'000'000, now);
+    EXPECT_FALSE(ok) << "R-R20-03: ds < event → on_event false";
     EXPECT_GE(r20.violation_count(), 1u) << "R-R20-03: 违例检出";
 
     bool found = false;
     for (const auto& v : r20.violations()) {
-        if (v.seq == kBadSeq) { found = true; break; }
+        if (v.seq == kBadSeq) {
+            found = true;
+            break;
+        }
     }
     EXPECT_TRUE(found) << "R-R20-03: 违例定位到 seq=" << kBadSeq;
     EXPECT_FALSE(r20.finalize()) << "R-R20-03: finalize FAIL";
@@ -79,17 +85,18 @@ TEST(R20ReplayViolations, R_R20_04_ingestion_lt_ds_detected) {
     const std::int64_t now = stcpp::infra::wal::pit::NowRealtimeNs();
 
     constexpr std::uint64_t kBadSeq = 1;
-    const bool ok = r20.on_event(kBadSeq,
-        now - 5'000'000,
-        now - 4'000'000,
-        now - 5'000'000,  // ingestion_ts < data_source_ts ← 违例
-        now);
+    const bool ok = r20.on_event(kBadSeq, now - 5'000'000, now - 4'000'000,
+                                 now - 5'000'000,  // ingestion_ts < data_source_ts ← 违例
+                                 now);
     EXPECT_FALSE(ok) << "R-R20-04: ingestion < ds → on_event false";
     EXPECT_GE(r20.violation_count(), 1u) << "R-R20-04: 违例检出";
 
     bool found = false;
     for (const auto& v : r20.violations()) {
-        if (v.seq == kBadSeq) { found = true; break; }
+        if (v.seq == kBadSeq) {
+            found = true;
+            break;
+        }
     }
     EXPECT_TRUE(found) << "R-R20-04: 违例定位到 seq=" << kBadSeq;
     EXPECT_FALSE(r20.finalize()) << "R-R20-04: finalize FAIL";
@@ -101,17 +108,17 @@ TEST(R20ReplayViolations, R_R20_05_asof_lt_ingestion_detected) {
     const std::int64_t now = stcpp::infra::wal::pit::NowRealtimeNs();
 
     constexpr std::uint64_t kBadSeq = 1;
-    const bool ok = r20.on_event(kBadSeq,
-        now - 5'000'000,
-        now - 4'000'000,
-        now - 2'000'000,
-        now - 3'000'000);  // as_of_ts < ingestion_ts ← 违例
+    const bool ok = r20.on_event(kBadSeq, now - 5'000'000, now - 4'000'000, now - 2'000'000,
+                                 now - 3'000'000);  // as_of_ts < ingestion_ts ← 违例
     EXPECT_FALSE(ok) << "R-R20-05: as_of < ingestion → on_event false";
     EXPECT_GE(r20.violation_count(), 1u) << "R-R20-05: 违例检出";
 
     bool found = false;
     for (const auto& v : r20.violations()) {
-        if (v.seq == kBadSeq) { found = true; break; }
+        if (v.seq == kBadSeq) {
+            found = true;
+            break;
+        }
     }
     EXPECT_TRUE(found) << "R-R20-05: 违例定位到 seq=" << kBadSeq;
     EXPECT_FALSE(r20.finalize()) << "R-R20-05: finalize FAIL";

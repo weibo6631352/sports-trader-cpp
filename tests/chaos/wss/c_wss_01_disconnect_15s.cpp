@@ -32,27 +32,27 @@ TEST_F(CWss01Fixture, C_WSS_01_disconnect_15s_stale_data_reject) {
     for (int i = 0; i < 5; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_wss01_base_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_wss01_base_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_wss01_base_" + std::to_string(i));
-        if (out.rm_decision.is_approved()) ++baseline_approved;
+        if (out.rm_decision.is_approved())
+            ++baseline_approved;
     }
     EXPECT_GE(baseline_approved, 1u) << "baseline: 至少 1 笔 approved (系统 RUNNING)";
 
     // --- 注入 C-WSS-01: 断 15s ---
     FaultConfig cfg;
-    cfg.kind                   = FaultKind::WssDisconnect;
+    cfg.kind = FaultKind::WssDisconnect;
     cfg.disconnect_duration_ms = 15'000;  // 15s
-    cfg.reconnect_ok           = true;
+    cfg.reconnect_ok = true;
     InjectFault(cfg);
 
     EXPECT_TRUE(fault_state_.disconnected) << "C-WSS-01: WSS 已标记断连";
-    EXPECT_EQ(mock_wss_stub_.disconnect_calls(), 1u)
-        << "C-WSS-01: disconnect_all() 调用 1 次";
+    EXPECT_EQ(mock_wss_stub_.disconnect_calls(), 1u) << "C-WSS-01: disconnect_all() 调用 1 次";
 
     // 断连期间: 注入 STALE_DATA 标记的 reject 场景
     // RM stale 阈值: 60s (STALE_60S_NS).
@@ -62,17 +62,19 @@ TEST_F(CWss01Fixture, C_WSS_01_disconnect_15s_stale_data_reject) {
     for (int i = 0; i < 3; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_wss01_disc_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_wss01_disc_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
         // book_snapshot_ts > 60s ago → BOOK_TS_STALE (RM stale threshold = 60s)
         // data_source_ts_ns = book_snapshot_ts_ns (via MakeValidIntent)
-        b.event_ts_ns        = now - 65'000'000'000LL;  // 65s ago (> 60s stale)
-        b.data_source_ts_ns  = now - 64'999'000'000LL;
-        b.ingestion_ts_ns    = now - 64'998'000'000LL;
+        b.event_ts_ns = now - 65'000'000'000LL;  // 65s ago (> 60s stale)
+        b.data_source_ts_ns = now - 64'999'000'000LL;
+        b.ingestion_ts_ns = now - 64'998'000'000LL;
         auto out = RunOneE2E(b, "sig_wss01_disc_" + std::to_string(i));
-        if (out.rm_decision.is_rejected())   ++stale_rejected;
-        if (out.rm_decision.is_approved())   ++approved_during_disconnect;
+        if (out.rm_decision.is_rejected())
+            ++stale_rejected;
+        if (out.rm_decision.is_approved())
+            ++approved_during_disconnect;
     }
 
     // C-WSS-01 核心断言: 断连期间 stale book (>60s) → RM 拒单

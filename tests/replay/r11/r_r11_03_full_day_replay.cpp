@@ -16,6 +16,7 @@
 #include "stcpp/infra/wal/wal_kind.hpp"
 #include "stcpp/infra/wal/wal_writer.hpp"
 #include "stcpp/observability/audit_record.hpp"
+
 #include "tests/integration/test_fixture.hpp"
 #include "tests/replay/paper/paper_r11_assertion.hpp"
 
@@ -37,13 +38,10 @@ protected:
 
 // R-R11-03: 模拟全天 500 笔 paper audit WAL 回放 → 所有写入在 paper 路径
 TEST_F(RR1103Fixture, R_R11_03_full_day_500_intents_paper_path) {
-    PaperLedgerIsolationAssertion r11(
-        paper_audit_.get(), risk_audit_.get(), position_.get(), shadow_audit_.get());
-    r11.set_baselines(
-        paper_audit_->HighWatermark(),
-        risk_audit_->HighWatermark(),
-        position_->HighWatermark(),
-        shadow_audit_->HighWatermark());
+    PaperLedgerIsolationAssertion r11(paper_audit_.get(), risk_audit_.get(), position_.get(),
+                                      shadow_audit_.get());
+    r11.set_baselines(paper_audit_->HighWatermark(), risk_audit_->HighWatermark(), position_->HighWatermark(),
+                      shadow_audit_->HighWatermark());
 
     // 模拟全天: 500 笔 (OQ-02 stub, 待小余 EventRecorder 接真 decoder)
     constexpr int kDayIntents = 500;
@@ -52,12 +50,12 @@ TEST_F(RR1103Fixture, R_R11_03_full_day_500_intents_paper_path) {
     for (int i = 0; i < kDayIntents; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_replay_day_" + std::to_string(i % 20);  // 20 市场循环
-        b.price              = 0.50 + 0.001 * (i % 40);
+        b.market_id = "mkt_replay_day_" + std::to_string(i % 20);  // 20 市场循环
+        b.price = 0.50 + 0.001 * (i % 40);
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_replay_day_" + std::to_string(i));
         ++seq;
 
@@ -69,8 +67,7 @@ TEST_F(RR1103Fixture, R_R11_03_full_day_500_intents_paper_path) {
         }
     }
 
-    EXPECT_EQ(seq, static_cast<std::uint64_t>(kDayIntents))
-        << "R-R11-03: 全天 500 笔全部处理";
+    EXPECT_EQ(seq, static_cast<std::uint64_t>(kDayIntents)) << "R-R11-03: 全天 500 笔全部处理";
 
     // finalize
     const bool r11_ok = r11.finalize();
@@ -79,16 +76,13 @@ TEST_F(RR1103Fixture, R_R11_03_full_day_500_intents_paper_path) {
             ADD_FAILURE() << "R-R11-03 violation: " << v.message;
         }
     }
-    EXPECT_TRUE(r11_ok)
-        << "R-R11-03: 全天回放 R-11 校验通过 (paper 账本零污染)";
+    EXPECT_TRUE(r11_ok) << "R-R11-03: 全天回放 R-11 校验通过 (paper 账本零污染)";
 
     // GM-PAPER-G 报表字段: paper_audit 有新增
-    EXPECT_GT(paper_audit_->HighWatermark(), 0u)
-        << "R-R11-03: paper_audit WAL 有记录 (GM-PAPER-G 报表可出)";
+    EXPECT_GT(paper_audit_->HighWatermark(), 0u) << "R-R11-03: paper_audit WAL 有记录 (GM-PAPER-G 报表可出)";
 
     // 老韩签字前提
-    EXPECT_EQ(r11.finalized_live_wal_delta(), 0u)
-        << "R-R11-03: live WAL delta == 0 (老韩 RM 主权签字前提)";
+    EXPECT_EQ(r11.finalized_live_wal_delta(), 0u) << "R-R11-03: live WAL delta == 0 (老韩 RM 主权签字前提)";
 }
 
 }  // namespace

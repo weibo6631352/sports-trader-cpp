@@ -13,9 +13,9 @@
 //   ASSERT paper_signer 不崩溃
 //   ASSERT e2e p99 latency < 500ms
 
-#include "tests/chaos/chaos_fixture.hpp"
-
 #include <vector>
+
+#include "tests/chaos/chaos_fixture.hpp"
 
 namespace stcpp::test::chaos {
 namespace {
@@ -29,11 +29,11 @@ class CLat04PaperFixture : public ChaosE2EFixture {};
 TEST_F(CLat04PaperFixture, C_LAT_04_paper_e2e_latency_p99_under_500ms) {
     // 注入 200ms 全链延迟
     FaultConfig cfg;
-    cfg.kind        = FaultKind::LatencySpike;
-    cfg.spike_ms    = 200;
+    cfg.kind = FaultKind::LatencySpike;
+    cfg.spike_ms = 200;
     cfg.spike_count = 10;
     cfg.target_rest = true;
-    cfg.target_rpc  = true;
+    cfg.target_rpc = true;
     InjectFault(cfg);
 
     // 收集 30 笔 e2e 延迟样本
@@ -43,17 +43,18 @@ TEST_F(CLat04PaperFixture, C_LAT_04_paper_e2e_latency_p99_under_500ms) {
     for (int i = 0; i < 30; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_lat04_paper_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_lat04_paper_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
 
         EXPECT_NO_FATAL_FAILURE({
             auto out = RunOneE2E(b, "sig_lat04_paper_" + std::to_string(i));
             e2e_latencies_ns.push_back(out.latency_ns);
-        }) << "C-LAT-04: PaperSigner.Sign 不崩溃 i=" << i;
+        }) << "C-LAT-04: PaperSigner.Sign 不崩溃 i="
+           << i;
     }
 
     ASSERT_EQ(e2e_latencies_ns.size(), 30u) << "C-LAT-04: 30 笔 e2e 完成";
@@ -61,19 +62,16 @@ TEST_F(CLat04PaperFixture, C_LAT_04_paper_e2e_latency_p99_under_500ms) {
     // e2e p99 < 500ms (500'000'000 ns) — in-process mock 远低于此
     const auto p99_e2e_ns = p99_chaos_ns(e2e_latencies_ns);
     EXPECT_LT(p99_e2e_ns, 500'000'000LL)
-        << "C-LAT-04: end-to-end latency p99 "
-        << (p99_e2e_ns / 1'000'000) << "ms 必须 < 500ms";
+        << "C-LAT-04: end-to-end latency p99 " << (p99_e2e_ns / 1'000'000) << "ms 必须 < 500ms";
 
     // WSS tick p99 < 50us (R-12)
     if (!fault_state_.wss_tick_latencies_ns.empty()) {
         const auto wss_p99_us = p99_chaos_ns(fault_state_.wss_tick_latencies_ns) / 1'000;
-        EXPECT_LT(wss_p99_us, 50LL)
-            << "C-LAT-04 / R-12: wss tick p99 " << wss_p99_us << "us 必须 < 50us";
+        EXPECT_LT(wss_p99_us, 50LL) << "C-LAT-04 / R-12: wss tick p99 " << wss_p99_us << "us 必须 < 50us";
     }
 
     // R-11: paper mode 不写 position WAL
-    EXPECT_EQ(position_->HighWatermark(), 0u)
-        << "C-LAT-04: paper mode 不写 position WAL (R-11)";
+    EXPECT_EQ(position_->HighWatermark(), 0u) << "C-LAT-04: paper mode 不写 position WAL (R-11)";
 }
 
 }  // namespace

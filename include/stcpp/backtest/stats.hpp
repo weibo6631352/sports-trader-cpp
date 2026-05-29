@@ -37,10 +37,8 @@ namespace stcpp::backtest::stats {
 // 门槛: 校正后 p' < 0.05 才算 IS 通过 (小程 §3.2)
 //
 
-[[nodiscard]] inline std::vector<double> bonferroni_adjust(
-    std::vector<double> const& p_values,
-    std::size_t                n_experiments) noexcept {
-
+[[nodiscard]] inline std::vector<double> bonferroni_adjust(std::vector<double> const& p_values,
+                                                           std::size_t n_experiments) noexcept {
     std::vector<double> out;
     out.reserve(p_values.size());
     double const n = static_cast<double>(n_experiments);
@@ -52,8 +50,7 @@ namespace stcpp::backtest::stats {
 }
 
 // 单值版 (简便接口)
-[[nodiscard]] inline double bonferroni_adjust_single(double p_value,
-                                                      std::size_t n_experiments) noexcept {
+[[nodiscard]] inline double bonferroni_adjust_single(double p_value, std::size_t n_experiments) noexcept {
     double const adj = p_value * static_cast<double>(n_experiments);
     return adj < 1.0 ? adj : 1.0;
 }
@@ -89,8 +86,10 @@ namespace detail {
 // 正态逆 CDF Φ^-1(p) 使用迭代法 (Brent 二分, 足够 MVP 精度)
 // 范围 p ∈ (0, 1); 极端值 clip
 [[nodiscard]] inline double normal_quantile(double p) noexcept {
-    if (p <= 0.0) return -8.0;
-    if (p >= 1.0) return  8.0;
+    if (p <= 0.0)
+        return -8.0;
+    if (p >= 1.0)
+        return 8.0;
 
     // 初始猜测: 常用近似 (Rational approx, NIST §26.2.22)
     // 对 p 很接近 0.5 的 case 精度足够
@@ -102,7 +101,8 @@ namespace detail {
         } else {
             hi = mid;
         }
-        if (hi - lo < 1e-8) break;
+        if (hi - lo < 1e-8)
+            break;
     }
     return 0.5 * (lo + hi);
 }
@@ -110,18 +110,18 @@ namespace detail {
 }  // namespace detail
 
 struct DsrInput {
-    double      sr_hat{0.0};      // 观测 Sharpe (已年化)
-    double      sigma_sr{0.3};    // Sharpe std across bootstrap samples (默认 0.3 保守)
-    double      gamma{0.0};       // Sharpe skewness (MVP: 设 0, 保守)
-    std::size_t T{100};           // trade 数 (样本量)
-    std::size_t N{81};            // 参数组合数 (P0-02: 81 = 3^4)
+    double sr_hat{0.0};    // 观测 Sharpe (已年化)
+    double sigma_sr{0.3};  // Sharpe std across bootstrap samples (默认 0.3 保守)
+    double gamma{0.0};     // Sharpe skewness (MVP: 设 0, 保守)
+    std::size_t T{100};    // trade 数 (样本量)
+    std::size_t N{81};     // 参数组合数 (P0-02: 81 = 3^4)
 };
 
 struct DsrResult {
-    double deflated_sharpe{0.0};   // DSR 值
-    double correction{0.0};        // 修正项 (越大 → 过拟合惩罚越重)
-    bool   pass{false};            // DSR > 1.0
-    bool   valid{false};           // 输入合法
+    double deflated_sharpe{0.0};  // DSR 值
+    double correction{0.0};       // 修正项 (越大 → 过拟合惩罚越重)
+    bool pass{false};             // DSR > 1.0
+    bool valid{false};            // 输入合法
 };
 
 [[nodiscard]] inline DsrResult compute_deflated_sharpe(DsrInput const& in) noexcept {
@@ -132,25 +132,25 @@ struct DsrResult {
         return out;
     }
 
-    double const T  = static_cast<double>(in.T);
-    double const N  = static_cast<double>(in.N);
+    double const T = static_cast<double>(in.T);
+    double const N = static_cast<double>(in.N);
 
     // Phi_inv(1 - 1/N): 当 N→1 时 = 0, 当 N=81 时 ≈ 2.20
-    double const q   = 1.0 - 1.0 / N;
+    double const q = 1.0 - 1.0 / N;
     double const phi_inv = detail::normal_quantile(q);
 
     // correction = sqrt(1 - gamma) / sqrt(T - 1) * sigma_SR * phi_inv * sqrt(T)
     //           = sigma_SR * phi_inv * sqrt(1 - gamma) * sqrt(T) / sqrt(T - 1)
-    double const sqrt_T    = std::sqrt(T);
-    double const sqrt_Tm1  = std::sqrt(T - 1.0);
-    double const sqrt_1mg  = std::sqrt(1.0 - in.gamma);  // gamma=0 → 1
+    double const sqrt_T = std::sqrt(T);
+    double const sqrt_Tm1 = std::sqrt(T - 1.0);
+    double const sqrt_1mg = std::sqrt(1.0 - in.gamma);  // gamma=0 → 1
 
     out.correction = in.sigma_sr * phi_inv * sqrt_1mg * sqrt_T / sqrt_Tm1;
 
     // DSR = SR_hat - correction
     // (简化: Z(SR_hat) ≈ SR_hat, MVP 阈值 > 1.0)
     out.deflated_sharpe = in.sr_hat - out.correction;
-    out.pass  = (out.deflated_sharpe > 1.0);
+    out.pass = (out.deflated_sharpe > 1.0);
     out.valid = true;
 
     return out;
@@ -161,20 +161,18 @@ struct DsrResult {
 // ---------------------------------------------------------------------------
 
 struct ScanResult {
-    stcpp::backtest::ParamSet     params{};
-    double       is_sharpe{0.0};
-    double       is_p_value{1.0};
-    double       bonferroni_p{1.0};
-    DsrResult    dsr{};
-    std::size_t  n_trades{0};
-    bool         is_pass{false};   // Bonferroni 校正后 p < 0.05 AND DSR > 1.0
+    stcpp::backtest::ParamSet params{};
+    double is_sharpe{0.0};
+    double is_p_value{1.0};
+    double bonferroni_p{1.0};
+    DsrResult dsr{};
+    std::size_t n_trades{0};
+    bool is_pass{false};  // Bonferroni 校正后 p < 0.05 AND DSR > 1.0
 };
 
 // 从多个参数扫描结果中选出 IS 最优 (Bonferroni 校正后 IS Sharpe 最高且 pass)
-[[nodiscard]] inline ScanResult select_best_params(
-    std::vector<ScanResult>& results,
-    std::size_t n_experiments) noexcept {
-
+[[nodiscard]] inline ScanResult select_best_params(std::vector<ScanResult>& results,
+                                                   std::size_t n_experiments) noexcept {
     // 先对所有结果做 Bonferroni 校正
     std::vector<double> p_vals;
     p_vals.reserve(results.size());
@@ -193,7 +191,7 @@ struct ScanResult {
     bool found = false;
     for (auto const& r : results) {
         if (r.is_pass && r.is_sharpe > best.is_sharpe) {
-            best  = r;
+            best = r;
             found = true;
         }
     }
@@ -214,12 +212,13 @@ struct ScanResult {
 
 [[nodiscard]] inline std::vector<double> extract_net_edge_series(
     std::vector<stcpp::backtest::TradeRecord> const& trades) noexcept {
-
     std::vector<double> out;
     out.reserve(trades.size());
     for (auto const& t : trades) {
-        if (t.filtered_out) continue;
-        if (t.outcome == stcpp::backtest::SettleOutcome::Pending) continue;
+        if (t.filtered_out)
+            continue;
+        if (t.outcome == stcpp::backtest::SettleOutcome::Pending)
+            continue;
         double const e = (t.size_usdc > 0.0) ? t.realized_pnl_usdc / t.size_usdc : 0.0;
         out.push_back(e);
     }

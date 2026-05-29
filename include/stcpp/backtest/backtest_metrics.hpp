@@ -35,15 +35,9 @@ namespace stcpp::backtest {
 //   n_strategies_dsr          — DSR 策略数 (= n_bonferroni_experiments)
 
 [[nodiscard]] BacktestMetrics compute_full_metrics(
-    std::vector<TradeRecord> const& trades,
-    WalkForwardWindow const&        window,
-    TradeBucket                     bucket,
-    bool                            is_in_sample,
-    double                          bankroll            = 100'000.0,
-    std::size_t                     n_bootstrap         = 5000,
-    std::size_t                     block_size          = 10,
-    std::uint64_t                   bootstrap_seed      = 42,
-    std::size_t                     n_bonferroni_experiments = 81,
-    std::size_t                     n_strategies_dsr    = 81);
+    std::vector<TradeRecord> const& trades, WalkForwardWindow const& window, TradeBucket bucket,
+    bool is_in_sample, double bankroll = 100'000.0, std::size_t n_bootstrap = 5000,
+    std::size_t block_size = 10, std::uint64_t bootstrap_seed = 42, std::size_t n_bonferroni_experiments = 81,
+    std::size_t n_strategies_dsr = 81);
 
 }  // namespace stcpp::backtest

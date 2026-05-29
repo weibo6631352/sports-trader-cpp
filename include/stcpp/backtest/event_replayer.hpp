@@ -57,16 +57,16 @@ struct SignalEvent {
     std::int64_t as_of_ts_ns{0};        // 信号触发时刻 (决策点)
 
     // 市场标识
-    std::string  market_id;
-    std::string  game_id;
-    TradeBucket  bucket{TradeBucket::Pregame};
+    std::string market_id;
+    std::string game_id;
+    TradeBucket bucket{TradeBucket::Pregame};
 
     // 信号值
-    double       fair_value{0.0};       // 小程 §5.1 goalserve_devig_p_yes_fair
-    double       pm_mid{0.0};           // Polymarket mid at as_of_ts
-    double       gross_edge{0.0};       // |pm_mid - fair_value|
-    TradeSide    side{TradeSide::BuyYes};
-    double       kelly_size_usdc{0.0};  // Kelly sizing 后的计划下单量
+    double fair_value{0.0};  // 小程 §5.1 goalserve_devig_p_yes_fair
+    double pm_mid{0.0};      // Polymarket mid at as_of_ts
+    double gross_edge{0.0};  // |pm_mid - fair_value|
+    TradeSide side{TradeSide::BuyYes};
+    double kelly_size_usdc{0.0};  // Kelly sizing 后的计划下单量
 
     // CLOB 快照 (复用 FillRateModel::compute_from_clob_book)
     stcpp::microstructure::OrderBookSnapshot book{};
@@ -83,15 +83,15 @@ struct SignalEvent {
 // ---------------------------------------------------------------------------
 
 struct BacktestConfig {
-    double      initial_bankroll{100'000.0};   // 初始本金 (USDC, 小程 §5.2: $100K)
-    double      fee_rate{0.03};                // Polymarket taker fee (3%)
-    ParamSet    params{};                      // 参数集 (C2 门 / Kelly / 死区 / MIN_BOOKS)
+    double initial_bankroll{100'000.0};  // 初始本金 (USDC, 小程 §5.2: $100K)
+    double fee_rate{0.03};               // Polymarket taker fee (3%)
+    ParamSet params{};                   // 参数集 (C2 门 / Kelly / 死区 / MIN_BOOKS)
 
     // Bernoulli fill 抽样 seed (确定性复现)
     std::uint64_t fill_seed{12345};
 
     // 是否启用 Bernoulli 抽样 (true=抽样模拟 fill, false=确定性 fill_rate)
-    bool        use_bernoulli_fill{true};
+    bool use_bernoulli_fill{true};
 
     // slippage 模式 (复用小肖 SlippageModel)
     stcpp::numerical::SlippageMode slippage_mode{stcpp::numerical::SlippageMode::Linear};
@@ -108,32 +108,27 @@ struct BacktestConfig {
 class BacktestLedger {
 public:
     explicit BacktestLedger(double initial_bankroll)
-        : initial_bankroll_(initial_bankroll)
-        , current_equity_(initial_bankroll) {}
+        : initial_bankroll_(initial_bankroll), current_equity_(initial_bankroll) {}
 
     // 追加成交 (fill_price / size_usdc 已确定, outcome 待结算)
-    void add_trade(TradeRecord t) {
-        trades_.push_back(std::move(t));
-    }
+    void add_trade(TradeRecord t) { trades_.push_back(std::move(t)); }
 
     // 结算: 按 market_id 注入结果, 计算 realized_pnl
     void settle_market(std::string const& market_id, SettleOutcome outcome) {
         for (auto& t : trades_) {
             if (t.market_id == market_id && t.outcome == SettleOutcome::Pending) {
                 t.outcome = outcome;
-                t.realized_pnl_usdc = compute_realized_pnl(
-                    t.side, outcome, t.fill_price, t.size_usdc, t.fee_rate, t.slippage_rate);
-                t.net_edge = (t.size_usdc > 0.0)
-                             ? t.realized_pnl_usdc / t.size_usdc
-                             : 0.0;
+                t.realized_pnl_usdc = compute_realized_pnl(t.side, outcome, t.fill_price, t.size_usdc,
+                                                           t.fee_rate, t.slippage_rate);
+                t.net_edge = (t.size_usdc > 0.0) ? t.realized_pnl_usdc / t.size_usdc : 0.0;
                 current_equity_ += t.realized_pnl_usdc;
             }
         }
     }
 
     [[nodiscard]] std::vector<TradeRecord> const& trades() const noexcept { return trades_; }
-    [[nodiscard]] double initial_bankroll()  const noexcept { return initial_bankroll_; }
-    [[nodiscard]] double current_equity()    const noexcept { return current_equity_; }
+    [[nodiscard]] double initial_bankroll() const noexcept { return initial_bankroll_; }
+    [[nodiscard]] double current_equity() const noexcept { return current_equity_; }
 
     void clear() {
         trades_.clear();
@@ -141,9 +136,9 @@ public:
     }
 
 private:
-    double                    initial_bankroll_;
-    double                    current_equity_;
-    std::vector<TradeRecord>  trades_;
+    double initial_bankroll_;
+    double current_equity_;
+    std::vector<TradeRecord> trades_;
 };
 
 // ---------------------------------------------------------------------------
@@ -164,15 +159,11 @@ private:
 
 class EventReplayer {
 public:
-    explicit EventReplayer(BacktestConfig cfg)
-        : cfg_(std::move(cfg))
-        , rng_(cfg_.fill_seed) {}
+    explicit EventReplayer(BacktestConfig cfg) : cfg_(std::move(cfg)), rng_(cfg_.fill_seed) {}
 
     // 批量回放一组 SignalEvent (已按 as_of_ts 排序)
     // 返回: TradeRecord 序列 (包含 filtered_out=true 的 trade 以供 audit)
-    [[nodiscard]] std::vector<TradeRecord> replay(
-        std::vector<SignalEvent> const& events) {
-
+    [[nodiscard]] std::vector<TradeRecord> replay(std::vector<SignalEvent> const& events) {
         std::vector<TradeRecord> records;
         records.reserve(events.size());
 
@@ -188,19 +179,19 @@ private:
         TradeRecord t;
 
         // --- R-20 4 ts 填充 ---
-        t.event_ts_ns       = ev.event_ts_ns;
+        t.event_ts_ns = ev.event_ts_ns;
         t.data_source_ts_ns = ev.data_source_ts_ns;
-        t.ingestion_ts_ns   = ev.ingestion_ts_ns;
-        t.as_of_ts_ns       = ev.as_of_ts_ns;
-        t.market_id         = ev.market_id;
-        t.game_id           = ev.game_id;
-        t.side              = ev.side;
-        t.bucket            = ev.bucket;
-        t.fair_value        = ev.fair_value;
-        t.pm_mid            = ev.pm_mid;
-        t.gross_edge        = ev.gross_edge;
-        t.fee_rate          = cfg_.fee_rate;
-        t.size_usdc         = ev.kelly_size_usdc;
+        t.ingestion_ts_ns = ev.ingestion_ts_ns;
+        t.as_of_ts_ns = ev.as_of_ts_ns;
+        t.market_id = ev.market_id;
+        t.game_id = ev.game_id;
+        t.side = ev.side;
+        t.bucket = ev.bucket;
+        t.fair_value = ev.fair_value;
+        t.pm_mid = ev.pm_mid;
+        t.gross_edge = ev.gross_edge;
+        t.fee_rate = cfg_.fee_rate;
+        t.size_usdc = ev.kelly_size_usdc;
 
         // --- R-20 PIT 校验 ---
         if (!trade_ts_ok(t)) {
@@ -220,33 +211,32 @@ private:
             return t;
         }
         // 死区: fair_value > (1 - threshold) 或 < threshold
-        if (ev.fair_value > (1.0 - cfg_.params.dead_zone_threshold)
-            || ev.fair_value < cfg_.params.dead_zone_threshold) {
+        if (ev.fair_value > (1.0 - cfg_.params.dead_zone_threshold) ||
+            ev.fair_value < cfg_.params.dead_zone_threshold) {
             t.filtered_out = true;
             return t;
         }
 
         // --- Step 3: FillRateModel::compute_from_clob_book (BR-5 复用) ---
         using FRM = stcpp::microstructure::FillRateModel;
-        using FI  = stcpp::microstructure::FillIntent;
+        using FI = stcpp::microstructure::FillIntent;
 
         FI intent;
-        intent.side      = (ev.side == TradeSide::BuyYes)
-                           ? stcpp::microstructure::Side::Buy
-                           : stcpp::microstructure::Side::Sell;
-        intent.price     = ev.pm_mid;
+        intent.side = (ev.side == TradeSide::BuyYes) ? stcpp::microstructure::Side::Buy
+                                                     : stcpp::microstructure::Side::Sell;
+        intent.price = ev.pm_mid;
         intent.size_usdc = ev.kelly_size_usdc;
-        intent.sport     = stcpp::microstructure::Sport::Basketball;  // default
-        intent.phase     = stcpp::microstructure::InplayPhase::Mid;
-        intent.path      = stcpp::microstructure::MatchPath::Maker;
+        intent.sport = stcpp::microstructure::Sport::Basketball;  // default
+        intent.phase = stcpp::microstructure::InplayPhase::Mid;
+        intent.path = stcpp::microstructure::MatchPath::Maker;
 
         auto const clob_out = FRM::compute_from_clob_book(ev.book, ev.probe, intent);
 
         // 若 CLOB 模型失败 (无效 snapshot), 用保守默认
-        double fill_rate   = 0.75;  // 保守默认
-        double slip_rate   = 0.003; // 保守 0.3%
-        if (clob_out.reject == stcpp::microstructure::FillRateReject::Ok
-            || clob_out.reject == stcpp::microstructure::FillRateReject::BelowFloor) {
+        double fill_rate = 0.75;   // 保守默认
+        double slip_rate = 0.003;  // 保守 0.3%
+        if (clob_out.reject == stcpp::microstructure::FillRateReject::Ok ||
+            clob_out.reject == stcpp::microstructure::FillRateReject::BelowFloor) {
             fill_rate = clob_out.fill_rate;
             slip_rate = clob_out.slippage_rate;
         }
@@ -264,24 +254,22 @@ private:
         if (!actually_filled) {
             // UNFILLED: 记录但 outcome 留 Pending, size_usdc = 0
             t.size_usdc = 0.0;
-            t.outcome   = SettleOutcome::Pending;
+            t.outcome = SettleOutcome::Pending;
             return t;
         }
 
         // --- Step 5: SlippageModel → expected_fill_price ---
         // 使用小肖 SlippageModel::compute (BR-5)
         stcpp::numerical::SlippageInput si;
-        si.order_size_usdc     = ev.kelly_size_usdc;
-        si.quote_price         = ev.pm_mid;
-        si.book_depth_l1_usdc  = (ev.book.bid[0].size_usdc > 0.0)
-                                  ? ev.book.bid[0].size_usdc
-                                  : 1000.0;  // fallback
+        si.order_size_usdc = ev.kelly_size_usdc;
+        si.quote_price = ev.pm_mid;
+        si.book_depth_l1_usdc =
+            (ev.book.bid[0].size_usdc > 0.0) ? ev.book.bid[0].size_usdc : 1000.0;  // fallback
         si.book_snapshot_ts_ns = ev.data_source_ts_ns;
-        si.wall_now_ns         = ev.as_of_ts_ns;
-        si.tick_size           = ev.book.tick_size;
+        si.wall_now_ns = ev.as_of_ts_ns;
+        si.tick_size = ev.book.tick_size;
 
-        auto const slip_out = stcpp::numerical::SlippageModel::compute(
-            si, cfg_.slippage_mode);
+        auto const slip_out = stcpp::numerical::SlippageModel::compute(si, cfg_.slippage_mode);
 
         // fill_price: 若 slippage model 失败, fallback pm_mid + slip_rate
         double fill_price = ev.pm_mid;
@@ -301,12 +289,14 @@ private:
         }
 
         // clamp fill_price ∈ (0, 1)
-        if (fill_price <= 0.0) fill_price = 0.001;
-        if (fill_price >= 1.0) fill_price = 0.999;
+        if (fill_price <= 0.0)
+            fill_price = 0.001;
+        if (fill_price >= 1.0)
+            fill_price = 0.999;
 
         t.fill_price = fill_price;
         // outcome 待结算, 不在 replay 阶段填
-        t.outcome    = SettleOutcome::Pending;
+        t.outcome = SettleOutcome::Pending;
 
         return t;
     }

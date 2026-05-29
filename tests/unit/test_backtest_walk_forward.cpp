@@ -26,17 +26,17 @@ namespace {
 // 辅助: 构造合法 TradeRecord
 TradeRecord make_trade(std::string game_id, std::int64_t as_of_ns) {
     TradeRecord t;
-    t.game_id           = std::move(game_id);
-    t.event_ts_ns       = as_of_ns - 3;
+    t.game_id = std::move(game_id);
+    t.event_ts_ns = as_of_ns - 3;
     t.data_source_ts_ns = as_of_ns - 2;
-    t.ingestion_ts_ns   = as_of_ns - 1;
-    t.as_of_ts_ns       = as_of_ns;
-    t.outcome           = SettleOutcome::YesWins;
-    t.side              = TradeSide::BuyYes;
-    t.bucket            = TradeBucket::Pregame;
-    t.size_usdc         = 100.0;
+    t.ingestion_ts_ns = as_of_ns - 1;
+    t.as_of_ts_ns = as_of_ns;
+    t.outcome = SettleOutcome::YesWins;
+    t.side = TradeSide::BuyYes;
+    t.bucket = TradeBucket::Pregame;
+    t.size_usdc = 100.0;
     t.realized_pnl_usdc = 5.0;
-    t.fill_price        = 0.45;
+    t.fill_price = 0.45;
     return t;
 }
 
@@ -48,15 +48,15 @@ TEST(WalkForward, BasicSplit) {
     WalkForwardConfig cfg = WalkForwardConfig::default_p0_02();
     // 缩小窗口以得到 2 fold
     cfg.train_duration_ns = 100LL * kDayNs;
-    cfg.oos_duration_ns   = 80LL  * kDayNs;
+    cfg.oos_duration_ns = 80LL * kDayNs;
     cfg.embargo_duration_ns = 7LL * kDayNs;
-    cfg.step_duration_ns  = 80LL  * kDayNs;
-    cfg.max_folds         = 0;
+    cfg.step_duration_ns = 80LL * kDayNs;
+    cfg.max_folds = 0;
 
     WalkForwardSplitter splitter(cfg);
     // 数据 span: 370 天
     std::int64_t const start = 0LL;
-    std::int64_t const end   = 370LL * kDayNs;
+    std::int64_t const end = 370LL * kDayNs;
     auto const windows = splitter.generate(start, end);
 
     // fold 0: IS=[0, 100d], emb=[100d,107d], OOS=[107d,187d] — OK
@@ -89,11 +89,11 @@ TEST(WalkForward, InsufficientData) {
 // T03: max_folds 限制
 TEST(WalkForward, MaxFolds) {
     WalkForwardConfig cfg;
-    cfg.train_duration_ns   = 30LL * kDayNs;
-    cfg.oos_duration_ns     = 20LL * kDayNs;
-    cfg.embargo_duration_ns = 3LL  * kDayNs;
-    cfg.step_duration_ns    = 20LL * kDayNs;
-    cfg.max_folds           = 2;
+    cfg.train_duration_ns = 30LL * kDayNs;
+    cfg.oos_duration_ns = 20LL * kDayNs;
+    cfg.embargo_duration_ns = 3LL * kDayNs;
+    cfg.step_duration_ns = 20LL * kDayNs;
+    cfg.max_folds = 2;
 
     WalkForwardSplitter splitter(cfg);
     auto const windows = splitter.generate(0, 500LL * kDayNs);
@@ -103,11 +103,11 @@ TEST(WalkForward, MaxFolds) {
 // T04: OOS 与下一个 IS 无重叠 (embargo 正确切分)
 TEST(WalkForward, NoOosIsOverlap) {
     WalkForwardConfig cfg;
-    cfg.train_duration_ns   = 50LL * kDayNs;
-    cfg.oos_duration_ns     = 30LL * kDayNs;
-    cfg.embargo_duration_ns = 7LL  * kDayNs;
-    cfg.step_duration_ns    = 30LL * kDayNs;
-    cfg.max_folds           = 3;
+    cfg.train_duration_ns = 50LL * kDayNs;
+    cfg.oos_duration_ns = 30LL * kDayNs;
+    cfg.embargo_duration_ns = 7LL * kDayNs;
+    cfg.step_duration_ns = 30LL * kDayNs;
+    cfg.max_folds = 3;
 
     WalkForwardSplitter splitter(cfg);
     auto const windows = splitter.generate(0, 500LL * kDayNs);
@@ -148,7 +148,7 @@ TEST(DataAccessGuard, FreezeParsmsInSample) {
 
     ParamSet p;
     p.gross_edge_threshold = 0.06;
-    p.kelly_fraction       = 0.20;
+    p.kelly_fraction = 0.20;
     guard.freeze_params(p);
 
     EXPECT_TRUE(guard.has_frozen_params());
@@ -204,11 +204,11 @@ TEST(PurgedKFold, GameIdGrouping) {
 
     // 每个 val fold 只包含一个 game_id 的 trade
     for (auto const& s : splits) {
-        if (s.val.empty()) continue;
+        if (s.val.empty())
+            continue;
         std::string const first_gid = s.val[0].game_id;
         for (auto const& t : s.val) {
-            EXPECT_EQ(t.game_id, first_gid)
-                << "Fold " << s.fold_index << " val contains mixed game_ids";
+            EXPECT_EQ(t.game_id, first_gid) << "Fold " << s.fold_index << " val contains mixed game_ids";
         }
     }
 }

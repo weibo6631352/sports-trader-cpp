@@ -27,14 +27,14 @@ class CFill03Fixture : public ChaosE2EFixture {};
 TEST_F(CFill03Fixture, C_FILL_03_partial_fill_price_move_slippage) {
     // 注入 30% 首批 + 10bps slippage
     FaultConfig cfg;
-    cfg.kind         = FaultKind::PartialFill;
-    cfg.fill_ratio   = 0.3;
-    cfg.fill_count   = 2;
+    cfg.kind = FaultKind::PartialFill;
+    cfg.fill_ratio = 0.3;
+    cfg.fill_count = 2;
     cfg.slippage_bps = 10.0;  // 10bps
-    cfg.paper_mode   = true;
+    cfg.paper_mode = true;
     InjectFault(cfg);
 
-    EXPECT_DOUBLE_EQ(partial_fill_ratio_, 0.3)   << "C-FILL-03: fill_ratio=0.3";
+    EXPECT_DOUBLE_EQ(partial_fill_ratio_, 0.3) << "C-FILL-03: fill_ratio=0.3";
     EXPECT_DOUBLE_EQ(partial_fill_slippage_, 10.0) << "C-FILL-03: slippage_bps=10";
 
     // 第一批: price=0.55 (正常价格)
@@ -42,12 +42,12 @@ TEST_F(CFill03Fixture, C_FILL_03_partial_fill_price_move_slippage) {
     for (int i = 0; i < 3; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_fill03_first_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_fill03_first_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_fill03_first_" + std::to_string(i));
         if (out.went_through_signer) {
             ++sign_through_first;
@@ -61,12 +61,12 @@ TEST_F(CFill03Fixture, C_FILL_03_partial_fill_price_move_slippage) {
     for (int i = 0; i < 3; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_fill03_second_" + std::to_string(i);
-        b.price              = 0.52;  // 市场反转后新价格
+        b.market_id = "mkt_fill03_second_" + std::to_string(i);
+        b.price = 0.52;  // 市场反转后新价格
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_fill03_second_" + std::to_string(i));
         if (out.went_through_signer) {
             ++sign_through_second;
@@ -75,12 +75,10 @@ TEST_F(CFill03Fixture, C_FILL_03_partial_fill_price_move_slippage) {
         }
     }
 
-    EXPECT_GE(sign_through_first + sign_through_second, 1)
-        << "C-FILL-03: 至少 1 笔走 signer";
+    EXPECT_GE(sign_through_first + sign_through_second, 1) << "C-FILL-03: 至少 1 笔走 signer";
 
     // R-11: position WAL 不写入 (paper mode)
-    EXPECT_EQ(position_->HighWatermark(), 0u)
-        << "C-FILL-03 / R-11: paper mode 不写 position WAL";
+    EXPECT_EQ(position_->HighWatermark(), 0u) << "C-FILL-03 / R-11: paper mode 不写 position WAL";
 }
 
 }  // namespace

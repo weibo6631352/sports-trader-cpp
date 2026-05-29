@@ -27,9 +27,9 @@ class CWss04PaperFixture : public ChaosE2EFixture {};
 TEST_F(CWss04PaperFixture, C_WSS_04_paper_startup_wss_disconnect) {
     // Simulate "startup + 2s" by injecting disconnect immediately (at=startup+2s equiv)
     FaultConfig cfg;
-    cfg.kind                   = FaultKind::WssDisconnect;
+    cfg.kind = FaultKind::WssDisconnect;
     cfg.disconnect_duration_ms = 10'000;
-    cfg.reconnect_ok           = true;
+    cfg.reconnect_ok = true;
     InjectFault(cfg);
 
     EXPECT_TRUE(fault_state_.disconnected) << "C-PAPER-01: WSS 断连";
@@ -39,20 +39,20 @@ TEST_F(CWss04PaperFixture, C_WSS_04_paper_startup_wss_disconnect) {
     for (int i = 0; i < 5; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_paper01_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_paper01_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
         // startup WSS 断连: book_snapshot_ts > 60s ago → BOOK_TS_STALE (RM 60s 阈值)
-        b.event_ts_ns        = now - 65'000'000'000LL;  // 65s > 60s stale
-        b.data_source_ts_ns  = now - 64'999'000'000LL;
-        b.ingestion_ts_ns    = now - 64'998'000'000LL;
+        b.event_ts_ns = now - 65'000'000'000LL;  // 65s > 60s stale
+        b.data_source_ts_ns = now - 64'999'000'000LL;
+        b.ingestion_ts_ns = now - 64'998'000'000LL;
         auto out = RunOneE2E(b, "sig_paper01_" + std::to_string(i));
-        if (out.went_through_signer) ++fill_count;
+        if (out.went_through_signer)
+            ++fill_count;
     }
 
     // C-PAPER-01 核心断言: 断连期间 VirtualFill == 0
-    EXPECT_EQ(fill_count, 0)
-        << "C-PAPER-01: paper runtime WSS 断连期间不产生 VirtualFill";
+    EXPECT_EQ(fill_count, 0) << "C-PAPER-01: paper runtime WSS 断连期间不产生 VirtualFill";
 
     // R-11: position WAL 无写入
     EXPECT_EQ(position_->HighWatermark(), 0u)

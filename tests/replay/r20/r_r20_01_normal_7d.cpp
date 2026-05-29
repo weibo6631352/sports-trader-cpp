@@ -9,6 +9,7 @@
 #include <gtest/gtest.h>
 
 #include "stcpp/infra/wal/pit.hpp"
+
 #include "tests/replay/paper/r20_ts_assertion.hpp"
 
 namespace stcpp::test::replay {
@@ -26,29 +27,27 @@ TEST(R20ReplayNormal, R_R20_01_normal_7d_zero_violations) {
     const std::int64_t day_ns = 86'400'000'000'000LL;  // 1 day in ns
 
     for (int i = 0; i < kTotalEvents; ++i) {
-        const int    day         = i / 1000;   // 0-6
-        const int    within_day  = i % 1000;
-        const std::int64_t base_offset_ns = static_cast<std::int64_t>(day) * day_ns
-            + static_cast<std::int64_t>(within_day) * 86'400'000'000LL;  // ~86s step
+        const int day = i / 1000;  // 0-6
+        const int within_day = i % 1000;
+        const std::int64_t base_offset_ns =
+            static_cast<std::int64_t>(day) * day_ns +
+            static_cast<std::int64_t>(within_day) * 86'400'000'000LL;  // ~86s step
 
         // 合法 4 ts (相对 7d 前)
-        const std::int64_t event_ts       = now_ns - (7LL * day_ns) + base_offset_ns;
+        const std::int64_t event_ts = now_ns - (7LL * day_ns) + base_offset_ns;
         const std::int64_t data_source_ts = event_ts + 100'000;      // +100us
-        const std::int64_t ingestion_ts   = data_source_ts + 500'000; // +500us
-        const std::int64_t as_of_ts       = ingestion_ts + 1'000'000; // +1ms
+        const std::int64_t ingestion_ts = data_source_ts + 500'000;  // +500us
+        const std::int64_t as_of_ts = ingestion_ts + 1'000'000;      // +1ms
 
-        const bool ok = r20.on_event(
-            static_cast<std::uint64_t>(i + 1),
-            event_ts, data_source_ts, ingestion_ts, as_of_ts);
+        const bool ok =
+            r20.on_event(static_cast<std::uint64_t>(i + 1), event_ts, data_source_ts, ingestion_ts, as_of_ts);
         EXPECT_TRUE(ok) << "R-R20-01: event " << i << " should be OK";
     }
 
     const bool finalize_ok = r20.finalize();
-    EXPECT_TRUE(finalize_ok)
-        << "R-R20-01: violation_count=" << r20.violation_count()
-        << " 必须 == 0 (7 天正常历史流)";
-    EXPECT_EQ(r20.violation_count(), 0u)
-        << "R-R20-01: 0 违例 (正常历史流)";
+    EXPECT_TRUE(finalize_ok) << "R-R20-01: violation_count=" << r20.violation_count()
+                             << " 必须 == 0 (7 天正常历史流)";
+    EXPECT_EQ(r20.violation_count(), 0u) << "R-R20-01: 0 违例 (正常历史流)";
     EXPECT_EQ(r20.checked_count(), static_cast<std::uint64_t>(kTotalEvents))
         << "R-R20-01: 全部 " << kTotalEvents << " 条事件被校验";
 }

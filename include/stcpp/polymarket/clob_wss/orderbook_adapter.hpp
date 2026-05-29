@@ -62,32 +62,32 @@
 #include <string_view>
 #include <unordered_map>
 
-#include "stcpp/data/feature_store_contract.hpp"       // FeatureStoreBookRow, kOrderBookLevels
-#include "stcpp/microstructure/orderbook.hpp"           // OrderBookSnapshot, kBookDepthLevels
-#include "stcpp/polymarket/wss/wss_event.hpp"           // WssEvent, SubTopic, FourTs
+#include "stcpp/data/feature_store_contract.hpp"  // FeatureStoreBookRow, kOrderBookLevels
+#include "stcpp/microstructure/orderbook.hpp"     // OrderBookSnapshot, kBookDepthLevels
+#include "stcpp/polymarket/wss/wss_event.hpp"     // WssEvent, SubTopic, FourTs
 
 namespace stcpp::polymarket::clob_wss {
 
+using stcpp::data::feature_store::FeatureStoreBookRow;
+using stcpp::data::feature_store::kOrderBookLevels;
+using stcpp::microstructure::compute_l1_probe;
+using stcpp::microstructure::depth_within_ticks;
 using stcpp::microstructure::kBookDepthLevels;
 using stcpp::microstructure::OrderBookLevel;
 using stcpp::microstructure::OrderBookSnapshot;
 using stcpp::microstructure::OrderBookTs;
-using stcpp::microstructure::compute_l1_probe;
-using stcpp::microstructure::depth_within_ticks;
 using stcpp::microstructure::TICK_01;
 using stcpp::microstructure::TICK_WINDOW;
-using stcpp::data::feature_store::FeatureStoreBookRow;
-using stcpp::data::feature_store::kOrderBookLevels;
-using stcpp::polymarket::wss::WssEvent;
-using stcpp::polymarket::wss::SubTopic;
 using stcpp::polymarket::wss::FourTs;
+using stcpp::polymarket::wss::SubTopic;
+using stcpp::polymarket::wss::WssEvent;
 
 // ---------------------------------------------------------------------------
 // AdapterState — per-token 状态机
 // ---------------------------------------------------------------------------
 enum class AdapterSnapshotState : std::uint8_t {
     kWaitingSnapshot = 0,  // 尚未收到初始 book snapshot
-    kLive            = 1,  // 已有 snapshot, 接受 price_change delta
+    kLive = 1,             // 已有 snapshot, 接受 price_change delta
 };
 
 // ---------------------------------------------------------------------------
@@ -114,10 +114,10 @@ public:
     explicit OrderBookAdapter(OrderBookAdapterConfig cfg = {});
 
     // Delete copy/move to prevent accidental state loss
-    OrderBookAdapter(const OrderBookAdapter&)            = delete;
+    OrderBookAdapter(const OrderBookAdapter&) = delete;
     OrderBookAdapter& operator=(const OrderBookAdapter&) = delete;
-    OrderBookAdapter(OrderBookAdapter&&)                 = delete;
-    OrderBookAdapter& operator=(OrderBookAdapter&&)      = delete;
+    OrderBookAdapter(OrderBookAdapter&&) = delete;
+    OrderBookAdapter& operator=(OrderBookAdapter&&) = delete;
 
     ~OrderBookAdapter() = default;
 
@@ -136,11 +136,8 @@ public:
     // R-12: 此函数在 vCPU0 调用, 严禁阻塞
     // R-20: data_source_ts 来自 ev.ts().data_source_ts_ns (UPSTREAM_PAYLOAD)
     // -----------------------------------------------------------------------
-    [[nodiscard]] bool OnEvent(const WssEvent&     ev,
-                               std::string_view    token_id,
-                               std::int64_t        recv_ts_ns,
-                               OrderBookSnapshot&  out_snap,
-                               FeatureStoreBookRow& out_book_row) noexcept;
+    [[nodiscard]] bool OnEvent(const WssEvent& ev, std::string_view token_id, std::int64_t recv_ts_ns,
+                               OrderBookSnapshot& out_snap, FeatureStoreBookRow& out_book_row) noexcept;
 
     // -----------------------------------------------------------------------
     // InjectMetadata — 填充 FeatureStoreBookRow 中 consumer 域的分区键
@@ -149,12 +146,9 @@ public:
     //
     // 此函数不是热路径 (仅填充字符串), 可在 vCPU1 调用
     // -----------------------------------------------------------------------
-    static void InjectMetadata(FeatureStoreBookRow& row,
-                               std::string_view     market_id,
-                               std::string_view     token_side,
-                               std::string_view     sport,
-                               std::int32_t         event_date_epoch_days,
-                               std::string_view     market_type) noexcept;
+    static void InjectMetadata(FeatureStoreBookRow& row, std::string_view market_id,
+                               std::string_view token_side, std::string_view sport,
+                               std::int32_t event_date_epoch_days, std::string_view market_type) noexcept;
 
     // -----------------------------------------------------------------------
     // ResetToken — 强制清除某 token 状态 (reconnect / resubscribe 时调用)
@@ -174,29 +168,29 @@ public:
     // -----------------------------------------------------------------------
     // Metrics (供 observability, R-12 原子读)
     // -----------------------------------------------------------------------
-    [[nodiscard]] std::uint64_t snapshots_received()   const noexcept { return snapshots_received_; }
-    [[nodiscard]] std::uint64_t deltas_accepted()      const noexcept { return deltas_accepted_; }
+    [[nodiscard]] std::uint64_t snapshots_received() const noexcept { return snapshots_received_; }
+    [[nodiscard]] std::uint64_t deltas_accepted() const noexcept { return deltas_accepted_; }
     [[nodiscard]] std::uint64_t deltas_rejected_early() const noexcept { return deltas_rejected_early_; }
-    [[nodiscard]] std::uint64_t ts_violations()        const noexcept { return ts_violations_; }
+    [[nodiscard]] std::uint64_t ts_violations() const noexcept { return ts_violations_; }
 
 private:
     // -----------------------------------------------------------------------
     // TokenState — per-token 内部状态 (vCPU0 only, no lock needed)
     // -----------------------------------------------------------------------
     struct TokenState {
-        AdapterSnapshotState state       = AdapterSnapshotState::kWaitingSnapshot;
-        double               tick_size   = TICK_01;
+        AdapterSnapshotState state = AdapterSnapshotState::kWaitingSnapshot;
+        double tick_size = TICK_01;
         // L1 bid/ask (v0.1 单档)
-        double               bid_price   = std::numeric_limits<double>::quiet_NaN();
-        double               bid_size    = std::numeric_limits<double>::quiet_NaN();
-        double               ask_price   = std::numeric_limits<double>::quiet_NaN();
-        double               ask_size    = std::numeric_limits<double>::quiet_NaN();
+        double bid_price = std::numeric_limits<double>::quiet_NaN();
+        double bid_size = std::numeric_limits<double>::quiet_NaN();
+        double ask_price = std::numeric_limits<double>::quiet_NaN();
+        double ask_size = std::numeric_limits<double>::quiet_NaN();
         // 4 ts of last accepted event
-        std::int64_t         last_event_ts_ns        = 0;
-        std::int64_t         last_data_source_ts_ns  = 0;
-        std::int64_t         last_ingestion_ts_ns    = 0;
+        std::int64_t last_event_ts_ns = 0;
+        std::int64_t last_data_source_ts_ns = 0;
+        std::int64_t last_ingestion_ts_ns = 0;
         // last trade ts (from last_trade_price bps → best proxy is data_source_ts)
-        std::int64_t         last_trade_ts_ns        = 0;
+        std::int64_t last_trade_ts_ns = 0;
     };
 
     // -----------------------------------------------------------------------
@@ -210,13 +204,11 @@ private:
     void ApplyDelta(TokenState& st, const WssEvent& ev, std::int64_t recv_ts_ns) noexcept;
 
     // Fill OrderBookSnapshot from TokenState + 4-ts
-    static void FillSnapshot(const TokenState&   st,
-                              std::string_view    token_id,
-                              OrderBookSnapshot&  snap) noexcept;
+    static void FillSnapshot(const TokenState& st, std::string_view token_id,
+                             OrderBookSnapshot& snap) noexcept;
 
     // Fill FeatureStoreBookRow from OrderBookSnapshot + L1Probe
-    static void FillBookRow(const OrderBookSnapshot& snap,
-                            FeatureStoreBookRow&      row) noexcept;
+    static void FillBookRow(const OrderBookSnapshot& snap, FeatureStoreBookRow& row) noexcept;
 
     // Validate 4-ts monotonic chain (R-20)
     static bool TsChainOk(const FourTs& ts) noexcept;
@@ -231,10 +223,10 @@ private:
     std::unordered_map<std::string, TokenState> token_states_;
 
     // Counters (not atomic — vCPU0 only)
-    std::uint64_t snapshots_received_    = 0;
-    std::uint64_t deltas_accepted_       = 0;
+    std::uint64_t snapshots_received_ = 0;
+    std::uint64_t deltas_accepted_ = 0;
     std::uint64_t deltas_rejected_early_ = 0;
-    std::uint64_t ts_violations_         = 0;
+    std::uint64_t ts_violations_ = 0;
 };
 
 }  // namespace stcpp::polymarket::clob_wss

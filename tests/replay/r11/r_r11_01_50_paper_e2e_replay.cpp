@@ -17,6 +17,7 @@
 #include "stcpp/infra/wal/wal_kind.hpp"
 #include "stcpp/infra/wal/wal_writer.hpp"
 #include "stcpp/observability/audit_record.hpp"
+
 #include "tests/integration/test_fixture.hpp"
 #include "tests/replay/paper/paper_r11_assertion.hpp"
 
@@ -42,17 +43,11 @@ protected:
 // R-R11-01: 50 笔 paper e2e → paper_audit HWM > 0; 其他 3 WAL HWM 不变
 TEST_F(RR1101Fixture, R_R11_01_50_paper_e2e_replay_r11_isolation) {
     // 初始化 PaperLedgerIsolationAssertion
-    PaperLedgerIsolationAssertion r11(
-        paper_audit_.get(),
-        risk_audit_.get(),
-        position_.get(),
-        shadow_audit_.get());
+    PaperLedgerIsolationAssertion r11(paper_audit_.get(), risk_audit_.get(), position_.get(),
+                                      shadow_audit_.get());
 
-    r11.set_baselines(
-        paper_audit_->HighWatermark(),
-        risk_audit_->HighWatermark(),
-        position_->HighWatermark(),
-        shadow_audit_->HighWatermark());
+    r11.set_baselines(paper_audit_->HighWatermark(), risk_audit_->HighWatermark(), position_->HighWatermark(),
+                      shadow_audit_->HighWatermark());
 
     // 回放 50 笔 paper e2e
     std::uint64_t seq = 0;
@@ -62,12 +57,12 @@ TEST_F(RR1101Fixture, R_R11_01_50_paper_e2e_replay_r11_isolation) {
     for (int i = 0; i < 50; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_replay_r11_01_" + std::to_string(i);
-        b.price              = 0.50 + 0.001 * (i % 20);
+        b.market_id = "mkt_replay_r11_01_" + std::to_string(i);
+        b.price = 0.50 + 0.001 * (i % 20);
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_replay_r11_01_" + std::to_string(i));
         ++seq;
 
@@ -83,7 +78,7 @@ TEST_F(RR1101Fixture, R_R11_01_50_paper_e2e_replay_r11_isolation) {
     }
 
     EXPECT_EQ(approved + rejected, 50u) << "R-R11-01: 50 笔全部处理";
-    EXPECT_GE(approved, 1u)  << "R-R11-01: 至少 1 笔 approved";
+    EXPECT_GE(approved, 1u) << "R-R11-01: 至少 1 笔 approved";
 
     // finalize: live WAL 水位线未变; paper_audit 有新增
     const bool r11_ok = r11.finalize();
@@ -97,18 +92,13 @@ TEST_F(RR1101Fixture, R_R11_01_50_paper_e2e_replay_r11_isolation) {
     EXPECT_TRUE(r11_ok) << "R-R11-01: R-11 校验通过 (paper 账本零污染)";
 
     // 明细断言
-    EXPECT_GT(paper_audit_->HighWatermark(), 0u)
-        << "R-R11-01: paper_audit HWM > 0";
-    EXPECT_EQ(risk_audit_->HighWatermark(), 0u)
-        << "R-R11-01 / R-11: risk_audit HWM 未变";
-    EXPECT_EQ(position_->HighWatermark(), 0u)
-        << "R-R11-01 / R-11: position HWM 未变";
-    EXPECT_EQ(shadow_audit_->HighWatermark(), 0u)
-        << "R-R11-01 / R-11: shadow_audit HWM 未变";
+    EXPECT_GT(paper_audit_->HighWatermark(), 0u) << "R-R11-01: paper_audit HWM > 0";
+    EXPECT_EQ(risk_audit_->HighWatermark(), 0u) << "R-R11-01 / R-11: risk_audit HWM 未变";
+    EXPECT_EQ(position_->HighWatermark(), 0u) << "R-R11-01 / R-11: position HWM 未变";
+    EXPECT_EQ(shadow_audit_->HighWatermark(), 0u) << "R-R11-01 / R-11: shadow_audit HWM 未变";
 
     // 老韩 RM 主权签字前提: live_wal_delta == 0
-    EXPECT_EQ(r11.finalized_live_wal_delta(), 0u)
-        << "R-R11-01: live WAL delta == 0 (老韩签字前提)";
+    EXPECT_EQ(r11.finalized_live_wal_delta(), 0u) << "R-R11-01: live WAL delta == 0 (老韩签字前提)";
 }
 
 }  // namespace

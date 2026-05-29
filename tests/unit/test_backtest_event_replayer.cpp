@@ -29,13 +29,13 @@ using namespace stcpp::microstructure;
 // 辅助: 构造合法 OrderBookSnapshot
 OrderBookSnapshot make_book(double mid = 0.50) {
     OrderBookSnapshot b;
-    b.ts.event_ts_ns       = 1'000;
+    b.ts.event_ts_ns = 1'000;
     b.ts.data_source_ts_ns = 1'001;
-    b.ts.ingestion_ts_ns   = 1'002;
-    b.ts.as_of_ts_ns       = 1'003;
-    b.tick_size            = 0.01;
-    b.top3_depth_usdc      = 5000.0;
-    b.spread_bps           = 20;
+    b.ts.ingestion_ts_ns = 1'002;
+    b.ts.as_of_ts_ns = 1'003;
+    b.tick_size = 0.01;
+    b.top3_depth_usdc = 5000.0;
+    b.spread_bps = 20;
 
     double const half_spread = 0.01;
     b.bid[0] = {mid - half_spread, 2000.0};
@@ -46,51 +46,50 @@ OrderBookSnapshot make_book(double mid = 0.50) {
 }
 
 // 辅助: 构造合法 SignalEvent
-SignalEvent make_signal(double fair = 0.56, double pm_mid = 0.50,
-                         bool use_legal_ts = true,
-                         bool filtered = false) {
+SignalEvent make_signal(double fair = 0.56, double pm_mid = 0.50, bool use_legal_ts = true,
+                        bool filtered = false) {
     SignalEvent ev;
     if (use_legal_ts) {
-        ev.event_ts_ns       = 1'000;
+        ev.event_ts_ns = 1'000;
         ev.data_source_ts_ns = 1'001;
-        ev.ingestion_ts_ns   = 1'002;
-        ev.as_of_ts_ns       = 1'003;
+        ev.ingestion_ts_ns = 1'002;
+        ev.as_of_ts_ns = 1'003;
     } else {
         // 非法 ts: event > data_source
-        ev.event_ts_ns       = 1'010;
+        ev.event_ts_ns = 1'010;
         ev.data_source_ts_ns = 1'000;  // 倒序
-        ev.ingestion_ts_ns   = 1'020;
-        ev.as_of_ts_ns       = 1'030;
+        ev.ingestion_ts_ns = 1'020;
+        ev.as_of_ts_ns = 1'030;
     }
-    ev.market_id         = "market1";
-    ev.game_id           = "game1";
-    ev.bucket            = TradeBucket::Pregame;
-    ev.fair_value        = fair;
-    ev.pm_mid            = pm_mid;
-    ev.gross_edge        = std::abs(fair - pm_mid);
-    ev.side              = TradeSide::BuyYes;
-    ev.kelly_size_usdc   = 500.0;
-    ev.filtered_out      = filtered;
-    ev.book              = make_book(pm_mid);
-    ev.probe             = Microprobe{};  // 空 probe
+    ev.market_id = "market1";
+    ev.game_id = "game1";
+    ev.bucket = TradeBucket::Pregame;
+    ev.fair_value = fair;
+    ev.pm_mid = pm_mid;
+    ev.gross_edge = std::abs(fair - pm_mid);
+    ev.side = TradeSide::BuyYes;
+    ev.kelly_size_usdc = 500.0;
+    ev.filtered_out = filtered;
+    ev.book = make_book(pm_mid);
+    ev.probe = Microprobe{};  // 空 probe
 
     // data_source_ts_ns → book.ts 同步
-    ev.book.ts.event_ts_ns       = ev.event_ts_ns;
+    ev.book.ts.event_ts_ns = ev.event_ts_ns;
     ev.book.ts.data_source_ts_ns = ev.data_source_ts_ns;
-    ev.book.ts.ingestion_ts_ns   = ev.ingestion_ts_ns;
-    ev.book.ts.as_of_ts_ns       = ev.as_of_ts_ns;
+    ev.book.ts.ingestion_ts_ns = ev.ingestion_ts_ns;
+    ev.book.ts.as_of_ts_ns = ev.as_of_ts_ns;
 
     return ev;
 }
 
 BacktestConfig make_cfg(bool bernoulli = false, std::uint64_t seed = 42) {
     BacktestConfig cfg;
-    cfg.initial_bankroll  = 100'000.0;
-    cfg.fee_rate          = 0.03;
+    cfg.initial_bankroll = 100'000.0;
+    cfg.fee_rate = 0.03;
     cfg.params.gross_edge_threshold = 0.05;  // C2 门 5¢
-    cfg.params.dead_zone_threshold  = 0.25;
+    cfg.params.dead_zone_threshold = 0.25;
     cfg.use_bernoulli_fill = bernoulli;
-    cfg.fill_seed          = seed;
+    cfg.fill_seed = seed;
     return cfg;
 }
 
@@ -199,13 +198,13 @@ TEST(BacktestLedger, SettleMarket) {
 
     TradeRecord t;
     t.event_ts_ns = t.data_source_ts_ns = t.ingestion_ts_ns = t.as_of_ts_ns = 1;
-    t.market_id  = "market1";
-    t.side       = TradeSide::BuyYes;
+    t.market_id = "market1";
+    t.side = TradeSide::BuyYes;
     t.fill_price = 0.45;
-    t.size_usdc  = 1000.0;
-    t.fee_rate   = 0.03;
+    t.size_usdc = 1000.0;
+    t.fee_rate = 0.03;
     t.slippage_rate = 0.003;
-    t.outcome    = SettleOutcome::Pending;
+    t.outcome = SettleOutcome::Pending;
     ledger.add_trade(t);
 
     // 初始: equity 不变 (未结算)
@@ -230,13 +229,13 @@ TEST(BacktestLedger, MultipleSettle) {
         TradeRecord t;
         t.event_ts_ns = t.data_source_ts_ns = t.ingestion_ts_ns = t.as_of_ts_ns =
             static_cast<std::int64_t>(i + 1);
-        t.market_id   = "market" + std::to_string(i);
-        t.side        = TradeSide::BuyYes;
-        t.fill_price  = 0.40;
-        t.size_usdc   = 500.0;
-        t.fee_rate    = 0.03;
+        t.market_id = "market" + std::to_string(i);
+        t.side = TradeSide::BuyYes;
+        t.fill_price = 0.40;
+        t.size_usdc = 500.0;
+        t.fee_rate = 0.03;
         t.slippage_rate = 0.003;
-        t.outcome     = SettleOutcome::Pending;
+        t.outcome = SettleOutcome::Pending;
         ledger.add_trade(t);
     }
 
@@ -255,7 +254,7 @@ TEST(BacktestLedger, Clear) {
     TradeRecord t;
     t.event_ts_ns = t.data_source_ts_ns = t.ingestion_ts_ns = t.as_of_ts_ns = 1;
     t.market_id = "m";
-    t.outcome   = SettleOutcome::YesWins;
+    t.outcome = SettleOutcome::YesWins;
     t.realized_pnl_usdc = 100.0;
     ledger.add_trade(t);
 

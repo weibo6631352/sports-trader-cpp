@@ -33,6 +33,7 @@
 // wal_writer.hpp 必须在 audit_record.hpp 之前 include (audit_record.hpp static_assert WalRecord<>)
 #include "stcpp/infra/wal/wal_writer.hpp"
 #include "stcpp/observability/audit_record.hpp"
+
 #include "tests/integration/test_fixture.hpp"
 #include "tests/sim/r12_sim/r12_sim_fixture.hpp"
 
@@ -41,12 +42,12 @@ namespace stcpp::test::chaos {
 // ---------- FaultKind — 5 类故障注入 (spec §1.2) --------------------------------
 
 enum class FaultKind : std::uint8_t {
-    None         = 0,
-    WssDisconnect = 1,   // §1.2.1
-    WssOutOfOrder = 2,   // §1.2.2
-    LatencySpike  = 3,   // §1.2.3
-    RestTimeout   = 4,   // §1.2.4
-    PartialFill   = 5,   // §1.2.5
+    None = 0,
+    WssDisconnect = 1,  // §1.2.1
+    WssOutOfOrder = 2,  // §1.2.2
+    LatencySpike = 3,   // §1.2.3
+    RestTimeout = 4,    // §1.2.4
+    PartialFill = 5,    // §1.2.5
 };
 
 // ---------- FaultConfig — 注入参数载体 -----------------------------------------
@@ -56,46 +57,46 @@ struct FaultConfig {
 
     // WssDisconnect params (§1.2.1)
     std::int64_t disconnect_duration_ms{0};
-    bool         reconnect_ok{true};
-    int          reconnect_retry_count{0};
+    bool reconnect_ok{true};
+    int reconnect_retry_count{0};
 
     // WssOutOfOrder params (§1.2.2)
-    int          ooo_window_size{2};
-    double       shuffle_probability{0.5};
+    int ooo_window_size{2};
+    double shuffle_probability{0.5};
 
     // LatencySpike params (§1.2.3)
     std::int64_t spike_ms{0};
-    int          spike_count{1};
-    bool         target_rest{true};
-    bool         target_rpc{false};
+    int spike_count{1};
+    bool target_rest{true};
+    bool target_rpc{false};
 
     // RestTimeout params (§1.2.4)
-    int          http_status_code{429};   // 429/502/504/0=timeout
-    std::string  path_filter{"/"};        // endpoint filter
+    int http_status_code{429};     // 429/502/504/0=timeout
+    std::string path_filter{"/"};  // endpoint filter
     std::int64_t timeout_ms{10'000};
 
     // PartialFill params (§1.2.5)
-    double       fill_ratio{1.0};         // first fill ratio (0.0-1.0)
-    int          fill_count{1};           // number of fill batches
-    double       slippage_bps{0.0};
-    bool         paper_mode{true};
+    double fill_ratio{1.0};  // first fill ratio (0.0-1.0)
+    int fill_count{1};       // number of fill batches
+    double slippage_bps{0.0};
+    bool paper_mode{true};
 };
 
 // ---------- FaultState — 注入运行时状态 ----------------------------------------
 
 struct FaultState {
-    bool           disconnected{false};
-    std::int64_t   disconnect_start_ns{0};
-    std::int64_t   disconnect_end_ns{0};
-    int            reconnect_attempt_count{0};
-    std::size_t    rest_error_count{0};
-    std::size_t    rest_retry_count{0};
-    std::size_t    ooo_gap_detected_count{0};
-    bool           rest_fallback_triggered{false};
-    bool           seq_gap_detected{false};
+    bool disconnected{false};
+    std::int64_t disconnect_start_ns{0};
+    std::int64_t disconnect_end_ns{0};
+    int reconnect_attempt_count{0};
+    std::size_t rest_error_count{0};
+    std::size_t rest_retry_count{0};
+    std::size_t ooo_gap_detected_count{0};
+    bool rest_fallback_triggered{false};
+    bool seq_gap_detected{false};
     // WAL watermarks at fault injection start (for R-11 delta check)
-    std::uint64_t  paper_audit_hwm_at_inject{0};
-    std::uint64_t  position_hwm_at_inject{0};
+    std::uint64_t paper_audit_hwm_at_inject{0};
+    std::uint64_t position_hwm_at_inject{0};
     // latency measurements (R-12 p99)
     std::vector<std::int64_t> wss_tick_latencies_ns;
 };
@@ -164,11 +165,10 @@ protected:
         wss_connected_ = false;
         fault_state_.disconnected = true;
         fault_state_.disconnect_start_ns = NowNsHelper();
-        fault_state_.disconnect_end_ns   =
-            fault_state_.disconnect_start_ns +
-            cfg.disconnect_duration_ms * 1'000'000LL;
-        fault_state_.paper_audit_hwm_at_inject  = paper_audit_->HighWatermark();
-        fault_state_.position_hwm_at_inject     = position_->HighWatermark();
+        fault_state_.disconnect_end_ns =
+            fault_state_.disconnect_start_ns + cfg.disconnect_duration_ms * 1'000'000LL;
+        fault_state_.paper_audit_hwm_at_inject = paper_audit_->HighWatermark();
+        fault_state_.position_hwm_at_inject = position_->HighWatermark();
         mock_wss_stub_.disconnect_all();
 
         // Simulate reconnect attempts
@@ -220,8 +220,8 @@ protected:
     // ---- Partial fill simulation (spec §1.2.5) ---------------------------
 
     void SimulatePartialFill(const FaultConfig& cfg) {
-        partial_fill_ratio_   = cfg.fill_ratio;
-        partial_fill_count_   = cfg.fill_count;
+        partial_fill_ratio_ = cfg.fill_ratio;
+        partial_fill_count_ = cfg.fill_count;
         partial_fill_slippage_ = cfg.slippage_bps;
     }
 
@@ -229,27 +229,28 @@ protected:
 
     // R-12 p99 (复用 r12_sim_fixture.hpp 同名函数, 在此复现以避免多继承复杂度)
     static std::int64_t p99_chaos_ns(std::vector<std::int64_t> xs) {
-        if (xs.empty()) return 0;
+        if (xs.empty())
+            return 0;
         std::sort(xs.begin(), xs.end());
-        const auto idx = static_cast<std::size_t>(
-            static_cast<double>(xs.size()) * 0.99);
+        const auto idx = static_cast<std::size_t>(static_cast<double>(xs.size()) * 0.99);
         return xs[std::min(idx, xs.size() - 1)];
     }
 
     static std::int64_t NowNsHelper() noexcept {
         return std::chrono::duration_cast<std::chrono::nanoseconds>(
-            std::chrono::steady_clock::now().time_since_epoch()).count();
+                   std::chrono::steady_clock::now().time_since_epoch())
+            .count();
     }
 
     // ---- State -----
-    FaultConfig   fault_cfg_{};
-    FaultState    fault_state_{};
-    bool          wss_connected_{true};
-    bool          rest_seq_gap_pending_{false};
-    std::int64_t  clob_delay_ms_{0};
-    double        partial_fill_ratio_{1.0};
-    int           partial_fill_count_{1};
-    double        partial_fill_slippage_{0.0};
+    FaultConfig fault_cfg_{};
+    FaultState fault_state_{};
+    bool wss_connected_{true};
+    bool rest_seq_gap_pending_{false};
+    std::int64_t clob_delay_ms_{0};
+    double partial_fill_ratio_{1.0};
+    int partial_fill_count_{1};
+    double partial_fill_slippage_{0.0};
 
     // Using r12 MockWssStub for disconnect tracking
     r12::MockWssStub mock_wss_stub_{};

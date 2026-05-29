@@ -26,8 +26,8 @@ class COoo03PaperFixture : public ChaosE2EFixture {};
 // C-OOO-03 (paper): 乱序 book 快照 → VirtualMatcher 拒 stale quote
 TEST_F(COoo03PaperFixture, C_OOO_03_paper_stale_quote_rejected) {
     FaultConfig cfg;
-    cfg.kind                = FaultKind::WssOutOfOrder;
-    cfg.ooo_window_size     = 3;
+    cfg.kind = FaultKind::WssOutOfOrder;
+    cfg.ooo_window_size = 3;
     cfg.shuffle_probability = 1.0;
     InjectFault(cfg);
 
@@ -35,12 +35,12 @@ TEST_F(COoo03PaperFixture, C_OOO_03_paper_stale_quote_rejected) {
     for (int i = 0; i < 3; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_ooo03_base_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_ooo03_base_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         auto out = RunOneE2E(b, "sig_ooo03_base_" + std::to_string(i));
         (void)out;
     }
@@ -51,24 +51,23 @@ TEST_F(COoo03PaperFixture, C_OOO_03_paper_stale_quote_rejected) {
     for (int i = 0; i < 3; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_ooo03_stale_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_ooo03_stale_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
         // 乱序 stale quote: 60+ 秒前的 book snapshot
-        b.event_ts_ns        = now - 70'000'000'000LL;  // 70s ago
-        b.data_source_ts_ns  = now - 69'999'000'000LL;
-        b.ingestion_ts_ns    = now - 69'998'000'000LL;
+        b.event_ts_ns = now - 70'000'000'000LL;  // 70s ago
+        b.data_source_ts_ns = now - 69'999'000'000LL;
+        b.ingestion_ts_ns = now - 69'998'000'000LL;
         auto out = RunOneE2E(b, "sig_ooo03_stale_" + std::to_string(i));
-        if (out.rm_decision.is_rejected()) ++stale_rejected;
+        if (out.rm_decision.is_rejected())
+            ++stale_rejected;
     }
 
     // C-OOO-03 核心断言: stale quote 被 RM 拒绝
-    EXPECT_GE(stale_rejected, 1u)
-        << "C-OOO-03: VirtualMatcher 不接受 stale quote → RM 至少 1 笔拒单";
+    EXPECT_GE(stale_rejected, 1u) << "C-OOO-03: VirtualMatcher 不接受 stale quote → RM 至少 1 笔拒单";
 
     // R-11: paper 不写 position WAL
-    EXPECT_EQ(position_->HighWatermark(), 0u)
-        << "C-OOO-03: paper 不写 position WAL (R-11)";
+    EXPECT_EQ(position_->HighWatermark(), 0u) << "C-OOO-03: paper 不写 position WAL (R-11)";
 }
 
 }  // namespace

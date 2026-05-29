@@ -63,15 +63,15 @@ using stcpp::strategy::Outcome;
 // ---------------------------------------------------------------------------
 
 // 概率 clamp 边界 — 防 Kelly 分母 0, 防 log(0)
-inline constexpr double kProbEps         = 1e-6;
-inline constexpr double kProbMax         = 1.0 - kProbEps;
+inline constexpr double kProbEps = 1e-6;
+inline constexpr double kProbMax = 1.0 - kProbEps;
 
 // 先验 sigmoid 参数 (可解释, 参考 soccer/basketball inplay model 文献)
 //   alpha: 每 1 分差贡献的 log-odds (足球 ~0.35, 篮球 ~0.10)
 //   beta:  时钟分数贡献的 log-odds (比赛越靠后, 领先优势越大)
 // 默认保守值 (多运动通用 baseline); ML 模型替换后不再用这些参数.
-inline constexpr double kDefaultAlpha    = 0.30;   // score_diff log-odds 系数
-inline constexpr double kDefaultBeta     = 0.50;   // time_fraction log-odds 系数
+inline constexpr double kDefaultAlpha = 0.30;  // score_diff log-odds 系数
+inline constexpr double kDefaultBeta = 0.50;   // time_fraction log-odds 系数
 
 // 订单簿混合权重 (0 = 纯先验, 1 = 纯 microprice)
 // 设计: microprice 捕捉市场共识, 但有噪声; 先验提供基本面锚点
@@ -79,7 +79,7 @@ inline constexpr double kDefaultBeta     = 0.50;   // time_fraction log-odds 系
 inline constexpr double kDefaultBookBlend = 0.20;  // 20% microprice, 80% prior
 
 // 归一化 Kahan 求和用的机器 eps (double)
-inline constexpr double kNormEps         = 1e-14;
+inline constexpr double kNormEps = 1e-14;
 
 // ---------------------------------------------------------------------------
 // 2. FairValueOutcomeCount — 当前支持 2 outcomes (YES/NO binary market)
@@ -95,13 +95,13 @@ struct FairValueResult {
     // 不变式: sum(probs) == 1.0 (±kNormEps), 每个 ∈ (kProbEps, kProbMax)
     std::array<double, kNumOutcomes> probs{0.5, 0.5};
 
-    double prior_yes{0.5};    // 纯先验 YES prob (调试 / audit 用)
-    double book_blend{0.0};   // 实际使用的订单簿混合权重 (0 = 纯先验)
-    bool   valid{false};      // false = 输入含 NaN/Inf, probs 为均匀分布
+    double prior_yes{0.5};   // 纯先验 YES prob (调试 / audit 用)
+    double book_blend{0.0};  // 实际使用的订单簿混合权重 (0 = 纯先验)
+    bool valid{false};       // false = 输入含 NaN/Inf, probs 为均匀分布
 
     // 便利访问
     [[nodiscard]] double p_yes() const noexcept { return probs[0]; }
-    [[nodiscard]] double p_no()  const noexcept { return probs[1]; }
+    [[nodiscard]] double p_no() const noexcept { return probs[1]; }
 };
 
 // ---------------------------------------------------------------------------
@@ -120,21 +120,20 @@ struct ScorePriorParams {
 //   book_row 为 optional — 无订单簿数据时退化纯先验
 // ---------------------------------------------------------------------------
 class IFairValueModel {
- public:
-    IFairValueModel()                                           = default;
-    IFairValueModel(IFairValueModel const&)                     = delete;
-    IFairValueModel(IFairValueModel&&) noexcept                 = delete;
-    IFairValueModel& operator=(IFairValueModel const&)          = delete;
-    IFairValueModel& operator=(IFairValueModel&&) noexcept      = delete;
-    virtual ~IFairValueModel()                                  = default;
+public:
+    IFairValueModel() = default;
+    IFairValueModel(IFairValueModel const&) = delete;
+    IFairValueModel(IFairValueModel&&) noexcept = delete;
+    IFairValueModel& operator=(IFairValueModel const&) = delete;
+    IFairValueModel& operator=(IFairValueModel&&) noexcept = delete;
+    virtual ~IFairValueModel() = default;
 
     // 核心估值入口
     // game_row  : 比分/赛况/统计 (feature store 标准化)
     // book_row  : 订单簿微结构 (nullptr = 无订单簿数据)
     // 返回 FairValueResult, valid=false 时 probs 为均匀分布 (fail-closed)
-    [[nodiscard]] virtual FairValueResult estimate(
-        FeatureStoreGameRow const& game_row,
-        FeatureStoreBookRow const* book_row) const noexcept = 0;
+    [[nodiscard]] virtual FairValueResult estimate(FeatureStoreGameRow const& game_row,
+                                                   FeatureStoreBookRow const* book_row) const noexcept = 0;
 };
 
 // ---------------------------------------------------------------------------
@@ -150,8 +149,10 @@ class IFairValueModel {
         return (x > 0.0) ? kProbMax : kProbEps;
     }
     // 防 exp overflow: |x| > 500 时 sigmoid 已饱和到机器精度
-    if (x > 500.0) return kProbMax;
-    if (x < -500.0) return kProbEps;
+    if (x > 500.0)
+        return kProbMax;
+    if (x < -500.0)
+        return kProbEps;
     // 数值稳定: 对 x >= 0 用原始公式, x < 0 用等价形式避免 exp(-x) 接近 0
     if (x >= 0.0) {
         double const ex = std::exp(-x);
@@ -166,9 +167,12 @@ class IFairValueModel {
 // NaN → 0.5 (均匀不确定)
 // Inf → kProbMax, -Inf → kProbEps (有方向性的无穷)
 [[nodiscard]] inline double clamp_prob(double p) noexcept {
-    if (std::isnan(p)) return 0.5;
-    if (p >= kProbMax)  return kProbMax;
-    if (p <= kProbEps)  return kProbEps;
+    if (std::isnan(p))
+        return 0.5;
+    if (p >= kProbMax)
+        return kProbMax;
+    if (p <= kProbEps)
+        return kProbEps;
     return p;
 }
 
@@ -227,29 +231,26 @@ class IFairValueModel {
 //   - elapsed_sec 负值 / 零 total → time_frac = 0 (不除零)
 // ---------------------------------------------------------------------------
 class BaselineFairValueModel final : public IFairValueModel {
- public:
+public:
     // 默认构造使用 kDefaultAlpha / kDefaultBeta / kDefaultBookBlend
     BaselineFairValueModel() noexcept = default;
 
-    explicit BaselineFairValueModel(ScorePriorParams params,
-                                    double book_blend = kDefaultBookBlend) noexcept
+    explicit BaselineFairValueModel(ScorePriorParams params, double book_blend = kDefaultBookBlend) noexcept
         : params_{params}, book_blend_{book_blend} {}
 
-    [[nodiscard]] FairValueResult estimate(
-        FeatureStoreGameRow const& game_row,
-        FeatureStoreBookRow const* book_row) const noexcept override;
+    [[nodiscard]] FairValueResult estimate(FeatureStoreGameRow const& game_row,
+                                           FeatureStoreBookRow const* book_row) const noexcept override;
 
     // getter (单测用)
     [[nodiscard]] ScorePriorParams params() const noexcept { return params_; }
     [[nodiscard]] double book_blend() const noexcept { return book_blend_; }
 
- private:
+private:
     ScorePriorParams params_{kDefaultAlpha, kDefaultBeta};
-    double           book_blend_{kDefaultBookBlend};
+    double book_blend_{kDefaultBookBlend};
 
     // 从 game_row 提取时钟分数 [0, 1]
-    [[nodiscard]] static double time_fraction_(
-        FeatureStoreGameRow const& row) noexcept;
+    [[nodiscard]] static double time_fraction_(FeatureStoreGameRow const& row) noexcept;
 
     // 从 book_row 提取 YES side microprice (无效时返 nullopt)
     [[nodiscard]] static std::optional<double> extract_microprice_(
@@ -267,18 +268,16 @@ class BaselineFairValueModel final : public IFairValueModel {
 // 不持有 model 所有权 (引用语义); 生命周期由调用方管理.
 // ---------------------------------------------------------------------------
 class FairValueEstimator {
- public:
-    explicit FairValueEstimator(IFairValueModel const& model) noexcept
-        : model_{model} {}
+public:
+    explicit FairValueEstimator(IFairValueModel const& model) noexcept : model_{model} {}
 
     // 主入口
-    [[nodiscard]] FairValueResult estimate(
-        FeatureStoreGameRow const& game_row,
-        FeatureStoreBookRow const* book_row = nullptr) const noexcept {
+    [[nodiscard]] FairValueResult estimate(FeatureStoreGameRow const& game_row,
+                                           FeatureStoreBookRow const* book_row = nullptr) const noexcept {
         return model_.estimate(game_row, book_row);
     }
 
- private:
+private:
     IFairValueModel const& model_;
 };
 
@@ -293,14 +292,22 @@ class FairValueEstimator {
     // 主流运动近似全场秒数 (不含加时)
     // sport 字段来自 feature_store_contract.hpp → SportInplaySlug() (小写 slug)
     // e.g., "soccer" / "basket" / "amfootball" / "hockey" / "baseball" / "tennis" / "volleyball"
-    if (sport == "soccer")       return 90 * 60;
-    if (sport == "basket")       return 48 * 60;    // NBA regulation (inplay slug = "basket")
-    if (sport == "amfootball")   return 60 * 60;    // NFL regulation
-    if (sport == "hockey")       return 60 * 60;    // NHL
-    if (sport == "baseball")     return 0;           // 棒球无时钟, 纯比分先验
-    if (sport == "tennis")       return 0;           // 网球无时钟
-    if (sport == "volleyball")   return 0;           // 排球无时钟
-    if (sport == "rugby")        return 80 * 60;
+    if (sport == "soccer")
+        return 90 * 60;
+    if (sport == "basket")
+        return 48 * 60;  // NBA regulation (inplay slug = "basket")
+    if (sport == "amfootball")
+        return 60 * 60;  // NFL regulation
+    if (sport == "hockey")
+        return 60 * 60;  // NHL
+    if (sport == "baseball")
+        return 0;  // 棒球无时钟, 纯比分先验
+    if (sport == "tennis")
+        return 0;  // 网球无时钟
+    if (sport == "volleyball")
+        return 0;  // 排球无时钟
+    if (sport == "rugby")
+        return 80 * 60;
     return 0;  // 未知运动 → 纯比分先验
 }
 

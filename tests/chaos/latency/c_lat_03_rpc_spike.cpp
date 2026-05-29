@@ -26,23 +26,23 @@ class CLat03Fixture : public ChaosE2EFixture {};
 TEST_F(CLat03Fixture, C_LAT_03_rpc_spike_2s_paper_signer_no_crash) {
     // 注入 RPC 延迟尖峰
     FaultConfig cfg;
-    cfg.kind        = FaultKind::LatencySpike;
-    cfg.spike_ms    = 2'000;
+    cfg.kind = FaultKind::LatencySpike;
+    cfg.spike_ms = 2'000;
     cfg.spike_count = 1;
     cfg.target_rest = false;
-    cfg.target_rpc  = true;
+    cfg.target_rpc = true;
     InjectFault(cfg);
 
     // paper signer VirtualConfirm 宽松超时: 不 abort, error 为 Ok 或可处理的错误码
     for (int i = 0; i < 5; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_lat03_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_lat03_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
 
         EXPECT_NO_FATAL_FAILURE({
             auto out = RunOneE2E(b, "sig_lat03_" + std::to_string(i));
@@ -59,8 +59,7 @@ TEST_F(CLat03Fixture, C_LAT_03_rpc_spike_2s_paper_signer_no_crash) {
     // WSS tick p99 校验 (R-12)
     if (!fault_state_.wss_tick_latencies_ns.empty()) {
         const auto p99_us = p99_chaos_ns(fault_state_.wss_tick_latencies_ns) / 1'000;
-        EXPECT_LT(p99_us, 50LL)
-            << "C-LAT-03 / R-12: wss tick p99 " << p99_us << "us 必须 < 50us";
+        EXPECT_LT(p99_us, 50LL) << "C-LAT-03 / R-12: wss tick p99 " << p99_us << "us 必须 < 50us";
     }
 }
 

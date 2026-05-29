@@ -35,15 +35,18 @@ namespace stcpp::backtest {
 
 enum class TradeBucket : std::uint8_t {
     Pregame = 0,  // LiveSection::Soon, T_kickoff - as_of ≤ 6h
-    Inplay  = 1,  // LiveSection::Live, game.live == true
+    Inplay = 1,   // LiveSection::Live, game.live == true
     Unknown = 2,
 };
 
 [[nodiscard]] constexpr const char* TradeBucketName(TradeBucket b) noexcept {
     switch (b) {
-        case TradeBucket::Pregame: return "PREGAME";
-        case TradeBucket::Inplay:  return "INPLAY";
-        case TradeBucket::Unknown: return "UNKNOWN";
+        case TradeBucket::Pregame:
+            return "PREGAME";
+        case TradeBucket::Inplay:
+            return "INPLAY";
+        case TradeBucket::Unknown:
+            return "UNKNOWN";
     }
     return "?";
 }
@@ -53,7 +56,7 @@ enum class TradeBucket : std::uint8_t {
 // ---------------------------------------------------------------------------
 
 enum class TradeSide : std::uint8_t {
-    BuyYes  = 0,  // 买 Yes token (看多)
+    BuyYes = 0,   // 买 Yes token (看多)
     SellYes = 1,  // 卖 Yes token (看空)
 };
 
@@ -62,9 +65,9 @@ enum class TradeSide : std::uint8_t {
 // ---------------------------------------------------------------------------
 
 enum class SettleOutcome : std::uint8_t {
-    Pending  = 0,  // 未结算
-    YesWins  = 1,  // Yes token = 1.0
-    NoWins   = 2,  // Yes token = 0.0
+    Pending = 0,  // 未结算
+    YesWins = 1,  // Yes token = 1.0
+    NoWins = 2,   // Yes token = 0.0
 };
 
 // ---------------------------------------------------------------------------
@@ -81,32 +84,32 @@ struct TradeRecord {
     std::int64_t as_of_ts_ns{0};        // 决策/信号触发时刻
 
     // ---- 市场标识 ----
-    std::string  market_id;             // Polymarket condition_id
-    std::string  game_id;               // Goalserve game_id (purged k-fold 分组键)
+    std::string market_id;  // Polymarket condition_id
+    std::string game_id;    // Goalserve game_id (purged k-fold 分组键)
 
     // ---- 信号 + 决策 ----
-    TradeSide    side{TradeSide::BuyYes};
-    TradeBucket  bucket{TradeBucket::Pregame};
+    TradeSide side{TradeSide::BuyYes};
+    TradeBucket bucket{TradeBucket::Pregame};
 
-    double fair_value{0.0};             // Goalserve de-vig fair probability (∈ (0,1))
-    double pm_mid{0.0};                 // Polymarket mid price at as_of_ts (∈ (0,1))
-    double gross_edge{0.0};             // |pm_mid - fair_value|
-    double fee_rate{0.03};              // Polymarket taker fee (3%)
-    double slippage_rate{0.003};        // 预期 slippage (FillRateModel 输出)
+    double fair_value{0.0};       // Goalserve de-vig fair probability (∈ (0,1))
+    double pm_mid{0.0};           // Polymarket mid price at as_of_ts (∈ (0,1))
+    double gross_edge{0.0};       // |pm_mid - fair_value|
+    double fee_rate{0.03};        // Polymarket taker fee (3%)
+    double slippage_rate{0.003};  // 预期 slippage (FillRateModel 输出)
 
     // ---- 执行 ----
-    double fill_price{0.0};             // 实际成交价 (≈ pm_mid ± slippage)
-    double size_usdc{0.0};              // 成交金额 (USDC)
+    double fill_price{0.0};  // 实际成交价 (≈ pm_mid ± slippage)
+    double size_usdc{0.0};   // 成交金额 (USDC)
 
     // ---- 结算 ----
     SettleOutcome outcome{SettleOutcome::Pending};
 
     // ---- PnL (结算后填充) ----
-    double realized_pnl_usdc{0.0};      // 净 PnL (扣 fee + slippage)
-    double net_edge{0.0};               // realized_pnl_usdc / size_usdc
+    double realized_pnl_usdc{0.0};  // 净 PnL (扣 fee + slippage)
+    double net_edge{0.0};           // realized_pnl_usdc / size_usdc
 
     // ---- 过滤标记 ----
-    bool   filtered_out{false};         // 被 C2 / 死区等过滤掉的信号 (不计入统计)
+    bool filtered_out{false};  // 被 C2 / 死区等过滤掉的信号 (不计入统计)
 };
 
 // ---------------------------------------------------------------------------
@@ -117,11 +120,11 @@ struct TradeRecord {
 //
 
 struct WalkForwardWindow {
-    std::int64_t is_start_ns{0};        // IS 窗口开始 (ns epoch)
-    std::int64_t is_end_ns{0};          // IS 窗口结束
-    std::int64_t embargo_end_ns{0};     // embargo 结束 (= is_end + embargo_duration)
-    std::int64_t oos_start_ns{0};       // OOS 窗口开始 (= embargo_end)
-    std::int64_t oos_end_ns{0};         // OOS 窗口结束
+    std::int64_t is_start_ns{0};     // IS 窗口开始 (ns epoch)
+    std::int64_t is_end_ns{0};       // IS 窗口结束
+    std::int64_t embargo_end_ns{0};  // embargo 结束 (= is_end + embargo_duration)
+    std::int64_t oos_start_ns{0};    // OOS 窗口开始 (= embargo_end)
+    std::int64_t oos_end_ns{0};      // OOS 窗口结束
 
     // 索引 (rolling 第几轮)
     std::uint32_t fold_index{0};
@@ -136,42 +139,42 @@ struct WalkForwardWindow {
 
 struct BacktestMetrics {
     // --- 基础计数 ---
-    std::size_t  n_trades{0};           // 总成交笔数
-    std::size_t  n_wins{0};             // 方向正确笔数
+    std::size_t n_trades{0};  // 总成交笔数
+    std::size_t n_wins{0};    // 方向正确笔数
 
     // --- Hit Rate ---
-    double hit_rate{0.0};               // n_wins / n_trades ∈ [0, 1]
+    double hit_rate{0.0};  // n_wins / n_trades ∈ [0, 1]
 
     // --- Net Edge ---
-    double net_edge_mean{0.0};          // E[net_pnl] / size (% per trade)
-    double net_edge_std{0.0};           // std dev
-    double total_net_pnl{0.0};          // 累计净 PnL (USDC)
+    double net_edge_mean{0.0};  // E[net_pnl] / size (% per trade)
+    double net_edge_std{0.0};   // std dev
+    double total_net_pnl{0.0};  // 累计净 PnL (USDC)
 
     // --- Sharpe (日收益率序列, 年化 ×√252) ---
-    double sharpe_ratio{0.0};           // (mean_daily_ret / std_daily_ret) × sqrt(252)
+    double sharpe_ratio{0.0};  // (mean_daily_ret / std_daily_ret) × sqrt(252)
 
     // --- MDD ---
-    double max_drawdown{0.0};           // peak-to-trough / peak_equity ∈ [0, 1]
+    double max_drawdown{0.0};  // peak-to-trough / peak_equity ∈ [0, 1]
 
     // --- 统计检验 ---
-    double t_stat{0.0};                 // 单尾 t-stat (H0: E[net_pnl] ≤ 0)
-    double p_value{0.0};                // 单尾 p-value
+    double t_stat{0.0};   // 单尾 t-stat (H0: E[net_pnl] ≤ 0)
+    double p_value{0.0};  // 单尾 p-value
 
     // --- Bootstrap ---
-    double sharpe_ci_lower{0.0};        // stationary bootstrap 90% CI 下界
-    double sharpe_ci_upper{0.0};        // stationary bootstrap 90% CI 上界
+    double sharpe_ci_lower{0.0};  // stationary bootstrap 90% CI 下界
+    double sharpe_ci_upper{0.0};  // stationary bootstrap 90% CI 上界
 
     // --- Bonferroni (参数扫描后校正) ---
-    double bonferroni_p{0.0};           // p_value × n_experiments (校正后)
+    double bonferroni_p{0.0};  // p_value × n_experiments (校正后)
 
     // --- DSR (Deflated Sharpe Ratio) ---
-    double deflated_sharpe{0.0};        // > 1.0 才算 IS 通过
+    double deflated_sharpe{0.0};  // > 1.0 才算 IS 通过
 
     // --- 桶标记 ---
-    TradeBucket  bucket{TradeBucket::Pregame};
+    TradeBucket bucket{TradeBucket::Pregame};
 
     // --- 窗口标记 ---
-    bool         is_in_sample{true};    // true=IS, false=OOS
+    bool is_in_sample{true};  // true=IS, false=OOS
     std::uint32_t fold_index{0};
 };
 
@@ -180,12 +183,12 @@ struct BacktestMetrics {
 // ---------------------------------------------------------------------------
 
 struct BootstrapResult {
-    double ci_lower{0.0};               // 90% CI 下界 (5th percentile)
-    double ci_upper{0.0};               // 90% CI 上界 (95th percentile)
-    double mean_sharpe{0.0};            // bootstrap 样本均值
-    double std_sharpe{0.0};             // bootstrap 样本 std
-    std::size_t n_bootstrap{5000};      // 重采样次数
-    std::size_t block_size{10};         // stationary block 平均长度 (天)
+    double ci_lower{0.0};           // 90% CI 下界 (5th percentile)
+    double ci_upper{0.0};           // 90% CI 上界 (95th percentile)
+    double mean_sharpe{0.0};        // bootstrap 样本均值
+    double std_sharpe{0.0};         // bootstrap 样本 std
+    std::size_t n_bootstrap{5000};  // 重采样次数
+    std::size_t block_size{10};     // stationary block 平均长度 (天)
 };
 
 // ---------------------------------------------------------------------------
@@ -193,10 +196,10 @@ struct BootstrapResult {
 // ---------------------------------------------------------------------------
 
 struct ParamSet {
-    double   gross_edge_threshold{0.06};    // C2 gross_edge 门 (5/6/7¢)
-    int      min_bookmakers{3};             // MIN_BOOKMAKERS (3/4/5)
-    double   kelly_fraction{0.20};          // Kelly fraction (0.15/0.20/0.25)
-    double   dead_zone_threshold{0.25};     // 死区阈值 (0.20/0.25/0.30)
+    double gross_edge_threshold{0.06};  // C2 gross_edge 门 (5/6/7¢)
+    int min_bookmakers{3};              // MIN_BOOKMAKERS (3/4/5)
+    double kelly_fraction{0.20};        // Kelly fraction (0.15/0.20/0.25)
+    double dead_zone_threshold{0.25};   // 死区阈值 (0.20/0.25/0.30)
 };
 
 // ---------------------------------------------------------------------------
@@ -204,13 +207,9 @@ struct ParamSet {
 // ---------------------------------------------------------------------------
 
 [[nodiscard]] constexpr bool trade_ts_ok(TradeRecord const& t) noexcept {
-    return t.event_ts_ns       > 0
-        && t.data_source_ts_ns > 0
-        && t.ingestion_ts_ns   > 0
-        && t.as_of_ts_ns       > 0
-        && t.event_ts_ns       <= t.data_source_ts_ns
-        && t.data_source_ts_ns <= t.ingestion_ts_ns
-        && t.ingestion_ts_ns   <= t.as_of_ts_ns;
+    return t.event_ts_ns > 0 && t.data_source_ts_ns > 0 && t.ingestion_ts_ns > 0 && t.as_of_ts_ns > 0 &&
+           t.event_ts_ns <= t.data_source_ts_ns && t.data_source_ts_ns <= t.ingestion_ts_ns &&
+           t.ingestion_ts_ns <= t.as_of_ts_ns;
 }
 
 // ---------------------------------------------------------------------------
@@ -220,32 +219,31 @@ struct ParamSet {
 //   ≈ gross_edge - fee_rate - slippage_rate  (fill_price ≈ 0.5 near-even 近似)
 // ---------------------------------------------------------------------------
 
-[[nodiscard]] inline double compute_net_edge(double fair_value, double fill_price,
-                                              double fee_rate, double slippage_rate) noexcept {
+[[nodiscard]] inline double compute_net_edge(double fair_value, double fill_price, double fee_rate,
+                                             double slippage_rate) noexcept {
     return (fair_value - fill_price) - (fee_rate + slippage_rate) * fill_price;
 }
 
 // Polymarket 二元结算 realized_pnl:
 //   BuyYes + YesWins → (1 - fill_price) * size - fee * fill_price * size - slippage * size
 //   BuyYes + NoWins  → -fill_price * size - fee * fill_price * size - slippage * size
-[[nodiscard]] inline double compute_realized_pnl(TradeSide side, SettleOutcome outcome,
-                                                  double fill_price, double size_usdc,
-                                                  double fee_rate, double slippage_rate) noexcept {
+[[nodiscard]] inline double compute_realized_pnl(TradeSide side, SettleOutcome outcome, double fill_price,
+                                                 double size_usdc, double fee_rate,
+                                                 double slippage_rate) noexcept {
     if (outcome == SettleOutcome::Pending) {
         return 0.0;
     }
-    bool const won = (side == TradeSide::BuyYes && outcome == SettleOutcome::YesWins)
-                  || (side == TradeSide::SellYes && outcome == SettleOutcome::NoWins);
-    double const gross = won ? (1.0 - fill_price) * size_usdc
-                              : -fill_price * size_usdc;
+    bool const won = (side == TradeSide::BuyYes && outcome == SettleOutcome::YesWins) ||
+                     (side == TradeSide::SellYes && outcome == SettleOutcome::NoWins);
+    double const gross = won ? (1.0 - fill_price) * size_usdc : -fill_price * size_usdc;
     double const cost = (fee_rate + slippage_rate) * fill_price * size_usdc;
     return gross - cost;
 }
 
 // 方向是否正确 (用于 hit rate 计算)
 [[nodiscard]] inline bool is_winning_trade(TradeSide side, SettleOutcome outcome) noexcept {
-    return (side == TradeSide::BuyYes && outcome == SettleOutcome::YesWins)
-        || (side == TradeSide::SellYes && outcome == SettleOutcome::NoWins);
+    return (side == TradeSide::BuyYes && outcome == SettleOutcome::YesWins) ||
+           (side == TradeSide::SellYes && outcome == SettleOutcome::NoWins);
 }
 
 }  // namespace stcpp::backtest

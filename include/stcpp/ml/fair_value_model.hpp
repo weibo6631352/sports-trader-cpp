@@ -63,9 +63,9 @@ inline constexpr std::size_t kMaxOutcomes = 8;
 //   NaN = 缺失 (训练侧 LightGBM/XGBoost 原生 missing; NN 侧需 impute, 见 spec).
 // ---------------------------------------------------------------------------
 struct FeatureVector {
-    std::vector<float> values;                 // 长度 = spec.feature_count()
-    std::int64_t as_of_ts_ns = 0;              // PIT 锚 (来自 feature_store row, ML-R8)
-    std::string_view spec_version = "";        // model_feature_spec.hpp kSpecVersion
+    std::vector<float> values;           // 长度 = spec.feature_count()
+    std::int64_t as_of_ts_ns = 0;        // PIT 锚 (来自 feature_store row, ML-R8)
+    std::string_view spec_version = "";  // model_feature_spec.hpp kSpecVersion
 
     [[nodiscard]] std::size_t size() const noexcept { return values.size(); }
     [[nodiscard]] bool empty() const noexcept { return values.empty(); }
@@ -80,15 +80,15 @@ struct FeatureVector {
 //   ok=false → 推理失败 (输入维度不匹配 / session 未加载 / NaN 阻断), probs 不可信.
 // ---------------------------------------------------------------------------
 struct ModelPrediction {
-    std::array<double, kMaxOutcomes> probs{};   // per-outcome fair prob
-    std::size_t num_outcomes = 0;               // 有效 outcome 数
-    bool normalized = false;                    // probs 是否已归一化 (sum ≈ 1)
-    bool ok = false;                            // 推理是否成功
+    std::array<double, kMaxOutcomes> probs{};  // per-outcome fair prob
+    std::size_t num_outcomes = 0;              // 有效 outcome 数
+    bool normalized = false;                   // probs 是否已归一化 (sum ≈ 1)
+    bool ok = false;                           // 推理是否成功
 
     // ---- ML-R8 元数据: 可复盘 ----
-    std::string_view model_id = "";             // 模型标识 (stub / onnx 文件 hash)
-    std::int64_t as_of_ts_ns = 0;               // 输入 feature 的 PIT 锚
-    std::size_t input_feature_count = 0;        // 实际喂入的 feature 数
+    std::string_view model_id = "";       // 模型标识 (stub / onnx 文件 hash)
+    std::int64_t as_of_ts_ns = 0;         // 输入 feature 的 PIT 锚
+    std::size_t input_feature_count = 0;  // 实际喂入的 feature 数
 
     [[nodiscard]] double prob(std::size_t i) const noexcept {
         return (i < num_outcomes) ? probs[i] : std::numeric_limits<double>::quiet_NaN();
@@ -97,7 +97,8 @@ struct ModelPrediction {
     // 归一化自检: sum 在 [1-eps, 1+eps]
     [[nodiscard]] bool sum_ok(double eps = 1e-6) const noexcept {
         double s = 0.0;
-        for (std::size_t i = 0; i < num_outcomes; ++i) s += probs[i];
+        for (std::size_t i = 0; i < num_outcomes; ++i)
+            s += probs[i];
         return (s >= 1.0 - eps) && (s <= 1.0 + eps);
     }
 };
@@ -106,16 +107,19 @@ struct ModelPrediction {
 // ModelKind — 推理后端枚举 (适配点选择).
 // ---------------------------------------------------------------------------
 enum class ModelKind : std::uint8_t {
-    Stub = 0,        // 内置确定性 stub (当前; 无外部依赖, 用于接口契约 + 回测管道打通)
-    Onnx = 1,        // ONNXRuntime C++ session (W11+, 加载 .onnx)
-    Treelite = 2,    // Treelite 编译树模型 (LightGBM/XGBoost 离线编译, W11+ 候选)
+    Stub = 0,      // 内置确定性 stub (当前; 无外部依赖, 用于接口契约 + 回测管道打通)
+    Onnx = 1,      // ONNXRuntime C++ session (W11+, 加载 .onnx)
+    Treelite = 2,  // Treelite 编译树模型 (LightGBM/XGBoost 离线编译, W11+ 候选)
 };
 
 [[nodiscard]] constexpr std::string_view to_string(ModelKind k) noexcept {
     switch (k) {
-        case ModelKind::Stub:     return "Stub";
-        case ModelKind::Onnx:     return "Onnx";
-        case ModelKind::Treelite: return "Treelite";
+        case ModelKind::Stub:
+            return "Stub";
+        case ModelKind::Onnx:
+            return "Onnx";
+        case ModelKind::Treelite:
+            return "Treelite";
     }
     return "unknown";
 }
@@ -164,13 +168,11 @@ public:
 // ---------------------------------------------------------------------------
 class StubFairValueModel final : public FairValueModel {
 public:
-    explicit StubFairValueModel(std::size_t feature_count,
-                                std::size_t outcome_count = 2,
+    explicit StubFairValueModel(std::size_t feature_count, std::size_t outcome_count = 2,
                                 std::string model_id_str = "stub-fair-value-v0.1") noexcept
         : feature_count_(feature_count),
-          outcome_count_(outcome_count == 0
-                             ? 2
-                             : (outcome_count > kMaxOutcomes ? kMaxOutcomes : outcome_count)),
+          outcome_count_(outcome_count == 0 ? 2
+                                            : (outcome_count > kMaxOutcomes ? kMaxOutcomes : outcome_count)),
           model_id_(std::move(model_id_str)) {}
 
     [[nodiscard]] ModelPrediction predict(const FeatureVector& fv) const noexcept override {
@@ -213,7 +215,8 @@ public:
                 sum += e;
             }
             if (sum > 0.0) {
-                for (std::size_t o = 0; o < outcome_count_; ++o) p.probs[o] /= sum;
+                for (std::size_t o = 0; o < outcome_count_; ++o)
+                    p.probs[o] /= sum;
                 p.normalized = true;
             }
         }
@@ -222,12 +225,8 @@ public:
         return p;
     }
 
-    [[nodiscard]] std::size_t expected_feature_count() const noexcept override {
-        return feature_count_;
-    }
-    [[nodiscard]] std::size_t output_outcome_count() const noexcept override {
-        return outcome_count_;
-    }
+    [[nodiscard]] std::size_t expected_feature_count() const noexcept override { return feature_count_; }
+    [[nodiscard]] std::size_t output_outcome_count() const noexcept override { return outcome_count_; }
     [[nodiscard]] ModelKind kind() const noexcept override { return ModelKind::Stub; }
     [[nodiscard]] std::string_view model_id() const noexcept override { return model_id_; }
     [[nodiscard]] bool ready() const noexcept override { return true; }
@@ -260,16 +259,15 @@ private:
 //       该文件当前不存在, 工厂在 src 实现里返回 nullptr (见 fair_value_model.cpp).
 // ---------------------------------------------------------------------------
 struct OnnxModelConfig {
-    std::string onnx_path;             // .onnx 文件路径 (W11+ 由训练侧导出)
+    std::string onnx_path;  // .onnx 文件路径 (W11+ 由训练侧导出)
     std::size_t expected_feature_count = 0;
     std::size_t output_outcome_count = 2;
-    std::string model_id;              // 通常 = onnx 文件 blake3 hash (复盘锚)
-    int intra_op_threads = 1;          // 热路径旁路: 单线程足够, 不抢 CPU
+    std::string model_id;      // 通常 = onnx 文件 blake3 hash (复盘锚)
+    int intra_op_threads = 1;  // 热路径旁路: 单线程足够, 不抢 CPU
 };
 
 // 工厂: 当前返回 nullptr (ONNXRuntime 未集成); W11+ 返回真 OnnxFairValueModel.
 //   调用方判 nullptr → 回落 StubFairValueModel.
-[[nodiscard]] std::unique_ptr<FairValueModel> make_onnx_fair_value_model(
-    const OnnxModelConfig& cfg) noexcept;
+[[nodiscard]] std::unique_ptr<FairValueModel> make_onnx_fair_value_model(const OnnxModelConfig& cfg) noexcept;
 
 }  // namespace stcpp::ml

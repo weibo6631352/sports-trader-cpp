@@ -48,27 +48,24 @@ using stcpp::data::goalserve::TimeStatus;
 // 构造一个满足 R-20 4 ts 链且 time_status=InPlay 的最小 GameRow
 // elapsed_sec: 当前节已用秒 (设为 -1 表示无)
 // sport: Goalserve inplay slug (小写, e.g., "soccer" / "basket" / "amfootball")
-FeatureStoreGameRow make_game_row(int score_home,
-                                  int score_away,
-                                  int elapsed_sec_val = -1,
-                                  TimeStatus ts = TimeStatus::InPlay,
-                                  std::string sport_val = "soccer") {
+FeatureStoreGameRow make_game_row(int score_home, int score_away, int elapsed_sec_val = -1,
+                                  TimeStatus ts = TimeStatus::InPlay, std::string sport_val = "soccer") {
     FeatureStoreGameRow row{};
     // R-20 4 ts — 单调非降, 供调用方调用 (Estimator 不校验, 单测保证正确)
     constexpr std::int64_t BASE_TS = 1'700'000'000'000'000'000LL;
-    row.event_ts_ns        = BASE_TS;
-    row.data_source_ts_ns  = BASE_TS + 1;
-    row.ingestion_ts_ns    = BASE_TS + 2;
-    row.as_of_ts_ns        = BASE_TS + 3;
-    row.sport              = std::move(sport_val);
-    row.market_type        = "Moneyline";
-    row.match_id           = "test_match_001";
-    row.home_team          = "HomeFC";
-    row.away_team          = "AwayFC";
-    row.score_home_total   = score_home;
-    row.score_away_total   = score_away;
-    row.time_status        = ts;
-    row.elapsed_sec        = elapsed_sec_val;
+    row.event_ts_ns = BASE_TS;
+    row.data_source_ts_ns = BASE_TS + 1;
+    row.ingestion_ts_ns = BASE_TS + 2;
+    row.as_of_ts_ns = BASE_TS + 3;
+    row.sport = std::move(sport_val);
+    row.market_type = "Moneyline";
+    row.match_id = "test_match_001";
+    row.home_team = "HomeFC";
+    row.away_team = "AwayFC";
+    row.score_home_total = score_home;
+    row.score_away_total = score_away;
+    row.time_status = ts;
+    row.elapsed_sec = elapsed_sec_val;
     return row;
 }
 
@@ -76,13 +73,13 @@ FeatureStoreGameRow make_game_row(int score_home,
 FeatureStoreBookRow make_book_row(double microprice_val) {
     FeatureStoreBookRow br{};
     constexpr std::int64_t BASE_TS = 1'700'000'000'000'000'000LL;
-    br.event_ts_ns        = BASE_TS;
-    br.data_source_ts_ns  = BASE_TS + 1;
-    br.ingestion_ts_ns    = BASE_TS + 2;
-    br.as_of_ts_ns        = BASE_TS + 3;
-    br.market_id          = "0xMARKET_001";
-    br.token_side         = "YES";
-    br.microprice         = microprice_val;
+    br.event_ts_ns = BASE_TS;
+    br.data_source_ts_ns = BASE_TS + 1;
+    br.ingestion_ts_ns = BASE_TS + 2;
+    br.as_of_ts_ns = BASE_TS + 3;
+    br.market_id = "0xMARKET_001";
+    br.token_side = "YES";
+    br.microprice = microprice_val;
     return br;
 }
 
@@ -102,20 +99,19 @@ TEST(FairValueEstimator, T01_Normalization) {
         TimeStatus ts;
     };
     std::array<Case, 6> cases{{
-        {0, 0,    0,    TimeStatus::NotStarted},
-        {1, 0,  2700,   TimeStatus::InPlay},    // soccer 30min, home leads
-        {0, 2,  5400,   TimeStatus::InPlay},    // soccer 60min, away leads
-        {3, 3,     0,   TimeStatus::InPlay},    // 平局
-        {5, 0,    -1,   TimeStatus::InPlay},    // 大差, 无时钟
-        {0, 0,     0,   TimeStatus::Ended},     // 结束
+        {0, 0, 0, TimeStatus::NotStarted},
+        {1, 0, 2700, TimeStatus::InPlay},  // soccer 30min, home leads
+        {0, 2, 5400, TimeStatus::InPlay},  // soccer 60min, away leads
+        {3, 3, 0, TimeStatus::InPlay},     // 平局
+        {5, 0, -1, TimeStatus::InPlay},    // 大差, 无时钟
+        {0, 0, 0, TimeStatus::Ended},      // 结束
     }};
 
     for (auto const& c : cases) {
-        auto const game  = make_game_row(c.home, c.away, c.elapsed_sec, c.ts);
+        auto const game = make_game_row(c.home, c.away, c.elapsed_sec, c.ts);
         FairValueResult r = model.estimate(game, nullptr);
         double const sum = r.probs[0] + r.probs[1];
-        EXPECT_NEAR(sum, 1.0, kNormTol)
-            << "home=" << c.home << " away=" << c.away;
+        EXPECT_NEAR(sum, 1.0, kNormTol) << "home=" << c.home << " away=" << c.away;
         EXPECT_TRUE(r.valid);
     }
 }
@@ -175,22 +171,20 @@ TEST(FairValueEstimator, T03_Monotonicity) {
     EXPECT_LT(r_trail.probs[0], 0.5) << "away leads → p_yes < 0.5";
 
     // home leads more → higher p_yes than smaller lead
-    auto game_big   = make_game_row(3, 0, -1, TimeStatus::InPlay);
+    auto game_big = make_game_row(3, 0, -1, TimeStatus::InPlay);
     auto game_small = make_game_row(1, 0, -1, TimeStatus::InPlay);
-    FairValueResult r_big   = model.estimate(game_big,   nullptr);
+    FairValueResult r_big = model.estimate(game_big, nullptr);
     FairValueResult r_small = model.estimate(game_small, nullptr);
-    EXPECT_GT(r_big.probs[0], r_small.probs[0])
-        << "+3 home lead → higher p_yes than +1";
+    EXPECT_GT(r_big.probs[0], r_small.probs[0]) << "+3 home lead → higher p_yes than +1";
 
     // 单调时钟效应: 相同领先分, 比赛越靠后优势越大
     ScorePriorParams params2{0.30, 0.50};
     BaselineFairValueModel model2{params2, 0.0};
-    auto game_early = make_game_row(1, 0,  900, TimeStatus::InPlay);  // 15min
-    auto game_late  = make_game_row(1, 0, 4500, TimeStatus::InPlay);  // 75min
+    auto game_early = make_game_row(1, 0, 900, TimeStatus::InPlay);  // 15min
+    auto game_late = make_game_row(1, 0, 4500, TimeStatus::InPlay);  // 75min
     FairValueResult r_early = model2.estimate(game_early, nullptr);
-    FairValueResult r_late  = model2.estimate(game_late,  nullptr);
-    EXPECT_GT(r_late.probs[0], r_early.probs[0])
-        << "same lead, later clock → higher p_yes (beta effect)";
+    FairValueResult r_late = model2.estimate(game_late, nullptr);
+    EXPECT_GT(r_late.probs[0], r_early.probs[0]) << "same lead, later clock → higher p_yes (beta effect)";
 }
 
 // ---------------------------------------------------------------------------
@@ -264,17 +258,15 @@ TEST(FairValueEstimator, T07_BookBlend_Applied) {
     // microprice = 0.60 (market 认为 YES 概率高)
     auto book = make_book_row(0.60);
 
-    FairValueResult r_with_book  = model.estimate(game, &book);
-    FairValueResult r_no_book    = model.estimate(game, nullptr);
+    FairValueResult r_with_book = model.estimate(game, &book);
+    FairValueResult r_no_book = model.estimate(game, nullptr);
 
     EXPECT_TRUE(r_with_book.valid);
-    EXPECT_NEAR(r_with_book.book_blend, 0.20, 1e-12)
-        << "valid microprice → book_blend=0.20";
+    EXPECT_NEAR(r_with_book.book_blend, 0.20, 1e-12) << "valid microprice → book_blend=0.20";
 
     // 混合后 p_yes 应该在 prior (0.5) 和 microprice (0.6) 之间
     // p_yes_adj = 0.2 * 0.6 + 0.8 * 0.5 = 0.12 + 0.40 = 0.52
-    EXPECT_GT(r_with_book.probs[0], r_no_book.probs[0])
-        << "microprice > prior → p_yes should increase";
+    EXPECT_GT(r_with_book.probs[0], r_no_book.probs[0]) << "microprice > prior → p_yes should increase";
     EXPECT_NEAR(r_with_book.probs[0], 0.52, 1e-6);
 
     // 归一性仍然成立
@@ -292,8 +284,7 @@ TEST(FairValueEstimator, T08_NullBookRow_PurePrior) {
     EXPECT_TRUE(r.valid);
     EXPECT_NEAR(r.book_blend, 0.0, 1e-12) << "nullptr book_row → book_blend=0";
     // probs[0] 应等于纯先验 (prior_yes)
-    EXPECT_NEAR(r.probs[0], r.prior_yes, 1e-6)
-        << "no book → probs[0] == prior_yes";
+    EXPECT_NEAR(r.probs[0], r.prior_yes, 1e-6) << "no book → probs[0] == prior_yes";
 }
 
 // ---------------------------------------------------------------------------
@@ -350,7 +341,7 @@ TEST(FairValueEstimator, T10_SafeSigmoid) {
     EXPECT_NEAR(safe_sigmoid(-ln3), 0.25, 1e-12);
 
     // 大值 → kProbMax (不 Inf)
-    EXPECT_NEAR(safe_sigmoid(1000.0),  kProbMax, 1e-12);
+    EXPECT_NEAR(safe_sigmoid(1000.0), kProbMax, 1e-12);
     EXPECT_NEAR(safe_sigmoid(-1000.0), kProbEps, 1e-12);
 
     // NaN 输入
@@ -362,7 +353,7 @@ TEST(FairValueEstimator, T10_SafeSigmoid) {
 
     // Inf 输入
     double const inf_val = std::numeric_limits<double>::infinity();
-    EXPECT_EQ(safe_sigmoid(inf_val),  kProbMax);
+    EXPECT_EQ(safe_sigmoid(inf_val), kProbMax);
     EXPECT_EQ(safe_sigmoid(-inf_val), kProbEps);
 }
 
@@ -413,7 +404,7 @@ TEST(FairValueEstimator, T12_ClampProb) {
     EXPECT_NEAR(clamp_prob(nan_v), 0.5, 1e-12);
 
     // +Inf ≥ kProbMax → kProbMax; -Inf ≤ kProbEps → kProbEps
-    EXPECT_EQ(clamp_prob(inf_v),  kProbMax);
+    EXPECT_EQ(clamp_prob(inf_v), kProbMax);
     EXPECT_EQ(clamp_prob(-inf_v), kProbEps);
 
     // 0.0 → kProbEps
@@ -455,24 +446,22 @@ namespace {
 
 // 简单 stub: 始终返回 p_yes = 0.70 (测试多态替换接口)
 class FixedFairValueModel final : public IFairValueModel {
- public:
-    explicit FixedFairValueModel(double fixed_p_yes) noexcept
-        : fixed_{fixed_p_yes} {}
+public:
+    explicit FixedFairValueModel(double fixed_p_yes) noexcept : fixed_{fixed_p_yes} {}
 
-    [[nodiscard]] FairValueResult estimate(
-        FeatureStoreGameRow const& /*game_row*/,
-        FeatureStoreBookRow const* /*book_row*/) const noexcept override {
+    [[nodiscard]] FairValueResult estimate(FeatureStoreGameRow const& /*game_row*/,
+                                           FeatureStoreBookRow const* /*book_row*/) const noexcept override {
         FairValueResult r{};
         auto normed = normalize2(fixed_, 1.0 - fixed_);
-        r.probs[0]    = normed[0];
-        r.probs[1]    = normed[1];
-        r.prior_yes   = fixed_;
-        r.book_blend  = 0.0;
-        r.valid       = true;
+        r.probs[0] = normed[0];
+        r.probs[1] = normed[1];
+        r.prior_yes = fixed_;
+        r.book_blend = 0.0;
+        r.valid = true;
         return r;
     }
 
- private:
+private:
     double fixed_{0.5};
 };
 
@@ -495,13 +484,13 @@ TEST(FairValueEstimator, T14_PolymorphicModel) {
 // ---------------------------------------------------------------------------
 TEST(FairValueEstimator, T15_TotalGameSeconds) {
     // sport 字段来自 SportInplaySlug() — 小写 slug
-    EXPECT_EQ(total_game_seconds("soccer"),       90 * 60);
-    EXPECT_EQ(total_game_seconds("basket"),       48 * 60);  // inplay slug = "basket"
-    EXPECT_EQ(total_game_seconds("amfootball"),   60 * 60);
-    EXPECT_EQ(total_game_seconds("hockey"),       60 * 60);
-    EXPECT_EQ(total_game_seconds("baseball"),     0);     // 无时钟
-    EXPECT_EQ(total_game_seconds("tennis"),       0);     // 无时钟
-    EXPECT_EQ(total_game_seconds("unknown_sport"), 0);    // 未知退化
+    EXPECT_EQ(total_game_seconds("soccer"), 90 * 60);
+    EXPECT_EQ(total_game_seconds("basket"), 48 * 60);  // inplay slug = "basket"
+    EXPECT_EQ(total_game_seconds("amfootball"), 60 * 60);
+    EXPECT_EQ(total_game_seconds("hockey"), 60 * 60);
+    EXPECT_EQ(total_game_seconds("baseball"), 0);       // 无时钟
+    EXPECT_EQ(total_game_seconds("tennis"), 0);         // 无时钟
+    EXPECT_EQ(total_game_seconds("unknown_sport"), 0);  // 未知退化
 
     // 棒球/网球 → time_frac=0 (纯比分先验)
     BaselineFairValueModel model;

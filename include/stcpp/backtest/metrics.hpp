@@ -44,16 +44,14 @@ public:
     struct BasicStats {
         std::size_t n_trades{0};
         std::size_t n_wins{0};
-        double      hit_rate{0.0};
-        double      net_edge_mean{0.0};
-        double      net_edge_std{0.0};
-        double      total_net_pnl{0.0};
-        bool        valid{false};
+        double hit_rate{0.0};
+        double net_edge_mean{0.0};
+        double net_edge_std{0.0};
+        double total_net_pnl{0.0};
+        bool valid{false};
     };
 
-    [[nodiscard]] static BasicStats compute_basic(
-        std::vector<TradeRecord> const& trades) noexcept {
-
+    [[nodiscard]] static BasicStats compute_basic(std::vector<TradeRecord> const& trades) noexcept {
         BasicStats out;
         out.n_trades = trades.size();
         if (out.n_trades == 0) {
@@ -64,18 +62,18 @@ public:
         std::size_t n_settled = 0;
         out.n_wins = 0;
         double sum_edge = 0.0;
-        double sum_sq   = 0.0;
-        double sum_pnl  = 0.0;
+        double sum_sq = 0.0;
+        double sum_pnl = 0.0;
         for (auto const& t : trades) {
-            if (t.filtered_out) continue;
-            if (t.outcome == SettleOutcome::Pending) continue;
+            if (t.filtered_out)
+                continue;
+            if (t.outcome == SettleOutcome::Pending)
+                continue;
             ++n_settled;
             sum_pnl += t.realized_pnl_usdc;
-            double const e = (t.size_usdc > 0.0)
-                             ? t.realized_pnl_usdc / t.size_usdc
-                             : 0.0;
+            double const e = (t.size_usdc > 0.0) ? t.realized_pnl_usdc / t.size_usdc : 0.0;
             sum_edge += e;
-            sum_sq   += e * e;
+            sum_sq += e * e;
             if (is_winning_trade(t.side, t.outcome)) {
                 ++out.n_wins;
             }
@@ -86,7 +84,7 @@ public:
         }
 
         double const n = static_cast<double>(out.n_trades);
-        out.hit_rate      = static_cast<double>(out.n_wins) / n;
+        out.hit_rate = static_cast<double>(out.n_wins) / n;
         out.net_edge_mean = sum_edge / n;
         out.total_net_pnl = sum_pnl;
 
@@ -112,12 +110,10 @@ public:
     // 调用者需提供 bankroll (初始本金) 和 trades 已按 as_of_ts 排序
     //
 
-    [[nodiscard]] static std::vector<double> compute_daily_returns(
-        std::vector<TradeRecord> const& trades,
-        double bankroll,
-        std::int64_t window_start_ns,
-        std::int64_t window_end_ns) noexcept {
-
+    [[nodiscard]] static std::vector<double> compute_daily_returns(std::vector<TradeRecord> const& trades,
+                                                                   double bankroll,
+                                                                   std::int64_t window_start_ns,
+                                                                   std::int64_t window_end_ns) noexcept {
         if (trades.empty() || bankroll <= 0.0) {
             return {};
         }
@@ -131,9 +127,12 @@ public:
         std::vector<double> daily_ret(static_cast<std::size_t>(n_days), 0.0);
 
         for (auto const& t : trades) {
-            if (t.filtered_out) continue;
-            if (t.outcome == SettleOutcome::Pending) continue;
-            if (t.as_of_ts_ns < window_start_ns || t.as_of_ts_ns >= window_end_ns) continue;
+            if (t.filtered_out)
+                continue;
+            if (t.outcome == SettleOutcome::Pending)
+                continue;
+            if (t.as_of_ts_ns < window_start_ns || t.as_of_ts_ns >= window_end_ns)
+                continue;
 
             std::int64_t const day_idx = (t.as_of_ts_ns - window_start_ns) / kDayNs;
             if (day_idx >= 0 && static_cast<std::size_t>(day_idx) < daily_ret.size()) {
@@ -148,20 +147,18 @@ public:
     // 1.3 Sharpe Ratio
     // -----------------------------------------------------------------------
 
-    [[nodiscard]] static double compute_sharpe(
-        std::vector<double> const& daily_returns,
-        double annualizer = 252.0) noexcept {
-
+    [[nodiscard]] static double compute_sharpe(std::vector<double> const& daily_returns,
+                                               double annualizer = 252.0) noexcept {
         if (daily_returns.size() < 2) {
             return 0.0;
         }
 
-        double sum   = 0.0;
+        double sum = 0.0;
         double sum_sq = 0.0;
         double const n = static_cast<double>(daily_returns.size());
 
         for (double r : daily_returns) {
-            sum    += r;
+            sum += r;
             sum_sq += r * r;
         }
 
@@ -184,10 +181,8 @@ public:
     //   peak_equity = initial_bankroll + cumulative_pnl_at_peak
     //
 
-    [[nodiscard]] static double compute_max_drawdown(
-        std::vector<TradeRecord> const& trades,
-        double initial_bankroll) noexcept {
-
+    [[nodiscard]] static double compute_max_drawdown(std::vector<TradeRecord> const& trades,
+                                                     double initial_bankroll) noexcept {
         if (trades.empty() || initial_bankroll <= 0.0) {
             return 0.0;
         }
@@ -197,8 +192,10 @@ public:
         double max_dd = 0.0;
 
         for (auto const& t : trades) {
-            if (t.filtered_out) continue;
-            if (t.outcome == SettleOutcome::Pending) continue;
+            if (t.filtered_out)
+                continue;
+            if (t.outcome == SettleOutcome::Pending)
+                continue;
 
             current_equity += t.realized_pnl_usdc;
             if (current_equity > peak_equity) {
@@ -221,26 +218,24 @@ public:
 
     struct TTestResult {
         double t_stat{0.0};
-        double p_value{1.0};   // 单尾 p-value (高 → 不拒绝 H0)
-        bool   valid{false};
+        double p_value{1.0};  // 单尾 p-value (高 → 不拒绝 H0)
+        bool valid{false};
     };
 
     // 简化版单样本 t-test: t = mean / (std / sqrt(n))
     // p-value 用 t-分布近似 (Student's t, df = n-1)
     // 注: 完整 t 分布 CDF 需 Boost.Math; 此处用正态近似 (n ≥ 30 近似合理)
-    [[nodiscard]] static TTestResult one_sample_t_test(
-        std::vector<double> const& values) noexcept {
-
+    [[nodiscard]] static TTestResult one_sample_t_test(std::vector<double> const& values) noexcept {
         TTestResult out;
         std::size_t const n = values.size();
         if (n < 2) {
             return out;
         }
 
-        double sum   = 0.0;
+        double sum = 0.0;
         double sum_sq = 0.0;
         for (double v : values) {
-            sum    += v;
+            sum += v;
             sum_sq += v * v;
         }
 
@@ -250,9 +245,9 @@ public:
 
         if (variance <= 0.0) {
             // 零方差: 全部值相同, t-stat 无意义
-            out.t_stat  = (mean > 0.0) ? 1e9 : (mean < 0.0 ? -1e9 : 0.0);
+            out.t_stat = (mean > 0.0) ? 1e9 : (mean < 0.0 ? -1e9 : 0.0);
             out.p_value = (mean > 0.0) ? 0.0 : 1.0;
-            out.valid   = true;
+            out.valid = true;
             return out;
         }
 
@@ -263,7 +258,7 @@ public:
         // P(Z > t_stat) ≈ 0.5 * erfc(t_stat / sqrt(2))
         // erfc 在 <cmath> 中可用
         out.p_value = 0.5 * std::erfc(out.t_stat / std::sqrt(2.0));
-        out.valid   = true;
+        out.valid = true;
         return out;
     }
 };
@@ -279,21 +274,18 @@ public:
 
 class StationaryBootstrap {
 public:
-    explicit StationaryBootstrap(std::size_t n_bootstrap = 5000,
-                                  std::size_t block_size  = 10,
-                                  std::uint64_t seed      = 42)
+    explicit StationaryBootstrap(std::size_t n_bootstrap = 5000, std::size_t block_size = 10,
+                                 std::uint64_t seed = 42)
         : n_bootstrap_(n_bootstrap), block_size_(block_size), seed_(seed) {}
 
     // Stationary Bootstrap: 随机 block 长度 Geometric(1/block_size)
     // 输入: daily_returns 序列
     // 输出: BootstrapResult (Sharpe CI)
-    [[nodiscard]] BootstrapResult compute_sharpe_ci(
-        std::vector<double> const& daily_returns,
-        double annualizer = 252.0) const {
-
+    [[nodiscard]] BootstrapResult compute_sharpe_ci(std::vector<double> const& daily_returns,
+                                                    double annualizer = 252.0) const {
         BootstrapResult out;
         out.n_bootstrap = n_bootstrap_;
-        out.block_size  = block_size_;
+        out.block_size = block_size_;
 
         std::size_t const T = daily_returns.size();
         if (T < 2) {
@@ -302,8 +294,7 @@ public:
 
         std::mt19937_64 rng(seed_);
         std::uniform_int_distribution<std::size_t> start_dist(0, T - 1);
-        std::geometric_distribution<std::size_t>   block_len_dist(
-            1.0 / static_cast<double>(block_size_));
+        std::geometric_distribution<std::size_t> block_len_dist(1.0 / static_cast<double>(block_size_));
 
         std::vector<double> bootstrap_sharpes;
         bootstrap_sharpes.reserve(n_bootstrap_);
@@ -347,23 +338,23 @@ public:
         out.ci_upper = bootstrap_sharpes[std::min(hi_idx, n - 1)];
 
         // 均值 + std
-        double sum   = 0.0;
+        double sum = 0.0;
         double sum_sq = 0.0;
         for (double sr : bootstrap_sharpes) {
-            sum    += sr;
+            sum += sr;
             sum_sq += sr * sr;
         }
         double const dn = static_cast<double>(n);
         out.mean_sharpe = sum / dn;
         double const variance = (sum_sq - sum * sum / dn) / (dn - 1.0);
-        out.std_sharpe  = (variance > 0.0) ? std::sqrt(variance) : 0.0;
+        out.std_sharpe = (variance > 0.0) ? std::sqrt(variance) : 0.0;
 
         return out;
     }
 
 private:
-    std::size_t   n_bootstrap_;
-    std::size_t   block_size_;
+    std::size_t n_bootstrap_;
+    std::size_t block_size_;
     std::uint64_t seed_;
 };
 

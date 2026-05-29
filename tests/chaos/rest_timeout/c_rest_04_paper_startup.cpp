@@ -27,10 +27,10 @@ class CRest04PaperFixture : public ChaosE2EFixture {};
 TEST_F(CRest04PaperFixture, C_REST_04_paper_startup_rest_timeout_r11_preserved) {
     // 注入: paper 启动时 /positions REST 超时
     FaultConfig cfg;
-    cfg.kind             = FaultKind::RestTimeout;
+    cfg.kind = FaultKind::RestTimeout;
     cfg.http_status_code = 0;
-    cfg.timeout_ms       = 10'000;
-    cfg.path_filter      = "/positions";
+    cfg.timeout_ms = 10'000;
+    cfg.path_filter = "/positions";
     InjectFault(cfg);
 
     // paper engine 以空 position state 启动 → position WAL HWM == 0
@@ -46,12 +46,12 @@ TEST_F(CRest04PaperFixture, C_REST_04_paper_startup_rest_timeout_r11_preserved) 
     for (int i = 0; i < 3; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_rest04_paper_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_rest04_paper_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         EXPECT_NO_FATAL_FAILURE({
             auto out = RunOneE2E(b, "sig_rest04_paper_" + std::to_string(i));
             ++processed;

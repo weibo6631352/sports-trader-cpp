@@ -26,9 +26,9 @@ class CRest02Fixture : public ChaosE2EFixture {};
 TEST_F(CRest02Fixture, C_REST_02_gamma_502_triggers_fallback) {
     // 注入 502
     FaultConfig cfg;
-    cfg.kind             = FaultKind::RestTimeout;
+    cfg.kind = FaultKind::RestTimeout;
     cfg.http_status_code = 502;
-    cfg.path_filter      = "/markets";
+    cfg.path_filter = "/markets";
     InjectFault(cfg);
 
     // 502 应触发 fallback (stub 层记录)
@@ -40,13 +40,13 @@ TEST_F(CRest02Fixture, C_REST_02_gamma_502_triggers_fallback) {
     for (int i = 0; i < 5; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_rest02_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_rest02_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
         // WSS 数据: 正常 ts (fallback 后 WSS only 仍更新 book)
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         EXPECT_NO_FATAL_FAILURE({
             auto out = RunOneE2E(b, "sig_rest02_" + std::to_string(i));
             ++processed;

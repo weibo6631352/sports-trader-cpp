@@ -26,15 +26,14 @@ class CWss03Fixture : public ChaosE2EFixture {};
 TEST_F(CWss03Fixture, C_WSS_03_reconnect_fail_3_times_no_crash) {
     // 注入: 断连 + 重连失败
     FaultConfig cfg;
-    cfg.kind                    = FaultKind::WssDisconnect;
-    cfg.disconnect_duration_ms  = 30'000;
-    cfg.reconnect_ok            = false;
-    cfg.reconnect_retry_count   = 3;
+    cfg.kind = FaultKind::WssDisconnect;
+    cfg.disconnect_duration_ms = 30'000;
+    cfg.reconnect_ok = false;
+    cfg.reconnect_retry_count = 3;
     InjectFault(cfg);
 
     EXPECT_TRUE(fault_state_.disconnected) << "C-WSS-03: WSS 已断连";
-    EXPECT_EQ(fault_state_.reconnect_attempt_count, 3)
-        << "C-WSS-03: reconnect_fail_count 必须记录 3 次";
+    EXPECT_EQ(fault_state_.reconnect_attempt_count, 3) << "C-WSS-03: reconnect_fail_count 必须记录 3 次";
 
     const auto hwm_before = fault_state_.paper_audit_hwm_at_inject;
 
@@ -42,12 +41,12 @@ TEST_F(CWss03Fixture, C_WSS_03_reconnect_fail_3_times_no_crash) {
     for (int i = 0; i < 3; ++i) {
         const auto now = NowRealtimeNs();
         PmBookUpdate b;
-        b.market_id          = "mkt_wss03_halt_" + std::to_string(i);
-        b.price              = 0.55;
+        b.market_id = "mkt_wss03_halt_" + std::to_string(i);
+        b.price = 0.55;
         b.book_depth_l1_usdc = 20'000.0;
-        b.event_ts_ns        = now - 5'000'000;
-        b.data_source_ts_ns  = now - 4'000'000;
-        b.ingestion_ts_ns    = now - 2'000'000;
+        b.event_ts_ns = now - 5'000'000;
+        b.data_source_ts_ns = now - 4'000'000;
+        b.ingestion_ts_ns = now - 2'000'000;
         // RunOneE2E 应不 throw / abort
         EXPECT_NO_FATAL_FAILURE({
             auto out = RunOneE2E(b, "sig_wss03_halt_" + std::to_string(i));
@@ -56,8 +55,7 @@ TEST_F(CWss03Fixture, C_WSS_03_reconnect_fail_3_times_no_crash) {
     }
 
     // R-11: paper_audit HighWatermark 不回退
-    EXPECT_GE(paper_audit_->HighWatermark(), hwm_before)
-        << "R-11: 重连失败不回退 paper_audit WAL";
+    EXPECT_GE(paper_audit_->HighWatermark(), hwm_before) << "R-11: 重连失败不回退 paper_audit WAL";
 
     // reconnect_ok=false → wss_connected_ 不恢复
     EXPECT_FALSE(wss_connected_) << "C-WSS-03: reconnect=false → WSS 不恢复";

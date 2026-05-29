@@ -16,6 +16,7 @@
 #include "stcpp/infra/wal/wal_kind.hpp"
 #include "stcpp/infra/wal/wal_writer.hpp"
 #include "stcpp/observability/audit_record.hpp"
+
 #include "tests/integration/test_fixture.hpp"
 #include "tests/replay/paper/paper_r11_assertion.hpp"
 
@@ -37,13 +38,10 @@ protected:
 
 // R-R11-02: live mode 误注入 → R-11 violation 检出并定位序号
 TEST_F(RR1102Fixture, R_R11_02_live_mode_injection_detected) {
-    PaperLedgerIsolationAssertion r11(
-        paper_audit_.get(), risk_audit_.get(), position_.get(), shadow_audit_.get());
-    r11.set_baselines(
-        paper_audit_->HighWatermark(),
-        risk_audit_->HighWatermark(),
-        position_->HighWatermark(),
-        shadow_audit_->HighWatermark());
+    PaperLedgerIsolationAssertion r11(paper_audit_.get(), risk_audit_.get(), position_.get(),
+                                      shadow_audit_.get());
+    r11.set_baselines(paper_audit_->HighWatermark(), risk_audit_->HighWatermark(), position_->HighWatermark(),
+                      shadow_audit_->HighWatermark());
 
     // 回放 5 笔 paper mode intent (正常)
     for (int i = 0; i < 5; ++i) {
@@ -54,10 +52,8 @@ TEST_F(RR1102Fixture, R_R11_02_live_mode_injection_detected) {
     // 第 6 条: 误注入 live mode (audit_wal_kind == RiskAudit)
     const std::uint64_t live_seq = 6;
     const bool live_ok = r11.on_decision_wal_kind(WalKind::RiskAudit, live_seq);
-    EXPECT_FALSE(live_ok)
-        << "R-R11-02: live mode 注入 → on_decision_wal_kind 返回 false";
-    EXPECT_GE(r11.violation_count(), 1u)
-        << "R-R11-02: live mode 注入 → R-11 violation 检出";
+    EXPECT_FALSE(live_ok) << "R-R11-02: live mode 注入 → on_decision_wal_kind 返回 false";
+    EXPECT_GE(r11.violation_count(), 1u) << "R-R11-02: live mode 注入 → R-11 violation 检出";
 
     // 定位到事件序号
     bool found_seq = false;
@@ -67,14 +63,13 @@ TEST_F(RR1102Fixture, R_R11_02_live_mode_injection_detected) {
             break;
         }
     }
-    EXPECT_TRUE(found_seq)
-        << "R-R11-02: R-11 violation 定位到 seq=" << live_seq;
+    EXPECT_TRUE(found_seq) << "R-R11-02: R-11 violation 定位到 seq=" << live_seq;
 }
 
 // R-R11-02 补充: live fill 注入也被检出
 TEST_F(RR1102Fixture, R_R11_02_live_fill_injection_detected) {
-    PaperLedgerIsolationAssertion r11(
-        paper_audit_.get(), risk_audit_.get(), position_.get(), shadow_audit_.get());
+    PaperLedgerIsolationAssertion r11(paper_audit_.get(), risk_audit_.get(), position_.get(),
+                                      shadow_audit_.get());
     r11.set_baselines(0, 0, 0, 0);
 
     // 正常 paper fill
@@ -83,10 +78,8 @@ TEST_F(RR1102Fixture, R_R11_02_live_fill_injection_detected) {
 
     // live fill 误注入 (Position WAL kind)
     const bool live_fill_ok = r11.on_fill_wal_kind(WalKind::Position, 2);
-    EXPECT_FALSE(live_fill_ok)
-        << "R-R11-02: live fill 注入 → on_fill_wal_kind 返回 false";
-    EXPECT_GE(r11.violation_count(), 1u)
-        << "R-R11-02: live fill 注入 → R-11 violation 检出";
+    EXPECT_FALSE(live_fill_ok) << "R-R11-02: live fill 注入 → on_fill_wal_kind 返回 false";
+    EXPECT_GE(r11.violation_count(), 1u) << "R-R11-02: live fill 注入 → R-11 violation 检出";
 }
 
 }  // namespace
