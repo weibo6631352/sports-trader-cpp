@@ -1185,6 +1185,140 @@ gtest_discover_tests(test_fair_value_estimator
     PROPERTIES LABELS "unit;pricing;fair-value;numerical;adr-037"
 )
 
+# ============================================================================
+# 小蒋 backtest framework v0.2 — 4 unit test targets
+#   test_backtest_types:          R-20 4 ts / net_edge 公式 / realized_pnl (10 case)
+#   test_backtest_walk_forward:   WalkForwardSplitter / DataAccessGuard / PurgedKFold (10 case)
+#   test_backtest_metrics:        MetricsComputer + StationaryBootstrap (14 case)
+#   test_backtest_stats:          Bonferroni + DSR + 过拟合检测 (10 case)
+#   test_backtest_event_replayer: EventReplayer + BacktestLedger (10 case)
+# BR-1 红线: link stcpp_backtest (链入 stcpp_microstructure via PUBLIC propagation)
+# BR-5 红线: stcpp_backtest 链 stcpp_microstructure (FillRateModel 复用)
+# ADR-010 grandfather: -Wno-double-promotion / -Wno-old-style-cast / -Wno-cast-align
+#                      -Wno-conversion (size_t → double 统计计算)
+# ============================================================================
+
+add_executable(test_backtest_types
+    test_backtest_types.cpp
+)
+target_link_libraries(test_backtest_types PRIVATE GTest::gtest_main stcpp_backtest)
+target_compile_options(test_backtest_types PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_types PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_types PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_types PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_types
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;backtest;types;r20;pit;backtest-v0.2"
+)
+
+add_executable(test_backtest_walk_forward
+    test_backtest_walk_forward.cpp
+)
+target_link_libraries(test_backtest_walk_forward PRIVATE GTest::gtest_main stcpp_backtest)
+target_compile_options(test_backtest_walk_forward PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_walk_forward PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_walk_forward PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_walk_forward PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_walk_forward
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;backtest;walk-forward;guard;purged-kfold;backtest-v0.2"
+)
+
+add_executable(test_backtest_metrics
+    test_backtest_metrics.cpp
+)
+target_link_libraries(test_backtest_metrics PRIVATE GTest::gtest_main stcpp_backtest)
+target_compile_options(test_backtest_metrics PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_metrics PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_metrics PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_metrics PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_metrics
+    DISCOVERY_TIMEOUT 60
+    PROPERTIES LABELS "unit;backtest;metrics;sharpe;mdd;bootstrap;backtest-v0.2"
+)
+
+add_executable(test_backtest_stats
+    test_backtest_stats.cpp
+)
+target_link_libraries(test_backtest_stats PRIVATE GTest::gtest_main stcpp_backtest)
+target_compile_options(test_backtest_stats PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_stats PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_stats PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_stats PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_stats
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;backtest;stats;bonferroni;dsr;overfitting;backtest-v0.2"
+)
+
+add_executable(test_backtest_event_replayer
+    test_backtest_event_replayer.cpp
+)
+target_link_libraries(test_backtest_event_replayer PRIVATE
+    GTest::gtest_main
+    stcpp_backtest
+    stcpp_microstructure
+)
+target_compile_options(test_backtest_event_replayer PRIVATE
+    -Wno-double-promotion
+    -Wno-old-style-cast
+    -Wno-cast-align
+    -Wno-conversion
+)
+target_include_directories(test_backtest_event_replayer PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_backtest_event_replayer PRIVATE cxx_std_20)
+target_compile_definitions(test_backtest_event_replayer PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_backtest_event_replayer
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;backtest;event-replayer;ledger;fill-rate;br1;br5;backtest-v0.2"
+)
+
+# ============================================================================
+
 # 小田 ADR-037: Feature Store Consumer Contract v1.0
 #   T1:  FeatureStoreGameRow R-20 4 ts chain ok + 4 violations
 #   T2:  FeatureStoreGameRow PIT ok / violation (as_of_ts <= now_ns)
