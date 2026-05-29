@@ -116,10 +116,14 @@ target_compile_options(stcpp_debug_api PRIVATE
 find_package(Threads REQUIRED)
 target_link_libraries(stcpp_debug_api PUBLIC Threads::Threads)
 
-# ---------- stcpp_debug_server 可运行入口 (live-only 模式) ----------
-# Owner: 小冯 (#34) 2026-05-29 — live-only 重构: 只有真实 WSS 模式
-#   删除 --real/--replay/--empty/--demo; gamma 发现走 /events;
-#   data_source 恒 "live"; positions/pnl/quote 无 paper 源 → 空/灰显
+# ---------- stcpp_debug_server 可运行入口 (单一 live 模式) ----------
+# Owner: 小卢 (senior-ic-pool) — 小冯+小段集成, 老板定: 只有 live
+#   小冯 (#34) 2026-05-29: live-only 重构: 只有真实 WSS 模式
+#     删除 --real/--replay/--empty/--demo; gamma 发现走 /events;
+#     data_source 恒 "live"; positions/pnl/quote 无 paper 源 → 空/灰显
+#   小段 (#37) 2026-05-29: Goalserve inplay 常开集成
+#     InplayFeedThread 无条件启动 (soccer/basketball/tennis)
+#     无 --score-live flag: score 与 book 同级, 均为 live
 #
 # 只读 server, 127.0.0.1 默认 (ADR-038 §5)。在 debug_api/ 定义以保证 target 顺序正确.
 #
@@ -130,10 +134,11 @@ target_link_libraries(stcpp_debug_api PUBLIC Threads::Threads)
 #   stcpp_sizing                 — SizingCalculator 真实 Kelly 计算 (小袁, ADR-042)
 #   stcpp_quote_snapshot_hub     — QuoteSnapshotHub quote hub (小石)
 #   stcpp_data_score_store       — ScoreSnapshotStore live feed 比分快照 (小段)
+#   stcpp_data_inplay_feed       — InplayFeedThread Goalserve inplay 常开 (小段 W5)
 #   OpenSSL (libssl + libcrypto) — LiveWssTransport POSIX+OpenSSL TLS 1.3
 #   POSIX socket (系统库)         — getaddrinfo/connect/recv/send (macOS/Linux 内置)
 
-# 查找 OpenSSL (--live 模式需要)
+# 查找 OpenSSL (LiveWssTransport POSIX+OpenSSL TLS 1.3, live 模式必须)
 find_package(OpenSSL QUIET)
 if(NOT OpenSSL_FOUND)
     # macOS homebrew fallback
@@ -144,7 +149,7 @@ if(NOT OpenSSL_FOUND)
         set(OPENSSL_FOUND_MANUAL TRUE)
         message(STATUS "OpenSSL found via homebrew: ${OPENSSL_SSL_LIB}")
     else()
-        message(WARNING "OpenSSL not found — --live mode will fail at runtime (link error). Install: brew install openssl@3")
+        message(WARNING "OpenSSL not found — live WSS will fail at link. Install: brew install openssl@3")
     endif()
 endif()
 
@@ -157,21 +162,21 @@ target_link_libraries(stcpp_debug_server PRIVATE
     stcpp_sizing
     stcpp_quote_snapshot_hub    # 集成 ④: quote hub (小石)
     stcpp_data_score_store
-    # stcpp_backtest 已移除: live-only 模式不再有 --replay (小冯 2026-05-29)
+    stcpp_data_inplay_feed      # Goalserve InplayFeedThread (小段 W5, POSIX+zlib, 常开)
 )
 
-# OpenSSL link (--live 模式 LiveWssTransport)
+# OpenSSL link (LiveWssTransport POSIX+OpenSSL TLS 1.3, live 常开必须)
 if(OpenSSL_FOUND)
     target_link_libraries(stcpp_debug_server PRIVATE OpenSSL::SSL OpenSSL::Crypto)
     target_compile_definitions(stcpp_debug_server PRIVATE STCPP_LIVE_WSS_OPENSSL=1)
-    message(STATUS "stcpp_debug_server: OpenSSL found via find_package (--live 模式启用)")
+    message(STATUS "stcpp_debug_server: OpenSSL found via find_package (live WSS 启用)")
 elseif(OPENSSL_FOUND_MANUAL)
     target_link_libraries(stcpp_debug_server PRIVATE ${OPENSSL_SSL_LIB} ${OPENSSL_CRYPTO_LIB})
     target_include_directories(stcpp_debug_server SYSTEM PRIVATE ${OPENSSL_INCLUDE_DIR})
     target_compile_definitions(stcpp_debug_server PRIVATE STCPP_LIVE_WSS_OPENSSL=1)
-    message(STATUS "stcpp_debug_server: OpenSSL found via homebrew fallback (--live 模式启用)")
+    message(STATUS "stcpp_debug_server: OpenSSL found via homebrew fallback (live WSS 启用)")
 else()
-    message(WARNING "stcpp_debug_server: OpenSSL NOT found — --live 模式将编译报错; 安装: brew install openssl@3")
+    message(WARNING "stcpp_debug_server: OpenSSL NOT found — live WSS 将编译报错; 安装: brew install openssl@3")
 endif()
 
 target_include_directories(stcpp_debug_server PRIVATE

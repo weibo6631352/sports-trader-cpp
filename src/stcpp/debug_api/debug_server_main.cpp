@@ -5,11 +5,16 @@
 //   - gamma 发现走 /events (而非 /markets), 结构正确: Event→Market(condition)→Token
 //   - 注入 EventInfo 到 RealStateProvider.set_events()
 //   - data_source 恒 "live"; positions/pnl/quote 无 paper 源 → 空/未接入
+// 小段 (#37) 2026-05-29: Goalserve inplay 常开集成
+//   - InplayFeedThread 启动时无条件拉起 (soccer/basketball/tennis)
+//   - ScoreSnapshotStore → RealStateProvider.score() 真实比分
+//   - 无 --score-live flag: score 数据源与 book 同级, 均为 live
 // 关联:
 //   server.hpp (HttpServer)
-//   real_state_provider.hpp (RealStateProvider — book/events 接真)
+//   real_state_provider.hpp (RealStateProvider — book/events/score 接真)
 //   live_wss_transport.hpp  (LiveWssTransport — POSIX+OpenSSL+HTTP CONNECT proxy)
 //   live_book_publisher.hpp (LiveBookPublisher — CLOB book JSON → OrderBookFeatures → hub)
+//   inplay_feed_thread.hpp  (InplayFeedThread — Goalserve inplay HTTP poll → ScoreSnapshotStore)
 //   docs/RESEARCH/laoli-events-ws-mapping-spec-v1.md (Events→Market→Token 字段映射)
 //   ADR-038 (观测 API) / R-12 (server 独立线程) / R-20 (4 时间戳契约)
 //   frontend/ 观测看板走独立 Vite dev server (localhost:3000), 跨域调此 API
@@ -22,14 +27,16 @@
 //
 // 启动流程:
 //   1. gamma /events 发现活跃体育 event → condition_id + clobTokenIds (双 token)
-//   2. 构造 OrderBookSnapshotHub + RealStateProvider (注入 EventInfo + token_map)
-//   3. LiveWssTransport + LiveBookPublisher → 订阅 CLOB market WSS → hub.Publish()
-//   4. HttpServer 起在独立线程 (R-12)
-//   5. 主线程等待 SIGINT/SIGTERM
+//   2. 构造 OrderBookSnapshotHub + ScoreSnapshotStore + RealStateProvider
+//   3. InplayFeedThread 启动 (Goalserve inplay, soccer/basketball/tennis, R-12)
+//   4. LiveWssTransport + LiveBookPublisher → 订阅 CLOB market WSS → hub.Publish()
+//   5. HttpServer 起在独立线程 (R-12)
+//   6. 主线程等待 SIGINT/SIGTERM; 停止时 join 所有后台线程
 //
 // data_source 恒 "live":
-//   positions/pnl/quote: 无 paper/replay 源 → 空 (前端灰显)
 //   book/event: 真实 Polymarket CLOB WSS + gamma /events
+//   score: 真实 Goalserve inplay feed (soccer/basketball/tennis)
+//   positions/pnl/quote: 无 paper/replay 源 → 空 (前端灰显)
 //
 // 安全: 默认 127.0.0.1 only; 只读 endpoint; 黑名单字段物理不在 schema 中。
 // 模式: build-time STCPP_EXEC_MODE_STR 决定 mode 字段。
@@ -48,6 +55,7 @@
 #include <thread>
 #include <vector>
 
+#include "stcpp/data/inplay_feed_thread.hpp"    // InplayFeedThread (小段 W5, 常开)
 #include "stcpp/data/score_snapshot_store.hpp"  // ScoreSnapshotStore (小段)
 #include "stcpp/risk/ledger_snapshot_hub.hpp"   // LedgerSnapshotHub
 #include "stcpp/sizing/quote_snapshot_hub.hpp"  // QuoteSnapshotHub
@@ -577,13 +585,19 @@ int main(int argc, char** argv) {
                 "  --host ADDR   bind address (default 127.0.0.1)\n"
                 "  --verbose     extra WSS/parser debug logging\n"
                 "\n"
-                "live (always): connect real Polymarket CLOB WSS\n"
-                "  - gamma /events discovery -> active sports Event/Market/Token\n"
-                "  - subscribe CLOB WSS market channel (book + price_change)\n"
-                "  - feed true book data into OrderBookSnapshotHub\n"
-                "  - R-12: WSS io_thread_ independent, hub.Publish() atomic\n"
-                "  - R-20: data_source_ts=CLOB timestamp(ms)*1e6 (UPSTREAM_PAYLOAD)\n"
-                "  - ToS: read-only public market data, no order placement\n"
+                "live (always on, no mode flags):\n"
+                "  Polymarket book feed:\n"
+                "    gamma /events discovery -> active sports Event/Market/Token\n"
+                "    subscribe CLOB WSS market channel (book + price_change)\n"
+                "    feed true book data into OrderBookSnapshotHub\n"
+                "    R-12: WSS io_thread_ independent, hub.Publish() atomic\n"
+                "    R-20: data_source_ts=CLOB timestamp(ms)*1e6 (UPSTREAM_PAYLOAD)\n"
+                "    ToS: read-only public market data, no order placement\n"
+                "  Goalserve score feed:\n"
+                "    InplayFeedThread: HTTP poll inplay.goalserve.com (soccer/basketball/tennis)\n"
+                "    -> ScoreSnapshotStore -> /api/v1/score/<event_id>\n"
+                "    R-12: independent per-sport thread, non-blocking Publish\n"
+                "    R-20: data_source_ts=updated_ts(ms)*1e6, event_ts=start_ts(s)*1e9\n"
                 "  Reads HTTPS_PROXY/HTTP_PROXY env vars for proxy config.\n"
                 "  (frontend served by Vite dev server, not this process)\n");
             return 0;
@@ -651,7 +665,7 @@ int main(int argc, char** argv) {
     }
 
     // -------------------------------------------------------------------------
-    // Step 2: construct hub + RealStateProvider
+    // Step 2: construct hub + ScoreSnapshotStore + RealStateProvider
     // -------------------------------------------------------------------------
     auto hub_owned = std::make_unique<stcpp::polymarket::clob_wss::OrderBookSnapshotHub>();
     auto score_store_owned = std::make_unique<stcpp::data::ScoreSnapshotStore>();
@@ -673,7 +687,26 @@ int main(int argc, char** argv) {
     real_provider->set_events(std::move(event_infos));
 
     // -------------------------------------------------------------------------
-    // Step 3: LiveWssTransport + LiveBookPublisher
+    // Step 3: InplayFeedThread — Goalserve score feed (常开, R-12 合规)
+    //
+    // 无条件启动: score 与 book 同为 live 数据源, 无 flag 控制.
+    // R-12: 独立 per-sport 线程, 绝不阻塞 WSS event loop.
+    // R-20: data_source_ts=updated_ts(ms)*1e6, event_ts=start_ts(s)*1e9.
+    // -------------------------------------------------------------------------
+    stcpp::data::InplayFeedConfig feed_cfg;
+    feed_cfg.sports = {
+        stcpp::data::goalserve::GoalserveSport::Soccer,
+        stcpp::data::goalserve::GoalserveSport::Basketball,
+        stcpp::data::goalserve::GoalserveSport::Tennis,
+    };
+    auto inplay_feed =
+        std::make_unique<stcpp::data::InplayFeedThread>(*score_store_owned, feed_cfg);
+    inplay_feed->Start();
+    std::printf("[debug_server] Goalserve InplayFeedThread 启动 (soccer/basketball/tennis, R-12)\n");
+    std::fflush(stdout);
+
+    // -------------------------------------------------------------------------
+    // Step 4: LiveWssTransport + LiveBookPublisher
     // -------------------------------------------------------------------------
     std::unique_ptr<LiveWssTransport> live_transport;
     std::unique_ptr<LiveBookPublisher> live_publisher;
@@ -725,7 +758,7 @@ int main(int argc, char** argv) {
     }
 
     // -------------------------------------------------------------------------
-    // Step 4: HttpServer (R-12: 独立 server_thread_)
+    // Step 5: HttpServer (R-12: 独立 server_thread_)
     // -------------------------------------------------------------------------
     HttpServer server{port, real_provider.get(), host.c_str()};
     server.start();
@@ -742,19 +775,20 @@ int main(int argc, char** argv) {
     std::printf("[debug_server] 观测/调试 API @ http://%s:%u  (mode=%s, data=live)\n", host.c_str(),
                 static_cast<unsigned>(port), STCPP_EXEC_MODE_STR);
     std::printf("[debug_server] live: book/event=真实 Polymarket CLOB WSS + gamma /events\n");
+    std::printf("[debug_server]       score=真实 Goalserve inplay feed (soccer/basketball/tennis)\n");
     std::printf("[debug_server]       positions/pnl/quote: 无 paper 源 → 空/灰显\n");
     std::printf("[debug_server] endpoints: /healthz /version /status /metrics\n");
     std::printf("[debug_server]            /api/v1/events\n");
     std::printf("[debug_server]            /api/v1/{market/<cond>,book/<cond>}\n");
     std::printf(
         "[debug_server]            /api/v1/{positions,pnl/*,risk/rejects,"
-        "gate/paper,quote/<cond>}\n");
+        "gate/paper,quote/<cond>,score/<event>}\n");
     std::printf("[debug_server] (前端走独立 Vite dev server, 跨域 CORS 已开放)\n");
     std::printf("[debug_server] Ctrl-C 停止\n");
     std::fflush(stdout);
 
     // -------------------------------------------------------------------------
-    // Step 5: main loop
+    // Step 6: main loop
     // -------------------------------------------------------------------------
     while (!g_stop.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
@@ -762,6 +796,11 @@ int main(int argc, char** argv) {
 
     std::printf("\n[debug_server] 收到停止信号, 关闭...\n");
     server.stop();
+
+    // 停止 InplayFeedThread (先于 score_store 析构; Stop() 内含 join)
+    std::printf("[debug_server] 停止 InplayFeedThread...\n");
+    inplay_feed->Stop();
+    std::printf("[debug_server] InplayFeedThread 已停止\n");
 
     // 停止 LiveWssTransport (Close() 内含 join io_thread_ + send_thread_)
     if (live_transport) {

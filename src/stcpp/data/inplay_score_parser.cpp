@@ -2,7 +2,8 @@
 //
 // Owner: 小段 (goalserve-specialist, #37)
 // Date:  2026-05-29
-// Task:  小余接入方案 v1 §3 采集段
+// Last-updated: 2026-05-29 (W5 live feed 实测修正)
+// Task:  小余接入方案 v1 §3 采集段 + W5 真实 HTTP 接线完成
 //
 // 解析策略:
 //   Goalserve inplay JSON 结构固定 (SSOT §3.2), 用轻量手写字段提取,
@@ -10,28 +11,31 @@
 //
 //   提取算法: JSON key 扫描 — 找 "\"key\":" 后提取值 (string/number).
 //   局限: 仅适用于 Goalserve inplay 这类结构扁平的 JSON.
-//   W5 真接时如需全量解析 odds 字段, 可升级到 simdjson (老李 W10 backlog).
 //
 // R-20 时间戳守法:
 //   data_source_ts_ns = updated_ts (ms) × 1e6  — PayloadScoresTs (优先)
-//   event_ts_ns       = data_source_ts_ns       — inplay 无独立事件时钟
+//   event_ts_ns       = start_ts (Unix sec) × 1e9 — 比赛排定开始 (真实 feed 字段)
+//                       start_ts 为空串时回落 data_source_ts
 //   ingestion_ts_ns   = caller 传入
-//   as_of_ts_ns       = 0 (由 ScoreSnapshotStore::Get() 读取侧填入)
+//   as_of_ts_ns       = ingestion_ts_ns (读取时由 store 覆盖)
 //   禁止: 内部调用 now() 替代 data_source_ts
 //
-// sport 差异 (MVP: Soccer / Basketball / Tennis, SSOT §3.5):
-//   Soccer:     period = "1st Half"/"2nd Half"/"Half Time"/"Extra Time"
-//               minute/seconds = 经过时间 (累计)
-//   Basketball: period = "1st Quarter"/"2nd Quarter"/"3rd Quarter"/"4th Quarter"/"OT"
-//               minute/seconds = 节内剩余时间 (倒计时, 体育专家待确认)
-//   Tennis:     period = "Set 1"/"Set 2"/"Set 3" 等
-//               minute/seconds 无意义 (网球无时钟)
+// 真实 feed 字段修正 (2026-05-29 实测 inplay.goalserve.com):
+//   1. time_status 字段不存在 — 真实 inplay feed 无此字段.
+//      替代: 所有出现在 feed 中的事件即为 InPlay 状态 (feed 只含进行中比赛).
+//      state 字段 (5位码, e.g. "21000") 存入 gs_state_code 供上层使用.
+//   2. name 字段 = "HomeTeam vs AwayTeam" — 解析队名.
+//   3. start_ts 字段 = Unix 秒时间戳 — 用作 event_ts.
+//   4. seconds 字段格式 = "分:秒" (e.g. "89:21") — 非纯秒.
 //
-// 真实 HTTP 接线 (W5 TODO):
-//   调用方 (vCPU3 worker): GoalserveClient::Fetch(UrlSpec{.endpoint=InplayOdds,
-//                           .sport=sport, .host=Inplay}) → gzip decompress
-//                           → InplayScoreParser::Parse(body, sport, recv_ns)
-//   接线点: src/stcpp/data/inplay_feed_thread.cpp (W5 小冯/小段)
+// sport 差异 (MVP: Soccer / Basketball / Tennis):
+//   Soccer:     period = "1st Half"/"2nd Half"/"Half Time"/"Extra Time"
+//   Basketball: period = "1st Quarter"/.."4th Quarter"/"OT"
+//   Tennis:     period = "Set N"
+//
+// 真实 HTTP 接线 (W5 完成):
+//   inplay_feed_thread.cpp: HTTP GET + gzip decompress
+//   → InplayScoreParser::Parse(body, sport, recv_ns) → ScoreSnapshotStore::Publish
 
 #include "stcpp/data/inplay_score_parser.hpp"
 
@@ -49,15 +53,19 @@ namespace {
 // ============================================================================
 // §0 极简 JSON 字段提取工具 (针对 Goalserve inplay 固定结构)
 //
-// Goalserve inplay JSON:
+// 真实 Goalserve inplay JSON (2026-05-29 实测):
 //   {
 //     "bm": "bet365",
-//     "updated_ts": 1716988800123,
+//     "updated_ts": 1780066172550,
 //     "events": {
-//       "134181543": {
-//         "info": { "id":"..", "period":"1st Half", "score":"0:1",
-//                   "minute":"28", "seconds":"0", "time_status":"1",
-//                   "league_id":"6374", "state":"11007" },
+//       "134261101": {
+//         "info": { "id":"134261101","mid":"..","bet365id":"..","name":"HomeTeam vs AwayTeam",
+//                   "sport":"soccer","league_id":"18235","league":"Brazil ...",
+//                   "start_time":"13:00","start_date":"29.05.2026",
+//                   "start_ts":"1780059600","start_ts_utc":"1780059600",
+//                   "period":"2nd Half","score":"2:1","state":"21000",
+//                   "minute":"89","seconds":"89:21" },
+//                   注: time_status 字段不存在于真实 feed!
 //         "odds": { ... }
 //       }
 //     }
@@ -132,9 +140,12 @@ namespace {
     return ec == std::errc{};
 }
 
-// 从 JSON 文本中找 "key": 后的 int32 值
-[[nodiscard]] bool ExtractInt32Value(std::string_view json, std::string_view key, std::int32_t& result,
-                                     std::size_t search_start = 0) noexcept {
+// ExtractInt32Value — 从 JSON 文本中找 "key": 后的 int32 值
+// 注: 当前 parser 通过 string 路径提取整数字段 (from_chars 内联), 此函数保留备用.
+// NOLINTNEXTLINE(misc-unused-parameters)
+[[maybe_unused]] [[nodiscard]] static bool ExtractInt32Value(std::string_view json, std::string_view key,
+                                                             std::int32_t& result,
+                                                             std::size_t search_start = 0) noexcept {
     std::int64_t v = 0;
     if (!ExtractInt64Value(json, key, v, search_start))
         return false;
@@ -197,18 +208,30 @@ namespace {
         rec.match_id.league_id = league_id_str;
     }
 
-    // --- time_status ---
-    std::string ts_str;
-    if (!ExtractStringValue(info_block, "time_status", ts_str, base)) {
-        // time_status 也可能是数字
-        std::int32_t ts_int = 0;
-        if (ExtractInt32Value(info_block, "time_status", ts_int, base)) {
-            ts_str = std::to_string(ts_int);
-        } else {
-            ts_str = "0";  // 默认 NotStarted
+    // --- name: "HomeTeam vs AwayTeam" → home_team / away_team ---
+    // 真实 feed (2026-05-29 实测): info.name 含队名, 格式 "Home vs Away"
+    std::string name_str;
+    if (ExtractStringValue(info_block, "name", name_str, base)) {
+        const auto vs_pos = name_str.find(" vs ");
+        if (vs_pos != std::string::npos) {
+            rec.home_team = name_str.substr(0, vs_pos);
+            rec.away_team = name_str.substr(vs_pos + 4);
         }
     }
-    rec.status = InplayScoreParser::ParseTimeStatus(ts_str);
+
+    // --- time_status (真实 feed 2026-05-29: 此字段不存在!) ---
+    // inplay feed 本质上只含进行中的比赛, 因此所有 event 均为 InPlay.
+    // state 字段 (5位码) 可进一步区分 clock-running vs clock-stopped.
+    // time_status 为 legacy 字段, 新版 feed 已移除; 此处兼容检测.
+    std::string ts_str;
+    if (ExtractStringValue(info_block, "time_status", ts_str, base)) {
+        // 老格式 feed 有此字段 — 按原有逻辑解析
+        rec.status = InplayScoreParser::ParseTimeStatus(ts_str);
+    } else {
+        // 真实 feed: 无 time_status — inplay 事件默认 InPlay
+        // (state 字段含 5位状态码, 存入 gs_state_code 供上层扩展)
+        rec.status = goalserve::TimeStatus::InPlay;
+    }
 
     // --- score: "0:1" → home_score_total, away_score_total ---
     std::string score_str;
@@ -256,20 +279,51 @@ namespace {
     }
 
     // seconds 单独字段 (inplay.goalserve.com info.seconds)
-    if (ExtractStringValue(info_block, "seconds", seconds_str, base)) {
-        std::int32_t sec_val = 0;
-        if (std::from_chars(seconds_str.data(), seconds_str.data() + seconds_str.size(), sec_val).ec ==
-            std::errc{}) {
-            // 如果 minute 字段已含秒 (86:31 格式), 不再从 seconds 字段覆盖
-            if (!rec.elapsed_sec.has_value()) {
+    // 真实 feed (2026-05-29): "seconds":"89:21" — 格式与 minute 字段相同 (分:秒)
+    // 只在 minute 字段未含秒时才从 seconds 字段提取
+    if (!rec.elapsed_sec.has_value() && ExtractStringValue(info_block, "seconds", seconds_str, base)) {
+        const auto sec_colon = seconds_str.find(':');
+        if (sec_colon != std::string::npos) {
+            // "89:21" 格式: 取冒号后的秒部分
+            const auto sec_part = seconds_str.substr(sec_colon + 1);
+            std::int32_t sec_val = 0;
+            if (std::from_chars(sec_part.data(), sec_part.data() + sec_part.size(), sec_val).ec ==
+                std::errc{}) {
+                rec.elapsed_sec = sec_val;
+            }
+        } else {
+            // 纯数字格式 (兼容旧格式)
+            std::int32_t sec_val = 0;
+            if (std::from_chars(seconds_str.data(), seconds_str.data() + seconds_str.size(), sec_val).ec ==
+                std::errc{}) {
                 rec.elapsed_sec = sec_val;
             }
         }
     }
 
+    // --- start_ts: Unix 秒 → event_ts_ns (R-20: 比赛排定开始时刻) ---
+    // 真实 feed 字段: "start_ts":"1780059600" (Unix sec string)
+    // 比 data_source_ts 更精确地表示赛事时间戳 (R-20: event_ts 语义)
+    std::int64_t event_ts_ns = data_source_ts_ns;  // fallback
+    std::string start_ts_str;
+    if (ExtractStringValue(info_block, "start_ts", start_ts_str, base) && !start_ts_str.empty()) {
+        std::int64_t start_ts_sec = 0;
+        const auto [ptr, ec] =
+            std::from_chars(start_ts_str.data(), start_ts_str.data() + start_ts_str.size(), start_ts_sec);
+        if (ec == std::errc{} && start_ts_sec > 0) {
+            event_ts_ns = start_ts_sec * 1'000'000'000LL;
+        }
+    }
+
     // --- 4ts 填充 (R-20) ---
+    // event_ts  = start_ts (比赛排定开始时刻, 来自 payload)
+    // R-20 chain: event_ts ≤ data_source_ts ≤ ingestion_ts
+    // 如果 start_ts > data_source_ts (赛前 feed 进来), 则 event_ts = data_source_ts (保守)
+    if (event_ts_ns > data_source_ts_ns) {
+        event_ts_ns = data_source_ts_ns;
+    }
+    rec.ts.event_ts_ns = event_ts_ns;
     rec.ts.data_source_ts_ns = data_source_ts_ns;  // Goalserve updated_ts → ns
-    rec.ts.event_ts_ns = data_source_ts_ns;        // inplay 无独立事件时刻, = data_source
     rec.ts.ingestion_ts_ns = ingestion_ts_ns;
     rec.ts.as_of_ts_ns = ingestion_ts_ns;  // 读取时 ScoreSnapshotStore::Get 可覆盖
     rec.ts.ds_origin = goalserve::DataSourceTsOrigin::PayloadScoresTs;
@@ -277,10 +331,8 @@ namespace {
     // sport
     rec.match_id.vendor = adapter::VendorId::Goalserve;
 
-    // home_team / away_team: inplay info 无队名字段 (队名来自 inplay-mapping/pregame)
-    // 填空串, 由映射物化 ETL (小余) 覆盖
-    rec.home_team = "";
-    rec.away_team = "";
+    // home_team / away_team: 来自 info.name "HomeTeam vs AwayTeam" (上面已解析)
+    // 如果 name 字段缺失或格式不对, 留空串 (由 mapping ETL 小余覆盖)
 
     (void)sport;  // sport 保留给未来 period 语义分支扩展
 
