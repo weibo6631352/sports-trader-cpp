@@ -112,6 +112,10 @@ add_subdirectory(src/stcpp/polymarket)
 # 接口留给小邓 ML 模型替换 (IFairValueModel)
 add_subdirectory(src/stcpp/pricing)
 
+# C-SIZE-01 (小袁 v0.1, ADR-042): Kelly SizingCalculator — edge_ci_lower 净 edge + 5 级 cap 链
+# R-1 绝不绕 RM (suggested_notional 仅建议); cap 注入 RiskConfig const& 禁字面量 (老高 grep 守护)
+add_subdirectory(src/stcpp/sizing)
+
 # A-NET-01 (老陈 Wave 3): 出站序列化 + 背压队列 (OutboundBuffer / OutboundSerializer / OutboundSubmitQueue)
 # 红线: zero-alloc, R-12 (不进 vCPU0 event loop), 不依赖 glaze / nghttp2 (Sprint-4+)
 add_subdirectory(src/stcpp/net)
