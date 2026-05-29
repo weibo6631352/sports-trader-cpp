@@ -529,6 +529,33 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
     )
 endif()
 
+# 小邓 ADR-037: FairValueModel 推理骨架 + feature 抽取契约
+# stcpp_ml_inference 三 mode 均编译 (不含 VirtualFill), 故本 target 无 EXEC_MODE guard.
+add_executable(test_fair_value_model
+    test_fair_value_model.cpp
+)
+target_link_libraries(test_fair_value_model PRIVATE
+    GTest::gtest_main
+    stcpp_ml_inference
+)
+target_include_directories(test_fair_value_model PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_fair_value_model PRIVATE cxx_std_20)
+target_compile_definitions(test_fair_value_model PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+target_compile_options(test_fair_value_model PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+gtest_discover_tests(test_fair_value_model
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;ml;adr037"
+)
+
 # 小卢 W5 Wave 25: SingleInstanceLock 7 用例 (laozhou-single-instance-spec-v1.md §3.1)
 #   T1 acquire→release→reacquire  T2 双进程 child 失败  T3 kill-9 后 reacquire
 #   T4 paper/live/backtest 物理隔离  T5 PID file 内容格式  T6 SIGTERM unlink  T7 race 1-wins
