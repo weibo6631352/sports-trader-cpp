@@ -48,8 +48,9 @@
 
 // POSIX
 #include <arpa/inet.h>
-#include <netdb.h>
 #include <sys/socket.h>
+
+#include <netdb.h>
 #include <unistd.h>
 
 // OpenSSL
@@ -75,7 +76,8 @@ inline ProxySpec ProxyFromEnv() {
     const char* envs[] = {"HTTPS_PROXY", "HTTP_PROXY", "ALL_PROXY", nullptr};
     for (int i = 0; envs[i] != nullptr; ++i) {
         const char* v = ::getenv(envs[i]);
-        if (!v || v[0] == '\0') continue;
+        if (!v || v[0] == '\0')
+            continue;
         // strip http:// or https://
         std::string s = v;
         for (const auto& prefix : {"https://", "http://"}) {
@@ -85,7 +87,8 @@ inline ProxySpec ProxyFromEnv() {
             }
         }
         // strip trailing /
-        while (!s.empty() && s.back() == '/') s.pop_back();
+        while (!s.empty() && s.back() == '/')
+            s.pop_back();
         // split host:port
         auto colon = s.rfind(':');
         if (colon == std::string::npos) {
@@ -224,8 +227,8 @@ private:
     // -----------------------------------------------------------------------
     void IoLoop() {
         if (verbose_) {
-            std::fprintf(stderr, "[live_wss] IoLoop: connecting to %s%s\n",
-                         wss_host_.c_str(), wss_path_.c_str());
+            std::fprintf(stderr, "[live_wss] IoLoop: connecting to %s%s\n", wss_host_.c_str(),
+                         wss_path_.c_str());
         }
 
         // 1. TCP connect
@@ -235,7 +238,8 @@ private:
         int sockfd = TcpConnect(tcp_host, tcp_port);
         if (sockfd < 0) {
             std::fprintf(stderr, "[live_wss] TCP connect failed: %s:%u\n", tcp_host.c_str(), tcp_port);
-            if (on_disconnected_) on_disconnected_("tcp_connect_failed");
+            if (on_disconnected_)
+                on_disconnected_("tcp_connect_failed");
             return;
         }
         if (verbose_) {
@@ -247,7 +251,8 @@ private:
             if (!HttpConnectTunnel(sockfd, wss_host_, 443)) {
                 std::fprintf(stderr, "[live_wss] HTTP CONNECT tunnel failed\n");
                 ::close(sockfd);
-                if (on_disconnected_) on_disconnected_("proxy_connect_failed");
+                if (on_disconnected_)
+                    on_disconnected_("proxy_connect_failed");
                 return;
             }
             if (verbose_) {
@@ -260,7 +265,8 @@ private:
         if (!ctx) {
             std::fprintf(stderr, "[live_wss] SSL_CTX_new failed\n");
             ::close(sockfd);
-            if (on_disconnected_) on_disconnected_("ssl_ctx_failed");
+            if (on_disconnected_)
+                on_disconnected_("ssl_ctx_failed");
             return;
         }
         SSL_CTX_set_verify(ctx, SSL_VERIFY_PEER, nullptr);
@@ -270,7 +276,8 @@ private:
         if (!ssl) {
             SSL_CTX_free(ctx);
             ::close(sockfd);
-            if (on_disconnected_) on_disconnected_("ssl_new_failed");
+            if (on_disconnected_)
+                on_disconnected_("ssl_new_failed");
             return;
         }
         SSL_set_fd(ssl, sockfd);
@@ -283,7 +290,8 @@ private:
             SSL_free(ssl);
             SSL_CTX_free(ctx);
             ::close(sockfd);
-            if (on_disconnected_) on_disconnected_("ssl_connect_failed");
+            if (on_disconnected_)
+                on_disconnected_("ssl_connect_failed");
             return;
         }
         if (verbose_) {
@@ -298,7 +306,8 @@ private:
         if (!WsHandshake(ssl, wss_host_, wss_path_)) {
             std::fprintf(stderr, "[live_wss] WebSocket handshake failed\n");
             CleanupSsl();
-            if (on_disconnected_) on_disconnected_("ws_handshake_failed");
+            if (on_disconnected_)
+                on_disconnected_("ws_handshake_failed");
             return;
         }
         if (verbose_) {
@@ -306,7 +315,8 @@ private:
         }
 
         connected_.store(true, std::memory_order_release);
-        if (on_connected_) on_connected_();
+        if (on_connected_)
+            on_connected_();
 
         // 5. Start send thread
         if (send_thread_.joinable()) {
@@ -324,7 +334,8 @@ private:
             send_thread_.join();
         }
         CleanupSsl();
-        if (on_disconnected_) on_disconnected_("recv_loop_ended");
+        if (on_disconnected_)
+            on_disconnected_("recv_loop_ended");
     }
 
     // -----------------------------------------------------------------------
@@ -347,8 +358,10 @@ private:
         int fd = -1;
         for (addrinfo* p = res; p; p = p->ai_next) {
             fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-            if (fd < 0) continue;
-            if (::connect(fd, p->ai_addr, p->ai_addrlen) == 0) break;
+            if (fd < 0)
+                continue;
+            if (::connect(fd, p->ai_addr, p->ai_addrlen) == 0)
+                break;
             ::close(fd);
             fd = -1;
         }
@@ -361,21 +374,22 @@ private:
     // -----------------------------------------------------------------------
     static bool HttpConnectTunnel(int sockfd, const std::string& target_host, std::uint16_t target_port) {
         char req[512];
-        int n = std::snprintf(req, sizeof(req),
-                              "CONNECT %s:%u HTTP/1.1\r\nHost: %s:%u\r\n\r\n",
-                              target_host.c_str(), target_port,
-                              target_host.c_str(), target_port);
-        if (::send(sockfd, req, static_cast<std::size_t>(n), 0) < 0) return false;
+        int n = std::snprintf(req, sizeof(req), "CONNECT %s:%u HTTP/1.1\r\nHost: %s:%u\r\n\r\n",
+                              target_host.c_str(), target_port, target_host.c_str(), target_port);
+        if (::send(sockfd, req, static_cast<std::size_t>(n), 0) < 0)
+            return false;
 
         // Read until "\r\n\r\n"
         char resp[1024];
         int total = 0;
         while (total < static_cast<int>(sizeof(resp)) - 1) {
             int r = static_cast<int>(::recv(sockfd, resp + total, 1, 0));
-            if (r <= 0) return false;
+            if (r <= 0)
+                return false;
             total += r;
             resp[total] = '\0';
-            if (total >= 4 && std::strstr(resp, "\r\n\r\n")) break;
+            if (total >= 4 && std::strstr(resp, "\r\n\r\n"))
+                break;
         }
         return std::strstr(resp, "200") != nullptr;
     }
@@ -414,17 +428,20 @@ private:
                               "Sec-WebSocket-Version: 13\r\n"
                               "\r\n",
                               path.c_str(), host.c_str(), b64);
-        if (SslWriteAll(ssl, req, static_cast<std::size_t>(n)) < 0) return false;
+        if (SslWriteAll(ssl, req, static_cast<std::size_t>(n)) < 0)
+            return false;
 
         // Read until "\r\n\r\n"
         char resp[2048];
         int total = 0;
         while (total < static_cast<int>(sizeof(resp)) - 1) {
             int r = SSL_read(ssl, resp + total, 1);
-            if (r <= 0) return false;
+            if (r <= 0)
+                return false;
             total += r;
             resp[total] = '\0';
-            if (total >= 4 && std::strstr(resp, "\r\n\r\n")) break;
+            if (total >= 4 && std::strstr(resp, "\r\n\r\n"))
+                break;
         }
         return std::strstr(resp, "101") != nullptr;
     }
@@ -439,7 +456,8 @@ private:
         while (!stop_.load(std::memory_order_acquire)) {
             // Read 2-byte header
             std::uint8_t hdr[2];
-            if (!SslReadExact(ssl, hdr, 2)) break;
+            if (!SslReadExact(ssl, hdr, 2))
+                break;
 
             bool fin = (hdr[0] & 0x80) != 0;
             std::uint8_t opcode = hdr[0] & 0x0F;
@@ -448,11 +466,13 @@ private:
 
             if (payload_len == 126) {
                 std::uint8_t ext[2];
-                if (!SslReadExact(ssl, ext, 2)) break;
+                if (!SslReadExact(ssl, ext, 2))
+                    break;
                 payload_len = (static_cast<std::uint64_t>(ext[0]) << 8) | ext[1];
             } else if (payload_len == 127) {
                 std::uint8_t ext[8];
-                if (!SslReadExact(ssl, ext, 8)) break;
+                if (!SslReadExact(ssl, ext, 8))
+                    break;
                 payload_len = 0;
                 for (int i = 0; i < 8; ++i) {
                     payload_len = (payload_len << 8) | ext[static_cast<std::size_t>(i)];
@@ -462,7 +482,8 @@ private:
             // Masking (server → client: usually not masked, but handle anyway)
             std::uint8_t mask_key[4] = {0, 0, 0, 0};
             if (masked) {
-                if (!SslReadExact(ssl, mask_key, 4)) break;
+                if (!SslReadExact(ssl, mask_key, 4))
+                    break;
             }
 
             // Payload
@@ -474,7 +495,8 @@ private:
             }
 
             std::vector<std::uint8_t> payload(payload_len);
-            if (payload_len > 0 && !SslReadExact(ssl, payload.data(), payload_len)) break;
+            if (payload_len > 0 && !SslReadExact(ssl, payload.data(), payload_len))
+                break;
 
             if (masked) {
                 for (std::size_t i = 0; i < payload_len; ++i) {
@@ -485,7 +507,8 @@ private:
             // Dispatch
             if (opcode == 0x8) {
                 // Close frame
-                if (verbose_) std::fprintf(stderr, "[live_wss] CLOSE frame received\n");
+                if (verbose_)
+                    std::fprintf(stderr, "[live_wss] CLOSE frame received\n");
                 break;
             } else if (opcode == 0x9) {
                 // Ping → send Pong
@@ -498,7 +521,8 @@ private:
                     // Complete single frame
                     const auto recv_ts = RecvNowNs();
                     std::string text(reinterpret_cast<const char*>(payload.data()), payload.size());
-                    if (on_text_frame_) on_text_frame_(text, recv_ts);
+                    if (on_text_frame_)
+                        on_text_frame_(text, recv_ts);
                 } else {
                     // Start of fragmented message
                     fragment_buf.insert(fragment_buf.end(), payload.begin(), payload.end());
@@ -509,7 +533,8 @@ private:
                                          fragment_buf.size());
                         fragment_buf.clear();
                         in_fragment = false;
-                        if (on_text_frame_) on_text_frame_(text, recv_ts);
+                        if (on_text_frame_)
+                            on_text_frame_(text, recv_ts);
                     }
                 }
             } else if (opcode == 0x0) {
@@ -518,10 +543,10 @@ private:
                 if (fin) {
                     in_fragment = false;
                     const auto recv_ts = RecvNowNs();
-                    std::string text(reinterpret_cast<const char*>(fragment_buf.data()),
-                                     fragment_buf.size());
+                    std::string text(reinterpret_cast<const char*>(fragment_buf.data()), fragment_buf.size());
                     fragment_buf.clear();
-                    if (on_text_frame_) on_text_frame_(text, recv_ts);
+                    if (on_text_frame_)
+                        on_text_frame_(text, recv_ts);
                 }
             }
         }
@@ -535,10 +560,10 @@ private:
             std::string msg;
             {
                 std::unique_lock<std::mutex> lk(send_mu_);
-                send_cv_.wait(lk, [this] {
-                    return stop_.load(std::memory_order_acquire) || !send_queue_.empty();
-                });
-                if (send_queue_.empty()) continue;
+                send_cv_.wait(
+                    lk, [this] { return stop_.load(std::memory_order_acquire) || !send_queue_.empty(); });
+                if (send_queue_.empty())
+                    continue;
                 msg = std::move(send_queue_.front());
                 send_queue_.pop();
             }
@@ -577,8 +602,7 @@ private:
         frame.insert(frame.end(), mask, mask + 4);
         // Masked payload
         for (std::size_t i = 0; i < plen; ++i) {
-            frame.push_back(static_cast<std::uint8_t>(
-                static_cast<std::uint8_t>(payload[i]) ^ mask[i % 4]));
+            frame.push_back(static_cast<std::uint8_t>(static_cast<std::uint8_t>(payload[i]) ^ mask[i % 4]));
         }
         return SslWriteAll(ssl, frame.data(), frame.size()) >= 0;
     }
@@ -602,7 +626,8 @@ private:
         auto* p = static_cast<std::uint8_t*>(buf);
         while (done < n) {
             int r = SSL_read(ssl, p + done, static_cast<int>(n - done));
-            if (r <= 0) return false;
+            if (r <= 0)
+                return false;
             done += static_cast<std::size_t>(r);
         }
         return true;
@@ -613,7 +638,8 @@ private:
         const auto* p = static_cast<const std::uint8_t*>(buf);
         while (done < n) {
             int r = SSL_write(ssl, p + done, static_cast<int>(n - done));
-            if (r <= 0) return -1;
+            if (r <= 0)
+                return -1;
             done += static_cast<std::size_t>(r);
         }
         return static_cast<int>(done);
