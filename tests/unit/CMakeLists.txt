@@ -1154,3 +1154,38 @@ gtest_discover_tests(test_feature_store_contract
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;feature-store;data-contract;adr-037;vendor-agnostic;pit"
 )
+
+# 小冯 OrderBookAdapter v0.1 — snapshot/delta 状态机 + R-20 4-ts + FeatureStoreBookRow
+#   v0.1: 单档合成; 完整 L2 多档待 W10 simdjson (@老李)
+#   T1: snapshot 4-ts chain (R-20) + state transition
+#   T2: delta rejected before snapshot (P-05)
+#   T3: delta accepted after snapshot
+#   T4: R-20 ts violation rejected + counter
+#   T5: ResetToken clears state
+#   T6: InjectMetadata consumer fields
+#   T7: kBookDepthLevels SSOT == kOrderBookLevels == 5
+#   T8: FeatureStoreBookRow ts_chain_ok() after adapter fill
+add_executable(test_orderbook_adapter
+    test_orderbook_adapter.cpp
+)
+target_link_libraries(test_orderbook_adapter PRIVATE
+    GTest::gtest_main
+    stcpp_polymarket_clob_wss
+)
+target_compile_options(test_orderbook_adapter PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_orderbook_adapter PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_orderbook_adapter PRIVATE cxx_std_20)
+target_compile_definitions(test_orderbook_adapter PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_orderbook_adapter
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;polymarket;clob-wss;orderbook-adapter;r-20;r-12;v0.1"
+)
