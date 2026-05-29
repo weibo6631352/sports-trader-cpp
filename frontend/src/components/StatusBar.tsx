@@ -1,10 +1,11 @@
 /**
- * StatusBar.tsx — 跨页常驻 Material AppBar 状态条 (v7)
+ * StatusBar.tsx — 跨页常驻 Material AppBar 状态条 (v8)
  * owner: 小苏  last_review: 2026-05-29
  *
- * v7 变更: AppBar + Toolbar + Chip + IconButton (SUID Material)
- * 内容: mode chip / 系统状态 / 净PnL / 运行时间 / WSS dot /
- *        Gate chip / 拒单/60s / API 异常 chip / 设置按钮
+ * v8 变更:
+ *  - 去掉 DEMO 横幅 (data_source 恒 live, 不再有 demo 模式)
+ *  - 替换为 LIVE 实时标识 + 连接/加载/stale 状态
+ *  - Stub 横幅仅 ?stub=1 时显示
  */
 
 import { createSignal, For, Show } from 'solid-js';
@@ -12,9 +13,7 @@ import AppBar from '@suid/material/AppBar';
 import Toolbar from '@suid/material/Toolbar';
 import Chip from '@suid/material/Chip';
 import IconButton from '@suid/material/IconButton';
-import Alert from '@suid/material/Alert';
 import Typography from '@suid/material/Typography';
-import Divider from '@suid/material/Divider';
 import TextField from '@suid/material/TextField';
 import Button from '@suid/material/Button';
 import Box from '@suid/material/Box';
@@ -23,6 +22,7 @@ import {
   fmtUsdc, fmtUptime, isEndpointFailing, failingEndpointsSummary, setBaseUrl, getBaseUrl,
 } from '../api';
 import { StatusDot, boolToDot } from './ui/StatusDot';
+import { USE_STUB } from '../store';
 
 export function StatusBar() {
   const [settingsOpen, setSettingsOpen] = createSignal(false);
@@ -32,8 +32,13 @@ export function StatusBar() {
   const h = () => state.healthz ?? ({} as NonNullable<typeof state.healthz>);
   const g = () => state.gate   ?? ({} as NonNullable<typeof state.gate>);
 
-  const isDemo = () => s().data_source !== 'live';
-  const mode   = () => s().mode ?? 'paper';
+  const mode = () => s().mode ?? 'live';
+
+  // v8: 连接状态逻辑 (data_source 恒 live, 根据后端是否响应判断)
+  const isConnected    = () => state.status != null;
+  const isConnecting   = () => state.status == null && !isEndpointFailing('/status');
+  const isBackendDown  = () => state.status == null && isEndpointFailing('/status');
+  const eventsCount    = () => state.eventGroups.length;
 
   const stateClass = () => {
     const st = s().state;
@@ -62,7 +67,7 @@ export function StatusBar() {
   const rmRejects = () => s().rm_rejects_last_60s;
 
   const hasApiErr = () =>
-    isEndpointFailing('/status') || isEndpointFailing('/api/v1/positions');
+    isEndpointFailing('/status') || isEndpointFailing('/api/v1/events');
 
   const apiErrTooltip = () => failingEndpointsSummary(3) || 'API 异常';
 
@@ -76,15 +81,11 @@ export function StatusBar() {
 
   return (
     <>
-      {/* DEMO 横幅 — Material Alert (P0-02 红线: 非实盘必须显示) */}
-      <Show when={isDemo()}>
-        <Alert
-          severity="warning"
-          class="demo-alert-banner"
-          sx={{ borderRadius: 0, py: 0.5, px: 2, fontSize: '12px', fontWeight: 700 }}
-        >
-          演示数据 · 非实盘 — 所有量化参数仅供参考, 不触发下单
-        </Alert>
+      {/* Stub 横幅 — 仅 ?stub=1 时显示 */}
+      <Show when={USE_STUB}>
+        <div id="stub-banner">
+          STUB 模式 — 本地 mock 数据 (URL 含 ?stub=1). 移除参数后连接真实 API.
+        </div>
       </Show>
 
       {/* Material AppBar */}
@@ -105,6 +106,23 @@ export function StatusBar() {
             sx={{ fontWeight: 700, fontSize: '10px', height: '20px' }}
           />
 
+          {/* v8: LIVE 实时标识 (连接中/实时/后端未连接) */}
+          <Show when={isConnected()}>
+            <span class="live-status-badge live-status-ok">
+              实时 LIVE
+            </span>
+          </Show>
+          <Show when={isConnecting()}>
+            <span class="live-status-badge live-status-connecting">
+              连接中...
+            </span>
+          </Show>
+          <Show when={isBackendDown()}>
+            <span class="live-status-badge live-status-stale">
+              后端离线
+            </span>
+          </Show>
+
           {/* 系统状态 */}
           <Typography
             variant="caption"
@@ -114,6 +132,15 @@ export function StatusBar() {
           >
             {stateText()}
           </Typography>
+
+          <span class="appbar-sep">|</span>
+
+          {/* 订阅市场数 */}
+          <Show when={eventsCount() > 0}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '11px' }}>
+              {eventsCount()} 赛事
+            </Typography>
+          </Show>
 
           <span class="appbar-sep">|</span>
 
@@ -129,7 +156,9 @@ export function StatusBar() {
             </Typography>
           </Show>
           <Show when={netPnl() == null}>
-            <Typography variant="caption" sx={{ color: 'text.disabled', fontFamily: 'monospace' }}>—</Typography>
+            <Typography variant="caption" sx={{ color: 'text.disabled', fontFamily: 'monospace' }}>
+              等待 paper runtime
+            </Typography>
           </Show>
 
           <span class="appbar-sep">|</span>
@@ -167,7 +196,7 @@ export function StatusBar() {
             />
           </Show>
           <Show when={!g().has_data}>
-            <Typography variant="caption" sx={{ color: 'text.disabled' }}>—</Typography>
+            <Typography variant="caption" sx={{ color: 'text.disabled' }}>Gate —</Typography>
           </Show>
 
           <span class="appbar-sep">|</span>

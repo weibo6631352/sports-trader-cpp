@@ -10,7 +10,7 @@
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, Market, BinaryMarketBookView, HalfBook,
-  Score, Quote,
+  Score, Quote, EventsResponse,
 } from './types';
 
 const NOW_NS = Date.now() * 1e6;
@@ -542,6 +542,48 @@ export const STUB_QUOTE_MAP: Record<string, Quote> = {
   'mlb-nyy-bos-ml': makeQuote(
     'mlb-nyy-bos-ml', 0.541, 0.549, -7.8, 0.000, 0, 0.18, 0.31,
   ),
+};
+
+// ============================================================
+// v8: Events stub (模拟 /api/v1/events)
+// ============================================================
+
+export const STUB_EVENTS: EventsResponse = {
+  as_of_ts: NOW_NS,
+  events: [
+    {
+      event_id: 'nba-lal-bos-2026-05-29',
+      slug: 'nba-lal-bos-2026-05-29',
+      title: 'LAL vs BOS',
+      sport: 'basketball',
+      neg_risk_market_id: '',
+      condition_ids: ['nba-lal-bos-ml', 'nba-lal-bos-total', 'nba-lal-bos-spread'],
+    },
+    {
+      event_id: 'epl-ars-che-2026-05-29',
+      slug: 'epl-ars-che-2026-05-29',
+      title: 'ARS vs CHE',
+      sport: 'soccer',
+      neg_risk_market_id: '',
+      condition_ids: ['epl-ars-che-total'],
+    },
+    {
+      event_id: 'nfl-kc-buf-2026-05-29',
+      slug: 'nfl-kc-buf-2026-05-29',
+      title: 'KC vs BUF',
+      sport: 'football',
+      neg_risk_market_id: '',
+      condition_ids: ['nfl-kc-buf-spread'],
+    },
+    {
+      event_id: 'mlb-nyy-bos-2026-05-29',
+      slug: 'mlb-nyy-bos-2026-05-29',
+      title: 'NYY vs BOS',
+      sport: 'baseball',
+      neg_risk_market_id: '',
+      condition_ids: ['mlb-nyy-bos-ml'],
+    },
+  ],
 };
 
 export const STUB_METRICS_TEXT = `

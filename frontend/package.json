@@ -1,7 +1,7 @@
 {
   "name": "sports-trader-cpp-frontend",
-  "version": "7.0.0",
-  "description": "sports-trader-cpp 操盘终端 v7 — SolidJS + SUID/Material Design (Google 风格)",
+  "version": "8.0.0",
+  "description": "sports-trader-cpp 操盘终端 v8 — /events 真实市场发现 + 折叠/展开 Accordion",
   "private": true,
   "type": "module",
   "scripts": {

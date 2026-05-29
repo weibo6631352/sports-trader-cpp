@@ -16,7 +16,7 @@
 
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
-  RiskRejects, GatePaper, Market, BinaryMarketBookView, Score, Quote,
+  RiskRejects, GatePaper, Market, BinaryMarketBookView, Score, Quote, EventsResponse,
 } from './types';
 
 // ---------- API base ----------
@@ -131,6 +131,7 @@ async function apiFetch<T>(path: string): Promise<T | null> {
 
 export const fetchHealthz = (): Promise<Healthz | null> => apiFetch('/healthz');
 export const fetchStatus = (): Promise<Status | null> => apiFetch('/status');
+export const fetchEvents = (): Promise<EventsResponse | null> => apiFetch('/api/v1/events');
 
 export const fetchPositions = (): Promise<Positions | null> => apiFetch('/api/v1/positions');
 export const fetchPnlTimeseries = (window = '1h', bucket = '5m'): Promise<PnlTimeseries | null> =>

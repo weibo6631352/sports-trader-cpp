@@ -1,96 +1,59 @@
-# sports-trader-cpp 观测/PnL 看板 v5 — SolidJS + TypeScript + Vite
+# sports-trader-cpp 操盘终端 v8 — SolidJS + SUID/Material Design
 
 **owner:** 小苏 (E 产品业务保障部)
 **last_review:** 2026-05-29
-**关联:** ADR-038 (观测 API), ADR-037 (本地优先), ADR-040 (book_pair 端点)
+**关联:** ADR-038 (观测 API), ADR-040 (book_pair 端点)
 
 ---
 
-## 技术栈 (v5.2 — SolidJS + TS + Vite)
+## v8 核心变化
 
-- **框架:** SolidJS 1.8 (细粒度响应式, 无 VDOM, 运行时轻量)
-- **类型:** TypeScript 5.4 (strict mode, 全量类型化 API client)
-- **构建:** Vite 5.2 (dev server + production build)
-- **样式:** 原生 CSS (延续 v5 量化终端深色风格, 无组件库)
-- **无 Python:** serve.py 已废弃; 开发用 `vite dev`, 产物用 `vite build` 静态文件
+- **市场发现:** `GET /api/v1/events` (真实 10 个 NHL/NBA/FIFA 事件), 不再依赖 positions
+- **折叠/展开:** Event 分组 Accordion + Market 摘要行折叠态 (~40px) + 点击展开三列详情
+- **去 DEMO 改 LIVE:** DEMO 横幅已移除; StatusBar 改为 LIVE 实时标识 + 连接/stale 三态
 
 ---
 
-## 标准 Vite 工作流
+## 技术栈 (v8)
+
+- **框架:** SolidJS 1.8 + TypeScript 5.4
+- **组件库:** @suid/material v0.19.0 (Material Design for SolidJS)
+- **构建:** Vite 5.2
+- **状态:** SolidJS createStore + sessionStorage 展开状态持久化
+
+---
+
+## 快速开始
 
 ```bash
 cd frontend
 npm install
-npm run dev        # 开发, HMR, http://127.0.0.1:3000 (连 8080 API, CORS)
 
-# 看产物:
-npm run build && npm run preview   # 标准 Vite 预览构建产物
-```
+# 开发 (连后端 8080 live 模式)
+npm run dev          # → http://127.0.0.1:3000
 
-后端单独跑: `stcpp_debug_server --real --port 8080` (只管 API, 不托管前端)
+# stub 模式 (后端未启动时)
+open "http://127.0.0.1:3000/?stub=1"
 
-**Stub 模式 (后端未启动时):**
+# 生产构建 (tsc + vite)
+npm run build        # 产物 dist/  (tsc 0 error)
 
-```
-http://127.0.0.1:3000/?stub=1
-```
-
-**API base (api.ts):**
-
-| 优先级 | 来源 |
-|--------|------|
-| 1 (最高) | localStorage `stcpp_api_base` — 设置面板手动覆盖 |
-| 2 (默认) | `http://127.0.0.1:8080` — 后端 API 地址 |
-
-跨域由后端 CORS 处理 (已开)。如需修改 API 地址, 点看板右上角设置按钮。
-
-产物规模 (2026-05-29 实测): JS 约 53 kB / gzip 19 kB, CSS 约 16 kB / gzip 3 kB.
-
----
-
-## 文件结构
-
-```
-frontend/
-├── index.html              # Vite 入口 HTML
-├── package.json            # npm 配置
-├── vite.config.ts          # Vite 配置
-├── tsconfig.json           # TypeScript 配置
-├── README.md               # 本文件
-├── INTEGRATION-VERIFY.md   # 字段契约对齐验证记录
-├── dist/                   # 产物 (gitignore)
-├── node_modules/           # 依赖 (gitignore)
-└── src/
-    ├── index.tsx           # Solid 挂载入口
-    ├── App.tsx             # 根组件 + 轮询初始化
-    ├── api.ts              # ADR-038 类型化 API client
-    ├── stub.ts             # 本地 mock 数据
-    ├── store.ts            # Solid createStore 应用状态 + 轮询逻辑
-    ├── i18n.ts             # 中文映射表 (5 张)
-    ├── types.ts            # 所有 TS 类型定义 (对齐后端 wire)
-    ├── style.css           # 深色量化终端样式 (v5 延续)
-    ├── components/
-    │   ├── GlobalBar.tsx       # 顶部常驻条 + 设置面板
-    │   ├── PnlSparkline.tsx    # PnL 净值曲线 (手写 SVG)
-    │   ├── EventGrid.tsx       # 赛事分组网格 (v5 核心)
-    │   └── SecondaryFooter.tsx # 折叠次要区 (PnL 归因 + metrics)
-    └── legacy/             # 原生三件套归档 (v5.1 及之前, 不参与 build)
-        ├── app.js
-        ├── api.js
-        ├── panels.js
-        └── stub.js
+# 后端 (无 flag = live)
+stcpp_debug_server --port 8080
 ```
 
 ---
 
-## 面板说明
+## 面板说明 (v8)
 
 | 区域 | 内容 | API Endpoint | 轮询 |
 |------|------|-------------|------|
-| 顶部常驻条 | 模式/状态/净PnL/WSS/Gate/p99/延迟/拒单 | /healthz + /status | 5s |
+| StatusBar (常驻) | mode/LIVE/状态/净PnL/运行时间/WSS/Gate/拒单/60s | /healthz + /status | 5s |
 | PnL sparkline | 净值曲线 (手写 SVG) | /api/v1/pnl/timeseries | 15s |
-| 赛事分组网格 | 赛事头比分 + 多盘口并列 (双边簿/量化/持仓) | /api/v1/positions + /market + /book_pair + /score + /quote | 5s |
-| 折叠区 | PnL 归因瀑布 + Prometheus 原始 metrics | /api/v1/pnl/attribution + /metrics | 15s/30s |
+| 盯盘页 (v8 Accordion) | Event 折叠分组 + Market 摘要行 + 展开三列详情 | /api/v1/events + /market + /book_pair + /score + /quote + /positions | 5s |
+| Ops 观测页 | 系统健康 + WSS + staleness + rejects + metrics | /healthz + /status + /metrics | 5s/30s |
+| PnL 分析页 | 净值曲线 + 归因瀑布 + 分市场 + Gate | /api/v1/pnl/* + /api/v1/gate/paper | 15s |
+| 市场详情页 | condition 深钻: 全档订单簿 + quote + score + rejects | /api/v1/market + /book_pair + /score + /quote + /risk/rejects | 按需 |
 
 ---
 
@@ -99,33 +62,56 @@ frontend/
 | 数据 | 间隔 |
 |------|------|
 | status / healthz | 5s |
-| positions + attribution + rejects (market grid) | 5s |
-| book / score / quote (per-condition) | 5s (与 market grid 合并) |
+| events + positions + attribution + rejects | 5s |
+| book / score / quote (per-condition) | 5s (与 events 合并) |
 | sparkline (timeseries) | 15s |
-| attribution (单独) | 15s |
-| gate | 15s |
-| metrics | 30s (折叠时跳过) |
-| market info | 60s |
+| attribution + gate | 15s |
+| metrics | 30s |
+| market info (cache) | 60s |
+
+---
+
+## 文件结构
+
+```
+frontend/
+├── index.html
+├── package.json
+├── vite.config.ts
+├── tsconfig.json
+├── README.md
+├── INTEGRATION-VERIFY.md
+├── dist/              # 产物 (gitignore)
+├── node_modules/      # 依赖 (gitignore)
+└── src/
+    ├── index.tsx      # Solid 挂载入口
+    ├── App.tsx        # 根组件 (v8 去 DEMO 横幅)
+    ├── api.ts         # 类型化 API client (含 fetchEvents)
+    ├── stub.ts        # 本地 mock 数据 (含 STUB_EVENTS)
+    ├── store.ts       # createStore + 轮询 (v8: /events 发现市场)
+    ├── i18n.ts        # 中文映射表
+    ├── types.ts       # TS 类型 (含 EventSummary/EventsResponse)
+    ├── style.css      # 深色量化终端样式 (v8 新增 Accordion/Collapse/LIVE 样式)
+    └── components/
+        ├── StatusBar.tsx       # 常驻状态条 (v8: LIVE badge + 无 DEMO 横幅)
+        ├── TradingPage.tsx     # 盯盘页 (v8: Accordion + Collapse 折叠/展开)
+        ├── OpsPage.tsx         # Ops 观测页 (保持 v7)
+        ├── AnalyticsPage.tsx   # PnL 分析页 (保持 v7)
+        ├── MarketDetailPage.tsx # 市场详情页 (保持 v7)
+        └── ...
+```
 
 ---
 
 ## 空数据处理
 
-- API 返回 404 → 显示 "未接入"
-- `found: false` / `has_data: false` → 显示 "未接入"
-- 网络不可达 → 显示占位符, 不崩溃
-- P0-03: 连续 3 次失败 → 顶部 "API 异常" 红色 chip
-
----
-
-## DEMO fail-safe (P0-02)
-
-`data_source !== 'live'` 时强制显示黄色横幅 + 每盘口 [demo] 角标.
-不可关闭, 老钱红线.
+- `/api/v1/events` 返回 0 events → 显示 "加载赛事数据..."
+- positions 空 (paper 未跑) → "无持仓 — 等待 paper runtime"
+- book/quote null → 优雅降级, 不报错
+- API 连续 3 次失败 → 顶部 "API 异常" 红色 Chip
 
 ---
 
 ## 4 时间戳字段
 
 对齐 ADR-038 R-20: `event_ts / data_source_ts / ingestion_ts / as_of_ts` (epoch_ns).
-JS Number 精度上限约 9e15, epoch_ns 约 1.7e18, 精度损失约 1024ns, 显示层可接受.

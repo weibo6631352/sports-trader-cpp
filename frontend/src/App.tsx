@@ -1,22 +1,16 @@
 /**
- * App.tsx — 根组件 (v7)
+ * App.tsx — 根组件 (v8)
  * owner: 小苏  last_review: 2026-05-29
  *
- * v7 架构:
- *   Material AppBar (常驻, 跨页不变) — 系统状态 + WSS + PnL + Gate
- *   DEMO/STUB 横幅 (Alert)
- *   Tab 导航栏 (AppBar 风格 underline tabs)
- *   页面内容区 (按 activeTab 切换, store 保持不重置)
+ * v8 变更:
+ *  - 去掉顶层 DEMO 横幅 (移入 StatusBar, data_source 恒 live)
+ *  - Stub 横幅由 StatusBar 负责 (?stub=1 判断)
+ *  - 四 Tab 结构保持不变
  *
- * SUID 组件: AppBar / Toolbar / Alert / Chip / Typography / Button
+ * SUID: AppBar / Toolbar / Chip / Typography / Button
  */
 
 import { createSignal, onMount, Show, For } from 'solid-js';
-import AppBar from '@suid/material/AppBar';
-import Toolbar from '@suid/material/Toolbar';
-import Typography from '@suid/material/Typography';
-import Alert from '@suid/material/Alert';
-import Chip from '@suid/material/Chip';
 import { USE_STUB, initPolling } from './store';
 import { StatusBar } from './components/StatusBar';
 import { TradingPage } from './components/TradingPage';
@@ -55,14 +49,7 @@ export function App() {
 
   return (
     <div id="app">
-      {/* Stub 横幅 */}
-      <Show when={USE_STUB}>
-        <div id="stub-banner">
-          STUB 模式 — 本地 mock 数据 (URL 含 ?stub=1). 移除参数后连接真实 API.
-        </div>
-      </Show>
-
-      {/* Material AppBar 常驻状态条 */}
+      {/* Material AppBar 常驻状态条 (含 Stub/LIVE 横幅) */}
       <StatusBar />
 
       {/* Tab 导航栏 (Material 下划线风格) */}

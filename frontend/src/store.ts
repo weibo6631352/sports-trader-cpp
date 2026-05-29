@@ -1,10 +1,15 @@
 /**
- * store.ts — 应用状态 (Solid createStore + 轮询逻辑)
+ * store.ts — 应用状态 (Solid createStore + 轮询逻辑) v8
  * owner: 小苏
  * last_review: 2026-05-29
  *
+ * v8 变更:
+ *  - refreshMarketGrid 改用 /api/v1/events 发现市场 (不再依赖 positions)
+ *  - EventGroup 增加 eventSlug / eventTitle / sport 字段
+ *  - positions/pnl 真实暂为空 (paper 没跑) → 正常空值, 不报错
+ *
  * 轮询分层:
- *   status/positions:         5s
+ *   status/events:            5s
  *   book/score/quote per-mkt: 5s
  *   rejects:                  5s
  *   timeseries/attribution:   15s
@@ -16,13 +21,13 @@ import { createStore, produce } from 'solid-js/store';
 import {
   fetchHealthz, fetchStatus, fetchPositions, fetchPnlTimeseries,
   fetchPnlAttribution, fetchRiskRejects, fetchGatePaper,
-  fetchMarket, fetchBook, fetchScore, fetchQuote, fetchMetrics,
+  fetchMarket, fetchBook, fetchScore, fetchQuote, fetchMetrics, fetchEvents,
 } from './api';
 import {
   STUB_HEALTHZ, STUB_STATUS, STUB_POSITIONS, STUB_PNL_TIMESERIES,
   STUB_PNL_ATTRIBUTION, STUB_RISK_REJECTS, STUB_GATE_PAPER,
   STUB_MARKET_MAP, STUB_BOOK_MAP, STUB_SCORE_MAP, STUB_QUOTE_MAP,
-  STUB_METRICS_TEXT,
+  STUB_METRICS_TEXT, STUB_EVENTS,
 } from './stub';
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
@@ -129,10 +134,12 @@ export async function refreshMetrics(_secondaryOpen?: boolean): Promise<void> {
   setState({ metrics: text ?? null });
 }
 
-// ---------- refreshMarketGrid (核心, v5 赛事分组逻辑) ----------
+// ---------- refreshMarketGrid (v8: 从 /api/v1/events 发现市场) ----------
 
 export async function refreshMarketGrid(): Promise<void> {
-  const [posData, attrData, rejectsData] = await Promise.all([
+  // 1. 并发拉 events + positions + attribution + rejects
+  const [eventsData, posData, attrData, rejectsData] = await Promise.all([
+    safeGet(fetchEvents, STUB_EVENTS),
     safeGet(fetchPositions, STUB_POSITIONS),
     safeGet(fetchPnlAttribution, STUB_PNL_ATTRIBUTION),
     safeGet(fetchRiskRejects, STUB_RISK_REJECTS),
@@ -142,16 +149,15 @@ export async function refreshMarketGrid(): Promise<void> {
   if (attrData) setState({ attribution: attrData });
   if (rejectsData) setState({ rejects: rejectsData });
 
+  // 2. positions 按 market_id 分组 (可能为空, live 模式 paper 未跑)
   const positions: Position[] = posData?.positions ?? [];
-
-  // positions 按 market_id 分组
   const posMap: Record<string, Position[]> = {};
   for (const p of positions) {
     if (!posMap[p.market_id]) posMap[p.market_id] = [];
     posMap[p.market_id].push(p);
   }
 
-  // attribution per_market PnL map
+  // 3. attribution per_market PnL map
   const pmPnlMap: Record<string, number> = {};
   const localAttr = attrData ?? state.attribution;
   if (localAttr?.per_market) {
@@ -160,7 +166,7 @@ export async function refreshMarketGrid(): Promise<void> {
     }
   }
 
-  // rejects 按 market_id 分组
+  // 4. rejects 按 market_id 分组
   const rejectMap: Record<string, RiskReject[]> = {};
   const localRejects = rejectsData ?? state.rejects;
   if (localRejects?.rejects) {
@@ -170,21 +176,23 @@ export async function refreshMarketGrid(): Promise<void> {
     }
   }
 
-  // 三数据源并集
-  const allConditionIds = new Set([
-    ...Object.keys(posMap),
-    ...Object.keys(rejectMap),
-    ...Object.keys(pmPnlMap),
-  ]);
+  // 5. 从 /api/v1/events 获取 condition_ids (核心改变)
+  const events = eventsData?.events ?? [];
 
-  if (allConditionIds.size === 0) {
+  if (events.length === 0) {
     setState({ eventGroups: [] });
     return;
   }
 
-  const isDemoData = !state.status || state.status.data_source !== 'live';
+  // 6. 所有 condition_ids 去重
+  const allConditionIds = new Set<string>();
+  for (const ev of events) {
+    for (const cid of ev.condition_ids) {
+      allConditionIds.add(cid);
+    }
+  }
 
-  // 并发拉取 market / book / quote
+  // 7. 并发拉取 market / book / quote
   await Promise.all(
     [...allConditionIds].map(async (condId) => {
       const cached = state.conditionCache[condId];
@@ -209,21 +217,17 @@ export async function refreshMarketGrid(): Promise<void> {
     }),
   );
 
-  // score 按 event_id 去重拉取
+  // 8. score 按 event_id 去重拉取
   const eventScoreCache: Record<string, Score | null> = {};
-  const eventIdsNeeded = new Set<string>();
-  for (const condId of allConditionIds) {
-    const mkt = state.conditionCache[condId]?.market;
-    if (mkt?.event_id) eventIdsNeeded.add(mkt.event_id);
-  }
+  const eventIdsFromApi = new Set(events.map((e) => e.event_id));
   await Promise.all(
-    [...eventIdsNeeded].map(async (evId) => {
+    [...eventIdsFromApi].map(async (evId) => {
       const score = await safeGetMapped(() => fetchScore(evId), STUB_SCORE_MAP, evId);
       eventScoreCache[evId] = score;
     }),
   );
 
-  // 写回 score
+  // 9. 写回 score
   setState(
     produce((s) => {
       for (const condId of allConditionIds) {
@@ -235,40 +239,38 @@ export async function refreshMarketGrid(): Promise<void> {
     }),
   );
 
-  // 按 event_id 分组
-  const NO_EVENT = '__no_event__';
-  const eventGroupMap: Record<string, EventGroup> = {};
+  // 10. 按 /api/v1/events 返回的事件顺序构建 EventGroup
+  const eventGroups: EventGroup[] = events.map((evSummary) => {
+    const score = eventScoreCache[evSummary.event_id] ?? null;
 
-  for (const condId of [...allConditionIds].sort()) {
-    const d = state.conditionCache[condId];
-    const mkt = d?.market ?? null;
-    const evId = mkt?.event_id ?? NO_EVENT;
-
-    if (!eventGroupMap[evId]) {
-      eventGroupMap[evId] = {
-        eventId: evId === NO_EVENT ? null : evId,
-        score: d?.score ?? null,
-        conditions: [],
+    const conditions: ConditionData[] = evSummary.condition_ids.map((condId) => {
+      const d = state.conditionCache[condId];
+      return {
+        conditionId: condId,
+        posRows: posMap[condId] ?? [],
+        market: d?.market ?? null,
+        book: d?.book ?? null,
+        quote: d?.quote ?? null,
+        rejectRows: rejectMap[condId] ?? [],
+        perMarketPnl: pmPnlMap[condId] != null ? pmPnlMap[condId] : null,
       };
-    }
-    if (!eventGroupMap[evId].score && d?.score) {
-      eventGroupMap[evId].score = d.score;
-    }
+    });
 
-    const cond: ConditionData = {
-      conditionId: condId,
-      posRows: posMap[condId] ?? [],
-      market: mkt,
-      book: d?.book ?? null,
-      quote: d?.quote ?? null,
-      rejectRows: rejectMap[condId] ?? [],
-      perMarketPnl: pmPnlMap[condId] != null ? pmPnlMap[condId] : null,
-      isDemoData,
+    return {
+      eventId: evSummary.event_id,
+      eventSlug: evSummary.slug,
+      eventTitle: evSummary.title,
+      sport: evSummary.sport,
+      score,
+      conditions,
     };
-    eventGroupMap[evId].conditions.push(cond);
-  }
+  });
 
-  const eventGroups = Object.values(eventGroupMap).sort((a, b) => {
+  // 进行中赛事排前面
+  eventGroups.sort((a, b) => {
+    const aLive = a.score?.status === 'inplay' || a.score?.status === 'halftime';
+    const bLive = b.score?.status === 'inplay' || b.score?.status === 'halftime';
+    if (aLive !== bLive) return aLive ? -1 : 1;
     const aHasPos = a.conditions.some((c) => c.posRows.length > 0);
     const bHasPos = b.conditions.some((c) => c.posRows.length > 0);
     if (aHasPos !== bHasPos) return aHasPos ? -1 : 1;

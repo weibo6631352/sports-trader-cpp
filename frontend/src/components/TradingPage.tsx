@@ -1,36 +1,35 @@
 /**
- * TradingPage.tsx — 盯盘页 (v7 Material Design)
+ * TradingPage.tsx — 盯盘页 v8 (折叠/展开 Accordion + Collapse)
  * owner: 小苏  last_review: 2026-05-29
  *
- * v7 变更:
- *  - SUID Card/CardContent/CardHeader: 事件卡片 / 盘口卡片
- *  - SUID Chip: 状态标签 (sport/status/mode/NR/demo/advisory)
- *  - SUID LinearProgress: 置信度条 / 深度条 / edge 条
- *  - SUID ToggleButtonGroup: 筛选栏
- *  - 数据更全: tick/fee/neg_risk/accepting/source/微价/imbalance/gap/seq
- *  - 保留 Event→Condition→DualBook 三层结构
- *  - 保留 DEMO/advisory/XD 红线
+ * v8 变更:
+ *  - 市场发现: /api/v1/events (不再依赖 positions)
+ *  - Event 分组: 原生 Accordion (CSS 动画, 无 SUID Accordion — 库未收录)
+ *  - Market 行: 折叠摘要行 (~40px) + SUID Collapse 展开区
+ *  - 展开区三列: 双边订单簿 / 量化AI / 持仓拒单
+ *  - 默认: 进行中赛事分组展开 / Market 行全部折叠
+ *  - 去 demo 改 LIVE, 持仓空态改为"无持仓/等待 paper runtime"
+ *  - 全展开/全折叠快捷按钮
+ *  - sessionStorage 保留展开状态
  */
 
-import { createSignal, For, Show } from 'solid-js';
-import Card from '@suid/material/Card';
-import CardContent from '@suid/material/CardContent';
-import CardHeader from '@suid/material/CardHeader';
+import { createSignal, For, Show, createMemo } from 'solid-js';
+import { createStore } from 'solid-js/store';
 import Chip from '@suid/material/Chip';
 import LinearProgress from '@suid/material/LinearProgress';
 import Typography from '@suid/material/Typography';
-import Divider from '@suid/material/Divider';
 import ToggleButton from '@suid/material/ToggleButton';
 import ToggleButtonGroup from '@suid/material/ToggleButtonGroup';
 import TextField from '@suid/material/TextField';
 import Box from '@suid/material/Box';
 import Alert from '@suid/material/Alert';
+import Badge from '@suid/material/Badge';
 import { state } from '../store';
 import {
   fmtTs, fmtBps, fmtUsdc, fmtClock, stalenessMs, isEndpointFailing,
 } from '../api';
 import {
-  STATUS_ZH, SPORT_ZH, REJECT_REASON_ZH, SIDE_ZH, inferMarketLabel,
+  STATUS_ZH, SPORT_ZH, REJECT_REASON_ZH, SIDE_ZH, MARKET_TYPE_ZH, inferMarketLabel, inferMarketTypeZh,
 } from '../i18n';
 import type {
   EventGroup, ConditionData, BinaryMarketBookView, HalfBook,
@@ -41,509 +40,492 @@ import { StatusDot, wssStateToDot } from './ui/StatusDot';
 import { DepthBar } from './ui/DepthBar';
 
 // ============================================================
-// 小工具
+// 展开状态 store (per conditionId + per eventId)
 // ============================================================
 
-function RejectChip(props: { rejectRows: RiskReject[] }) {
-  const has = () => props.rejectRows.length > 0;
-  const tooltip = () =>
-    props.rejectRows
-      .map((r) => `${REJECT_REASON_ZH[r.reason_code] ?? r.reason_code} · ${SIDE_ZH[r.side] ?? r.side} ${r.size}@${r.price}`)
-      .join('\n');
-  return (
-    <Show when={has()}>
-      <Chip
-        label={`x${props.rejectRows.length}`}
-        color="error"
-        size="small"
-        title={tooltip()}
-        sx={{ fontSize: '10px', height: '18px', fontWeight: 700 }}
-      />
-    </Show>
-  );
+// 读写 sessionStorage (避免页面刷新丢失展开状态)
+function ssGet(key: string): boolean | null {
+  try { const v = sessionStorage.getItem(key); return v === null ? null : v === '1'; } catch { return null; }
+}
+function ssSet(key: string, val: boolean): void {
+  try { sessionStorage.setItem(key, val ? '1' : '0'); } catch { /* ignore */ }
+}
+
+// Market 行展开状态
+const [expandedMarkets, setExpandedMarkets] = createStore<Record<string, boolean>>({});
+// Event 分组展开状态
+const [expandedEvents, setExpandedEvents] = createStore<Record<string, boolean>>({});
+
+function isMarketExpanded(condId: string): boolean {
+  if (condId in expandedMarkets) return expandedMarkets[condId];
+  const ss = ssGet(`stcpp_mkt_exp_${condId}`);
+  return ss ?? false;
+}
+
+function toggleMarket(condId: string): void {
+  const next = !isMarketExpanded(condId);
+  setExpandedMarkets(condId, next);
+  ssSet(`stcpp_mkt_exp_${condId}`, next);
+}
+
+function isEventExpanded(eventId: string, isLive: boolean): boolean {
+  if (eventId in expandedEvents) return expandedEvents[eventId];
+  const ss = ssGet(`stcpp_evt_exp_${eventId}`);
+  if (ss !== null) return ss;
+  return isLive; // 进行中赛事默认展开分组
+}
+
+function toggleEvent(eventId: string, isLive: boolean): void {
+  const next = !isEventExpanded(eventId, isLive);
+  setExpandedEvents(eventId, next);
+  ssSet(`stcpp_evt_exp_${eventId}`, next);
+}
+
+function expandAllMarkets(condIds: string[]): void {
+  for (const c of condIds) {
+    setExpandedMarkets(c, true);
+    ssSet(`stcpp_mkt_exp_${c}`, true);
+  }
+}
+
+function collapseAllMarkets(condIds: string[]): void {
+  for (const c of condIds) {
+    setExpandedMarkets(c, false);
+    ssSet(`stcpp_mkt_exp_${c}`, false);
+  }
 }
 
 // ============================================================
-// EventHeader (Material CardHeader 风格)
+// 盘口类型 Chip 颜色映射 (胜负蓝/让分橙/大小紫)
 // ============================================================
 
-function EventHeader(props: { group: EventGroup }) {
-  const score      = () => props.group.score;
-  const conditions = () => props.group.conditions;
-  const firstMkt   = () => conditions().find((c) => c.market)?.market ?? null;
-  const isDemoData = () => conditions().some((c) => c.isDemoData);
-  const sport      = () => score()?.sport ?? null;
-  const sportZh    = () => sport() ? (SPORT_ZH[sport()!] ?? sport()) : '';
-  const eventUrl   = () => firstMkt()?.polymarket_url ?? null;
+function marketTypeColor(condId: string): 'primary' | 'warning' | 'secondary' | 'default' {
+  if (condId.includes('-ml') || condId.includes('-moneyline')) return 'primary';
+  if (condId.includes('-spread')) return 'warning';
+  if (condId.includes('-total')) return 'secondary';
+  return 'default';
+}
 
-  const statusZh  = () => STATUS_ZH[score()?.status ?? ''] ?? score()?.status ?? '?';
-  const isLive    = () => score()?.status === 'inplay';
-  const statusColor = (): 'success' | 'warning' | 'default' | 'error' => {
-    const st = score()?.status;
-    if (st === 'inplay')   return 'success';
-    if (st === 'halftime') return 'warning';
-    if (st === 'final')    return 'default';
-    return 'default';
+function marketTypeShort(condId: string): string {
+  if (condId.includes('-ml') || condId.includes('-moneyline')) return '胜负';
+  if (condId.includes('-spread')) return '让分';
+  if (condId.includes('-total')) return '大小';
+  // fallback: last segment
+  const parts = condId.split('-');
+  const last = parts[parts.length - 1];
+  return MARKET_TYPE_ZH[last] ?? last.toUpperCase().slice(0, 4);
+}
+
+// ============================================================
+// 延迟三色辅助
+// ============================================================
+
+function stalenessColor(ms: number | null): 'success' | 'warning' | 'error' | 'default' {
+  if (ms == null) return 'default';
+  if (ms < 100) return 'success';
+  if (ms < 1000) return 'warning';
+  return 'error';
+}
+
+function stalenessText(ms: number | null): string {
+  if (ms == null) return '—';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function stalenessClass(ms: number | null): string {
+  if (ms == null) return 'stale-none';
+  if (ms < 100) return 'stale-ok';
+  if (ms < 1000) return 'stale-warn';
+  return 'stale-err';
+}
+
+// ============================================================
+// Market 摘要行 (折叠态, ~40px)
+// ============================================================
+
+function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onClick: () => void }) {
+  const c = () => props.cond;
+  const condId = () => c().conditionId;
+  const book = () => c().book;
+  const quote = () => c().quote;
+  const posRows = () => c().posRows;
+
+  // 最优买卖 (取 token0 的 best_bid / best_ask 作为代表)
+  const bestBid = () => {
+    const b = book()?.token0?.best_bid;
+    return (b != null && Number.isFinite(Number(b))) ? Number(b) : null;
+  };
+  const bestAsk = () => {
+    const a = book()?.token0?.best_ask;
+    return (a != null && Number.isFinite(Number(a))) ? Number(a) : null;
   };
 
-  // per-event staleness
-  const maxStaleMs = () => {
-    const vals = conditions()
-      .map((c) => c.book ? stalenessMs(c.book.as_of_ts_ns ?? c.book.token0?.book_as_of_ts) : null)
-      .filter((v): v is number => v != null);
-    if (vals.length === 0) return null;
-    return Math.max(...vals);
-  };
-  const staleText = () => {
-    const ms = maxStaleMs();
-    if (ms == null) return null;
-    return ms < 1000 ? `延迟 ${Math.round(ms)}ms` : `延迟 ${(ms / 1000).toFixed(1)}s`;
-  };
-  const staleColor = (): 'error' | 'warning' | '' => {
-    const ms = maxStaleMs();
-    if (ms == null) return '';
-    if (ms >= 10000) return 'error';
-    if (ms >= 2000)  return 'warning';
-    return '';
+  // edge
+  const edgeBps = () => {
+    const e = quote()?.edge_bps;
+    return (e != null && Number.isFinite(Number(e))) ? Number(e) : null;
   };
 
-  const subheader = () => {
-    const sc = score();
-    if (!sc) return null;
-    const parts: string[] = [];
-    if (sc.period) parts.push(sc.period);
-    if (sc.clock_sec != null) parts.push(fmtClock(sc.clock_sec));
-    return parts.join(' · ');
+  // 持仓摘要
+  const posText = () => {
+    if (posRows().length === 0) return null;
+    const p = posRows()[0];
+    const qty = Math.abs(Number(p.net_qty));
+    return `${p.outcome} ${(qty / 1000).toFixed(1)}k`;
   };
+
+  // 浮盈
+  const pnlTotal = () => {
+    if (posRows().length === 0) return null;
+    const v = posRows().reduce((acc, p) => acc + Number(p.pnl_realized) + Number(p.pnl_unrealized), 0);
+    return v;
+  };
+  const pnlFmt = () => {
+    const v = pnlTotal();
+    if (v == null) return null;
+    if (v >= 0) return `+$${v.toFixed(1)}`;
+    return `($${Math.abs(v).toFixed(1)})`;
+  };
+
+  // 拒单数
+  const rejectCount = () => c().rejectRows.length;
+
+  // 延迟
+  const staleMs = () => {
+    const asOf = book()?.as_of_ts_ns ?? book()?.token0?.book_as_of_ts;
+    return stalenessMs(asOf);
+  };
+
+  // 市场名称 (含线值)
+  const mktLabel = () => inferMarketLabel(condId(), c().market);
+
+  // 展开图标
+  const arrow = () => props.expanded ? '▼' : '▶';
 
   return (
-    <div class="event-header-wrap">
-      {/* Sport Chip */}
-      <Show when={sportZh()}>
-        <Chip label={sportZh()} size="small" variant="outlined"
-          sx={{ fontSize: '10px', height: '20px', color: 'text.secondary' }} />
-      </Show>
+    <div
+      class={`v8-market-row${props.expanded ? ' v8-market-row-open' : ''}`}
+      onClick={props.onClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') props.onClick(); }}
+      title={`点击${props.expanded ? '折叠' : '展开'}详情`}
+    >
+      {/* 展开箭头 */}
+      <span class="v8-row-arrow">{arrow()}</span>
 
-      {/* LIVE 角标 */}
-      <Show when={isLive()}>
-        <span class="live-badge">LIVE</span>
-      </Show>
+      {/* 盘口类型 Chip */}
+      <Chip
+        label={marketTypeShort(condId())}
+        color={marketTypeColor(condId())}
+        size="small"
+        sx={{ fontSize: '10px', height: '20px', fontWeight: 700, minWidth: '40px', flexShrink: 0 }}
+      />
 
-      {/* 队伍 / 比分 */}
-      <Show
-        when={score()}
-        fallback={<Typography variant="body2" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>—</Typography>}
-      >
-        {(sc) => (
-          <>
-            <Typography variant="subtitle2" class="evt-team">{sc().home}</Typography>
-            <Typography variant="h6" class="evt-score">{sc().home_score ?? '—'}</Typography>
-            <span class="evt-dash">—</span>
-            <Typography variant="h6" class="evt-score">{sc().away_score ?? '—'}</Typography>
-            <Typography variant="subtitle2" class="evt-team">{sc().away}</Typography>
-            <Chip
-              label={statusZh()}
-              color={statusColor()}
-              size="small"
-              variant="outlined"
-              sx={{ fontSize: '10px', height: '20px' }}
-            />
-            <Show when={subheader()}>
-              <Typography variant="caption" class="evt-period">{subheader()}</Typography>
-            </Show>
-          </>
-        )}
-      </Show>
+      {/* 市场名 */}
+      <span class="v8-row-name">{mktLabel()}</span>
 
-      {/* DEMO chip */}
-      <Show when={isDemoData()}>
-        <Chip label="DEMO" color="warning" size="small" variant="outlined"
-          title="演示数据·非实盘" sx={{ fontSize: '10px', height: '20px' }} />
-      </Show>
+      {/* 最优买 */}
+      <span class={`v8-row-price v8-bid${bestBid() == null ? ' v8-dim' : ''}`}>
+        {bestBid() != null ? bestBid()!.toFixed(3) : '—'}
+      </span>
 
-      {/* Polymarket 链接 */}
-      <Show when={eventUrl()}>
-        <Typography
-          component="a"
-          href={eventUrl()!}
-          target="_blank"
-          rel="noopener noreferrer"
-          variant="caption"
-          sx={{ color: 'primary.main', textDecoration: 'none', ml: 0.5, '&:hover': { textDecoration: 'underline' } }}
-        >
-          Polymarket
-        </Typography>
-      </Show>
+      {/* 最优卖 */}
+      <span class={`v8-row-price v8-ask${bestAsk() == null ? ' v8-dim' : ''}`}>
+        {bestAsk() != null ? bestAsk()!.toFixed(3) : '—'}
+      </span>
 
-      {/* staleness */}
-      <Show when={staleText()}>
-        <Typography
-          variant="caption"
-          sx={{
-            fontFamily: 'monospace',
-            ml: 'auto',
-            color: staleColor() === 'error' ? 'error.main' : staleColor() === 'warning' ? 'warning.main' : 'text.disabled',
-          }}
-        >
-          {staleText()}
-        </Typography>
-      </Show>
+      {/* Edge */}
+      <span class={`v8-row-edge${edgeBps() == null ? ' v8-dim' : edgeBps()! > 0 ? ' v8-edge-pos' : edgeBps()! < 0 ? ' v8-edge-neg' : ' v8-dim'}`}>
+        {edgeBps() != null ? fmtBps(edgeBps()!) : '—'}
+      </span>
+
+      {/* 持仓 */}
+      <span class={`v8-row-pos${posText() ? '' : ' v8-dim'}`}>
+        {posText() ?? '无持仓'}
+      </span>
+
+      {/* 浮盈 */}
+      <span class={`v8-row-pnl${pnlFmt() == null ? ' v8-dim' : pnlTotal()! >= 0 ? ' v8-pnl-pos' : ' v8-pnl-neg'}`}>
+        {pnlFmt() ?? '—'}
+      </span>
+
+      {/* 拒单 Badge */}
+      <span class="v8-row-reject">
+        <Show when={rejectCount() > 0}>
+          <span class="v8-reject-badge" title={c().rejectRows.map((r) => REJECT_REASON_ZH[r.reason_code] ?? r.reason_code).join(', ')}>
+            ×{rejectCount()}
+          </span>
+        </Show>
+        <Show when={rejectCount() === 0}>
+          <span class="v8-dim">×0</span>
+        </Show>
+      </span>
+
+      {/* 延迟 */}
+      <span class={`v8-row-stale ${stalenessClass(staleMs())}`}>
+        {stalenessText(staleMs())}
+      </span>
     </div>
   );
 }
 
 // ============================================================
-// CondQuote (Material Alert + LinearProgress)
-// XD-1/3/4/5 红线保持
+// 展开区子块 A: 双边订单簿
 // ============================================================
 
-function CondQuote(props: { quote: Quote | null; isDemoData: boolean }) {
-  const q = () => props.quote;
-
-  return (
-    <Show
-      when={q()}
-      fallback={
-        <Box sx={{ p: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>量化未接入</Typography>
-          <Show when={props.isDemoData}>
-            <Chip label="demo" color="warning" size="small" sx={{ fontSize: '9px', height: '16px' }} />
-          </Show>
-        </Box>
-      }
-    >
-      {(quote) => {
-        const fairValue   = () => Number(quote().fair_value);
-        const marketMid   = () => Number(quote().market_mid);
-        const edgeBps     = () => Number(quote().edge_bps);
-        const kelly       = () => Number(quote().kelly_fraction);
-        const notional    = () => Number(quote().suggested_notional);
-        const signalStr   = () => Number(quote().signal_strength);
-        const modelConf   = () => Number(quote().model_confidence ?? quote().model_conf);
-        const modelId     = () => quote().model_id ?? '—';
-        const modelKind   = () => quote().model_kind ?? '—';
-        const calibrated  = () => quote().model_calibrated !== false;
-        const predictOk   = () => quote().predict_ok !== false;
-        const advisory    = () => quote().advisory === true;
-        const ciLower     = () => quote().fair_ci_lower;
-        const ciUpper     = () => quote().fair_ci_upper;
-        const hasCi       = () => Number.isFinite(ciLower()) && Number.isFinite(ciUpper());
-        const edgePositive = () => fairValue() >= marketMid();
-        const edgePct     = () => Math.min(Math.abs(edgeBps()) / 100, 1) * 100;
-        const kellyPositive = () => Number.isFinite(kelly()) && kelly() > 0;
-        const confPct     = () => Number.isFinite(modelConf()) ? modelConf() * 100 : 0;
-        const confColor = (): 'success' | 'warning' | 'error' | 'inherit' =>
-          modelConf() >= 0.7 ? 'success' : modelConf() >= 0.4 ? 'warning' : 'error';
-
-        return (
-          <>
-            {/* XD-3: advisory Alert */}
-            <Show when={advisory()}>
-              <Alert severity="warning" sx={{ py: 0.25, px: 1, fontSize: '11px', mb: 0.5 }}>
-                仅供参考·不下单
-              </Alert>
-            </Show>
-
-            {/* Row 1: 公允价 / 市场中间价 */}
-            <div class="cond-quote-row">
-              <span class="q-lbl">公允</span>
-              <Typography
-                sx={{ fontFamily: 'monospace', fontSize: '15px', fontWeight: 700,
-                  color: !calibrated() ? 'text.disabled' : 'text.primary' }}
-              >
-                {Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}
-              </Typography>
-              <Show when={!calibrated()}>
-                <span class="uncalib-chip" title="模型尚未完成校准">未校准</span>
-              </Show>
-              <span class="q-lbl">市场</span>
-              <Typography sx={{ fontFamily: 'monospace', fontSize: '11px', color: 'text.secondary' }}>
-                {Number.isFinite(marketMid()) ? marketMid().toFixed(4) : '—'}
-              </Typography>
-              <Show when={props.isDemoData}>
-                <Chip label="demo" color="warning" size="small" sx={{ fontSize: '9px', height: '16px', ml: 'auto' }} />
-              </Show>
-            </div>
-
-            {/* Row 2: CI 区间 */}
-            <Show when={hasCi()}>
-              <div class="cond-ci-row">
-                <span class="q-ci-label">CI</span>
-                <Typography sx={{ fontFamily: 'monospace', fontSize: '11px', color: 'text.secondary' }}>
-                  [{ciLower()!.toFixed(3)}–{ciUpper()!.toFixed(3)}]
-                </Typography>
-              </div>
-            </Show>
-
-            {/* Row 3: AI provenance + 置信度 LinearProgress */}
-            <div class="cond-prov-row">
-              <span class="q-lbl">模型</span>
-              <Typography
-                title={`${modelId()} · ${modelKind()} · ${quote().spec_version ?? '—'}`}
-                sx={{ fontFamily: 'monospace', fontSize: '10px', color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '90px', whiteSpace: 'nowrap' }}
-              >
-                {modelId()}
-              </Typography>
-              <span class="q-prov-sep">|</span>
-              <span class="q-lbl">置信</span>
-              {/* v7: LinearProgress 替换 ConfBar */}
-              <Box sx={{ flex: 1, minWidth: '30px' }}>
-                <LinearProgress
-                  variant="determinate"
-                  value={confPct()}
-                  color={confColor()}
-                  sx={{ height: 6, borderRadius: 3 }}
-                />
-              </Box>
-              <Typography sx={{ fontFamily: 'monospace', fontSize: '10px', color: confColor() === 'success' ? '#4caf50' : confColor() === 'warning' ? '#ff9800' : '#f44336', ml: 0.5, whiteSpace: 'nowrap' }}>
-                {Number.isFinite(modelConf()) ? `${(modelConf() * 100).toFixed(0)}%` : '—'}
-              </Typography>
-            </div>
-
-            {/* XD-5: predict_ok=false → 不画 edge/kelly/notional */}
-            <Show
-              when={predictOk()}
-              fallback={
-                <Alert severity="error" sx={{ py: 0.25, px: 1, fontSize: '10px', mt: 0.5 }}>
-                  预测异常 · edge/kelly/额度暂不可用
-                </Alert>
-              }
-            >
-              {/* Row 4: edge LinearProgress + 信号 */}
-              <div class="cond-edge-row">
-                <span class="q-lbl">优势</span>
-                <Box sx={{ flex: 1, minWidth: '20px' }}>
-                  <LinearProgress
-                    variant="determinate"
-                    value={edgePct()}
-                    color={edgePositive() ? 'success' : 'error'}
-                    sx={{ height: 5, borderRadius: 2 }}
-                  />
-                </Box>
-                <Typography class={`q-edge ${edgePositive() ? 'edge-pos' : 'edge-neg'}`}>
-                  {fmtBps(edgeBps())}
-                </Typography>
-                <span class="q-lbl">信号</span>
-                <Typography class="q-sig">
-                  {Number.isFinite(signalStr()) ? signalStr().toFixed(2) : '—'}
-                </Typography>
-              </div>
-
-              {/* Row 5: Kelly + 建议额度 */}
-              <div class="cond-kelly-row">
-                <span class="q-lbl">Kelly</span>
-                <Typography class={`q-kelly ${kellyPositive() ? 'kelly-pos' : 'kelly-zero'}`}>
-                  {Number.isFinite(kelly()) ? `${(kelly() * 100).toFixed(1)}%` : '—'}
-                </Typography>
-                <span class="q-lbl">额</span>
-                <Typography class="q-notional">
-                  ${Number.isFinite(notional())
-                    ? notional().toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-                    : '—'}
-                </Typography>
-              </div>
-            </Show>
-          </>
-        );
-      }}
-    </Show>
-  );
-}
-
-// ============================================================
-// MiniHalfBook (5 档 + DepthBar)
-// ============================================================
-
-function MiniHalfBook(props: { half: HalfBook }) {
-  const h = () => props.half;
-  const bid      = () => Number(h().best_bid);
-  const ask      = () => Number(h().best_ask);
-  const micro    = () => Number(h().microprice);
-  const spread   = () => Number(h().spread);
-  const imbalance = () => Number(h().imbalance);
-  const imbPct   = () => Number.isFinite(imbalance()) ? `${((imbalance() + 1) / 2 * 100).toFixed(1)}%` : '50%';
-  const imbNum   = () => Number.isFinite(imbalance()) ? imbalance().toFixed(2) : '—';
-  const bids     = () => (h().bids ?? []).slice(0, 5);
-  const asks     = () => (h().asks ?? []).slice(0, 5);
-  const maxLen   = () => Math.max(bids().length, asks().length);
-  const depthIdx = () => Array.from({ length: maxLen() }, (_, i) => i);
-  const maxSize  = () => Math.max(...bids().map((b) => Number(b.size)), ...asks().map((a) => Number(a.size)), 1);
-  const wssState = () => h().wss_state ?? 'unknown';
-  const source   = () => h().source ?? '—';
-
-  return (
-    <div class="mini-half">
-      {/* 标题行 */}
-      <div class="mini-half-header">
-        <Chip
-          label={h().outcome ?? '—'}
-          size="small"
-          variant="outlined"
-          sx={{ fontSize: '10px', height: '18px', maxWidth: '80px', fontWeight: 700 }}
-        />
-        <StatusDot state={wssStateToDot(wssState())} size="sm" title={`WSS: ${wssState()}`} />
-        <Show when={(h().gap_count ?? 0) > 0}>
-          <span class="gap-dot" title={`gap ${h().gap_count}`} />
-        </Show>
-        <Typography variant="caption" sx={{ fontSize: '9px', color: 'text.disabled', ml: 'auto' }} title="来源">
-          {source()}
+function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId: string }) {
+  const book = () => props.book;
+  if (!book()) {
+    return (
+      <div class="v8-expand-panel">
+        <div class="v8-panel-title">双边订单簿</div>
+        <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>
+          {isEndpointFailing(`/api/v1/book_pair/${props.conditionId}`) ? '拉取失败' : '订单簿未接入'}
         </Typography>
       </div>
+    );
+  }
 
-      {/* Best bid / ask + microprice */}
-      <div class="mini-ba-row">
-        <Typography class="mono-main mini-bid" sx={{ fontSize: '13px !important' }}>
-          {Number.isFinite(bid()) ? bid().toFixed(4) : '—'}
-        </Typography>
-        <span class="mini-ba-sep">|</span>
-        <Typography class="mono-main mini-ask" sx={{ fontSize: '13px !important' }}>
-          {Number.isFinite(ask()) ? ask().toFixed(4) : '—'}
-        </Typography>
-      </div>
+  const bk = () => book()!;
+  const vigInfo = () => {
+    const cs = Number(bk().cross_spread);
+    if (!Number.isFinite(cs)) return null;
+    const color: 'success' | 'warning' | 'error' = cs < 0.02 ? 'success' : cs < 0.04 ? 'warning' : 'error';
+    return { text: `${(cs * 100).toFixed(2)}%`, color };
+  };
 
-      {/* microprice + 价差 + imbalance */}
-      <div class="mini-spread-row">
-        <span class="q-lbl">微价</span>
-        <Typography sx={{ fontFamily: 'monospace', fontSize: '10px', color: 'text.secondary' }}>
-          {Number.isFinite(micro()) ? micro().toFixed(4) : '—'}
-        </Typography>
-        <span class="q-lbl">差</span>
-        <Typography sx={{ fontFamily: 'monospace', fontSize: '10px', color: 'text.secondary' }}>
-          {Number.isFinite(spread()) ? `${(spread() * 100).toFixed(2)}%` : '—'}
-        </Typography>
-      </div>
-      <div class="mini-spread-row">
-        <span class="q-lbl">失衡</span>
-        <div class="mini-imb-track" title={`imbalance ${imbNum()}`}>
-          <div class="mini-imb-fill" style={{ width: imbPct() }} />
+  function HalfPane(p: { half: HalfBook; label: string }) {
+    const h = () => p.half;
+    const bids = () => (h().bids ?? []).slice(0, 5);
+    const asks = () => (h().asks ?? []).slice(0, 5);
+    const maxLen = () => Math.max(bids().length, asks().length);
+    const depthIdx = () => Array.from({ length: maxLen() }, (_, i) => i);
+    const maxSize = () => Math.max(...bids().map((b) => Number(b.size)), ...asks().map((a) => Number(a.size)), 1);
+    const imbalance = () => Number(h().imbalance);
+    const imbPct = () => Number.isFinite(imbalance()) ? `${((imbalance() + 1) / 2 * 100).toFixed(0)}%` : '50%';
+
+    return (
+      <div class="v8-half-pane">
+        <div class="v8-half-label">
+          <Chip label={h().outcome ?? p.label} size="small" variant="outlined"
+            sx={{ fontSize: '9px', height: '16px', fontWeight: 700 }} />
+          <StatusDot state={wssStateToDot(h().wss_state ?? 'unknown')} size="sm" title={`WSS: ${h().wss_state}`} />
         </div>
-        <Typography class="mini-imb-val">{imbNum()}</Typography>
-      </div>
-
-      {/* 5 档深度 */}
-      <div class="mini-depth">
-        <div style={{ display: 'grid', 'grid-template-columns': '1fr 1fr', gap: '1px', 'margin-bottom': '2px' }}>
-          <Typography class="mini-col-lbl" sx={{ textAlign: 'right', fontSize: '9px !important' }}>量/买</Typography>
-          <Typography class="mini-col-lbl" sx={{ textAlign: 'left', fontSize: '9px !important' }}>卖/量</Typography>
+        <div class="v8-half-ba">
+          <span class="v8-bid mono-strong">{Number.isFinite(Number(h().best_bid)) ? Number(h().best_bid).toFixed(4) : '—'}</span>
+          <span class="v8-ba-sep">|</span>
+          <span class="v8-ask mono-strong">{Number.isFinite(Number(h().best_ask)) ? Number(h().best_ask).toFixed(4) : '—'}</span>
+        </div>
+        <div class="v8-half-imb">
+          <span class="q-lbl">失衡</span>
+          <div class="mini-imb-track">
+            <div class="mini-imb-fill" style={{ width: imbPct() }} />
+          </div>
+          <span class="mono-sub">{Number.isFinite(imbalance()) ? imbalance().toFixed(2) : '—'}</span>
+        </div>
+        <div class="v8-depth-header">
+          <span class="v8-depth-col-bid">量/买</span>
+          <span class="v8-depth-col-ask">卖/量</span>
         </div>
         <For each={depthIdx()}>
           {(i) => {
             const b = () => bids()[i];
             const a = () => asks()[i];
             return (
-              <div style={{ display: 'flex', gap: '4px', 'margin-bottom': '2px', 'align-items': 'center' }}>
-                <div style={{ flex: '1', display: 'flex', 'flex-direction': 'column', gap: '1px' }}>
-                  <div style={{ display: 'flex', gap: '3px', 'align-items': 'center', 'justify-content': 'flex-end' }}>
-                    <Typography class="mini-bid-size" sx={{ fontFamily: 'monospace', fontSize: '9px' }}>
-                      {b() ? Number(b().size).toLocaleString() : ''}
-                    </Typography>
-                    <Typography class="mini-bid-px" sx={{ fontFamily: 'monospace', fontSize: '10px' }}>
-                      {b() ? Number(b().price).toFixed(4) : ''}
-                    </Typography>
-                  </div>
+              <div class="v8-depth-row">
+                <div class="v8-depth-bid-side">
                   <Show when={b()}>
-                    <DepthBar size={Number(b().size)} maxSize={maxSize()} side="bid" />
+                    <>
+                      <span class="v8-depth-size mono-sub">{Number(b().size).toLocaleString()}</span>
+                      <span class="v8-bid mono-sub">{Number(b().price).toFixed(4)}</span>
+                      <DepthBar size={Number(b().size)} maxSize={maxSize()} side="bid" />
+                    </>
                   </Show>
                 </div>
-                <span style={{ color: 'var(--md-border)', 'font-size': '10px' }}>|</span>
-                <div style={{ flex: '1', display: 'flex', 'flex-direction': 'column', gap: '1px' }}>
-                  <div style={{ display: 'flex', gap: '3px', 'align-items': 'center' }}>
-                    <Typography class="mini-ask-px" sx={{ fontFamily: 'monospace', fontSize: '10px' }}>
-                      {a() ? Number(a().price).toFixed(4) : ''}
-                    </Typography>
-                    <Typography class="mini-ask-size" sx={{ fontFamily: 'monospace', fontSize: '9px' }}>
-                      {a() ? Number(a().size).toLocaleString() : ''}
-                    </Typography>
-                  </div>
+                <span class="v8-depth-sep">|</span>
+                <div class="v8-depth-ask-side">
                   <Show when={a()}>
-                    <DepthBar size={Number(a().size)} maxSize={maxSize()} side="ask" />
+                    <>
+                      <DepthBar size={Number(a().size)} maxSize={maxSize()} side="ask" />
+                      <span class="v8-ask mono-sub">{Number(a().price).toFixed(4)}</span>
+                      <span class="v8-depth-size mono-sub">{Number(a().size).toLocaleString()}</span>
+                    </>
                   </Show>
                 </div>
               </div>
             );
           }}
         </For>
+        <div class="v8-half-seq">
+          <span class="q-lbl">seq</span>
+          <span class="mono-sub">{h().sequence_no ?? '—'}</span>
+          <Show when={(h().gap_count ?? 0) > 0}>
+            <Chip label={`gap:${h().gap_count}`} color="error" size="small" sx={{ fontSize: '9px', height: '14px' }} />
+          </Show>
+        </div>
       </div>
+    );
+  }
 
-      {/* seq / gap / wss_state 详情 */}
-      <div class="mini-seq-row">
-        <span class="q-lbl">seq</span>
-        <Typography class="mono-sub">{h().sequence_no ?? '—'}</Typography>
-        <Show when={(h().gap_count ?? 0) > 0}>
-          <Chip label={`gap:${h().gap_count}`} color="error" size="small" sx={{ fontSize: '9px', height: '16px', ml: 0.5 }} />
+  return (
+    <div class="v8-expand-panel">
+      <div class="v8-panel-title">
+        双边订单簿
+        <Show when={vigInfo()}>
+          {(vi) => (
+            <Chip
+              label={`vig ${vi().text}`}
+              color={vi().color}
+              size="small"
+              variant="outlined"
+              sx={{ fontSize: '9px', height: '16px', ml: 0.5 }}
+            />
+          )}
         </Show>
+      </div>
+      <div class="v8-dual-pane">
+        <HalfPane half={bk().token0} label="YES" />
+        <HalfPane half={bk().token1} label="NO" />
       </div>
     </div>
   );
 }
 
 // ============================================================
-// DualBook
+// 展开区子块 B: 量化 / AI (XD-1/3/4/5 红线保持)
 // ============================================================
 
-function DualBook(props: { book: BinaryMarketBookView | null; conditionId: string }) {
-  const book = () => props.book;
+function ExpandQuotePanel(props: { quote: Quote | null }) {
+  if (!props.quote) {
+    return (
+      <div class="v8-expand-panel">
+        <div class="v8-panel-title">量化 / AI</div>
+        <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>量化未接入</Typography>
+      </div>
+    );
+  }
 
-  const vigInfo = () => {
-    const cs = Number(book()?.cross_spread);
-    if (!Number.isFinite(cs)) return null;
-    const color: 'success' | 'warning' | 'error' = cs < 0.02 ? 'success' : cs < 0.04 ? 'warning' : 'error';
-    return { text: `${(cs * 100).toFixed(2)}%`, color };
-  };
+  const q = () => props.quote!;
+  const fairValue  = () => Number(q().fair_value);
+  const marketMid  = () => Number(q().market_mid);
+  const edgeBps    = () => Number(q().edge_bps);
+  const kelly      = () => Number(q().kelly_fraction);
+  const notional   = () => Number(q().suggested_notional);
+  const signalStr  = () => Number(q().signal_strength);
+  const modelConf  = () => Number(q().model_confidence ?? q().model_conf);
+  const modelId    = () => q().model_id ?? '—';
+  const calibrated = () => q().model_calibrated !== false;
+  const predictOk  = () => q().predict_ok !== false;
+  const advisory   = () => q().advisory === true;
+  const ciLower    = () => q().fair_ci_lower;
+  const ciUpper    = () => q().fair_ci_upper;
+  const hasCi      = () => Number.isFinite(ciLower()) && Number.isFinite(ciUpper());
+  const confPct    = () => Number.isFinite(modelConf()) ? modelConf() * 100 : 0;
+  const confColor  = (): 'success' | 'warning' | 'error' | 'inherit' =>
+    modelConf() >= 0.7 ? 'success' : modelConf() >= 0.4 ? 'warning' : 'error';
+  const edgePos    = () => fairValue() >= marketMid();
+  const edgePct    = () => Math.min(Math.abs(edgeBps()) / 100, 1) * 100;
+  const kellyPos   = () => Number.isFinite(kelly()) && kelly() > 0;
 
   return (
-    <Show
-      when={book()}
-      fallback={
-        <Box sx={{ p: 1, color: 'text.disabled', fontSize: '12px', fontStyle: 'italic' }}>
-          <Show
-            when={isEndpointFailing(`/api/v1/book/${props.conditionId}`)}
-            fallback={<span>订单簿未接入</span>}
-          >
-            <Chip label="订单簿拉取失败" color="error" size="small" />
-          </Show>
+    <div class="v8-expand-panel">
+      <div class="v8-panel-title">
+        量化 / AI
+        {/* XD-3: ADVISORY 角标强制显示 (paper 期) */}
+        <Show when={advisory()}>
+          <span class="v8-advisory-badge">ADVISORY</span>
+        </Show>
+      </div>
+
+      {/* Fair / 市场中间价 */}
+      <div class="v8-q-row">
+        <span class="q-lbl">公允</span>
+        <span class={`mono-strong${!calibrated() ? ' v8-dim' : ''}`} style={{ 'font-size': '15px' }}>
+          {Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}
+        </span>
+        <Show when={!calibrated()}>
+          <span class="uncalib-chip">未校准</span>
+        </Show>
+        <Show when={hasCi()}>
+          <span class="mono-sub">[{ciLower()!.toFixed(3)}–{ciUpper()!.toFixed(3)}]</span>
+        </Show>
+      </div>
+
+      <div class="v8-q-row">
+        <span class="q-lbl">市场</span>
+        <span class="mono-sub">{Number.isFinite(marketMid()) ? marketMid().toFixed(4) : '—'}</span>
+      </div>
+
+      {/* 置信度 */}
+      <div class="v8-q-row">
+        <span class="q-lbl">置信</span>
+        <Box sx={{ flex: 1, minWidth: '40px' }}>
+          <LinearProgress variant="determinate" value={confPct()} color={confColor()} sx={{ height: 5, borderRadius: 2 }} />
         </Box>
-      }
-    >
-      {(bk) => (
-        <>
-          <div class="cond-book-header">
-            <Typography variant="caption" class="cond-book-label">双边订单簿</Typography>
-            <Show when={vigInfo()}>
-              {(vi) => (
-                <Chip
-                  label={`vig ${vi().text}`}
-                  color={vi().color}
-                  size="small"
-                  variant="outlined"
-                  title="vig (ask0+ask1-1)"
-                  sx={{ fontSize: '10px', height: '18px' }}
-                />
-              )}
-            </Show>
-            {/* mode chip */}
-            <Chip
-              label={bk().mode ?? ''}
-              size="small"
-              variant="outlined"
-              sx={{ fontSize: '9px', height: '16px', color: 'text.secondary', ml: 0.5 }}
-            />
-          </div>
-          <div class="cond-dual-grid">
-            <MiniHalfBook half={bk().token0} />
-            <MiniHalfBook half={bk().token1} />
-          </div>
-        </>
-      )}
-    </Show>
+        <Typography sx={{ fontFamily: 'monospace', fontSize: '10px', ml: 0.5,
+          color: confColor() === 'success' ? '#4caf50' : confColor() === 'warning' ? '#ff9800' : '#f44336' }}>
+          {Number.isFinite(modelConf()) ? `${(modelConf() * 100).toFixed(0)}%` : '—'}
+        </Typography>
+        <Show when={calibrated()}>
+          <span class="mono-sub" style={{ 'color': '#4caf50' }}>已校准</span>
+        </Show>
+      </div>
+
+      {/* XD-5: predict_ok=false */}
+      <Show
+        when={predictOk()}
+        fallback={
+          <Alert severity="error" sx={{ py: 0.25, px: 1, fontSize: '10px', mt: 0.5 }}>
+            预测异常 · edge/kelly/额度暂不可用
+          </Alert>
+        }
+      >
+        <div class="v8-q-row">
+          <span class="q-lbl">优势</span>
+          <Box sx={{ flex: 1, minWidth: '24px' }}>
+            <LinearProgress variant="determinate" value={edgePct()} color={edgePos() ? 'success' : 'error'} sx={{ height: 4, borderRadius: 2 }} />
+          </Box>
+          <span class={`mono-sub${edgePos() ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
+            {fmtBps(edgeBps())}
+          </span>
+        </div>
+
+        <div class="v8-q-row">
+          <span class="q-lbl">Kelly</span>
+          <span class={`mono-strong${kellyPos() ? ' kelly-pos' : ' kelly-zero'}`}>
+            {Number.isFinite(kelly()) ? `${(kelly() * 100).toFixed(1)}%` : '—'}
+          </span>
+          <span class="q-lbl">额</span>
+          <span class="mono-sub">
+            ${Number.isFinite(notional()) ? notional().toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
+          </span>
+          <span class="v8-advisory-inline">[advisory]</span>
+        </div>
+
+        <div class="v8-q-row">
+          <span class="q-lbl">信号α</span>
+          <span class="mono-sub">{Number.isFinite(signalStr()) ? signalStr().toFixed(2) : '—'}</span>
+        </div>
+      </Show>
+
+      {/* model provenance */}
+      <div class="v8-q-row v8-model-row">
+        <span class="q-lbl">model</span>
+        <span class="mono-sub" title={`${q().model_id} · ${q().model_kind} · ${q().spec_version}`}>
+          {modelId()}
+        </span>
+      </div>
+    </div>
   );
 }
 
 // ============================================================
-// CondPos (持仓区)
+// 展开区子块 C: 持仓 + 拒单
 // ============================================================
 
-function CondPos(props: { posRows: Position[]; perMarketPnl: number | null }) {
+function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; perMarketPnl: number | null }) {
   const pnlStr = () => {
     const v = props.perMarketPnl;
     if (v == null) return null;
@@ -551,160 +533,232 @@ function CondPos(props: { posRows: Position[]; perMarketPnl: number | null }) {
   };
 
   return (
-    <Show
-      when={props.posRows.length > 0}
-      fallback={
-        <div class="cond-pos-header">
-          <Typography variant="caption" sx={{ color: 'text.disabled' }}>持仓 —</Typography>
-          <Show when={pnlStr()}>
-            {(ps) => (
-              <Typography variant="caption" class={`mono-main ${ps().pos ? 'pnl-pos' : 'pnl-neg'}`} sx={{ ml: 1 }}>
-                {ps().text}
-              </Typography>
-            )}
-          </Show>
-        </div>
-      }
-    >
-      <>
-        <div class="cond-pos-header">
-          <Typography variant="caption" sx={{ color: 'text.secondary' }}>持仓/PnL</Typography>
-          <Show when={pnlStr()}>
-            {(ps) => (
-              <Typography variant="caption" class={`mono-main ${ps().pos ? 'pnl-pos' : 'pnl-neg'}`} sx={{ ml: 'auto' }}>
-                {ps().text}
-              </Typography>
-            )}
-          </Show>
-        </div>
+    <div class="v8-expand-panel">
+      <div class="v8-panel-title">持仓 + 拒单</div>
+
+      {/* 持仓 */}
+      <Show
+        when={props.posRows.length > 0}
+        fallback={
+          <div class="v8-pos-empty">
+            <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>
+              无持仓 — 等待 paper runtime
+            </Typography>
+          </div>
+        }
+      >
         <For each={props.posRows}>
           {(p) => {
-            const netQty   = () => Number(p.net_qty);
-            const mark     = () => Number(p.mark_price);
-            const pnlTotal = () => Number(p.pnl_realized) + Number(p.pnl_unrealized);
-            const pos      = () => pnlTotal() >= 0;
-            const qtySign  = () => netQty() >= 0 ? '+' : '';
+            const netQty  = () => Number(p.net_qty);
+            const mark    = () => Number(p.mark_price);
+            const pnlTot  = () => Number(p.pnl_realized) + Number(p.pnl_unrealized);
+            const pos     = () => pnlTot() >= 0;
             return (
-              <div class="cond-pos-row">
+              <div class="v8-pos-row">
                 <Chip label={p.outcome ?? '—'} size="small" variant="outlined"
                   sx={{ fontSize: '9px', height: '16px', fontWeight: 700 }} />
-                <Typography class="cond-pos-qty">
-                  {qtySign()}{netQty().toLocaleString()}u
-                </Typography>
-                <Typography class="cond-pos-mark">
-                  {Number.isFinite(mark()) ? mark().toFixed(4) : '—'}
-                </Typography>
-                <Typography class={`mono-main ${pos() ? 'pnl-pos' : 'pnl-neg'}`} sx={{ ml: 'auto', fontSize: '12px !important' }}>
-                  {fmtUsdc(pnlTotal())}
-                </Typography>
+                <span class="mono-sub">{netQty() >= 0 ? '+' : ''}{netQty().toLocaleString()}u</span>
+                <span class="mono-sub">@{Number.isFinite(mark()) ? mark().toFixed(4) : '—'}</span>
+                <span class={`mono-sub ${pos() ? 'pnl-pos' : 'pnl-neg'}`} style={{ 'margin-left': 'auto' }}>
+                  {fmtUsdc(pnlTot())}
+                </span>
               </div>
             );
           }}
         </For>
-      </>
-    </Show>
+        <Show when={pnlStr()}>
+          {(ps) => (
+            <div class="v8-pos-total">
+              <span class="q-lbl">合计</span>
+              <span class={`mono-strong ${ps().pos ? 'pnl-pos' : 'pnl-neg'}`}>{ps().text}</span>
+            </div>
+          )}
+        </Show>
+      </Show>
+
+      {/* 拒单明细 */}
+      <div class="v8-reject-title">拒单 (最近 {Math.min(props.rejectRows.length, 5)} 条)</div>
+      <Show
+        when={props.rejectRows.length > 0}
+        fallback={<Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>—</Typography>}
+      >
+        <For each={props.rejectRows.slice(0, 5)}>
+          {(r) => (
+            <div class="v8-reject-row">
+              <span class={`v8-reject-reason${r.reason_code === 'MARKET_NOT_ACCEPTING_ORDERS' ? ' v8-reject-stale' : ''}`}>
+                {REJECT_REASON_ZH[r.reason_code] ?? r.reason_code}
+              </span>
+              <span class="mono-sub">{SIDE_ZH[r.side] ?? r.side}</span>
+              <span class="mono-sub">{r.size}@{r.price}</span>
+            </div>
+          )}
+        </For>
+      </Show>
+    </div>
   );
 }
 
 // ============================================================
-// ConditionColumn
+// Market 展开区 (三列横排)
 // ============================================================
 
-function ConditionColumn(props: { cond: ConditionData }) {
-  const c        = () => props.cond;
-  const condId   = () => c().market?.condition_id ?? c().conditionId;
-  const mktLabel = () => inferMarketLabel(condId(), c().market);
-  const mkt      = () => c().market;
-  const inactive = () => mkt() != null && !mkt()!.accepting_orders;
+function MarketExpandArea(props: { cond: ConditionData }) {
+  const c = () => props.cond;
+  return (
+    <div class="v8-expand-area">
+      <ExpandBookPanel book={c().book} conditionId={c().conditionId} />
+      <ExpandQuotePanel quote={c().quote} />
+      <ExpandPosPanel posRows={c().posRows} rejectRows={c().rejectRows} perMarketPnl={c().perMarketPnl} />
+    </div>
+  );
+}
 
-  // 补充: tick / fee / source
-  const tickSz = () => mkt()?.tick_size;
-  const feeRate = () => mkt()?.fee_rate;
-  const accepting = () => mkt()?.accepting_orders;
-  const negRisk = () => mkt()?.neg_risk;
+// ============================================================
+// Event 分组 (Accordion 风格, 原生 CSS)
+// ============================================================
+
+function EventAccordion(props: { group: EventGroup }) {
+  const grp = () => props.group;
+  const score = () => grp().score;
+  const eventId = () => grp().eventId ?? '__no_event__';
+
+  const isLive = () => score()?.status === 'inplay' || score()?.status === 'halftime';
+
+  const expanded = () => isEventExpanded(eventId(), isLive());
+
+  // 赛事头显示文本
+  const sportZh = () => {
+    const sp = grp().sport ?? score()?.sport;
+    return sp ? (SPORT_ZH[sp] ?? sp) : '';
+  };
+  const homeTeam = () => score()?.home ?? grp().eventTitle?.split(' vs ')[0] ?? '—';
+  const awayTeam = () => score()?.away ?? grp().eventTitle?.split(' vs ')[1] ?? '—';
+  const homeScore = () => score()?.home_score;
+  const awayScore = () => score()?.away_score;
+  const statusZh  = () => STATUS_ZH[score()?.status ?? ''] ?? score()?.status ?? '?';
+  const subheader = () => {
+    const sc = score();
+    if (!sc) return grp().eventTitle ?? '';
+    const parts: string[] = [];
+    if (sc.period) parts.push(sc.period);
+    if (sc.clock_sec != null) parts.push(fmtClock(sc.clock_sec));
+    return parts.join(' · ');
+  };
+
+  // 当前 event 下的最大延迟
+  const maxStaleMs = () => {
+    const vals = grp().conditions
+      .map((c) => c.book ? stalenessMs(c.book.as_of_ts_ns ?? c.book.token0?.book_as_of_ts) : null)
+      .filter((v): v is number => v != null);
+    if (vals.length === 0) return null;
+    return Math.max(...vals);
+  };
 
   return (
-    <div class={`cond-col${inactive() ? ' cond-col-inactive' : ''}`} data-condition={condId()}>
-      {/* 拒单 Chip 右上角 */}
-      <div class="cond-col-pos-anchor">
-        <RejectChip rejectRows={c().rejectRows} />
-      </div>
+    <div class="v8-event-accordion" data-event={eventId()}>
+      {/* 赛事头 (点击折叠/展开整组) */}
+      <div
+        class={`v8-event-header${expanded() ? ' v8-event-header-open' : ''}`}
+        onClick={() => toggleEvent(eventId(), isLive())}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') toggleEvent(eventId(), isLive()); }}
+      >
+        <span class="v8-evt-arrow">{expanded() ? '▼' : '▶'}</span>
 
-      {/* 盘口标题行 */}
-      <div class="cond-header">
-        <Typography class="cond-type-label" title={condId()}>{mktLabel()}</Typography>
-        <Show when={mkt()}>
-          {(m) => (
-            <>
-              <span
-                class={`acc-dot ${m().accepting_orders ? 'acc-dot-ok' : 'acc-dot-off'}`}
-                title={m().accepting_orders ? '接单中' : '不接单'}
-              />
-              <Show when={m().neg_risk}>
-                <Chip label="NR" size="small" variant="outlined"
-                  title="neg_risk" sx={{ fontSize: '9px', height: '16px', color: 'text.disabled' }} />
-              </Show>
-              {/* tick + fee */}
-              <Show when={m().tick_size != null}>
-                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '9px', color: 'text.disabled' }} title="tick_size">
-                  tick:{m().tick_size}
-                </Typography>
-              </Show>
-              <Show when={m().fee_rate != null}>
-                <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '9px', color: 'text.disabled' }} title="fee_rate">
-                  fee:{(Number(m().fee_rate)*100).toFixed(2)}%
-                </Typography>
-              </Show>
-            </>
-          )}
+        {/* 运动图标/标签 */}
+        <Show when={sportZh()}>
+          <Chip label={sportZh()} size="small" variant="outlined"
+            sx={{ fontSize: '9px', height: '18px', color: 'text.secondary', mr: 0.5 }} />
         </Show>
+
+        {/* 进行中闪烁标识 */}
+        <Show when={isLive()}>
+          <span class="live-badge">LIVE</span>
+        </Show>
+
+        {/* 队伍 + 比分 */}
+        <span class="v8-evt-team">{homeTeam()}</span>
+        <Show when={homeScore() != null}>
+          <span class="v8-evt-score">{homeScore()}</span>
+          <span class="v8-evt-dash">—</span>
+          <span class="v8-evt-score">{awayScore()}</span>
+        </Show>
+        <span class="v8-evt-team">{awayTeam()}</span>
+
+        {/* 状态 Chip */}
+        <Show when={score()}>
+          <Chip
+            label={statusZh()}
+            color={isLive() ? 'success' : 'default'}
+            size="small"
+            variant="outlined"
+            sx={{ fontSize: '9px', height: '18px' }}
+          />
+        </Show>
+
+        {/* 子标题: 节次/时钟 */}
+        <Show when={subheader()}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '10px', fontFamily: 'monospace' }}>
+            {subheader()}
+          </Typography>
+        </Show>
+
+        {/* 延迟 */}
+        <Show when={maxStaleMs() != null}>
+          <span class={`v8-evt-stale ${stalenessClass(maxStaleMs())}`}>
+            {stalenessText(maxStaleMs())}
+          </span>
+        </Show>
+
+        {/* Market 数 */}
+        <span class="v8-evt-mkt-count">{grp().conditions.length}个盘口</span>
       </div>
 
-      {/* 量化决策区 */}
-      <div class="cond-quote-section">
-        <CondQuote quote={c().quote} isDemoData={c().isDemoData} />
-      </div>
+      {/* 分组内容 (展开/折叠) */}
+      <div class={`v8-event-body${expanded() ? ' v8-event-body-open' : ''}`}>
+        {/* 摘要行表格头 */}
+        <div class="v8-market-list-header">
+          <span class="v8-col-arrow" />
+          <span class="v8-col-type">类型</span>
+          <span class="v8-col-name">盘口</span>
+          <span class="v8-col-price">买价</span>
+          <span class="v8-col-price">卖价</span>
+          <span class="v8-col-edge">Edge</span>
+          <span class="v8-col-pos">持仓</span>
+          <span class="v8-col-pnl">浮盈</span>
+          <span class="v8-col-rej">拒单</span>
+          <span class="v8-col-stale">延迟</span>
+        </div>
 
-      {/* 双边订单簿 */}
-      <div class="cond-book-section">
-        <DualBook book={c().book} conditionId={condId()} />
-      </div>
-
-      {/* 持仓区 */}
-      <div class="cond-pos-section">
-        <CondPos posRows={c().posRows} perMarketPnl={c().perMarketPnl} />
+        <For each={grp().conditions}>
+          {(cond) => {
+            const condId = cond.conditionId;
+            const isExpanded = () => isMarketExpanded(condId);
+            return (
+              <>
+                <MarketSummaryRow
+                  cond={cond}
+                  expanded={isExpanded()}
+                  onClick={() => toggleMarket(condId)}
+                />
+                {/* 展开区 — 用 CSS height 动画 (SUID Collapse 未包含在库中) */}
+                <div class={`v8-market-collapse${isExpanded() ? ' v8-market-collapse-open' : ''}`}>
+                  <Show when={isExpanded()}>
+                    <MarketExpandArea cond={cond} />
+                  </Show>
+                </div>
+              </>
+            );
+          }}
+        </For>
       </div>
     </div>
   );
 }
 
 // ============================================================
-// EventGroupCard (Material Card)
-// ============================================================
-
-function EventGroupCard(props: { group: EventGroup }) {
-  const allInactive = () =>
-    props.group.conditions.every((c) => c.market != null && !c.market!.accepting_orders);
-
-  return (
-    <Card
-      variant="outlined"
-      class={allInactive() ? 'event-group-inactive' : ''}
-      data-event={props.group.eventId ?? ''}
-      sx={{ overflow: 'hidden' }}
-    >
-      <EventHeader group={props.group} />
-      <div class="event-columns">
-        <For each={props.group.conditions}>
-          {(cond) => <ConditionColumn cond={cond} />}
-        </For>
-      </div>
-    </Card>
-  );
-}
-
-// ============================================================
-// TradingToolbar (Material ToggleButtonGroup 筛选)
+// TradingToolbar
 // ============================================================
 
 type FilterMode = 'all' | 'live' | 'position';
@@ -716,6 +770,9 @@ function TradingToolbar(props: {
   onSearch: (s: string) => void;
   visibleCount: number;
   totalCount: number;
+  totalMarkets: number;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
 }) {
   return (
     <div class="trading-toolbar">
@@ -745,8 +802,14 @@ function TradingToolbar(props: {
       />
 
       <Typography variant="caption" class="toolbar-count">
-        显示 {props.visibleCount} / {props.totalCount}
+        {props.visibleCount} 赛事 / {props.totalMarkets} 盘口
       </Typography>
+
+      {/* 全展开/全折叠快捷按钮 */}
+      <div class="v8-toolbar-btns">
+        <button class="v8-quickbtn" onClick={props.onExpandAll} title="全部展开">全展</button>
+        <button class="v8-quickbtn" onClick={props.onCollapseAll} title="全部折叠">全折</button>
+      </div>
     </div>
   );
 }
@@ -776,9 +839,10 @@ export function TradingPage() {
         if (sc) {
           if (sc.home?.toLowerCase().includes(q)) return true;
           if (sc.away?.toLowerCase().includes(q)) return true;
-          if (sc.event_id?.toLowerCase().includes(q)) return true;
         }
         if (g.eventId?.toLowerCase().includes(q)) return true;
+        if (g.eventTitle?.toLowerCase().includes(q)) return true;
+        if (g.sport?.toLowerCase().includes(q)) return true;
         return g.conditions.some((c) =>
           c.market?.slug?.toLowerCase().includes(q) || c.conditionId?.toLowerCase().includes(q),
         );
@@ -786,6 +850,10 @@ export function TradingPage() {
     }
     return groups;
   };
+
+  const totalMarkets = () => filteredGroups().reduce((acc, g) => acc + g.conditions.length, 0);
+
+  const allCondIds = () => filteredGroups().flatMap((g) => g.conditions.map((c) => c.conditionId));
 
   return (
     <div>
@@ -796,6 +864,9 @@ export function TradingPage() {
         onSearch={setSearch}
         visibleCount={filteredGroups().length}
         totalCount={allGroups().length}
+        totalMarkets={totalMarkets()}
+        onExpandAll={() => expandAllMarkets(allCondIds())}
+        onCollapseAll={() => collapseAllMarkets(allCondIds())}
       />
 
       {/* PnL 净值曲线 */}
@@ -803,8 +874,8 @@ export function TradingPage() {
         <PnlSparkline />
       </div>
 
-      {/* 市场网格 */}
-      <div class="market-grid">
+      {/* 赛事列表 (v8 Accordion) */}
+      <div class="v8-event-list">
         <Show
           when={filteredGroups().length > 0}
           fallback={
@@ -812,16 +883,16 @@ export function TradingPage() {
               variant="body2"
               sx={{ p: 5, textAlign: 'center', color: 'text.disabled', fontStyle: 'italic' }}
             >
-              {state.positions == null
-                ? '加载市场数据...'
+              {state.eventGroups.length === 0 && allGroups().length === 0
+                ? '加载赛事数据... (从 /api/v1/events 发现)'
                 : filter() !== 'all'
                   ? '该筛选条件下无赛事'
-                  : '等待持仓建立 / 后端未接入 · 点 ⚙ 检查'}
+                  : '等待后端连接 · 点 ⚙ 检查 API 地址'}
             </Typography>
           }
         >
           <For each={filteredGroups()}>
-            {(group) => <EventGroupCard group={group} />}
+            {(group) => <EventAccordion group={group} />}
           </For>
         </Show>
       </div>

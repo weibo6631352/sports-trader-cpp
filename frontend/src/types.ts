@@ -274,6 +274,22 @@ export interface Quote {
   model_as_of_ts: number;
 }
 
+// ---------- /api/v1/events ----------
+
+export interface EventSummary {
+  event_id: string;
+  slug: string;
+  title: string;
+  sport: string;
+  neg_risk_market_id: string;
+  condition_ids: string[];
+}
+
+export interface EventsResponse {
+  events: EventSummary[];
+  as_of_ts: number;
+}
+
 // ---------- 渲染用聚合类型 ----------
 
 export interface ConditionData {
@@ -284,11 +300,13 @@ export interface ConditionData {
   quote: Quote | null;
   rejectRows: RiskReject[];
   perMarketPnl: number | null;
-  isDemoData: boolean;
 }
 
 export interface EventGroup {
   eventId: string | null;
+  eventSlug: string | null;
+  eventTitle: string | null;
+  sport: string | null;
   score: Score | null;
   conditions: ConditionData[];
 }

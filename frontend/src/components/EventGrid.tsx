@@ -95,7 +95,8 @@ function EventHeader(props: { group: EventGroup }) {
   const conditions = () => props.group.conditions;
 
   const firstMkt = () => conditions().find((c) => c.market)?.market ?? null;
-  const isDemoData = () => conditions().some((c) => c.isDemoData);
+  // v8: isDemoData removed (data_source is always live now)
+  const isDemoData = () => false;
 
   const sport = () => score()?.sport ?? null;
   const sportZh = () => (sport() ? (SPORT_ZH[sport()!] ?? sport()) : '');
@@ -576,7 +577,7 @@ function ConditionColumn(props: { cond: ConditionData }) {
       </div>
 
       <div class="cond-quote-section">
-        <CondQuote quote={c().quote} isDemoData={c().isDemoData} />
+        <CondQuote quote={c().quote} isDemoData={false} />
       </div>
 
       <div class="cond-book-section">
