@@ -3,115 +3,89 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>sports-trader-cpp — 观测看板 v1</title>
+  <title>sports-trader-cpp — 单屏盯盘终端 v3</title>
   <link rel="stylesheet" href="src/style.css" />
 </head>
 <body>
 <div id="app">
 
-  <!-- Top Bar -->
+  <!-- DEMO 横幅 (data_source==demo 时强制显示, 不可关闭, 老钱红线 P0) -->
+  <div id="demo-banner" class="hidden">
+    演示数据 · 非实盘 — 所有量化参数仅供参考, 不触发下单
+  </div>
+
+  <!-- 顶部常驻条 -->
   <div class="top-bar">
-    <h1>sports-trader-cpp &mdash; 观测 / PnL 看板 v1</h1>
-    <button class="icon-btn" id="settings-btn" title="API 配置">&#9881; 设置</button>
+    <span id="top-mode-badge"></span>
+    <span id="top-state"></span>
+    <span id="top-uptime" class="top-dim"></span>
+    <span class="top-sep">|</span>
+    <span class="top-label">WSS</span>
+    <span id="top-wss"></span>
+    <span class="top-sep">|</span>
+    <span class="top-label">净PnL</span>
+    <span id="top-pnl" class="top-pnl">—</span>
+    <span class="top-sep">|</span>
+    <span id="top-gate"></span>
+    <span class="top-sep">|</span>
+    <span class="top-label">p99</span>
+    <span id="top-p99" class="top-dim">—</span>
+    <span class="top-sep">|</span>
+    <span class="top-label">staleness</span>
+    <span id="top-staleness" class="top-dim">—</span>
+    <span class="top-sep">|</span>
+    <span class="top-label">拒单/60s</span>
+    <span id="top-rejects" class="top-dim">—</span>
+    <div class="top-right">
+      <button class="icon-btn" id="settings-btn" title="API 配置">&#9881;</button>
+    </div>
   </div>
 
-  <!-- Stub Banner -->
-  <div id="stub-banner" class="hidden">
-    STUB 模式 — 显示本地 mock 数据 (URL 含 ?stub=1). 移除参数后连接真实 API.
-  </div>
-
-  <!-- Settings Panel -->
+  <!-- 设置面板 -->
   <div id="settings-panel" class="hidden">
     <div class="settings-row">
       <label>API Base</label>
-      <input id="api-base-input" type="text" placeholder="http://127.0.0.1:8080" />
+      <input id="api-base-input" type="text" placeholder="http://127.0.0.1:8092" />
       <button class="btn-primary" id="api-base-save">保存并刷新</button>
     </div>
-    <div style="margin-top:6px;font-size:11px;color:var(--text-dim)">
-      默认连 127.0.0.1:8080 (ADR-037 本地优先). 调试时加 ?stub=1 使用 mock 数据.
-    </div>
+    <div class="settings-hint">默认 127.0.0.1:8080. 加 ?stub=1 使用 mock 数据.</div>
   </div>
 
-  <!-- Status Bar -->
-  <div id="status-bar">
-    <div class="no-data">加载中...</div>
+  <!-- Stub 标识 -->
+  <div id="stub-banner" class="hidden">
+    STUB 模式 — 本地 mock 数据 (URL 含 ?stub=1). 移除参数后连接真实 API.
   </div>
 
-  <!-- Tabs Navigation -->
-  <nav class="tabs-nav">
-    <button class="tab-btn tab-active" data-tab="pnl">PnL / 持仓</button>
-    <button class="tab-btn" data-tab="risk">风控 / 拒单</button>
-    <button class="tab-btn" data-tab="gate">PAPER-GATE</button>
-    <button class="tab-btn" data-tab="book">订单簿</button>
-    <button class="tab-btn" data-tab="metrics">Metrics</button>
-  </nav>
+  <!-- 全局 PnL 曲线 (窄条 sparkline) -->
+  <div id="pnl-sparkline-wrap">
+    <div id="pnl-sparkline"><div class="no-data spark-placeholder">PnL 曲线加载中...</div></div>
+  </div>
 
-  <!-- Tab: PnL / 持仓 -->
-  <section id="tab-pnl" class="tab-section">
+  <!-- 主盯盘区: market 卡片网格 -->
+  <div id="market-grid">
+    <div class="no-data grid-placeholder">加载市场数据...</div>
+  </div>
 
-    <!-- 持仓面板 -->
-    <div class="panel-card">
-      <div class="panel-title">持仓 &nbsp;<span style="color:var(--text-dim);font-weight:400;font-size:11px">GET /api/v1/positions (3s)</span></div>
-      <div id="positions-panel"><div class="no-data">加载中...</div></div>
-    </div>
+  <!-- 底部折叠区: 仅次要内容 -->
+  <details id="secondary-details" class="secondary-section">
+    <summary class="secondary-summary">次要信息 (PnL 归因瀑布 / raw metrics)</summary>
 
-    <!-- PnL 净值曲线 -->
-    <div class="panel-card">
-      <div class="panel-title">净 PnL 曲线 &nbsp;<span style="color:var(--text-dim);font-weight:400;font-size:11px">GET /api/v1/pnl/timeseries (10s)</span></div>
-      <div id="pnl-curve-panel"><div class="no-data">加载中...</div></div>
-    </div>
+    <div class="secondary-inner">
 
-    <!-- PnL 归因 -->
-    <div class="panel-card">
-      <div class="panel-title">盈亏归因 (瀑布) &nbsp;<span style="color:var(--text-dim);font-weight:400;font-size:11px">GET /api/v1/pnl/attribution (10s)</span></div>
-      <div id="pnl-attr-panel"><div class="no-data">加载中...</div></div>
-    </div>
-
-  </section>
-
-  <!-- Tab: 风控 / 拒单 -->
-  <section id="tab-risk" class="tab-section hidden">
-
-    <div class="panel-card">
-      <div class="panel-title">RM 拒单流 &nbsp;<span style="color:var(--text-dim);font-weight:400;font-size:11px">GET /api/v1/risk/rejects (5s)</span></div>
-      <div id="risk-rejects-panel"><div class="no-data">加载中...</div></div>
-    </div>
-
-  </section>
-
-  <!-- Tab: PAPER-GATE -->
-  <section id="tab-gate" class="tab-section hidden">
-
-    <div class="panel-card">
-      <div class="panel-title">GM-PAPER-G 门禁仪表 &nbsp;<span style="color:var(--text-dim);font-weight:400;font-size:11px">GET /api/v1/gate/paper (30s)</span></div>
-      <div id="gate-paper-panel"><div class="no-data">加载中...</div></div>
-    </div>
-
-  </section>
-
-  <!-- Tab: 订单簿 -->
-  <section id="tab-book" class="tab-section hidden">
-
-    <div class="panel-card">
-      <div class="panel-title">订单簿 &nbsp;<span style="color:var(--text-dim);font-weight:400;font-size:11px">GET /api/v1/book/{condition_id} (2s)</span></div>
-      <div class="book-search">
-        <input id="book-search-input" type="text" placeholder="condition_id (e.g. mkt-abc-001)" />
-        <button class="btn-primary" id="book-search-btn">查询</button>
+      <!-- PnL 归因瀑布 -->
+      <div class="panel-card">
+        <div class="panel-title">PnL 归因 (瀑布) <span class="poll-hint">15s</span></div>
+        <div id="pnl-attr-panel"><div class="no-data">加载中...</div></div>
       </div>
-      <div id="book-panel"><div class="no-data">输入 condition_id 查询订单簿</div></div>
+
+      <!-- Raw metrics -->
+      <div class="panel-card">
+        <div class="panel-title">Prometheus /metrics <span class="poll-hint">30s</span></div>
+        <div id="metrics-panel"><div class="no-data">加载中...</div></div>
+      </div>
+
     </div>
-
-  </section>
-
-  <!-- Tab: Metrics -->
-  <section id="tab-metrics" class="tab-section hidden">
-
-    <div class="panel-card">
-      <div class="panel-title">Prometheus /metrics &nbsp;<span style="color:var(--text-dim);font-weight:400;font-size:11px">GET /metrics (15s)</span></div>
-      <div id="metrics-panel"><div class="no-data">加载中...</div></div>
-    </div>
-
-  </section>
+  </details>
 
 </div><!-- /#app -->
 
