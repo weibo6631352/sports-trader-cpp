@@ -65,10 +65,13 @@ add_library(stcpp_debug_api STATIC
     endpoint_healthz.cpp
     endpoint_version.cpp
     endpoint_status.cpp
-    # W9 W3 加入:
-    # endpoint_positions.cpp
-    # endpoint_signals.cpp
-    # endpoint_drain.cpp
+    # ADR-038 MVP read-only endpoints (小卢):
+    endpoint_positions.cpp
+    endpoint_pnl.cpp
+    endpoint_risk.cpp
+    endpoint_gate.cpp
+    endpoint_metrics.cpp
+    endpoint_market.cpp
 )
 
 target_include_directories(stcpp_debug_api

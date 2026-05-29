@@ -11,12 +11,14 @@
 #pragma once
 
 // cpp-httplib header-only (SYSTEM include — 不受公司 -Werror 约束)
-#include <httplib.h>
-
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <string>
 #include <thread>
+
+#include "src/stcpp/debug_api/state_provider.hpp"
+#include <httplib.h>
 
 namespace stcpp::debug_api {
 
@@ -38,13 +40,18 @@ namespace stcpp::debug_api {
 // W9 W3 将扩展注入接口 (SignalEngine* / SystemState* 等), 接口兼容 W9 W2 stub.
 class HttpServer {
 public:
-    explicit HttpServer(uint16_t port);
+    // provider: 观测只读状态契约 (ADR-038 §2/§3). 不传 = 内置 StubStateProvider(paper),
+    //   返回结构合法的空/0 值。各模块 owner 提供真实 double-buffer snapshot 后,
+    //   由 main 注入。HttpServer 只持 const 句柄, 不拥有生命周期 (caller 保证 outlive)。
+    // bind: 安全默认 "127.0.0.1" (ADR-038 §5 / 小白 §2). 远程走 SSH 隧道, 不开 0.0.0.0。
+    explicit HttpServer(uint16_t port, const StateProvider* provider = nullptr,
+                        const char* bind_addr = "127.0.0.1");
 
     // 禁止拷贝/移动 (httplib::Server 不可拷贝; thread 不可拷贝)
-    HttpServer(const HttpServer&)            = delete;
+    HttpServer(const HttpServer&) = delete;
     HttpServer& operator=(const HttpServer&) = delete;
-    HttpServer(HttpServer&&)                 = delete;
-    HttpServer& operator=(HttpServer&&)      = delete;
+    HttpServer(HttpServer&&) = delete;
+    HttpServer& operator=(HttpServer&&) = delete;
 
     ~HttpServer();
 
@@ -64,17 +71,25 @@ public:
     // 进程启动时刻 (server 构造时记录); 用于计算 uptime_sec
     std::chrono::steady_clock::time_point start_time() const noexcept { return start_time_; }
 
+    // 观测只读状态契约 (const 句柄, 永不为空: 缺省指向内置 stub)
+    const StateProvider& provider() const noexcept { return *provider_; }
+
 private:
     // 注册所有 endpoint handler 到 server_
     void register_handlers();
 
-    httplib::Server   server_;
-    std::thread       server_thread_;
+    httplib::Server server_;
+    std::thread server_thread_;
     std::atomic<bool> running_{false};
-    uint16_t          port_;
+    uint16_t port_;
+    std::string bind_addr_;
+
+    // 缺省 stub provider (caller 未注入时使用); provider_ 指向它或外部注入的实现
+    StubStateProvider default_provider_;
+    const StateProvider* provider_;
 
     // 构造时记录, 不变; 用于 uptime_sec (steady_clock 不受系统时钟调整影响)
     std::chrono::steady_clock::time_point start_time_;
 };
 
-} // namespace stcpp::debug_api
+}  // namespace stcpp::debug_api
