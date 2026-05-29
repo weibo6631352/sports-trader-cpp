@@ -1117,3 +1117,40 @@ gtest_discover_tests(test_goalserve_adapter
     DISCOVERY_TIMEOUT 30
     PROPERTIES LABELS "unit;goalserve;adapter;vendor-agnostic;adr-037"
 )
+
+# 小田 ADR-037: Feature Store Consumer Contract v1.0
+#   T1:  FeatureStoreGameRow R-20 4 ts chain ok + 4 violations
+#   T2:  FeatureStoreGameRow PIT ok / violation (as_of_ts <= now_ns)
+#   T3:  from_game_record() — 4 ts 透传 + event_date 计算 + as_of_ts override
+#   T4:  Bookmaker slots NaN 语义 (is_present / valid_bm_count)
+#   T5:  FeatureStoreBookRow R-20 4 ts chain + PIT
+#   T6:  BookRow level_valid NaN 语义 (空 level != 0, out-of-bounds)
+#   T7:  validate_game_row 全路径 (valid/ts_viol/pit_viol/no_match_id/no_sport/fallback_origin)
+#   T8:  validate_book_row 全路径 (valid YES/NO/ts_viol/pit_viol/no_market_id/bad_side)
+#   T9:  kFeatureStoreSchemaVersion ABI 字符串稳定
+#   T10: kOrderBookLevels / kNumBookmakers compile-time ABI 锁
+# vendor-agnostic: 不硬编码 Goalserve/Polymarket; 消费契约供小段/小冯 adapter 对齐
+add_executable(test_feature_store_contract
+    test_feature_store_contract.cpp
+)
+target_link_libraries(test_feature_store_contract PRIVATE
+    GTest::gtest_main
+    stcpp_data_contract
+)
+target_compile_options(test_feature_store_contract PRIVATE
+    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
+    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
+    -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
+)
+target_include_directories(test_feature_store_contract PRIVATE
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_feature_store_contract PRIVATE cxx_std_20)
+target_compile_definitions(test_feature_store_contract PRIVATE
+    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
+)
+gtest_discover_tests(test_feature_store_contract
+    DISCOVERY_TIMEOUT 30
+    PROPERTIES LABELS "unit;feature-store;data-contract;adr-037;vendor-agnostic;pit"
+)
