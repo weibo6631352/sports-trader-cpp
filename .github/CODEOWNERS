@@ -1,0 +1,17 @@
+# CODEOWNERS — 红线路径自动请求评审 (ADR-039 §4)
+# 注: agent persona (老韩/老沈/老郭...) 非 GitHub 账号, 无法直接映射;
+#     此处把红线/敏感路径映射到 repo owner 作为强制守门,
+#     persona owner 路由 (risk→老韩 / signer→老沈+老孙 / ABI→老郭) 见 ADR-039 §5。
+
+# 风控红线 (RM 不可绕过)
+/src/stcpp/risk/         @weibo6631352
+/include/stcpp/risk/     @weibo6631352
+
+# 签名 / 私钥红线
+/include/stcpp/crypto/   @weibo6631352
+/src/stcpp/signer/       @weibo6631352
+
+# 制度 / CI / ADR (改规则必经 owner)
+/.github/                @weibo6631352
+/docs/ADR/               @weibo6631352
+/CLAUDE.md               @weibo6631352
