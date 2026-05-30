@@ -2,6 +2,10 @@
 //
 // Owner: 小卢 (senior-ic-pool)
 // last_review: 2026-05-30
+// 小段 2026-05-30: 接入 ScoreEventMapper (Goalserve inplay ↔ Polymarket event 映射层)
+//   score(event_id) 先走 mapper_.Resolve(event_id) → inplay_match_id
+//   再查 ScoreSnapshotStore.Get(inplay_match_id) 取真实比分
+//   解决 B3: score 端点 100% miss 问题
 //
 // 设计概述 (去 demo 重构 — 老板: 只有 live):
 //   真实接入路径:
@@ -16,6 +20,8 @@
 //        market() 查 catalog 返回 found=true 真实数据 (非硬编码 false)
 //     7. LiveMetricsHooks (P1-2 修复) — 接真实 uptime/rm_reject/fill/staleness/wss
 //        metrics() 填充真实值 (非全 0)
+//     8. ScoreEventMapper (小段 score-mapping) — Goalserve inplay ↔ Polymarket event 映射
+//        score() 先 mapper.Resolve(pm_event_id) → inplay_match_id → store.Get()
 //
 //   无数据语义 (彻底去 demo, 老板: 只有 live):
 //     - hub/store 无数据 → 返回结构合法空值 (不是 demo 假数据)
@@ -62,6 +68,7 @@
 #include <utility>
 #include <vector>
 
+#include "stcpp/data/score_event_mapper.hpp"
 #include "stcpp/data/score_snapshot_store.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/polymarket/wss/pm_wss_subscriber.hpp"  // IWssTransport (P1-2/P1-3)
@@ -305,6 +312,15 @@ public:
         }
         // wss_sports_api / wss_user_channel: 当前无接入 → false (标注而非虚报)
 
+        // ---- 小段 score-mapping 统计 (G-FREEZE-W 只增, 2026-05-30) ----
+        // ScoreEventMapper.LastStats() O(1) mutex 持锁 < 1us (R-12 合规)
+        if (score_mapper_ != nullptr) {
+            const data::MatchStats ms = score_mapper_->LastStats();
+            snap.score_matched_total = ms.matched_count;
+            snap.score_attempted_total = ms.total_attempted;
+            snap.score_match_rate = ms.match_rate();
+        }
+
         return snap;
     }
 
@@ -330,16 +346,47 @@ public:
     }
 
     // ---- score — 读 ScoreSnapshotStore (live feed); 无数据 → found=false ----
-    // ScoreSnapshotStore.Get(event_id) O(1) 无锁读 (R-12 合规)
-    // score_store_ 为 nullptr 或 event_id 不存在 → found=false (不回落 demo)
+    //
+    // 小段 score-mapping 接入 (2026-05-30):
+    //   Step 1: score_mapper_.Resolve(pm_event_id) → inplay_match_id
+    //           ScoreEventMapper 维护 Polymarket event_id → Goalserve inplay_match_id 映射
+    //           精确路径 (gameId) 优先, 否则队名+时间 fuzzy match
+    //   Step 2: ScoreSnapshotStore.Get(inplay_match_id) → EventScore
+    //
+    // 回落逻辑:
+    //   mapper 为 nullptr (未注入) → 直接用 event_id 查 store (旧行为, 兼容测试)
+    //   mapper 无映射 / store 无数据 → found=false
+    //
+    // R-12 合规: mapper.Resolve O(1) mutex < 1us; store.Get O(1) mutex < 5ns
+    // R-20 合规: EventScore.ts 4ts 来自 ScoreSnapshotStore (Goalserve payload 透传)
     EventScore score(const std::string& event_id) const override {
-        if (score_store_ != nullptr) {
-            const auto opt = score_store_->Get(event_id);
-            if (opt.has_value()) {
-                return *opt;
-            }
+        if (score_store_ == nullptr) {
+            EventScore miss;
+            miss.found = false;
+            miss.event_id = event_id;
+            miss.source = "live";
+            return miss;
         }
-        // store 无数据 / event_id 不存在 → found=false
+
+        // 确定查 store 用的 key (inplay_match_id)
+        std::string store_key = event_id;  // fallback: 直查 (mapper 未注入时)
+        if (score_mapper_ != nullptr) {
+            const std::string inplay_id = score_mapper_->Resolve(event_id);
+            if (!inplay_id.empty()) {
+                store_key = inplay_id;  // 映射命中 → 用 Goalserve inplay_match_id
+            }
+            // 映射 miss → store_key 保持 event_id (大概率仍 miss, 但保证逻辑正确)
+        }
+
+        const auto opt = score_store_->Get(store_key);
+        if (opt.has_value()) {
+            // 把 pm_event_id 写回 EventScore.event_id (保证上层 ID 对齐)
+            EventScore es = *opt;
+            es.event_id = event_id;
+            return es;
+        }
+
+        // store 无数据 → found=false
         EventScore miss;
         miss.found = false;
         miss.event_id = event_id;
@@ -518,10 +565,21 @@ public:
     // P1-3: book()/book_pair() wss_state 从 hooks_.wss_transport->IsConnected() 动态读取。
     void set_live_metrics_hooks(LiveMetricsHooks hooks) { hooks_ = hooks; }
 
+    // ---- 小段 score-mapping: set_score_mapper — ScoreEventMapper 注入 ----
+    // 注入后 score(pm_event_id) 先走映射层查 inplay_match_id 再查 ScoreSnapshotStore.
+    // 非热路径, 启动时注入一次; 采集线程周期调用 mapper.Refresh() 更新映射表.
+    // nullptr → 降级为直接用 event_id 查 store (旧行为, 无 panic)
+    // R-12: mapper.Resolve() O(1) mutex < 1us, 读线程安全
+    void set_score_mapper(const data::ScoreEventMapper* mapper) noexcept {
+        score_mapper_ = mapper;
+    }
+
 private:
     const polymarket::clob_wss::OrderBookSnapshotHub& hub_;
     const risk::RmDebugSnapshot* snap_;            // nullable; nullptr → 空 vector
     const data::ScoreSnapshotStore* score_store_;  // nullable; nullptr → found=false
+    // 小段 score-mapping: ScoreEventMapper (nullable; nullptr → 旧行为直查 store)
+    const data::ScoreEventMapper* score_mapper_{nullptr};
     MarketTokenMap token_map_;
     risk::RiskConfig risk_cfg_;  // 保留参数兼容 (当前实现未使用)
     ExecMode mode_;

@@ -3,6 +3,7 @@
 # Owner: 小段 (goalserve-specialist, #37)
 # Sprint-2 W6 Wave 29 — D-W5-03/05 data-contract 落 src/stcpp/data/
 # 小段 W9+ — inplay score parser + ScoreSnapshotStore
+# 小段 2026-05-30 — ScoreEventMapper (Goalserve inplay ↔ Polymarket event 映射层)
 #
 # Targets:
 #   stcpp_data_goalserve       — W4 stub (goalserve_stub.cpp), URL builder + client
@@ -10,6 +11,7 @@
 #   stcpp_data_contract        — static lib alias (links stcpp_data_schema + stcpp_data_goalserve)
 #   stcpp_data_inplay_parser   — InplayScoreParser (soccer/basketball/tennis, 零外部依赖)
 #   stcpp_data_score_store     — ScoreSnapshotStore (R-12 RCU-lite in-mem store)
+#   stcpp_data_score_mapper    — ScoreEventMapper (Goalserve inplay ↔ Polymarket 映射, 小段)
 
 # ---------------------------------------------------------------------------
 # stcpp_data_goalserve: GoalserveClient stub (W4, W5 接 cpp-httplib)
@@ -109,6 +111,39 @@ target_compile_features(stcpp_data_score_store PUBLIC cxx_std_20)
 find_package(Threads REQUIRED)
 target_link_libraries(stcpp_data_score_store
     PUBLIC Threads::Threads
+)
+
+# ---------------------------------------------------------------------------
+# stcpp_data_score_mapper: ScoreEventMapper (小段 2026-05-30)
+#
+# Goalserve inplay_match_id ↔ Polymarket event_id 双向映射层
+# 精确路径: gameId → pregame→inplay 表 → inplay_match_id
+# fuzzy 路径: 队名一致化 (NormalizeName) + 时间邻近 (900s 窗口)
+# MVP sport: Soccer / Basketball / Tennis
+#
+# 接口:
+#   SetInplayCandidates / SetPolymarketEvents / SetPregameToInplayMapping
+#   Refresh() → MatchStats (matched_count / total_attempted / miss_reasons)
+#   Resolve(pm_event_id) → inplay_match_id (O(1) hash lookup, R-12 合规)
+#
+# 依赖: stcpp_data_goalserve (GoalserveSport enum), std::mutex (Threads)
+# R-12: Resolve() O(1) mutex < 1us; Refresh() 仅采集线程调用 (非热路径)
+# ---------------------------------------------------------------------------
+add_library(stcpp_data_score_mapper STATIC
+    score_event_mapper.cpp
+)
+
+target_include_directories(stcpp_data_score_mapper
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_features(stcpp_data_score_mapper PUBLIC cxx_std_20)
+
+find_package(Threads REQUIRED)
+target_link_libraries(stcpp_data_score_mapper
+    PUBLIC
+        stcpp_data_goalserve   # GoalserveSport enum
+        Threads::Threads
 )
 
 # ---------------------------------------------------------------------------

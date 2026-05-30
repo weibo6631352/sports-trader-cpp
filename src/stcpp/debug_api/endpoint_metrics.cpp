@@ -116,6 +116,20 @@ void register_metrics(httplib::Server& svr, const HttpServer& hs) {
                     "Number of subscribed user channel condition_ids",
                     ml + " " + json::i64(m.subscribed_user_conditions));
 
+        // ---- 小段 score-mapping 统计 (2026-05-30) ----
+        // score_matched / score_attempted / score_match_rate
+        // 来源: ScoreEventMapper.LastStats() (最近 Refresh 周期)
+        // 0/0/0.0 = mapper 未注入 或 无 PM event 待匹配 (outright/futures 期均为 0)
+        metric_line(out, "stcpp_score_matched_total", "gauge",
+                    "Goalserve inplay events matched to Polymarket events (last Refresh cycle)",
+                    ml + " " + json::i64(m.score_matched_total));
+        metric_line(out, "stcpp_score_attempted_total", "gauge",
+                    "Polymarket events attempted for score matching (last Refresh cycle)",
+                    ml + " " + json::i64(m.score_attempted_total));
+        metric_line(out, "stcpp_score_match_rate", "gauge",
+                    "Score match rate [0.0,1.0] (matched/attempted, last Refresh cycle)",
+                    ml + " " + json::num(m.score_match_rate));
+
         res.set_content(out, "text/plain; version=0.0.4; charset=utf-8");
         res.status = 200;
     });

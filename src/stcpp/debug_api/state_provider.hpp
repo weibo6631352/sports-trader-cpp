@@ -203,6 +203,13 @@ struct MetricsSnapshot {
     std::int64_t subscribed_markets_total{0};
     std::int64_t subscribed_user_conditions{0};
     std::int64_t wss_last_disconnect_ts_ns{0};
+    // 小段 score-mapping (G-FREEZE-W 只增, 2026-05-30):
+    //   score_matched_total   — ScoreEventMapper 最近 Refresh 匹配成功数 (供小卢 /metrics)
+    //   score_attempted_total — ScoreEventMapper 最近 Refresh 尝试匹配数
+    //   score_match_rate      — matched / attempted [0.0, 1.0]; 0 = mapper 未注入或无 event
+    std::int64_t score_matched_total{0};
+    std::int64_t score_attempted_total{0};
+    double score_match_rate{0.0};
 };
 
 // ============================================================

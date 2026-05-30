@@ -162,6 +162,7 @@ target_link_libraries(stcpp_debug_server PRIVATE
     stcpp_sizing
     stcpp_quote_snapshot_hub    # 集成 ④: quote hub (小石)
     stcpp_data_score_store
+    stcpp_data_score_mapper     # ScoreEventMapper (小段 2026-05-30, inplay↔pm 映射层)
     stcpp_data_inplay_feed      # Goalserve InplayFeedThread (小段 W5, POSIX+zlib, 常开)
     stcpp_paper_loop            # feat/xiaoxiao-paper-loop: 最小 paper 交易循环 (小肖)
     stcpp_pricing               # BaselineFairValueModel
