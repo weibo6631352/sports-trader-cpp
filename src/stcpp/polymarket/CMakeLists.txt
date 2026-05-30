@@ -29,8 +29,10 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
 endif()
 
 if(STCPP_EXEC_MODE STREQUAL "live")
+    find_package(CURL REQUIRED)
     add_library(stcpp_polymarket_live STATIC
         live/live_pm_client.cpp
+        live/live_order_submitter.cpp   # GM 2026-05-31 Phase 3: 实盘下单器 (实盘验证)
     )
     target_include_directories(stcpp_polymarket_live
         PUBLIC ${CMAKE_SOURCE_DIR}/include
@@ -39,9 +41,17 @@ if(STCPP_EXEC_MODE STREQUAL "live")
     target_compile_definitions(stcpp_polymarket_live PRIVATE
         STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
     )
-    target_link_libraries(stcpp_polymarket_live PUBLIC stcpp_infra_wal)
-    # M5+ 接入: libcurl (REST) + libwebsockets (WSS) + libsecp256k1 (EIP-712).
-    # 当前 stub 不引入任何第三方依赖, link 顺利.
+    # Phase 3: 签名(eip712+secp256k1) + wire(body/HMAC) + libcurl POST 串成下单器。
+    target_link_libraries(stcpp_polymarket_live
+        PUBLIC  stcpp_infra_wal
+                stcpp_crypto_eip712
+                stcpp_crypto_secp256k1
+                stcpp_polymarket_clob_wire
+        PRIVATE CURL::libcurl
+    )
+    # Phase 3 真网验证 CLI (live only)
+    add_executable(stcpp_live_order_cli live/live_order_cli.cpp)
+    target_link_libraries(stcpp_live_order_cli PRIVATE stcpp_polymarket_live CURL::libcurl)
 endif()
 
 # 小冯 W5 Wave 24 (W5-D-02): PM sports-api WSS subscriber v0.1 — paper + live 共享 (read-only)
