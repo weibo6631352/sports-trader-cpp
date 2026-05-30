@@ -82,6 +82,15 @@ inline constexpr double kDefaultBookBlend = 0.20;  // 20% microprice, 80% prior
 inline constexpr double kNormEps = 1e-14;
 
 // ---------------------------------------------------------------------------
+// 置信权重 ramp (P0-3 dogfood-remediation):
+//   in-play score-prior 的置信度随比赛进程从 base 线性升到 max.
+//   早期 (time_frac=0) 信号弱 → 主要听市场 de-vig; 后期领先更确定 → 加大先验权重.
+//   终态 (Ended/...) 由调用方直接给 conf=1.0 (确定性结果), 不用此 ramp.
+// ---------------------------------------------------------------------------
+inline constexpr double kBasePriorConfidence = 0.15;  // time_frac=0 时的先验权重
+inline constexpr double kMaxPriorConfidence = 0.60;   // time_frac=1 时的先验权重上限
+
+// ---------------------------------------------------------------------------
 // 2. FairValueOutcomeCount — 当前支持 2 outcomes (YES/NO binary market)
 //    ADR-037 扩展路: 改为 constexpr 参数模板即可支持 3-way
 // ---------------------------------------------------------------------------
@@ -202,6 +211,99 @@ public:
     r0 += correction;
     r0 = clamp_prob(r0);  // re-clamp after correction
     return {r0, r1};
+}
+
+// ---------------------------------------------------------------------------
+// 6b. de-vig + 信号融合 纯函数 (P1-8 / P0-3 dogfood-remediation)
+//
+// 这些是无状态 noexcept 纯函数, 供 paper_loop 把 edge 锚在"去 vig 的 fair 概率"
+// 而非裸 mid/ask (后者含庄家 overround → 系统性偏高 → P1-8 假 edge).
+// 同时给 in-play 真实先验提供置信加权凸组合工具 (P0-3).
+// ---------------------------------------------------------------------------
+
+// devig_binary: 二元市场 (YES/NO) de-vig — 剥离 overround.
+//   p_yes_fair = yes_mid / (yes_mid + no_mid)
+//
+// 退化 / fail-closed 语义 (宁可空不可假):
+//   - 双边都无效 (<=0 或 非有限)            → std::nullopt
+//   - 仅 YES 有效                            → clamp_prob(yes_mid) (单边裸 mid)
+//   - 仅 NO  有效                            → clamp_prob(1 - no_mid) (NO 隐含 YES)
+//   - 双边有效                                → clamp_prob(yes_mid / (yes_mid+no_mid))
+//
+// 注: 单边退化保留裸 mid 是有意为之 — 单边时无法估 overround, 已是当前可得最优.
+//     调用方据 has_value() 决定是否有可用市场锚 (无 → 不产 intent).
+[[nodiscard]] inline std::optional<double> devig_binary(double yes_mid, double no_mid) noexcept {
+    const bool yes_ok = std::isfinite(yes_mid) && (yes_mid > 0.0);
+    const bool no_ok = std::isfinite(no_mid) && (no_mid > 0.0);
+
+    if (!yes_ok && !no_ok) {
+        return std::nullopt;  // fail-closed: 无任何可用市场信号
+    }
+    if (yes_ok && !no_ok) {
+        return clamp_prob(yes_mid);  // 单边 YES: 退化为裸 mid
+    }
+    if (!yes_ok && no_ok) {
+        return clamp_prob(1.0 - no_mid);  // 单边 NO: 隐含 YES = 1 - no_mid
+    }
+
+    const double denom = yes_mid + no_mid;
+    if (!std::isfinite(denom) || denom <= kNormEps) {
+        return std::nullopt;
+    }
+    return clamp_prob(yes_mid / denom);
+}
+
+// prior_confidence: in-play 先验置信 ramp — time_frac ∈ [0,1] 线性映射到
+//   [kBasePriorConfidence, kMaxPriorConfidence]. 越界自动 clamp 到端点.
+[[nodiscard]] inline double prior_confidence(double time_frac) noexcept {
+    double tf = std::isfinite(time_frac) ? time_frac : 0.0;
+    if (tf < 0.0)
+        tf = 0.0;
+    if (tf > 1.0)
+        tf = 1.0;
+    const double c = kBasePriorConfidence + (kMaxPriorConfidence - kBasePriorConfidence) * tf;
+    if (c < kBasePriorConfidence)
+        return kBasePriorConfidence;
+    if (c > kMaxPriorConfidence)
+        return kMaxPriorConfidence;
+    return c;
+}
+
+// inplay_score_prior_yes: 比分差 + 时钟 → YES 先验 (与 BaselineFairValueModel 同形,
+//   但作为独立纯函数供 paper_loop 直接用, 不经 normalize). is_terminal=true 时
+//   返回确定性近似 (领先→近 1, 落后→近 0, 平→0.5), 不再受时钟影响.
+//   非终态: sigmoid(alpha*diff + beta*diff*time_frac) — time 项耦合 (带符号) score
+//   领先, 故 0:0 恒 0.5, 领先随时间更确定.
+[[nodiscard]] inline double inplay_score_prior_yes(double score_diff, double time_frac, bool is_terminal,
+                                                   double alpha = kDefaultAlpha,
+                                                   double beta = kDefaultBeta) noexcept {
+    if (is_terminal) {
+        if (score_diff > 0.0)
+            return kProbMax;
+        if (score_diff < 0.0)
+            return kProbEps;
+        return 0.5;  // 平局终态 → push/不确定
+    }
+    double tf = std::isfinite(time_frac) ? time_frac : 0.0;
+    if (tf < 0.0)
+        tf = 0.0;
+    if (tf > 1.0)
+        tf = 1.0;
+    const double logit = alpha * score_diff + beta * score_diff * tf;
+    return clamp_prob(safe_sigmoid(logit));
+}
+
+// blend_prob: 置信加权凸组合 p = conf*p_prior + (1-conf)*p_market, 全程 clamp.
+//   conf 越界 clamp 到 [0,1].
+[[nodiscard]] inline double blend_prob(double p_prior, double p_market, double conf) noexcept {
+    double w = std::isfinite(conf) ? conf : 0.0;
+    if (w < 0.0)
+        w = 0.0;
+    if (w > 1.0)
+        w = 1.0;
+    const double pp = std::isfinite(p_prior) ? p_prior : 0.5;
+    const double pm = std::isfinite(p_market) ? p_market : 0.5;
+    return clamp_prob(w * pp + (1.0 - w) * pm);
 }
 
 // ---------------------------------------------------------------------------

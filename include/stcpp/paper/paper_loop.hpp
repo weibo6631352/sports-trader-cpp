@@ -60,6 +60,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -210,8 +211,10 @@ private:
     // ---- 内部实现 ----
     void RunLoop(std::stop_token st);
     void TickAll();
+    // P1-8: no_token_mid = 对边 (NO) token mid 供 de-vig; NaN/0 → 单边退化 (devig_binary 处理).
     void TickOne(const std::string& condition_id, const std::string& token_id,
-                 const polymarket::clob_wss::OrderBookFeatures& feat);
+                 const polymarket::clob_wss::OrderBookFeatures& feat,
+                 double no_token_mid = std::numeric_limits<double>::quiet_NaN());
 
     // CI 下界: edge_ci_lower = (p_fair - p_ask) - z * sqrt(p*(1-p)/n)
     [[nodiscard]] static double ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept;

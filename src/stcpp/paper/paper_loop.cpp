@@ -44,6 +44,8 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
+#include <optional>
 #include <thread>
 
 #include "stcpp/data/feature_store_contract.hpp"
@@ -167,7 +169,8 @@ void PaperLoop::RunLoop(std::stop_token st) {
 
 void PaperLoop::TickAll() {
     for (const auto& [cond_id, tok_pair] : token_map_) {
-        const std::string& token0 = tok_pair.first;  // YES token
+        const std::string& token0 = tok_pair.first;   // YES token
+        const std::string& token1 = tok_pair.second;  // NO token (P1-8 de-vig 用)
 
         // 1. 读真实 hub 快照 (R-12: 原子只读, 无锁)
         const auto opt = hub_.Read(token0);
@@ -187,7 +190,23 @@ void PaperLoop::TickAll() {
             continue;
         }
 
-        TickOne(cond_id, token0, feat);
+        // P1-8: 读 NO token book 取对边 mid 供 de-vig. NO book 不可得 → 单边退化
+        // (devig_binary 内部以 yes_mid 退化, 不阻塞). 不污染 R-12 (仍是原子只读).
+        double no_token_mid = std::numeric_limits<double>::quiet_NaN();
+        if (!token1.empty()) {
+            const auto no_opt = hub_.Read(token1);
+            if (no_opt.has_value() && no_opt->valid) {
+                const double no_mp = no_opt->microprice;
+                const double no_mid = no_opt->mid;
+                if (std::isfinite(no_mp) && no_mp > 0.0 && no_mp < 1.0) {
+                    no_token_mid = no_mp;
+                } else if (std::isfinite(no_mid) && no_mid > 0.0 && no_mid < 1.0) {
+                    no_token_mid = no_mid;
+                }
+            }
+        }
+
+        TickOne(cond_id, token0, feat, no_token_mid);
     }
 }
 
@@ -204,7 +223,7 @@ void PaperLoop::TickAll() {
 // ---------------------------------------------------------------------------
 
 void PaperLoop::TickOne(const std::string& condition_id, const std::string& token_id,
-                        const polymarket::clob_wss::OrderBookFeatures& feat) {
+                        const polymarket::clob_wss::OrderBookFeatures& feat, double no_token_mid) {
     using namespace stcpp::data::feature_store;
 
     // orders_attempted: 进入 TickOne 即计数 (book 有效, 开始尝试流程)
@@ -213,6 +232,16 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     const double best_ask = feat.best_ask();
     const double best_bid = feat.best_bid();
     const double microprice = std::isfinite(feat.microprice) ? feat.microprice : (best_bid + best_ask) * 0.5;
+
+    // ---- P1-8 de-vig: edge 锚 = 去 overround 的 fair 概率, 非裸 mid/ask --------
+    // yes_mid 用 YES token microprice (无效则回退 L1 mid); no_token_mid 来自对边 book.
+    // 双边无效 → devig_binary 返 nullopt → 无可用市场锚 → fail-closed (不产 intent).
+    const double yes_mid_for_devig =
+        (std::isfinite(microprice) && microprice > 0.0 && microprice < 1.0) ? microprice : feat.mid;
+    const std::optional<double> p_market_devig_opt = pricing::devig_binary(yes_mid_for_devig, no_token_mid);
+    const bool devig_ok = p_market_devig_opt.has_value();
+    // de-vig 失败时用裸 microprice 兜底显示, 但 devig_ok=false 会在下方 gate 拦截 intent.
+    const double p_market_devig = devig_ok ? *p_market_devig_opt : pricing::clamp_prob(microprice);
 
     // ---- Step 2: FairValueEstimator ----------------------------------------
     // M1: 无 Goalserve game_row → 退化纯订单簿先验 (score_diff=0, time_frac=0)
@@ -257,12 +286,31 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
         return;
     }
 
-    const double p_fair = fv_result.p_yes();
+    // ---- P0-3 / P1-8 fair 锚定 --------------------------------------------
+    // 默认 (无真实 Goalserve 先验, M1 stub 路径): p_fair = p_market_devig.
+    //   → edge ≈ 0 (锚在去 vig 的市场上自己跟自己比), 配合 has_real_fair gate 不产 intent.
+    //   这根除了"低价 outright 被 stub 强拉 → 假 edge"(Spain 0.169 → fake 1076bps).
+    // 有真实 in-play game_row 时: 用 score-prior 置信加权混合到 de-vig 市场锚上,
+    //   置信随时钟从 kBasePriorConfidence 升到 kMaxPriorConfidence; 终态 conf=1.0.
+    double p_fair = p_market_devig;
+    if (has_real_fair) {
+        const double score_diff =
+            static_cast<double>(game_row.score_home_total) - static_cast<double>(game_row.score_away_total);
+        const bool terminal = stcpp::data::goalserve::IsTerminal(game_row.time_status);
+        // time_frac 复用 Baseline 同源逻辑: elapsed/total (NotStarted=0, 终态=1).
+        // 此处直接用 fv_result.prior_yes 已含的同形先验作 score-prior, 避免重复算时钟.
+        const double p_prior = fv_result.prior_yes;
+        const double conf = terminal ? 1.0 : pricing::prior_confidence(/*time_frac=*/0.0);
+        (void)score_diff;  // 方向已含于 prior_yes; 保留以备未来 explicit prior 切换
+        p_fair = pricing::blend_prob(p_prior, p_market_devig, conf);
+    }
+
     const double mark_price = microprice;  // 真实 mark (来自 hub)
 
     // ---- Step 3: CI 下界 + SizingCalculator --------------------------------
-    // edge_ci_lower = (p_fair - best_ask) - z * sqrt(p*(1-p)/n) (§10.3)
-    const double edge_ci_lower = ComputeEdgeCiLower(p_fair, best_ask, cfg_.n_effective, cfg_.z_90);
+    // edge_ci_lower = (p_fair - p_market_devig) - z * sqrt(p*(1-p)/n) (§10.3)
+    // P1-8: 锚在 de-vig 市场概率, 不再用带 vig 的 best_ask, 杜绝 overround 假 edge.
+    const double edge_ci_lower = ComputeEdgeCiLower(p_fair, p_market_devig, cfg_.n_effective, cfg_.z_90);
 
     // best_ask_size 做 book depth 近似 (L1 USDC depth)
     const double book_depth_l1 = std::isfinite(feat.best_ask_size()) && feat.best_ask_size() > 0.0
@@ -271,9 +319,10 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
 
     sizing::SizingInput sz_in;
     sz_in.fair_value = p_fair;
-    sz_in.price = best_ask;  // buy YES at ask
+    sz_in.price = best_ask;  // buy YES at ask (执行价仍是真实 ask)
     sz_in.edge_ci_lower = edge_ci_lower;
-    sz_in.edge_bps = std::abs(p_fair - best_ask) * 10'000.0;
+    // P1-8: edge 锚在 fair vs de-vig 市场, 非裸 ask (后者含 vig → 系统性高估 edge).
+    sz_in.edge_bps = std::abs(p_fair - p_market_devig) * 10'000.0;
     sz_in.bankroll_usdc = cfg_.bankroll_usdc;
     sz_in.fill_rate = 0.65;    // 保守固定 (M1)
     sz_in.slippage_bps = 8.0;  // 保守固定 (M1)
@@ -300,12 +349,12 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
         return;
     }
 
-    // ---- P0-3: fake fair gate (second gate) --------------------------------
-    // 即使 advisory gate 被 override (未来真实 M2+ 场景), 若无真实 fair 依据,
-    // 仍不允许 suggested_notional > 0 进入 intent 构造.
-    if (!has_real_fair) {
-        // stub fair 路径: sizing_out.suggested_notional 可能非零 (因 CI gating 数值),
-        // 但我们直接拦截, 不产生 intent. 数值安全已由 PublishQuoteSnapshot 中清零保证.
+    // ---- P0-3 / P1-8: fake fair gate (second gate) -------------------------
+    // 即使 advisory gate 被 override (未来真实 M2+ 场景), 仍需:
+    //   1) 有真实 fair 依据 (has_real_fair) — 否则 stub 路径不产 intent;
+    //   2) de-vig 成功 (devig_ok) — 否则无可用市场锚, 无信号绝不伪造 (fail-closed).
+    if (!has_real_fair || !devig_ok) {
+        // stub fair 路径 / 无市场锚: 直接拦截, 不产生 intent. 宁可空不可假.
         return;
     }
 
