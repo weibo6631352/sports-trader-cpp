@@ -296,14 +296,15 @@ public:
 
 // 配置 v0.5 (老沈 W9 Wave 57)
 struct RiskConfig {
-    // P0-2 c2 (老郭 ADR-041 L1, 2026-05-30): 3 cap 字段 int64→MicroPUSD 强类型。值字节级零变
-    //   (brace-init = 原 int64 直灌 .v, micro 语义), RM 4 比较点包 from_micro。字段名 _usdc 暂留
-    //   (名实统一是 c3+; 这步只上类型护栏)。bankroll/daily_loss 同模式留 c2b。
-    //   注: 这些字段实为 micro pUSD (RM 直接比 size_pUSD_micro); 默认值 10'000(micro)≈0.01pUSD
-    //   是历史遗留不合理默认 (生产由 paper_daemon/test 覆盖), cap 真值校准归 c3 (老韩主权)。
-    domain::MicroPUSD per_order_cap_usdc{10'000};
-    domain::MicroPUSD market_exposure_cap_usdc{50'000};  // v0.5: per-condition cap
-    domain::MicroPUSD per_outcome_cap_usdc{25'000};      // v0.5 新增: per-token cap (R6.2b)
+    // P0-2 c2/c3 (老郭 ADR-041 L1 + 老韩 cap 真值 SSOT, 2026-05-30): 3 cap 字段 MicroPUSD 强类型
+    //   (micro pUSD; RM 直接比 size_pUSD_micro)。c3 校准默认值 = 老韩 RM 主权终值
+    //   (docs/RESEARCH/laohan-p0-2-c3-cap-truth-ssot-v1.md §1; 锚 bankroll 意图 100k pUSD):
+    //     per_order 1000 pUSD (1%) ≤ per_outcome 2000 pUSD (2%) ≤ per_condition 5000 pUSD (5%)
+    //   序约束 (单笔 ≤ 单 token ≤ 单 condition) 否则下层 cap 死代码。原默认 10'000 micro=0.01pUSD
+    //   荒谬已废。值用 _upusd (micro 直读)。bankroll/daily_loss 仍 int64 留 c2b (勿在 c3 漏改)。
+    domain::MicroPUSD per_order_cap_usdc{1'000'000'000};        // 1000 pUSD (micro)
+    domain::MicroPUSD market_exposure_cap_usdc{5'000'000'000};  // 5000 pUSD (micro); per-condition
+    domain::MicroPUSD per_outcome_cap_usdc{2'000'000'000};      // 2000 pUSD (micro); per-token (R6.2b)
     std::int64_t bankroll_usdc = 100'000;
     // DD 软 / 硬熔断阈值 (GM §9 裁决 #1: -3% 软 / -5% 硬)
     // daily_loss_soft_pct: 跌破后拒新开仓 (is_close=false), 放平仓 (is_close=true)

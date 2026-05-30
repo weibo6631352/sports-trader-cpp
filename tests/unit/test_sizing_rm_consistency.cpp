@@ -21,6 +21,7 @@
 //   5. grep 守护 (CI): stcpp_sizing TU 内无 cap 字面量
 //      (此测试文件本身可用字面量, 守护目标是 sizing_calculator.cpp/.hpp)
 
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -52,8 +53,11 @@ static risk::OrderIntent make_minimal_intent(std::int64_t size_pUSD_micro, doubl
                                              double price, std::int32_t /*slippage_bps*/,
                                              std::string const& signal_id) {
     risk::OrderIntent it;
-    // R-20 4 ts (单调不等式)
-    std::int64_t const now = 1'748'000'000'000'000'000LL;
+    // R-20 4 ts (单调不等式)。c3: 用真实 wall-clock now (RM 新鲜度门用 wall-clock; 原固定 2025
+    //   常量已 stale >1yr → 每 intent BOOK_TS_STALE → 全套 evaluate 路径空过. 改真实 now 激活.
+    std::int64_t const now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
     it.event_ts_ns = now - 200'000'000;
     it.data_source_ts_ns = now - 150'000'000;
     it.ingestion_ts_ns = now - 50'000'000;
@@ -71,7 +75,10 @@ static risk::OrderIntent make_minimal_intent(std::int64_t size_pUSD_micro, doubl
     it.size_pUSD_micro = size_pUSD_micro;
 
     // book context (slippage model 需要; 给合法值绕过 EXCEED_BOOK_DEPTH / STALE)
-    it.book_depth_l1_usdc = 1e8;  // 极大深度 → ρ ~ 0, slippage ~ 0
+    // c3: book_depth_l1_usdc 是 micro pUSD (RM 比 size_pUSD_micro)。原 1e8(=100 pUSD)在 size 仍
+    //   按"whole 当 micro"小值时够大; size 真 ×1e6 后须同量级放大, 否则 size>>depth → ρ~1 →
+    //   EDGE_NEGATED_BY_SLIPPAGE / EXCEED_BOOK_DEPTH。设 1e14(=1e8 pUSD)极大深度 → ρ~0。
+    it.book_depth_l1_usdc = 1e14;
     // book_snapshot_ts_ns 需 > 0 且不 stale (RM check_stale / SlippageModel)
     // 使用 as_of_ts - 1s (在 60s 窗口内)
     it.book_snapshot_ts_ns = now - 1'000'000'000LL;  // 1s 前
@@ -92,6 +99,11 @@ static risk::OrderIntent make_minimal_intent(std::int64_t size_pUSD_micro, doubl
 static std::pair<risk::RiskConfig, std::shared_ptr<risk::RiskGateway>> make_rm(
     std::int64_t bankroll_usdc = 100'000) {
     risk::RiskConfig cfg;
+    // c3 (P0-2): 显式 cap 真值 (whole pUSD, from_pusd→micro 字段); sizing .to_pusd() 回 whole 比,
+    //   RM 直接 micro 比 —— 同一 cfg 实例喂 sizing + RM, 同源同值 (终结双错对消假放行)。
+    cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(10'000.0);
+    cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(25'000.0);
+    cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(50'000.0);
     cfg.bankroll_usdc = bankroll_usdc;
     cfg.edge_ci_lower_floor = 0.0;
     cfg.excessive_slippage_bps = 10'000;  // 松弛 slippage 上限 (单测不关注)
@@ -102,6 +114,9 @@ static std::pair<risk::RiskConfig, std::shared_ptr<risk::RiskGateway>> make_rm(
 
     // 设置 RUNNING 状态 (默认 SAFE_MODE)
     gw->set_state(risk::RmState::RUNNING);
+    // c3: RM bankroll 对齐 micro (bankroll 字段仍 int64=c2b; 同 paper_loop 运行期 set_bankroll ×1e6
+    //   喂法)。否则 size_pUSD_micro(micro) 比 bankroll(raw) 差 1e6 → 误 INSUFFICIENT_BANKROLL。
+    gw->set_bankroll(bankroll_usdc * 1'000'000LL);
 
     // 激活市场 (绕过 MARKET_NOT_ACTIVE)
     gw->set_market_active("0xABCD", true);
@@ -148,9 +163,14 @@ TEST(SizingRmConsistencyTest, ZeroSizingReject_RandomInputs_N10000) {
     auto [cfg, gw] = make_rm(100'000);
 
     std::mt19937_64 rng(42);
-    std::uniform_real_distribution<double> dist_p(0.05, 0.95);        // fair_value
-    std::uniform_real_distribution<double> dist_c(0.05, 0.95);        // price
-    std::uniform_real_distribution<double> dist_ci(0.001, 0.30);      // edge_ci_lower (均正)
+    std::uniform_real_distribution<double> dist_p(0.05, 0.95);  // fair_value
+    std::uniform_real_distribution<double> dist_c(0.05, 0.95);  // price
+    // c3 (小袁定夺): edge_ci_lower 下界 0.001→0.02 (200 bps)。原 0.001 覆盖了 sizing↔RM 的 fee-门
+    //   公式分歧噪声带 (sizing fee 用 fair_value, RM fee 用 price; p≠c 时极小 edge 方向不一致 →
+    //   sizing 显正而 RM EDGE_NEGATED_BY_SLIPPAGE 拒, 37/9863)。该分歧是独立 P 项 (fee canonical p
+    //   待老韩裁, 见 docs/MEETINGS/2026-05-30-arch-debt-audit.md P0-6), 非单位/c3 范围。200bps 以上
+    //   fee p-vs-c 差 (≤75bps) 不致方向翻转, Test1 不变式真成立。极小 edge 一致性归 P0-6 专项。
+    std::uniform_real_distribution<double> dist_ci(0.02, 0.30);       // edge_ci_lower (均正; 避 fee-gap 带)
     std::uniform_real_distribution<double> dist_slip(0.0, 5.0);       // slippage_bps (很小)
     std::uniform_real_distribution<double> dist_fr(0.50, 1.0);        // fill_rate (>= floor)
     std::uniform_real_distribution<double> dist_br(50'000, 200'000);  // bankroll
@@ -181,7 +201,7 @@ TEST(SizingRmConsistencyTest, ZeroSizingReject_RandomInputs_N10000) {
         sizing_positive_count++;
 
         // sizing 显正仓位 → 喂 RM (构造 intent)
-        auto const size_micro = static_cast<std::int64_t>(out.suggested_notional);
+        auto const size_micro = static_cast<std::int64_t>(out.suggested_notional * 1'000'000.0);
         if (size_micro <= 0) {
             continue;
         }
@@ -198,12 +218,6 @@ TEST(SizingRmConsistencyTest, ZeroSizingReject_RandomInputs_N10000) {
 
         if (decision.is_rejected() && is_sizing_reject(decision.reject)) {
             ++sizing_dim_rejects;
-            // 打印前几条帮助 debug
-            if (sizing_dim_rejects <= 3) {
-                // GTEST_LOG_(INFO) << "sizing reject: code=" << static_cast<int>(decision.reject)
-                //                  << " notional=" << out.suggested_notional
-                //                  << " bankroll=" << in.bankroll_usdc;
-            }
         }
 
         // 幂等 cache 清空 (prevent DUPLICATE_INTENT on repeated signal_id)
@@ -213,6 +227,37 @@ TEST(SizingRmConsistencyTest, ZeroSizingReject_RandomInputs_N10000) {
     // 核心断言: sizing 显正仓位时, RM 不因 sizing 维度拒
     EXPECT_EQ(sizing_dim_rejects, 0) << "sizing dimension rejects found: " << sizing_dim_rejects
                                      << " (out of " << sizing_positive_count << " positive sizing results)";
+}
+
+// ---------------------------------------------------------------------------
+// 验收门 B+C (c3, 老韩 cap 真值 SSOT §5): over-cap 必拒 + 边界精确.
+//   防"cap=∞ 恒不拒"假绿 —— Test1 只验"不该拒的没拒", B 验"该拒的真拒", C 锚 micro 粒度.
+//   (这正是当前 bug 的伪装: 双错对消让 Test1 假绿, 但 over-cap 也被放行而无人知.)
+// ---------------------------------------------------------------------------
+TEST(SizingRmConsistencyTest, PerOrderCap_OverCapRejects_BoundaryExact) {
+    auto [cfg, gw] = make_rm(100'000);
+    const std::int64_t cap_micro = cfg.per_order_cap_usdc.v;  // from_pusd(10'000) = 1e10 micro
+
+    // C: 恰好 == cap → 放行 (RM 用 >, 等值不拒)
+    {
+        const std::string sig = "sig_cap_at";
+        gw->set_edge_ci_lower(sig, 0.10);
+        auto at_cap = make_minimal_intent(cap_micro, 0.10, 0.50, 5, sig);
+        auto d = gw->evaluate(at_cap);
+        EXPECT_FALSE(d.is_rejected())
+            << "边界等值应放行 (RM >, 非 >=); reject=" << static_cast<int>(d.reject);
+    }
+
+    // B: 超 cap 1 micro → 必拒 EXCEED_PER_ORDER_CAP (micro 粒度精确)
+    {
+        const std::string sig = "sig_cap_over";
+        gw->set_edge_ci_lower(sig, 0.10);
+        auto over_cap = make_minimal_intent(cap_micro + 1, 0.10, 0.50, 5, sig);
+        auto d = gw->evaluate(over_cap);
+        ASSERT_TRUE(d.is_rejected());
+        EXPECT_EQ(d.reject, risk::RejectCode::EXCEED_PER_ORDER_CAP)
+            << "over-cap 必须以 EXCEED_PER_ORDER_CAP 拒 (防 cap=∞ 恒不拒假绿)";
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -308,7 +353,7 @@ TEST(SizingRmConsistencyTest, BankrollDynamic_Drawdown_Cap4_Recalculated) {
 
     // drawdown: bankroll 缩水到 80k
     in.bankroll_usdc = 80'000.0;
-    gw->set_bankroll(80'000);
+    gw->set_bankroll(80'000 * 1'000'000LL);  // c3: RM bankroll micro 对齐
 
     auto out_80k = SizingCalculator::compute(cfg, in);
     ASSERT_TRUE(out_80k.valid);
@@ -325,7 +370,7 @@ TEST(SizingRmConsistencyTest, BankrollDynamic_Drawdown_Cap4_Recalculated) {
     EXPECT_LE(out_80k.suggested_notional, out_100k.suggested_notional + 1e-9);
 
     // 将 80k sizing 喂给 RM (bankroll 也 set_bankroll(80k)) — 不应 INSUFFICIENT_BANKROLL
-    auto const size_micro_80k = static_cast<std::int64_t>(out_80k.suggested_notional);
+    auto const size_micro_80k = static_cast<std::int64_t>(out_80k.suggested_notional * 1'000'000.0);
     if (size_micro_80k > 0) {
         std::string const sig_id = "sig_bankroll_80k";
         gw->set_edge_ci_lower(sig_id, in.edge_ci_lower);
@@ -366,7 +411,7 @@ TEST(SizingRmConsistencyTest, SizingPositive_Implies_RM_NotEdgeCINegative) {
     ASSERT_TRUE(out.valid);
     ASSERT_GT(out.suggested_notional, 0.0);
 
-    auto const size_micro = static_cast<std::int64_t>(out.suggested_notional);
+    auto const size_micro = static_cast<std::int64_t>(out.suggested_notional * 1'000'000.0);
     ASSERT_GT(size_micro, 0);
 
     std::string const sig_id = "sig_edge_ci_pos";

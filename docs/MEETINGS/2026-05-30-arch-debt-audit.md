@@ -45,6 +45,11 @@
 - gamma boot-once (盘中新盘不发现, 卡全盘口北极星) + `market_discovery.cpp:489` popen curl (无超时/无错误码, 跨洋脆, ToS 速率不可控)。
 - 处置: boot-once → 周期 rediscover; 实盘前 popen → C++ client。**owner:** 老李 + 老周 (线程模型, R-12)。
 
+### P0-6 sizing↔RM fee 门用不同 p (fair_value vs price) — c3 揭开 (小袁定性: 真 bug)
+- **根因 (小袁核实):** sizing `compute_net_ci_edge` 用 `fair_value` 算 fee (`sizing_calculator.cpp` Step 3); RM `EDGE_NEGATED_BY_SLIPPAGE` 门用入场价 `price` 算 fee (`risk_gateway.cpp` check_signal_ L587)。p≠c 时极小 edge 下方向不一致 → sizing 显正而 RM 拒 (37/9863, edge 20-50bps)。**独立于单位, 非 c3。**
+- **暴露过程 (c3 副产物):** c3 修 `test_sizing_rm_consistency` 的 `make_minimal_intent` 时间戳 (原固定 2025 常量已 stale >1yr → 每 intent BOOK_TS_STALE → **Test1/4/6 evaluate 路径长期空过假绿**) 为真实 wall-clock, 激活后才暴露此 fee gap。**测试空过本身也是债 (测试质量洞)。** c3 已收口: Test1 edge 下界 0.001→0.02 避 fee-gap 噪声带 + 本项另立。
+- **语义争议点 (待裁):** fee 的 p 用 fair_value 还是 price? 小袁微观结构意见: fee 是 taker 付平台 on 市场价 c → 应用 `price`, sizing 的 fair_value 错。**裁定权老韩 (RM fee 公式 SSOT), 抄送小梁 (影响 Kelly f* 分子)。** 裁定后 GM 落地改 `compute_net_ci_edge` 传参 + 加极小 edge 一致性专项 (恢复 Test1 边界覆盖)。**owner:** 老韩 (裁) + 小袁/小梁 (量化) + GM (落地)。
+
 ## 2. P1 — M1 后清
 
 | # | 债 | 证据 | owner |

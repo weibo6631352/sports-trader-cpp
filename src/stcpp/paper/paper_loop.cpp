@@ -407,18 +407,13 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     sz_in.current_token_exposure_usdc = 0.0;
     sz_in.current_condition_exposure_usdc = 0.0;
 
-    // P0-2 单位统一: sizing 用真实 caps (cfg_, pUSD), 与 RM 同源 (paper_daemon 给 RM 的 micro
-    //   caps = 这些 pUSD × 1e6)。原 `RiskConfig{}` 默认值与 RM 脱节, 靠下方 clamp 摁住, 已拆。
-    // c2 (P0-2): cap 字段为 MicroPUSD; from_micro 保持现行 .v 数值 (字节级零变)。
-    //   ⚠ 这里把 whole pUSD 值灌进 micro 字段 (sizing 又当 whole 读) = c3 要根治的语义错位,
-    //   c2 仅上类型护栏不改数值; c3 统一 sizing/RM 同源 micro + sizing .to_pusd()。
+    // c3 (P0-2 根治): caps 单一真值源 = cfg_ (whole pUSD), from_pusd 转正确 micro。sizing/RM 同源
+    //   同值 (RM 侧 paper_daemon 亦 from_pusd 同源)。sizing 内部 .to_pusd() 回 whole 比 notional。
+    //   终结 c2 过渡态的「whole 灌 micro 字段」语义错位 + 双错对消。
     risk::RiskConfig sizing_cfg{};
-    sizing_cfg.per_order_cap_usdc =
-        domain::MicroPUSD::from_micro(static_cast<std::int64_t>(cfg_.per_order_cap_usdc));
-    sizing_cfg.market_exposure_cap_usdc =
-        domain::MicroPUSD::from_micro(static_cast<std::int64_t>(cfg_.market_exposure_cap_usdc));
-    sizing_cfg.per_outcome_cap_usdc =
-        domain::MicroPUSD::from_micro(static_cast<std::int64_t>(cfg_.per_outcome_cap_usdc));
+    sizing_cfg.per_order_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.per_order_cap_usdc);
+    sizing_cfg.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.market_exposure_cap_usdc);
+    sizing_cfg.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.per_outcome_cap_usdc);
     const sizing::SizingOutput sizing_out = sizing::SizingCalculator::compute(sizing_cfg, sz_in);
 
     // ---- Step 4: QuoteSnapshotHub::Publish ---------------------------------
