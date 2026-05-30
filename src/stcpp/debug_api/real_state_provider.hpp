@@ -570,9 +570,7 @@ public:
     // 非热路径, 启动时注入一次; 采集线程周期调用 mapper.Refresh() 更新映射表.
     // nullptr → 降级为直接用 event_id 查 store (旧行为, 无 panic)
     // R-12: mapper.Resolve() O(1) mutex < 1us, 读线程安全
-    void set_score_mapper(const data::ScoreEventMapper* mapper) noexcept {
-        score_mapper_ = mapper;
-    }
+    void set_score_mapper(const data::ScoreEventMapper* mapper) noexcept { score_mapper_ = mapper; }
 
 private:
     const polymarket::clob_wss::OrderBookSnapshotHub& hub_;
