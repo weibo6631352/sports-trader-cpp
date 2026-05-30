@@ -1275,3 +1275,63 @@ TEST_F(PaperLoopTest, T_A5_7_DD_MultiPositionAggregation) {
     EXPECT_EQ(d.reject, RejectCode::DAILY_LOSS_HALT)
         << "A5: 两仓各亏 2k 应聚合成 -4k ≥ 软 3k 触发 DD; 若只算单仓 -2k < 3k 则不触 = 聚合 bug";
 }
+
+// Phase B (小梁 spec §2): SelectSide 选边逻辑单测 (de-vig 锚定, 纯函数)
+//   raw_edge_yes = p_fair_yes - p_market_devig; >= 0 → YES 低估买 YES; < 0 → NO 低估买 NO。
+TEST_F(PaperLoopTest, T_PhaseB_SelectSide_DeVigAnchored) {
+    loop_ = MakeLoop();
+    // YES 低估 (模型 fair 0.60 > 市场共识 0.50) → 买 YES
+    EXPECT_EQ(loop_->SelectSideForTest(0.60, 0.50).outcome, TradedSide::Yes);
+    // NO 低估 (模型 fair_YES 0.30 < 共识 0.50, 即 fair_NO 0.70 > 共识_NO 0.50) → 买 NO
+    EXPECT_EQ(loop_->SelectSideForTest(0.30, 0.50).outcome, TradedSide::No);
+    // 临界 p_fair == devig → raw_edge=0 >= 0 → 买 YES (默认, 下游 sizing 会因 edge=0 不下单)
+    EXPECT_EQ(loop_->SelectSideForTest(0.50, 0.50).outcome, TradedSide::Yes);
+    // side 恒 Buy (M1 只买不平; sell-to-open 空头 M2)
+    EXPECT_EQ(loop_->SelectSideForTest(0.30, 0.50).side, strategy::Side::Buy);
+}
+
+// Phase B (小梁 §7 C4 反向-fill): NO 被低估 → 真买 NO 端到端 (解 Phase A 建不起 NO intent)。
+//   soccer 0:3 落后 + 75min (conf~0.52) → 模型 fair_YES 低 (~0.30); 市场仍 ~0.50 (未反映落后) →
+//   raw_edge_yes<0 → 选 NO; n_eff=150 sigma 小 → NO edge 过 CI → 在 NO token(1002) 成交。
+TEST_F(PaperLoopTest, T_PhaseB_BuyNo_EndToEnd) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    auto es = MakeFreshScore("gs-no", 0, 3);  // YES 队 0:3 落后 → prior_yes 低
+    es.sport = "soccer";                      // total_game_seconds=5400
+    es.clock_sec = 75 * 60;                   // 75min → time_frac≈0.83 → conf≈0.52
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-no"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-no", true};
+
+    // 市场把 YES/NO 都定价 ~0.50 (未反映落后) → devig≈0.50 > 模型 fair_YES 0.30 → NO 低估
+    // 市场把 YES 高估 (~0.70)、NO 低估 (~0.30) (未反映 0:3 落后) → devig≈0.70 >> 模型 fair_YES
+    //   → raw_edge_yes 强负 → 买被低估的 NO (ask~0.31)。
+    hub_->Publish("1001", MakeFreshBook(0.69, 0.71));  // YES book (市场高估 YES)
+    hub_->Publish("1002", MakeFreshBook(0.29, 0.31));  // NO book (被选边, 低估)
+
+    cfg_.advisory_markets_no_intent = false;
+    cfg_.n_effective = 150;  // 生产级紧度 → sigma 小 → NO edge 过 CI
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    loop_->Stop();
+
+    EXPECT_GT(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
+        << "Phase B: NO 被低估 (YES 0:3 落后但市场未反映) → 选 NO → 应成交";
+    // 验成交在 NO token(1002), 非 YES(1001) — 证选边 + 字段切换正确, 不买错边
+    bool found_no = false;
+    for (auto const& pv : position_ledger_->get_all_positions()) {
+        if (pv.token_id == "1002") {
+            found_no = true;
+            EXPECT_EQ(pv.outcome, strategy::Outcome::No) << "Phase B: NO token 仓位 outcome 应为 No";
+        }
+        EXPECT_NE(pv.token_id, "1001") << "Phase B: 不应在 YES token 成交 (选的是 NO, 防买错边)";
+    }
+    EXPECT_TRUE(found_no) << "Phase B: 应在 NO token(1002) 建仓 (买被低估的 NO)";
+}

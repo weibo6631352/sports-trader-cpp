@@ -269,38 +269,31 @@ void PaperLoop::TickAll() {
 //   Phase B (老韩 RM checklist B-1..B-8 绿后): 真双边选边 — 各边算 fair/edge_ci/Kelly f*,
 //     选 f* 大者 (小袁微观选边 + 小梁 Kelly); 含买 NO (token_id=NO token, outcome=No)。
 //   M2: 开放 sell-to-open 空头 (side=Sell, 老韩 condition cap signed-sum 语义重裁 — C1)。
-DecisionSide PaperLoop::SelectSide(const BinaryMarketSnapshot& mkt) const noexcept {
-    (void)mkt;
-    return DecisionSide{TradedSide::Yes, strategy::Side::Buy, 0.0};
+DecisionSide PaperLoop::SelectSide(double p_fair_yes, double p_market_devig) const noexcept {
+    // de-vig 锚定 (小梁 spec §1-2): raw_edge_yes 与 raw_edge_no 精确互为相反数 → 不可能两边同正。
+    //   选被低估边: raw_edge_yes >= 0 → YES 模型价 > 市场共识 = YES 低估 → 买 YES;
+    //               raw_edge_yes < 0  → NO 低估 → 买 NO。下游 sizing/CI gate 定是否真够 edge 下单。
+    const bool is_yes = (p_fair_yes - p_market_devig) >= 0.0;
+    return DecisionSide{is_yes ? TradedSide::Yes : TradedSide::No, strategy::Side::Buy, 0.0};
 }
 
 void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     using namespace stcpp::data::feature_store;
 
-    // ---- Step 0: 选边 (老周架构; M1 SelectSide 桩恒 {Yes, Buy} → 逐位等价) ----
-    const DecisionSide decision = SelectSide(mkt);
-    if (decision.outcome == TradedSide::None) {
-        return;  // 两边都不值得 → 跳过
-    }
-    const bool is_yes = (decision.outcome == TradedSide::Yes);
-    const SideView& traded = is_yes ? mkt.yes : mkt.no;
-    const SideView& opposite = is_yes ? mkt.no : mkt.yes;
-
-    // 被交易边无有效快照 → fail-closed (旧 TickAll 对 token0 valid 门, 移此按被交易边判)。
-    if (!traded.present) {
+    // ---- Phase B (小梁 spec §3): fair 始终 YES-canonical → 先算 fair, 再选边 ----
+    // FairValueEstimator 只支持 YES token 输入 + 先验由 game_row(YES 队比分) 提供 → fair 必用 YES book。
+    // 选边 (SelectSide) 是 fair 后的纯代数判断; 执行 (price/depth/4ts/token) 才按被选边切 (Step F+)。
+    // YES book 缺 → 无 YES-canonical fair → fail-closed (即便 NO book 在也不交易)。
+    if (!mkt.yes.present) {
         stats_.hub_reads_empty.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-
-    // 别名: 被交易边 book / condition / token (旧单边参数; 下游 body 不变)。
-    //   C2 (老郭): book_depth / price / 4ts 全经 feat=traded.book → 选边后天然切被交易边, 无错边。
-    const auto& feat = traded.book;
+    const auto& feat = mkt.yes.book;  // YES-canonical (fair / de-vig / book_row 用)
     const std::string& condition_id = mkt.condition_id;
-    const std::string& token_id = is_yes ? mkt.yes_token_id : mkt.no_token_id;
 
-    const double best_ask = feat.best_ask();
+    const double best_ask = feat.best_ask();  // YES ask (fair 段; 执行 ask 选边后定 exec_ask)
     const double best_bid = feat.best_bid();
-    // L1 价格有效性门 (旧 TickAll 的 best_ask/bid 校验, 按被交易边)。
+    // L1 价格有效性门 (YES book)。
     if (!std::isfinite(best_ask) || best_ask <= 0.0 || best_ask >= 1.0) {
         return;
     }
@@ -308,16 +301,16 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         return;
     }
 
-    // orders_attempted: 进入有效决策即计数 (gates 后, 时机同旧 TickOne entry)。
+    // orders_attempted: 进入有效决策即计数 (YES gate 后, 时机同旧)。
     stats_.orders_attempted.fetch_add(1, std::memory_order_relaxed);
 
     const double microprice = std::isfinite(feat.microprice) ? feat.microprice : (best_bid + best_ask) * 0.5;
 
-    // no_token_mid: 对边 (opposite) book microprice 优先 / mid 回退 (旧 TickAll de-vig 逻辑逐字保留)。
+    // no_token_mid: NO book microprice 优先 / mid 回退 (de-vig 对边; 单边退化 devig_binary 处理)。
     double no_token_mid = std::numeric_limits<double>::quiet_NaN();
-    if (opposite.present) {
-        const double op_mp = opposite.book.microprice;
-        const double op_mid = opposite.book.mid;
+    if (mkt.no.present) {
+        const double op_mp = mkt.no.book.microprice;
+        const double op_mid = mkt.no.book.mid;
         if (std::isfinite(op_mp) && op_mp > 0.0 && op_mp < 1.0) {
             no_token_mid = op_mp;
         } else if (std::isfinite(op_mid) && op_mid > 0.0 && op_mid < 1.0) {
@@ -390,8 +383,9 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const bool has_real_fair = (game_row.time_status != stcpp::data::goalserve::TimeStatus::NotStarted);
 
     FeatureStoreBookRow book_row{};
-    // token_side: 被交易边 (FairValueEstimator extract_microprice_ 检查此字段)。M1 桩恒 YES。
-    book_row.token_side = is_yes ? "YES" : "NO";
+    // token_side 始终 YES-canonical (小梁 §3 Step C: FairValueEstimator 只支持 YES 输入;
+    // fair_NO=1-fair_YES)。
+    book_row.token_side = "YES";
     // L1 bid/ask
     book_row.bid_price[0] = best_bid;
     book_row.bid_size_usdc[0] = feat.best_bid_size();
@@ -440,28 +434,51 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         p_fair = pricing::blend_prob(p_prior, p_market_devig, conf);
     }
 
-    const double mark_price = microprice;  // 真实 mark (来自 hub)
+    // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
+    const DecisionSide decision = SelectSide(p_fair, p_market_devig);
+    const bool is_yes = (decision.outcome == TradedSide::Yes);
+    // Step F: 被选边执行 book / token / ask / depth / 4ts 全切被选边 (老郭 C2 / 老韩 B-6)。
+    const SideView& traded = is_yes ? mkt.yes : mkt.no;
+    if (!traded.present) {
+        // 选 NO 但 NO book 无快照 (YES 高估但 NO 边缺) → fail-closed, 不交易。
+        return;
+    }
+    const auto& exec_feat = traded.book;
+    const std::string& token_id = is_yes ? mkt.yes_token_id : mkt.no_token_id;
+    const double exec_ask = exec_feat.best_ask();
+    if (!std::isfinite(exec_ask) || exec_ask <= 0.0 || exec_ask >= 1.0) {
+        return;  // 被选边 ask 无效 (NO 边) → fail-closed
+    }
+    const double exec_mark = std::isfinite(exec_feat.microprice) ? exec_feat.microprice : exec_feat.mid;
 
-    // ---- Step 3: CI 下界 + SizingCalculator --------------------------------
-    // edge_ci_lower = (p_fair - p_market_devig) - z * sqrt(p*(1-p)/n) (§10.3)
-    // P1-8: 锚在 de-vig 市场概率, 不再用带 vig 的 best_ask, 杜绝 overround 假 edge.
-    const double edge_ci_lower = ComputeEdgeCiLower(p_fair, p_market_devig, cfg_.n_effective, cfg_.z_90);
+    // ---- Step G: 被选边 fair / edge_ci (小梁 §2 de-vig 对称代数) ----
+    //   raw_edge_yes = p_fair - p_market_devig; sigma=sqrt(p_fair(1-p_fair)/n) (互余 → 两边方差相等)。
+    //   YES: edge_ci = raw - z*sigma (== 旧 ComputeEdgeCiLower, YES 路径逐位不变);
+    //   NO : edge_ci = -raw - z*sigma; p_fair_selected = 1 - p_fair。
+    const double raw_edge_yes = p_fair - p_market_devig;
+    const double sigma =
+        std::sqrt(std::max(0.0, p_fair * (1.0 - p_fair)) / static_cast<double>(cfg_.n_effective));
+    const double edge_ci_lower = (is_yes ? raw_edge_yes : -raw_edge_yes) - cfg_.z_90 * sigma;
+    const double p_fair_selected = is_yes ? p_fair : (1.0 - p_fair);
 
-    // best_ask_size 做 book depth 近似 (L1 USDC depth)
-    const double book_depth_l1 = std::isfinite(feat.best_ask_size()) && feat.best_ask_size() > 0.0
-                                     ? feat.best_ask_size()
+    const double mark_price = exec_mark;  // 真实 mark (被选边 hub)
+
+    // ---- Step H: SizingCalculator 入参 (按被选边) --------------------------
+    // best_ask_size 做 book depth 近似 (L1 USDC depth; 被选边)。
+    const double book_depth_l1 = std::isfinite(exec_feat.best_ask_size()) && exec_feat.best_ask_size() > 0.0
+                                     ? exec_feat.best_ask_size()
                                      : 1000.0;  // fallback 1000 pUSD
 
     sizing::SizingInput sz_in;
-    sz_in.fair_value = p_fair;
-    sz_in.price = best_ask;  // buy YES at ask (执行价仍是真实 ask)
+    sz_in.fair_value = p_fair_selected;
+    sz_in.price = exec_ask;  // 被选边 ask (买被低估边)
     sz_in.edge_ci_lower = edge_ci_lower;
-    // P1-8: edge 锚在 fair vs de-vig 市场, 非裸 ask (后者含 vig → 系统性高估 edge).
-    sz_in.edge_bps = std::abs(p_fair - p_market_devig) * 10'000.0;
+    // edge_bps: |raw_edge| 两边同幅 (de-vig 对称)。
+    sz_in.edge_bps = std::abs(raw_edge_yes) * 10'000.0;
     sz_in.bankroll_usdc = cfg_.bankroll_usdc;
     sz_in.fill_rate = 0.65;    // 保守固定 (M1)
     sz_in.slippage_bps = 8.0;  // 保守固定 (M1)
-    sz_in.buy_yes = (p_fair > best_ask);
+    sz_in.buy_yes = is_yes;
 
     // c4 (P0-2 隐患#1 闭合, 老韩 review): sizing 必须看 RM 同源的真实累计 exposure。否则第 2 笔起
     //   sizing 以为满 headroom (硬编码 0) 而 RM 按真实 exposure 拒 → surprise-reject + sizing 无感分叉
@@ -522,10 +539,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // R-20: as_of_ts_ns = 信号评估时刻 (>= ingestion_ts_ns)
     const std::int64_t as_of_now = NowNs();
 
-    // 校验 4 ts 链 (调试保护; release build 仍执行但不 abort)
-    // event_ts_ns <= data_source_ts_ns <= ingestion_ts_ns <= as_of_now
-    if (feat.event_ts_ns <= 0 || feat.data_source_ts_ns < feat.event_ts_ns ||
-        feat.ingestion_ts_ns < feat.data_source_ts_ns || as_of_now < feat.ingestion_ts_ns) {
+    // 校验 4 ts 链 (调试保护; release build 仍执行但不 abort)。Phase B: intent 成交标的是被选边,
+    //   4ts 来自被选边 book exec_feat (R-20: 数据源 = 被交易 token 的 hub 快照, 禁 now() 替代)。
+    if (exec_feat.event_ts_ns <= 0 || exec_feat.data_source_ts_ns < exec_feat.event_ts_ns ||
+        exec_feat.ingestion_ts_ns < exec_feat.data_source_ts_ns || as_of_now < exec_feat.ingestion_ts_ns) {
         // ts 链违规: 跳过 (不构造 intent, 不送 RM)
         return;
     }
@@ -533,10 +550,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const std::uint64_t intent_id = ++intent_seq_;
 
     risk::OrderIntent intent;
-    // R-20 4 ts
-    intent.event_ts_ns = feat.event_ts_ns;
-    intent.data_source_ts_ns = feat.data_source_ts_ns;
-    intent.ingestion_ts_ns = feat.ingestion_ts_ns;
+    // R-20 4 ts (被选边 book)
+    intent.event_ts_ns = exec_feat.event_ts_ns;
+    intent.data_source_ts_ns = exec_feat.data_source_ts_ns;
+    intent.ingestion_ts_ns = exec_feat.ingestion_ts_ns;
     intent.as_of_ts_ns = as_of_now;
 
     // 市场标识
@@ -550,8 +567,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     intent.signal_id = cfg_.strategy_id + "-" + std::to_string(intent_id);
     intent.feature_snapshot_id = "paper-m1-no-snapshot";
 
-    // 定价 (买 YES at ask)
-    intent.price = best_ask;
+    // 定价: 买被选边 at ask (YES→ask_YES, NO→ask_NO; exec_ask 已切被选边)
+    intent.price = exec_ask;
 
     // 仓位大小: SizingCalculator 建议值, 转 micro pUSD
     // P0-2 (拆 clamp 遮羞布): sizing 已受 sizing_cfg.per_order_cap_usdc (= RM cap ÷ 1e6) 约束,
@@ -568,9 +585,9 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
 
     // book context (R8.4 freshness)
     // 单位对齐 (A2 修): RM check_liquidity_ 比 size_pUSD_micro vs book_depth_l1_usdc,
-    //   后者须同为 micro pUSD. book_depth_l1 来自 feat.best_ask_size() (pUSD), × 1e6 转 micro.
-    intent.book_depth_l1_usdc = book_depth_l1 * 1'000'000.0;
-    intent.book_snapshot_ts_ns = feat.ingestion_ts_ns;
+    //   后者须同为 micro pUSD. book_depth_l1 来自 exec_feat.best_ask_size() (被选边, pUSD), × 1e6 转 micro.
+    intent.book_depth_l1_usdc = book_depth_l1 * 1'000'000.0;  // book_depth_l1 已切被选边 (Step H)
+    intent.book_snapshot_ts_ns = exec_feat.ingestion_ts_ns;   // 被选边 book ts (R8.4 + R-20)
     intent.tick_size = 0.01;
 
     // V2 EIP-712 字段 (timestamp_ms = 当前毫秒, spec-10 必须 != 0)
@@ -655,7 +672,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     position_ledger_.apply_fill(condition_id, token_id, intent.outcome, fill);  // 参数化 (M1 桩 YES)
 
     // ---- Step 8b: LedgerSnapshotHub::Publish (positions/pnl 可见) ----------
-    PublishLedgerSnapshot(condition_id, fill, mark_price, feat);
+    PublishLedgerSnapshot(condition_id, fill, mark_price, exec_feat);  // 被选边 mark + 4ts
     stats_.ledger_publishes.fetch_add(1, std::memory_order_relaxed);
 
     // ---- Step 8c: 喂 RM (P0-1) — apply_fill 后回喂敞口, 激活 exposure 红线 ----

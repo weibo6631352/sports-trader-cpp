@@ -269,6 +269,11 @@ public:
     // P0-1 test seam: 测试直接触发喂数 (验 exposure 红线接通 + 单位 ×1e6 门禁, 老周强制测试)。
     void FeedRiskGatewayForTest() noexcept { FeedRiskGateway(); }
 
+    // Phase B test seam: 单测 SelectSide 选边逻辑 (de-vig 锚定: p_fair>=devig 买 YES, < 买 NO)。
+    [[nodiscard]] DecisionSide SelectSideForTest(double p_fair_yes, double p_market_devig) const noexcept {
+        return SelectSide(p_fair_yes, p_market_devig);
+    }
+
 private:
     // ---- 线程控制 ----
     std::jthread loop_thread_;
@@ -292,9 +297,10 @@ private:
     // 二元市场双边决策 (老周架构 laozhou-binary-dual-side-arch-v1 + 老郭 review APPROVE-with-conditions):
     //   TickOne 改 per-condition, 入参带整盘口 (YES book + NO book), 决策时带双边信息 (老板原则 C3)。
     void TickOne(const BinaryMarketSnapshot& mkt);
-    // SelectSide: 选边 (买 YES / 买 NO / 不交易)。M1 桩恒 {Yes, Buy} (逐位等价回归);
-    //   Phase B (老韩 RM checklist 绿后) 真双边选边 (小袁微观 + 小梁 Kelly f* 选大边)。
-    [[nodiscard]] DecisionSide SelectSide(const BinaryMarketSnapshot& mkt) const noexcept;
+    // SelectSide (Phase B, 小梁 spec): de-vig 锚定下选被低估边。raw_edge_yes=p_fair_yes-p_market_devig;
+    //   edge_NO=-edge_YES (精确对称) → raw_edge_yes>=0 买 YES (YES 低估), <0 买 NO (NO 低估)。
+    //   是否真下单 (edge 够不够) 由下游 sizing/CI gate 定 (edge_ci<=0 → suggested=0 → 不产 intent)。
+    [[nodiscard]] DecisionSide SelectSide(double p_fair_yes, double p_market_devig) const noexcept;
 
     // CI 下界: edge_ci_lower = (p_fair - p_ask) - z * sqrt(p*(1-p)/n)
     [[nodiscard]] static double ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept;
