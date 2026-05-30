@@ -9,7 +9,7 @@
 - 关联:
   - GM 决议: `docs/ADR/2026-05-28-gm-policy-jurisdictional-deferral.md`
   - v4 (C++ 全栈实现层 + 8 Blocker 权威): `docs/RESEARCH/laosun-key-management-v4-cpp.md`
-  - v3 (Rust 设计 trail, 跨境合规权威, **deactivated** 但保留): `docs/RESEARCH/laosun-key-management-v3.md`
+  - v3 (Rust 设计 trail, 跨境合规权威, 已删)
   - Sygnum 承诺 ADR: `docs/ADR/2026-05-28-gm-commitment-sygnum-deadline.md` (**Superseded by GM**)
   - 老沈 multi-vendor KMS: `docs/RESEARCH/laoshen-multi-vendor-kms-v1.md` (**Deprecated**)
   - 老沈 安全 co-review: `docs/RESEARCH/laoshen-key-management-coreview-v1.md` (保留)

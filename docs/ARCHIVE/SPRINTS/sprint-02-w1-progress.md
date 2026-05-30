@@ -68,7 +68,7 @@ W1 计划完成率 **5/6 = 83%**, 唯一掉队 S2-021 老胡 W2 紧盯.
 | 指令 | 状态 | 落地证据 | 影响 backlog |
 |---|---|---|---|
 | **Rust 撤回 C++ ground-up** | Agreed (已闭环 Sprint-1) | 老周 v0.3 / v0.4 全 C++; 老孙 v4-cpp; 小蒋 v0.2-cpp | 无新增 ticket |
-| **上链 deferred** | Agreed (新 ADR) | `gm-decision-defer-onchain-until-profitable.md`; 老叶 4 文档归档; 老孙 v5 simplified; 老周 v0.4 §18 Paper mock | S2-008 / S2-009 / S2-010 部分 deferred (砍 ~3 周工程量) |
+| **上链 deferred** | Agreed (GM 决议, 原 gm-decision-defer-onchain-until-profitable.md 已删) | 老叶 4 文档归档; 老孙 v5 simplified; 老周 v0.4 §18 Paper mock | S2-008 / S2-009 / S2-010 部分 deferred (砍 ~3 周工程量) |
 | **撤地域合规纠缠** | Agreed (新 ADR) | `gm-policy-jurisdictional-deferral.md`; 老黄 v2 / 老沈 v2 / 老孙 v5 simplified; Sygnum 承诺 Superseded | 老黄 §1.3 撤 / 老沈 跨 vendor 撤 / 老孙 跨境 Shamir 撤 |
 | **R-20 数据时间戳红线** | Agreed (新红线) | `gm-redline-data-source-timestamping.md`; 11 owner 派单 (老韩/老唐/小蒋/小邓/老高/老孙/老李/小段/小余/小米/老郭) | 见本周报 §5 |
 

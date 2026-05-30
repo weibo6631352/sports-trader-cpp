@@ -572,7 +572,7 @@ L2 cache 不友好, 几乎从不该用. 用 `std::vector` / `absl::flat_hash_map
 
 ## 6. 安全编码 (老沈 + 老孙 配合)
 
-老高这里只挡**显性**违规. 完整威胁见 `laoshen-threat-model-v1.md`, 私钥架构见 `laosun-key-management-v1.md`.
+老高这里只挡**显性**违规. 完整威胁见 `laoshen-threat-model-v1.md`, 私钥架构见 `laosun-key-management-v5.1.md` (当前 SSOT; 原 v1 Rust 版已删).
 
 ### 6.1 [block / 红线 §9.2] 私钥相关代码
 

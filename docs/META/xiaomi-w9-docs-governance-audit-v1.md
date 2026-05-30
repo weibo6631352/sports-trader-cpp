@@ -34,7 +34,7 @@
 | 2026-05-28-department-manager-mandate.md | SSOT (ADR-005) |
 | 2026-05-28-gm-commitment-sygnum-deadline.md | SSOT (GM 承诺) |
 | 2026-05-28-gm-decision-defer-aws-until-profitable.md | SSOT (含 RETRACTED 区段, AWS 延期) |
-| 2026-05-28-gm-decision-defer-onchain-until-profitable.md | SSOT (on-chain 延期) |
+| 2026-05-28-gm-decision-defer-onchain-until-profitable.md | 已删 (GM 2026-05-30 硬删; 决策事实保留: MVP 不上链) |
 | 2026-05-28-gm-decision-goalserve-odds-gap.md | SSOT (Goalserve odds gap GM 决议) |
 | 2026-05-28-gm-policy-api-monitoring-longterm.md | SSOT |
 | 2026-05-28-gm-policy-cross-domain-listening.md | SSOT |
@@ -48,7 +48,7 @@
 | 2026-05-28-gm-signoff-sprint1-retro.md | Archive |
 | 2026-05-28-r07-r08-liquidity-vs-position-cap-priority.md | SSOT |
 | 2026-06-01-adr-010-test-code-grading.md | SSOT |
-| 2026-06-01-adr-011-paper-live-binary.md | SSOT |
+| 2026-06-01-adr-011-paper-live-binary.md | 已删 (GM 2026-05-30 硬删; 单 binary 架构仍是现行事实) |
 | 2026-06-01-adr-012-wss-topology.md | SSOT |
 | 2026-06-01-adr-013-cross-region.md | **Outdated** — 被 ADR-013-v2 supersede |
 | 2026-06-01-adr-014-ml-shadow-timing.md | SSOT |
@@ -160,7 +160,7 @@
 - laotang-friend-class-firstmismatch-w7-cleanup.md: Archive (cleanup 记录)
 
 **Key Management (老孙)**
-- laosun-key-management-v1~v3: **Archive** (历史 Rust 版本, 废弃语言)
+- laosun-key-management-v1~v3: **已删** (历史 Rust 版本, GM 2026-05-30 硬删)
 - laosun-key-management-v4-cpp.md: Archive (C++ 版, 已被 v5 替代)
 - laosun-key-management-v5-simplified.md: Archive (被 v5.1 替代)
 - laosun-key-management-v5.1.md: **SSOT**
@@ -169,8 +169,8 @@
 - laoli-laoSun-handshake-v1.md: Archive
 
 **Rust 废弃文档 (老张)**
-- laozhang-rust-engineering-stack-v1.md: **Archive** (Rust 已废弃, GM 2026-05-28)
-- laozhang-rust-signer-crates-v1.md: **Archive** (同上, 知识沉淀保留)
+- laozhang-rust-engineering-stack-v1.md: **已删** (GM 2026-05-30 硬删)
+- laozhang-rust-signer-crates-v1.md: **已删** (同上)
 
 **Polymarket 数据 (老李)**
 - laoli-polymarket-api-spec-v1.md: Archive (被 endpoint-matrix + SSOT 替代)
@@ -434,7 +434,7 @@
 | laozhou-architecture-v0.1~v0.5 | 移入 `docs/RESEARCH/archive/` |
 | laogao-pr-review-v1.1~v1.4 | 移入 `docs/RESEARCH/archive/` |
 | laohan-riskmanager-design-v0.3 (非 v0.3.1) | 移入 `docs/RESEARCH/archive/` |
-| laosun-key-management-v1~v4 | 移入 `docs/RESEARCH/archive/` (Rust 废弃版 + C++ 过渡版) |
+| laosun-key-management-v1~v3 | 已删 (GM 2026-05-30 硬删, Rust 废弃版); v4 移入 ARCHIVE/ |
 | laohuang-compliance-redline-v1.md | 移入 `docs/RESEARCH/archive/` |
 
 ### 5.3 保留但标注状态的文档 (不删, 不移)
@@ -443,8 +443,8 @@
 |---|---|
 | ADR-020 (ic-tester-separation) | 保留, 已有 RETRACTED 内容, 是 audit log |
 | ADR-022 (ic-self-test-tester-review) | 保留, 已标 Supersedes ADR-020 |
-| `laozhang-rust-engineering-stack-v1.md` | 保留, 知识沉淀, 加 `status: Archive (Rust 废弃 2026-05-28)` |
-| `laozhang-rust-signer-crates-v1.md` | 保留, 同上 |
+| `laozhang-rust-engineering-stack-v1.md` | 已删 (GM 2026-05-30 硬删) |
+| `laozhang-rust-signer-crates-v1.md` | 已删 (同上) |
 
 **ADR-025/026 实查结论:** 这两个编号的文件从未在 docs/ADR/ 中创建. 无操作.
 

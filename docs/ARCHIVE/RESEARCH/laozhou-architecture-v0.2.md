@@ -29,7 +29,7 @@
 | # | ADR-001 整改项 | v0.2 落地位置 | 验收口径 | 状态 |
 |---|---|---|---|---|
 | C-Z1 | §11 预算前置声明 us-east-1 同区, 跨区作废 | **§11.0 前置声明 + §13 部署假设** | §11 第一句必含 "本预算假设主节点部署在 us-east-1..." | 修 |
-| C-Z2 | §12 OQ-5 CLOSED, 引用老孙 v1 §2.1 | **§12 OQ-5 标 CLOSED + reference** | OQ-5 状态字段 = CLOSED, 引用 `laosun-key-management-v1.md §2.1` | 修 |
+| C-Z2 | §12 OQ-5 CLOSED, 引用老孙 v1 §2.1 | **§12 OQ-5 标 CLOSED + reference** | OQ-5 状态字段 = CLOSED, 引用 laosun-key-management-v1.md §2.1 (Rust 版已删; 当前 SSOT: v5.1) | 修 |
 | C-Z3 | §8.1 与老吴实例规格对齐 (走 GM 批 c6i.xlarge) | **§8.1 + §15 八核映射到 4 vCPU** | §8.1 核分配按 c6i.xlarge 4 物理核 + HT 重画 | 修 |
 | C-Z4 | §7.3 自研 WAL 最小可证明设计 | **§7.3 WAL 设计 + §7.4 audit / position WAL 分离** | 给出 record format / fsync 策略 / crash 恢复 | 修 |
 | C-Z5 | §6.2 跨进程 SHM ring 选型 (派 @小石) | **§6.2 收口 + 派单 S1-011 增节** | 起步推荐 boost::ipc + 自研 SPSC over SHM, 明示派单 | 修 |

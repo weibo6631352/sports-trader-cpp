@@ -10,7 +10,7 @@
   - `xiaoxiao-kelly-slippage-model-v1.md` (小肖 Kelly + slippage v1, C++)
   - `laohan-riskmanager-design-v0.2.md` (老韩 RM v0.2, paper 必跑 RM)
   - `laozhou-architecture-v0.2.md` (老周架构 v0.2 §14 SAFE_MODE; paper signer 是唯一替身)
-  - `laosun-key-management-v3.md` (老孙 signer v3 C++ + SecureBuffer)
+  - `laosun-key-management-v5.1.md` (老孙 signer 当前 SSOT; 原 v3 Rust 版已删)
   - `xiaoyuan-microstructure-v1.md` (小袁 Wave 6; paper fill 模拟依赖)
   - `xiaosong-test-replay-framework-v0.1.md` (小宋 replay 协议)
   - `laogao-code-conventions-v1.md` (老高 R-11: paper / live / backtest 单 binary + flag)

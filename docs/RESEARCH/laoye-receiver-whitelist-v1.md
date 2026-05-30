@@ -3,7 +3,7 @@
 - Owner: 老叶 (defi-onchain-advisor)
 - Date: 2026-05-28
 - 验收人: 老孙 (signer 调用方) + 老黄 (合规变更审批) + 老雷 (final sign-off)
-- 关联: `docs/RESEARCH/laosun-key-management-v2.md` (Q10, B5 依赖), `docs/RESEARCH/laoli-polymarket-api-spec-v1.md` (老李社区流传值)
+- 关联: `docs/RESEARCH/laosun-key-management-v5.1.md` (Q10/B5 白名单校验, 原 v2 参考, 已删), `docs/RESEARCH/laoli-polymarket-api-spec-v1.md` (老李社区流传值)
 - 截止: 2026-06-26 (Sprint-2 启动)
 - 验证方法: polygonscan og:title meta 标签 + Polymarket GitHub 官方 repo addresses.json + 实测 verified contract 状态
 - 验证日期: 2026-05-28 全部地址当日复核

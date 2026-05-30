@@ -5,7 +5,7 @@
 - Status: Active recruiting (Sprint-2 W2 起)
 - 截止入职: 2026-06-30 (Q2)
 - 评委: 见 docs/HIRING/backlog.md §3 (HC-01)
-- 关联 ADR: `docs/ADR/2026-05-28-gm-decision-defer-onchain-until-profitable.md`
+- 关联决策: MVP 不上链 (GM 2026-05-28 决议, 原 gm-decision-defer-onchain-until-profitable.md 已删; M4.5 hard gate 通过后解锁)
 
 ## 阶段透明告知
 

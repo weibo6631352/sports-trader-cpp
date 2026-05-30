@@ -3,7 +3,7 @@
 - **Owner:** 老雷 (GM)
 - **Date:** 2026-05-28
 - **Status:** Standing Decision
-- **关联:** 用户 2026-05-28 指令、`docs/ADR/2026-05-28-gm-decision-defer-onchain-until-profitable.md`（上链 deferred 同逻辑）、M4.5 7 hard gate
+- **关联:** 用户 2026-05-28 指令、上链 deferred 同逻辑（原 gm-decision-defer-onchain-until-profitable.md 已删; 决策事实: MVP 不上链, M4.5 hard gate 通过后解锁）、M4.5 7 hard gate
 
 ---
 

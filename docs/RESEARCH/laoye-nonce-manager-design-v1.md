@@ -3,7 +3,7 @@
 - Owner: 老叶 (defi-onchain-advisor)
 - Date: 2026-05-28
 - 验收人: 老孙 (crypto-signing-expert) + 老雷 (CEO)
-- 关联: `docs/RESEARCH/laosun-key-management-v2.md` (Q9), 关联 ticket S1-005 (signer) / S1-009 (RPC)
+- 关联: `docs/RESEARCH/laosun-key-management-v5.1.md` (nonce mgr Q9, 原 v2 已删), 关联 ticket S1-005 (signer) / S1-009 (RPC)
 - 截止: 2026-06-26 (Sprint-2 启动)
 - 上游依赖: 老叶 `laoye-polygon-rpc-selection-v1.md` (Alchemy primary / QuickNode secondary / dRPC fallback)
 - 下游消费者: signer (老孙), trader (老周), audit (老唐), monitoring (小郑)

@@ -6,8 +6,8 @@
 - 验收人: 老孙 (v3 协议) + 老黄 (合规 sign-off) + 老雷 (GM final)
 - 关联:
   - `laohuang-shamir-jurisdiction-signoff-v1.md` §8.2 (N4 跨 vendor KMS 硬约束)
-  - `laosun-key-management-v2.md` §5.5 (跨 vendor 副本占位, 待我细化)
-  - `laosun-key-management-v1.md` §3.1 (KMS unwrap 启动期流程)
+  - laosun-key-management v2 §5.5 (跨 vendor 副本占位, 原文已删)
+  - laosun-key-management v1 §3.1 (KMS unwrap 启动期流程, 原文已删; 当前权威: v5.1)
   - `laoshen-key-management-coreview-v1.md` §4.3 (我自己 v1 review 提的 N4)
   - `laoshen-threat-model-v1.md` (T-06 / I-05 / E-04 KMS 相关威胁)
 - 状态: v1 提交, 等老孙 v3 引用 + 老黄 R4 复核 + 老雷 final sign-off
@@ -521,7 +521,7 @@ RTO: 跨 vendor 切换自动 < 1s, 全部失败时 YubiHSM 离线 unwrap < 2h.
 - AWS us-east-1 incident history: AWS 官方 status page
 - 跨洋延迟数据: `laojiang-latency-budget-v1.md` (老姜)
 - Shamir 方案: `laohuang-shamir-jurisdiction-signoff-v1.md` (老黄)
-- 老孙 v2 主方案: `laosun-key-management-v2.md` (老孙)
+- 老孙 signer 主方案: `laosun-key-management-v5.1.md` (老孙, 当前 SSOT; 原 v2 已删)
 - 我自己 v1 co-review: `laoshen-key-management-coreview-v1.md`
 - 我威胁模型: `laoshen-threat-model-v1.md`
 - 红线表: `laohuang-compliance-redline-v1.md` R1~R12

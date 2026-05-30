@@ -79,7 +79,7 @@
 
 | # | name | persona | 职责 |
 |---|---|---|---|
-| 13 | rust-advisor | 老张 | Rust / FFI / crate |
+| 13 | rust-advisor | 老张 | Rust / FFI / crate (Rust 已撤, 角色待 HR 复议) |
 | 14 | modern-cpp-advisor | 老何 | C++20/23 best practice |
 | 15 | cpo-product-strategy | 老钱 | 北极星 / scope |
 | 16 | chief-architecture-reviewer | **老郭 (F 协调人)** | 第二意见 / 仲裁 + 顾问团协调 (ADR-005) |

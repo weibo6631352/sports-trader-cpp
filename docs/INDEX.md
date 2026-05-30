@@ -53,7 +53,7 @@
 - [`ADR/2026-05-28-department-manager-mandate.md`](ADR/2026-05-28-department-manager-mandate.md) — ADR-005 主管制度 mandate [SSOT]
 - [`ADR/2026-05-28-gm-commitment-sygnum-deadline.md`](ADR/2026-05-28-gm-commitment-sygnum-deadline.md) — GM 承诺 Sygnum 6/11 contact-made [SSOT]
 - [`ADR/2026-05-28-gm-decision-defer-aws-until-profitable.md`](ADR/2026-05-28-gm-decision-defer-aws-until-profitable.md) — GM 决议 AWS 延后至盈利后 (含 RETRACTED 区段) [SSOT]
-- [`ADR/2026-05-28-gm-decision-defer-onchain-until-profitable.md`](ADR/2026-05-28-gm-decision-defer-onchain-until-profitable.md) — GM 决议 延后链上深度优化至盈利后 [SSOT]
+- `ADR/2026-05-28-gm-decision-defer-onchain-until-profitable.md` — GM 决议 延后链上深度优化至盈利后 [已删]
 - [`ADR/2026-05-28-gm-decision-goalserve-odds-gap.md`](ADR/2026-05-28-gm-decision-goalserve-odds-gap.md) — GM 决议 Goalserve odds 缺口 [SSOT]
 - [`ADR/2026-05-28-gm-policy-api-monitoring-longterm.md`](ADR/2026-05-28-gm-policy-api-monitoring-longterm.md) — GM 政策 API 长期监控 [SSOT]
 - [`ADR/2026-05-28-gm-policy-cross-domain-listening.md`](ADR/2026-05-28-gm-policy-cross-domain-listening.md) — GM 政策 跨域听取义务 [SSOT]
@@ -70,7 +70,7 @@
 ### 2026-06-01 (Sprint-2 W5)
 
 - [`ADR/2026-06-01-adr-010-test-code-grading.md`](ADR/2026-06-01-adr-010-test-code-grading.md) — ADR-010 测试代码分级 [SSOT]
-- [`ADR/2026-06-01-adr-011-paper-live-binary.md`](ADR/2026-06-01-adr-011-paper-live-binary.md) — ADR-011 paper/live 共享 binary [SSOT]
+- `ADR/2026-06-01-adr-011-paper-live-binary.md` — ADR-011 paper/live 单 binary 架构 [已删]
 - [`ADR/2026-06-01-adr-012-wss-topology.md`](ADR/2026-06-01-adr-012-wss-topology.md) — ADR-012 WSS 拓扑 [SSOT]
 - [`ADR/2026-06-01-adr-013-cross-region.md`](ADR/2026-06-01-adr-013-cross-region.md) — ADR-013 v1 跨洋选址 [Outdated — 被 ADR-013-v2 supersede; 老郭 W9 W3 加 SUPERSEDED 注记后归档]
 - [`ADR/2026-06-01-adr-014-ml-shadow-timing.md`](ADR/2026-06-01-adr-014-ml-shadow-timing.md) — ADR-014 ML shadow timing [SSOT]
@@ -297,7 +297,7 @@
 **Signer / Key Impl (老孙)**
 
 - [`RESEARCH/laosun-key-management-v5.1.md`](RESEARCH/laosun-key-management-v5.1.md) — Key management v5.1 C++ (老孙) [SSOT] **← 最新**
-  - 旧版 [Archive]: [`v5-simplified`](RESEARCH/laosun-key-management-v5-simplified.md) | [`v4-cpp`](RESEARCH/laosun-key-management-v4-cpp.md) | [`v3`](RESEARCH/laosun-key-management-v3.md) | [`v2`](RESEARCH/laosun-key-management-v2.md) | [`v1 (Rust)`](RESEARCH/laosun-key-management-v1.md)
+  - 旧版 [Archive]: [`v5-simplified`](RESEARCH/laosun-key-management-v5-simplified.md) | [`v4-cpp`](RESEARCH/laosun-key-management-v4-cpp.md) | v3/v2/v1 (Rust 设计 trail, 已删)
 - [`RESEARCH/laosun-libsodium-fetchcontent-w7-plan.md`](RESEARCH/laosun-libsodium-fetchcontent-w7-plan.md) — libsodium FetchContent W7 plan (老孙) [SSOT]
 - [`RESEARCH/laosun-w9-signer-v53-abi-align-spec-v1.md`](RESEARCH/laosun-w9-signer-v53-abi-align-spec-v1.md) — Signer v5.3 ABI align spec (老孙, W9) [SSOT]
 - [`RESEARCH/laoshan-monocypher-vs-libsodium-w7-ack.md`](RESEARCH/laoshan-monocypher-vs-libsodium-w7-ack.md) — Monocypher vs libsodium W7 ack (老山) [SSOT]
@@ -409,13 +409,6 @@
 - `RESEARCH/xiaomi-docs-health-2026-05-28.md` [Archive]
 - `RESEARCH/xiaomi-docs-health-2026-05-28-v2.md` [Archive]
 - `RESEARCH/xiaomi-r20-backfill-2026-05-28.md` [Archive]
-
-### H. 已废弃 (Rust 知识沉淀)
-
-> GM 2026-05-28 决议: 全公司禁 Rust. 下列文档保留作历史知识沉淀, 不再 active.
-
-- [`RESEARCH/laozhang-rust-engineering-stack-v1.md`](RESEARCH/laozhang-rust-engineering-stack-v1.md) — Rust 工程栈 v1 (老张) [Archive]
-- [`RESEARCH/laozhang-rust-signer-crates-v1.md`](RESEARCH/laozhang-rust-signer-crates-v1.md) — Rust signer crate 选型 v1 (老张) [Archive]
 
 ---
 

@@ -1,7 +1,7 @@
 # 私钥方案 Co-Review v1
 
 - Co-reviewer: 老沈 (security-engineer)
-- Reviewing: laosun-key-management-v1.md
+- Reviewing: laosun-key-management-v1.md (Rust 版, 已删; 当前权威版本 v5.1)
 - Date: 2026-05-28
 - 验收人: 老雷
 - 关联: S1-005 (老孙) / S1-016 (老沈威胁模型) / S1-006 (老黄红线) / S1-010 (老吴跨洋)

@@ -238,9 +238,7 @@ docs/
 
 ### 12.3 ~~Rust~~ — 已废弃（GM 2026-05-28 最终版）
 
-**公司不使用 Rust。** 所有生产组件 C++20，包括 signer。临时验证用 C++ 小程序 + bash + curl，不引入 Rust 工具链。
-
-**已派出的 Rust 设计文档（老孙 signer v1/v2/v3 + 老张 crate 选型 + Rust 工程栈）** 作为知识沉淀保留，但实施改 C++（老孙 v4 重写）。
+**公司不使用 Rust。** 所有生产组件 C++20，包括 signer。临时验证用 C++ 小程序 + bash + curl，不引入 Rust 工具链。Signer 当前实现为 C++（老孙 v5.1）。
 
 ### 12.4 Python 量化栈 (`.venv/`, 不入 git) — 严格限制
 

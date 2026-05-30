@@ -45,7 +45,7 @@
 4. `mode` 字段强制 + 禁合表 CI 守 (R-11)。
 5. metric 命名契约固化 (老徐, §3.3)。
 
-**勘误 (移交 GM/小米):** 任务 prompt 称 "ADR-037 + drive directive (R-12/R-11/R-20)" — 实测 ADR-037 (`2026-05-29-data-model-strategy-vendor-agnostic.md`) 是 **数据/模型战略**, 三条红线在各自独立 ADR (R-12 `gm-redline-websocket-non-blocking`, R-20 `gm-redline-data-source-timestamping`, R-11 `adr-011-paper-live-binary`)。本评审已按真实 SSOT 锚定。
+**勘误 (移交 GM/小米):** 任务 prompt 称 "ADR-037 + drive directive (R-12/R-11/R-20)" — 实测 ADR-037 (`2026-05-29-data-model-strategy-vendor-agnostic.md`) 是 **数据/模型战略**, 三条红线在各自独立 ADR (R-12 `gm-redline-websocket-non-blocking`, R-20 `gm-redline-data-source-timestamping`, R-11 paper/live 隔离红线, 原 ADR-011 已删)。本评审已按真实 SSOT 锚定。
 
 ---
 **最后更新:** 2026-05-29 by 老郭

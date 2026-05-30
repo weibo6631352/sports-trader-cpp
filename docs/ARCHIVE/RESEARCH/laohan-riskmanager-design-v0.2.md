@@ -11,7 +11,7 @@
     - `docs/RESEARCH/laozhou-architecture-v0.1.md` (§9.2 SAFE_MODE 路径)
     - `docs/RESEARCH/laowu-cross-region-deployment-v0.1.md` (us-east-1 c6i.xlarge)
     - `docs/RESEARCH/laojiang-latency-budget-v1.md` (内环 p99 预算 / 信号 → 下单)
-    - `docs/RESEARCH/laosun-key-management-v1.md` (本地 signer 50us)
+    - laosun-key-management v1 (本地 signer 50us 参考; Rust 版已删, 当前 SSOT: v5.1)
 
 ---
 

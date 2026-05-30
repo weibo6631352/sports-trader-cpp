@@ -9,7 +9,7 @@
   - `xiaoying-acceptance-spec-v1.md` §1.H (M1-H PnL 看板 3 条 acceptance)
   - `xiaosu-ui-wireframe-v0.1.md` (前序 wireframe, 技术栈历史背景)
   - `xiaoyou-ux-framework-v1.md` (7 维 + 4 色法 + P0 告警约定)
-  - `ADR/2026-06-01-adr-011-paper-live-binary.md` (paper/live 隔离, mode badge)
+  - paper/live 单 binary 架构 (原 ADR-011, 已删; mode badge 仍须按 paper/live 分离显示)
 
 ---
 

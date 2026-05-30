@@ -8,7 +8,7 @@
   - `docs/RESEARCH/laozhou-architecture-v0.1.md`
   - `docs/RESEARCH/laohan-riskmanager-design-v0.1.md`
   - 交叉验证: `laojiang-latency-budget-v1.md`, `laowu-cross-region-deployment-v0.1.md`,
-    `xiaoshi-data-structures-selection-v1.md`, `laosun-key-management-v1.md`
+    `xiaoshi-data-structures-selection-v1.md`, laosun-key-management-v1.md (Rust 版已删; 当前 signer SSOT: v5.1)
 
 ---
 

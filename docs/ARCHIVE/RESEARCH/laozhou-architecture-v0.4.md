@@ -7,7 +7,7 @@
   - `docs/RESEARCH/laozhou-architecture-v0.3.md` (v0.3 主体保留, **本文增量**, 仅修订 §15/§17 + 新增 §18/§19/§20)
   - `docs/ADR/2026-05-28-arch-and-rm-v0.1-review.md` (ADR-001 升 Accepted final)
   - `docs/ADR/2026-05-28-gm-signoff-sprint1-retro.md` (18 决议, **D-05 / D-06 / D-07 / D-12 / D-18 直接落本文**)
-  - `docs/ADR/2026-05-28-gm-decision-defer-onchain-until-profitable.md` (**上链 deferred → §18 必做**)
+  - MVP 不上链 (GM 决议, 原 gm-decision-defer-onchain-until-profitable.md 已删; **上链 deferred → §18 必做**)
   - `docs/ADR/2026-05-28-gm-signoff-paper-trade.md` (ExecutionMode 三态 + R-11 红线)
   - `docs/ADR/2026-05-28-gm-redline-websocket-non-blocking.md` (R-12)
   - `docs/ADR/2026-05-28-gm-policy-cross-domain-listening.md` (听取义务 + 双向收口 → §20)
@@ -224,7 +224,7 @@ INPLAY_HOT_CRIT 判定依赖 Goalserve 推送 (Q4 时钟 / inning / score_diff).
 
 ### 18.0 章节定位
 
-GM 2026-05-28 `gm-decision-defer-onchain-until-profitable.md` 决议: **MVP 起始阶段不上链, paper trading 7 hard gate (M4.5) 全过后才解锁.** ExecutionMode 三态 (Live / Paper / Shadow) 设计**不动** (paper trade ADR), Paper mode 必须把"虚拟上链"做成 plug-in mock 接口 (派单老周 v0.4 §18 + 小蒋 paper engine v0.2 落代码).
+GM 2026-05-28 决议 (原 gm-decision-defer-onchain-until-profitable.md 已删): **MVP 起始阶段不上链, paper trading 7 hard gate (M4.5) 全过后才解锁.** ExecutionMode 三态 (Live / Paper / Shadow) 设计**不动** (paper trade 红线 R-11), Paper mode 必须把"虚拟上链"做成 plug-in mock 接口 (派单老周 v0.4 §18 + 小蒋 paper engine v0.2 落代码).
 
 **与 Live mode 共享 90% 路径**: data ingest / book builder / strategy / RiskGateway / audit / metrics / fill ingestion / position ledger 全部同份代码. 仅 L5 signer 出口 (TB-B 边界) 分叉为 PaperSigner / RealSigner, 通过 CMake 编译期隔离 (小蒋 v0.2 §3.2 方案 A).
 

@@ -7,7 +7,7 @@
 - **关联:**
   - `docs/RESEARCH/laoshen-multi-vendor-kms-v1.md` Top 1 风险
   - `docs/RESEARCH/laohuang-shamir-jurisdiction-signoff-v1.md` §8.2 (N4 非美主权约束)
-  - `docs/RESEARCH/laosun-key-management-v3.md` §N4
+  - laosun-key-management v3 §N4 (Rust 版已删; 当前 signer SSOT: v5.1)
 
 ---
 

@@ -8,9 +8,9 @@
 - 状态: v4 提交, 等老高 PR review 接力 + 老沈 + 老黄 final
 - **决策依据**: GM 2026-05-28 用户终极拍板 — **公司无 Rust 项目, signer 撤 Rust 改 C++ 全量重写**
 - 关联:
-  - 前版 v1 (Rust 选型论证, 保留为 review trail): `docs/RESEARCH/laosun-key-management-v1.md`
-  - 前版 v2 (8 Blocker 修复, Rust 实现, 保留): `docs/RESEARCH/laosun-key-management-v2.md`
-  - 前版 v3 (Shamir / 跨 vendor / passphrase, Rust 实现, 保留): `docs/RESEARCH/laosun-key-management-v3.md`
+  - 前版 v1 (Rust 选型论证): 已删
+  - 前版 v2 (8 Blocker 修复, Rust 实现): 已删
+  - 前版 v3 (Shamir / 跨 vendor / passphrase, Rust 实现): 已删
   - 安全 co-review: `docs/RESEARCH/laoshen-key-management-coreview-v1.md`
   - 跨 vendor KMS: `docs/RESEARCH/laoshen-multi-vendor-kms-v1.md`
   - GM Sygnum 截止承诺: `docs/ADR/2026-05-28-gm-commitment-sygnum-deadline.md`

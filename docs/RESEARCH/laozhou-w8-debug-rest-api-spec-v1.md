@@ -6,7 +6,7 @@
 - 关联:
   - `laozhou-architecture-v0.6-e2e.md` (vCPU 分工 + 链路图)
   - `ADR/2026-06-W3-adr-018-lib-selection.md` (cpp-httplib / simdjson 决议)
-  - `ADR/2026-06-01-adr-011-paper-live-binary.md` (paper/live 隔离)
+  - paper/live 单 binary 架构 (原 ADR-011, 已删; paper/live 隔离仍是现行红线 R-11)
   - `ADR/2026-06-01-adr-015-vcpu-pin.md` (vCPU 分工, API server 独立 vCPU)
   - `ADR/2026-05-28-gm-redline-websocket-non-blocking.md` (R-12)
   - `ADR/2026-05-28-gm-redline-data-source-timestamping.md` (R-20, 4-ts)
