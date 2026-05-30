@@ -285,6 +285,7 @@ set(_STCPP_CONDITIONAL_SRCS
     test_signer_v53_pit.cpp         # paper only
     test_signer_v62.cpp             # paper only
     test_paper_daemon.cpp           # paper only (links stcpp_paper_app)
+    test_market_discovery.cpp       # paper only (links stcpp_paper_app; 小宋 MD-01..47)
     test_strategy_unlock.cpp        # STCPP_BUILD_CLI only
     # deferred / not-yet-buildable stubs (target library not yet implemented):
     test_parquet_writer_stub.cpp    # W7+ HC-06 deferred; stcpp_data_parquet not yet built
@@ -356,6 +357,12 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     # STCPP_CLOB_V2=1 追加 define
     list(APPEND EXTRA_DEFS_test_signer_v62 STCPP_CLOB_V2=1)
     stcpp_add_unit_test(test_signer_v62 test_signer_v62.cpp)
+
+    # 小宋 market_discovery 单测草案 MD-01..47
+    # discovery_detail 纯函数 + ParseSports* Parse 层 fixture 测试 (无网络)
+    set(EXTRA_LIBS_test_market_discovery stcpp_paper_app)
+    set(LABELS_test_market_discovery "unit;paper;market-discovery;gamma;parse;xiaosong")
+    stcpp_add_unit_test(test_market_discovery test_market_discovery.cpp)
 
 endif()
 
