@@ -231,4 +231,58 @@ TEST(FairValueDevigPrior, D12_InPlayLeadBlend) {
     EXPECT_GE(p_fair, *devig);
 }
 
+// ============================================================
+// D13-D18: 边界 / 数值安全补充 (GM 2026-05-30, 补 D01-D12 缺口)
+// ============================================================
+
+TEST(FairValueDevigPrior, D13_Devig_NaN) {
+    // paper_loop 单边场景真实传 NaN no_token_mid → 应退化为 yes 边, 不 crash
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const auto r = devig_binary(0.62, nan);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_NEAR(*r, 0.62, 1e-6);
+    // 双边 NaN → fail-closed nullopt
+    EXPECT_FALSE(devig_binary(nan, nan).has_value());
+    // yes NaN, no 有效 → 退化 1-no
+    const auto r2 = devig_binary(nan, 0.70);
+    ASSERT_TRUE(r2.has_value());
+    EXPECT_NEAR(*r2, 1.0 - 0.70, 1e-6);
+}
+
+TEST(FairValueDevigPrior, D14_InplayTieIsHalf) {
+    // 平局 score_diff=0 → prior = 0.5 (任何时间点, 含终态)
+    EXPECT_NEAR(inplay_score_prior_yes(0.0, 0.0, false), 0.5, 1e-6);
+    EXPECT_NEAR(inplay_score_prior_yes(0.0, 1.0, false), 0.5, 1e-6);
+    EXPECT_NEAR(inplay_score_prior_yes(0.0, 0.8, true), 0.5, 1e-6);
+}
+
+TEST(FairValueDevigPrior, D15_BlendConfBoundary) {
+    // conf=0 → 全 market; conf=1 → 全 prior
+    EXPECT_NEAR(blend_prob(0.8, 0.3, 0.0), 0.3, 1e-9);
+    EXPECT_NEAR(blend_prob(0.8, 0.3, 1.0), 0.8, 1e-9);
+}
+
+TEST(FairValueDevigPrior, D16_BlendConfClamp) {
+    // conf 越界 → clamp 到 [0,1] (conf>1 当 1, conf<0 当 0)
+    EXPECT_NEAR(blend_prob(0.8, 0.3, 5.0), 0.8, 1e-9);
+    EXPECT_NEAR(blend_prob(0.8, 0.3, -2.0), 0.3, 1e-9);
+}
+
+TEST(FairValueDevigPrior, D17_PriorConfidenceAnchors) {
+    // tf=0 → kBase; tf=1 → kMax (精确锚点, 非仅单调)
+    EXPECT_NEAR(prior_confidence(0.0), kBasePriorConfidence, 1e-9);
+    EXPECT_NEAR(prior_confidence(1.0), kMaxPriorConfidence, 1e-9);
+    // 越界 clamp
+    EXPECT_NEAR(prior_confidence(-1.0), kBasePriorConfidence, 1e-9);
+    EXPECT_NEAR(prior_confidence(2.0), kMaxPriorConfidence, 1e-9);
+}
+
+TEST(FairValueDevigPrior, D18_LaterLeadMoreExtreme) {
+    // 同样领先 score_diff=1, 比赛越晚 prior 越极端 (远离 0.5)
+    const double early = inplay_score_prior_yes(1.0, 0.1, false);
+    const double late = inplay_score_prior_yes(1.0, 0.9, false);
+    EXPECT_GT(late, early);  // 晚领先 → 更接近 1
+    EXPECT_GT(early, 0.5);
+}
+
 }  // namespace
