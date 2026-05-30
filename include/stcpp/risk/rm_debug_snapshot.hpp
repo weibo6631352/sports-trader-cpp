@@ -274,7 +274,7 @@ public:
     RmDebugSnapshot() noexcept {
         for (auto& slot : slots_) {
             slot.seq.store(0u, std::memory_order_relaxed);
-            std::memset(&slot.row, 0, sizeof(slot.row));
+            slot.row = RejectRow{};  // 值初始化 (RejectRow 非平凡; gcc -Wclass-memaccess 禁 memset)
         }
         write_idx_.store(0u, std::memory_order_relaxed);
     }

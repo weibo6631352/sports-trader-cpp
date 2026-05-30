@@ -224,8 +224,9 @@ private:
     sizing::QuoteSnapshotHub& quote_hub_;
     // P0-1: rm_snap_ 字段保留供外部通过 attach_rm_debug_snapshot() 读取 ring snapshot.
     // paper_loop 不再调用 push_reject (RM 内部已唯一负责), 但字段生命周期管理仍属 paper_loop.
-    // [[maybe_unused]]: clang -Wunused-private-field 豁免 (字段不在 loop 热路径使用, 但保留接口语义)
-    [[maybe_unused]] risk::RmDebugSnapshot* rm_snap_;
+    // 当前只写不读 (P0-1 后 push_reject 移到 RM); ctor 内 (void)rm_snap_ 抑制 clang
+    // -Wunused-private-field (gcc 不认指针成员上的 [[maybe_unused]], 故不用属性, 改 (void) 引用)。
+    risk::RmDebugSnapshot* rm_snap_;
 
     // ---- 自有对象 (FairValueEstimator 是 facade, 持 model 引用) ----
     pricing::FairValueEstimator fv_estimator_;

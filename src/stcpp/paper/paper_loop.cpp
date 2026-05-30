@@ -101,7 +101,9 @@ PaperLoop::PaperLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk
       psigner_(&nonce_provider_, &gas_estimator_, &confirm_watcher_),
       matcher_(0xBEEFCAFEULL),
       token_map_(std::move(token_map)),
-      cfg_(std::move(cfg)) {}
+      cfg_(std::move(cfg)) {
+    (void)rm_snap_;  // 只写不读字段: 抑制 clang -Wunused-private-field (跨 gcc/clang 可移植)
+}
 
 // ---------------------------------------------------------------------------
 // dtor — 保证线程已 join
