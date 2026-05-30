@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cmath>
 #include <ctime>
 #include <fcntl.h>
 #include <string>
@@ -118,6 +119,27 @@ int main(int argc, char** argv) {
     // SIDE: 0=BUY 1=SELL (env)。SELL: makerAmount=卖出 shares(micro), takerAmount=收到 USDC(micro)
     const char* side_env = std::getenv("SIDE");
     const std::uint64_t side = side_env ? std::strtoull(side_env, nullptr, 10) : 0;
+
+    // 份额输入便利层 (对齐官方 py-clob-client-v2 get_order_amounts):
+    //   SHARES=<份额> PRICE=<价> [TICK=0.001] → 自动算 makerAmount/takerAmount, 免手算 micro。
+    //   BUY : takerAmount=份额, makerAmount=份额×价 ;  SELL: makerAmount=份额, takerAmount=份额×价
+    if (const char* sh = std::getenv("SHARES")) {
+        const char* pr = std::getenv("PRICE");
+        if (!pr) { std::printf("❌ SHARES 需配 PRICE (如 PRICE=0.02)\n"); return 1; }
+        double shares = std::strtod(sh, nullptr);
+        double price = std::strtod(pr, nullptr);
+        double tick = std::getenv("TICK") ? std::strtod(std::getenv("TICK"), nullptr) : 0.001;
+        price = std::round(price / tick) * tick;            // 价取整到 tick
+        double sz = std::floor(shares * 100.0) / 100.0;     // 份额下取整到 2 位小数
+        double usdc = sz * price;
+        if (side == 0) {  // BUY: taker=份额, maker=USDC
+            takerAmt = static_cast<std::uint64_t>(std::llround(sz * 1e6));
+            makerAmt = static_cast<std::uint64_t>(std::llround(usdc * 1e6));
+        } else {          // SELL: maker=份额, taker=USDC
+            makerAmt = static_cast<std::uint64_t>(std::llround(sz * 1e6));
+            takerAmt = static_cast<std::uint64_t>(std::llround(usdc * 1e6));
+        }
+    }
     // signatureType: 0=EOA 1=POLY_PROXY 2=POLY_GNOSIS_SAFE (env SIG_TYPE 覆盖, 默认 1)
     const char* st_env = std::getenv("SIG_TYPE");
     const std::uint64_t sigType = st_env ? std::strtoull(st_env, nullptr, 10) : 1;
