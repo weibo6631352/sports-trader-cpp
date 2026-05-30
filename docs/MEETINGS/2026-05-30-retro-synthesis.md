@@ -71,7 +71,7 @@ owner: 老雷 (GM) | last_review: 2026-05-30
 | A3 | **Goalserve 白名单**(挂 Elastic IP + 报白名单) | 用户(运营) | 🔴 M1 唯一外部 blocker |
 | A4 | **RM feed-liveness 自检** + 风控状态逐条标(防假已活) | 老韩 + GM | ✅ 2026-05-30 (commit 8a641c2) — FeedKey 10 红线 last_fed_ns atomic 数组 + report() + daemon 首 tick 自检喊 NEVER FED; 零 ABI (私有成员); 逐条标降级 M2. RiskGateway 55 + paper_loop 23 绿 |
 | **P1-9** | **RM slippage gate 单位失配根治** (A2 副产, MVP「第一笔成交」拦路石) | 老韩 spec / GM | ✅ 2026-05-30 (commit 44f10eb) — order_size 走 .to_pusd() micro→whole; 4 test 重校(R13/17/17b/18)+ 新 sanity 守卫 500pUSD ρ=0.1 过; F5 CI 护栏; 1061/1061 绿 |
-| A5 | DD 喂数(A1 完成后)/ c4 闭合(sizing 取 RM 真值,M2 前)/ consec(M2) | 老韩 + GM | 🟠 排在 A1/A4 后; **DD 喂数验证需 A3 (Goalserve 白名单, 用户运营) 接通 live 数据** |
+| A5 | DD 喂数(A1 完成后)/ c4 闭合(sizing 取 RM 真值,M2 前)/ consec(M2) | 老韩 + GM | 🟡 **DD 喂数 ✅ 2026-05-31 (commit fe82fdb, 老韩 spec)** — daily_pnl=时点净MtM−fee, best_bid 保守, 全量覆盖无双计, 软/硬熔断激活, 5 T-A5 测试 + F6 护栏, 1069/1069 绿。**剩: c4 闭合(M2前) / consec(M2) / realized累加器(M2) / live 端到端验证(需 A3)** |
 | A6 | 流程: 改动分层(契约级全闭环 / 单向安全免陪跑)+ P2 回流 IC | 老胡 | 🟡 |
 
 **一句话校准:** 下一步**不是**接 DD,而是 **PositionLedger micro 根治(R-4)** —— 它一刀解决单位债真源 + PnL bug + DD 喂数前置 + <1pUSD 静默丢仓,是本会话复盘挖出的最高杠杆动作。
