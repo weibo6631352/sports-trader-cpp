@@ -286,6 +286,7 @@ set(_STCPP_CONDITIONAL_SRCS
     test_signer_v62.cpp             # paper only
     test_paper_daemon.cpp           # paper only (links stcpp_paper_app)
     test_market_discovery.cpp       # paper only (links stcpp_paper_app; 小宋 MD-01..47)
+    test_event_matcher.cpp          # paper only (links stcpp_paper_app; A0 映射桥)
     test_strategy_unlock.cpp        # STCPP_BUILD_CLI only
     # deferred / not-yet-buildable stubs (target library not yet implemented):
     test_parquet_writer_stub.cpp    # W7+ HC-06 deferred; stcpp_data_parquet not yet built
@@ -363,6 +364,11 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     set(EXTRA_LIBS_test_market_discovery stcpp_paper_app)
     set(LABELS_test_market_discovery "unit;paper;market-discovery;gamma;parse;xiaosong")
     stcpp_add_unit_test(test_market_discovery test_market_discovery.cpp)
+
+    # A0 映射桥 EventMatcher (condition_id↔goalserve event, fail-closed)
+    set(EXTRA_LIBS_test_event_matcher stcpp_paper_app)
+    set(LABELS_test_event_matcher "unit;paper;event-matcher;a0;mapping;fail-closed;laolei")
+    stcpp_add_unit_test(test_event_matcher test_event_matcher.cpp)
 
 endif()
 

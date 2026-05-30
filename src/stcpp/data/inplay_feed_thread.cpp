@@ -713,6 +713,12 @@ debug_api::EventScore InplayFeedThread::ToEventScore(const data::adapter::GameSc
     es.ts.ingestion_ts_ns = rec.ts.ingestion_ts_ns;
     es.ts.as_of_ts_ns = rec.ts.as_of_ts_ns;
 
+    // A0 映射桥: league_id + kickoff_ts_sec (EventMatcher 锚定用)
+    es.league_id = rec.match_id.league_id;
+    // kickoff = event_ts_ns/1e9 (inplay feed 只返进行中 event, event_ts_ns 即真 kickoff;
+    // 见 EventScore.kickoff_ts_sec 注释 R-20 clamp 不触发的前提).
+    es.kickoff_ts_sec = rec.ts.event_ts_ns / 1'000'000'000LL;
+
     return es;
 }
 

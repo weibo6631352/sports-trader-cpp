@@ -12,6 +12,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdio>
+#include <ctime>
 
 namespace stcpp::app {
 
@@ -53,12 +54,13 @@ std::string ExtractJsonStr(const std::string& json, const std::string& key) {
     return json.substr(pos, end - pos);
 }
 
-// Extract clobTokenIds — handles TWO gamma API encodings:
-//   Native array:  "clobTokenIds":["tok0","tok1"]
-//   JSON string:   "clobTokenIds":"[\"tok0\",\"tok1\"]"  (gamma /events encodes as string)
-// Returns true and fills tok0/tok1 if at least 2 tokens found.
-bool ExtractClobTokenIds(const std::string& obj, std::string& tok0, std::string& tok1) {
-    const std::string needle = "\"clobTokenIds\":";
+// Extract a 2-string array under `key` — handles TWO gamma API encodings:
+//   Native array:  "key":["a","b"]
+//   JSON string:   "key":"[\"a\",\"b\"]"  (gamma /events encodes as string)
+// Returns true and fills out0/out1 if at least 2 items found.
+bool ExtractTwoStringArray(const std::string& obj, const std::string& key, std::string& out0,
+                           std::string& out1) {
+    const std::string needle = "\"" + key + "\":";
     std::size_t arr_start = obj.find(needle);
     if (arr_start == std::string::npos)
         return false;
@@ -146,9 +148,46 @@ bool ExtractClobTokenIds(const std::string& obj, std::string& tok0, std::string&
     }
     if (tokens.size() < 2)
         return false;
-    tok0 = tokens[0];
-    tok1 = tokens[1];
+    out0 = tokens[0];
+    out1 = tokens[1];
     return true;
+}
+
+// clobTokenIds (YES/NO token ids) — 委托 ExtractTwoStringArray.
+bool ExtractClobTokenIds(const std::string& obj, std::string& tok0, std::string& tok1) {
+    return ExtractTwoStringArray(obj, "clobTokenIds", tok0, tok1);
+}
+
+// outcomes (moneyline 即两队名) — 委托 ExtractTwoStringArray.
+bool ExtractOutcomes(const std::string& obj, std::string& out0, std::string& out1) {
+    return ExtractTwoStringArray(obj, "outcomes", out0, out1);
+}
+
+// 解析 gamma 时间 → Unix 秒 (UTC). 支持 "YYYY-MM-DD HH:MM:SS+00" 与 ISO "YYYY-MM-DDTHH:MM:SS...Z".
+// 只取前 19 字符的 Y-M-D H:M:S (分隔符 ' ' 或 'T'), 用 timegm 算 UTC epoch. 失败返 0.
+std::int64_t ParseGammaTimeToEpochSec(const std::string& s) {
+    if (s.size() < 19)
+        return 0;
+    int y = 0, mo = 0, d = 0, h = 0, mi = 0, se = 0;
+    // 容忍日期与时间之间的分隔符 (' ' 或 'T'): 用 %d 间分隔, 中间符号单独 scan.
+    char sep = 0;
+    if (std::sscanf(s.c_str(), "%4d-%2d-%2d%c%2d:%2d:%2d", &y, &mo, &d, &sep, &h, &mi, &se) != 7)
+        return 0;
+    if (sep != ' ' && sep != 'T')
+        return 0;
+    if (y < 1970 || mo < 1 || mo > 12 || d < 1 || d > 31)
+        return 0;
+    std::tm tm{};
+    tm.tm_year = y - 1900;
+    tm.tm_mon = mo - 1;
+    tm.tm_mday = d;
+    tm.tm_hour = h;
+    tm.tm_min = mi;
+    tm.tm_sec = se;
+    const std::time_t epoch = ::timegm(&tm);  // UTC (gamma 时间均 UTC: +00 / Z)
+    if (epoch < 0)
+        return 0;
+    return static_cast<std::int64_t>(epoch);
 }
 
 // Extract sportsMarketType → normalize to moneyline/spread/totals/outright/prop/series/unknown
@@ -352,6 +391,10 @@ std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int 
             if (dm.token0_id.empty() || dm.token1_id.empty())
                 continue;
 
+            // A0 映射桥锚定字段 (best-effort; 缺失不阻塞发现, 仅降匹配率)
+            (void)ExtractOutcomes(mobj, dm.outcome0_name, dm.outcome1_name);
+            dm.game_start_ts_sec = ParseGammaTimeToEpochSec(ExtractJsonStr(mobj, "gameStartTime"));
+
             ev.markets.push_back(std::move(dm));
         }
 
@@ -413,6 +456,10 @@ std::vector<DiscoveredEvent> ParseSportsMarketsFlat(const std::string& json_buf,
             continue;
         if (dm.token0_id.empty() || dm.token1_id.empty())
             continue;
+
+        // A0 映射桥锚定字段 (best-effort)
+        (void)ExtractOutcomes(mobj, dm.outcome0_name, dm.outcome1_name);
+        dm.game_start_ts_sec = ParseGammaTimeToEpochSec(ExtractJsonStr(mobj, "gameStartTime"));
 
         // Wrap in synthetic event (event_id = condition_id, slug/title = question)
         DiscoveredEvent ev;

@@ -26,6 +26,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -44,6 +45,12 @@ struct DiscoveredMarket {
     std::string sports_market_type;  // 归一化: moneyline/spread/totals/outright/prop/series/unknown
     std::string token0_id;           // YES
     std::string token1_id;           // NO
+    // A0 映射桥 (condition_id↔goalserve event) 锚定字段:
+    //   outcome0/1_name: gamma market.outcomes 两项 (moneyline 即两队名, e.g. ["Galorys","LDP"]).
+    //   game_start_ts_sec: gamma market.gameStartTime → Unix 秒 (真实开赛, 比 listing startDate 准; 0=缺).
+    std::string outcome0_name;
+    std::string outcome1_name;
+    std::int64_t game_start_ts_sec{0};
 };
 
 // 单个 event (含 markets[])
@@ -95,11 +102,24 @@ namespace discovery_detail {
 // 最小 JSON string 值提取 ("key":"value"). 找不到返 "".
 [[nodiscard]] std::string ExtractJsonStr(const std::string& json, const std::string& key);
 
-// 提取 clobTokenIds — 处理两种 gamma 编码:
-//   原生数组:    "clobTokenIds":["tok0","tok1"]
-//   JSON 字符串: "clobTokenIds":"[\"tok0\",\"tok1\"]"  (gamma /events 此编码)
-// 至少 2 个 token 时填 tok0/tok1 并返 true.
+// 提取某 key 的 2-string 数组 — 处理两种 gamma 编码:
+//   原生数组:    "key":["a","b"]
+//   JSON 字符串: "key":"[\"a\",\"b\"]"  (gamma /events 此编码)
+// 至少 2 项时填 out0/out1 并返 true.
+[[nodiscard]] bool ExtractTwoStringArray(const std::string& obj, const std::string& key, std::string& out0,
+                                         std::string& out1);
+
+// 提取 clobTokenIds (= ExtractTwoStringArray(obj,"clobTokenIds",...)). 填 tok0/tok1 (YES/NO).
 [[nodiscard]] bool ExtractClobTokenIds(const std::string& obj, std::string& tok0, std::string& tok1);
+
+// 提取 outcomes (= ExtractTwoStringArray(obj,"outcomes",...)). moneyline 即两队名.
+[[nodiscard]] bool ExtractOutcomes(const std::string& obj, std::string& out0, std::string& out1);
+
+// 解析 gamma 时间 → Unix 秒 (UTC). 处理两种格式:
+//   gameStartTime: "2026-05-30 20:00:00+00"
+//   startDate ISO: "2026-05-30T05:25:21.889Z"
+// 解析失败返 0.
+[[nodiscard]] std::int64_t ParseGammaTimeToEpochSec(const std::string& s);
 
 // sportsMarketType 归一化 → moneyline/spread/totals/outright/prop/series/unknown.
 [[nodiscard]] std::string NormalizeSportsMarketType(const std::string& raw);

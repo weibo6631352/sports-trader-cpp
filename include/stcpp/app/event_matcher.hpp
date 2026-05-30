@@ -1,0 +1,78 @@
+// include/stcpp/app/event_matcher.hpp — condition_id ↔ Goalserve event 映射桥 (A0)
+//
+// Owner: 老雷 (GM) — M1 路线评审会决议 A0 (docs/MEETINGS/2026-05-30-m1-route-review.md)
+// last_review: 2026-05-30
+//
+// 归属: app 编排层 (stcpp_paper_app 库). 消费 EventScore (debug_api) + market 队名/kickoff,
+//   app → debug_api 单向 (老周架构裁定 B1)。
+//
+// 职责: 把 Polymarket gamma market (两队名 outcomes + gameStartTime) 锚定到 Goalserve
+//   in-play event (EventScore: home/away/kickoff/league)。无公共 ID (小段口径报告:
+//   Goalserve inplay id 134xxx 与 Polymarket condition_id 无对照表), 只能语义锚定:
+//   归一化队名 overlap + kickoff 时间窗口。
+//
+// **fail-closed (红线):** 匹配不上 → matched=false (上游退回 has_real_fair=false, 不产 intent)。
+//   错配下单 = 张冠李戴比分 → 假 fair → 真亏 (老周风险点)。宁可不匹配, 绝不猜。
+//
+// 算法 (小段匹配策略):
+//   1. 队名归一化: lowercase + alnum tokenize → token 集合。
+//   2. 队相似度: overlap coefficient = |A∩B| / min(|A|,|B|) (比 Jaccard 宽容名长差异,
+//      如 "LA Lakers" vs "Los Angeles Lakers" = 0.5)。
+//   3. 双向分配: market{t0,t1} 对 event{home,away} 取 max(直配, 交叉配)。
+//   4. 合格条件: 双队各自 overlap ≥ team_sim_threshold (默认 0.5) **且** (两侧 kickoff 均已知时)
+//      时间差 ≤ kickoff_window_sec (默认 ±15min)。
+//   5. 多候选取 team_score 最高。无合格 → fail-closed。
+//
+// 已知限制 (小段): 队名缩写完全不同 (Man Utd vs Manchester United) → overlap=0 → 不匹配
+//   (fail-closed, 该盘不交易); 网球运动员名格式差异大 (匹配率 ~70%)。M1 可接受。
+
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+#include "src/stcpp/debug_api/state_provider.hpp"  // EventScore
+
+namespace stcpp::app {
+
+// market 侧锚定输入 (与 DiscoveredMarket 解耦, 便于单测)
+struct EventMatchInput {
+    std::string team0;               // market outcome0 (moneyline 队名)
+    std::string team1;               // market outcome1
+    std::int64_t kickoff_ts_sec{0};  // gameStartTime Unix 秒; 0 = 未知 (跳过时间窗口检查)
+    std::string sport;               // 可选提示 (当前未强制用)
+};
+
+struct EventMatchResult {
+    bool matched{false};
+    std::string inplay_match_id;  // = EventScore.event_id (Goalserve inplay id)
+    double team_score{0.0};       // 双队 overlap 之和 (诊断/择优用)
+};
+
+class EventMatcher {
+public:
+    struct Config {
+        double team_sim_threshold{0.50};       // 每队 overlap 系数下界 (fail-closed: 偏精度)
+        std::int64_t kickoff_window_sec{900};  // kickoff 容差 ±15min
+    };
+
+    EventMatcher() noexcept = default;
+    explicit EventMatcher(Config cfg) noexcept : cfg_(cfg) {}
+
+    // 从候选 EventScore 列表找最佳匹配. fail-closed: 无合格返 matched=false.
+    [[nodiscard]] EventMatchResult Match(const EventMatchInput& in,
+                                         const std::vector<debug_api::EventScore>& candidates) const;
+
+    // ---- 纯 helper (暴露供单测) ----
+    // 队名归一化: lowercase + alnum token 集合 (去重, 排序).
+    [[nodiscard]] static std::vector<std::string> NormalizeTeamTokens(const std::string& name);
+
+    // overlap 系数: |A∩B| / min(|A|,|B|). 任一空 → 0.
+    [[nodiscard]] static double TeamSimilarity(const std::string& a, const std::string& b);
+
+private:
+    Config cfg_{};
+};
+
+}  // namespace stcpp::app

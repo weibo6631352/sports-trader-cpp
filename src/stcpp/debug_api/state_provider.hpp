@@ -294,6 +294,12 @@ struct EventScore {
     int away_score{0};
     FourTs ts{};
     std::string source{"goalserve"};
+    // A0 映射桥 (condition_id↔goalserve event): EventMatcher 锚定字段.
+    //   league_id: Goalserve 联赛 id (从 GameScoreRecord.match_id.league_id 透传; 过滤匹配范围).
+    //   kickoff_ts_sec: 开赛 Unix 秒 (= ts.event_ts_ns/1e9; inplay feed 只返进行中 event,
+    //     start_ts<=now 不触发 R-20 clamp, 故 event_ts_ns 即真实 kickoff). 时间窗口锚定用.
+    std::string league_id;
+    std::int64_t kickoff_ts_sec{0};
 };
 
 // ============================================================
