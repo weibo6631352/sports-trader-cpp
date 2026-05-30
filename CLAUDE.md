@@ -182,8 +182,10 @@ docs/
 2. **冻结契约文件单一 owner 串行改** — `state_provider.hpp` 等被多模块 include 的 G-FREEZE-W 文件，**禁止多 agent 并行加字段**；要加排队走唯一 owner。
 3. **worktree 必从最新 main 切** — 派单前 `git fetch` + 确认 worktree merge-base == 最新 main HEAD（基线陈旧 = 冲突面放大）。
 
-**派单 prompt 必含（防丢失）：**
+**派单 prompt 必含（防丢失 + 防工具误判）：**
 4. **显式要求 `git add -A && git commit`** — 哪怕同时说"不要 push/merge"，也**必须 commit**。未提交的活随时会丢。
+4b. **前置 Edit 工具规则** — prompt 写明："Edit/Write 已存在文件前必须先 Read 该文件，这是工具保护机制；直接 Edit 会报 `Error editing file`，先 Read 再 Edit 即成功，**不要当工具故障无限重试**。" GM 无法中途给运行中 agent 发消息纠偏（SendMessage 该上下文不可用），故必须派单时讲清。
+4c. **禁止 agent 创建 CMakeUserPresets.json / CMakePresets.json** — 曾有 agent 误建畸形 preset 破坏全局构建。
 
 **集成时（防误删 + 防假成功）：**
 5. **合并前验 `git rev-list --count main..<branch>` > 0** — 等于 0 说明 agent 没 commit，**先抢救别清理**。
