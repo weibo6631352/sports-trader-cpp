@@ -380,9 +380,13 @@ static std::string ExtractMarketsArray(const std::string& event_obj) {
 static std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events = 5) {
     std::vector<DiscoveredEvent> result;
 
+    // tag_id=1 = Sports 标签 (纯体育池, laoli SSOT §6); ascending=false 让近期/未来
+    // 开赛的单场比赛优先 (含 moneyline/totals/spreads), 而非赛季级 outright 夺冠盘.
+    // 实测: ascending=true 首批全是 outright (sportsMarketType 空); ascending=false
+    // 首批含 moneyline 71 / totals 111 / spreads 56 → 盘口识别率真实 > 0.
     const std::string url =
         "https://gamma-api.polymarket.com/events"
-        "?closed=false&active=true&limit=20";
+        "?tag_id=1&closed=false&active=true&limit=100&order=startDate&ascending=false";
     const std::string cmd = "curl -s --max-time 15 \"" + url + "\" 2>/dev/null";
 
     std::fprintf(stderr, "[live_discover] GET %s\n", url.c_str());
@@ -624,7 +628,7 @@ int main(int argc, char** argv) {
     std::printf("[debug_server] live: gamma /events 发现活跃体育市场...\n");
     std::fflush(stdout);
 
-    auto discovered = DiscoverSportsEvents(/*max_events=*/5);
+    auto discovered = DiscoverSportsEvents(/*max_events=*/30);
 
     // Fallback: if /events returned no sports, try /markets flat (NHL futures etc.)
     if (discovered.empty()) {
