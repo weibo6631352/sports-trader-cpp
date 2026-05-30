@@ -284,6 +284,7 @@ set(_STCPP_CONDITIONAL_SRCS
     test_signer_v52.cpp             # paper only
     test_signer_v53_pit.cpp         # paper only
     test_signer_v62.cpp             # paper only
+    test_paper_daemon.cpp           # paper only (links stcpp_paper_app)
     test_strategy_unlock.cpp        # STCPP_BUILD_CLI only
     # deferred / not-yet-buildable stubs (target library not yet implemented):
     test_parquet_writer_stub.cpp    # W7+ HC-06 deferred; stcpp_data_parquet not yet built
@@ -324,6 +325,13 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
         stcpp_infra_wal
     )
     stcpp_add_unit_test(test_paper_pm_client test_paper_pm_client.cpp)
+
+    # 老雷 PaperDaemon 重构 (老郭 §A.1): 装配 + R-11 detach 生命周期回归 (老韩审计要求)
+    set(EXTRA_LIBS_test_paper_daemon
+        stcpp_paper_app
+    )
+    set(LABELS_test_paper_daemon "unit;paper;paper-daemon;r-11;assembly;lifecycle;laolei")
+    stcpp_add_unit_test(test_paper_daemon test_paper_daemon.cpp)
 
     # 老孙 W6 Wave 30: signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
     set(EXTRA_LIBS_test_signer_v52

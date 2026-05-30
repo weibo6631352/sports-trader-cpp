@@ -219,6 +219,10 @@ void detach_rm_debug_snapshot() noexcept {
     g_rm_debug_snapshot.store(nullptr, std::memory_order_release);
 }
 
+const RmDebugSnapshot* current_rm_debug_snapshot() noexcept {
+    return g_rm_debug_snapshot.load(std::memory_order_acquire);
+}
+
 // ---------- audit_id 生成 (ULID stub) ----------------------------------------
 //
 // BUG-W5-001 patch: seq 段 shift 修正 (原 shift=72 是 uint64 UB)

@@ -141,4 +141,11 @@ add_subdirectory(src/stcpp/backtest)
 # R-11: paper 不污染真账本; R-12: 独立线程; R-20: 4 ts 全链路透传
 add_subdirectory(src/stcpp/paper)
 
+# PaperDaemon 编排层 (老郭 §A.1 / 老周架构裁定 B1)
+# stcpp_paper_app (PaperDaemon + market_discovery) + stcpp_debug_server(http) + stcpp_paper_runtime(headless)
+# 必须在 debug_api + paper 之后 (app → debug_api/paper 单向依赖).
+if(STCPP_BUILD_DEBUG_API)
+    add_subdirectory(src/stcpp/app)
+endif()
+
 message(STATUS "stcpp project scaffold (Sprint-3 W9 W2 + backtest v0.2). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1 + debug-api v0.1 + fair-value-estimator v0.1 + backtest framework v0.2.")

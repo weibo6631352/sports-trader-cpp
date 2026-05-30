@@ -1,0 +1,109 @@
+// src/stcpp/app/debug_server_main.cpp — paper daemon + 观测 HTTP 入口 (thin main)
+//
+// Owner: 老雷 (GM) — PaperDaemon 重构 (老郭 §A.1): 962 行装配逻辑已抽进
+//   stcpp::app::PaperDaemon (stcpp_paper_app 库). 本 main 退化为 ~80 行:
+//   parse args → 填 PaperDaemonConfig (RunMode::PaperDaemon) → Build → Run.
+//
+// last_review: 2026-05-30
+//
+// 角色: RunMode::PaperDaemon —— 带 HTTP 观测端 (= 原 stcpp_debug_server).
+//   live book/event = 真实 Polymarket CLOB WSS + gamma /events
+//   score = 真实 Goalserve inplay feed (soccer/basketball/tennis)
+//   positions/pnl/quote = paper 交易循环驱动 (PaperLoop, 500ms tick)
+//
+// 红线: R-11 (paper 不污染真账本) / R-12 (后台线程独立) / R-20 (4 ts 透传) 由 PaperDaemon 守护.
+// ToS: 只读公开 book channel + gamma REST, 不下单.
+
+#include <atomic>
+#include <csignal>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <utility>
+
+#include "stcpp/app/paper_daemon.hpp"
+
+namespace {
+
+// 信号 → daemon 停止. RequestStop 是 noexcept, 信号上下文安全.
+std::atomic<stcpp::app::PaperDaemon*> g_daemon{nullptr};
+
+void handle_signal(int /*sig*/) {
+    if (auto* d = g_daemon.load(std::memory_order_acquire)) {
+        d->RequestStop();
+    }
+}
+
+// build-time STCPP_EXEC_MODE_STR → ExecMode (R-7 真相源).
+stcpp::debug_api::ExecMode mode_from_build() noexcept {
+    using stcpp::debug_api::ExecMode;
+    if (std::strcmp(STCPP_EXEC_MODE_STR, "live") == 0) {
+        return ExecMode::Live;
+    }
+    if (std::strcmp(STCPP_EXEC_MODE_STR, "backtest") == 0) {
+        return ExecMode::Backtest;
+    }
+    return ExecMode::Paper;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    stcpp::app::PaperDaemonConfig cfg;
+    cfg.mode = stcpp::app::RunMode::PaperDaemon;
+    cfg.exec_mode = mode_from_build();
+
+    for (int i = 1; i < argc; ++i) {
+        const std::string a = argv[i];
+        if (a == "--port" && i + 1 < argc) {
+            cfg.port = static_cast<std::uint16_t>(std::stoi(argv[++i]));
+        } else if (a == "--host" && i + 1 < argc) {
+            cfg.host = argv[++i];
+        } else if (a == "--verbose" || a == "-v") {
+            cfg.verbose = true;
+        } else if (a == "--no-record-ml") {
+            cfg.record_ml = false;
+        } else if (a == "--ml-path" && i + 1 < argc) {
+            cfg.ml_path = argv[++i];
+        } else if (a == "--no-paper") {
+            cfg.enable_paper_trading = false;  // 仅观测, 不起 PaperLoop
+        } else if (a == "--help" || a == "-h") {
+            std::printf(
+                "usage: stcpp_debug_server [--port N] [--host ADDR] [--verbose] [--no-record-ml]\n"
+                "                          [--ml-path PATH] [--no-paper]\n"
+                "  --port N         listen port (default 8080)\n"
+                "  --host ADDR      bind address (default 127.0.0.1)\n"
+                "  --verbose        extra WSS/parser debug logging\n"
+                "  --no-record-ml   disable ML training data capture\n"
+                "  --ml-path PATH   ML capture output (default data/ml_capture/quotes.jsonl)\n"
+                "  --no-paper       observe only, do not run PaperLoop\n"
+                "\n"
+                "RunMode::PaperDaemon — paper trading loop + HTTP observability API.\n"
+                "  live book: gamma /events discovery -> CLOB WSS market channel\n"
+                "  live score: Goalserve inplay (soccer/basketball/tennis)\n"
+                "  positions/pnl/quote: PaperLoop (R-11 isolated, ToS: VirtualFill only)\n"
+                "  (frontend served by Vite dev server, not this process)\n");
+            return 0;
+        } else {
+            std::fprintf(stderr, "[debug_server] unknown arg: %s (try --help)\n", a.c_str());
+            return 2;
+        }
+    }
+
+    stcpp::app::PaperDaemon daemon(std::move(cfg));
+    g_daemon.store(&daemon, std::memory_order_release);
+    std::signal(SIGINT, handle_signal);
+    std::signal(SIGTERM, handle_signal);
+
+    const stcpp::app::BuildResult br = daemon.Build();
+    if (!br.ok) {
+        std::fprintf(stderr, "[debug_server] FATAL: PaperDaemon::Build 失败: %s\n", br.error.c_str());
+        return 1;
+    }
+
+    const int rc = daemon.Run();  // Start + WaitForStop(SIGINT/SIGTERM) + Shutdown
+    g_daemon.store(nullptr, std::memory_order_release);
+    std::printf("[debug_server] 已停止\n");
+    return rc;
+}

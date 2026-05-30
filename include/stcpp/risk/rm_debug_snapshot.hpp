@@ -409,4 +409,8 @@ static_assert(sizeof(RmDebugSnapshot) > 0, "RmDebugSnapshot must be complete typ
 void attach_rm_debug_snapshot(RmDebugSnapshot* snap) noexcept;
 void detach_rm_debug_snapshot() noexcept;
 
+// 读当前全局 hook 指针 (observability / 测试用; acquire-load).
+// 用途: 断言 attach/detach 生命周期 (老韩 R-11 INV-1: Shutdown 后须 == nullptr).
+[[nodiscard]] const RmDebugSnapshot* current_rm_debug_snapshot() noexcept;
+
 }  // namespace stcpp::risk
