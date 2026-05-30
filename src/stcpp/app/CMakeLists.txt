@@ -69,7 +69,8 @@ elseif(OPENSSL_FOUND_MANUAL)
     target_include_directories(stcpp_paper_app SYSTEM PUBLIC ${OPENSSL_INCLUDE_DIR})
     target_compile_definitions(stcpp_paper_app PUBLIC STCPP_LIVE_WSS_OPENSSL=1)
 endif()
-# 三方库豁免 (cpp-httplib 经 stcpp_debug_api PUBLIC SYSTEM include; OpenSSL SYSTEM 头)
+# 三方库豁免: cpp-httplib (经 stcpp_debug_api PUBLIC SYSTEM include 传入, 宏展开/cast/format 警告)
+# 三方库豁免: OpenSSL (LiveWssTransport TLS, SYSTEM 头) — ADR-010 §3.2
 target_compile_options(stcpp_paper_app PRIVATE
     -Wno-old-style-cast
     -Wno-cast-align
@@ -86,6 +87,7 @@ target_compile_options(stcpp_paper_app PRIVATE
 add_executable(stcpp_debug_server debug_server_main.cpp)
 target_link_libraries(stcpp_debug_server PRIVATE stcpp_paper_app)
 target_compile_features(stcpp_debug_server PRIVATE cxx_std_20)
+# 三方库豁免: cpp-httplib (经 stcpp_paper_app→stcpp_debug_api SYSTEM include) + OpenSSL — ADR-010 §3.2
 target_compile_options(stcpp_debug_server PRIVATE
     -Wno-old-style-cast -Wno-cast-align -Wno-sign-conversion -Wno-conversion
     -Wno-shadow -Wno-double-promotion -Wno-format-nonliteral
@@ -98,6 +100,7 @@ add_executable(stcpp_paper_runtime paper_runtime_main.cpp)
 set_target_properties(stcpp_paper_runtime PROPERTIES OUTPUT_NAME paper_runtime)
 target_link_libraries(stcpp_paper_runtime PRIVATE stcpp_paper_app)
 target_compile_features(stcpp_paper_runtime PRIVATE cxx_std_20)
+# 三方库豁免: cpp-httplib (经 stcpp_paper_app→stcpp_debug_api SYSTEM include) + OpenSSL — ADR-010 §3.2
 target_compile_options(stcpp_paper_runtime PRIVATE
     -Wno-old-style-cast -Wno-cast-align -Wno-sign-conversion -Wno-conversion
     -Wno-shadow -Wno-double-promotion -Wno-format-nonliteral
