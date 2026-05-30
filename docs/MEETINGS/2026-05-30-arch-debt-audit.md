@@ -20,6 +20,13 @@
 - DD 熔断 / consec_loss / exposure 限额**逻辑都写了**, 但生产路径**从不喂数** → 阈值永不触发 → 虚假安全。`paper_loop.cpp:140` 只 `set_bankroll`, 全仓零处喂 realized PnL / consec / exposure 进 RM。**实质等效「绕过 RM」(踩红线 §8)。**
 - 处置: 实盘前必接三条喂数管道 (PnL/consec 从 position_ledger → RM, exposure 从成交回执 → RM)。**owner:** 老韩定喂数契约 + 老周定数据流向, GM 实现。
 
+#### P0-1 spec + step1 已落 (2026-05-30, 老韩契约 `laohan-p0-1-rm-feed-contract-v1.md` + 老周架构 `laozhou-p0-1-rm-feed-architecture-v1.md`)
+- **✅ step1 exposure 红线接通 (已 commit):** PaperLoop TickOne 尾部加 `FeedRiskGateway()` (Step 8c, apply_fill 后) → `PositionLedger.get_per_condition/outcome_exposure()` **×1e6 (whole pUSD→micro)** 全量覆盖喂 RM。loop_thread_ 串行 (R-12 满足, 不在 WSS io_thread)。RM 侧零改动。
+- **🔴 单位 P0 门禁已焊 (老周强制):** PositionLedger 存 whole pUSD, RM 比 micro, 漏 ×1e6 = exposure 红线静默架空。`test_paper_loop P0_1_ExposureRedLine_UnitGate` end-to-end 验: fill 45pUSD 喂入后 +10pUSD 越 50pUSD condition cap → EXCEED_CONDITION_EXPOSURE (漏乘则红)。
+- **⚠ 单位冲突已亲验解决:** 老韩 spec 误判"零换算直搬", 老周对 (whole vs micro 差 1e6)。GM 追 `vord.size_usdc=micro/1e6`(paper_loop:560)→ matcher `fill_size×rate`(:95)→ apply_fill `(int64)whole`(:54) 钉死 = whole pUSD。
+- **⏳ step2 daily_pnl (DD) deferred — GM 实施时挖出新债:** `PublishLedgerSnapshot:655` 有**预存 PnL 单位 bug** (`net_qty = size_usdc/1e6` 把 whole 当 micro → unrealized PnL 错 1e6)。daily_pnl 的 unrealized 源在此, 故 DD 喂数须先修 ledger PnL 单位。M1 只买不平 → realized=0, 此 bug 不咬决策但堵 DD 喂数。**新 backlog: PublishLedgerSnapshot PnL 单位修正 (派小肖/老彭, 修后接 daily_pnl)。**
+- **⏳ consec deferred:** M1 只买不平 → 无平仓结果序列 → 恒 0 正确 (非 bug), M2 接平仓回路。
+
 ### P0-2 单位 bug「未关闭」(非「已 hotfix」) — 老郭挖出真相
 - **同一个 `RiskConfig.per_order_cap_usdc` 被两条路当两种单位**: paper_daemon→RM 当 **micro** (10'000'000); paper_loop sizing 用默认 `RiskConfig{}` (10'000) → SizingCalculator 当 **pUSD** (`sizing_calculator.cpp:175`)。**差 1000 倍, 只靠 `paper_loop.cpp:480` 一行 `min(notional, 10.0)` magic clamp 摁住没爆。**
 - `RiskConfig` 字段**名叫 `_usdc` 值是 micro** (`risk_gateway.hpp:298`) — 名实不符。`MicroPUSD` c1 是**零接入孤儿** (生产零调用, 制造「已治理」错觉)。

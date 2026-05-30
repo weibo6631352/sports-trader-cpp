@@ -264,6 +264,9 @@ public:
         return event_map_ ? event_map_->size() : 0;
     }
 
+    // P0-1 test seam: 测试直接触发喂数 (验 exposure 红线接通 + 单位 ×1e6 门禁, 老周强制测试)。
+    void FeedRiskGatewayForTest() noexcept { FeedRiskGateway(); }
+
 private:
     // ---- 线程控制 ----
     std::jthread loop_thread_;
@@ -292,6 +295,12 @@ private:
     void PublishLedgerSnapshot(const std::string& condition_id, const execution::VirtualFill& fill,
                                double mark_price,
                                const polymarket::clob_wss::OrderBookFeatures& feat) noexcept;
+
+    // P0-1 (老韩 RM 契约 + 老周架构): 把 paper 持仓敞口喂进 RM, 激活 exposure 红线 (生产此前零喂数
+    //   → per_condition/per_outcome cap 永不咬)。loop_thread_ 内串行调用 (R-12: 不在 WSS io_thread)。
+    //   ⚠ 单位: 仓位账本 size_usdc 是 whole pUSD, RM exposure 比 micro → 必 ×1e6 (漏乘 =
+    //   红线静默架空)。
+    void FeedRiskGateway() noexcept;
 
     // P0-3: has_real_fair=false → 清零 edge/kelly/notional/signal/predict_ok (宁可空不可假)
     void PublishQuoteSnapshot(const std::string& condition_id, const pricing::FairValueResult& fv_result,

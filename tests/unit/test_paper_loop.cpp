@@ -964,3 +964,76 @@ TEST_F(PaperLoopTest, T22_A15_TimeFrac_UnlocksFillAtProductionNeff) {
     EXPECT_GT(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
         << "A1.5: 真 time_frac (60min 2:0) → conf 升 → n_eff=150 即成交 (证明 time_frac 解锁)";
 }
+
+// ---------------------------------------------------------------------------
+// P0-1 单位门禁 (老韩 RM 契约 + 老周 P0 gate): exposure 红线接通 + ×1e6 单位正确
+//   fill 累积敞口 → FeedRiskGateway (production via test seam) → 越 condition cap 必触
+//   EXCEED_CONDITION_EXPOSURE。漏 ×1e6 (whole 当 micro) → 敞口缩 1e6 ≈ 0 → cap 不咬 →
+//   此测红 = 红线静默架空门禁 (老周: 无此测试不许 merge)。
+// ---------------------------------------------------------------------------
+namespace {
+risk::OrderIntent MakeP01Intent(const std::string& cid, const std::string& tid, const std::string& sig,
+                                std::int64_t size_micro) {
+    const std::int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
+    risk::OrderIntent it;
+    it.event_ts_ns = now - 200'000'000;
+    it.data_source_ts_ns = now - 150'000'000;
+    it.ingestion_ts_ns = now - 50'000'000;
+    it.as_of_ts_ns = now - 1'000'000;
+    it.condition_id = cid;
+    it.token_id = tid;
+    it.outcome = risk::Outcome::Yes;
+    it.side = risk::Side::Buy;
+    it.strategy_id = "p01_strat";
+    it.signal_id = sig;
+    it.feature_snapshot_id = "p01_fs";
+    it.price = 0.50;
+    it.size_pUSD_micro = size_micro;
+    it.book_depth_l1_usdc = 1e14;  // 极大深度 → 不触 slippage/book_depth 门
+    it.book_snapshot_ts_ns = now - 1'000'000'000LL;
+    it.tick_size = 0.01;
+    it.timestamp_ms = now / 1'000'000LL;
+    it.metadata = "0x0000000000000000000000000000000000000000000000000000000000000000";
+    it.builder = "0x0000000000000000000000000000000000000000000000000000000000000000";
+    return it;
+}
+}  // namespace
+
+TEST_F(PaperLoopTest, P0_1_ExposureRedLine_UnitGate) {
+    const std::string cid = "0xC0NDP01";
+    const std::string tid = "9001";  // numeric token_id (uint256 格式合法)
+    loop_ = MakeLoop();
+
+    // RM 门设置 (到达 position_caps 前所有门: state/market/freshness)
+    rm_->set_state(RmState::RUNNING);
+    rm_->set_market_active(cid, true);
+    rm_->set_market_state(cid, MarketState::PREGAME);
+    rm_->set_market_freshness_ms(cid, 100);
+    rm_->set_token_book_freshness_ms(tid, 100);
+    rm_->set_recon_freshness_ms(100);
+
+    // 控制组: 无敞口 → 10 pUSD 单不应因 condition exposure 拒 (证明 feed 前安全网空)
+    rm_->set_edge_ci_lower("p01_ctrl", 0.10);
+    auto d_ctrl = rm_->evaluate(MakeP01Intent(cid, tid, "p01_ctrl", 10'000'000LL));
+    EXPECT_NE(d_ctrl.reject, RejectCode::EXCEED_CONDITION_EXPOSURE) << "P0-1: 无敞口时不应触 condition cap";
+
+    // 累积敞口: apply_fill 45 whole pUSD → 仓位账本 condition_exposure = 45 (whole pUSD)
+    execution::VirtualFill fill{};
+    fill.fill_size_usdc = 45.0;  // whole pUSD
+    fill.fill_price = 0.50;
+    fill.reject = execution::MatchReject::Ok;
+    position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
+
+    // 喂 RM (production FeedRiskGateway): 45 whole × 1e6 = 45e6 micro
+    loop_->FeedRiskGatewayForTest();
+
+    // 越 condition cap (50 pUSD=50e6 micro): 45e6 + 10e6 = 55e6 > 50e6 → EXCEED_CONDITION_EXPOSURE
+    //   (condition 在 check_position_caps_ 中先于 per_outcome 检查)
+    rm_->set_edge_ci_lower("p01_over", 0.10);
+    auto d_over = rm_->evaluate(MakeP01Intent(cid, tid, "p01_over", 10'000'000LL));
+    EXPECT_EQ(d_over.reject, RejectCode::EXCEED_CONDITION_EXPOSURE)
+        << "P0-1 单位门禁: fill 45pUSD 喂入后 +10pUSD 应越 50pUSD condition cap; "
+           "若 FeedRiskGateway 漏 ×1e6 则敞口=45 micro≈0, cap 不咬 → exposure 红线静默架空";
+}

@@ -588,6 +588,10 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     PublishLedgerSnapshot(condition_id, fill, mark_price, feat);
     stats_.ledger_publishes.fetch_add(1, std::memory_order_relaxed);
 
+    // ---- Step 8c: 喂 RM (P0-1) — apply_fill 后回喂敞口, 激活 exposure 红线 ----
+    //   全量覆盖 (PL 已增量维护 → RM 全量 = PL 真值, 自愈)。loop_thread_ 串行, R-12 满足。
+    FeedRiskGateway();
+
     std::fprintf(stderr,
                  "[paper_loop] FILL cond=%.24s... tok=%.16s... "
                  "fill_sz=%.4f fill_px=%.4f p_fair=%.4f edge=%.1fbps\n",
@@ -688,6 +692,33 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
     lf.valid = true;
 
     ledger_hub_.Publish(condition_id, lf);
+}
+
+// ---------------------------------------------------------------------------
+// FeedRiskGateway — P0-1: paper 持仓敞口 → RM (激活 exposure 红线)
+//
+// 背景: RM 的 per_condition / per_outcome exposure cap 逻辑齐全, 但生产此前零喂数
+//   (paper_loop 只 set_bankroll, 从不喂 exposure) → cap 永不咬 = 风控纸面化。
+// 老韩 RM 契约 + 老周架构: loop_thread_ 内 apply_fill 后全量覆盖喂 RM。
+//
+// 🔴 单位门禁 (老周 P0 gate): 仓位账本 size_usdc 存 whole pUSD (apply_fill 把 whole
+//   double cast int64); RM exposure 比 micro (check_position_caps_ from_micro(cur+size_micro))。
+//   故喂前必 × 1e6 (whole → micro)。漏乘 → exposure 红线静默架空 (同 P0-2 单位 bug 同型)。
+//   守护: test_paper_loop P0-1 单位门测试 (fill 越 cap → 必触 EXCEED_CONDITION_EXPOSURE)。
+//
+// daily_pnl (DD) / consec: M1 暂不喂 (M1 只买不平 → realized=0, consec 无源; daily_pnl 的
+//   unrealized 路径撞 PublishLedgerSnapshot 预存 PnL 单位 bug, 待 ledger PnL 单位修复后接)。
+// ---------------------------------------------------------------------------
+void PaperLoop::FeedRiskGateway() noexcept {
+    constexpr std::int64_t kMicroPerPusd = 1'000'000LL;  // whole pUSD → micro (RM exposure 单位)
+    // per-condition 敞口 (全量覆盖)
+    for (auto const& [cid, whole_pusd] : position_ledger_.get_per_condition_exposure()) {
+        rm_.set_condition_exposure(cid, whole_pusd * kMicroPerPusd);
+    }
+    // per-outcome (token) 敞口 (全量覆盖)
+    for (auto const& [tid, whole_pusd] : position_ledger_.get_per_outcome_exposure()) {
+        rm_.set_outcome_exposure(tid, whole_pusd * kMicroPerPusd);
+    }
 }
 
 // ---------------------------------------------------------------------------
