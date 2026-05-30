@@ -42,3 +42,10 @@ build-*/
 # Claude Code worktrees (本地并行开发, 不入 git)
 .claude/worktrees/
 .gitignore.backup
+build_*/
+build-*/
+Testing/
+.claire/
+__pycache__/
+*.pyc
+frontend/dist/
