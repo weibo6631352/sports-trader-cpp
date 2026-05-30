@@ -44,7 +44,7 @@
 #include <vector>
 
 #include "stcpp/app/market_discovery.hpp"  // DiscoveredEvent
-#include "stcpp/paper/paper_loop.hpp"       // PaperLoop / PaperLoopConfig + paper 栈全套类型
+#include "stcpp/paper/paper_loop.hpp"      // PaperLoop / PaperLoopConfig + paper 栈全套类型
 
 #include "src/stcpp/debug_api/real_state_provider.hpp"  // RealStateProvider / MarketTokenMap / LiveMetricsHooks / ExecMode / EventInfo
 
@@ -80,8 +80,10 @@ enum class RunMode : std::uint8_t {
 
 [[nodiscard]] constexpr const char* ToString(RunMode m) noexcept {
     switch (m) {
-        case RunMode::PaperDaemon: return "paper-daemon";
-        case RunMode::Headless:    return "headless";
+        case RunMode::PaperDaemon:
+            return "paper-daemon";
+        case RunMode::Headless:
+            return "headless";
     }
     return "unknown";
 }
@@ -180,7 +182,9 @@ public:
     [[nodiscard]] const debug_api::MarketTokenMap& token_map() const noexcept { return token_map_; }
 
     // 装配组件只读句柄 (测试断言用; nullptr 若未 Build)
-    [[nodiscard]] const polymarket::clob_wss::OrderBookSnapshotHub* hub() const noexcept { return hub_.get(); }
+    [[nodiscard]] const polymarket::clob_wss::OrderBookSnapshotHub* hub() const noexcept {
+        return hub_.get();
+    }
     [[nodiscard]] const sizing::QuoteSnapshotHub* quote_hub() const noexcept { return quote_hub_.get(); }
     [[nodiscard]] const risk::LedgerSnapshotHub* ledger_hub() const noexcept { return ledger_hub_.get(); }
     [[nodiscard]] const risk::PositionLedger* paper_position_ledger() const noexcept {

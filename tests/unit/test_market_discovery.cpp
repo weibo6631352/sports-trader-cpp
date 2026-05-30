@@ -15,10 +15,11 @@
 //   EXTRA_LIBS_test_market_discovery stcpp_paper_app
 //   LABELS_test_market_discovery "unit;paper;market-discovery;gamma;parse;xiaosong"
 
-#include "stcpp/app/market_discovery.hpp"
+#include <string>
 
 #include <gtest/gtest.h>
-#include <string>
+
+#include "stcpp/app/market_discovery.hpp"
 
 using namespace stcpp::app;
 using namespace stcpp::app::discovery_detail;
@@ -78,8 +79,7 @@ TEST(ExtractClobTokenIds, MD06_EscapedBackslashInEncodedString) {
     // 目标 outer string value = [\"tok-with\\slash\",\"tok-b\"]
     // unescape: [\"→", \\→\] → content = ["tok-with\slash","tok-b"]
     // 内层扫描: tok0="tok-with\slash", tok1="tok-b"
-    const std::string obj =
-        "{\"clobTokenIds\":\"[\\\"tok-with\\\\\\\\slash\\\",\\\"tok-b\\\"]\"}";
+    const std::string obj = "{\"clobTokenIds\":\"[\\\"tok-with\\\\\\\\slash\\\",\\\"tok-b\\\"]\"}";
     std::string tok0, tok1;
     EXPECT_TRUE(ExtractClobTokenIds(obj, tok0, tok1));
     EXPECT_EQ(tok1, "tok-b");
@@ -270,28 +270,38 @@ TEST(NormalizeSportsMarketType, Extra_SpreadMixedCase) {
 
 // 辅助函数: 构造一个最小合法的 market JSON 对象 (字符串)
 // conditionId, question, clobTokenIds (native array)
-static std::string MakeMarket(const std::string& condition_id,
-                               const std::string& question,
-                               const std::string& tok0,
-                               const std::string& tok1,
-                               const std::string& smt = "Moneyline") {
-    return "{\"conditionId\":\"" + condition_id + "\","
-           "\"question\":\"" + question + "\","
-           "\"sportsMarketType\":\"" + smt + "\","
-           "\"clobTokenIds\":[\"" + tok0 + "\",\"" + tok1 + "\"]}";
+static std::string MakeMarket(const std::string& condition_id, const std::string& question,
+                              const std::string& tok0, const std::string& tok1,
+                              const std::string& smt = "Moneyline") {
+    return "{\"conditionId\":\"" + condition_id +
+           "\","
+           "\"question\":\"" +
+           question +
+           "\","
+           "\"sportsMarketType\":\"" +
+           smt +
+           "\","
+           "\"clobTokenIds\":[\"" +
+           tok0 + "\",\"" + tok1 + "\"]}";
 }
 
 // 辅助函数: 构造一个最小合法的 event JSON 对象
 // sport 字段非空即可通过 sports filter
-static std::string MakeEvent(const std::string& event_id,
-                              const std::string& title,
-                              const std::string& sport,
-                              const std::string& markets_content) {
-    return "{\"id\":\"" + event_id + "\","
-           "\"slug\":\"" + event_id + "-slug\","
-           "\"title\":\"" + title + "\","
-           "\"sport\":\"" + sport + "\","
-           "\"markets\":[" + markets_content + "]}";
+static std::string MakeEvent(const std::string& event_id, const std::string& title, const std::string& sport,
+                             const std::string& markets_content) {
+    return "{\"id\":\"" + event_id +
+           "\","
+           "\"slug\":\"" +
+           event_id +
+           "-slug\","
+           "\"title\":\"" +
+           title +
+           "\","
+           "\"sport\":\"" +
+           sport +
+           "\","
+           "\"markets\":[" +
+           markets_content + "]}";
 }
 
 // MD-40: 2 个 event, 每个 2 markets, native array clobTokenIds
@@ -301,7 +311,7 @@ TEST(ParseSportsEvents, MD40_TwoEventsTwoMarketsEach) {
     const std::string m3 = MakeMarket("cond-2a", "Q3", "tok-2a-y", "tok-2a-n");
     const std::string m4 = MakeMarket("cond-2b", "Q4", "tok-2b-y", "tok-2b-n");
     const std::string ev1 = MakeEvent("ev-1", "NBA Finals", "basketball", m1 + "," + m2);
-    const std::string ev2 = MakeEvent("ev-2", "NFL Sunday", "football",   m3 + "," + m4);
+    const std::string ev2 = MakeEvent("ev-2", "NFL Sunday", "football", m3 + "," + m4);
     const std::string json = "[" + ev1 + "," + ev2 + "]";
 
     auto result = ParseSportsEvents(json, 30);
@@ -323,8 +333,9 @@ TEST(ParseSportsEvents, MD40_TwoEventsTwoMarketsEach) {
 // MD-41: conditionId 缺失, market 被跳过 → event 无 markets → event 也跳过
 TEST(ParseSportsEvents, MD41_MissingConditionId) {
     // market 无 conditionId 字段
-    const std::string m = "{\"question\":\"Who wins?\","
-                          "\"clobTokenIds\":[\"tok-y\",\"tok-n\"]}";
+    const std::string m =
+        "{\"question\":\"Who wins?\","
+        "\"clobTokenIds\":[\"tok-y\",\"tok-n\"]}";
     const std::string ev = MakeEvent("ev-41", "NBA Game", "basketball", m);
     const std::string json = "[" + ev + "]";
 
@@ -334,9 +345,10 @@ TEST(ParseSportsEvents, MD41_MissingConditionId) {
 
 // MD-42: markets:[] 空数组 → event 被跳过, result 为空
 TEST(ParseSportsEvents, MD42_EmptyMarketsArray) {
-    const std::string ev = "{\"id\":\"ev-42\",\"slug\":\"ev-42\","
-                           "\"title\":\"NBA Game\",\"sport\":\"basketball\","
-                           "\"markets\":[]}";
+    const std::string ev =
+        "{\"id\":\"ev-42\",\"slug\":\"ev-42\","
+        "\"title\":\"NBA Game\",\"sport\":\"basketball\","
+        "\"markets\":[]}";
     const std::string json = "[" + ev + "]";
 
     auto result = ParseSportsEvents(json, 30);
@@ -346,10 +358,12 @@ TEST(ParseSportsEvents, MD42_EmptyMarketsArray) {
 // MD-43: sport 为 "null" 字符串, title 含 "NBA" → 关键词匹配, event 纳入
 TEST(ParseSportsEvents, MD43_SportNullTitleNba) {
     const std::string m = MakeMarket("cond-43", "NBA Winner", "tok-43-y", "tok-43-n");
-    const std::string ev = "{\"id\":\"ev-43\",\"slug\":\"ev-43-slug\","
-                           "\"title\":\"NBA Playoffs\","
-                           "\"sport\":\"null\","
-                           "\"markets\":[" + m + "]}";
+    const std::string ev =
+        "{\"id\":\"ev-43\",\"slug\":\"ev-43-slug\","
+        "\"title\":\"NBA Playoffs\","
+        "\"sport\":\"null\","
+        "\"markets\":[" +
+        m + "]}";
     const std::string json = "[" + ev + "]";
 
     auto result = ParseSportsEvents(json, 30);
@@ -361,10 +375,12 @@ TEST(ParseSportsEvents, MD43_SportNullTitleNba) {
 // MD-44: sport 为空, title 无体育关键词 → event 被过滤
 TEST(ParseSportsEvents, MD44_NonSportEvent) {
     const std::string m = MakeMarket("cond-44", "Will X happen?", "tok-44-y", "tok-44-n");
-    const std::string ev = "{\"id\":\"ev-44\",\"slug\":\"ev-44\","
-                           "\"title\":\"Political Election 2026\","
-                           "\"sport\":\"\","
-                           "\"markets\":[" + m + "]}";
+    const std::string ev =
+        "{\"id\":\"ev-44\",\"slug\":\"ev-44\","
+        "\"title\":\"Political Election 2026\","
+        "\"sport\":\"\","
+        "\"markets\":[" +
+        m + "]}";
     const std::string json = "[" + ev + "]";
 
     auto result = ParseSportsEvents(json, 30);
@@ -389,10 +405,11 @@ TEST(ParseSportsEvents, MD45_MaxEventsTruncation) {
 // MD-46: JSON-encoded clobTokenIds 格式 → token_map 正确填充
 TEST(ParseSportsEvents, MD46_JsonEncodedClobTokenIds) {
     // market 使用 JSON-encoded string 格式
-    const std::string m = "{\"conditionId\":\"cond-46\","
-                          "\"question\":\"NBA winner?\","
-                          "\"sportsMarketType\":\"Moneyline\","
-                          "\"clobTokenIds\":\"[\\\"tok-46-y\\\",\\\"tok-46-n\\\"]\"}";
+    const std::string m =
+        "{\"conditionId\":\"cond-46\","
+        "\"question\":\"NBA winner?\","
+        "\"sportsMarketType\":\"Moneyline\","
+        "\"clobTokenIds\":\"[\\\"tok-46-y\\\",\\\"tok-46-n\\\"]\"}";
     const std::string ev = MakeEvent("ev-46", "NBA Finals", "basketball", m);
     const std::string json = "[" + ev + "]";
 
@@ -408,10 +425,11 @@ TEST(ParseSportsEvents, MD46_JsonEncodedClobTokenIds) {
 // 关键验证: 字符串不被 \" 提前截断 (esc 状态机保证跨越 \" 继续扫), 包含完整内容.
 TEST(ParseSportsEvents, MD47_EscapedQuoteInQuestion) {
     // question 含转义引号
-    const std::string m = "{\"conditionId\":\"cond-47\","
-                          "\"question\":\"NBA \\\"Finals\\\" 2026\","
-                          "\"sportsMarketType\":\"Moneyline\","
-                          "\"clobTokenIds\":[\"tok-47-y\",\"tok-47-n\"]}";
+    const std::string m =
+        "{\"conditionId\":\"cond-47\","
+        "\"question\":\"NBA \\\"Finals\\\" 2026\","
+        "\"sportsMarketType\":\"Moneyline\","
+        "\"clobTokenIds\":[\"tok-47-y\",\"tok-47-n\"]}";
     const std::string ev = MakeEvent("ev-47", "NBA game", "basketball", m);
     const std::string json = "[" + ev + "]";
 
@@ -421,7 +439,7 @@ TEST(ParseSportsEvents, MD47_EscapedQuoteInQuestion) {
     // ExtractJsonStr 不截断: question 包含 "Finals" 和 "2026" (不被首个 \" 截断)
     const std::string& q = result[0].markets[0].question;
     EXPECT_NE(q.find("Finals"), std::string::npos) << "question truncated at escaped quote: " << q;
-    EXPECT_NE(q.find("2026"), std::string::npos)   << "question missing trailing content: " << q;
+    EXPECT_NE(q.find("2026"), std::string::npos) << "question missing trailing content: " << q;
     // raw bytes 含反斜杠 (不做 unescape)
     EXPECT_NE(q.find('\\'), std::string::npos);
 }
@@ -550,10 +568,12 @@ TEST(ParseSportsEvents, MaxZero_EmptyResult) {
 TEST(ParseSportsEvents, MissingEventId_Skipped) {
     const std::string m = MakeMarket("cond-noid", "NBA?", "ty-noid", "tn-noid");
     // 无 "id" 字段
-    const std::string ev = "{\"slug\":\"no-id-slug\","
-                           "\"title\":\"NBA Game\","
-                           "\"sport\":\"basketball\","
-                           "\"markets\":[" + m + "]}";
+    const std::string ev =
+        "{\"slug\":\"no-id-slug\","
+        "\"title\":\"NBA Game\","
+        "\"sport\":\"basketball\","
+        "\"markets\":[" +
+        m + "]}";
     const std::string json = "[" + ev + "]";
 
     auto result = ParseSportsEvents(json, 30);
@@ -575,10 +595,12 @@ TEST(ParseSportsEvents, SportsMarketType_Normalized) {
 // neg_risk_market_id 字段提取
 TEST(ParseSportsEvents, NegRiskMarketId_Extracted) {
     const std::string m = MakeMarket("cond-nr", "Q", "ty-nr", "tn-nr");
-    const std::string ev = "{\"id\":\"ev-nr\",\"slug\":\"ev-nr\","
-                           "\"title\":\"NBA Game\",\"sport\":\"basketball\","
-                           "\"negRiskMarketID\":\"nr-market-456\","
-                           "\"markets\":[" + m + "]}";
+    const std::string ev =
+        "{\"id\":\"ev-nr\",\"slug\":\"ev-nr\","
+        "\"title\":\"NBA Game\",\"sport\":\"basketball\","
+        "\"negRiskMarketID\":\"nr-market-456\","
+        "\"markets\":[" +
+        m + "]}";
     const std::string json = "[" + ev + "]";
 
     auto result = ParseSportsEvents(json, 30);
@@ -590,10 +612,10 @@ TEST(ParseSportsEvents, NegRiskMarketId_Extracted) {
 TEST(ParseSportsEvents, PartialMarkets_OnlyValidKept) {
     const std::string m_valid = MakeMarket("cond-pv1", "Q1", "ty-pv1", "tn-pv1");
     // 无 conditionId
-    const std::string m_invalid = "{\"question\":\"No cond\","
-                                  "\"clobTokenIds\":[\"ty-bad\",\"tn-bad\"]}";
-    const std::string ev = MakeEvent("ev-pv", "NBA Game", "basketball",
-                                     m_valid + "," + m_invalid);
+    const std::string m_invalid =
+        "{\"question\":\"No cond\","
+        "\"clobTokenIds\":[\"ty-bad\",\"tn-bad\"]}";
+    const std::string ev = MakeEvent("ev-pv", "NBA Game", "basketball", m_valid + "," + m_invalid);
     const std::string json = "[" + ev + "]";
 
     auto result = ParseSportsEvents(json, 30);

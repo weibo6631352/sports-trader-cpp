@@ -56,8 +56,8 @@ void print_usage() {
 //   G4 运行期: ExecutionContext::Init(Paper) 单次 (双调内部 abort).
 // ---------------------------------------------------------------------------
 void enforce_paper_mode_gates() {
-    using stcpp::execution::ExecutionMode;
     using stcpp::execution::ExecutionContext;
+    using stcpp::execution::ExecutionMode;
 
     // G1: 编译期锁 —— paper_runtime 绝不在 live/backtest binary 中编译.
     static_assert(stcpp::execution::kCompiledMode == ExecutionMode::Paper,
@@ -133,8 +133,8 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "[paper_runtime] FATAL: PaperDaemon::Build 失败: %s\n", br.error.c_str());
         return 1;
     }
-    std::printf("[paper_runtime] Build OK: markets=%zu tokens=%zu; 进入 headless 常驻\n",
-                br.market_count, br.token_count);
+    std::printf("[paper_runtime] Build OK: markets=%zu tokens=%zu; 进入 headless 常驻\n", br.market_count,
+                br.token_count);
     std::fflush(stdout);
 
     const int rc = daemon.Run();

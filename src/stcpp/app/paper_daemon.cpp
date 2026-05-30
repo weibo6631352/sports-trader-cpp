@@ -183,7 +183,7 @@ BuildResult PaperDaemon::Build() {
 
     // paper RiskGateway (paper 专用; 与 live RM 隔离; NullAuditEmitter 不落真 WAL)
     paper_audit_emitter_ = std::make_shared<NullAuditEmitter>();
-    risk::RiskConfig paper_rm_cfg;  // M1 demo cap (逐字对齐原 main)
+    risk::RiskConfig paper_rm_cfg;               // M1 demo cap (逐字对齐原 main)
     paper_rm_cfg.per_order_cap_usdc = 10;        // 10 pUSD demo cap
     paper_rm_cfg.market_exposure_cap_usdc = 50;  // 50 pUSD
     paper_rm_cfg.per_outcome_cap_usdc = 25;      // 25 pUSD
@@ -264,8 +264,9 @@ BuildResult PaperDaemon::Build() {
             std::fflush(stderr);
         });
     } else {
-        std::fprintf(stderr,
-                     "[paper_daemon] WARNING: 无 token 可订阅 (发现失败), WSS 未装配, book 回落 found=false.\n");
+        std::fprintf(
+            stderr,
+            "[paper_daemon] WARNING: 无 token 可订阅 (发现失败), WSS 未装配, book 回落 found=false.\n");
     }
 
     // ---- Step 4c: FeatureRecorder (构造, 不 Start) ----
@@ -278,8 +279,7 @@ BuildResult PaperDaemon::Build() {
         for (const auto& [cond_id, _tok] : token_map_) {
             ml_cond_ids.push_back(cond_id);
         }
-        ml_recorder_ =
-            std::make_unique<ml::FeatureRecorder>(*quote_hub_, std::move(ml_cond_ids), rec_cfg);
+        ml_recorder_ = std::make_unique<ml::FeatureRecorder>(*quote_hub_, std::move(ml_cond_ids), rec_cfg);
     }
 
     // ---- Step 5: HttpServer (仅 RunMode::PaperDaemon; Headless 无 HTTP) ----

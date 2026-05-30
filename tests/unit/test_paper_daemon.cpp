@@ -10,10 +10,10 @@
 //   - Build 幂等; Headless 无 HTTP 但读模型仍装配 (R-11: 同一 Build 写栈).
 //   - Start→Shutdown 线程起停无崩 (offline feeds, paper_loop jthread join).
 
-#include <gtest/gtest.h>
-
 #include <utility>
 #include <vector>
+
+#include <gtest/gtest.h>
 
 #include "stcpp/app/paper_daemon.hpp"
 #include "stcpp/risk/rm_debug_snapshot.hpp"
@@ -55,7 +55,9 @@ PaperDaemonConfig OfflineHeadlessCfg() {
 }
 
 // 每个 test 前清掉残留全局 hook (其它 test 可能 attach 过).
-void ResetGlobalHook() { stcpp::risk::detach_rm_debug_snapshot(); }
+void ResetGlobalHook() {
+    stcpp::risk::detach_rm_debug_snapshot();
+}
 
 }  // namespace
 

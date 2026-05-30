@@ -62,7 +62,8 @@ struct DiscoveredEvent {
 
 // 解析 gamma /events 响应 JSON → DiscoveredEvent 列表 (主路径).
 // max_events: 最多解析的 event 数.
-[[nodiscard]] std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int max_events = 30);
+[[nodiscard]] std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf,
+                                                             int max_events = 30);
 
 // 解析 gamma /markets 平铺响应 JSON → DiscoveredEvent 列表 (回退路径; 每 market 包成 synthetic event).
 // max_markets: 最多解析的 market 数.
