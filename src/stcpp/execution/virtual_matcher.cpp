@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <cstring>
 
+#include "stcpp/domain/micro_pusd.hpp"  // A1: to_micro_pusd (fill_size double→micro 唯一入口)
+
 namespace stcpp::execution {
 
 namespace {
@@ -61,7 +63,7 @@ VirtualFill VirtualMatcher::Match(const VirtualOrder& order) noexcept {
 
     if (so.reject != numerical::RejectCode::Ok) {
         out.reject = MatchReject::SlippageModelReject;
-        out.fill_size_usdc = 0.0;
+        out.fill_size_usdc = 0;
         out.p_fill_clamped = 0.0;
         out.bernoulli_draw = false;
         return out;
@@ -85,14 +87,14 @@ VirtualFill VirtualMatcher::Match(const VirtualOrder& order) noexcept {
 
     if (!draw) {
         out.reject = MatchReject::BernoulliMissed;
-        out.fill_size_usdc = 0.0;
+        out.fill_size_usdc = 0;
         return out;
     }
 
     // 4) Fill: 按 expected_fill_rate 折扣 size (而非 p_clamped, 因 cap 上限只是 Bernoulli 参数,
     //    实际 size 还是按真实 model rate, 保留 audit 可还原性)
     out.reject = MatchReject::Ok;
-    out.fill_size_usdc = order.size_usdc * rate01;
+    out.fill_size_usdc = domain::to_micro_pusd(order.size_usdc * rate01);  // A1: pUSD→micro
     return out;
 }
 
@@ -129,12 +131,12 @@ VirtualFill VirtualMatcher::MatchWithBook(const VirtualOrderWithBook& order) noe
     // ClobModelReject: InvalidSnapshot 或 InvalidIntent → 拒单
     if (clob_out.reject == microstructure::FillRateReject::InvalidSnapshot) {
         out.reject = MatchReject::InvalidBookSnapshot;
-        out.fill_size_usdc = 0.0;
+        out.fill_size_usdc = 0;
         return out;
     }
     if (clob_out.reject == microstructure::FillRateReject::InvalidIntent) {
         out.reject = MatchReject::ClobModelReject;
-        out.fill_size_usdc = 0.0;
+        out.fill_size_usdc = 0;
         return out;
     }
     // BelowFloor: 标记但继续, fill_rate < 0.50 会在下面 clamp 到 FLOOR
@@ -150,7 +152,7 @@ VirtualFill VirtualMatcher::MatchWithBook(const VirtualOrderWithBook& order) noe
     // BelowFloor 拒单 (fill_rate < FLOOR 即使 clamp 也无意义)
     if (clob_out.reject == microstructure::FillRateReject::BelowFloor) {
         out.reject = MatchReject::ClobModelReject;
-        out.fill_size_usdc = 0.0;
+        out.fill_size_usdc = 0;
         out.bernoulli_draw = false;
         return out;
     }
@@ -178,8 +180,8 @@ VirtualFill VirtualMatcher::MatchWithBook(const VirtualOrderWithBook& order) noe
     // 关键约束: 禁止理想化全成交 (CPO 要求, 基于真实 depth 的部分成交)
     // p_fill = p_clamped ∈ [0.50, 0.90], 所以 fill_size < size_usdc (保证部分成交逻辑)
     out.reject = MatchReject::Ok;
-    out.bernoulli_draw = true;  // Mode A: 有成交
-    out.fill_size_usdc = order.size_usdc * p_clamped;
+    out.bernoulli_draw = true;                                                // Mode A: 有成交
+    out.fill_size_usdc = domain::to_micro_pusd(order.size_usdc * p_clamped);  // A1: pUSD→micro
 
     return out;
 }

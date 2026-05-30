@@ -360,3 +360,33 @@ transformer_v62 / signer 透传点：取裸 micro 用 `.v`（`SignV62Request.siz
 - [ ] ADR-040 落 docs/ADR/，老郭+老韩签字
 - [ ] 下游通知: 老孙(signer .v 透传) / 老唐(WAL 布局零变) / 小梁(sizing 出口 from_pusd) / 老高(CI grep 守护)
 - [ ] 老韩 §4.3 四点 review 通过
+
+---
+
+## c6 续章 — PositionLedger/VirtualFill micro 收口 (A1, 老郭轻量级 ADR 签字)
+
+> last_review: 2026-05-30 | 老周 spec + 老郭裁定 (ADR-041 c-series, 非完整评审)
+
+**背景:** 复盘四方收敛 —— 单位债真源在 `PositionLedger` (存 whole pUSD), 非 RiskConfig。
+`PublishLedgerSnapshot:659 ÷1e6` 把 whole 当 micro → PnL 低估 1e6 (已躺 main); `(int64)0.7 = 0`
+静默丢仓。R-4 根治: PositionLedger + VirtualFill 金额统一 micro。
+
+**R-4 红线原文 (§8.1#1 粘原文禁转述):**
+> 「数据 schema 静默变更（不通知下游） → 责任人承担事故」(CLAUDE.md §8 红线)
+> 「ABI/字段单位变更必触发下游审计 (补 R-4 配套): 任何字段重命名/单位变更必须 audit 全部
+>   比较点/消费点的单位一致性, 否则会「静默架空」依赖该字段的红线」(CLAUDE.md §8.1#3)
+
+**裁定 (老郭):**
+1. **`VirtualFill.fill_size_usdc` + `PositionLedger.size_usdc` 用裸 int64 micro, 不上 MicroPUSD**
+   —— 老郭撤回"坚持 MicroPUSD"立场 (理由: 单字段不成 struct 级护栏 + ledger 累加不比 cap,
+   MicroPUSD 护栏价值在 cap 比较边界已 c1/c2 覆盖)。**这是"helper 单点 + c5 F4 grep + 注释契约
+   + bench 补审"四件套换来的豁免, 非免费**。
+2. **double→micro 唯一入口 `domain::to_micro_pusd()`** (llround, 复用 from_pusd)。
+3. **ABI 零影响**: VirtualFill double(8B)→int64(8B) 同宽, sizeof==120 不变 (static_assert 未改),
+   非 memcpy 序列化 (WAL 走字段级转换), R-7 live 不 link。R-4 + R-8.1#3, 轻量级 ADR。
+4. **两个同名 PositionLedger** (risk:: + infra::wal::) 同 commit 改 (避免单位再裂)。
+
+**验收 (达成):** 补偿性 ×1e6 从 2 处 (FeedRiskGateway + WAL ledger) → 0; PublishLedgerSnapshot
+÷1e6 PnL bug 自愈 (数据对了); <1pUSD 不丢 (`A1_SubOnePusdFill_NotTruncatedToZero`); c5 加 F4
+规则守 fill_size×1e6 反模式; P0-1 ExposureRedLine gate 迁移后仍绿 (45e6 → 仍触 EXCEED)。
+全量 1061/1061 绿。

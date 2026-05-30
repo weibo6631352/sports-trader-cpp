@@ -41,7 +41,7 @@ void PositionLedger::apply_fill(std::string const& condition_id, std::string con
     // 仅处理成功成交 (BernoulliMissed / SlippageModelReject 不更新仓位)
     if (fill.reject != execution::MatchReject::Ok)
         return;
-    if (fill.fill_size_usdc == 0.0)
+    if (fill.fill_size_usdc == 0)
         return;
 
     // side 语义: VirtualFill 无 side 字段; 调用方约定:
@@ -51,7 +51,8 @@ void PositionLedger::apply_fill(std::string const& condition_id, std::string con
     // 平仓 (SELL) 调用方传 fill_size_usdc 为正值, delta_usdc 负由 is_close 派送:
     // 此处统一用 +fill_size_usdc; 平仓语义由 REST /drain 端 DRAIN state 保证
     // TODO W9 W5: 当 side 信息透传入 VirtualFill 后更新符号逻辑
-    auto const delta_raw = static_cast<std::int64_t>(fill.fill_size_usdc);
+    // A1: fill_size_usdc 已是 int64 micro pUSD, 直存无 cast (消原 (int64)whole 的 <1pUSD 截断丢仓)。
+    auto const delta_raw = fill.fill_size_usdc;
 
     // R-20: 严格透传 as_of_ts_ns, 禁 now()
     auto const ts = fill.as_of_ts_ns;

@@ -573,7 +573,7 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     // R-11: VirtualFill.mode_tag 必须为 0 (paper 标记; VirtualMatcher 内部硬填)
     assert(fill.mode_tag == 0u);  // 防御性校验 (debug build)
 
-    if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0.0) {
+    if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {  // A1: micro int64
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
         return;
     }
@@ -595,8 +595,9 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     std::fprintf(stderr,
                  "[paper_loop] FILL cond=%.24s... tok=%.16s... "
                  "fill_sz=%.4f fill_px=%.4f p_fair=%.4f edge=%.1fbps\n",
-                 condition_id.c_str(), token_id.c_str(), fill.fill_size_usdc, fill.fill_price, p_fair,
-                 sz_in.edge_bps);
+                 condition_id.c_str(), token_id.c_str(),
+                 static_cast<double>(fill.fill_size_usdc) / 1'000'000.0,  // A1: micro→pUSD 显示
+                 fill.fill_price, p_fair, sz_in.edge_bps);
 }
 
 // ---------------------------------------------------------------------------
@@ -655,7 +656,8 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
 
     for (const auto& pv : pos_opt) {
         if (pv.condition_id == condition_id) {
-            // size_usdc (signed micro) → qty in pUSD
+            // A1: size_usdc 现真为 signed micro (账本 micro 化), /1e6 = qty pUSD 正确
+            //   (原 size_usdc 存 whole 时此 /1e6 致 PnL 低估 1e6, A1 后数据对了, 式子本就对)。
             net_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
             avg_entry = pv.avg_entry_price;
             last_update = pv.last_update_ts;
@@ -668,8 +670,9 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
     // 已实现 PnL: 简化 M1 只跟 fill.fill_size_usdc × (fill.fill_price - best_ask)
     // 真实 realized 在平仓时产生; M1 买入阶段 realized = 0
     const double pnl_realized = 0.0;
-    const double pnl_fee =
-        fill.fill_size_usdc * sizing::kSportsTakerFeeRate * fill.fill_price * (1.0 - fill.fill_price);
+    // A1: fill_size_usdc micro → /1e6 转 pUSD 算 fee (unit-contract-ok: micro→pUSD)
+    const double pnl_fee = (static_cast<double>(fill.fill_size_usdc) / 1'000'000.0) *
+                           sizing::kSportsTakerFeeRate * fill.fill_price * (1.0 - fill.fill_price);
     const double pnl_gross = pnl_realized + pnl_unrealized;
 
     risk::LedgerFeatures lf{};
@@ -710,14 +713,13 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
 //   unrealized 路径撞 PublishLedgerSnapshot 预存 PnL 单位 bug, 待 ledger PnL 单位修复后接)。
 // ---------------------------------------------------------------------------
 void PaperLoop::FeedRiskGateway() noexcept {
-    constexpr std::int64_t kMicroPerPusd = 1'000'000LL;  // whole pUSD → micro (RM exposure 单位)
-    // per-condition 敞口 (全量覆盖)
-    for (auto const& [cid, whole_pusd] : position_ledger_.get_per_condition_exposure()) {
-        rm_.set_condition_exposure(cid, whole_pusd * kMicroPerPusd);
+    // A1 (老郭钳-6): 账本 micro 化后 get_*_exposure 已是 micro, 与 RM exposure 同单位 → 删原 ×1e6
+    //   补偿乘 (P0-1 的"whole→micro"对冲乘已无意义)。直喂, 全量覆盖 (PL 真值, 自愈)。
+    for (auto const& [cid, micro] : position_ledger_.get_per_condition_exposure()) {
+        rm_.set_condition_exposure(cid, micro);
     }
-    // per-outcome (token) 敞口 (全量覆盖)
-    for (auto const& [tid, whole_pusd] : position_ledger_.get_per_outcome_exposure()) {
-        rm_.set_outcome_exposure(tid, whole_pusd * kMicroPerPusd);
+    for (auto const& [tid, micro] : position_ledger_.get_per_outcome_exposure()) {
+        rm_.set_outcome_exposure(tid, micro);
     }
 }
 

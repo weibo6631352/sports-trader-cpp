@@ -52,8 +52,8 @@ private:
 struct MockPosition {
     std::atomic<std::int64_t> filled_usdc{0};
     std::atomic<std::int64_t> fill_count{0};
-    void apply(double size) noexcept {
-        filled_usdc.fetch_add(static_cast<std::int64_t>(size), std::memory_order_relaxed);
+    void apply(std::int64_t size) noexcept {  // A1: fill_size micro int64
+        filled_usdc.fetch_add(size, std::memory_order_relaxed);
         fill_count.fetch_add(1, std::memory_order_relaxed);
     }
 };

@@ -914,7 +914,7 @@ TEST_F(PaperLoopTest, T21_R11_ApplyFill_RejectsNonPaperModeTag) {
 
     execution::VirtualFill fill{};
     fill.reject = execution::MatchReject::Ok;
-    fill.fill_size_usdc = 5.0;
+    fill.fill_size_usdc = 5'000'000;  // A1 micro
     fill.fill_price = 0.5;
     fill.as_of_ts_ns = now_ns;
     fill.mode_tag = 1;  // 非 paper (e.g. live) → 红线3 应拒, 不记账
@@ -1021,7 +1021,7 @@ TEST_F(PaperLoopTest, P0_1_ExposureRedLine_UnitGate) {
 
     // 累积敞口: apply_fill 45 whole pUSD → 仓位账本 condition_exposure = 45 (whole pUSD)
     execution::VirtualFill fill{};
-    fill.fill_size_usdc = 45.0;  // whole pUSD
+    fill.fill_size_usdc = 45'000'000;  // A1 micro (=45 pUSD)
     fill.fill_price = 0.50;
     fill.reject = execution::MatchReject::Ok;
     position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);

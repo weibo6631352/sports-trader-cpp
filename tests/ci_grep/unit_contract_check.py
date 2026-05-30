@@ -93,6 +93,18 @@ _ONE_E6 = r"1'?000'?000(?:\.0+)?L?L?"
 _F3_CAP_SCALE_A = re.compile(rf"\b(?:{_CAP_ALT})\b[^;]*\*\s*{_ONE_E6}")
 _F3_CAP_SCALE_B = re.compile(rf"{_ONE_E6}\s*\*[^;]*\b(?:{_CAP_ALT})\b")
 
+# F4 (A1 老郭钳-2): ledger/matcher 里 fill_size_usdc 同表达式 × 1e6 字面量.
+#   A1 后 fill_size_usdc 是裸 int64 micro (无类型抓手), double→micro 唯一走 to_micro_pusd();
+#   任何 fill_size 旁的裸 ×1e6/llround(x*1e6) = 绕开 helper = 单位债复发信号. 合法 micro→pUSD
+#   换算 (pnl_fee / ml training_label) 走 // unit-contract-ok 显式豁免.
+F4_FILES = {
+    "matcher": "src/stcpp/execution/virtual_matcher.cpp",
+    "wal_ledger": "src/stcpp/infra/wal/position_ledger.cpp",
+    "risk_ledger": "src/stcpp/risk/position_ledger.cpp",
+}
+_F4_FILLSIZE_SCALE = re.compile(rf"\bfill_size_usdc\b[^;]*\*\s*{_ONE_E6}")
+_F4_FILLSIZE_SCALE_B = re.compile(rf"{_ONE_E6}\s*\*[^;]*\bfill_size_usdc\b")
+
 _COMMENT_PREFIXES = ("//", "*", "/*", "#")
 
 
@@ -193,6 +205,22 @@ def main() -> int:
                     f"  cap→micro 唯一合法落点 = {PAPER_DAEMON} from_pusd (whole pUSD 配置入口)."
                 )
 
+    # --- F4 (A1): matcher/ledger 里 fill_size_usdc × 1e6 (绕开 to_micro_pusd) ---
+    for rel in F4_FILES.values():
+        path = repo_root / rel
+        if not path.is_file():
+            continue
+        for lineno, line in _scan_lines(path):
+            if _is_comment_or_exempt(line):
+                continue
+            if _F4_FILLSIZE_SCALE.search(line) or _F4_FILLSIZE_SCALE_B.search(line):
+                errors.append(
+                    f"F4 (FAIL): {rel}:{lineno} fill_size_usdc 同表达式 × 1e6 (绕开 to_micro_pusd)\n"
+                    f"  行内容: {line.strip()}\n"
+                    f"  A1: fill_size 是裸 int64 micro; double→micro 唯一走 domain::to_micro_pusd().\n"
+                    f"  合法 micro→pUSD 换算 (pnl_fee/training_label): 行尾加 // {_EXEMPT_MARK}: micro→pUSD."
+                )
+
     # 输出
     if missing:
         for m in missing:
@@ -205,7 +233,7 @@ def main() -> int:
     if not errors:
         print(
             f"[unit_contract_check] PASS: 扫描 {scanned} enforced 文件 "
-            f"(F1 sizing.v / F2 cast-cap×3 / F3 cap×1e6), 无 P0-2 单位失配反模式. "
+            f"(F1 sizing.v / F2 cast-cap / F3 cap×1e6 / F4 fill_size×1e6), 无 P0-2 单位失配反模式. "
             f"paper_loop/paper_daemon 合法 ×1e6/from_pusd 边界转换已豁免."
         )
         return 0

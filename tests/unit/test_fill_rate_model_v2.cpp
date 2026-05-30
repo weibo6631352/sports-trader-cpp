@@ -37,6 +37,7 @@
 
 #include <gtest/gtest.h>
 
+#include "stcpp/domain/micro_pusd.hpp"  // A1: to_micro_pusd
 #include "stcpp/execution/virtual_matcher.hpp"
 #include "stcpp/infra/wal/wal_kind.hpp"
 #include "stcpp/microstructure/fill_rate_model.hpp"
@@ -302,12 +303,15 @@ TEST(VirtualMatcherModeA, T13_PartialFill_NoIdealFullFill) {
     auto fill = m.MatchWithBook(order);
 
     if (fill.reject == ex::MatchReject::Ok) {
-        EXPECT_LT(fill.fill_size_usdc, order.size_usdc)
+        // A1: fill_size_usdc 现 micro int64; order.size_usdc 是 whole pUSD → RHS 走 to_micro_pusd 转 micro
+        EXPECT_LT(fill.fill_size_usdc, stcpp::domain::to_micro_pusd(order.size_usdc))
             << "Mode A 禁止理想全成交: fill_size 必须 < size_usdc";
-        EXPECT_GT(fill.fill_size_usdc, 0.0);
+        EXPECT_GT(fill.fill_size_usdc, 0);
         // fill_size = size_usdc × p_fill_clamped; p_fill ∈ [0.50, 0.90]
-        EXPECT_GE(fill.fill_size_usdc, order.size_usdc * ex::kFillRateFloor - 1e-6);
-        EXPECT_LE(fill.fill_size_usdc, order.size_usdc * ex::kFillRateClobCap + 1e-6);
+        EXPECT_GE(fill.fill_size_usdc,
+                  stcpp::domain::to_micro_pusd(order.size_usdc * ex::kFillRateFloor) - 1);
+        EXPECT_LE(fill.fill_size_usdc,
+                  stcpp::domain::to_micro_pusd(order.size_usdc * ex::kFillRateClobCap) + 1);
     }
 }
 
@@ -337,7 +341,7 @@ TEST(VirtualMatcherModeA, T15_InvalidBookSnapshot_Rejects) {
     auto fill = m.MatchWithBook(order);
 
     EXPECT_EQ(fill.reject, ex::MatchReject::InvalidBookSnapshot);
-    EXPECT_DOUBLE_EQ(fill.fill_size_usdc, 0.0);
+    EXPECT_EQ(fill.fill_size_usdc, 0);
     // R-11 仍硬填 PaperAudit
     EXPECT_EQ(fill.audit_wal_kind, stcpp::infra::wal::WalKind::PaperAudit);
 }
@@ -351,7 +355,7 @@ TEST(VirtualMatcherModeA, T16_BelowFloor_ClobModelReject) {
     auto fill = m.MatchWithBook(order);
 
     EXPECT_EQ(fill.reject, ex::MatchReject::ClobModelReject);
-    EXPECT_DOUBLE_EQ(fill.fill_size_usdc, 0.0);
+    EXPECT_EQ(fill.fill_size_usdc, 0);
     EXPECT_FALSE(fill.bernoulli_draw);
 }
 

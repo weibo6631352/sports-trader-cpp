@@ -77,7 +77,7 @@ static execution::VirtualFill make_fill(std::int64_t as_of_ts_ns, double fill_pr
     execution::VirtualFill f{};
     f.reject = execution::MatchReject::Ok;
     f.fill_price = fill_price;
-    f.fill_size_usdc = fill_size_usdc;
+    f.fill_size_usdc = stcpp::domain::to_micro_pusd(fill_size_usdc);  // A1 whole→micro
     f.expected_fill_rate = 0.60;
     f.bernoulli_draw = true;
     // R-20: as_of_ts_ns 严格透传
@@ -112,7 +112,7 @@ TEST(PositionLedgerW76, TC01_SnapshotConsistency) {
     EXPECT_EQ(pv->condition_id, cid);
     EXPECT_EQ(pv->token_id, tid);
     EXPECT_EQ(pv->outcome, Outcome::Yes);
-    EXPECT_EQ(pv->size_usdc, 200LL);
+    EXPECT_EQ(pv->size_usdc, 200'000'000LL);
     EXPECT_NEAR(pv->avg_entry_price, 0.6, 1e-9);
 
     // R-20: last_update_ts == as_of_ts_ns (禁 now())
@@ -122,17 +122,17 @@ TEST(PositionLedgerW76, TC01_SnapshotConsistency) {
     auto all = ledger.get_all_positions();
     ASSERT_EQ(all.size(), 1u);
     EXPECT_EQ(all[0].token_id, tid);
-    EXPECT_EQ(all[0].size_usdc, 200LL);
+    EXPECT_EQ(all[0].size_usdc, 200'000'000LL);
 
     // per_outcome_exposure
     auto outcome_exp = ledger.get_per_outcome_exposure();
     ASSERT_EQ(outcome_exp.count(tid), 1u);
-    EXPECT_EQ(outcome_exp.at(tid), 200LL);
+    EXPECT_EQ(outcome_exp.at(tid), 200'000'000LL);
 
     // per_condition_exposure
     auto cond_exp = ledger.get_per_condition_exposure();
     ASSERT_EQ(cond_exp.count(cid), 1u);
-    EXPECT_EQ(cond_exp.at(cid), 200LL);
+    EXPECT_EQ(cond_exp.at(cid), 200'000'000LL);
 
     // 再注入一笔 (VWAP 测试)
     auto fill2 = make_fill(2'000'000'001LL, 0.4, 100.0);
@@ -140,7 +140,7 @@ TEST(PositionLedgerW76, TC01_SnapshotConsistency) {
 
     auto pv2 = ledger.get_position(tid);
     ASSERT_TRUE(pv2.has_value());
-    EXPECT_EQ(pv2->size_usdc, 300LL);
+    EXPECT_EQ(pv2->size_usdc, 300'000'000LL);
     // VWAP: (200 * 0.6 + 100 * 0.4) / 300 = (120 + 40) / 300 = 0.5333...
     EXPECT_NEAR(pv2->avg_entry_price, 160.0 / 300.0, 1e-9);
     EXPECT_EQ(pv2->last_update_ts, 2'000'000'001LL);

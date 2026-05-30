@@ -106,8 +106,10 @@ struct VirtualOrderWithBook {
 struct VirtualFill {
     MatchReject reject{MatchReject::Ok};
 
-    double fill_price{0.0};      // VWAP, SlippageModel 出 (Mode A++) 或 clob 估算 (Mode A)
-    double fill_size_usdc{0.0};  // = order.size_usdc * effective_fill_rate (or 0)
+    double fill_price{0.0};  // VWAP, SlippageModel 出 (Mode A++) 或 clob 估算 (Mode A)
+    // A1 (老郭钳-3): micro pUSD (1e-6), signed; = to_micro_pusd(order.size_usdc * fill_rate)。
+    //   double→micro 转换唯一走 to_micro_pusd() (禁手写 ×1e6); ledger 直存无截断 (消 <1pUSD 丢仓)。
+    std::int64_t fill_size_usdc{0};
     double expected_fill_rate{0.0};
     double p_fill_clamped{0.0};  // floor/cap 后的 Bernoulli 参数
     std::int32_t slippage_bps{0};
