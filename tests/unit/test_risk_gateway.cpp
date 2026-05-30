@@ -148,6 +148,19 @@ protected:
         rm_->set_market_active(cid, true);
     }
 
+    // P1-9 (老韩 spec §1.3): 抬 cap 的本地 RM。liquidity reject test (R13/R17/R17b/R18) 修正后需真实
+    //   whole pUSD size 才能重建 ρ>floor; 但默认 per_order_cap=10'000 micro(0.01 pUSD) 会让 ADR-004
+    //   caps 抢先命中 EXCEED_PER_ORDER_CAP。故走本地 cfg 抬 cap + 手动注入 market (RM 自持 emitter)。
+    std::unique_ptr<RiskGateway> make_local_rm(RiskConfig const& c) {
+        auto le = std::make_shared<InMemoryEmitter>();
+        auto rm = std::make_unique<RiskGateway>(c, le);
+        rm->set_state(RmState::RUNNING);
+        rm->set_market_state(kMockConditionId, MarketState::PREGAME);
+        rm->set_market_freshness_ms(kMockConditionId, 100);
+        rm->set_market_active(kMockConditionId, true);
+        return rm;
+    }
+
     RiskConfig cfg_;
     std::shared_ptr<InMemoryEmitter> emitter_;
     std::unique_ptr<RiskGateway> rm_;
@@ -360,10 +373,19 @@ TEST_F(RiskGatewayTest, R12_EDGE_CI_NEGATIVE) {
 }
 
 TEST_F(RiskGatewayTest, R13_EDGE_NEGATED_BY_SLIPPAGE) {
+    // P1-9: liquidity 先填 d.slippage_bps, check_signal 再比 edge_bps < slippage_bps。
+    //   修正后 ρ 按真实 whole size 算; 要 slip>edge(50bps) 且 fill≥floor (否则被 LOW_FILL 抢)。
+    //   depth=800, size=480 pUSD → ρ=0.6 → slip≈60bps, fill≈0.83; edge_bps=50<60 → EDGE_NEGATED。
+    RiskConfig c = cfg_;
+    c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000.0);
+    c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(2'000.0);
+    c.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(3'000.0);
+    auto local = make_local_rm(c);
     auto it = make_ok_intent("sig_thin2");
     it.book_depth_l1_usdc = 800;
-    rm_->set_edge_ci_lower("sig_thin2", 0.005);
-    auto d2 = rm_->evaluate(it);
+    it.size_pUSD_micro = 480'000'000;              // 480 pUSD whole; ρ=0.6
+    local->set_edge_ci_lower("sig_thin2", 0.005);  // edge_bps=50 < slip≈60 → EDGE_NEGATED
+    auto d2 = local->evaluate(it);
     EXPECT_EQ(d2.reject, RejectCode::EDGE_NEGATED_BY_SLIPPAGE);
 }
 
@@ -400,27 +422,69 @@ TEST_F(RiskGatewayTest, R16_LOW_FILL_RATE) {
 }
 
 TEST_F(RiskGatewayTest, R17_EXCESSIVE_SLIPPAGE) {
+    // P1-9: 修正后真实 whole size 喂 ρ。depth=400, size=1100 pUSD → ρ=2.75 → fill=0.158<0.5
+    //   → LOW_FILL_RATE (fill<floor 先于 slip 检; 语义与旧版一致 — 名 EXCESSIVE 实测 LOW_FILL)。
+    RiskConfig c = cfg_;
+    c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(2'000.0);
+    c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(3'000.0);
+    c.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(5'000.0);
+    auto local = make_local_rm(c);
     auto it = make_ok_intent("sig_xslip");
     it.book_depth_l1_usdc = 400;
-    it.size_pUSD_micro = 1'000;
-    auto d = rm_->evaluate(it);
+    it.size_pUSD_micro = 1'100'000'000;  // 1100 pUSD whole; ρ=2.75 fill=0.158<0.5
+    auto d = local->evaluate(it);
     EXPECT_EQ(d.reject, RejectCode::LOW_FILL_RATE);
 }
 
 TEST_F(RiskGatewayTest, R17b_EXCESSIVE_SLIPPAGE_pure) {
+    // P1-9: 修正后借机真正命中纯 EXCESSIVE_SLIPPAGE (旧版靠 OR 兜底, 实际从没测到纯 EXCESSIVE)。
+    //   低 price(0.05) 放大 tick 占比 → slip>200bps; depth=400 size=85 pUSD → ρ=0.21 fill=0.932≥0.5
+    //   → fill 不触 LOW_FILL, slip=213bps>200 → 纯 EXCESSIVE_SLIPPAGE。
+    RiskConfig c = cfg_;
+    c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(500.0);
+    c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000.0);
+    c.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(2'000.0);
+    auto local = make_local_rm(c);
     auto it = make_ok_intent("sig_xslip_b");
+    it.price = 0.05;  // 低 price 放大 tick 占比 → slip>200bps
     it.book_depth_l1_usdc = 400;
-    it.size_pUSD_micro = 1'000;
-    auto d = rm_->evaluate(it);
-    EXPECT_TRUE(d.reject == RejectCode::EXCESSIVE_SLIPPAGE || d.reject == RejectCode::LOW_FILL_RATE)
-        << "R17b: expected EXCESSIVE_SLIPPAGE or LOW_FILL_RATE, got " << static_cast<int>(d.reject);
+    it.size_pUSD_micro = 85'000'000;  // 85 pUSD whole; ρ=0.21 fill=0.932 slip=213bps
+    auto d = local->evaluate(it);
+    EXPECT_EQ(d.reject, RejectCode::EXCESSIVE_SLIPPAGE)
+        << "R17b: fill>=0.5 但 slip>200bps, 应纯 EXCESSIVE_SLIPPAGE, got " << static_cast<int>(d.reject);
 }
 
 TEST_F(RiskGatewayTest, R18_EXCEED_BOOK_DEPTH) {
+    // P1-9: 修正后真实 whole size 喂 ρ。要 ρ>3 (depth=250) 需 size>750 pUSD; 抬 cap 否则
+    //   ADR-004 caps 先命中 EXCEED_PER_ORDER_CAP。size=800 pUSD → ρ=3.2>3 → EXCEED_BOOK_DEPTH。
+    RiskConfig c = cfg_;
+    c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(2'000.0);
+    c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(3'000.0);
+    c.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(5'000.0);
+    auto local = make_local_rm(c);
     auto it = make_ok_intent("sig_xdepth");
+    it.size_pUSD_micro = 800'000'000;  // 800 pUSD whole; ρ=800/250=3.2>3
     it.book_depth_l1_usdc = 250;
-    auto d = rm_->evaluate(it);
+    auto d = local->evaluate(it);
     expect_rejected(d, RejectCode::EXCEED_BOOK_DEPTH);
+}
+
+// P1-9 MVP sanity (老韩 spec §1.6.4): 真实量级单 (500 pUSD, depth 5000) 不再被 liquidity gate
+//   误拒。ρ=500/5000=0.1 合法。这是「第一笔成交」能发生的直接前置 — 永久守卫防 P1-9 回归
+//   (BUG 时 ρ=5e8/5e3=1e5≫3 → EXCEED_BOOK_DEPTH → 实盘正常单全量误拒)。
+TEST_F(RiskGatewayTest, P1_9_RealisticSize_PassesLiquidity) {
+    RiskConfig c = cfg_;
+    c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000.0);
+    c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(2'000.0);
+    c.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(5'000.0);
+    auto local = make_local_rm(c);
+    auto it = make_ok_intent("sig_realistic");
+    it.size_pUSD_micro = 500'000'000;  // 500 pUSD whole (实盘量级); ρ=0.1 合法
+    it.book_depth_l1_usdc = 5'000;
+    auto d = local->evaluate(it);
+    EXPECT_EQ(d.decision, Decision::APPROVED)
+        << "P1-9: 真实 size 500 pUSD 应过 liquidity gate (ρ=0.1), got reject " << static_cast<int>(d.reject);
+    EXPECT_NE(d.reject, RejectCode::EXCEED_BOOK_DEPTH);
 }
 
 // ---- 系统 -------------------------------------------------------------------

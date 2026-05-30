@@ -105,6 +105,14 @@ F4_FILES = {
 _F4_FILLSIZE_SCALE = re.compile(rf"\bfill_size_usdc\b[^;]*\*\s*{_ONE_E6}")
 _F4_FILLSIZE_SCALE_B = re.compile(rf"{_ONE_E6}\s*\*[^;]*\bfill_size_usdc\b")
 
+# F5 (P1-9 老韩 spec §1.4): risk_gateway.cpp 里 order_size_usdc 裸 (double)size_pUSD_micro 当 whole 喂.
+#   size_pUSD_micro 是 micro(1e-6); SlippageModel.order_size_usdc 是 whole pUSD (ρ=order/depth 需同量纲).
+#   裸 cast = micro 当 whole, 差 1e6 → liquidity gate 全量误拒 EXCEED_BOOK_DEPTH (P1-9 复发).
+#   正确: domain::MicroPUSD::from_micro(...size_pUSD_micro).to_pusd() (含 .to_pusd() → 放行).
+_F5_SIZE_RAW_DOUBLE = re.compile(
+    r"order_size_usdc\s*=\s*(?:static_cast<double>|\(double\))\s*\(\s*[\w.\->]*size_pUSD_micro"
+)
+
 _COMMENT_PREFIXES = ("//", "*", "/*", "#")
 
 
@@ -221,6 +229,22 @@ def main() -> int:
                     f"  合法 micro→pUSD 换算 (pnl_fee/training_label): 行尾加 // {_EXEMPT_MARK}: micro→pUSD."
                 )
 
+    # --- F5 (P1-9): risk_gateway.cpp 里 order_size_usdc 裸 (double)size_pUSD_micro 当 whole 喂 ---
+    for lineno, line in _scan_lines(rm_path):
+        if _is_comment_or_exempt(line):
+            continue
+        # 同行含 to_pusd = 正确写法 (from_micro(...).to_pusd()), 放行
+        if "to_pusd" in line:
+            continue
+        if _F5_SIZE_RAW_DOUBLE.search(line):
+            errors.append(
+                f"F5 (FAIL): {ENFORCED_FILES['rm']}:{lineno} order_size_usdc 裸 (double)size_pUSD_micro\n"
+                f"  行内容: {line.strip()}\n"
+                f"  size_pUSD_micro 是 micro(1e-6); SlippageModel.order_size_usdc 是 whole pUSD.\n"
+                f"  必须 domain::MicroPUSD::from_micro(...).to_pusd() (micro→whole 唯一通道).\n"
+                f"  裸 cast → ρ=order/depth 差 1e6 → liquidity gate 全量误拒 (P1-9 复发)."
+            )
+
     # 输出
     if missing:
         for m in missing:
@@ -233,7 +257,7 @@ def main() -> int:
     if not errors:
         print(
             f"[unit_contract_check] PASS: 扫描 {scanned} enforced 文件 "
-            f"(F1 sizing.v / F2 cast-cap / F3 cap×1e6 / F4 fill_size×1e6), 无 P0-2 单位失配反模式. "
+            f"(F1 sizing.v / F2 cast-cap / F3 cap×1e6 / F4 fill_size×1e6 / F5 order_size 裸micro), 无 P0-2 单位失配反模式. "
             f"paper_loop/paper_daemon 合法 ×1e6/from_pusd 边界转换已豁免."
         )
         return 0

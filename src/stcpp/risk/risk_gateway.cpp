@@ -523,7 +523,13 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
 // 7. liquidity
 bool RiskGateway::check_liquidity_(OrderIntent const& it, RiskDecision& d) const noexcept {
     numerical::SlippageInput in{
-        .order_size_usdc = static_cast<double>(it.size_pUSD_micro),
+        // P1-9 (老韩 spec §1.2): size_pUSD_micro 是 micro(1e-6 pUSD); SlippageModel 的
+        //   order_size_usdc 与 book_depth_l1_usdc 同为 whole pUSD 口径 (ρ=order/depth 需同量纲)。
+        //   v0.6 size_usdc→size_pUSD_micro rename 漏 audit 的消费点 (cap 比较点 c2/c3 已修, 此处漏)。
+        //   走 MicroPUSD::from_micro(...).to_pusd() = micro→whole 唯一合法转换通道 (A1 既有 API)。
+        //   裸 (double)size_pUSD_micro 当 whole 喂 → ρ 放大 1e6 → 真实单全量误拒 EXCEED_BOOK_DEPTH。
+        //   cite: docs/RESEARCH/laohan-a4-p19-rm-feedliveness-slippage-unit-spec-v1.md §1
+        .order_size_usdc = domain::MicroPUSD::from_micro(it.size_pUSD_micro).to_pusd(),
         .quote_price = it.price,
         .book_depth_l1_usdc = it.book_depth_l1_usdc,
         .book_snapshot_ts_ns = it.book_snapshot_ts_ns,
