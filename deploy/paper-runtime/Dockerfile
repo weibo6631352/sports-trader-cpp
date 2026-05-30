@@ -1,6 +1,6 @@
 # paper-runtime/Dockerfile
 # owner: 老吴 (linux-sre-devops, A-unit, #10)
-# last_review: 2026-05-29
+# last_review: 2026-05-30
 # target: eu-central-1 Frankfurt — Ubuntu 24.04 + cmake + cpp-httplib + websocat
 # build: docker build -t stcpp-paper:latest .
 # run:  docker run --env-file /etc/stcpp/paper.env stcpp-paper:latest
@@ -44,8 +44,9 @@ WORKDIR /src
 # Copy source (respects .dockerignore)
 COPY . .
 
-# CMake configure + build
+# CMake configure + build + install to staging prefix
 # PAPER_MODE=ON: links paper_engine, skips live order submission, skips nonce_ledger writes
+# cmake --install outputs binary to /src/install/bin/paper_runtime (fixed path for Stage 2 COPY)
 RUN cmake -B build \
       -G Ninja \
       -DCMAKE_BUILD_TYPE=${BUILD_TYPE} \
@@ -53,7 +54,8 @@ RUN cmake -B build \
       -DCMAKE_C_COMPILER=gcc-13 \
       -DCMAKE_CXX_COMPILER=g++-13 \
     && cmake --build build --parallel \
-    && ctest --test-dir build --output-on-failure -j4
+    && ctest --test-dir build --output-on-failure -j4 \
+    && cmake --install build --prefix /src/install
 
 # ---------------------------------------------------------------------------
 # Stage 2: runtime
@@ -83,13 +85,14 @@ RUN useradd -r -s /bin/false -d /app stcpp
 RUN mkdir -p /app/bin /app/data /app/logs /app/config \
  && chown -R stcpp:stcpp /app
 
-# Copy built binary from builder stage
-COPY --from=builder --chown=stcpp:stcpp /src/build/src/stcpp/paper_runtime /app/bin/paper_runtime
+# Copy built binary from builder stage (cmake --install --prefix /src/install → /src/install/bin/paper_runtime)
+COPY --from=builder --chown=stcpp:stcpp /src/install/bin/paper_runtime /app/bin/paper_runtime
 
-# Healthcheck: probe local debug REST endpoint (老周 laozhou-w8-debug-rest-api-spec-v1.md)
-# port 9090 = debug REST (not trading port)
+# Healthcheck: headless binary — no HTTP endpoint.
+# Process-alive is the only container health signal; rely on Docker restart-policy for recovery.
+# If process is alive the container is healthy; if it has exited Docker marks it unhealthy and restarts.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-    CMD curl -sf http://localhost:9090/health || exit 1
+    CMD pgrep -x paper_runtime > /dev/null || exit 1
 
 WORKDIR /app
 
@@ -101,4 +104,6 @@ ENV LOG_DIR=/app/logs
 ENV DATA_DIR=/app/data
 
 ENTRYPOINT ["/app/bin/paper_runtime"]
-CMD ["--config", "/app/config/paper.toml"]
+# CLI: [--verbose] [--no-record-ml] [--ml-path PATH] — no --config TOML
+# All runtime config injected via --env-file /etc/stcpp/paper.env (PAPER_MODE=1 enforced by ENV above)
+CMD []

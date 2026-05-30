@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # provision.sh — Frankfurt eu-central-1 t3.medium production instance bootstrap
 # owner: 老吴 (linux-sre-devops, A-unit, #10)
-# date: 2026-05-29
+# date: 2026-05-30
 # usage: bash provision.sh [--dry-run] [--skip-build]
 #
 # 前置条件:
@@ -101,9 +101,9 @@ if [[ "${SKIP_BUILD}" != "--skip-build" ]]; then
 
   dry cmake --build "${REPO_DIR}/build" --parallel
 
-  dry install -m 755 \
-    "${REPO_DIR}/build/src/stcpp/paper_runtime" \
-    /opt/stcpp/bin/paper_runtime
+  # cmake --install 使用 CMakeLists.txt 中的 install(TARGETS stcpp_paper_runtime RUNTIME DESTINATION bin)
+  # --prefix /opt/stcpp → binary 落到 /opt/stcpp/bin/paper_runtime
+  dry cmake --install "${REPO_DIR}/build" --prefix /opt/stcpp
 
   dry chown stcpp:stcpp /opt/stcpp/bin/paper_runtime
   log "Binary installed: /opt/stcpp/bin/paper_runtime"
@@ -150,7 +150,10 @@ dry tee /etc/logrotate.d/stcpp > /dev/null << 'LOGROTATECFG'
     notifempty
     sharedscripts
     postrotate
-        systemctl kill -s HUP stcpp-paper 2>/dev/null || true
+        # paper_runtime 已注册 SIGHUP=SIG_IGN (headless, 无 HTTP/config reload 语义).
+        # HUP 发出后进程忽略 → logrotate 静默失败. 改用 restart 触发干净重启
+        # (paper daemon 重启代价低: SIGTERM→rc 0, RestartSec=5s 后自愈).
+        systemctl restart stcpp-paper 2>/dev/null || true
     endscript
 }
 LOGROTATECFG
@@ -164,11 +167,13 @@ cat << 'CHECKLIST'
 Post-provision checklist (manual steps):
   1. Write /etc/stcpp/paper.env via secret manager (POLYMARKET_API_KEY, WALLET_PRIVATE_KEY, GOALSERVE_API_KEY, etc.)
      chmod 600 /etc/stcpp/paper.env
-  2. Write /etc/stcpp/paper.toml (app config — no secrets, safe to git)
-  3. systemctl start stcpp-paper
-  4. systemctl status stcpp-paper
-  5. journalctl -u stcpp-paper -f     (watch startup logs)
-  6. curl http://localhost:9090/health  (debug REST health)
+     NOTE: paper_runtime CLI has no --config TOML; all config via env vars — no paper.toml needed.
+  2. systemctl start stcpp-paper
+  3. systemctl status stcpp-paper
+  4. journalctl -u stcpp-paper -f     (watch startup logs)
+  5. journalctl -u stcpp-paper --since "1min ago" | tail -5   (check R-11 PAPER_MODE gate passed)
+  6. systemctl is-active stcpp-paper   (headless binary: no HTTP endpoint; process-alive = healthy)
+     journalctl -u stcpp-paper --since "1min ago" | tail -5  (confirm ticks/approved/fills logged)
   7. curl http://localhost:9100/metrics (Prometheus node-exporter)
   8. Add Frankfurt instance IP to Prometheus scrape targets in obs node prometheus.yml
 

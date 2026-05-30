@@ -1,6 +1,6 @@
 # laowu-paper-runtime-binary-deploy-alignment-v1.md
 # owner: 老吴 (linux-sre-devops, A-unit, #10)
-# last_review: 2026-05-30
+# last_review: 2026-05-30 (T1-T5 落地完成 — 三份配置文件全部对齐新 headless binary)
 
 ## 背景
 

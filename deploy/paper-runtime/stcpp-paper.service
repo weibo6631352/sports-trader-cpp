@@ -1,6 +1,6 @@
 # stcpp-paper.service — systemd unit for paper runtime (Frankfurt eu-central-1)
 # owner: 老吴 (linux-sre-devops, A-unit, #10)
-# last_review: 2026-05-29
+# last_review: 2026-05-30
 # deploy path: /etc/systemd/system/stcpp-paper.service
 # manage: systemctl {start|stop|restart|status} stcpp-paper
 #
@@ -37,10 +37,14 @@ Environment=PAPER_MODE=1
 Environment=LOG_DIR=/var/log/stcpp
 Environment=DATA_DIR=/opt/stcpp/data
 
-# Binary 路径 (由 provision.sh 安装到此)
-ExecStart=/opt/stcpp/bin/paper_runtime --config /etc/stcpp/paper.toml
+# Binary 路径 (由 provision.sh cmake --install 安装到此)
+# CLI: [--verbose] [--no-record-ml] [--ml-path PATH] — 无 --config TOML
+# 运行时配置全由 EnvironmentFile=/etc/stcpp/paper.env 注入
+ExecStart=/opt/stcpp/bin/paper_runtime
 
-# 优雅 reload: SIGHUP (reload config, 不断链路)
+# SIGHUP: 代码层已 SIG_IGN; ExecReload 保留作 logrotate postrotate 占位,
+# 实际无 reload 语义 — headless binary 无 HTTP, 无配置热更新.
+# 若未来 paper_runtime 注册 SIGHUP handler 再赋予 reload 语义.
 ExecReload=/bin/kill -HUP $MAINPID
 
 # 崩溃重启策略
@@ -49,7 +53,8 @@ RestartSec=5s
 StartLimitIntervalSec=60s
 StartLimitBurst=5
 
-# 文件描述符 (WSS + CLOB + Goalserve 链路 + debug REST + prometheus /metrics)
+# 文件描述符 (WSS + CLOB + Goalserve 链路 + FeatureRecorder JSONL + PositionLedger WAL)
+# headless binary 无 HTTP/metrics 端点; 65536 上限无害, 留余量供 live 升级时不用改 unit
 LimitNOFILE=65536
 
 # 日志重定向 to journal (journald → promtail → Loki)
