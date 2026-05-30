@@ -125,6 +125,16 @@ TEST(EventMatcher, Orientation_CrossAssignment_YesIsAway) {
     EXPECT_FALSE(r.yes_is_home);
 }
 
+TEST(EventMatcher, Orientation_Ambiguous_FailClosed) {
+    // 队名近似 (City / City FC): 直配与交叉两种分配都过门且分差≈0 → orientation 模糊
+    //   靠 >= 任意拍一边 = 比分方向可能接反 = 反向下单。P2-1 (老郭): fail-closed 不匹配。
+    EventMatcher m;
+    EventMatchInput in{"City", "City FC", 2000000, "soccer"};
+    std::vector<EventScore> cands{MakeEv("amb", "City", "City FC", 2000000)};
+    const auto r = m.Match(in, cands);
+    EXPECT_FALSE(r.matched) << "P2-1: orientation 模糊 (直配/交叉都过门且分差<margin) → fail-closed 不匹配";
+}
+
 TEST(EventMatcher, AbbrevTeamsWithinThreshold_Match) {
     // 双队 overlap=0.5 (== 默认阈值 0.5) → 过门
     EventMatcher m;

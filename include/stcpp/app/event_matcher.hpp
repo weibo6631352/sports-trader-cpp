@@ -60,6 +60,9 @@ public:
     struct Config {
         double team_sim_threshold{0.50};       // 每队 overlap 系数下界 (fail-closed: 偏精度)
         std::int64_t kickoff_window_sec{900};  // kickoff 容差 ±15min
+        // P2-1 (老郭): 直配/交叉两分配都过门且分差 < 此值 → orientation 模糊 → fail-closed.
+        //   防比分方向接反 (镜像 fair → 反向下单). 默认 0.10.
+        double orientation_margin{0.10};
     };
 
     EventMatcher() noexcept = default;

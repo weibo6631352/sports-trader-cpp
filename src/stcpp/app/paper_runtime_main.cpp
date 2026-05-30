@@ -37,10 +37,11 @@ void handle_signal(int /*sig*/) {
 
 void print_usage() {
     std::printf(
-        "usage: paper_runtime [--verbose] [--no-record-ml] [--ml-path PATH]\n"
+        "usage: paper_runtime [--verbose] [--no-record-ml] [--ml-path PATH] [--enable-fills]\n"
         "  --verbose        extra WSS/parser debug logging\n"
         "  --no-record-ml   disable ML training data capture\n"
         "  --ml-path PATH   ML capture output (default data/ml_capture/quotes.jsonl)\n"
+        "  --enable-fills   解封 paper 成交 (默认仅观测; 价值观保守默认, 显式才开火)\n"
         "\n"
         "RunMode::Headless — paper trading daemon, no HTTP (stderr -> journald).\n"
         "  Requires PAPER_MODE=1 env (R-11 hard gate).\n"
@@ -114,6 +115,8 @@ int main(int argc, char** argv) {
             cfg.record_ml = false;
         } else if (a == "--ml-path" && i + 1 < argc) {
             cfg.ml_path = argv[++i];
+        } else if (a == "--enable-fills") {
+            cfg.enable_paper_fills = true;  // P0-3: 默认仅观测, 显式开火
         } else {
             std::fprintf(stderr, "[paper_runtime] unknown arg: %s (try --help)\n", a.c_str());
             return 2;

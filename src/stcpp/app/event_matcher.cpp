@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdlib>
 
 namespace stcpp::app {
@@ -93,6 +94,14 @@ EventMatchResult EventMatcher::Match(const EventMatchInput& in,
         // 合格门 1: 双队各自 overlap ≥ 阈值 (用所选分配的 min)
         if (team_min < cfg_.team_sim_threshold) {
             continue;
+        }
+
+        // 合格门 1.5 (P2-1, 老郭审查): orientation fail-closed —— 直配/交叉两种分配都过门
+        //   且分数接近时, yes_is_home 靠 >= 任意拍一边 = 比分方向可能接反 = 镜像 fair =
+        //   系统性反向下单。此时 orientation 模糊, 宁可不匹配 (fail-closed), 不交易该盘。
+        if (direct_min >= cfg_.team_sim_threshold && cross_min >= cfg_.team_sim_threshold &&
+            std::abs(direct_min - cross_min) < cfg_.orientation_margin) {
+            continue;  // orientation 模糊 → fail-closed (防反向下单)
         }
 
         // 合格门 2: kickoff 时间窗口 (两侧均已知才检查; 任一未知 → 不据时间否决)

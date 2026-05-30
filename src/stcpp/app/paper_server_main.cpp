@@ -71,6 +71,8 @@ int main(int argc, char** argv) {
             cfg.ml_path = argv[++i];
         } else if (a == "--no-paper") {
             cfg.enable_paper_trading = false;  // 仅观测, 不起 PaperLoop
+        } else if (a == "--enable-fills") {
+            cfg.enable_paper_fills = true;  // P0-3: 默认仅观测, 显式开火
         } else if (a == "--help" || a == "-h") {
             std::printf(
                 "usage: stcpp_paper_server [--port N] [--host ADDR] [--verbose] [--no-record-ml]\n"
@@ -81,6 +83,7 @@ int main(int argc, char** argv) {
                 "  --no-record-ml   disable ML training data capture\n"
                 "  --ml-path PATH   ML capture output (default data/ml_capture/quotes.jsonl)\n"
                 "  --no-paper       observe only, do not run PaperLoop\n"
+                "  --enable-fills   解封 paper 成交 (默认仅观测; 保守默认, 显式才开火)\n"
                 "\n"
                 "RunMode::PaperDaemon — paper trading loop + HTTP observability API.\n"
                 "  live book: gamma /events discovery -> CLOB WSS market channel\n"

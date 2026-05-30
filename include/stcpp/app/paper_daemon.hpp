@@ -115,7 +115,9 @@ struct PaperDaemonConfig {
     //   (has_real_fair=true 时产生 paper intent → RM → VirtualFill → 写私有 paper ledger).
     //   false → 仅观测 (advisory gate 拦 intent, 零成交). qf.advisory 恒 true 不受影响 (ML-R2).
     //   收口在此 (老韩红线1): PaperLoopConfig 默认仍 true (backward compat), 仅 daemon 显式翻.
-    bool enable_paper_fills{true};
+    //   **默认 false (P0-3 安全默认, 老郭审查): 生产 daemon 默认仅观测, 显式 --enable-fills 才开火.
+    //   价值观 #1/#2 (实盘优先 + 纪律>收益): 解封成交必须运维显式开, 非编译期默认.**
+    bool enable_paper_fills{false};
 
     // 离线测试 seam (小宋): false → Start() 不起真 WSS/inplay 网络线程.
     // Build() 仍完整装配 (供装配正确性单测, 不发外网请求).

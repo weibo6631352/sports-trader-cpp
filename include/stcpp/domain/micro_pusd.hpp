@@ -17,7 +17,7 @@
 //
 // 红线: 铁律#3 (单位口径回测/实盘一致); R-20 不涉 (无 ts)。
 //
-// c1 (本提交): 仅类型 + 单测, 不接入 RM/OrderIntent/PositionLedger (c2-c5)。
+// c1 (本提交): 仅类型 + 单测, 暂不接入 RM / 订单结构 / 仓位账本 (留待 c2-c5)。
 #pragma once
 
 #include <cmath>
