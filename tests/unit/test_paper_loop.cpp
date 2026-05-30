@@ -1214,3 +1214,64 @@ TEST_F(PaperLoopTest, T_A5_5_FeedLiveness_Transition) {
     EXPECT_FALSE(DdEverFed(*rm_, "consec_loss"))
         << "A5: consec_loss 延 M2 (M1 无平仓源), 应仍 NEVER FED — 锁 M2 边界";
 }
+
+// T-A5-6 (老韩 A5 review nit#1): MtM=0 临界 — best_bid==avg_entry 不臆造盈亏 (break-even)
+TEST_F(PaperLoopTest, T_A5_6_DD_BreakEven_ZeroMtM) {
+    const std::string cid = "0xDD0006";
+    const std::string tid = "8006";
+    RebuildRmHighCap(5'000.0);
+    loop_ = MakeLoop();
+    rm_->set_state(RmState::RUNNING);
+    rm_->set_market_active(cid, true);
+    rm_->set_market_state(cid, MarketState::PREGAME);
+    rm_->set_market_freshness_ms(cid, 100);
+    rm_->set_token_book_freshness_ms(tid, 100);
+    rm_->set_recon_freshness_ms(100);
+    rm_->set_bankroll(stcpp::domain::MicroPUSD::from_pusd(100'000.0).v);
+    rm_->set_edge_ci_lower("dd_be", 0.10);
+
+    execution::VirtualFill fill{};
+    fill.fill_size_usdc = 10'000'000'000LL;  // qty=10000
+    fill.fill_price = 0.50;
+    fill.reject = execution::MatchReject::Ok;
+    position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
+    hub_->Publish(tid, MakeSyntheticBook(0.50, 0.51));  // best_bid==avg_entry 0.50 → MtM=0
+
+    loop_->FeedRiskGatewayForTest();
+    auto d = rm_->evaluate(MakeP01Intent(cid, tid, "dd_be", 10'000'000LL));
+    EXPECT_NE(d.reject, RejectCode::DAILY_LOSS_HALT)
+        << "A5: best_bid==avg_entry → MtM=0 → daily_pnl=0 (无 cum_fee), 不臆造亏损不触 DD";
+}
+
+// T-A5-7 (老韩 A5 review nit#1): 多仓位聚合 — daily_pnl = Σ 各仓 MtM (跨 condition/token 求和)
+TEST_F(PaperLoopTest, T_A5_7_DD_MultiPositionAggregation) {
+    RebuildRmHighCap(5'000.0);  // 硬 5k; 软 = 0.03×100k = 3k (聚合判别阈)
+    loop_ = MakeLoop();
+    rm_->set_state(RmState::RUNNING);
+    rm_->set_bankroll(stcpp::domain::MicroPUSD::from_pusd(100'000.0).v);
+    // 两个 condition/token, 各亏 2000 pUSD → 聚合 4000 ≥ 软 3k 触发; 单仓 2000 < 3k 不触
+    struct P {
+        std::string cid, tid;
+    };
+    const P p0{"0xDDM01", "8101"};
+    const P p1{"0xDDM02", "8102"};
+    for (auto const& p : {p0, p1}) {
+        rm_->set_market_active(p.cid, true);
+        rm_->set_market_state(p.cid, MarketState::PREGAME);
+        rm_->set_market_freshness_ms(p.cid, 100);
+        rm_->set_token_book_freshness_ms(p.tid, 100);
+        execution::VirtualFill fill{};
+        fill.fill_size_usdc = 10'000'000'000LL;  // qty=10000
+        fill.fill_price = 0.80;
+        fill.reject = execution::MatchReject::Ok;
+        position_ledger_->apply_fill(p.cid, p.tid, strategy::Outcome::Yes, fill);
+        hub_->Publish(p.tid, MakeSyntheticBook(0.60, 0.61));  // (0.60-0.80)*10000 = -2000 each
+    }
+    rm_->set_recon_freshness_ms(100);
+    rm_->set_edge_ci_lower("dd_multi", 0.10);
+
+    loop_->FeedRiskGatewayForTest();
+    auto d = rm_->evaluate(MakeP01Intent(p0.cid, p0.tid, "dd_multi", 10'000'000LL));
+    EXPECT_EQ(d.reject, RejectCode::DAILY_LOSS_HALT)
+        << "A5: 两仓各亏 2k 应聚合成 -4k ≥ 软 3k 触发 DD; 若只算单仓 -2k < 3k 则不触 = 聚合 bug";
+}
