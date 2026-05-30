@@ -1,38 +1,44 @@
+# ===== sports-trader-cpp .gitignore =====
+
+# 数据文件 (Parquet / DuckDB / 大文件) — 仅根级 data/, 不误伤 src/stcpp/data 源码
+/data/
+raw_dumps/
+*.parquet
+*.duckdb
+*.db
+*.bson
+*.tl
+*.gz
+*.csv
+
+# C++ build
 build/
 build-*/
-build_*/
-cmake-build-*/
-data/
-*.parquet
-.cache/
 *.o
-*.so
-*.dylib
 *.a
-.DS_Store
-.env
+*.so
+*.so.*
+*.dylib
+*.dylib.*
+*.dll
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# secrets
 .env
 .env.local
-.env.*.local
-*.key
 *.pem
-secrets/
+*.key
 
-# Python venv (量化预研, 见 scripts/activate-quant.sh)
+# OS
+.DS_Store
+
+# Python venv (量化离线栈)
 .venv/
-.venv-*/
-__pycache__/
-*.pyc
-.ipynb_checkpoints/
 
-# Claude Code 本地配置 (不入 git; 团队共享走 .mcp.json)
-.claude/settings.local.json
-
-
-.claire/
-Testing/
-
-# Frontend (SolidJS + Vite)
-frontend/node_modules/
-frontend/dist/
+# Claude Code worktrees (本地并行开发, 不入 git)
 .claude/worktrees/
+.gitignore.backup
