@@ -183,3 +183,18 @@ target_link_libraries(stcpp_crypto_ed25519 PUBLIC Threads::Threads)
 message(STATUS "stcpp_crypto_ed25519: libsodium-${LIBSODIUM_VERSION} ExternalProject_Add")
 message(STATUS "stcpp_crypto_ed25519: install -> ${LIBSODIUM_PREFIX}")
 message(STATUS "stcpp_crypto_ed25519: static lib -> ${LIBSODIUM_STATIC_LIB}")
+
+# ---------- stcpp_crypto_eip712 — Polymarket CTF Exchange V2 EIP-712 digest 编码 ----------
+#
+# Owner: GM (老雷) 2026-05-31。固化自 experiments/laosun-laoli-live-order (首笔实盘成交验证)。
+# 纯 C++ digest 编码 (keccak256 + EIP-712 struct/domain), 无外部依赖。
+# 全 mode 构建 (paper/live/backtest 共用; 下游 signer_v62 live 分支 + live_pm_client)。
+# secp256k1 签名 + L2 HMAC + POST 走后续 increment (那时再链 secp256k1/openssl)。
+add_library(stcpp_crypto_eip712 STATIC
+    eip712_v2.cpp
+)
+target_include_directories(stcpp_crypto_eip712
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(stcpp_crypto_eip712 PUBLIC cxx_std_20)
+message(STATUS "stcpp_crypto_eip712: V2 EIP-712 digest 编码 (纯 C++, 无外部依赖)")
