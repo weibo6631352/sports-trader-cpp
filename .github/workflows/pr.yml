@@ -488,6 +488,9 @@ jobs:
         with: { python-version: '3.11' }
       - name: Run adr010_wno_check.py
         run: python3 tests/ci_grep/adr010_wno_check.py
+      # P0-2 单位契约防复发 (老高, 老郭 钳制-3): sizing cap 裸 .v / cast cap / cap×1e6
+      - name: Run unit_contract_check.py
+        run: python3 tests/ci_grep/unit_contract_check.py
 
   # ---------------------------------------------------------------------------
   # v1.5 新增: 2 Python grep job (Wave 35 — GM 错 #21 补救 + ADR-021/023 配套)

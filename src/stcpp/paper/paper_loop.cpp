@@ -490,7 +490,10 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     const double notional_usdc = sizing_out.suggested_notional;
     intent.size_pUSD_micro = static_cast<std::int64_t>(notional_usdc * 1'000'000.0);
     if (intent.size_pUSD_micro <= 0) {
-        intent.size_pUSD_micro = 1'000'000LL;  // 最小 1 pUSD
+        // c5 (老韩 cap 真值 SSOT): 兜底 = min(1pUSD, per_order_cap)。原硬编码 1 pUSD 在 sub-1-pUSD
+        //   cap 下会越 cap (1pUSD > cap) → 兜底自造 RM EXCEED_PER_ORDER_CAP 拒。clamp 到 cap 上限内。
+        const std::int64_t cap_micro = static_cast<std::int64_t>(cfg_.per_order_cap_usdc * 1'000'000.0);
+        intent.size_pUSD_micro = (cap_micro < 1'000'000LL) ? cap_micro : 1'000'000LL;
     }
 
     // book context (R8.4 freshness)

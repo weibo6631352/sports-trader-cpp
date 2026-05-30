@@ -269,6 +269,14 @@ else
         fi
     fi
 
+    # 4g. P0-2 单位契约防复发 (老高, 老郭 钳制-3) — sizing cap 裸 .v / cast cap / cap×1e6
+    if [ -f "tests/ci_grep/unit_contract_check.py" ]; then
+        if ! "$PYTHON_BIN" tests/ci_grep/unit_contract_check.py 2>&1 | tail -5; then
+            echo "[pre-push]   FAIL: unit_contract_check.py"
+            GREP_FAIL=1
+        fi
+    fi
+
     if [ "$GREP_FAIL" -eq 1 ]; then
         echo "[pre-push] FAIL: grep 检查失败 — 修 grep fail 后再 push"
         exit 1
