@@ -66,11 +66,12 @@ owner: 老雷 (GM) | last_review: 2026-05-30
 
 | # | 行动 | owner | 优先级 |
 |---|---|---|---|
-| A1 | **PositionLedger + VirtualFill micro 根治(R-4)** — 单位债真源,解锁 DD + 消 PnL bug + 消 <1pUSD 截断 | 老韩 spec / 老周审计 / 老郭 ADR / GM | 🔴 下一个大件 |
+| A1 | **PositionLedger + VirtualFill micro 根治(R-4)** — 单位债真源,解锁 DD + 消 PnL bug + 消 <1pUSD 截断 | 老韩 spec / 老周审计 / 老郭 ADR / GM | ✅ 2026-05-30 (commit 19c84b0) — 1061/1061 serial 绿, 7 钳制 + <1pUSD 守卫 + c5 F4 grep |
 | A2 | **修 bench**(bench_risk_gateway / bench_e2e_latency 编译断裂)+ 补 BM_Feed/BM_Approved | 老姜 + GM | ✅ 2026-05-30 — 两 bench v0.6 字段对齐编译通 (build-bench 全绿); BM_Approved 修 timestamp_ms 走真热路径(294ns); BM_RmFeed_NPositions O(N) 基线 (N=20→485ns / N=500→14.4us, MVP 可忽略); E2E 真产 fill (fill_count=1). **副产: P1-9 RM slippage gate 单位失配 (risk_gateway.cpp:526 漏/1e6) → 老韩** |
 | A3 | **Goalserve 白名单**(挂 Elastic IP + 报白名单) | 用户(运营) | 🔴 M1 唯一外部 blocker |
-| A4 | **RM feed-liveness 自检** + 风控状态逐条标(防假已活) | 老韩 + GM | 🟠 |
-| A5 | DD 喂数(A1 完成后)/ c4 闭合(sizing 取 RM 真值,M2 前)/ consec(M2) | 老韩 + GM | 🟠 排在 A1 后 |
+| A4 | **RM feed-liveness 自检** + 风控状态逐条标(防假已活) | 老韩 + GM | ✅ 2026-05-30 (commit 8a641c2) — FeedKey 10 红线 last_fed_ns atomic 数组 + report() + daemon 首 tick 自检喊 NEVER FED; 零 ABI (私有成员); 逐条标降级 M2. RiskGateway 55 + paper_loop 23 绿 |
+| **P1-9** | **RM slippage gate 单位失配根治** (A2 副产, MVP「第一笔成交」拦路石) | 老韩 spec / GM | ✅ 2026-05-30 (commit 44f10eb) — order_size 走 .to_pusd() micro→whole; 4 test 重校(R13/17/17b/18)+ 新 sanity 守卫 500pUSD ρ=0.1 过; F5 CI 护栏; 1061/1061 绿 |
+| A5 | DD 喂数(A1 完成后)/ c4 闭合(sizing 取 RM 真值,M2 前)/ consec(M2) | 老韩 + GM | 🟠 排在 A1/A4 后; **DD 喂数验证需 A3 (Goalserve 白名单, 用户运营) 接通 live 数据** |
 | A6 | 流程: 改动分层(契约级全闭环 / 单向安全免陪跑)+ P2 回流 IC | 老胡 | 🟡 |
 
 **一句话校准:** 下一步**不是**接 DD,而是 **PositionLedger micro 根治(R-4)** —— 它一刀解决单位债真源 + PnL bug + DD 喂数前置 + <1pUSD 静默丢仓,是本会话复盘挖出的最高杠杆动作。
