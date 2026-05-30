@@ -66,10 +66,11 @@ protected:
         cfg_.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(10'000);
         cfg_.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000);
         cfg_.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(25'000);
-        cfg_.bankroll_usdc = 100'000;
-        cfg_.daily_loss_halt_usdc = 0;    // 禁用旧绝对值字段, 强制走 pct 路径
-        cfg_.daily_loss_soft_pct = 0.03;  // D1: -3% 软熔断
-        cfg_.daily_loss_hard_pct = 0.05;  // D1: -5% 硬 kill
+        cfg_.bankroll_usdc =
+            stcpp::domain::MicroPUSD::from_pusd(100'000.0);       // c2b: 100k pUSD (br=1e11 micro)
+        cfg_.daily_loss_halt_usdc = stcpp::domain::MicroPUSD{0};  // c2b: 禁用绝对值, 走 pct (pnl 已 ×1e6)
+        cfg_.daily_loss_soft_pct = 0.03;                          // D1: -3% 软熔断
+        cfg_.daily_loss_hard_pct = 0.05;                          // D1: -5% 硬 kill
         cfg_.consec_loss_halt_count = 5;
         cfg_.excessive_slippage_bps = 200;
         cfg_.edge_ci_lower_floor = 0.0;
@@ -128,7 +129,7 @@ protected:
 
 // D1-T1: daily_pnl = 0 → APPROVED (无熔断)
 TEST_F(Wave3Test, D1_DD_NoPnlLoss_Approved) {
-    rm_->set_daily_pnl(0);
+    rm_->set_daily_pnl(0 * 1'000'000LL);
     auto d = rm_->evaluate(make_ok_intent("sig_d1_zero"));
     EXPECT_EQ(d.decision, Decision::APPROVED) << "D1: daily_pnl=0, 无亏损, 不应触发熔断";
 }
@@ -137,7 +138,7 @@ TEST_F(Wave3Test, D1_DD_NoPnlLoss_Approved) {
 TEST_F(Wave3Test, D1_DD_BelowSoftThreshold_Approved) {
     // bankroll=100000, soft_pct=0.03 → soft_threshold=3000
     // pnl=-2999 (loss=2999 < 3000) → 未触发
-    rm_->set_daily_pnl(-2'999);
+    rm_->set_daily_pnl(-2'999 * 1'000'000LL);
     auto d = rm_->evaluate(make_ok_intent("sig_d1_below_soft"));
     EXPECT_EQ(d.decision, Decision::APPROVED)
         << "D1: loss 2999 < 3% of bankroll 100000 (3000), 不应触发软熔断";
@@ -146,7 +147,7 @@ TEST_F(Wave3Test, D1_DD_BelowSoftThreshold_Approved) {
 // D1-T3: daily_pnl 精确到 -3% → 软熔断触发, 新开仓拒绝 (is_close=false)
 TEST_F(Wave3Test, D1_DD_AtSoftThreshold_OpenRejected) {
     // loss = 3000 = 3% × 100000 → 触发软熔断
-    rm_->set_daily_pnl(-3'000);
+    rm_->set_daily_pnl(-3'000 * 1'000'000LL);
     auto it = make_ok_intent("sig_d1_soft_open");
     it.is_close = false;  // 新开仓
     auto d = rm_->evaluate(it);
@@ -156,7 +157,7 @@ TEST_F(Wave3Test, D1_DD_AtSoftThreshold_OpenRejected) {
 // D1-T4: 软熔断状态下, 平仓单放行 (is_close=true)
 TEST_F(Wave3Test, D1_DD_SoftThreshold_CloseApproved) {
     // loss = 3500 → 在软熔断区间 [-5%, -3%)
-    rm_->set_daily_pnl(-3'500);
+    rm_->set_daily_pnl(-3'500 * 1'000'000LL);
     auto it = make_ok_intent("sig_d1_soft_close");
     it.is_close = true;
     it.side = Side::Sell;
@@ -167,7 +168,7 @@ TEST_F(Wave3Test, D1_DD_SoftThreshold_CloseApproved) {
 // D1-T5: -5% 硬 kill → 拒单 + 状态转 HALTED
 TEST_F(Wave3Test, D1_DD_HardKill_HaltedState) {
     // loss = 5000 = 5% × 100000 → 硬 kill
-    rm_->set_daily_pnl(-5'000);
+    rm_->set_daily_pnl(-5'000 * 1'000'000LL);
     auto it = make_ok_intent("sig_d1_hard_kill");
     it.is_close = false;
     auto d = rm_->evaluate(it);
@@ -178,7 +179,7 @@ TEST_F(Wave3Test, D1_DD_HardKill_HaltedState) {
 
 // D1-T6: 硬 kill 后, 平仓单也被拒 (HALTED 全拒含平仓)
 TEST_F(Wave3Test, D1_DD_HardKill_CloseAlsoRejected) {
-    rm_->set_daily_pnl(-5'001);  // > 5%
+    rm_->set_daily_pnl(-5'001 * 1'000'000LL);  // > 5%
     // 首次评估触发 HALTED 迁移
     auto it_open = make_ok_intent("sig_d1_hard_trigger");
     [[maybe_unused]] auto d_trigger = rm_->evaluate(it_open);  // 触发 HALTED
@@ -196,7 +197,7 @@ TEST_F(Wave3Test, D1_DD_HardKill_CloseAlsoRejected) {
 // D1-T7: 超过 5% (更大亏损) 仍触发硬 kill
 TEST_F(Wave3Test, D1_DD_LargeHardKill) {
     // loss = 80000 >> 5%
-    rm_->set_daily_pnl(-80'000);
+    rm_->set_daily_pnl(-80'000 * 1'000'000LL);
     auto d = rm_->evaluate(make_ok_intent("sig_d1_large"));
     expect_rejected(d, RejectCode::DAILY_LOSS_HALT);
     EXPECT_EQ(rm_->state(), RmState::HALTED);
@@ -476,7 +477,7 @@ TEST(Wave3EnumValues, TS_V2_enum_current_values) {
 
 // COMBO-T1: TS_V2_MISSING 优先于 DD 软熔断 (check_invalid_intent_ 在 check_position_caps_ 前)
 TEST_F(Wave3Test, Combo_TS_V2_MISSING_BeforeDD) {
-    rm_->set_daily_pnl(-3'500);  // 在软熔断区间
+    rm_->set_daily_pnl(-3'500 * 1'000'000LL);  // 在软熔断区间
     auto it = make_ok_intent("sig_combo_ts_before_dd");
     it.timestamp_ms = 0;  // TS_V2_MISSING (step 2 触发)
     it.is_close = false;

@@ -104,7 +104,8 @@ static std::pair<risk::RiskConfig, std::shared_ptr<risk::RiskGateway>> make_rm(
     cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(10'000.0);
     cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(25'000.0);
     cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(50'000.0);
-    cfg.bankroll_usdc = bankroll_usdc;
+    cfg.bankroll_usdc =
+        stcpp::domain::MicroPUSD::from_pusd(static_cast<double>(bankroll_usdc));  // c2b: whole→micro
     cfg.edge_ci_lower_floor = 0.0;
     cfg.excessive_slippage_bps = 10'000;  // 松弛 slippage 上限 (单测不关注)
     cfg.enable_moneyline = true;

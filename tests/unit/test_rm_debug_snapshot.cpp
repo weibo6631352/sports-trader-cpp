@@ -101,8 +101,8 @@ std::pair<std::shared_ptr<RiskGateway>, std::shared_ptr<NullEmitter>> make_gw() 
         stcpp::domain::MicroPUSD::from_micro(10'000'000);  // 10 USDC (micro); 足够大不触发 cap
     cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(100'000'000);
     cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000'000);
-    cfg.bankroll_usdc = 1'000'000'000;
-    cfg.daily_loss_halt_usdc = 0;
+    cfg.bankroll_usdc = stcpp::domain::MicroPUSD::from_micro(1'000'000'000);  // c2b 保值
+    cfg.daily_loss_halt_usdc = stcpp::domain::MicroPUSD{0};                   // c2b 禁用
     cfg.daily_loss_soft_pct = 0.03;
     cfg.daily_loss_hard_pct = 0.05;
     cfg.consec_loss_halt_count = 100;

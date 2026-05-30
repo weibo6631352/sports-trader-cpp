@@ -129,8 +129,9 @@ protected:
         rm_cfg.market_exposure_cap_usdc =
             stcpp::domain::MicroPUSD::from_micro(50'000'000);                            // 50 pUSD (micro)
         rm_cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(25'000'000);  // 25 pUSD (micro)
-        rm_cfg.bankroll_usdc = 1'000'000'000;                                            // 1K pUSD (micro)
-        rm_cfg.edge_ci_lower_floor = -1.0;                                               // 放宽 CI 门
+        rm_cfg.bankroll_usdc =
+            stcpp::domain::MicroPUSD::from_micro(1'000'000'000);  // c2b 保值 // 1K pUSD (micro)
+        rm_cfg.edge_ci_lower_floor = -1.0;                        // 放宽 CI 门
         rm_cfg.enable_moneyline = true;
 
         auto emitter = std::make_shared<NullAuditEmitter>();

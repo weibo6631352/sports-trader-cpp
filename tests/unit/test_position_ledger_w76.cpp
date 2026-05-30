@@ -186,8 +186,8 @@ TEST(SystemStateW76, TC03_DrainCloseAllowed) {
     cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(100'000);
     cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(500'000);
     cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(250'000);
-    cfg.bankroll_usdc = 1'000'000;
-    cfg.daily_loss_halt_usdc = 50'000;
+    cfg.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000'000.0);      // c2b
+    cfg.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_pusd(50'000.0);  // c2b
     cfg.consec_loss_halt_count = 100;
     cfg.edge_ci_lower_floor = 0.0;
     cfg.enable_moneyline = true;
@@ -195,7 +195,7 @@ TEST(SystemStateW76, TC03_DrainCloseAllowed) {
     auto emitter = std::make_shared<InMemAudit>();
     RiskGateway gw(cfg, emitter);
     gw.set_state(RmState::RUNNING);
-    gw.set_bankroll(1'000'000);
+    gw.set_bankroll(1'000'000LL * 1'000'000LL);  // c2b 对齐 micro
 
     // (a) DRAIN + is_close=true + Sell → state check 放行 (后续可能因 4ts 被拒, 但 state 关通过)
     gw.set_state(RmState::DRAIN);
@@ -240,11 +240,11 @@ TEST(SystemStateW76, TC03_DrainCloseAllowed) {
 TEST(SystemStateW76, TC04_RejectRingTailCopy) {
     RiskConfig cfg;
     cfg.enable_moneyline = true;
-    cfg.bankroll_usdc = 1'000'000;
+    cfg.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000'000.0);  // c2b
     cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(100'000);
     cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(500'000);
     cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(250'000);
-    cfg.daily_loss_halt_usdc = 50'000;
+    cfg.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_pusd(50'000.0);  // c2b
     cfg.consec_loss_halt_count = 100;
     cfg.edge_ci_lower_floor = 0.0;
 

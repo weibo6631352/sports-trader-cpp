@@ -149,7 +149,7 @@ struct RiskGateway::State_ {
 
 RiskGateway::RiskGateway(RiskConfig cfg, std::shared_ptr<AuditEmitter> emitter) noexcept
     : cfg_(cfg), emitter_(std::move(emitter)), s_(std::make_unique<State_>()) {
-    bankroll_usdc_.store(cfg.bankroll_usdc);
+    bankroll_usdc_.store(cfg.bankroll_usdc.v);  // c2b: MicroPUSD 字段 → atomic int64 micro 镜像
 }
 
 RiskGateway::~RiskGateway() = default;
@@ -486,8 +486,8 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
         // 硬阈值: daily_loss_halt_usdc 旧字段绝对值 (>0 时覆盖 hard_pct)
         // 若旧字段为 0, 则用 hard_pct × bankroll
         std::int64_t hard_threshold = 0;
-        if (cfg_.daily_loss_halt_usdc > 0) {
-            hard_threshold = cfg_.daily_loss_halt_usdc;
+        if (cfg_.daily_loss_halt_usdc.v > 0) {  // c2b: MicroPUSD; .v 取 micro 阈值 (整数比零变)
+            hard_threshold = cfg_.daily_loss_halt_usdc.v;
         } else {
             hard_threshold = static_cast<std::int64_t>(static_cast<double>(br) * cfg_.daily_loss_hard_pct);
         }
@@ -695,8 +695,8 @@ RiskDecision RiskGateway::evaluate(OrderIntent const& intent) noexcept {
             auto const pnl = daily_pnl_usdc_.load(std::memory_order_acquire);
             if (pnl < 0) {
                 std::int64_t hard_threshold =
-                    (cfg_.daily_loss_halt_usdc > 0)
-                        ? cfg_.daily_loss_halt_usdc
+                    (cfg_.daily_loss_halt_usdc.v > 0)  // c2b: 与 check_position_caps_ DD 块同步取 .v
+                        ? cfg_.daily_loss_halt_usdc.v
                         : static_cast<std::int64_t>(static_cast<double>(br) * cfg_.daily_loss_hard_pct);
                 if (-pnl >= hard_threshold) {
                     state_.store(RmState::HALTED, std::memory_order_release);

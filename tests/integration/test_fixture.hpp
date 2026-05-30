@@ -218,8 +218,8 @@ protected:
         risk::RiskConfig rcfg{};
         rcfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(10'000);
         rcfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000);
-        rcfg.bankroll_usdc = 100'000;
-        rcfg.daily_loss_halt_usdc = 5'000;
+        rcfg.bankroll_usdc = stcpp::domain::MicroPUSD::from_micro(100'000);       // c2b 保值
+        rcfg.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_micro(5'000);  // c2b 保值
         rcfg.consec_loss_halt_count = 5;
         rcfg.excessive_slippage_bps = 200;
         rcfg.edge_ci_lower_floor = 0.0;

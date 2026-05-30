@@ -94,8 +94,8 @@ protected:
         cfg_.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(10'000);
         cfg_.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000);
         cfg_.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(25'000);  // v0.5 新增
-        cfg_.bankroll_usdc = 100'000;
-        cfg_.daily_loss_halt_usdc = 5'000;
+        cfg_.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);       // c2b 100k pUSD
+        cfg_.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_pusd(5'000.0);  // c2b 5k pUSD
         cfg_.consec_loss_halt_count = 5;
         cfg_.excessive_slippage_bps = 200;
         rm_ = std::make_unique<RiskGateway>(cfg_, emitter_);
@@ -333,7 +333,7 @@ TEST_F(RiskGatewayTest, R08_EXCEED_MARKET_EXPOSURE) {
 }
 
 TEST_F(RiskGatewayTest, R09_DAILY_LOSS_HALT) {
-    rm_->set_daily_pnl(-6'000);
+    rm_->set_daily_pnl(-6'000 * 1'000'000LL);
     auto d = rm_->evaluate(make_ok_intent());
     expect_rejected(d, RejectCode::DAILY_LOSS_HALT);
 }
