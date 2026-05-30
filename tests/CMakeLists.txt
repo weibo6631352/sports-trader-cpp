@@ -34,6 +34,7 @@ foreach(_gt_target gtest gtest_main)
             -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
             -Wno-cast-align         # ADR-010 grandfather: gtest mock 转型
             -Wno-character-conversion  # GM 错 #11 配套 W6 W2 reinstate: gtest-printers.h:502 char8_t→char32_t (AppleClang 21)
+            -Wno-null-dereference   # 三方库豁免: googletest gtest.h:705 Linux GCC -O2/-O3 流分析误报 (Release 构建, ADR-010 §3.2)
         )
     endif()
 endforeach()
@@ -48,6 +49,7 @@ foreach(_gm_target gmock gmock_main)
             -Wno-cast-align         # ADR-010 grandfather: gmock mock 转型
             -Wno-character-conversion  # gtest-printers.h char8_t→char32_t (AppleClang 21)
             -Wno-sign-conversion    # 三方库豁免: gmock internal matcher 宏 (ADR-010 §3.2, Linux GCC 13)
+            -Wno-null-dereference   # 三方库豁免: googletest gtest.h:705 Linux GCC -O2/-O3 流分析误报 (Release 构建, ADR-010 §3.2)
         )
     endif()
 endforeach()
