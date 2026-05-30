@@ -407,8 +407,13 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     sz_in.current_token_exposure_usdc = 0.0;
     sz_in.current_condition_exposure_usdc = 0.0;
 
-    risk::RiskConfig rm_cfg{};  // 默认 cap 配置 (per_order=10K, bankroll=100K)
-    const sizing::SizingOutput sizing_out = sizing::SizingCalculator::compute(rm_cfg, sz_in);
+    // P0-2 单位统一: sizing 用真实 caps (cfg_, pUSD), 与 RM 同源 (paper_daemon 给 RM 的 micro
+    //   caps = 这些 pUSD × 1e6)。原 `RiskConfig{}` 默认值与 RM 脱节, 靠下方 clamp 摁住, 已拆。
+    risk::RiskConfig sizing_cfg{};
+    sizing_cfg.per_order_cap_usdc = static_cast<std::int64_t>(cfg_.per_order_cap_usdc);
+    sizing_cfg.market_exposure_cap_usdc = static_cast<std::int64_t>(cfg_.market_exposure_cap_usdc);
+    sizing_cfg.per_outcome_cap_usdc = static_cast<std::int64_t>(cfg_.per_outcome_cap_usdc);
+    const sizing::SizingOutput sizing_out = sizing::SizingCalculator::compute(sizing_cfg, sz_in);
 
     // ---- Step 4: QuoteSnapshotHub::Publish ---------------------------------
     // 无论下单与否, 发布 quote 快照 (供 /api/v1/quote 端点显示真实估值)
@@ -476,8 +481,10 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     intent.price = best_ask;
 
     // 仓位大小: SizingCalculator 建议值, 转 micro pUSD
-    // clamp 到合理范围 (demo 场景 <= 10 pUSD, 避免 RM cap 触发)
-    const double notional_usdc = std::min(sizing_out.suggested_notional, 10.0);  // demo 上限 10 pUSD
+    // P0-2 (拆 clamp 遮羞布): sizing 已受 sizing_cfg.per_order_cap_usdc (= RM cap ÷ 1e6) 约束,
+    //   suggested_notional ≤ per_order_cap (pUSD) → × 1e6 后必 ≤ RM per_order_cap (micro), RM
+    //   不会因 size 拒。原 `min(notional, 10.0)` 是失配年代的硬钳 (sizing/RM 单位脱节), 已删。
+    const double notional_usdc = sizing_out.suggested_notional;
     intent.size_pUSD_micro = static_cast<std::int64_t>(notional_usdc * 1'000'000.0);
     if (intent.size_pUSD_micro <= 0) {
         intent.size_pUSD_micro = 1'000'000LL;  // 最小 1 pUSD

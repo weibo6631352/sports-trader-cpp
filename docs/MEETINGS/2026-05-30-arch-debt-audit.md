@@ -25,6 +25,15 @@
 - `RiskConfig` 字段**名叫 `_usdc` 值是 micro** (`risk_gateway.hpp:298`) — 名实不符。`MicroPUSD` c1 是**零接入孤儿** (生产零调用, 制造「已治理」错觉)。
 - 处置: 升级认定为 **P0 未关闭**。c2-c5 必做 + `RiskConfig` 字段「改名 `_micro` 或换 `MicroPUSD`」二选一, 不许名实不符躺 main。**owner:** 老周 (spec) + 老韩 (cap 真值) + IC。
 
+#### P0-2 第一刀已落 (2026-05-30, GM 写码 + 老韩 RM 主权评审放行) — clamp 遮羞布已拆
+- **本次范围 (已 commit):** 把 caps 纳入 `PaperLoopConfig` (pUSD 单一真值源 10/50/25), sizing 用同源 pUSD caps 构造 `sizing_cfg` (替代脱节的默认 `RiskConfig{}`), paper_daemon 给 RM 的 micro caps 改由该 pUSD 源 × 1e6 派生。**删掉 `paper_loop.cpp` 的 `min(notional, 10.0)` clamp** —— sizing 自然受 per_order_cap 约束, ×1e6 后必 ≤ RM micro cap。**未动 RM evaluate 逻辑 / 未改 RiskConfig 字段名 (ABI-locked, 留 c2-c5)。** 全量 1057/1057 绿, `A2_DaemonProducesPaperFill` 拆 clamp 后仍产 fill。
+- **老韩评审结论 (放行, agentId a6fdcd24):** RM evaluate 4 个 cap 比较点 (risk_gateway.cpp:432/452/465/473, 全 `>`) 原文未变 → **RM 主权实质未削**。cap1(per_order) 单位闭环数值验证通过, 边界 `notional==cap` 时 `intent_micro==rm_cap`, `>` 不触发, 无 ±1 micro 偶发拒。
+- **⚠ c2-c5 必须带走的 3 个前提/隐患 (老韩挖出, 均安全方向, 非阻塞):**
+  1. **per_outcome/condition 闭环靠的是「exposure 恒 0」不是单位推理:** paper 全程不调 RM exposure setter (RM 侧 `cur` 恒 0), sizing 的 `current_*_exposure_usdc` 也硬编码 0 (paper_loop:407-408)。累加比较退化成单笔。**c2-c5 若让 paper 回写 exposure, sizing 必须从 RM 真实 exposure 取值, 否则第 2 笔后 per_outcome/condition 双轨偶发拒且 sizing 无感。**
+  2. **int64 截断改 cap 经济含义:** `sizing_cfg.per_order_cap_usdc = (int64)cfg_.per_order_cap_usdc` 把 pUSD 小数 cap 截整 (10.0/50.0/25.0 无损; 7.7→7 偏小)。方向是 sizing 更严 → 不触发 RM 拒 (安全), 但 per_order 实际生效值被悄悄收紧。**名实统一后 pUSD→micro 转换只能一处 (paper_daemon ×1e6), sizing 不该再吃截断的 int64 pUSD。**
+  3. **最小 1 pUSD 兜底可被 RM 拒 (sub-1-pUSD cap 下):** paper_loop `size<=0 → 1'000'000` 兜底; 若 cap < 1 pUSD (如 per_order=0.1 → RM cap=100000 micro), 兜底写 1 pUSD = 1000000 micro `> 100000` → RM 拒。当前默认 10/50/25 远大于 1 不触发。**c2-c5 兜底应 clamp 到 `min(1pUSD, per_order_cap)`。**
+- **c2-c5 RM 侧清单 (老韩):** 字段名实统一 (micro 显名, 需老韩+老周 spec, ABI-locked) → 消 int64 截断 (sizing 吃 double pUSD 或吃 micro) → exposure 累加路径对齐 → 兜底与 cap 关系。**走 R-4 (schema 静默变更红线) 流程, audit 全部 RiskConfig 消费/构造点, 引用红线粘原文 (§8.1 第 3 条)。**
+
 ### P0-3 enable_paper_fills 默认开火, 无 kill switch — 老郭挖出安全缺口
 - `paper_daemon.hpp:118` `enable_paper_fills{true}`, `paper_runtime` **无命令行开关能关** → headless 生产 daemon 一启动就默认解封成交, 运维无法降级「仅观测」。违反价值观 #1/#2 (实盘优先 + 纪律>收益 保守默认)。**无评审记录** (D3/D4 签的是「隔离正确」非「默认开火」)。
 - 处置: **默认改 `false` + 加 `--enable-fills` 显式开关**。小改、安全默认、即时可做。**owner:** GM。

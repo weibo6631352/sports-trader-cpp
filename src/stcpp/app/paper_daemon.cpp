@@ -195,16 +195,22 @@ BuildResult PaperDaemon::Build() {
 
     // paper RiskGateway (paper 专用; 与 live RM 隔离; NullAuditEmitter 不落真 WAL)
     paper_audit_emitter_ = std::make_shared<NullAuditEmitter>();
-    // A2 单位修 (老雷 2026-05-30): RM caps/bankroll 与 OrderIntent.size_pUSD_micro 同为
-    //   micro pUSD (RM check_position_caps_ 直接比 size_pUSD_micro). 原 main 把 cap 当 pUSD
-    //   设成 10/50/25/1000 → A2 解封后任何订单 size(micro)远超 → 永远拒. 改 × 1e6 对齐 micro.
-    //   (此 bug 因 advisory gate 长期挡着未暴露; A2 第一笔成交才现形.)
+    // P0-2 单位统一 (老雷 2026-05-30, 拆 clamp 遮羞布): caps 单一真值源 = cfg_.paper_loop (pUSD)。
+    //   RM check_position_caps_ 直接比 size_pUSD_micro (micro), 故 RM cfg 这里由 pUSD 源 × 1e6 派生;
+    //   sizing 用同一 pUSD 源直接算 (paper_loop.cpp)。两端同源 → sizing notional 自然 ≤ RM cap,
+    //   无需 paper_loop `min(notional,10.0)` clamp (已删)。
+    //   原 main 两处独立硬编码 (sizing RiskConfig{} 10K pUSD vs RM 10 pUSD micro) 差 1000x, 靠 clamp
+    //   摁住; advisory gate 长期挡着未爆, A2 第一笔成交才现形, 本次根治。
+    constexpr double kMicroPerPusd = 1'000'000.0;
     risk::RiskConfig paper_rm_cfg;
-    paper_rm_cfg.per_order_cap_usdc = 10'000'000;        // 10 pUSD (micro)
-    paper_rm_cfg.market_exposure_cap_usdc = 50'000'000;  // 50 pUSD (micro)
-    paper_rm_cfg.per_outcome_cap_usdc = 25'000'000;      // 25 pUSD (micro)
-    paper_rm_cfg.bankroll_usdc = 1'000'000'000;          // 1K pUSD (micro)
-    paper_rm_cfg.edge_ci_lower_floor = -1.0;             // M1 放宽 CI 门
+    paper_rm_cfg.per_order_cap_usdc =
+        static_cast<std::int64_t>(cfg_.paper_loop.per_order_cap_usdc * kMicroPerPusd);
+    paper_rm_cfg.market_exposure_cap_usdc =
+        static_cast<std::int64_t>(cfg_.paper_loop.market_exposure_cap_usdc * kMicroPerPusd);
+    paper_rm_cfg.per_outcome_cap_usdc =
+        static_cast<std::int64_t>(cfg_.paper_loop.per_outcome_cap_usdc * kMicroPerPusd);
+    paper_rm_cfg.bankroll_usdc = static_cast<std::int64_t>(cfg_.paper_loop.bankroll_usdc * kMicroPerPusd);
+    paper_rm_cfg.edge_ci_lower_floor = -1.0;  // M1 放宽 CI 门
     paper_rm_cfg.enable_moneyline = true;
     paper_rm_ = std::make_unique<risk::RiskGateway>(paper_rm_cfg, paper_audit_emitter_);
 

@@ -109,6 +109,15 @@ struct PaperLoopConfig {
     // bankroll (pUSD). 用于 SizingCalculator.
     double bankroll_usdc{100'000.0};
 
+    // 风控 caps (pUSD, 单一真值源). P0-2 单位统一 (老雷 2026-05-30, 拆 clamp 遮羞布):
+    //   sizing 直接用 (pUSD); paper_daemon 装配 RM 时 × 1e6 转 micro (RM 比 size_pUSD_micro)。
+    //   消除原「sizing 用 RiskConfig{} 默认 10K pUSD vs RM 10 pUSD(micro)」1000x 失配 +
+    //   paper_loop `min(notional, 10.0)` clamp 遮羞布 (失配被它摁住没爆, 非真修复)。
+    //   两端同源同语义 → 无需 clamp: sizing 自然受 per_order_cap 约束, ×1e6 后必 ≤ RM cap。
+    double per_order_cap_usdc{10.0};
+    double market_exposure_cap_usdc{50.0};
+    double per_outcome_cap_usdc{25.0};
+
     // CI 参数 (§10.3 保守值 n=30, z=1.645)
     int n_effective{30};
     double z_90{1.645};
