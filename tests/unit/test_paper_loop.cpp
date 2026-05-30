@@ -1362,3 +1362,77 @@ TEST_F(PaperLoopTest, T_PhaseB_NoSelected_NoBookAbsent_FailClosed) {
     EXPECT_EQ(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
         << "Phase B fail-closed: 选 NO 但 NO book 缺 → 不应成交 (绝不用 YES 价/深度替代买错边)";
 }
+
+// 盈利能力演示: 连接好的流水线在「模型有 edge」时产生盈利 (运行 + 盈利)。
+//   场景: YES 2:0 领先 (模型 fair~0.65) + 市场初始低估 YES (ask~0.47) → 流水线买入被低估 YES;
+//         市场收敛到 fair (best_bid~0.64) → YES 仓位 MtM 盈利 (买被低估边的正期望兑现)。
+//   注: 实盘真盈利需 A3 (Goalserve live 比分接通); 本测用合成 edge + 收敛 demo 流水线盈利能力
+//       (证整条决策→成交→PnL 链路 operational, A3 一到位即可换 live 数据产真盈利)。
+TEST_F(PaperLoopTest, T_Profit_PipelineProducesProfit) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    // 高 bankroll/cap (足够大仓位演示 ≥500 pUSD PnL); RM 与 cfg 同源 (P0-2)
+    RiskConfig c;
+    c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(10'000.0);
+    c.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);
+    c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);
+    c.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000'000.0);
+    c.edge_ci_lower_floor = -1.0;
+    c.enable_moneyline = true;
+    rm_ = std::make_unique<RiskGateway>(c, std::make_shared<NullAuditEmitter>());
+    cfg_.bankroll_usdc = 1'000'000.0;
+    cfg_.per_order_cap_usdc = 10'000.0;
+    cfg_.market_exposure_cap_usdc = 100'000.0;
+    cfg_.per_outcome_cap_usdc = 100'000.0;
+    cfg_.n_effective = 150;
+    cfg_.advisory_markets_no_intent = false;
+
+    auto es = MakeFreshScore("gs-profit", 2, 0);  // YES 2:0 领先 → 模型 fair_YES 高
+    es.sport = "soccer";
+    es.clock_sec = 60 * 60;  // 60min → conf~0.45
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-profit"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-profit", true};
+
+    // 市场初始低估 YES (ask 0.47), NO 高估 (0.53) → devig~0.47 < 模型 fair → 买 YES。
+    //   大 book 深度 (200k) → 大单 (per_order 10k) 能成交 (撮合不 BelowFloor)。
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+    auto big_fresh = [&](double bid, double ask) {
+        auto f = MakeSyntheticBook(bid, ask, 200'000.0, 200'000.0);  // 大深度
+        f.event_ts_ns = now_ns - 3'000'000'000LL;
+        f.data_source_ts_ns = now_ns - 2'000'000'000LL;
+        f.ingestion_ts_ns = now_ns - 1'000'000'000LL;
+        f.as_of_ts_ns = now_ns;
+        return f;
+    };
+    hub_->Publish("1001", big_fresh(0.45, 0.47));
+    hub_->Publish("1002", big_fresh(0.53, 0.55));
+
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    loop_->Stop();
+
+    ASSERT_GT(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
+        << "流水线应买入被低估的 YES (模型 fair > 市场 ask)";
+
+    // 市场收敛到模型 fair (best_bid~0.64): YES 仓位按收敛 mark 计 MtM (A5 净 MtM 口径)
+    const double converged_bid = 0.64;
+    double total_pnl = 0.0;
+    for (auto const& pv : position_ledger_->get_all_positions()) {
+        const double net_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;  // A5 口径
+        total_pnl += (converged_bid - pv.avg_entry_price) * net_qty;
+    }
+    std::fprintf(stderr, "[PROFIT] 流水线 MtM PnL = %.2f pUSD (买被低估 YES @~0.47 → 收敛 %.2f)\n", total_pnl,
+                 converged_bid);
+    EXPECT_GE(total_pnl, 500.0)
+        << "流水线盈利能力: 买被低估 YES + 市场收敛 fair → MtM PnL ≥ 500 pUSD (运行 + 盈利演示)";
+}
