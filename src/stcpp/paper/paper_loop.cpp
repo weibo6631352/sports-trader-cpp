@@ -222,49 +222,33 @@ void PaperLoop::RunLoop(std::stop_token st) {
 }
 
 // ---------------------------------------------------------------------------
-// TickAll — 遍历所有 condition_id, 对 token0 (YES side) 做一次 paper 尝试
+// TickAll — 遍历所有 condition, 双边读 (YES book + NO book) 组 BinaryMarketSnapshot 进决策
+//   (老板原则 C3: 决策带整盘口; 老周架构: 决策线程栈上组装, 零锁; R-12 不触碰)。
 // ---------------------------------------------------------------------------
 
 void PaperLoop::TickAll() {
     for (const auto& [cond_id, tok_pair] : token_map_) {
-        const std::string& token0 = tok_pair.first;   // YES token
-        const std::string& token1 = tok_pair.second;  // NO token (P1-8 de-vig 用)
+        const std::string& yes_tok = tok_pair.first;  // YES token
+        const std::string& no_tok = tok_pair.second;  // NO token
 
-        // 1. 读真实 hub 快照 (R-12: 原子只读, 无锁)
-        const auto opt = hub_.Read(token0);
-        if (!opt.has_value() || !opt->valid) {
-            stats_.hub_reads_empty.fetch_add(1, std::memory_order_relaxed);
-            continue;
+        // 双边读 (R-12: 各 token 独立 atomic 只读, 无锁; WSS 单边刷新天然映射 per-token slot)。
+        //   SideView.present = hub 命中 + valid。完整 OrderBookFeatures 进决策 (不再只取 NO mid 标量)。
+        BinaryMarketSnapshot mkt;
+        mkt.condition_id = cond_id;
+        mkt.yes_token_id = yes_tok;
+        mkt.no_token_id = no_tok;
+        if (const auto yo = hub_.Read(yes_tok); yo.has_value() && yo->valid) {
+            mkt.yes.present = true;
+            mkt.yes.book = *yo;
         }
-        const auto& feat = *opt;
-
-        // 2. L1 价格校验 (best_ask 必须有效)
-        const double best_ask = feat.best_ask();
-        const double best_bid = feat.best_bid();
-        if (!std::isfinite(best_ask) || best_ask <= 0.0 || best_ask >= 1.0) {
-            continue;
-        }
-        if (!std::isfinite(best_bid) || best_bid <= 0.0) {
-            continue;
-        }
-
-        // P1-8: 读 NO token book 取对边 mid 供 de-vig. NO book 不可得 → 单边退化
-        // (devig_binary 内部以 yes_mid 退化, 不阻塞). 不污染 R-12 (仍是原子只读).
-        double no_token_mid = std::numeric_limits<double>::quiet_NaN();
-        if (!token1.empty()) {
-            const auto no_opt = hub_.Read(token1);
-            if (no_opt.has_value() && no_opt->valid) {
-                const double no_mp = no_opt->microprice;
-                const double no_mid = no_opt->mid;
-                if (std::isfinite(no_mp) && no_mp > 0.0 && no_mp < 1.0) {
-                    no_token_mid = no_mp;
-                } else if (std::isfinite(no_mid) && no_mid > 0.0 && no_mid < 1.0) {
-                    no_token_mid = no_mid;
-                }
+        if (!no_tok.empty()) {
+            if (const auto no = hub_.Read(no_tok); no.has_value() && no->valid) {
+                mkt.no.present = true;
+                mkt.no.book = *no;
             }
         }
-
-        TickOne(cond_id, token0, feat, no_token_mid);
+        // 价格有效性门 + 选边后退化 fail-closed 全在 TickOne (按被交易边判, 支持 C4 反向桩测试)。
+        TickOne(mkt);
     }
 }
 
@@ -280,16 +264,66 @@ void PaperLoop::TickAll() {
 //   advisory=true → return, 不进 RM, 不产生 intent.
 // ---------------------------------------------------------------------------
 
-void PaperLoop::TickOne(const std::string& condition_id, const std::string& token_id,
-                        const polymarket::clob_wss::OrderBookFeatures& feat, double no_token_mid) {
+// SelectSide — 选边 (买 YES / 买 NO / 不交易)。
+//   M1 桩: 恒返 {Yes, Buy} → 与改造前行为逐位等价 (老郭 C4 回归门禁验)。
+//   Phase B (老韩 RM checklist B-1..B-8 绿后): 真双边选边 — 各边算 fair/edge_ci/Kelly f*,
+//     选 f* 大者 (小袁微观选边 + 小梁 Kelly); 含买 NO (token_id=NO token, outcome=No)。
+//   M2: 开放 sell-to-open 空头 (side=Sell, 老韩 condition cap signed-sum 语义重裁 — C1)。
+DecisionSide PaperLoop::SelectSide(const BinaryMarketSnapshot& mkt) const noexcept {
+    (void)mkt;
+    return DecisionSide{TradedSide::Yes, strategy::Side::Buy, 0.0};
+}
+
+void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     using namespace stcpp::data::feature_store;
 
-    // orders_attempted: 进入 TickOne 即计数 (book 有效, 开始尝试流程)
-    stats_.orders_attempted.fetch_add(1, std::memory_order_relaxed);
+    // ---- Step 0: 选边 (老周架构; M1 SelectSide 桩恒 {Yes, Buy} → 逐位等价) ----
+    const DecisionSide decision = SelectSide(mkt);
+    if (decision.outcome == TradedSide::None) {
+        return;  // 两边都不值得 → 跳过
+    }
+    const bool is_yes = (decision.outcome == TradedSide::Yes);
+    const SideView& traded = is_yes ? mkt.yes : mkt.no;
+    const SideView& opposite = is_yes ? mkt.no : mkt.yes;
+
+    // 被交易边无有效快照 → fail-closed (旧 TickAll 对 token0 valid 门, 移此按被交易边判)。
+    if (!traded.present) {
+        stats_.hub_reads_empty.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
+    // 别名: 被交易边 book / condition / token (旧单边参数; 下游 body 不变)。
+    //   C2 (老郭): book_depth / price / 4ts 全经 feat=traded.book → 选边后天然切被交易边, 无错边。
+    const auto& feat = traded.book;
+    const std::string& condition_id = mkt.condition_id;
+    const std::string& token_id = is_yes ? mkt.yes_token_id : mkt.no_token_id;
 
     const double best_ask = feat.best_ask();
     const double best_bid = feat.best_bid();
+    // L1 价格有效性门 (旧 TickAll 的 best_ask/bid 校验, 按被交易边)。
+    if (!std::isfinite(best_ask) || best_ask <= 0.0 || best_ask >= 1.0) {
+        return;
+    }
+    if (!std::isfinite(best_bid) || best_bid <= 0.0) {
+        return;
+    }
+
+    // orders_attempted: 进入有效决策即计数 (gates 后, 时机同旧 TickOne entry)。
+    stats_.orders_attempted.fetch_add(1, std::memory_order_relaxed);
+
     const double microprice = std::isfinite(feat.microprice) ? feat.microprice : (best_bid + best_ask) * 0.5;
+
+    // no_token_mid: 对边 (opposite) book microprice 优先 / mid 回退 (旧 TickAll de-vig 逻辑逐字保留)。
+    double no_token_mid = std::numeric_limits<double>::quiet_NaN();
+    if (opposite.present) {
+        const double op_mp = opposite.book.microprice;
+        const double op_mid = opposite.book.mid;
+        if (std::isfinite(op_mp) && op_mp > 0.0 && op_mp < 1.0) {
+            no_token_mid = op_mp;
+        } else if (std::isfinite(op_mid) && op_mid > 0.0 && op_mid < 1.0) {
+            no_token_mid = op_mid;
+        }
+    }
 
     // ---- P1-8 de-vig: edge 锚 = 去 overround 的 fair 概率, 非裸 mid/ask --------
     // yes_mid 用 YES token microprice (无效则回退 L1 mid); no_token_mid 来自对边 book.
@@ -356,8 +390,8 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     const bool has_real_fair = (game_row.time_status != stcpp::data::goalserve::TimeStatus::NotStarted);
 
     FeatureStoreBookRow book_row{};
-    // token_side = "YES" (FairValueEstimator extract_microprice_ 检查此字段)
-    book_row.token_side = "YES";
+    // token_side: 被交易边 (FairValueEstimator extract_microprice_ 检查此字段)。M1 桩恒 YES。
+    book_row.token_side = is_yes ? "YES" : "NO";
     // L1 bid/ask
     book_row.bid_price[0] = best_bid;
     book_row.bid_size_usdc[0] = feat.best_bid_size();
@@ -508,8 +542,8 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     // 市场标识
     intent.condition_id = condition_id;
     intent.token_id = token_id;
-    intent.outcome = strategy::Outcome::Yes;
-    intent.side = strategy::Side::Buy;
+    intent.outcome = is_yes ? strategy::Outcome::Yes : strategy::Outcome::No;  // 参数化 (M1 桩 YES)
+    intent.side = decision.side;                                               // M1 桩 Buy; M2 开放 Sell
 
     // 业务 ID (去重: intent_seq_ 单调)
     intent.strategy_id = cfg_.strategy_id;
@@ -592,7 +626,7 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     vord.audit_id = sign_req.audit_id;
     vord.intent_id = sign_req.intent_id;
     vord.market_id = sign_req.condition_id;
-    vord.outcome = "YES";
+    vord.outcome = is_yes ? "YES" : "NO";  // 参数化 (M1 桩 YES)
     vord.size_usdc = static_cast<double>(sign_req.size_pUSD_micro) / 1'000'000.0;
     vord.quote_price = sign_req.price;
     vord.book_depth_l1_usdc = book_depth_l1;
@@ -618,7 +652,7 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
 
     // ---- Step 8: PositionLedger::apply_fill --------------------------------
     // R-11: position_ledger_ 是 paper 专用账本 (调用方构建时物理隔离)
-    position_ledger_.apply_fill(condition_id, token_id, strategy::Outcome::Yes, fill);
+    position_ledger_.apply_fill(condition_id, token_id, intent.outcome, fill);  // 参数化 (M1 桩 YES)
 
     // ---- Step 8b: LedgerSnapshotHub::Publish (positions/pnl 可见) ----------
     PublishLedgerSnapshot(condition_id, fill, mark_price, feat);

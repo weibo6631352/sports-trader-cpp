@@ -63,12 +63,14 @@
 #include <limits>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <utility>
 
 #include "stcpp/execution/virtual_matcher.hpp"
+#include "stcpp/paper/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/ledger_snapshot_hub.hpp"
@@ -287,10 +289,12 @@ private:
     // ---- 内部实现 ----
     void RunLoop(std::stop_token st);
     void TickAll();
-    // P1-8: no_token_mid = 对边 (NO) token mid 供 de-vig; NaN/0 → 单边退化 (devig_binary 处理).
-    void TickOne(const std::string& condition_id, const std::string& token_id,
-                 const polymarket::clob_wss::OrderBookFeatures& feat,
-                 double no_token_mid = std::numeric_limits<double>::quiet_NaN());
+    // 二元市场双边决策 (老周架构 laozhou-binary-dual-side-arch-v1 + 老郭 review APPROVE-with-conditions):
+    //   TickOne 改 per-condition, 入参带整盘口 (YES book + NO book), 决策时带双边信息 (老板原则 C3)。
+    void TickOne(const BinaryMarketSnapshot& mkt);
+    // SelectSide: 选边 (买 YES / 买 NO / 不交易)。M1 桩恒 {Yes, Buy} (逐位等价回归);
+    //   Phase B (老韩 RM checklist 绿后) 真双边选边 (小袁微观 + 小梁 Kelly f* 选大边)。
+    [[nodiscard]] DecisionSide SelectSide(const BinaryMarketSnapshot& mkt) const noexcept;
 
     // CI 下界: edge_ci_lower = (p_fair - p_ask) - z * sqrt(p*(1-p)/n)
     [[nodiscard]] static double ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept;
