@@ -166,12 +166,10 @@ TEST(SizingRmConsistencyTest, ZeroSizingReject_RandomInputs_N10000) {
     std::mt19937_64 rng(42);
     std::uniform_real_distribution<double> dist_p(0.05, 0.95);  // fair_value
     std::uniform_real_distribution<double> dist_c(0.05, 0.95);  // price
-    // c3 (小袁定夺): edge_ci_lower 下界 0.001→0.02 (200 bps)。原 0.001 覆盖了 sizing↔RM 的 fee-门
-    //   公式分歧噪声带 (sizing fee 用 fair_value, RM fee 用 price; p≠c 时极小 edge 方向不一致 →
-    //   sizing 显正而 RM EDGE_NEGATED_BY_SLIPPAGE 拒, 37/9863)。该分歧是独立 P 项 (fee canonical p
-    //   待老韩裁, 见 docs/MEETINGS/2026-05-30-arch-debt-audit.md P0-6), 非单位/c3 范围。200bps 以上
-    //   fee p-vs-c 差 (≤75bps) 不致方向翻转, Test1 不变式真成立。极小 edge 一致性归 P0-6 专项。
-    std::uniform_real_distribution<double> dist_ci(0.02, 0.30);       // edge_ci_lower (均正; 避 fee-gap 带)
+    // P0-6 已修 (老韩 canonical p=price): sizing fee 改用 price 与 RM 同源, fee-gap 恒 0, 极小 edge
+    //   不再方向分歧。c3 当时为避 fee-gap 噪声带把下界收到 0.02, 现恢复 0.001 (sizing/RM fee 同源后
+    //   不变式在 edge≥0.001 真成立, 37/9863 归零)。极小 edge 一致性另有专项 SmallEdge_FeeP_*。
+    std::uniform_real_distribution<double> dist_ci(0.001, 0.30);      // edge_ci_lower (均正)
     std::uniform_real_distribution<double> dist_slip(0.0, 5.0);       // slippage_bps (很小)
     std::uniform_real_distribution<double> dist_fr(0.50, 1.0);        // fill_rate (>= floor)
     std::uniform_real_distribution<double> dist_br(50'000, 200'000);  // bankroll
@@ -429,6 +427,56 @@ TEST(SizingRmConsistencyTest, SizingPositive_Implies_RM_NotEdgeCINegative) {
         EXPECT_NE(decision.reject, risk::RejectCode::EXCEED_PER_OUTCOME_CAP);
         EXPECT_NE(decision.reject, risk::RejectCode::EXCEED_CONDITION_EXPOSURE);
         EXPECT_NE(decision.reject, risk::RejectCode::INSUFFICIENT_BANKROLL);
+    }
+}
+
+// =============================================================================
+// P0-6 专项 (老韩 canonical p=price 裁定): sizing fee 必用 price (= RM), 非 fair_value。
+//   回归哨兵: fair_value≠price 时若 sizing fee 改回 fair_value, net_ci_edge 立偏 → 此测红。
+//   现有 Test2/NetCIEdge helper 只传单 p, 测不出 price/fair_value 混用 — 正是 P0-6 漏网根因。
+// =============================================================================
+TEST(SizingRmConsistencyTest, SmallEdge_FeeP_Canonical_PriceConsistency) {
+    constexpr double kFee = 0.03;  // kSportsTakerFeeRate (RM risk_gateway.cpp:588 canonical)
+    risk::RiskConfig cfg;
+    cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000'000.0);
+    cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000'000.0);
+    cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000'000.0);
+    cfg.edge_ci_lower_floor = 0.0;
+
+    struct Case {
+        double fair_value, price, edge;
+    };
+    // fair_value ≠ price 的极小 edge 对 (P0-6 关键覆盖); 前 5 个 edge > fee(price) 门 B 过, 后 2 个拒
+    const std::vector<Case> cases = {
+        {0.62, 0.55, 0.012}, {0.40, 0.55, 0.013}, {0.70, 0.50, 0.011}, {0.30, 0.65, 0.014},
+        {0.55, 0.45, 0.012}, {0.62, 0.55, 0.003}, {0.40, 0.60, 0.002},
+    };
+    for (auto const& tc : cases) {
+        SizingInput in;
+        in.fair_value = tc.fair_value;
+        in.price = tc.price;
+        in.edge_ci_lower = tc.edge;
+        in.edge_bps = tc.edge * 10'000.0;
+        in.bankroll_usdc = 100'000.0;
+        in.fill_rate = 0.80;
+        in.slippage_bps = 0.0;  // 隔离 fee 门 (不触 slippage 门 A)
+        in.buy_yes = true;
+        in.model_conf = 1.0;
+        auto out = SizingCalculator::compute(cfg, in);
+
+        // RM canonical: fee 用 price (非 fair_value)
+        double const rm_net = tc.edge - kFee * tc.price * (1.0 - tc.price);
+        bool const rm_passes = rm_net > 0.0;
+
+        // 门 B 判定: sizing 必与 RM(price) 一致 (fee 同源)
+        EXPECT_EQ(out.valid && out.suggested_notional > 0.0, rm_passes)
+            << "P0-6 门 B 判定 sizing↔RM(price) 不一致 (fv=" << tc.fair_value << " c=" << tc.price << ")";
+        // 门 B 过时 net_ci_edge 必 == RM net (用 price); 若 sizing 误用 fair_value 此处偏
+        if (rm_passes) {
+            EXPECT_NEAR(out.net_ci_edge, rm_net, 1e-9)
+                << "P0-6 sizing fee 必用 price 非 fair_value (fv=" << tc.fair_value << " c=" << tc.price
+                << ")";
+        }
     }
 }
 

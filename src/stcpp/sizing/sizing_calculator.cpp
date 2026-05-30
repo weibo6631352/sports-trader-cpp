@@ -94,8 +94,9 @@ SizingOutput SizingCalculator::compute(risk::RiskConfig const& cfg, SizingInput 
         return make_fail(in, CappedBy::NO_EDGE);
     }
 
-    double const p = in.fair_value;  // fair_value (CI gating 用; f* 分子用 net_ci_edge)
-    double const c = in.price;       // 入场价
+    // P0-6 (老韩 canonical p=price 裁定): fee 用入场价 c, 非 fair_value。fair_value 在 sizing 内
+    //   无其他消费点 (edge 走 edge_ci_lower, Kelly 分子走 net_ci_edge, 分母走 c), 故不再取局部 p。
+    double const c = in.price;  // 入场价 (CI gating fee 门 + Kelly 分母均用 c)
 
     // ------------------------------------------------------------------
     // Step 1: CI gating 门 (老韩 §2.1 裁定 — 与 RM check_signal_ L564 同源)
@@ -118,12 +119,13 @@ SizingOutput SizingCalculator::compute(risk::RiskConfig const& cfg, SizingInput 
     }
 
     // ------------------------------------------------------------------
-    // Step 3: 门 B (fee, 老韩 §2.3 — RM check_signal_ L585 同源)
+    // Step 3: 门 B (fee, 老韩 §2.3 — RM check_signal_ L587 同源)
     //   net_ci_edge = edge_ci_lower − fee_per_unit
-    //   fee_per_unit = kSportsTakerFeeRate × p × (1−p)
+    //   fee_per_unit = kSportsTakerFeeRate × c × (1−c)  ← P0-6: 用入场价 c (= RM canonical),
+    //     原用 fair_value 与 RM 不一致, 极小 edge 下方向分歧 (37/9863, 老韩裁定 fee 锚 price)
     //   net_ci_edge <= floor → NO_EDGE
     // ------------------------------------------------------------------
-    double const net_ci_edge = compute_net_ci_edge(in.edge_ci_lower, p);
+    double const net_ci_edge = compute_net_ci_edge(in.edge_ci_lower, c);
     if (net_ci_edge <= floor) {
         return make_fail(in, CappedBy::NO_EDGE);
     }

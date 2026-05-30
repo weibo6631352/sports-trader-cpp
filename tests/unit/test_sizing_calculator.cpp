@@ -239,9 +239,9 @@ TEST(SizingCalculatorTest, C5_CI_Gating_JustAboveFloor) {
 TEST(SizingCalculatorTest, C6_FeeGate_B_NetEdgeNegated) {
     auto cfg = make_default_cfg();
     auto in = make_default_input();
-    // p = 0.5 → fee_per_unit = 0.03 × 0.5 × 0.5 = 0.0075 = 75 bps
-    // 设 edge_ci_lower = 0.005 (50 bps) < fee_per_unit (75 bps) → net_ci_edge < 0 → NO_EDGE
-    in.fair_value = 0.50 + 1e-4;  // 避免 valid_input 拒 p=0.5
+    // P0-6 (fee 用 price): price=0.40 → fee_per_unit = 0.03 × 0.40 × 0.60 = 0.0072 = 72 bps
+    // 设 edge_ci_lower = 0.005 (50 bps) < fee_per_unit (72 bps) → net_ci_edge < 0 → NO_EDGE
+    in.fair_value = 0.50 + 1e-4;  // 避免 valid_input 拒 (fair_value 不再进 fee, 仅过校验)
     in.price = 0.40;
     in.edge_ci_lower = 0.005;  // 50 bps
     in.slippage_bps = 1.0;     // slippage < edge_ci_lower_bps (50), 门 A 通过
@@ -434,9 +434,8 @@ TEST(SizingCalculatorTest, DirectionSymmetry_BuyYES_vs_BuyNO) {
     ASSERT_TRUE(out_yes.valid);
     ASSERT_TRUE(out_no.valid);
 
-    // net_ci_edge 应相同 (同 edge_ci_lower, 同 p×(1-p) by symmetry of p=0.6 vs p=0.4)
-    // fee_per_unit(p=0.6) = 0.03 × 0.6 × 0.4 = 0.0072
-    // fee_per_unit(p=0.4) = 0.03 × 0.4 × 0.6 = 0.0072 (完全对称)
+    // net_ci_edge 应相同 (同 edge_ci_lower; P0-6: fee 用 price, 两向 price 均=0.50 → fee 相同)
+    // fee_per_unit = 0.03 × 0.50 × 0.50 = 0.0075 (两向 price 同 → fee 对称, 与 fair_value 0.6/0.4 无关)
     EXPECT_NEAR(out_yes.net_ci_edge, out_no.net_ci_edge, 1e-12);
 
     // kelly_full 可能因分母不同而异 (YES: /(1-c)=0.5; NO: /c=0.5 — 此例相同)
