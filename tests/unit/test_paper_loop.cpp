@@ -1335,3 +1335,30 @@ TEST_F(PaperLoopTest, T_PhaseB_BuyNo_EndToEnd) {
     }
     EXPECT_TRUE(found_no) << "Phase B: 应在 NO token(1002) 建仓 (买被低估的 NO)";
 }
+
+// Phase B fail-closed: 选 NO 但 NO book 缺 → 不交易 (防「选 NO 用 YES 价/深度」漏网, 老郭核)。
+TEST_F(PaperLoopTest, T_PhaseB_NoSelected_NoBookAbsent_FailClosed) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+    auto es = MakeFreshScore("gs-noabs", 0, 3);  // YES 0:3 落后 → 模型 fair_YES 低 → 倾向选 NO
+    es.sport = "soccer";
+    es.clock_sec = 75 * 60;
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-noabs"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-noabs", true};
+    // 只发 YES book (市场高估 YES) — NO book 缺。SelectSide 倾向 NO 但 NO book 不可得 → fail-closed。
+    hub_->Publish("1001", MakeFreshBook(0.69, 0.71));
+    cfg_.advisory_markets_no_intent = false;
+    cfg_.n_effective = 150;
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    loop_->Stop();
+    EXPECT_EQ(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
+        << "Phase B fail-closed: 选 NO 但 NO book 缺 → 不应成交 (绝不用 YES 价/深度替代买错边)";
+}
