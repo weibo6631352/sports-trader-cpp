@@ -428,8 +428,22 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     sz_in.fill_rate = 0.65;    // 保守固定 (M1)
     sz_in.slippage_bps = 8.0;  // 保守固定 (M1)
     sz_in.buy_yes = (p_fair > best_ask);
-    sz_in.current_token_exposure_usdc = 0.0;
-    sz_in.current_condition_exposure_usdc = 0.0;
+
+    // c4 (P0-2 隐患#1 闭合, 老韩 review): sizing 必须看 RM 同源的真实累计 exposure。否则第 2 笔起
+    //   sizing 以为满 headroom (硬编码 0) 而 RM 按真实 exposure 拒 → surprise-reject + sizing 无感分叉
+    //   (A5/P0-1 已让 paper 喂真实 exposure 给 RM, 此前 sizing 侧未跟进 = 活跃分叉)。
+    //   单源同值: 与 FeedRiskGateway 喂 RM 同走 position_ledger get_per_*_exposure (micro), 无双轨。
+    {
+        const auto cond_exp = position_ledger_.get_per_condition_exposure();
+        const auto tok_exp = position_ledger_.get_per_outcome_exposure();
+        const auto cit = cond_exp.find(condition_id);
+        const auto tit = tok_exp.find(token_id);
+        // unit-contract-ok: ledger micro → sizing current_*_exposure_usdc 的 whole pUSD 域 (÷1e6)
+        sz_in.current_condition_exposure_usdc =
+            (cit != cond_exp.end()) ? static_cast<double>(cit->second) / 1'000'000.0 : 0.0;
+        sz_in.current_token_exposure_usdc =
+            (tit != tok_exp.end()) ? static_cast<double>(tit->second) / 1'000'000.0 : 0.0;
+    }
 
     // c3 (P0-2 根治): caps 单一真值源 = cfg_ (whole pUSD), from_pusd 转正确 micro。sizing/RM 同源
     //   同值 (RM 侧 paper_daemon 亦 from_pusd 同源)。sizing 内部 .to_pusd() 回 whole 比 notional。
