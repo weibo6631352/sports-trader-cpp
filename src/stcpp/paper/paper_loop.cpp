@@ -311,6 +311,11 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
                         const int opp_score = it->second.yes_is_home ? es.away_score : es.home_score;
                         game_row.score_home_total = static_cast<std::int32_t>(yes_score);
                         game_row.score_away_total = static_cast<std::int32_t>(opp_score);
+                        // A1.5 (小梁): 接真时钟 → time_frac. FairValue::time_fraction_ 用
+                        //   game_row.elapsed_sec / total_game_seconds(sport). 不填则 time_frac=0,
+                        //   先验置信永远压在 base 0.15, 真实领先 edge 被 CI 吃掉 → 几乎不成交.
+                        game_row.elapsed_sec = static_cast<std::int32_t>(es.clock_sec);
+                        game_row.sport = es.sport;  // SportInplaySlug (total_game_seconds 匹配)
                         // R-20: 4ts 切真 Goalserve ts (禁 book ts / 本地 now() 替代上游).
                         game_row.event_ts_ns = es.ts.event_ts_ns;
                         game_row.data_source_ts_ns = es.ts.data_source_ts_ns;
@@ -363,10 +368,16 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
         const double score_diff =
             static_cast<double>(game_row.score_home_total) - static_cast<double>(game_row.score_away_total);
         const bool terminal = stcpp::data::goalserve::IsTerminal(game_row.time_status);
-        // time_frac 复用 Baseline 同源逻辑: elapsed/total (NotStarted=0, 终态=1).
-        // 此处直接用 fv_result.prior_yes 已含的同形先验作 score-prior, 避免重复算时钟.
+        // A1.5 (小梁): blend 置信用真 time_frac (elapsed/total), 非硬编码 0.
+        //   time_frac=0 时 conf 压在 base 0.15 (先验只 15% 拉力 → 领先 edge 被 CI 吃掉);
+        //   接真时钟后 conf 随比赛进程从 0.15 升到 0.60, 先验对 fair 的拉力非线性增强.
+        const int total_sec = pricing::total_game_seconds(game_row.sport);
+        const double time_frac =
+            (game_row.elapsed_sec >= 0 && total_sec > 0)
+                ? static_cast<double>(game_row.elapsed_sec) / static_cast<double>(total_sec)
+                : 0.0;
         const double p_prior = fv_result.prior_yes;
-        const double conf = terminal ? 1.0 : pricing::prior_confidence(/*time_frac=*/0.0);
+        const double conf = terminal ? 1.0 : pricing::prior_confidence(time_frac);
         (void)score_diff;  // 方向已含于 prior_yes; 保留以备未来 explicit prior 切换
         p_fair = pricing::blend_prob(p_prior, p_market_devig, conf);
     }

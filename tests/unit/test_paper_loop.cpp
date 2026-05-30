@@ -926,3 +926,39 @@ TEST_F(PaperLoopTest, T21_R11_ApplyFill_RejectsNonPaperModeTag) {
     ledger.apply_fill("cond-x", "1001", Outcome::Yes, fill);
     EXPECT_FALSE(ledger.get_all_positions().empty()) << "对照: paper fill (mode_tag=0) 应正常记账";
 }
+
+// ---------------------------------------------------------------------------
+// T22: A1.5 真时钟 time_frac 解锁成交 — 接真 clock_sec+sport → time_frac→conf 升,
+//   生产级 n_effective=150 (非 T17 的 500) 即可成交。证明 time_frac 是正期望前置 (小梁)。
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T22_A15_TimeFrac_UnlocksFillAtProductionNeff) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    // soccer 2:0 领先, 已踢 60 分钟 (time_frac=3600/5400≈0.67 → conf≈0.45, 远超 base 0.15)
+    auto es = MakeFreshScore("gs-tf", 2, 0);
+    es.sport = "soccer";     // total_game_seconds("soccer")=5400
+    es.clock_sec = 60 * 60;  // 60min → time_frac≈0.67
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-tf"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-tf", true};
+
+    // 市场低估 YES (ask=0.30); 60min 2:0 领先 → 真 fair 被 time_frac 拉高 → edge 过门
+    hub_->Publish("1001", MakeFreshBook(0.28, 0.30));
+
+    cfg_.advisory_markets_no_intent = false;
+    cfg_.n_effective = 150;  // 生产级紧度 (小梁建议 150-200), 非 T17 的 500
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));
+    loop_->Stop();
+
+    // A1.5: time_frac 拉高先验置信 → 生产级 n_eff 下真实领先即成交 (T17 同场景需 n=500)
+    EXPECT_GT(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
+        << "A1.5: 真 time_frac (60min 2:0) → conf 升 → n_eff=150 即成交 (证明 time_frac 解锁)";
+}
