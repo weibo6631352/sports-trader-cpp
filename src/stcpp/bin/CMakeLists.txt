@@ -1,30 +1,12 @@
-# src/stcpp/bin/CMakeLists.txt — 主二进制 (build-time mode switch)
+# src/stcpp/bin/CMakeLists.txt — CLI 二进制
 #
-# 落:
-#   xiaojiang-paper-engine-skeleton-v1.md §5 (paper.cpp main)
-#   ADR gm-signoff-paper-trade R-7 (三 target 物理隔离)
+# 注: 原 stcpp_paper (paper.cpp stub loop) 已于 2026-05-30 废弃删除。
+#   paper daemon 统一到 debug_server (src/stcpp/debug_api/debug_server_main.cpp):
+#   该进程已装配 gamma 发现 + PaperLoop + InplayFeedThread + LiveWss + HttpServer +
+#   FeatureRecorder, 是事实上的 paper 常驻进程 (老板 2026-05-30 定: 统一 debug_server)。
+#   老郭架构评审 B 表 #1 确认 stcpp_paper 零外部依赖, 安全删除。
 #
-# 红线: 一次 build 只产一个 binary. STCPP_EXEC_MODE = paper / live / backtest.
-# paper signer .o 不进 live binary.
-
-if(STCPP_EXEC_MODE STREQUAL "paper")
-    add_executable(stcpp_paper paper.cpp)
-    target_compile_definitions(stcpp_paper PRIVATE STCPP_EXEC_MODE_paper=1)
-    target_link_libraries(stcpp_paper PRIVATE
-        stcpp_process_lock      # W5 Wave 25: 防多开 (R-7/R-11/R-12)
-        stcpp_signer_paper
-        stcpp_execution_paper
-        stcpp_infra_wal
-    )
-    target_include_directories(stcpp_paper PRIVATE ${CMAKE_SOURCE_DIR}/include)
-    target_compile_features(stcpp_paper PRIVATE cxx_std_20)
-endif()
-
-# Live / Backtest deferred (派单约束; M4.5+).
-# if(STCPP_EXEC_MODE STREQUAL "live")
-#     add_executable(stcpp_live live.cpp)
-#     ...
-# endif()
+# 本目录现仅余 stcpp-strategy-unlock CLI (三签解锁工具)。
 
 # -------------------------------------------------------------------------
 # 老沈 W6 Wave 29: stcpp-strategy-unlock CLI (Smell #4, ADR-009 v2)
