@@ -47,6 +47,7 @@ endif()
 # 小冯 W5 Wave 24 (W5-D-02): PM sports-api WSS subscriber v0.1 — paper + live 共享 (read-only)
 #   第 5 host wss://sports-api.polymarket.com/ws 公开免鉴权 (R-33 流程红线触发的新发现).
 #   transport-agnostic — IWssTransport 抽象, 真 boost.beast 实现 W6 老周 ack 后接入.
+add_subdirectory(wire)
 add_subdirectory(wss)
 
 # 小冯 Wave 79 (W9 W3): CLOB WSS subscriber — market + user channel
