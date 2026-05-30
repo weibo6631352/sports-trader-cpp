@@ -49,6 +49,7 @@
 #include <thread>
 
 #include "stcpp/data/feature_store_contract.hpp"
+#include "stcpp/data/score_snapshot_store.hpp"  // A1: ScoreSnapshotStore::Get(inplay_match_id)
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
@@ -57,6 +58,24 @@
 #include "stcpp/strategy/signal_iface.hpp"
 
 namespace stcpp::paper {
+
+namespace {
+
+// A1: EventScore.status 字符串 → TimeStatus (MapStatus 的逆; 见 inplay_score_parser.cpp:645).
+//   "inplay"/"halftime" → InPlay (live, has_real_fair=true); "final" → Ended (terminal);
+//   "pregame"/未知 → NotStarted (stub, fail-closed: 不交易非 live 局).
+[[nodiscard]] stcpp::data::goalserve::TimeStatus MapEventScoreStatus(const std::string& s) noexcept {
+    using stcpp::data::goalserve::TimeStatus;
+    if (s == "inplay" || s == "halftime") {
+        return TimeStatus::InPlay;
+    }
+    if (s == "final") {
+        return TimeStatus::Ended;
+    }
+    return TimeStatus::NotStarted;  // pregame / 未知 → fail-closed
+}
+
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // ctor
@@ -247,17 +266,49 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     // M1: 无 Goalserve game_row → 退化纯订单簿先验 (score_diff=0, time_frac=0)
     // FairValueEstimator 处理 nullptr book_row 时 kappa=0 (纯先验), 不会 NaN.
     FeatureStoreGameRow game_row{};
+    // 默认 stub: 无真实 Goalserve 比分 → 纯订单簿先验 (score_diff=0). 4ts 用 book feat 近似.
     game_row.time_status = stcpp::data::goalserve::TimeStatus::NotStarted;
-    // 4 ts (R-20 守护: game_row 4 ts 用 hub 快照 ts 近似, 真实接入 Goalserve 后替换)
     game_row.event_ts_ns = feat.event_ts_ns;
     game_row.data_source_ts_ns = feat.data_source_ts_ns;
     game_row.ingestion_ts_ns = feat.ingestion_ts_ns;
     game_row.as_of_ts_ns = feat.as_of_ts_ns;
 
-    // P0-3: has_real_fair = false when time_status==NotStarted (no Goalserve data).
-    // When a real Goalserve game_row is available (future M2+), set has_real_fair=true.
-    // Invariant: has_real_fair=true requires time_status != NotStarted AND a non-stub
-    // model_kind (kONNX or kLightGBM), i.e. model_calibrated=true.
+    // ---- A1: 解析真实 Goalserve 比分 (condition→event 映射 + score_store.Get) ----
+    // fail-closed: 无 score_store / 无映射 / 未匹配 / 陈旧 / 非 in-play → 保持 stub.
+    if (score_store_ != nullptr) {
+        const std::shared_ptr<const ConditionEventMap> map = LoadEventMap();
+        if (map) {
+            const auto it = map->find(condition_id);
+            if (it != map->end() && !it->second.inplay_match_id.empty()) {
+                const auto es_opt = score_store_->Get(it->second.inplay_match_id);
+                if (es_opt.has_value() && es_opt->found) {
+                    const auto& es = *es_opt;
+                    const auto ev_ts = MapEventScoreStatus(es.status);
+                    // 新鲜度: data_source_ts 不能太旧 (老韩 D4 #8 + 老周 R-20: 冻结比分不当 live fair).
+                    const std::int64_t now_ns = NowNs();
+                    const bool fresh = es.ts.data_source_ts_ns > 0 &&
+                                       (now_ns - es.ts.data_source_ts_ns) <= cfg_.score_staleness_limit_ns;
+                    if (ev_ts != stcpp::data::goalserve::TimeStatus::NotStarted && fresh) {
+                        game_row.time_status = ev_ts;
+                        // orientation (老周张冠李戴防护): 把 YES 队比分填进 score_home_total,
+                        //   令 FairValue score_diff = YES队 - 对手 (prior_yes 方向正确).
+                        const int yes_score = it->second.yes_is_home ? es.home_score : es.away_score;
+                        const int opp_score = it->second.yes_is_home ? es.away_score : es.home_score;
+                        game_row.score_home_total = static_cast<std::int32_t>(yes_score);
+                        game_row.score_away_total = static_cast<std::int32_t>(opp_score);
+                        // R-20: 4ts 切真 Goalserve ts (禁 book ts / 本地 now() 替代上游).
+                        game_row.event_ts_ns = es.ts.event_ts_ns;
+                        game_row.data_source_ts_ns = es.ts.data_source_ts_ns;
+                        game_row.ingestion_ts_ns = es.ts.ingestion_ts_ns;
+                        game_row.as_of_ts_ns = es.ts.as_of_ts_ns;
+                    }
+                }
+            }
+        }
+    }
+
+    // has_real_fair = true 当 time_status != NotStarted (真实 in-play Goalserve 比分已填).
+    // 注: A1 仅打通 fair 计算 + quote 真 edge; advisory gate (Step 4b) 仍拦 intent (A2 解封).
     const bool has_real_fair = (game_row.time_status != stcpp::data::goalserve::TimeStatus::NotStarted);
 
     FeatureStoreBookRow book_row{};

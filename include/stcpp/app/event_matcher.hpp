@@ -48,6 +48,11 @@ struct EventMatchResult {
     bool matched{false};
     std::string inplay_match_id;  // = EventScore.event_id (Goalserve inplay id)
     double team_score{0.0};       // 双队 overlap 之和 (诊断/择优用)
+    // orientation (正确性命门, 老周张冠李戴): market YES token(=team0) 对应 EventScore 的 home 还是 away.
+    //   true  = 直配 (team0→home): YES 队即 home. FairValue score_diff=home-away 直接成立.
+    //   false = 交叉 (team0→away): YES 队即 away. 消费侧须把 away_score 填进 score_home_total
+    //           (令 score_diff = YES队 - 对手), 否则 prior_yes 方向反 → 下错单.
+    bool yes_is_home{true};
 };
 
 class EventMatcher {

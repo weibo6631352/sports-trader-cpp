@@ -61,6 +61,8 @@
 #include <atomic>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -77,7 +79,25 @@
 #include "stcpp/sizing/quote_snapshot_hub.hpp"
 #include "stcpp/sizing/sizing_calculator.hpp"
 
+// A1: ScoreSnapshotStore 前向声明 (实体在 stcpp_data_score_store; .cpp 内 include).
+//   PaperLoop 仅持 const 指针 + 调 Get(), 头文件不拉 score_store 重型依赖.
+namespace stcpp::data {
+class ScoreSnapshotStore;
+}  // namespace stcpp::data
+
 namespace stcpp::paper {
+
+// ---------------------------------------------------------------------------
+// EventMapEntry / ConditionEventMap (A1 映射桥消费侧契约)
+//   condition_id → {Goalserve inplay_match_id, orientation}.
+//   由 app 层 (PaperDaemon + EventMatcher) 解析后经 SetEventMapping() 注入 (atomic 热刷).
+//   yes_is_home: market YES token 对应 EventScore 的 home(true)/away(false). 见 EventMatcher 注释.
+// ---------------------------------------------------------------------------
+struct EventMapEntry {
+    std::string inplay_match_id;
+    bool yes_is_home{true};
+};
+using ConditionEventMap = std::unordered_map<std::string, EventMapEntry>;
 
 // ---------------------------------------------------------------------------
 // PaperLoopConfig — 运行参数
@@ -109,6 +129,11 @@ struct PaperLoopConfig {
     // false = 允许产生 intent (仅当 has_real_fair=true 且未来真实 ML 模型接入后使用).
     // 当前 M1: 恒 true. 修改此值须同步更新 advisory 字段逻辑并重走 paper gate.
     bool advisory_markets_no_intent{true};
+
+    // A1: 真实 Goalserve 比分新鲜度上限 (ns). data_source_ts 比 now 旧超过此值 →
+    //   视为陈旧, 退回 has_real_fair=false (老韩 D4 #8 + 老周 R-20: 冻结比分不当 live fair).
+    //   默认 120s (feed ~1-5s 周期; 容跨洋抖动 + 短暂断流).
+    std::int64_t score_staleness_limit_ns{120'000'000'000LL};
 };
 
 // ---------------------------------------------------------------------------
@@ -169,6 +194,18 @@ public:
 
     [[nodiscard]] const PaperLoopStats& stats() const noexcept { return stats_; }
 
+    // A1: 注入真实 Goalserve 比分源 (可空; nullptr → 恒 stub 路径, 行为同 A1 前).
+    //   单 writer: 仅主线程在 Start() 前调用一次 (score_store_ 之后只读).
+    void SetScoreStore(const data::ScoreSnapshotStore* s) noexcept { score_store_ = s; }
+
+    // A1: 注入/热刷 condition_id→event 映射 (app 层 EventMatcher 解析后周期推送).
+    //   线程安全: shared_ptr + mutex 短锁 swap (同 ScoreSnapshotStore 模式; libc++ 无
+    //   atomic<shared_ptr>). loop_thread_ 读时短锁拷 ptr, app 层写时短锁换 ptr.
+    void SetEventMapping(std::shared_ptr<const ConditionEventMap> m) noexcept {
+        std::lock_guard<std::mutex> lk(event_map_mu_);
+        event_map_ = std::move(m);
+    }
+
 private:
     // ---- 依赖引用 ----
     const polymarket::clob_wss::OrderBookSnapshotHub& hub_;
@@ -196,6 +233,19 @@ private:
     // ---- 配置与 token map ----
     std::unordered_map<std::string, std::pair<std::string, std::string>> token_map_;
     PaperLoopConfig cfg_;
+
+    // ---- A1: 真实比分源 + 映射 ----
+    // score_store_: 单 writer (Start 前注入), 之后 loop_thread_ 只读 Get(). 可空 → stub 路径.
+    const data::ScoreSnapshotStore* score_store_{nullptr};
+    // event_map_: condition→event 映射 (shared_ptr + mutex 热刷; loop_thread_ 读, app 层写).
+    mutable std::mutex event_map_mu_;
+    std::shared_ptr<const ConditionEventMap> event_map_;
+
+    // LoadEventMap — 短锁拷当前映射 ptr (loop_thread_ 用; nullptr 若未注入).
+    [[nodiscard]] std::shared_ptr<const ConditionEventMap> LoadEventMap() const noexcept {
+        std::lock_guard<std::mutex> lk(event_map_mu_);
+        return event_map_;
+    }
 
     // ---- 线程控制 ----
     std::jthread loop_thread_;

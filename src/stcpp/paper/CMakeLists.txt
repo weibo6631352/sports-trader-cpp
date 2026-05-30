@@ -46,6 +46,7 @@ target_link_libraries(stcpp_paper_loop PUBLIC
     stcpp_signer_paper
     stcpp_execution_paper
     stcpp_infra_wal
+    stcpp_data_score_store  # A1: ScoreSnapshotStore::Get(inplay_match_id) → 真实 Goalserve 比分
 )
 
 # ADR-010: 不添加 -Wno-* 抑制 (Rule 1: 生产代码禁新增 -Wno-conversion/-Wno-sign-conversion)

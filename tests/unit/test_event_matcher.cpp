@@ -104,6 +104,27 @@ TEST(EventMatcher, CrossAssignment_HomeAwaySwapped) {
     EXPECT_EQ(r.inplay_match_id, "134000002");
 }
 
+TEST(EventMatcher, Orientation_DirectAssignment_YesIsHome) {
+    // market t0(YES)=Lakers, event home=Lakers → YES=home → yes_is_home=true
+    EventMatcher m;
+    EventMatchInput in{"Lakers", "Celtics", 2000000, "nba"};
+    std::vector<EventScore> cands{MakeEv("d", "Lakers", "Celtics", 2000000)};
+    const auto r = m.Match(in, cands);
+    ASSERT_TRUE(r.matched);
+    EXPECT_TRUE(r.yes_is_home);
+}
+
+TEST(EventMatcher, Orientation_CrossAssignment_YesIsAway) {
+    // market t0(YES)=Lakers, event home=Celtics away=Lakers → YES=away → yes_is_home=false
+    // (消费侧据此把 away_score 填进 score_home_total, 防 prior 方向反 → 老周张冠李戴)
+    EventMatcher m;
+    EventMatchInput in{"Lakers", "Celtics", 2000000, "nba"};
+    std::vector<EventScore> cands{MakeEv("c", "Celtics", "Lakers", 2000000)};
+    const auto r = m.Match(in, cands);
+    ASSERT_TRUE(r.matched);
+    EXPECT_FALSE(r.yes_is_home);
+}
+
 TEST(EventMatcher, AbbrevTeamsWithinThreshold_Match) {
     // 双队 overlap=0.5 (== 默认阈值 0.5) → 过门
     EventMatcher m;

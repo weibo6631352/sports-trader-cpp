@@ -108,6 +108,8 @@ EventMatchResult EventMatcher::Match(const EventMatchInput& in,
             best.matched = true;
             best.inplay_match_id = ev.event_id;
             best.team_score = team_sum;
+            // orientation: 直配胜出 → YES(team0)=home; 交叉胜出 → YES=away.
+            best.yes_is_home = (direct_min >= cross_min);
         }
     }
 

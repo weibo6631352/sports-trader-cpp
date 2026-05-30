@@ -32,6 +32,7 @@
 
 #include <chrono>
 #include <cmath>
+#include <memory>
 #include <optional>
 #include <string>
 #include <thread>
@@ -39,6 +40,7 @@
 
 #include <gtest/gtest.h>
 
+#include "stcpp/data/score_snapshot_store.hpp"  // A1: 真实比分注入
 #include "stcpp/paper/paper_loop.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/pricing/fair_value_estimator.hpp"
@@ -618,4 +620,115 @@ TEST_F(PaperLoopTest, T14_P0_4_AdvisoryGate) {
         << "P0-4: no orders approved when advisory gate is active";
     EXPECT_EQ(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
         << "P0-4: no fills when advisory gate is active";
+}
+
+// ---------------------------------------------------------------------------
+// T15: A1 真实 Goalserve 比分接入 — score_store + 映射 → has_real_fair=true
+//   T13 的镜像: 真实 in-play 比分 → predict_ok=true (vs stub predict_ok=false).
+//   advisory gate 仍 true (默认) → 无成交; 仅验 quote 真 fair 流出 (A1 范围, A2 才解封).
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T15_A1_RealGoalserveScore_PredictOk) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+    using stcpp::debug_api::EventScore;
+
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+
+    // 真实 in-play EventScore: YesTeam 领先 2:0 (yes_is_home=true → score_diff=+2 → 看多 YES)
+    EventScore es;
+    es.found = true;
+    es.event_id = "gs-match-1";
+    es.status = "inplay";
+    es.home = "YesTeam";
+    es.away = "NoTeam";
+    es.home_score = 2;
+    es.away_score = 0;
+    es.kickoff_ts_sec = now_ns / 1'000'000'000LL - 3600;
+    es.ts.event_ts_ns = now_ns - 3'600'000'000'000LL;    // kickoff 1h 前 (in-play)
+    es.ts.data_source_ts_ns = now_ns - 1'000'000'000LL;  // 1s 前 (fresh < 120s)
+    es.ts.ingestion_ts_ns = now_ns - 500'000'000LL;      // 0.5s 前
+    es.ts.as_of_ts_ns = now_ns;                          // 单调链
+
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-match-1"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+
+    // 映射: cond-test-001 → gs-match-1, yes_is_home=true
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-match-1", true};
+
+    // 市场低估 YES (mid≈0.30); YesTeam 2:0 领先 → 真 fair 应 > mid
+    const auto feat = MakeSyntheticBook(0.28, 0.32);
+    hub_->Publish("token-yes-001", feat);
+
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();  // 显式停 (store 局部, 须在其析构前 join)
+
+    EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0));
+
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    // A1 核心: 真实 in-play 比分 → has_real_fair=true → predict_ok=true (区别于 T13 stub)
+    EXPECT_TRUE(opt->predict_ok) << "A1: real in-play Goalserve score → has_real_fair=true → predict_ok=true";
+    // 真 fair (领先方) 高于被低估的市场 mid → 方向正确 (orientation 正确证明)
+    EXPECT_GT(opt->fair_value, 0.30)
+        << "A1: leading YES team real fair should exceed underpriced market mid (orientation ok)";
+}
+
+// ---------------------------------------------------------------------------
+// T16: A1 fail-closed — 陈旧比分 (data_source_ts 超 staleness) → 退回 stub
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T16_A1_StaleScore_FailClosedToStub) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+    using stcpp::debug_api::EventScore;
+
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+
+    EventScore es;
+    es.found = true;
+    es.event_id = "gs-match-stale";
+    es.status = "inplay";
+    es.home = "YesTeam";
+    es.away = "NoTeam";
+    es.home_score = 2;
+    es.away_score = 0;
+    // data_source_ts 比 now 旧 300s (> 默认 120s staleness) → 应 fail-closed 退回 stub
+    es.ts.event_ts_ns = now_ns - 3'600'000'000'000LL;
+    es.ts.data_source_ts_ns = now_ns - 300'000'000'000LL;
+    es.ts.ingestion_ts_ns = now_ns - 300'000'000'000LL;
+    es.ts.as_of_ts_ns = now_ns - 300'000'000'000LL;
+
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-match-stale"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-match-stale", true};
+
+    const auto feat = MakeSyntheticBook(0.28, 0.32);
+    hub_->Publish("token-yes-001", feat);
+
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    loop_->Stop();
+
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    // 陈旧比分 → 退回 stub → predict_ok=false (老韩 D4 #8: 冻结比分不当 live fair)
+    EXPECT_FALSE(opt->predict_ok)
+        << "A1: stale score (data_source_ts > staleness limit) must fail-closed to stub";
 }
