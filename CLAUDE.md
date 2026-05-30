@@ -116,7 +116,17 @@
 - WebSocket event loop 任何同步 REST / 阻塞 IO / 锁 > 100us → P0（ADR R-12）
 - Paper mode 污染真账本（写入 position / pnl_ledger / nonce_ledger） → P0（ADR R-11）
 - **所有数据源使用必须标记时间信息（4 时间戳契约：event_ts ≤ data_source_ts ≤ ingestion_ts ≤ as_of_ts）→ P0（ADR R-20）；时间戳优先用数据源自带，禁本地 `now()` 替代上游 ts**
-- **数据源类文档撰写必须四维扫描（R-33 流程红线）：** 1) 官方 portal / docs 索引（含 llms.txt 若有）；2) 一手 SDK 源码（含 py / ts / go 多语言）；3) 实测 RTT 真实行为；4) 同行 SSOT cross-reference。任一维度漏扫导致 P0 缺口（如 Polymarket `wss://sports-api/ws` 第 5 host 漏）= 流程事故而非个人事故，但流程必须固化
+
+> **R-33（数据源文档四维扫描）已 2026-05-30 从「一票否决红线」降级为文档质量 SOP**（老郭红线审计：它是文档撰写流程，不该与「绕过 RM / 私钥落盘」同列金融一票否决）。SOP 内容仍有效，归 §9 文档体系治理，违反不再 P0。
+
+### 8.1 红线治理纪律（2026-05-30 立，老郭红线审计配套）
+
+> **背景：** 红线审计发现真红线地基稳，但「编号治理」是软肋 —— 撞过两次「约束咬人」（ML-R2 被转述成「paper 恒 advisory 不产 fill」阻塞 MVP；size 改 micro 后 caps/bankroll/book_depth 单位失配把 caps 红线静默架空）。根都不在红线条文，在「语义在文档间漂移没人守边界」。
+
+1. **红线/R-XX 引用必粘原文，禁转述。** 引用任何红线或 R-XX 约束，必须链原文出处 + 粘定义原话，不许凭记忆转述（ML-R2 教训：转述一层就走样成阻塞正当目标的伪约束）。
+2. **固化 D3（advisory 语义）：** 「advisory」= 不自动路由 live，**≠** 不产生 paper 成交。paper 成交是 paper 模式的目的 + MVP 验收项。ML-R2 的契约载体是 `QuoteFeatures.advisory` 标志，不是「禁止 paper fill」。（详见 docs/MEETINGS/2026-05-30-m1-route-review.md D3）
+3. **ABI/字段单位变更必触发下游审计（补 R-4 配套）：** 任何字段重命名/单位变更（如 `size_usdc → size_pUSD_micro`）必须 audit 全部比较点/消费点的单位一致性，否则会「静默架空」依赖该字段的红线（caps/exposure/bankroll）。这类变更走 R-4（schema 静默变更红线）。
+4. **R-NN 命名空间歧义（backlog，派小米）：** 全库 `R-\d` 被三套体系同号异义混用（§8 红线 R-12=WSS / RM 拒单码 R-12=EDGE_NEGATED / 风险登记 R-12=另一回事）。拆命名空间：红线 `RL-` / 拒单码 `RJ-` / 风险项 `RR-`，消 ML-R2 式误传导土壤。
 
 **地域 / 法律 / 监管层合规已 GM 2026-05-28 决议暂不纠缠**，未来迁合规地区一次性处理。详见 [`docs/ADR/2026-05-28-gm-policy-jurisdictional-deferral.md`](docs/ADR/2026-05-28-gm-policy-jurisdictional-deferral.md)。
 
@@ -264,4 +274,4 @@ docs/
 
 ---
 
-**最后更新：** 2026-05-29 by 老雷 (§10 Model 分级 v3 — 管理层+顾问 Opus 4.8 / IC Sonnet 4.6, 老板 2026-05-29 verbatim)
+**最后更新：** 2026-05-30 by 老雷 (§8 红线审计配套 — R-33 降级 SOP + §8.1 红线治理纪律: 引用粘原文/固化 D3/单位变更审计/R-NN 命名空间拆分)
