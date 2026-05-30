@@ -1,0 +1,5 @@
+# 编译产物 (源码 .cpp/.h 入 git, 二进制不入)
+*
+!*.cpp
+!*.h
+!.gitignore
