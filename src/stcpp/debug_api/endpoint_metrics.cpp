@@ -116,6 +116,37 @@ void register_metrics(httplib::Server& svr, const HttpServer& hs) {
                     "Number of subscribed user channel condition_ids",
                     ml + " " + json::i64(m.subscribed_user_conditions));
 
+        // ---- 覆盖率/识别率 metric (ADR-038 小卢 2026-05-30; 低基数 mode label only) ----
+        //
+        // 1. 盘口类型识别率 (从 market catalog 算)
+        //    recognized: sports_market_type 非空非 "unknown"
+        //    unknown:    sports_market_type == "" 或 "unknown"
+        //    派生率 = recognized / (recognized + unknown) (由 ops 层 PromQL 算)
+        //    当前 outright 类 sportsMarketType 字段缺失 → unknown 桶非零, 识别率 < 100%
+        metric_line(out, "stcpp_market_type_recognized_total", "gauge",
+                    "Markets in catalog with recognized sports_market_type (non-empty, non-unknown)",
+                    ml + " " + json::i64(m.market_type_recognized_total));
+        metric_line(out, "stcpp_market_type_unknown_total", "gauge",
+                    "Markets in catalog with unrecognized sports_market_type (empty or 'unknown')",
+                    ml + " " + json::i64(m.market_type_unknown_total));
+
+        // 2. 市场覆盖 (从 catalog + hub 算)
+        //    markets_discovered_total  — gamma /events 发现并入 catalog 的市场总数
+        //    markets_subscribed_total  (上方已输出) — hub 双 token 口径
+        //    tokens_subscribed_total   (上方已输出) — hub token_count 口径
+        //    覆盖率 = subscribed_markets / discovered (PromQL 算)
+        metric_line(out, "stcpp_markets_discovered_total", "gauge",
+                    "Total markets discovered from gamma /events and loaded into catalog",
+                    ml + " " + json::i64(m.markets_discovered_total));
+
+        // 3. 直播员/比分匹配率 (从 ScoreSnapshotStore + catalog 算)
+        //    score_matched_total — catalog 中能在 score_store 找到对应 event_id 比分的 condition 数
+        //    匹配率 = score_matched / markets_discovered (PromQL 算)
+        //    当前 outright 无 inplay → score_matched 偏低 (诚实暴露)
+        metric_line(out, "stcpp_score_matched_total", "gauge",
+                    "Conditions in catalog whose event_id has a live Goalserve score snapshot",
+                    ml + " " + json::i64(m.score_matched_total));
+
         res.set_content(out, "text/plain; version=0.0.4; charset=utf-8");
         res.status = 200;
     });

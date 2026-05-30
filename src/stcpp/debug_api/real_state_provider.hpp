@@ -305,6 +305,54 @@ public:
         }
         // wss_sports_api / wss_user_channel: 当前无接入 → false (标注而非虚报)
 
+        // ---- 覆盖率/识别率 metric (ADR-038 小卢 2026-05-30) ----
+        // 全部从 catalog_ / token_map_ / score_store_ 只读算, 无新外部调用 (R-12)
+        //
+        // 1. 盘口类型识别率: 遍历 catalog_, 按 sports_market_type 分桶
+        //    recognized = sports_market_type 非空且 != "unknown"
+        //    unknown    = 空字符串 或 "unknown"
+        {
+            std::int64_t recognized = 0;
+            std::int64_t unknown = 0;
+            for (const auto& [cid, mi] : catalog_) {
+                const bool is_unknown = mi.sports_market_type.empty() || mi.sports_market_type == "unknown";
+                if (is_unknown) {
+                    ++unknown;
+                } else {
+                    ++recognized;
+                }
+            }
+            snap.market_type_recognized_total = recognized;
+            snap.market_type_unknown_total = unknown;
+        }
+
+        // 2. 市场覆盖
+        //    markets_discovered_total  = catalog_ 条目数 (gamma /events 发现并填入的市场)
+        //    markets_subscribed_total  已被 tok_cnt / 2 覆盖 (订阅 hub 的双 token 口径)
+        //    tokens_subscribed_total   已被 hub.token_count() 覆盖
+        snap.markets_discovered_total = static_cast<std::int64_t>(catalog_.size());
+
+        // 3. 直播员/比分匹配率: 每个 catalog_ 条目取其 event_id,
+        //    在 score_store_ 中查找 → 有结果即计入 score_matched_total
+        //    条件: score_store_ 非 nullptr (否则无数据源, 0 = 诚实暴露)
+        {
+            std::int64_t matched = 0;
+            if (score_store_ != nullptr) {
+                // 收集 catalog_ 中唯一 event_id 集合 (同一 event 可有多个 condition_id)
+                // 按 condition 算匹配: 每个 condition 的 event_id 若有比分则计1
+                for (const auto& [cid, mi] : catalog_) {
+                    if (mi.event_id.empty()) {
+                        continue;
+                    }
+                    const auto opt = score_store_->Get(mi.event_id);
+                    if (opt.has_value() && opt->found) {
+                        ++matched;
+                    }
+                }
+            }
+            snap.score_matched_total = matched;
+        }
+
         return snap;
     }
 

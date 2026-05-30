@@ -203,6 +203,31 @@ struct MetricsSnapshot {
     std::int64_t subscribed_markets_total{0};
     std::int64_t subscribed_user_conditions{0};
     std::int64_t wss_last_disconnect_ts_ns{0};
+
+    // ---- 覆盖率/识别率 metric (ADR-038 小卢 2026-05-30 append; G-FREEZE-W 只增不改名) ----
+    //
+    // 盘口类型识别率 (从 market catalog 算):
+    //   market_type_recognized_total — catalog 中 sports_market_type 非空非 "unknown" 的市场数
+    //   market_type_unknown_total    — catalog 中 sports_market_type == "" 或 "unknown" 的市场数
+    //   派生率 = recognized / (recognized + unknown)
+    //   当前 outright 类 sportsMarketType 字段为空 → 0% 识别 (诚实暴露)
+    std::int64_t market_type_recognized_total{0};
+    std::int64_t market_type_unknown_total{0};
+
+    // 市场覆盖 (从 catalog + token_map 算):
+    //   markets_discovered_total  — gamma /events 发现并入 catalog 的市场总数
+    //   markets_subscribed_total  — token_map 中已建立双 token 映射的市场数 (可订阅/已订阅)
+    //   tokens_subscribed_total   — hub.token_count() 中有效 book slot 数 (实际收到过数据的 token)
+    //   覆盖率 = markets_subscribed / markets_discovered
+    //   注意: markets_subscribed_total (新语义: token_map 条目) 与旧
+    //         subscribed_markets_total (hub.token_count()/2) 各自独立, 两种口径均保留
+    std::int64_t markets_discovered_total{0};
+
+    // 直播员/比分匹配率 (从 ScoreSnapshotStore + market catalog 算):
+    //   score_matched_total — catalog 中能在 score_store 找到对应 event_id 比分的 condition 数
+    //   匹配率 = score_matched / markets_discovered
+    //   当前 outright 无 inplay 数据 → 0% (诚实暴露)
+    std::int64_t score_matched_total{0};
 };
 
 // ============================================================
