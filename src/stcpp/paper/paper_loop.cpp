@@ -183,9 +183,31 @@ void PaperLoop::Stop() noexcept {
 void PaperLoop::RunLoop(std::stop_token st) {
     using namespace std::chrono_literals;
 
+    bool feed_liveness_checked = false;  // A4: 首个 tick 后一次性自检
+
     while (!st.stop_requested() && !stop_requested_.load(std::memory_order_acquire)) {
         TickAll();
         stats_.ticks_total.fetch_add(1, std::memory_order_relaxed);
+
+        // A4 (老韩 spec §2.6.3): 首个完整 tick 后跑一次 RM feed-liveness 自检。此时 daemon 已喂完
+        //   一轮 (bankroll@Start + exposure/freshness@tick); 仍 ever_fed=false 的红线 = paper daemon
+        //   根本没接通的喂数管道 = 风控纸面化, 必须喊出来 (防「假已活」)。非热路径 (一次性, 循环外语义)。
+        if (!feed_liveness_checked) {
+            feed_liveness_checked = true;
+            auto const rows = rm_.feed_liveness_report();
+            int never_fed = 0;
+            for (auto const& r : rows) {
+                if (!r.ever_fed) {
+                    std::fprintf(stderr,
+                                 "[paper_loop] RM feed-liveness: 红线 '%.*s' NEVER FED — "
+                                 "paper daemon 未接通该红线喂数管道 (纸面化, 默认值静默放行风险)\n",
+                                 static_cast<int>(r.key.size()), r.key.data());
+                    ++never_fed;
+                }
+            }
+            std::fprintf(stderr, "[paper_loop] RM feed-liveness 自检: %d/%zu 红线从未被喂\n", never_fed,
+                         rows.size());
+        }
 
         // 间隔 sleep (R-12: 不 spinlock; sleep 期间响应 stop_token)
         const auto interval = std::chrono::milliseconds(cfg_.tick_interval_ms);

@@ -156,51 +156,117 @@ RiskGateway::~RiskGateway() = default;
 
 // ---------- setters ----------------------------------------------------------
 
+// A4: mark_fed_ — 记某红线被喂 (now_realtime_ns 自由函数在本 TU; relaxed store, 无锁,
+//   独立于 s_->mu)。各 setter 末尾调; map 类红线任一 key 喂即标活 (last-any-key-fed)。
+void RiskGateway::mark_fed_(FeedKey k) noexcept {
+    last_fed_ns_[static_cast<std::size_t>(k)].store(now_realtime_ns(), std::memory_order_relaxed);
+}
+
+// ---- A4: 去 inline 的 4 个标量红线 setter (移 .cpp 以记 last_fed_ns) ----
+void RiskGateway::set_daily_pnl(std::int64_t usdc) noexcept {
+    daily_pnl_usdc_.store(usdc);
+    mark_fed_(FeedKey::DailyPnl);
+}
+void RiskGateway::set_consec_loss(std::int32_t n) noexcept {
+    consec_loss_.store(n);
+    mark_fed_(FeedKey::ConsecLoss);
+}
+void RiskGateway::set_bankroll(std::int64_t usdc) noexcept {
+    bankroll_usdc_.store(usdc);
+    mark_fed_(FeedKey::Bankroll);
+}
+void RiskGateway::set_recon_freshness_ms(std::uint32_t ms) noexcept {
+    recon_freshness_ms_.store(ms);
+    mark_fed_(FeedKey::ReconFreshness);
+}
+
 void RiskGateway::set_market_exposure(std::string const& m, std::int64_t v) noexcept {
-    std::lock_guard<std::mutex> g(s_->mu);
-    // v0.4 兼容: 同时写 market_exposure_usdc + condition_exposure_usdc
-    s_->market_exposure_usdc[m] = v;
-    s_->condition_exposure_usdc[m] = v;
+    {
+        std::lock_guard<std::mutex> g(s_->mu);
+        // v0.4 兼容: 同时写 market_exposure_usdc + condition_exposure_usdc
+        s_->market_exposure_usdc[m] = v;
+        s_->condition_exposure_usdc[m] = v;
+    }
+    mark_fed_(FeedKey::Exposure);
 }
 
 void RiskGateway::set_condition_exposure(std::string const& cid, std::int64_t v) noexcept {
-    std::lock_guard<std::mutex> g(s_->mu);
-    s_->condition_exposure_usdc[cid] = v;
-    s_->market_exposure_usdc[cid] = v;  // keep compat map in sync
+    {
+        std::lock_guard<std::mutex> g(s_->mu);
+        s_->condition_exposure_usdc[cid] = v;
+        s_->market_exposure_usdc[cid] = v;  // keep compat map in sync
+    }
+    mark_fed_(FeedKey::Exposure);
 }
 
 void RiskGateway::set_outcome_exposure(std::string const& token_id, std::int64_t v) noexcept {
-    std::lock_guard<std::mutex> g(s_->mu);
-    s_->token_exposure_usdc[token_id] = v;
+    {
+        std::lock_guard<std::mutex> g(s_->mu);
+        s_->token_exposure_usdc[token_id] = v;
+    }
+    mark_fed_(FeedKey::Exposure);
 }
 
 void RiskGateway::set_edge_ci_lower(std::string const& sig, double v) noexcept {
-    std::lock_guard<std::mutex> g(s_->mu);
-    s_->signal_edge_ci_lower[sig] = v;
+    {
+        std::lock_guard<std::mutex> g(s_->mu);
+        s_->signal_edge_ci_lower[sig] = v;
+    }
+    mark_fed_(FeedKey::EdgeCi);
 }
 void RiskGateway::set_strategy_ev_ratio(std::string const& sid, double r) noexcept {
-    std::lock_guard<std::mutex> g(s_->mu);
-    s_->strategy_ev_ratio[sid] = r;
+    {
+        std::lock_guard<std::mutex> g(s_->mu);
+        s_->strategy_ev_ratio[sid] = r;
+    }
+    mark_fed_(FeedKey::StrategyEv);
 }
 void RiskGateway::set_market_freshness_ms(std::string const& m, std::uint32_t ms) noexcept {
-    std::lock_guard<std::mutex> g(s_->mu);
-    s_->market_freshness_ms[m] = ms;
+    {
+        std::lock_guard<std::mutex> g(s_->mu);
+        s_->market_freshness_ms[m] = ms;
+    }
+    mark_fed_(FeedKey::Freshness);
 }
 void RiskGateway::set_token_book_freshness_ms(std::string const& token_id, std::uint32_t ms) noexcept {
-    std::lock_guard<std::mutex> g(s_->mu);
-    s_->token_book_freshness_ms[token_id] = ms;
+    {
+        std::lock_guard<std::mutex> g(s_->mu);
+        s_->token_book_freshness_ms[token_id] = ms;
+    }
+    mark_fed_(FeedKey::Freshness);
 }
 void RiskGateway::set_market_state(std::string const& m, MarketState st) noexcept {
-    std::lock_guard<std::mutex> g(s_->mu);
-    s_->market_state[m] = st;
+    {
+        std::lock_guard<std::mutex> g(s_->mu);
+        s_->market_state[m] = st;
+    }
+    mark_fed_(FeedKey::MarketState);
 }
 void RiskGateway::set_market_active(std::string const& m, bool active) noexcept {
-    std::lock_guard<std::mutex> g(s_->mu);
-    s_->market_active[m] = active;
+    {
+        std::lock_guard<std::mutex> g(s_->mu);
+        s_->market_active[m] = active;
+    }
+    mark_fed_(FeedKey::MarketActive);
 }
 void RiskGateway::clear_idempotency() noexcept {
     std::lock_guard<std::mutex> g(s_->mu);
     s_->seen_signal_ids.clear();
+}
+
+// A4: feed-liveness 诊断快照 (非热路径; daemon 启动自检 + 周期巡检调用)。
+std::vector<RiskGateway::FeedLivenessRow> RiskGateway::feed_liveness_report() const noexcept {
+    static constexpr std::array<std::string_view, static_cast<std::size_t>(FeedKey::COUNT)> kNames = {
+        "bankroll",  "daily_pnl", "consec_loss", "recon_freshness", "exposure",
+        "freshness", "edge_ci",   "strategy_ev", "market_state",    "market_active",
+    };
+    std::vector<FeedLivenessRow> rows;
+    rows.reserve(static_cast<std::size_t>(FeedKey::COUNT));
+    for (std::size_t i = 0; i < static_cast<std::size_t>(FeedKey::COUNT); ++i) {
+        auto const ts = last_fed_ns_[i].load(std::memory_order_relaxed);
+        rows.push_back(FeedLivenessRow{kNames[i], ts, ts != 0});
+    }
+    return rows;
 }
 
 // 老沈 rm_debug_snapshot D1: 进程级全局 snapshot 指针 (单例)

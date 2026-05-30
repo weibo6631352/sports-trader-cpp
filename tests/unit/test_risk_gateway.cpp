@@ -917,4 +917,43 @@ TEST(T7_ABI_Handshake, OrderIntent_V05_FieldAlignment) {
     std::printf("[T7 ABI Handshake] OrderIntent v0.5 字段对齐 100%% PASS\n");
 }
 
+// ===== A4: feed-liveness 自检 (老韩 spec §2; retro synthesis §3) =============
+
+TEST_F(RiskGatewayTest, A4_FeedLiveness_NeverFed) {
+    // 全新 RM (SetUp 只 set_state — 非 feed 红线) → 所有红线 ever_fed=false, last_fed_ns=0。
+    //   语义: 这些红线「生产里压根没被喂过」, daemon 启动自检应喊出来 (防纸面化)。
+    auto rows = rm_->feed_liveness_report();
+    EXPECT_EQ(rows.size(), static_cast<std::size_t>(RiskGateway::FeedKey::COUNT));
+    for (auto const& r : rows) {
+        EXPECT_FALSE(r.ever_fed) << "A4: " << r.key << " 不该 ever_fed (从未喂)";
+        EXPECT_EQ(r.last_fed_ns, 0) << "A4: " << r.key << " last_fed_ns 应为 0";
+    }
+}
+
+TEST_F(RiskGatewayTest, A4_FeedLiveness_AfterFeed) {
+    rm_->set_bankroll(1'000);
+    rm_->set_daily_pnl(0);
+    rm_->set_condition_exposure(kMockConditionId, 0);    // → Exposure
+    rm_->set_market_freshness_ms(kMockConditionId, 50);  // → Freshness
+    auto rows = rm_->feed_liveness_report();
+    auto find = [&](std::string_view k) -> RiskGateway::FeedLivenessRow {
+        for (auto const& r : rows)
+            if (r.key == k)
+                return r;
+        return RiskGateway::FeedLivenessRow{};
+    };
+    // 已喂红线: ever_fed=true + last_fed_ns>0
+    EXPECT_TRUE(find("bankroll").ever_fed);
+    EXPECT_GT(find("bankroll").last_fed_ns, 0);
+    EXPECT_TRUE(find("daily_pnl").ever_fed);
+    EXPECT_TRUE(find("exposure").ever_fed) << "set_condition_exposure → Exposure 标活";
+    EXPECT_TRUE(find("freshness").ever_fed) << "set_market_freshness_ms → Freshness 标活";
+    // 未喂红线: 仍 false (防「假已活」核心 — 这些是生产里没接通的红线)
+    EXPECT_FALSE(find("consec_loss").ever_fed);
+    EXPECT_FALSE(find("edge_ci").ever_fed);
+    EXPECT_FALSE(find("strategy_ev").ever_fed);
+    EXPECT_FALSE(find("recon_freshness").ever_fed);
+    EXPECT_FALSE(find("market_active").ever_fed);
+}
+
 }  // namespace stcpp::risk::test

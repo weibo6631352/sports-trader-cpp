@@ -69,6 +69,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <vector>
 
 #include "stcpp/domain/micro_pusd.hpp"
 #include "stcpp/numerical/slippage_model.hpp"
@@ -352,9 +353,11 @@ public:
     void set_condition_exposure(std::string const& condition_id, std::int64_t usdc) noexcept;
     void set_outcome_exposure(std::string const& token_id, std::int64_t usdc) noexcept;
 
-    void set_daily_pnl(std::int64_t usdc) noexcept { daily_pnl_usdc_.store(usdc); }
-    void set_consec_loss(std::int32_t n) noexcept { consec_loss_.store(n); }
-    void set_bankroll(std::int64_t usdc) noexcept { bankroll_usdc_.store(usdc); }
+    // A4 (老韩 spec §2): 去 inline — body 移 .cpp 以记 last_fed_ns_ (now_realtime_ns 在 .cpp;
+    //   避免给 ABI-locked hpp 加 pit.hpp 依赖)。非热路径 (每 tick 喂一次), out-of-line 开销可忽略。
+    void set_daily_pnl(std::int64_t usdc) noexcept;
+    void set_consec_loss(std::int32_t n) noexcept;
+    void set_bankroll(std::int64_t usdc) noexcept;
 
     // 信号注入 (W5 接小肖 Kelly+CI, 当前测试 setter)
     void set_edge_ci_lower(std::string const& signal_id, double v) noexcept;
@@ -364,7 +367,7 @@ public:
     void set_market_freshness_ms(std::string const& market_id, std::uint32_t ms) noexcept;
     // v0.5 新增: per-token book freshness (R8.4)
     void set_token_book_freshness_ms(std::string const& token_id, std::uint32_t ms) noexcept;
-    void set_recon_freshness_ms(std::uint32_t ms) noexcept { recon_freshness_ms_.store(ms); }
+    void set_recon_freshness_ms(std::uint32_t ms) noexcept;  // A4: 去 inline (记 last_fed_ns)
     void set_market_state(std::string const& market_id, MarketState s) noexcept;
     void set_market_active(std::string const& market_id, bool active) noexcept;
 
@@ -373,6 +376,32 @@ public:
 
     // 公开 helper (单测 + audit 用): ULID 生成 stub
     [[nodiscard]] static std::array<std::uint8_t, 16> next_audit_id(std::int64_t now_ns) noexcept;
+
+    // ---- A4 feed-liveness 自检 (老韩 spec §2; retro synthesis §3) ----
+    //   病: 上游忘喂某红线 → RM 拿默认值「假装已活」静默放行 = 风控纸面化。
+    //   机制: 每红线 setter 末尾 O(1) relaxed store last_fed_ns_ (热路径零感, 不碰 R-12 锁红线);
+    //         report() 仅启动期 + 周期巡检调 (绝不进 evaluate 热路径)。
+    //   标量红线 = last-fed; map 类红线 = last-any-key-fed (比 ever-fed 更informative: maps 也得 staleness)。
+    enum class FeedKey : std::uint8_t {
+        Bankroll = 0,  // 标量
+        DailyPnl,
+        ConsecLoss,
+        ReconFreshness,
+        Exposure,      // map 类 (condition / outcome / market_exposure 任一喂 → 标活)
+        Freshness,     // map 类 (market / token book freshness 任一喂)
+        EdgeCi,        // map 类 (per-signal)
+        StrategyEv,    // map 类 (per-strategy)
+        MarketState,   // map 类
+        MarketActive,  // map 类
+        COUNT
+    };
+    struct FeedLivenessRow {
+        std::string_view key;      // 红线名
+        std::int64_t last_fed_ns;  // 0 = 从未喂过
+        bool ever_fed;             // last_fed_ns != 0
+    };
+    // 诊断快照 (非热路径): 各红线 (是否喂过 + 上次喂 ts)。daemon 启动自检 + 周期巡检调用。
+    [[nodiscard]] std::vector<FeedLivenessRow> feed_liveness_report() const noexcept;
 
 private:
     // ---- 10 reject rule helper (优先级 short-circuit; 命中即返回 reject) ----
@@ -400,6 +429,9 @@ private:
     // emit audit + 填 audit_id. 返 false → AUDIT_WAL_BACKPRESSURE.
     [[nodiscard]] bool emit_audit_(OrderIntent const& it, RiskDecision& d) noexcept;
 
+    // A4: 记某红线被喂 (O(1) relaxed store now_realtime_ns; .cpp 定义, 因 now_realtime_ns 在 .cpp)。
+    void mark_fed_(FeedKey k) noexcept;
+
     // ---- 配置 (ctor 起不可变) ----
     RiskConfig cfg_;
 
@@ -410,6 +442,10 @@ private:
     std::atomic<std::int64_t> bankroll_usdc_{0};
     std::atomic<std::uint32_t> recon_freshness_ms_{0};
     std::atomic<std::uint64_t> audit_seq_{0};
+
+    // A4 feed-liveness: 每红线上次被喂的 wall ns (0 = 从未喂)。relaxed store/load, 私有诊断成员,
+    //   不进任何序列化 struct (RiskConfig/AuditRecord/OrderIntent 布局零变, ABI-中性)。
+    std::array<std::atomic<std::int64_t>, static_cast<std::size_t>(FeedKey::COUNT)> last_fed_ns_{};
 
     // emitter (DI)
     std::shared_ptr<AuditEmitter> emitter_;
