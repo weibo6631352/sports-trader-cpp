@@ -203,12 +203,13 @@ BuildResult PaperDaemon::Build() {
     //   摁住; advisory gate 长期挡着未爆, A2 第一笔成交才现形, 本次根治。
     constexpr double kMicroPerPusd = 1'000'000.0;
     risk::RiskConfig paper_rm_cfg;
-    paper_rm_cfg.per_order_cap_usdc =
-        static_cast<std::int64_t>(cfg_.paper_loop.per_order_cap_usdc * kMicroPerPusd);
-    paper_rm_cfg.market_exposure_cap_usdc =
-        static_cast<std::int64_t>(cfg_.paper_loop.market_exposure_cap_usdc * kMicroPerPusd);
-    paper_rm_cfg.per_outcome_cap_usdc =
-        static_cast<std::int64_t>(cfg_.paper_loop.per_outcome_cap_usdc * kMicroPerPusd);
+    // c2 (P0-2): cap 字段为 MicroPUSD; from_micro 包 micro 计算值 (此处语义正确 = 真 micro)。
+    paper_rm_cfg.per_order_cap_usdc = domain::MicroPUSD::from_micro(
+        static_cast<std::int64_t>(cfg_.paper_loop.per_order_cap_usdc * kMicroPerPusd));
+    paper_rm_cfg.market_exposure_cap_usdc = domain::MicroPUSD::from_micro(
+        static_cast<std::int64_t>(cfg_.paper_loop.market_exposure_cap_usdc * kMicroPerPusd));
+    paper_rm_cfg.per_outcome_cap_usdc = domain::MicroPUSD::from_micro(
+        static_cast<std::int64_t>(cfg_.paper_loop.per_outcome_cap_usdc * kMicroPerPusd));
     paper_rm_cfg.bankroll_usdc = static_cast<std::int64_t>(cfg_.paper_loop.bankroll_usdc * kMicroPerPusd);
     paper_rm_cfg.edge_ci_lower_floor = -1.0;  // M1 放宽 CI 门
     paper_rm_cfg.enable_moneyline = true;

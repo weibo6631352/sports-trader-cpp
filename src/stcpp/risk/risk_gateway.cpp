@@ -428,8 +428,8 @@ bool RiskGateway::check_market_(OrderIntent const& it, RiskDecision& d) const no
 
 // 6. position_caps (ADR-004 前移)
 bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) const noexcept {
-    // EXCEED_PER_ORDER_CAP
-    if (it.size_pUSD_micro > cfg_.per_order_cap_usdc) {
+    // EXCEED_PER_ORDER_CAP (c2: cap 为 MicroPUSD; size 包 from_micro 同型比, 字节级零变)
+    if (domain::MicroPUSD::from_micro(it.size_pUSD_micro) > cfg_.per_order_cap_usdc) {
         d.reject = RejectCode::EXCEED_PER_ORDER_CAP;
         return true;
     }
@@ -449,7 +449,7 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
             if (me_it != s_->market_exposure_usdc.end())
                 cur = me_it->second;
         }
-        if (cur + it.size_pUSD_micro > cfg_.market_exposure_cap_usdc) {
+        if (domain::MicroPUSD::from_micro(cur + it.size_pUSD_micro) > cfg_.market_exposure_cap_usdc) {
             d.reject = RejectCode::EXCEED_CONDITION_EXPOSURE;
             return true;
         }
@@ -457,12 +457,12 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
 
     // R6.2b: per_outcome cap (v0.5, uses token_id)
     // Only check if token_id is set and per_outcome_cap_usdc > 0
-    if (!it.token_id.empty() && cfg_.per_outcome_cap_usdc > 0) {
+    if (!it.token_id.empty() && cfg_.per_outcome_cap_usdc.v > 0) {
         std::int64_t cur_tok = 0;
         auto te_it = s_->token_exposure_usdc.find(it.token_id);
         if (te_it != s_->token_exposure_usdc.end())
             cur_tok = te_it->second;
-        if (cur_tok + it.size_pUSD_micro > cfg_.per_outcome_cap_usdc) {
+        if (domain::MicroPUSD::from_micro(cur_tok + it.size_pUSD_micro) > cfg_.per_outcome_cap_usdc) {
             d.reject = RejectCode::EXCEED_PER_OUTCOME_CAP;
             return true;
         }

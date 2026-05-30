@@ -172,7 +172,9 @@ SizingOutput SizingCalculator::compute(risk::RiskConfig const& cfg, SizingInput 
     // ------------------------------------------------------------------
 
     // Cap 1: PER_ORDER — RiskConfig.per_order_cap_usdc (引用值, 非字面量)
-    double const cap1_limit = static_cast<double>(cfg.per_order_cap_usdc);
+    // c2 (P0-2): cap 为 MicroPUSD; .v 取原始值保持现行数值 (字节级零变)。
+    //   ⚠ 现行把 micro raw 当 whole pUSD 比 (= 第二现场失配, 小袁核实) → c3 改 .to_pusd() 根治。
+    double const cap1_limit = static_cast<double>(cfg.per_order_cap_usdc.v);
     double notional_c1 = notional_kelly;
     CappedBy capped = CappedBy::NONE;
 
@@ -184,7 +186,7 @@ SizingOutput SizingCalculator::compute(risk::RiskConfig const& cfg, SizingInput 
     // Cap 2: PER_OUTCOME — RiskConfig.per_outcome_cap_usdc
     // headroom = max(0, per_outcome_cap − current_token_exposure)
     {
-        double const cap2_limit = static_cast<double>(cfg.per_outcome_cap_usdc);
+        double const cap2_limit = static_cast<double>(cfg.per_outcome_cap_usdc.v);  // c2 .v 保值 (c3 改)
         double const headroom2 = cap2_limit - in.current_token_exposure_usdc;
         double const effective2 = (headroom2 > 0.0) ? headroom2 : 0.0;
         if (notional_c1 > effective2) {
@@ -195,7 +197,7 @@ SizingOutput SizingCalculator::compute(risk::RiskConfig const& cfg, SizingInput 
 
     // Cap 3: CONDITION_EXPOSURE — RiskConfig.market_exposure_cap_usdc
     {
-        double const cap3_limit = static_cast<double>(cfg.market_exposure_cap_usdc);
+        double const cap3_limit = static_cast<double>(cfg.market_exposure_cap_usdc.v);  // c2 .v 保值 (c3 改)
         double const headroom3 = cap3_limit - in.current_condition_exposure_usdc;
         double const effective3 = (headroom3 > 0.0) ? headroom3 : 0.0;
         if (notional_c1 > effective3) {

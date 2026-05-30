@@ -63,9 +63,9 @@ protected:
     void SetUp() override {
         emitter_ = std::make_shared<Wave3Emitter>();
         cfg_ = RiskConfig{};
-        cfg_.per_order_cap_usdc = 10'000;
-        cfg_.market_exposure_cap_usdc = 50'000;
-        cfg_.per_outcome_cap_usdc = 25'000;
+        cfg_.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(10'000);
+        cfg_.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000);
+        cfg_.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(25'000);
         cfg_.bankroll_usdc = 100'000;
         cfg_.daily_loss_halt_usdc = 0;    // 禁用旧绝对值字段, 强制走 pct 路径
         cfg_.daily_loss_soft_pct = 0.03;  // D1: -3% 软熔断

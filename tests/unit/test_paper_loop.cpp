@@ -125,11 +125,12 @@ protected:
         // RM: 放宽 cap 以便 demo 场景产生成交
         // 单位 (A2 修): RM caps/bankroll 与 size_pUSD_micro 同为 micro pUSD (× 1e6).
         RiskConfig rm_cfg;
-        rm_cfg.per_order_cap_usdc = 10'000'000;        // 10 pUSD (micro)
-        rm_cfg.market_exposure_cap_usdc = 50'000'000;  // 50 pUSD (micro)
-        rm_cfg.per_outcome_cap_usdc = 25'000'000;      // 25 pUSD (micro)
-        rm_cfg.bankroll_usdc = 1'000'000'000;          // 1K pUSD (micro)
-        rm_cfg.edge_ci_lower_floor = -1.0;             // 放宽 CI 门
+        rm_cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(10'000'000);  // 10 pUSD (micro)
+        rm_cfg.market_exposure_cap_usdc =
+            stcpp::domain::MicroPUSD::from_micro(50'000'000);                            // 50 pUSD (micro)
+        rm_cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(25'000'000);  // 25 pUSD (micro)
+        rm_cfg.bankroll_usdc = 1'000'000'000;                                            // 1K pUSD (micro)
+        rm_cfg.edge_ci_lower_floor = -1.0;                                               // 放宽 CI 门
         rm_cfg.enable_moneyline = true;
 
         auto emitter = std::make_shared<NullAuditEmitter>();

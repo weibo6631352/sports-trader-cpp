@@ -91,9 +91,9 @@ protected:
     void SetUp() override {
         emitter_ = std::make_shared<InMemoryEmitter>();
         cfg_ = RiskConfig{};
-        cfg_.per_order_cap_usdc = 10'000;
-        cfg_.market_exposure_cap_usdc = 50'000;
-        cfg_.per_outcome_cap_usdc = 25'000;  // v0.5 新增
+        cfg_.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(10'000);
+        cfg_.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000);
+        cfg_.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(25'000);  // v0.5 新增
         cfg_.bankroll_usdc = 100'000;
         cfg_.daily_loss_halt_usdc = 5'000;
         cfg_.consec_loss_halt_count = 5;
@@ -660,7 +660,7 @@ TEST_F(RiskGatewayTest, T2_PerOutcomeCap_Reject) {
     // 需先调大 per_order_cap 以避免 EXCEED_PER_ORDER_CAP 先触发
     rm_.reset();
     RiskConfig c2 = cfg_;
-    c2.per_order_cap_usdc = 50'000;
+    c2.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000);
     rm_ = std::make_unique<RiskGateway>(c2, emitter_);
     rm_->set_state(RmState::RUNNING);
     rm_->set_outcome_exposure(no_token_id, 20'000);
@@ -755,7 +755,7 @@ TEST_F(RiskGatewayTest, T6_HotPath_P99_Under_50us) {
     };
     auto noop = std::make_shared<NoopEmit>();
     RiskConfig c = cfg_;
-    c.per_outcome_cap_usdc = 25'000;
+    c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(25'000);
     RiskGateway fast_rm(c, noop);
     fast_rm.set_state(RmState::RUNNING);
     fast_rm.set_market_active(kMockConditionId, true);

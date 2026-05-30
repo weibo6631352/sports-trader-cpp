@@ -126,7 +126,7 @@ TEST(SizingCalculatorTest, C1_PerOrderCap_NotExceeded) {
 
     ASSERT_TRUE(out.valid);
     // C1: suggested_notional <= per_order_cap (引用值)
-    EXPECT_LE(out.suggested_notional, static_cast<double>(cfg.per_order_cap_usdc) + 1e-9);
+    EXPECT_LE(out.suggested_notional, static_cast<double>(cfg.per_order_cap_usdc.v) + 1e-9);
     EXPECT_EQ(out.capped_by, CappedBy::PER_ORDER_CAP);
 }
 
@@ -147,7 +147,7 @@ TEST(SizingCalculatorTest, C2_PerOutcomeCap_WithExistingExposure) {
 
     ASSERT_TRUE(out.valid);
     EXPECT_LE(out.suggested_notional + in.current_token_exposure_usdc,
-              static_cast<double>(cfg.per_outcome_cap_usdc) + 1e-9);
+              static_cast<double>(cfg.per_outcome_cap_usdc.v) + 1e-9);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,7 +167,7 @@ TEST(SizingCalculatorTest, C3_ConditionExposureCap_WithExistingExposure) {
 
     ASSERT_TRUE(out.valid);
     EXPECT_LE(out.suggested_notional + in.current_condition_exposure_usdc,
-              static_cast<double>(cfg.market_exposure_cap_usdc) + 1e-9);
+              static_cast<double>(cfg.market_exposure_cap_usdc.v) + 1e-9);
 }
 
 // ---------------------------------------------------------------------------
@@ -490,7 +490,7 @@ TEST(SizingCalculatorTest, CappedBy_PER_ORDER_CAP_Triggered) {
 
     ASSERT_TRUE(out.valid);
     EXPECT_EQ(out.capped_by, CappedBy::PER_ORDER_CAP);
-    EXPECT_LE(out.suggested_notional, static_cast<double>(cfg.per_order_cap_usdc) + 1e-9);
+    EXPECT_LE(out.suggested_notional, static_cast<double>(cfg.per_order_cap_usdc.v) + 1e-9);
 }
 
 TEST(SizingCalculatorTest, CappedBy_PER_OUTCOME_CAP_Triggered) {
@@ -509,7 +509,7 @@ TEST(SizingCalculatorTest, CappedBy_PER_OUTCOME_CAP_Triggered) {
     ASSERT_TRUE(out.valid);
     EXPECT_EQ(out.capped_by, CappedBy::PER_OUTCOME_CAP);
     EXPECT_LE(out.suggested_notional + in.current_token_exposure_usdc,
-              static_cast<double>(cfg.per_outcome_cap_usdc) + 1e-9);
+              static_cast<double>(cfg.per_outcome_cap_usdc.v) + 1e-9);
 }
 
 TEST(SizingCalculatorTest, CappedBy_CONDITION_EXPOSURE_Triggered) {
@@ -526,7 +526,7 @@ TEST(SizingCalculatorTest, CappedBy_CONDITION_EXPOSURE_Triggered) {
     ASSERT_TRUE(out.valid);
     EXPECT_EQ(out.capped_by, CappedBy::CONDITION_EXPOSURE);
     EXPECT_LE(out.suggested_notional + in.current_condition_exposure_usdc,
-              static_cast<double>(cfg.market_exposure_cap_usdc) + 1e-9);
+              static_cast<double>(cfg.market_exposure_cap_usdc.v) + 1e-9);
 }
 
 TEST(SizingCalculatorTest, CappedBy_BANKROLL_FRACTION_Triggered) {

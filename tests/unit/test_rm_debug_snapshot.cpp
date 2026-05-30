@@ -97,9 +97,10 @@ OrderIntent make_base_intent(std::int64_t base_ns, int signal_seq = 0) {
 std::pair<std::shared_ptr<RiskGateway>, std::shared_ptr<NullEmitter>> make_gw() {
     auto em = std::make_shared<NullEmitter>();
     RiskConfig cfg{};
-    cfg.per_order_cap_usdc = 10'000'000;  // 10 USDC (micro); 足够大不触发 cap
-    cfg.market_exposure_cap_usdc = 100'000'000;
-    cfg.per_outcome_cap_usdc = 50'000'000;
+    cfg.per_order_cap_usdc =
+        stcpp::domain::MicroPUSD::from_micro(10'000'000);  // 10 USDC (micro); 足够大不触发 cap
+    cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(100'000'000);
+    cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000'000);
     cfg.bankroll_usdc = 1'000'000'000;
     cfg.daily_loss_halt_usdc = 0;
     cfg.daily_loss_soft_pct = 0.03;

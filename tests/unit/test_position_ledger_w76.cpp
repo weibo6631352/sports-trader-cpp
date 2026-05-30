@@ -183,9 +183,9 @@ TEST(SystemStateW76, TC03_DrainCloseAllowed) {
     // 使用 RiskGateway 的 DRAIN state 验证放行条件
     // (DRAIN: is_close=true + side=Sell 放行; 其余 reject STATE_DRAIN)
     RiskConfig cfg;
-    cfg.per_order_cap_usdc = 100'000;
-    cfg.market_exposure_cap_usdc = 500'000;
-    cfg.per_outcome_cap_usdc = 250'000;
+    cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(100'000);
+    cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(500'000);
+    cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(250'000);
     cfg.bankroll_usdc = 1'000'000;
     cfg.daily_loss_halt_usdc = 50'000;
     cfg.consec_loss_halt_count = 100;
@@ -241,9 +241,9 @@ TEST(SystemStateW76, TC04_RejectRingTailCopy) {
     RiskConfig cfg;
     cfg.enable_moneyline = true;
     cfg.bankroll_usdc = 1'000'000;
-    cfg.per_order_cap_usdc = 100'000;
-    cfg.market_exposure_cap_usdc = 500'000;
-    cfg.per_outcome_cap_usdc = 250'000;
+    cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(100'000);
+    cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(500'000);
+    cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(250'000);
     cfg.daily_loss_halt_usdc = 50'000;
     cfg.consec_loss_halt_count = 100;
     cfg.edge_ci_lower_floor = 0.0;

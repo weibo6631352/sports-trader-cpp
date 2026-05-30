@@ -216,8 +216,8 @@ protected:
 
         // RiskGateway (老韩 v0.3.1) — 真件
         risk::RiskConfig rcfg{};
-        rcfg.per_order_cap_usdc = 10'000;
-        rcfg.market_exposure_cap_usdc = 50'000;
+        rcfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(10'000);
+        rcfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000);
         rcfg.bankroll_usdc = 100'000;
         rcfg.daily_loss_halt_usdc = 5'000;
         rcfg.consec_loss_halt_count = 5;
