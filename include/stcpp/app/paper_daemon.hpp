@@ -12,7 +12,7 @@
 // 职责: 把 paper daemon 的 8+ 组件装配逻辑从 debug_server_main.cpp 的 main() 函数体
 //   抽出, 用 Build()/Start()/WaitForStop()/Shutdown() 表达 11 步启动序与反序关停.
 //   两个 binary 共用同一份 Build() 写栈:
-//     - stcpp_debug_server  → RunMode::PaperDaemon (带 HTTP 观测端)
+//     - stcpp_paper_server  → RunMode::PaperDaemon (带 HTTP 观测端)
 //     - stcpp_paper_runtime → RunMode::Headless    (无 HTTP, systemd 常驻)
 //
 // 设计 (老周三段式裁定 + 老韩 R-11 硬 gate):
@@ -75,7 +75,7 @@ namespace stcpp::app {
 //   STCPP_EXEC_MODE (paper/live/backtest, R-7/R-11 真相源) 正交. RunMode 不切交易模式.
 // ---------------------------------------------------------------------------
 enum class RunMode : std::uint8_t {
-    PaperDaemon = 0,  // 带 HTTP 观测端 (= 现 stcpp_debug_server)
+    PaperDaemon = 0,  // 带 HTTP 观测端 (= 现 stcpp_paper_server)
     Headless = 1,     // 无 HTTP, systemd 常驻 (= stcpp_paper_runtime)
 };
 

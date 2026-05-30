@@ -1,10 +1,10 @@
-# deploy/paper-runtime/Dockerfile.debug-server
+# deploy/paper-runtime/Dockerfile.paper-server
 # owner: 老吴 (linux-sre-devops, A-unit, #10)
 # last_review: 2026-05-29
 #
-# 目标: 多阶段构建 stcpp_debug_server + frontend SPA (SolidJS + Vite)
+# 目标: 多阶段构建 stcpp_paper_server + frontend SPA (SolidJS + Vite)
 #   Stage 1 (node-builder)  — npm run build → frontend/dist/
-#   Stage 2 (cpp-builder)   — gcc-13 + cmake + ninja → stcpp_debug_server binary
+#   Stage 2 (cpp-builder)   — gcc-13 + cmake + ninja → stcpp_paper_server binary
 #   Stage 3 (runtime)       — Ubuntu 24.04 minimal: binary + dist/ 静态文件, 无 Node 运行时
 #
 # 对齐文档:
@@ -15,16 +15,16 @@
 #   CLAUDE.md R-12: API server 独立线程, 不阻塞 hot path
 #
 # build (从仓库根执行):
-#   docker build -f deploy/paper-runtime/Dockerfile.debug-server \
-#                -t stcpp-debug-server:latest .
+#   docker build -f deploy/paper-runtime/Dockerfile.paper-server \
+#                -t stcpp-paper-server:latest .
 #
 # run (本地验证, SSH 隧道 → 8080):
 #   docker run --rm -p 127.0.0.1:8080:8080 \
 #              -e PAPER_MODE=1 \
 #              --env-file /etc/stcpp/paper.env \
-#              stcpp-debug-server:latest
+#              stcpp-paper-server:latest
 #
-# Frankfurt 部署走 docker-compose.yml + systemd unit (stcpp-debug-server.service)
+# Frankfurt 部署走 docker-compose.yml + systemd unit (stcpp-paper-server.service)
 
 # ---------------------------------------------------------------------------
 # Stage 1: node-builder — frontend npm run build
@@ -47,7 +47,7 @@ COPY frontend/ .
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-# Stage 2: cpp-builder — gcc-13 cmake ninja → stcpp_debug_server
+# Stage 2: cpp-builder — gcc-13 cmake ninja → stcpp_paper_server
 # ---------------------------------------------------------------------------
 FROM ubuntu:24.04 AS cpp-builder
 
@@ -80,8 +80,8 @@ COPY include/ include/
 COPY src/ src/
 COPY tests/ tests/
 
-# cmake configure + build stcpp_debug_server target only
-# --target stcpp_debug_server 跳过 paper_runtime / backtest binary, 加快构建
+# cmake configure + build stcpp_paper_server target only
+# --target stcpp_paper_server 跳过 paper_runtime / backtest binary, 加快构建
 # STCPP_EXEC_MODE 决定 STCPP_EXEC_MODE_STR 编译期常量 (debug_server_main.cpp 引用)
 # PAPER_MODE=ON: 链接 paper_engine, 跳过 live order submission + nonce_ledger 写
 RUN cmake -B build \
@@ -91,7 +91,7 @@ RUN cmake -B build \
       -DSTCPP_EXEC_MODE=${STCPP_EXEC_MODE} \
       -DCMAKE_C_COMPILER=gcc-13 \
       -DCMAKE_CXX_COMPILER=g++-13 \
-    && cmake --build build --target stcpp_debug_server --parallel
+    && cmake --build build --target stcpp_paper_server --parallel
 
 # ---------------------------------------------------------------------------
 # Stage 3: runtime — minimal Ubuntu 24.04, 无 Node / 无编译工具
@@ -125,8 +125,8 @@ RUN mkdir -p /app/bin /app/frontend/dist /app/data /app/logs /app/config \
 
 # --- 从 cpp-builder 复制 binary ---
 COPY --from=cpp-builder --chown=stcpp:stcpp \
-    /src/build/src/stcpp/debug_api/stcpp_debug_server \
-    /app/bin/stcpp_debug_server
+    /src/build/src/stcpp/debug_api/stcpp_paper_server \
+    /app/bin/stcpp_paper_server
 
 # --- 从 node-builder 复制 frontend 静态文件 (无 Node 运行时) ---
 # vite build outDir=dist, base='./' → 资源引用相对路径
@@ -159,5 +159,5 @@ ENV DATA_DIR=/app/data
 # ADR-038 §5: 默认 127.0.0.1 (不开 0.0.0.0), 远程走 SSH 隧道
 # --frontend /app/frontend/dist: cpp-httplib 托管静态文件, 与 API 同源 :8080
 # --real: 接真实 OrderBook snapshot (paper runtime 联动时启用; standalone 用 --demo 默认)
-ENTRYPOINT ["/app/bin/stcpp_debug_server"]
+ENTRYPOINT ["/app/bin/stcpp_paper_server"]
 CMD ["--host", "127.0.0.1", "--port", "8080", "--frontend", "/app/frontend/dist"]

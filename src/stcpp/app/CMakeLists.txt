@@ -8,7 +8,7 @@
 #
 # 产出:
 #   stcpp_paper_app       STATIC — PaperDaemon + market_discovery (可测)
-#   stcpp_debug_server    EXE    — RunMode::PaperDaemon (带 HTTP; 原 debug_api 定义, 现迁此)
+#   stcpp_paper_server    EXE    — RunMode::PaperDaemon (带 HTTP; 原 debug_api 定义, 现迁此)
 #   stcpp_paper_runtime   EXE    — RunMode::Headless (systemd /opt/stcpp/bin/paper_runtime)
 #
 # 关联: ADR-011 (paper/live binary), R-11 (paper 隔离), R-12 (后台线程独立)
@@ -83,13 +83,17 @@ target_compile_options(stcpp_paper_app PRIVATE
 )
 
 # ---------------------------------------------------------------------------
-# stcpp_debug_server EXE — RunMode::PaperDaemon (带 HTTP)
+# stcpp_paper_server EXE — RunMode::PaperDaemon (带 HTTP 运营观测端)
+#   (原 stcpp_paper_server / debug_server_main.cpp — W9 骨架遗留名, 2026-05-30 改名;
+#    它是 paper daemon 的运营观测 HTTP 服务, 非调试工具. OUTPUT_NAME=paper_server,
+#    与 headless 的 paper_runtime 对齐.)
 # ---------------------------------------------------------------------------
-add_executable(stcpp_debug_server debug_server_main.cpp)
-target_link_libraries(stcpp_debug_server PRIVATE stcpp_paper_app)
-target_compile_features(stcpp_debug_server PRIVATE cxx_std_20)
+add_executable(stcpp_paper_server paper_server_main.cpp)
+set_target_properties(stcpp_paper_server PROPERTIES OUTPUT_NAME paper_server)
+target_link_libraries(stcpp_paper_server PRIVATE stcpp_paper_app)
+target_compile_features(stcpp_paper_server PRIVATE cxx_std_20)
 # 三方库豁免: cpp-httplib (经 stcpp_paper_app→stcpp_debug_api SYSTEM include) + OpenSSL — ADR-010 §3.2
-target_compile_options(stcpp_debug_server PRIVATE
+target_compile_options(stcpp_paper_server PRIVATE
     -Wno-old-style-cast -Wno-cast-align -Wno-sign-conversion -Wno-conversion
     -Wno-shadow -Wno-double-promotion -Wno-format-nonliteral
 )
@@ -109,4 +113,4 @@ target_compile_options(stcpp_paper_runtime PRIVATE
 # 部署: install 到 bin/ → provision.sh 用 cmake --install (老吴对齐 §2, T4)
 install(TARGETS stcpp_paper_runtime RUNTIME DESTINATION bin)
 
-message(STATUS "stcpp_paper_app: PaperDaemon 编排层 | debug_server(http) + paper_runtime(headless) | mode=${STCPP_EXEC_MODE}")
+message(STATUS "stcpp_paper_app: PaperDaemon 编排层 | paper_server(http) + paper_runtime(headless) | mode=${STCPP_EXEC_MODE}")

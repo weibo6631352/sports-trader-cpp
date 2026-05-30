@@ -116,7 +116,7 @@ target_compile_options(stcpp_debug_api PRIVATE
 find_package(Threads REQUIRED)
 target_link_libraries(stcpp_debug_api PUBLIC Threads::Threads)
 
-# 注: stcpp_debug_server / stcpp_paper_runtime 可运行入口已迁至 src/stcpp/app/
+# 注: stcpp_paper_server / stcpp_paper_runtime 可运行入口已迁至 src/stcpp/app/
 #     (PaperDaemon 重构, 老郭 §A.1 / 老周架构裁定 B1). debug_api 仅保留契约库,
 #     绝不含 paper_daemon.cpp — 库依赖保持 Threads only, 防 §A.2 "什么都连" 膨胀.
 

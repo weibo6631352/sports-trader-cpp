@@ -142,7 +142,7 @@ add_subdirectory(src/stcpp/backtest)
 add_subdirectory(src/stcpp/paper)
 
 # PaperDaemon 编排层 (老郭 §A.1 / 老周架构裁定 B1)
-# stcpp_paper_app (PaperDaemon + market_discovery) + stcpp_debug_server(http) + stcpp_paper_runtime(headless)
+# stcpp_paper_app (PaperDaemon + market_discovery) + stcpp_paper_server(http) + stcpp_paper_runtime(headless)
 # 必须在 debug_api + paper 之后 (app → debug_api/paper 单向依赖).
 if(STCPP_BUILD_DEBUG_API)
     add_subdirectory(src/stcpp/app)

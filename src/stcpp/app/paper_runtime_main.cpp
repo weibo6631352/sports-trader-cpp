@@ -6,7 +6,7 @@
 // last_review: 2026-05-30
 //
 // 角色: RunMode::Headless —— 无 HTTP 观测端, stderr → journald (老吴部署对齐 §3).
-//   全天候跑 PaperLoop + ML 采集; 观测看板由独立 stcpp_debug_server (按需起) 提供.
+//   全天候跑 PaperLoop + ML 采集; 观测看板由独立 stcpp_paper_server (按需起) 提供.
 //
 // R-11 硬 gate (老韩 R-11 审计 G1-G4): main() 第一件事跑 mode 一致性校验.
 //   mode 唯一真相源 = build-time (kCompiledMode); PAPER_MODE env 仅做冗余交叉校验.

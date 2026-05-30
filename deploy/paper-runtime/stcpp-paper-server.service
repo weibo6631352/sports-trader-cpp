@@ -1,16 +1,16 @@
-# stcpp-debug-server.service — systemd unit for stcpp_debug_server (Frankfurt eu-central-1)
+# stcpp-paper-server.service — systemd unit for stcpp_paper_server (Frankfurt eu-central-1)
 # owner: 老吴 (linux-sre-devops, A-unit, #10)
 # last_review: 2026-05-29
 #
-# deploy path: /etc/systemd/system/stcpp-debug-server.service
-# manage:      systemctl {start|stop|restart|status|reload} stcpp-debug-server
-# logs:        journalctl -u stcpp-debug-server -f
+# deploy path: /etc/systemd/system/stcpp-paper-server.service
+# manage:      systemctl {start|stop|restart|status|reload} stcpp-paper-server
+# logs:        journalctl -u stcpp-paper-server -f
 #
 # 关联:
 #   ADR-038 §5: 默认 127.0.0.1, 不开 0.0.0.0; 远程访问走 SSH 隧道
 #   ADR-013 v2: Frankfurt eu-central-1 目标部署地
 #   CLAUDE.md R-11: PAPER_MODE=1 强制 (env override)
-#   CLAUDE.md R-12: stcpp_debug_server 独立进程/线程, 不阻塞 hot path
+#   CLAUDE.md R-12: stcpp_paper_server 独立进程/线程, 不阻塞 hot path
 #
 # 远程访问方式 (ADR-038 §5 SSH 隧道, 不开公网端口):
 #   ssh -L 8080:127.0.0.1:8080 ubuntu@<frankfurt-ip> -N
@@ -52,7 +52,7 @@ Environment=DATA_DIR=/opt/stcpp/data
 #      --frontend /opt/stcpp/frontend/dist  (cpp-httplib 静态文件托管)
 #      --real 可选: paper runtime 联动时接真实 OrderBook snapshot hub;
 #                  standalone 模式去掉 --real, 使用 DemoStateProvider
-ExecStart=/opt/stcpp/bin/stcpp_debug_server \
+ExecStart=/opt/stcpp/bin/paper_server \
     --host 127.0.0.1 \
     --port 8080 \
     --frontend /opt/stcpp/frontend/dist
@@ -72,7 +72,7 @@ LimitNOFILE=65536
 # 日志: journal → promtail → Loki (Sprint-3 小郑观测栈)
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=stcpp-debug-server
+SyslogIdentifier=stcpp-paper-server
 
 # ---------------------------------------------------------------------------
 # Security hardening (非 root 运行 + namespace 隔离)

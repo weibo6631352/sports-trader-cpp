@@ -1,4 +1,7 @@
-// src/stcpp/app/debug_server_main.cpp — paper daemon + 观测 HTTP 入口 (thin main)
+// src/stcpp/app/paper_server_main.cpp — paper daemon + 运营观测 HTTP 入口 (thin main)
+//
+// (原名 debug_server_main.cpp / stcpp_debug_server —— W9 骨架遗留名, 2026-05-30 改名:
+//  它是 paper daemon 的运营观测 HTTP 服务, 非调试工具. headless 版见 paper_runtime_main.cpp)
 //
 // Owner: 老雷 (GM) — PaperDaemon 重构 (老郭 §A.1): 962 行装配逻辑已抽进
 //   stcpp::app::PaperDaemon (stcpp_paper_app 库). 本 main 退化为 ~80 行:
@@ -6,7 +9,7 @@
 //
 // last_review: 2026-05-30
 //
-// 角色: RunMode::PaperDaemon —— 带 HTTP 观测端 (= 原 stcpp_debug_server).
+// 角色: RunMode::PaperDaemon —— 带 HTTP 观测端 (= 原 stcpp_paper_server).
 //   live book/event = 真实 Polymarket CLOB WSS + gamma /events
 //   score = 真实 Goalserve inplay feed (soccer/basketball/tennis)
 //   positions/pnl/quote = paper 交易循环驱动 (PaperLoop, 500ms tick)
@@ -70,7 +73,7 @@ int main(int argc, char** argv) {
             cfg.enable_paper_trading = false;  // 仅观测, 不起 PaperLoop
         } else if (a == "--help" || a == "-h") {
             std::printf(
-                "usage: stcpp_debug_server [--port N] [--host ADDR] [--verbose] [--no-record-ml]\n"
+                "usage: stcpp_paper_server [--port N] [--host ADDR] [--verbose] [--no-record-ml]\n"
                 "                          [--ml-path PATH] [--no-paper]\n"
                 "  --port N         listen port (default 8080)\n"
                 "  --host ADDR      bind address (default 127.0.0.1)\n"
@@ -86,7 +89,7 @@ int main(int argc, char** argv) {
                 "  (frontend served by Vite dev server, not this process)\n");
             return 0;
         } else {
-            std::fprintf(stderr, "[debug_server] unknown arg: %s (try --help)\n", a.c_str());
+            std::fprintf(stderr, "[paper_server] unknown arg: %s (try --help)\n", a.c_str());
             return 2;
         }
     }
@@ -98,12 +101,12 @@ int main(int argc, char** argv) {
 
     const stcpp::app::BuildResult br = daemon.Build();
     if (!br.ok) {
-        std::fprintf(stderr, "[debug_server] FATAL: PaperDaemon::Build 失败: %s\n", br.error.c_str());
+        std::fprintf(stderr, "[paper_server] FATAL: PaperDaemon::Build 失败: %s\n", br.error.c_str());
         return 1;
     }
 
     const int rc = daemon.Run();  // Start + WaitForStop(SIGINT/SIGTERM) + Shutdown
     g_daemon.store(nullptr, std::memory_order_release);
-    std::printf("[debug_server] 已停止\n");
+    std::printf("[paper_server] 已停止\n");
     return rc;
 }

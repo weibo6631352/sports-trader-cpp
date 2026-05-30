@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# provision-debug-server.sh — Frankfurt eu-central-1 bootstrap for stcpp_debug_server
+# provision-paper-server.sh — Frankfurt eu-central-1 bootstrap for stcpp_paper_server
 # owner: 老吴 (linux-sre-devops, A-unit, #10)
 # last_review: 2026-05-29
 #
-# usage: sudo bash provision-debug-server.sh [--dry-run] [--docker] [--skip-build]
+# usage: sudo bash provision-paper-server.sh [--dry-run] [--docker] [--skip-build]
 #
 #   --dry-run      打印命令不执行 (安全预览)
 #   --docker       使用 docker compose 模式 (default: systemd + binary 直跑)
@@ -48,7 +48,7 @@ done
 
 REPO_DIR="${REPO_DIR:-/opt/stcpp/src}"
 
-log()  { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [provision-debug-server] $*"; }
+log()  { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] [provision-paper-server] $*"; }
 die()  { echo "[ERROR] $*" >&2; exit 1; }
 dry()  {
     if $DRY_RUN; then
@@ -94,7 +94,7 @@ log "=== §2 ufw firewall ==="
 #   22/tcp   — SSH (管理 + 隧道入口)
 #   9100/tcp — Prometheus node-exporter (仅内网 Prometheus scrape)
 # 不开放:
-#   8080     — stcpp_debug_server (只绑 127.0.0.1, 走 SSH 隧道, ADR-038 §5)
+#   8080     — stcpp_paper_server (只绑 127.0.0.1, 走 SSH 隧道, ADR-038 §5)
 dry ufw --force reset
 dry ufw default deny incoming
 dry ufw default allow outgoing
@@ -179,18 +179,18 @@ if ! $USE_DOCKER && ! $SKIP_BUILD; then
           -S "${REPO_DIR}"
 
     dry cmake --build "${REPO_DIR}/build-debug-server" \
-          --target stcpp_debug_server \
+          --target stcpp_paper_server \
           --parallel
 
     dry install -m 755 \
-        "${REPO_DIR}/build-debug-server/src/stcpp/debug_api/stcpp_debug_server" \
-        /opt/stcpp/bin/stcpp_debug_server
-    dry chown stcpp:stcpp /opt/stcpp/bin/stcpp_debug_server
-    log "Binary 已安装: /opt/stcpp/bin/stcpp_debug_server"
+        "${REPO_DIR}/build-debug-server/src/stcpp/debug_api/stcpp_paper_server" \
+        /opt/stcpp/bin/paper_server
+    dry chown stcpp:stcpp /opt/stcpp/bin/paper_server
+    log "Binary 已安装: /opt/stcpp/bin/paper_server"
 
 elif ! $USE_DOCKER && $SKIP_BUILD; then
     log "=== §5 SKIP build — binary + frontend/dist 必须已预装 ==="
-    log "    binary:  /opt/stcpp/bin/stcpp_debug_server"
+    log "    binary:  /opt/stcpp/bin/paper_server"
     log "    dist:    /opt/stcpp/frontend/dist/"
 fi
 
@@ -202,13 +202,13 @@ if ! $USE_DOCKER; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
     dry install -m 644 \
-        "${SCRIPT_DIR}/stcpp-debug-server.service" \
-        /etc/systemd/system/stcpp-debug-server.service
+        "${SCRIPT_DIR}/stcpp-paper-server.service" \
+        /etc/systemd/system/stcpp-paper-server.service
 
     dry systemctl daemon-reload
-    dry systemctl enable stcpp-debug-server
+    dry systemctl enable stcpp-paper-server
     log "systemd unit 已安装."
-    log "启动: systemctl start stcpp-debug-server"
+    log "启动: systemctl start stcpp-paper-server"
 
 else
     # Docker 模式: 不装 systemd unit, compose 自管
@@ -233,7 +233,7 @@ log "node-exporter: $(systemctl is-active prometheus-node-exporter 2>/dev/null |
 # ---------------------------------------------------------------------------
 if ! $USE_DOCKER; then
     log "=== §8 logrotate ==="
-    dry tee /etc/logrotate.d/stcpp-debug-server > /dev/null << 'LOGROTATECFG'
+    dry tee /etc/logrotate.d/stcpp-paper-server > /dev/null << 'LOGROTATECFG'
 /var/log/stcpp/*.log {
     daily
     rotate 14
@@ -243,7 +243,7 @@ if ! $USE_DOCKER; then
     notifempty
     sharedscripts
     postrotate
-        systemctl kill -s HUP stcpp-debug-server 2>/dev/null || true
+        systemctl kill -s HUP stcpp-paper-server 2>/dev/null || true
     endscript
 }
 LOGROTATECFG
@@ -252,7 +252,7 @@ fi
 # ---------------------------------------------------------------------------
 # §9 Post-provision checklist
 # ---------------------------------------------------------------------------
-log "=== provision-debug-server.sh DONE ==="
+log "=== provision-paper-server.sh DONE ==="
 
 cat << 'CHECKLIST'
 
@@ -266,7 +266,7 @@ Post-provision checklist (手动步骤, 按顺序执行):
   [必须] 2. 写入 /etc/stcpp/paper.toml (应用配置, 无 secret, 可 git 存):
             参见 deploy/paper-runtime/.env.example
 
-  [systemd] 3. systemctl start stcpp-debug-server
+  [systemd] 3. systemctl start stcpp-paper-server
   [docker]  3. docker compose -f deploy/paper-runtime/docker-compose.yml up -d
 
   4. 验证 liveness (本机):
@@ -291,8 +291,8 @@ Post-provision checklist (手动步骤, 按顺序执行):
      # 注: 9100 已在 ufw 开放; 8080 不对外 (隧道访问)
 
   8. 验证 PAPER_MODE 强制:
-     [systemd] journalctl -u stcpp-debug-server | grep -i paper
-     [docker]  docker logs stcpp-debug-server | grep -i paper
+     [systemd] journalctl -u stcpp-paper-server | grep -i paper
+     [docker]  docker logs stcpp-paper-server | grep -i paper
 
 RTT 预期 (ADR-013 v2 §3):
   clob.polymarket.com (Cloudflare → eu-west-2 London):  ~15ms (Frankfurt→London)

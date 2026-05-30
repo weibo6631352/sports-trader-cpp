@@ -2,7 +2,7 @@
 # owner: 老吴 (linux-sre-devops, A-unit, #10)
 # last_review: 2026-05-29
 #
-# 用途: Frankfurt eu-central-1 本机运行 stcpp_debug_server (ADR-038 + ADR-013 v2)
+# 用途: Frankfurt eu-central-1 本机运行 stcpp_paper_server (ADR-038 + ADR-013 v2)
 #   - 容器绑定 127.0.0.1:8080 (ADR-038 §5 安全默认, 不暴露公网)
 #   - 远程访问: ssh -L 8080:127.0.0.1:8080 ubuntu@<frankfurt-ip> -N
 #   - Prometheus node-exporter metrics: :9100 (localhost scrape by Prometheus)
@@ -27,17 +27,17 @@ name: stcpp-paper-runtime
 
 services:
   # ---------------------------------------------------------------------------
-  # stcpp_debug_server: 观测/调试 API + frontend 看板 (C++ 托管, 无 Node 运行时)
+  # stcpp_paper_server: 观测/调试 API + frontend 看板 (C++ 托管, 无 Node 运行时)
   # ---------------------------------------------------------------------------
   debug-server:
     build:
       context: ../..             # 仓库根 (CMakeLists.txt + frontend/ + src/ 都在这里)
-      dockerfile: deploy/paper-runtime/Dockerfile.debug-server
+      dockerfile: deploy/paper-runtime/Dockerfile.paper-server
       args:
         BUILD_TYPE: Release
         STCPP_EXEC_MODE: paper   # 编译期常量 → STCPP_EXEC_MODE_STR="paper"
-    image: stcpp-debug-server:latest
-    container_name: stcpp-debug-server
+    image: stcpp-paper-server:latest
+    container_name: stcpp-paper-server
 
     restart: unless-stopped
 
@@ -96,7 +96,7 @@ services:
     logging:
       driver: journald
       options:
-        tag: stcpp-debug-server
+        tag: stcpp-paper-server
 
 # ---------------------------------------------------------------------------
 # volumes (named, 跨 compose down 持久化)

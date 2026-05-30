@@ -39,7 +39,7 @@ open "http://127.0.0.1:3000/?stub=1"
 npm run build        # 产物 dist/  (tsc 0 error)
 
 # 后端 (无 flag = live)
-stcpp_debug_server --port 8080
+paper_server --port 8080
 ```
 
 ---

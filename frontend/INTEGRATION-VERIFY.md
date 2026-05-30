@@ -50,7 +50,7 @@ vite build                 → 306 modules transformed
 
 ## 真实后端数据验证 (2026-05-29)
 
-后端: `stcpp_debug_server` live 模式已运行 (port 8080)
+后端: `paper_server` live 模式已运行 (port 8080)
 
 | endpoint | 状态 | 样本 |
 |----------|------|------|
@@ -139,7 +139,7 @@ open "http://127.0.0.1:3000/?stub=1"
 npm run build   # 产物 dist/  (tsc 0 error)
 
 # 后端 (独立进程, 无 flag = live)
-stcpp_debug_server --port 8080
+paper_server --port 8080
 ```
 
 ---
@@ -147,7 +147,7 @@ stcpp_debug_server --port 8080
 ## v8 数据流图
 
 ```
-[后端 stcpp_debug_server :8080]
+[后端 paper_server :8080]
     |
     ├── GET /api/v1/events        → EventSummary[10] (event_id/slug/title/sport/condition_ids)
     |                              store: refreshMarketGrid → eventGroups
