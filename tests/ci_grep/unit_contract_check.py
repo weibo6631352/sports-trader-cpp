@@ -113,6 +113,13 @@ _F5_SIZE_RAW_DOUBLE = re.compile(
     r"order_size_usdc\s*=\s*(?:static_cast<double>|\(double\))\s*\(\s*[\w.\->]*size_pUSD_micro"
 )
 
+# F6 (A5 老韩 spec §4): paper_loop.cpp 里 set_daily_pnl(...) 喂入必须是 micro pUSD (×1e6).
+#   daily_pnl 在 whole pUSD 域算 (MtM − fee), set_daily_pnl 收 signed micro → 必 ×1e6。
+#   漏 ×1e6 → 喂入小 1e6 → DD 阈值不咬 (P0-2/P1-9 同型单位 bug 复发, 风控静默失效)。
+#   守护: set_daily_pnl( 调用行必须含 1'000'000 (×1e6) 或 unit-contract-ok 标记, 否则 FAIL。
+_F6_SET_DAILY_PNL = re.compile(r"set_daily_pnl\s*\(")
+_F6_HAS_SCALE = re.compile(r"1'?000'?000|1e6|unit-contract-ok")
+
 _COMMENT_PREFIXES = ("//", "*", "/*", "#")
 
 
@@ -245,6 +252,18 @@ def main() -> int:
                 f"  裸 cast → ρ=order/depth 差 1e6 → liquidity gate 全量误拒 (P1-9 复发)."
             )
 
+    # --- F6 (A5): paper_loop.cpp set_daily_pnl 喂入必须 ×1e6 (whole pUSD → micro) ---
+    for lineno, line in _scan_lines(paper_path):
+        if _is_comment_or_exempt(line):
+            continue
+        if _F6_SET_DAILY_PNL.search(line) and not _F6_HAS_SCALE.search(line):
+            errors.append(
+                f"F6 (FAIL): {ENFORCED_FILES['paper']}:{lineno} set_daily_pnl 喂入疑似漏 ×1e6\n"
+                f"  行内容: {line.strip()}\n"
+                f"  daily_pnl 在 whole pUSD 域算 (MtM−fee); set_daily_pnl 收 signed micro → 必 ×1e6.\n"
+                f"  漏乘 → 喂入小 1e6 → DD 阈值不咬 (风控静默失效, P0-2/P1-9 同型). 行内加 × 1'000'000."
+            )
+
     # 输出
     if missing:
         for m in missing:
@@ -257,7 +276,7 @@ def main() -> int:
     if not errors:
         print(
             f"[unit_contract_check] PASS: 扫描 {scanned} enforced 文件 "
-            f"(F1 sizing.v / F2 cast-cap / F3 cap×1e6 / F4 fill_size×1e6 / F5 order_size 裸micro), 无 P0-2 单位失配反模式. "
+            f"(F1 sizing.v / F2 cast-cap / F3 cap×1e6 / F4 fill_size×1e6 / F5 order_size 裸micro / F6 daily_pnl×1e6), 无 P0-2 单位失配反模式. "
             f"paper_loop/paper_daemon 合法 ×1e6/from_pusd 边界转换已豁免."
         )
         return 0

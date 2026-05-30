@@ -279,6 +279,11 @@ private:
     // ---- intent_id 单调递增 (loop_thread_ 单写) ----
     std::uint64_t intent_seq_{0};
 
+    // ---- A5 (老韩 spec §4): 累计已付 taker fee (whole pUSD, 单调加) ----
+    //   DD 喂数: daily_pnl = 时点净 MtM − cum_fee。PublishLedgerSnapshot 算 pnl_fee 后累加,
+    //   FeedRiskGateway 读。loop_thread_ 单 writer (两者同线程顺序调), 无需 atomic。
+    double cum_fee_pusd_{0.0};
+
     // ---- 内部实现 ----
     void RunLoop(std::stop_token st);
     void TickAll();

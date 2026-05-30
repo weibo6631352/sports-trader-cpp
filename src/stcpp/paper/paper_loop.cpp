@@ -697,6 +697,10 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
                            sizing::kSportsTakerFeeRate * fill.fill_price * (1.0 - fill.fill_price);
     const double pnl_gross = pnl_realized + pnl_unrealized;
 
+    // A5 (老韩 spec §4): 累计已付 fee (单调加, whole pUSD)。FeedRiskGateway 的 DD 喂数读它
+    //   (daily_pnl = 时点净 MtM − cum_fee)。loop_thread_ 单 writer, 无需 atomic。
+    cum_fee_pusd_ += pnl_fee;
+
     risk::LedgerFeatures lf{};
     // R-20: 4 ts 透传 (data_source_ts_ns 来自 feat, 禁本地 now() 替代)
     lf.event_ts_ns = feat.event_ts_ns;
@@ -731,8 +735,9 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
 //   故喂前必 × 1e6 (whole → micro)。漏乘 → exposure 红线静默架空 (同 P0-2 单位 bug 同型)。
 //   守护: test_paper_loop P0-1 单位门测试 (fill 越 cap → 必触 EXCEED_CONDITION_EXPOSURE)。
 //
-// daily_pnl (DD) / consec: M1 暂不喂 (M1 只买不平 → realized=0, consec 无源; daily_pnl 的
-//   unrealized 路径撞 PublishLedgerSnapshot 预存 PnL 单位 bug, 待 ledger PnL 单位修复后接)。
+// daily_pnl (DD): A5 (老韩 spec) 已接通 (净 MtM − cum_fee, best_bid 清算; 见下)。A1 ledger PnL
+//   单位根治后, 老郭事前否决前置已清除。
+// consec_loss: 延 M2 (M1 只买不平 → 无平仓 trade = 无连亏源; feed-liveness NEVER FED 为预期正确态)。
 // ---------------------------------------------------------------------------
 void PaperLoop::FeedRiskGateway() noexcept {
     // A1 (老郭钳-6): 账本 micro 化后 get_*_exposure 已是 micro, 与 RM exposure 同单位 → 删原 ×1e6
@@ -743,6 +748,29 @@ void PaperLoop::FeedRiskGateway() noexcept {
     for (auto const& [tid, micro] : position_ledger_.get_per_outcome_exposure()) {
         rm_.set_outcome_exposure(tid, micro);
     }
+
+    // A5 (老韩 spec §1-§5): daily_pnl → DD 熔断。M1 买入阶段语义 = 净未实现 MtM − 累计 fee。
+    //   全量覆盖 (set_daily_pnl 是 atomic store 非累加) → 天然无双计, 与 exposure 喂法同构, 自愈。
+    //   保守 (铁律#2): 多头清算 mark 用 best_bid (砸 bid 侧成交真值); 无效 bid 仓位按 0 浮盈
+    //   (不臆造正盈余掩盖亏损)。亏损时 pnl 为负 → RM `if(pnl<0)` 分支 (符号天然对齐, 无需取反)。
+    //   M2: 接平仓 (realized≠0) 后须改为 realized(日界累加) + unrealized(时点), 见 spec §3。
+    double pnl_pusd = 0.0;
+    for (auto const& pv : position_ledger_.get_all_positions()) {
+        // unit-contract-ok: signed micro → whole share (qty)
+        const double qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        const auto bk = hub_.Read(pv.token_id);
+        if (bk.has_value()) {
+            const double bid = bk->best_bid();
+            if (std::isfinite(bid) && bid > 0.0 && bid < 1.0) {
+                pnl_pusd += (bid - pv.avg_entry_price) * qty;  // 时点浮动 MtM (清算价 best_bid)
+            }
+            // 无效 bid: 跳过浮盈贡献 (保守, 不臆造正值; 该仓位仍承担下方 cum_fee)
+        }
+    }
+    pnl_pusd -= cum_fee_pusd_;  // 减累计已付 fee (spec §1.3/§4)
+    // unit-contract-ok: pUSD → micro (×1e6 唯一通道; signed PnL 不走 MicroPUSD 非负 cap helper)。
+    //   防 P0-2/P1-9 同型单位 bug: 漏 ×1e6 → 喂入小 1e6 → 阈值不咬 (T-A5-1 单位门守护)。
+    rm_.set_daily_pnl(static_cast<std::int64_t>(pnl_pusd * 1'000'000.0));
 }
 
 // ---------------------------------------------------------------------------

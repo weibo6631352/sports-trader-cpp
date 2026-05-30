@@ -163,6 +163,21 @@ protected:
                                            rm_snap_.get(), *fv_model_, token_map_, cfg_);
     }
 
+    // A5 (老韩 spec): DD 测试需大亏损仓位 + 高 cap (否则 exposure/bankroll 抢先拒, 测不到 DD)。
+    //   hard_threshold 参数可调 (默认 5k pUSD); 重建 rm_ 后须在 MakeLoop 前调用。
+    void RebuildRmHighCap(double hard_pusd = 5'000.0) {
+        RiskConfig c;
+        c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);
+        c.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);
+        c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);
+        c.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);
+        c.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_pusd(hard_pusd);  // DD 硬阈值
+        c.edge_ci_lower_floor = -1.0;                                             // 放宽信号门
+        c.enable_moneyline = true;
+        auto emitter = std::make_shared<NullAuditEmitter>();
+        rm_ = std::make_unique<RiskGateway>(c, emitter);
+    }
+
     std::unique_ptr<OrderBookSnapshotHub> hub_;
     std::unique_ptr<LedgerSnapshotHub> ledger_hub_;
     std::unique_ptr<QuoteSnapshotHub> quote_hub_;
@@ -1036,4 +1051,166 @@ TEST_F(PaperLoopTest, P0_1_ExposureRedLine_UnitGate) {
     EXPECT_EQ(d_over.reject, RejectCode::EXCEED_CONDITION_EXPOSURE)
         << "P0-1 单位门禁: fill 45pUSD 喂入后 +10pUSD 应越 50pUSD condition cap; "
            "若 FeedRiskGateway 漏 ×1e6 则敞口=45 micro≈0, cap 不咬 → exposure 红线静默架空";
+}
+
+// ===========================================================================
+// A5 (老韩 spec laohan-a5-dd-feed-spec-v1.md): daily_pnl → DD 熔断喂数
+//   daily_pnl = 时点净 MtM (best_bid 清算) − 累计 fee; 全量覆盖; 亏损为负 → RM if(pnl<0)。
+// ===========================================================================
+
+namespace {
+// A5: feed_liveness_report 里查某红线 ever_fed
+bool DdEverFed(RiskGateway& rm, std::string_view key) {
+    for (auto const& r : rm.feed_liveness_report())
+        if (r.key == key)
+            return r.ever_fed;
+    return false;
+}
+}  // namespace
+
+// T-A5-1: DD 喂入触发硬 kill + state→HALTED (兼单位门 — 漏 ×1e6 则不触发)
+TEST_F(PaperLoopTest, T_A5_1_DD_HardKill_UnitGate) {
+    const std::string cid = "0xDD0001";
+    const std::string tid = "8001";
+    RebuildRmHighCap(5'000.0);  // 硬 5k
+    loop_ = MakeLoop();
+    rm_->set_state(RmState::RUNNING);
+    rm_->set_market_active(cid, true);
+    rm_->set_market_state(cid, MarketState::PREGAME);
+    rm_->set_market_freshness_ms(cid, 100);
+    rm_->set_token_book_freshness_ms(tid, 100);
+    rm_->set_recon_freshness_ms(100);
+    rm_->set_bankroll(stcpp::domain::MicroPUSD::from_pusd(100'000.0).v);  // 软阈值依赖 bankroll
+    rm_->set_edge_ci_lower("dd_over", 0.10);
+
+    // 亏损持仓: 买 YES @0.80, qty=10000 pUSD; best_bid=0.20 → MtM=(0.20-0.80)*10000=-6000 pUSD
+    execution::VirtualFill fill{};
+    fill.fill_size_usdc = 10'000'000'000LL;  // 10000 pUSD (micro)
+    fill.fill_price = 0.80;
+    fill.reject = execution::MatchReject::Ok;
+    position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
+    hub_->Publish(tid, MakeSyntheticBook(0.20, 0.21));  // best_bid=0.20
+
+    loop_->FeedRiskGatewayForTest();
+    EXPECT_TRUE(DdEverFed(*rm_, "daily_pnl")) << "A5: FeedRiskGateway 后 daily_pnl 应 ever_fed";
+
+    auto d = rm_->evaluate(MakeP01Intent(cid, tid, "dd_over", 10'000'000LL));
+    EXPECT_EQ(d.reject, RejectCode::DAILY_LOSS_HALT)
+        << "A5 单位门: -6000pUSD 浮亏喂入应越 5k 硬阈值; 漏 ×1e6 则=-6000 micro≈0, loss<5e9 不触发";
+    EXPECT_EQ(rm_->state(), RmState::HALTED) << "A5: 硬 kill 应迁移 state→HALTED";
+}
+
+// T-A5-2: 软熔断方向 — is_close 平仓放行 (浮亏 ∈ [3k,5k) 软触硬不触)
+TEST_F(PaperLoopTest, T_A5_2_DD_Soft_CloseExempt) {
+    const std::string cid = "0xDD0002";
+    const std::string tid = "8002";
+    RebuildRmHighCap(5'000.0);  // 硬 5k; 软 = 0.03×100k = 3k
+    loop_ = MakeLoop();
+    rm_->set_state(RmState::RUNNING);
+    rm_->set_market_active(cid, true);
+    rm_->set_market_state(cid, MarketState::PREGAME);
+    rm_->set_market_freshness_ms(cid, 100);
+    rm_->set_token_book_freshness_ms(tid, 100);
+    rm_->set_recon_freshness_ms(100);
+    rm_->set_bankroll(stcpp::domain::MicroPUSD::from_pusd(100'000.0).v);
+    rm_->set_edge_ci_lower("dd_soft_open", 0.10);
+    rm_->set_edge_ci_lower("dd_soft_close", 0.10);
+
+    // 浮亏 4000 pUSD ∈ [3k,5k): 买 @0.80 qty=10000, best_bid=0.40 → (0.40-0.80)*10000=-4000
+    execution::VirtualFill fill{};
+    fill.fill_size_usdc = 10'000'000'000LL;
+    fill.fill_price = 0.80;
+    fill.reject = execution::MatchReject::Ok;
+    position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
+    hub_->Publish(tid, MakeSyntheticBook(0.40, 0.41));
+    loop_->FeedRiskGatewayForTest();
+
+    // 开仓 (is_close=false) → 软熔断拒
+    auto d_open = rm_->evaluate(MakeP01Intent(cid, tid, "dd_soft_open", 10'000'000LL));
+    EXPECT_EQ(d_open.reject, RejectCode::DAILY_LOSS_HALT) << "A5: 软熔断应拒新开仓";
+    EXPECT_NE(rm_->state(), RmState::HALTED) << "A5: 软熔断不应硬 kill (state 不迁 HALTED)";
+
+    // 平仓 (is_close=true) → 放行
+    auto it_close = MakeP01Intent(cid, tid, "dd_soft_close", 10'000'000LL);
+    it_close.is_close = true;
+    it_close.side = risk::Side::Sell;
+    auto d_close = rm_->evaluate(it_close);
+    EXPECT_NE(d_close.reject, RejectCode::DAILY_LOSS_HALT) << "A5: 软熔断应放行平仓 (is_close=true)";
+}
+
+// T-A5-3: 无双计自愈 — 连喂两次, daily_pnl 覆盖写非累加。判别用软阈值 3k (=0.03×100k bankroll):
+//   单次浮亏 2k < 3k 不触; 若累加成 4k ≥ 3k 则误触 = 双计 bug。
+TEST_F(PaperLoopTest, T_A5_3_DD_NoDoubleCount) {
+    const std::string cid = "0xDD0003";
+    const std::string tid = "8003";
+    RebuildRmHighCap(5'000.0);  // 硬 5k; 软 = 0.03×100k = 3k (本测有效判别阈)
+    loop_ = MakeLoop();
+    rm_->set_state(RmState::RUNNING);
+    rm_->set_market_active(cid, true);
+    rm_->set_market_state(cid, MarketState::PREGAME);
+    rm_->set_market_freshness_ms(cid, 100);
+    rm_->set_token_book_freshness_ms(tid, 100);
+    rm_->set_recon_freshness_ms(100);
+    rm_->set_bankroll(stcpp::domain::MicroPUSD::from_pusd(100'000.0).v);
+    rm_->set_edge_ci_lower("dd_dbl", 0.10);
+
+    execution::VirtualFill fill{};
+    fill.fill_size_usdc = 10'000'000'000LL;  // qty=10000
+    fill.fill_price = 0.80;
+    fill.reject = execution::MatchReject::Ok;
+    position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
+    hub_->Publish(tid, MakeSyntheticBook(0.60, 0.61));  // 浮亏 (0.60-0.80)*10000 = -2000
+
+    loop_->FeedRiskGatewayForTest();
+    loop_->FeedRiskGatewayForTest();  // 第二 tick: 覆盖写则仍 -2k, 累加则 -4k
+
+    auto d = rm_->evaluate(MakeP01Intent(cid, tid, "dd_dbl", 10'000'000LL));
+    EXPECT_NE(d.reject, RejectCode::DAILY_LOSS_HALT)
+        << "A5: 两次喂入应覆盖写 (仍 -2k < 3k 软阈值不触); 若累加成 -4k ≥ 3k 则误触 = 双计 bug";
+}
+
+// T-A5-4: 无效 bid 保守 — 拿不到有效 best_bid 的仓位不臆造浮盈 (MtM 贡献 0)
+TEST_F(PaperLoopTest, T_A5_4_DD_InvalidBid_Conservative) {
+    const std::string cid = "0xDD0004";
+    const std::string tid = "8004";
+    RebuildRmHighCap(5'000.0);
+    loop_ = MakeLoop();
+    rm_->set_state(RmState::RUNNING);
+    rm_->set_market_active(cid, true);
+    rm_->set_market_state(cid, MarketState::PREGAME);
+    rm_->set_market_freshness_ms(cid, 100);
+    rm_->set_token_book_freshness_ms(tid, 100);
+    rm_->set_recon_freshness_ms(100);
+    rm_->set_bankroll(stcpp::domain::MicroPUSD::from_pusd(100'000.0).v);
+    rm_->set_edge_ci_lower("dd_nobid", 0.10);
+
+    // 持仓但 hub 无该 token book → hub_.Read 返回 nullopt → MtM 贡献跳过 (不臆造正浮盈)
+    execution::VirtualFill fill{};
+    fill.fill_size_usdc = 10'000'000'000LL;
+    fill.fill_price = 0.80;
+    fill.reject = execution::MatchReject::Ok;
+    position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
+    // 故意不 Publish tid 的 book
+
+    loop_->FeedRiskGatewayForTest();  // 不崩溃; daily_pnl = -cum_fee = 0 (直喂路径无 fee 累计)
+    EXPECT_TRUE(DdEverFed(*rm_, "daily_pnl")) << "A5: 无效 bid 仍喂 daily_pnl (=0, 标 ever_fed)";
+
+    auto d = rm_->evaluate(MakeP01Intent(cid, tid, "dd_nobid", 10'000'000LL));
+    EXPECT_NE(d.reject, RejectCode::DAILY_LOSS_HALT)
+        << "A5: 无效 bid → MtM=0 (不臆造亏也不臆造盈), daily_pnl≥0 不触 DD";
+}
+
+// T-A5-5: feed-liveness 状态转移 — daily_pnl NEVER FED → ever_fed; consec_loss 仍 NEVER FED (M2 边界)
+TEST_F(PaperLoopTest, T_A5_5_FeedLiveness_Transition) {
+    RebuildRmHighCap(5'000.0);
+    loop_ = MakeLoop();
+
+    // 喂前: daily_pnl 从未喂
+    EXPECT_FALSE(DdEverFed(*rm_, "daily_pnl")) << "A5: FeedRiskGateway 前 daily_pnl 应 NEVER FED";
+
+    loop_->FeedRiskGatewayForTest();  // 无仓位也喂 set_daily_pnl(0) → 标 fed
+
+    EXPECT_TRUE(DdEverFed(*rm_, "daily_pnl")) << "A5: FeedRiskGateway 后 daily_pnl ever_fed";
+    EXPECT_FALSE(DdEverFed(*rm_, "consec_loss"))
+        << "A5: consec_loss 延 M2 (M1 无平仓源), 应仍 NEVER FED — 锁 M2 边界";
 }
