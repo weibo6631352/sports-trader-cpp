@@ -41,6 +41,8 @@ set(_STCPP_UNIT_COMMON_OPTS
 set(EXTRA_LIBS_test_audit_emitter       stcpp_observability_audit)
 set(EXTRA_LIBS_test_risk_gateway        stcpp_risk)
 set(EXTRA_LIBS_test_risk_gateway_wave3  stcpp_risk)
+# Phase B buy-NO: RM token-agnostic + per-condition cap 合并专项 (老韩 checklist T-NO-1..12)
+set(EXTRA_LIBS_test_risk_gateway_buy_no stcpp_risk)
 # 老沈 rm_debug_snapshot D1: lock-free double-buffer ring (feat/laoshen-rm-debug-snapshot)
 set(EXTRA_LIBS_test_rm_debug_snapshot   stcpp_risk)
 set(EXTRA_LIBS_test_goalserve_client    stcpp_data_goalserve)
