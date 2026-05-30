@@ -17,7 +17,7 @@
 #include <cstdint>
 #include <string>
 
-#include "stcpp/strategy/signal_iface.hpp"   // Outcome enum
+#include "stcpp/strategy/signal_iface.hpp"  // Outcome enum
 
 namespace stcpp::risk {
 
@@ -28,11 +28,11 @@ using stcpp::strategy::Outcome;
 // avg_entry_price: ∈ (0, 1), 加权均值
 // last_update_ts: 严格透传 VirtualFill.as_of_ts_ns (R-20 红线, **禁 now()**)
 struct PositionView {
-    std::string  condition_id;       // bytes32 hex (0x 前缀, 66 char)
-    std::string  token_id;           // uint256 string (无 0x, 十进制, ≤77 位)
-    Outcome      outcome{Outcome::Yes};
-    std::int64_t size_usdc{0};       // signed cent
-    double       avg_entry_price{0.0};
+    std::string condition_id;  // bytes32 hex (0x 前缀, 66 char)
+    std::string token_id;      // uint256 string (无 0x, 十进制, ≤77 位)
+    Outcome outcome{Outcome::Yes};
+    std::int64_t size_usdc{0};  // signed micro pUSD (A1 账本 micro 化; /1e6 = whole share qty)
+    double avg_entry_price{0.0};
     std::int64_t last_update_ts{0};  // = VirtualFill.as_of_ts_ns (R-20)
 };
 
