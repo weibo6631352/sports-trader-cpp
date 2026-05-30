@@ -247,6 +247,14 @@ private:
         return event_map_;
     }
 
+public:
+    // 当前映射条目数 (测试/观测: 验证 app 层刷新线程已匹配并注入映射). 短锁.
+    [[nodiscard]] std::size_t event_map_size() const noexcept {
+        std::lock_guard<std::mutex> lk(event_map_mu_);
+        return event_map_ ? event_map_->size() : 0;
+    }
+
+private:
     // ---- 线程控制 ----
     std::jthread loop_thread_;
     std::atomic<bool> stop_requested_{false};

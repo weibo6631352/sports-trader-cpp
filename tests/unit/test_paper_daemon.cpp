@@ -10,12 +10,16 @@
 //   - Build 幂等; Headless 无 HTTP 但读模型仍装配 (R-11: 同一 Build 写栈).
 //   - Start→Shutdown 线程起停无崩 (offline feeds, paper_loop jthread join).
 
+#include <chrono>
+#include <memory>
+#include <thread>
 #include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 #include "stcpp/app/paper_daemon.hpp"
+#include "stcpp/data/score_snapshot_store.hpp"  // A1b 集成: 注入比分
 #include "stcpp/risk/rm_debug_snapshot.hpp"
 
 namespace {
@@ -35,6 +39,10 @@ std::vector<DiscoveredEvent> MakeInjectedMarkets() {
     m.sports_market_type = "moneyline";
     m.token0_id = "1001";  // YES
     m.token1_id = "1002";  // NO
+    // A1b: 两队名 + kickoff (EventMatcher 锚定输入)
+    m.outcome0_name = "Team A";  // YES
+    m.outcome1_name = "Team B";  // NO
+    m.game_start_ts_sec = 1'000'000;
 
     DiscoveredEvent ev;
     ev.event_id = "EVT_TEST_1";
@@ -168,4 +176,103 @@ TEST(PaperDaemon, StartStop_OfflineFeeds_NoCrash) {
     EXPECT_TRUE(daemon.is_started());
     daemon.Shutdown();  // join paper_loop + detach
     EXPECT_EQ(stcpp::risk::current_rm_debug_snapshot(), nullptr);
+}
+
+// ---------------------------------------------------------------------------
+// A1b: Build 从带队名的 market 捕获 EventMatcher 锚定输入
+// ---------------------------------------------------------------------------
+TEST(PaperDaemon, A1b_Build_CapturesMarketMatchInputs) {
+    ResetGlobalHook();
+    PaperDaemon daemon(OfflineHeadlessCfg());
+    daemon.InjectMarkets(MakeInjectedMarkets());  // market 含 outcome0/1_name
+    ASSERT_TRUE(daemon.Build().ok);
+    EXPECT_EQ(daemon.market_match_input_count(), 1u)
+        << "A1b: Build 应从两队名齐全的 market 捕获 1 条 EventMatchInput";
+    daemon.Shutdown();
+}
+
+// ---------------------------------------------------------------------------
+// A1b: 刷新线程匹配真实比分 → 注入 condition→event 映射到 PaperLoop
+// ---------------------------------------------------------------------------
+TEST(PaperDaemon, A1b_RefreshThread_MatchesScore_SetsMapping) {
+    using stcpp::data::ScoreMap;
+    using stcpp::debug_api::EventScore;
+
+    ResetGlobalHook();
+    auto cfg = OfflineHeadlessCfg();
+    cfg.mapping_refresh_sec = 1;           // 快刷
+    cfg.paper_loop.tick_interval_ms = 50;  // 快 tick
+    PaperDaemon daemon(std::move(cfg));
+    daemon.InjectMarkets(MakeInjectedMarkets());  // Team A vs Team B, kickoff=1'000'000
+    ASSERT_TRUE(daemon.Build().ok);
+
+    // 向内部 score_store 发布匹配的 in-play 比分 (Team A vs Team B, fresh)
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+    EventScore es;
+    es.found = true;
+    es.event_id = "gs-match-A1b";
+    es.status = "inplay";
+    es.home = "Team A";
+    es.away = "Team B";
+    es.home_score = 1;
+    es.away_score = 0;
+    es.kickoff_ts_sec = 1'000'000;  // == market kickoff (窗口内)
+    es.ts.event_ts_ns = now_ns - 3'600'000'000'000LL;
+    es.ts.data_source_ts_ns = now_ns - 1'000'000'000LL;  // fresh
+    es.ts.ingestion_ts_ns = now_ns - 500'000'000LL;
+    es.ts.as_of_ts_ns = now_ns;
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-match-A1b"] = es;
+    daemon.score_store_for_test()->Publish(std::shared_ptr<const ScoreMap>(sm));
+
+    daemon.Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));  // 等 ≥1 刷新周期
+    const std::size_t mapped = daemon.paper_loop()->event_map_size();
+    daemon.Shutdown();
+
+    EXPECT_EQ(mapped, 1u) << "A1b: 刷新线程应把 Team A vs Team B 匹配到 Goalserve event → 1 条映射";
+}
+
+// ---------------------------------------------------------------------------
+// A1b fail-closed: 无匹配比分 → 映射为空 (paper_loop 退回 stub)
+// ---------------------------------------------------------------------------
+TEST(PaperDaemon, A1b_RefreshThread_NoMatch_EmptyMapping) {
+    using stcpp::data::ScoreMap;
+    using stcpp::debug_api::EventScore;
+
+    ResetGlobalHook();
+    auto cfg = OfflineHeadlessCfg();
+    cfg.mapping_refresh_sec = 1;
+    cfg.paper_loop.tick_interval_ms = 50;
+    PaperDaemon daemon(std::move(cfg));
+    daemon.InjectMarkets(MakeInjectedMarkets());  // Team A vs Team B
+    ASSERT_TRUE(daemon.Build().ok);
+
+    // 发布不相干的比分 (队名完全不同 → 不匹配)
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+    EventScore es;
+    es.found = true;
+    es.event_id = "gs-other";
+    es.status = "inplay";
+    es.home = "Unrelated FC";
+    es.away = "Nobody United";
+    es.kickoff_ts_sec = 1'000'000;
+    es.ts.event_ts_ns = now_ns - 3'600'000'000'000LL;
+    es.ts.data_source_ts_ns = now_ns - 1'000'000'000LL;
+    es.ts.ingestion_ts_ns = now_ns - 500'000'000LL;
+    es.ts.as_of_ts_ns = now_ns;
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-other"] = es;
+    daemon.score_store_for_test()->Publish(std::shared_ptr<const ScoreMap>(sm));
+
+    daemon.Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    const std::size_t mapped = daemon.paper_loop()->event_map_size();
+    daemon.Shutdown();
+
+    EXPECT_EQ(mapped, 0u) << "A1b fail-closed: 队名不匹配 → 0 映射 (paper_loop 退回 stub)";
 }

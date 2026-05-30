@@ -13,8 +13,9 @@
 #include <thread>
 #include <utility>
 
-#include "stcpp/data/inplay_feed_thread.hpp"  // InplayFeedThread / InplayFeedConfig
-#include "stcpp/ml/feature_recorder.hpp"      // FeatureRecorder
+#include "stcpp/data/inplay_feed_thread.hpp"    // InplayFeedThread / InplayFeedConfig
+#include "stcpp/data/score_snapshot_store.hpp"  // A1b: ScoreSnapshotStore::GetSnapshot
+#include "stcpp/ml/feature_recorder.hpp"        // FeatureRecorder
 
 #include "src/stcpp/debug_api/live_book_publisher.hpp"  // LiveBookPublisher
 #include "src/stcpp/debug_api/live_wss_transport.hpp"   // LiveWssTransport
@@ -79,6 +80,17 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
                         dm.sports_market_type.c_str(), dm.group_item_title.c_str());
             token_map_[dm.condition_id] = {dm.token0_id, dm.token1_id};
             ei.condition_ids.push_back(dm.condition_id);
+
+            // A1b: 捕获 EventMatcher 锚定输入 (仅 moneyline 且两队名齐 → 可匹配 Goalserve).
+            //   outcome0/1 即两队名; game_start_ts_sec = kickoff; sport 取 event 级.
+            if (!dm.outcome0_name.empty() && !dm.outcome1_name.empty()) {
+                EventMatchInput mi_in;
+                mi_in.team0 = dm.outcome0_name;  // YES (token0)
+                mi_in.team1 = dm.outcome1_name;  // NO  (token1)
+                mi_in.kickoff_ts_sec = dm.game_start_ts_sec;
+                mi_in.sport = ev.sport;
+                market_match_inputs_[dm.condition_id] = std::move(mi_in);
+            }
 
             // P1-1: 填充 MarketInfo catalog (gamma 发现的真实元信息)
             MarketInfo mi;
@@ -202,6 +214,8 @@ BuildResult PaperDaemon::Build() {
     paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
                                                      token_map_, cfg_.paper_loop);
+    // A1b: 注入真实比分源 (Start 前; 之后 loop_thread_ 只读). 映射由刷新线程 SetEventMapping.
+    paper_loop_->SetScoreStore(score_store_.get());
 
     // ---- Step 2d: RealStateProvider (读模型) ----
     risk::RiskConfig rsp_risk_cfg;
@@ -334,6 +348,16 @@ void PaperDaemon::Start() {
         paper_loop_->Start();
     }
 
+    // ---- Step 4b' start: 映射刷新线程 (A1b; EventMatcher 周期匹配 condition↔goalserve) ----
+    //   仅当: 起交易 + 有 score_store + 有可匹配 market + 刷新周期>0.
+    if (cfg_.enable_paper_trading && cfg_.mapping_refresh_sec > 0 && score_store_ && paper_loop_ &&
+        !market_match_inputs_.empty()) {
+        mapping_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshEventMapping(st); });
+        std::printf("[paper_daemon] 映射刷新线程启动 (EventMatcher, %ds 周期, %zu 可匹配 market)\n",
+                    cfg_.mapping_refresh_sec, market_match_inputs_.size());
+        std::fflush(stdout);
+    }
+
     // ---- Step 4c start: FeatureRecorder ----
     if (ml_recorder_) {
         ml_recorder_->Start();
@@ -377,6 +401,12 @@ void PaperDaemon::RequestStop() noexcept {
 void PaperDaemon::Shutdown() noexcept {
     if (shutdown_done_.exchange(true, std::memory_order_acq_rel)) {
         return;  // 幂等
+    }
+
+    // 0. A1b 映射刷新线程先停 (它 touch paper_loop_ + score_store_, 必在二者析构/停止前 join).
+    if (mapping_refresh_thread_.joinable()) {
+        mapping_refresh_thread_.request_stop();
+        mapping_refresh_thread_.join();
     }
 
     // 1. HttpServer 先停 (停止读端, 不再读 real_provider_)
@@ -432,6 +462,56 @@ int PaperDaemon::Run() {
     WaitForStop();
     Shutdown();
     return 0;
+}
+
+// ---------------------------------------------------------------------------
+// RefreshEventMapping — 映射刷新线程主体 (A1b)
+//   周期: 取 score_store 快照 → 对每个 market 跑 EventMatcher → 构建 condition→event
+//   映射 → paper_loop_->SetEventMapping(). Goalserve event 动态出现, 故周期重匹配.
+//   fail-closed: 未匹配的 condition 不进映射 (paper_loop 退回 stub, has_real_fair=false).
+// ---------------------------------------------------------------------------
+void PaperDaemon::RefreshEventMapping(std::stop_token st) {
+    using namespace std::chrono;
+    while (!st.stop_requested()) {
+        // 1. 取 Goalserve 比分快照 → 候选 EventScore 列表
+        std::vector<debug_api::EventScore> candidates;
+        if (score_store_ != nullptr) {
+            const auto snap = score_store_->GetSnapshot();  // shared_ptr<const ScoreMap>
+            if (snap) {
+                candidates.reserve(snap->size());
+                for (const auto& [_id, es] : *snap) {
+                    candidates.push_back(es);
+                }
+            }
+        }
+
+        // 2. 对每个 market 跑 EventMatcher → 构建新映射 (fail-closed: 未匹配不入)
+        auto new_map = std::make_shared<paper::ConditionEventMap>();
+        std::size_t matched = 0;
+        for (const auto& [cond_id, in] : market_match_inputs_) {
+            const auto r = event_matcher_.Match(in, candidates);
+            if (r.matched) {
+                (*new_map)[cond_id] = paper::EventMapEntry{r.inplay_match_id, r.yes_is_home};
+                ++matched;
+            }
+        }
+
+        // 3. 推送映射给 PaperLoop (热刷)
+        if (paper_loop_) {
+            paper_loop_->SetEventMapping(std::shared_ptr<const paper::ConditionEventMap>(std::move(new_map)));
+        }
+        std::fprintf(stderr, "[paper_daemon] 映射刷新: %zu/%zu market 匹配到 Goalserve event\n", matched,
+                     market_match_inputs_.size());
+
+        // 4. 间隔 sleep (响应 stop_token; 不 spinlock)
+        const auto deadline = steady_clock::now() + seconds(cfg_.mapping_refresh_sec);
+        while (steady_clock::now() < deadline) {
+            if (st.stop_requested()) {
+                return;
+            }
+            std::this_thread::sleep_for(milliseconds(100));
+        }
+    }
 }
 
 }  // namespace stcpp::app

@@ -43,6 +43,7 @@
 #include <string>
 #include <vector>
 
+#include "stcpp/app/event_matcher.hpp"     // EventMatcher / EventMatchInput (A1 映射桥)
 #include "stcpp/app/market_discovery.hpp"  // DiscoveredEvent
 #include "stcpp/paper/paper_loop.hpp"      // PaperLoop / PaperLoopConfig + paper 栈全套类型
 
@@ -113,6 +114,10 @@ struct PaperDaemonConfig {
     // 离线测试 seam (小宋): false → Start() 不起真 WSS/inplay 网络线程.
     // Build() 仍完整装配 (供装配正确性单测, 不发外网请求).
     bool start_live_feeds{true};
+
+    // A1b: condition↔goalserve event 映射刷新周期 (秒). 刷新线程低频跑 EventMatcher
+    //   (Goalserve event 动态出现, 周期重匹配). 0 → 不起刷新线程 (退回纯 stub).
+    int mapping_refresh_sec{5};
 
     // gamma 发现规模
     int max_events{30};
@@ -191,6 +196,14 @@ public:
         return paper_position_ledger_.get();
     }
     [[nodiscard]] const paper::PaperLoop* paper_loop() const noexcept { return paper_loop_.get(); }
+    // 测试用 (A1b 集成): 向内部 score_store 发布比分 / 读 quote_hub.
+    [[nodiscard]] data::ScoreSnapshotStore* score_store_for_test() noexcept { return score_store_.get(); }
+    [[nodiscard]] const sizing::QuoteSnapshotHub* quote_hub_for_test() const noexcept {
+        return quote_hub_.get();
+    }
+    [[nodiscard]] std::size_t market_match_input_count() const noexcept {
+        return market_match_inputs_.size();
+    }
     [[nodiscard]] const debug_api::RealStateProvider* state_provider() const noexcept {
         return real_provider_.get();
     }
@@ -198,6 +211,11 @@ public:
 private:
     // 发现 → token_map_/market_catalog_/event_infos_/all_token_ids_ (gamma 或注入).
     void PopulateCatalog(const std::vector<DiscoveredEvent>& discovered);
+
+    // A1b: 映射刷新线程主体 — 周期跑 EventMatcher (score_store 快照 × market 元数据)
+    //   → 构建 condition→event 映射 → paper_loop_->SetEventMapping(). Goalserve event
+    //   动态出现, 故周期重匹配 (非 boot 一次性)。
+    void RefreshEventMapping(std::stop_token st);
 
     PaperDaemonConfig cfg_;
 
@@ -210,6 +228,12 @@ private:
     debug_api::MarketInfoMap market_catalog_;
     std::vector<debug_api::EventInfo> event_infos_;
     std::vector<std::string> all_token_ids_;
+
+    // ---- A1b: 映射桥 (EventMatcher + 元数据 + 刷新线程) ----
+    EventMatcher event_matcher_;
+    // condition_id → market 锚定输入 (两队名 + kickoff + sport; Build 从 DiscoveredMarket 填).
+    std::unordered_map<std::string, EventMatchInput> market_match_inputs_;
+    std::jthread mapping_refresh_thread_;
 
     // =====================================================================
     // 装配组件 —— 声明顺序即析构逆序的逆 (老韩 R-11 INV-1 + 老周钉死1):
