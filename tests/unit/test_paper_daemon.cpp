@@ -19,7 +19,8 @@
 #include <gtest/gtest.h>
 
 #include "stcpp/app/paper_daemon.hpp"
-#include "stcpp/data/score_snapshot_store.hpp"  // A1b 集成: 注入比分
+#include "stcpp/data/score_snapshot_store.hpp"                   // A1b 集成: 注入比分
+#include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"  // A2 端到端: 注入 book
 #include "stcpp/risk/rm_debug_snapshot.hpp"
 
 namespace {
@@ -275,4 +276,80 @@ TEST(PaperDaemon, A1b_RefreshThread_NoMatch_EmptyMapping) {
     daemon.Shutdown();
 
     EXPECT_EQ(mapped, 0u) << "A1b fail-closed: 队名不匹配 → 0 映射 (paper_loop 退回 stub)";
+}
+
+// ---------------------------------------------------------------------------
+// A2 端到端: daemon 离线注入 book+score → 刷新线程匹配 + A2 解封 → 真产 paper 成交
+//   落**隔离的 paper_position_ledger**。这是 A0→A2 全链路 daemon 级证明 +
+//   老韩 R-11「实测隔离」: 第一笔真 fill 后, 仓位只进私有 paper 账本.
+//   (Goalserve 真实数据走同一路径; 此处离线注入证明代码链路成立.)
+// ---------------------------------------------------------------------------
+TEST(PaperDaemon, A2_DaemonProducesPaperFill_IsolatedLedger) {
+    using stcpp::data::ScoreMap;
+    using stcpp::debug_api::EventScore;
+    using stcpp::polymarket::clob_wss::OrderBookFeatures;
+    using stcpp::polymarket::clob_wss::WssConnState;
+
+    ResetGlobalHook();
+    auto cfg = OfflineHeadlessCfg();       // Headless + start_live_feeds=false + record_ml=false
+    cfg.enable_paper_fills = true;         // A2: 解封成交
+    cfg.mapping_refresh_sec = 1;           // 快刷
+    cfg.paper_loop.tick_interval_ms = 50;  // 快 tick
+    cfg.paper_loop.n_effective = 500;      // 紧 CI 让真实 edge 过门 (生产 n_eff 小梁调)
+    PaperDaemon daemon(std::move(cfg));
+    daemon.InjectMarkets(MakeInjectedMarkets());  // Team A vs Team B, token0="1001", kickoff=1'000'000
+    ASSERT_TRUE(daemon.Build().ok);
+
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+
+    // 真实 in-play 比分: Team A 2:0 领先 (匹配 market; yes=Team A=home)
+    EventScore es;
+    es.found = true;
+    es.event_id = "gs-e2e";
+    es.status = "inplay";
+    es.home = "Team A";
+    es.away = "Team B";
+    es.home_score = 2;
+    es.away_score = 0;
+    es.kickoff_ts_sec = 1'000'000;  // == market kickoff (窗口内)
+    es.ts.event_ts_ns = now_ns - 3'600'000'000'000LL;
+    es.ts.data_source_ts_ns = now_ns - 1'000'000'000LL;  // fresh
+    es.ts.ingestion_ts_ns = now_ns - 500'000'000LL;
+    es.ts.as_of_ts_ns = now_ns;
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-e2e"] = es;
+    daemon.score_store_for_test()->Publish(std::shared_ptr<const ScoreMap>(sm));
+
+    // 市场低估 YES (mid≈0.19), Team A 领先 → 真 fair > ask → buy YES. fresh ts (防 RM STALE).
+    OrderBookFeatures f{};
+    f.valid = true;
+    f.event_ts_ns = now_ns - 3'000'000'000LL;
+    f.data_source_ts_ns = now_ns - 2'000'000'000LL;
+    f.ingestion_ts_ns = now_ns - 1'000'000'000LL;
+    f.as_of_ts_ns = now_ns;
+    f.bids[0].price = 0.18;
+    f.bids[0].size_usdc = 500.0;
+    f.asks[0].price = 0.20;
+    f.asks[0].size_usdc = 500.0;
+    f.microprice = 0.19;
+    f.mid = 0.19;
+    f.spread = 0.02;
+    f.imbalance = 0.0;
+    f.wss_state = WssConnState::kConnected;
+    f.sequence_no = 1;
+    daemon.hub_for_test()->Publish("1001", f);  // token0 (YES)
+
+    daemon.Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));  // ≥1 刷新周期 + 若干 tick
+    const auto positions = daemon.paper_position_ledger()->get_all_positions();
+    const auto fills = daemon.paper_loop()->stats().fills_completed.load();
+    daemon.Shutdown();
+
+    // A2 端到端: daemon 真产 ≥1 笔 paper 成交, 落隔离 paper 账本
+    EXPECT_GT(fills, static_cast<std::uint64_t>(0))
+        << "A2 端到端: daemon (真实比分映射 + 解封) 应产生 ≥1 笔 paper 成交";
+    EXPECT_FALSE(positions.empty())
+        << "R-11 实测隔离: 成交仓位应落入私有 paper_position_ledger (非共享真账本)";
 }

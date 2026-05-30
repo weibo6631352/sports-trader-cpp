@@ -204,6 +204,8 @@ public:
     [[nodiscard]] const paper::PaperLoop* paper_loop() const noexcept { return paper_loop_.get(); }
     // 测试用 (A1b 集成): 向内部 score_store 发布比分 / 读 quote_hub.
     [[nodiscard]] data::ScoreSnapshotStore* score_store_for_test() noexcept { return score_store_.get(); }
+    // 测试用 (A2 端到端): 向内部 book hub 发布合成 book (离线无 WSS 时驱动 paper_loop tick).
+    [[nodiscard]] polymarket::clob_wss::OrderBookSnapshotHub* hub_for_test() noexcept { return hub_.get(); }
     [[nodiscard]] const sizing::QuoteSnapshotHub* quote_hub_for_test() const noexcept {
         return quote_hub_.get();
     }
