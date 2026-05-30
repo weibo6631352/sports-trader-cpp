@@ -452,14 +452,14 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const double exec_mark = std::isfinite(exec_feat.microprice) ? exec_feat.microprice : exec_feat.mid;
 
     // ---- Step G: 被选边 fair / edge_ci (小梁 §2 de-vig 对称代数) ----
-    //   raw_edge_yes = p_fair - p_market_devig; sigma=sqrt(p_fair(1-p_fair)/n) (互余 → 两边方差相等)。
-    //   YES: edge_ci = raw - z*sigma (== 旧 ComputeEdgeCiLower, YES 路径逐位不变);
-    //   NO : edge_ci = -raw - z*sigma; p_fair_selected = 1 - p_fair。
-    const double raw_edge_yes = p_fair - p_market_devig;
-    const double sigma =
-        std::sqrt(std::max(0.0, p_fair * (1.0 - p_fair)) / static_cast<double>(cfg_.n_effective));
-    const double edge_ci_lower = (is_yes ? raw_edge_yes : -raw_edge_yes) - cfg_.z_90 * sigma;
+    //   被选边 fair/共识互余 (fair_NO=1-fair_YES, devig_NO=1-devig_YES) → edge_ci 用 canonical
+    //   ComputeEdgeCiLower(被选边 fair, 被选边共识) 即对; de-vig 互余 → sigma 两边相等。
+    //   (老郭 impl review nit#2: 用单一 ComputeEdgeCiLower, 消同公式两处实现的漂移风险;
+    //    YES 路径 == 旧 ComputeEdgeCiLower(p_fair, p_market_devig) 逐位不变。)
     const double p_fair_selected = is_yes ? p_fair : (1.0 - p_fair);
+    const double p_devig_selected = is_yes ? p_market_devig : (1.0 - p_market_devig);
+    const double edge_ci_lower =
+        ComputeEdgeCiLower(p_fair_selected, p_devig_selected, cfg_.n_effective, cfg_.z_90);
 
     const double mark_price = exec_mark;  // 真实 mark (被选边 hub)
 
@@ -473,8 +473,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     sz_in.fair_value = p_fair_selected;
     sz_in.price = exec_ask;  // 被选边 ask (买被低估边)
     sz_in.edge_ci_lower = edge_ci_lower;
-    // edge_bps: |raw_edge| 两边同幅 (de-vig 对称)。
-    sz_in.edge_bps = std::abs(raw_edge_yes) * 10'000.0;
+    // edge_bps: 被选边 fair vs 市场共识幅度 (de-vig 对称 → 两边同幅; nit#3 语义澄清)。
+    sz_in.edge_bps = std::abs(p_fair_selected - p_devig_selected) * 10'000.0;
     sz_in.bankroll_usdc = cfg_.bankroll_usdc;
     sz_in.fill_rate = 0.65;    // 保守固定 (M1)
     sz_in.slippage_bps = 8.0;  // 保守固定 (M1)
