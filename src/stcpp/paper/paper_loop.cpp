@@ -50,6 +50,7 @@
 
 #include "stcpp/data/feature_store_contract.hpp"
 #include "stcpp/data/score_snapshot_store.hpp"  // A1: ScoreSnapshotStore::Get(inplay_match_id)
+#include "stcpp/execution/execution_mode.hpp"   // A2 红线1: kCompiledMode 运行期 mode 断言
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
@@ -119,10 +120,24 @@ void PaperLoop::Start() {
         return;  // 已启动, 幂等
     }
 
+    // R-11/R-7 (老韩 A2 红线1): 运行期 mode 交叉断言. advisory gate 解封 (产生 paper intent)
+    //   仅许 build-time paper mode. 防 advisory_markets_no_intent=false 误带进 live/backtest binary.
+    //   build-time 锁 + 此运行期交叉校验双保险; 不一致 → abort (R-7 立场: 绝不放行).
+    if (!cfg_.advisory_markets_no_intent &&
+        stcpp::execution::kCompiledMode != stcpp::execution::ExecutionMode::Paper) {
+        std::fprintf(stderr,
+                     "[paper_loop] FATAL (R-11/R-7): advisory_markets_no_intent=false (解封 paper 成交) "
+                     "仅许 paper mode; kCompiledMode=%s. abort.\n",
+                     std::string(stcpp::execution::ToString(stcpp::execution::kCompiledMode)).c_str());
+        std::abort();
+    }
+
     // 若配置要求, 把 RM 从 SAFE_MODE 切到 RUNNING
     if (cfg_.set_rm_running) {
         rm_.set_state(risk::RmState::RUNNING);
-        rm_.set_bankroll(static_cast<std::int64_t>(cfg_.bankroll_usdc));
+        // 单位对齐 (A2 修): RM bankroll_usdc_ 与 size_pUSD_micro 同为 micro pUSD;
+        //   cfg_.bankroll_usdc 是 pUSD (Kelly sizing 用), 喂 RM 须 × 1e6 转 micro.
+        rm_.set_bankroll(static_cast<std::int64_t>(cfg_.bankroll_usdc * 1'000'000.0));
     }
 
     stop_requested_.store(false, std::memory_order_release);
@@ -458,7 +473,9 @@ void PaperLoop::TickOne(const std::string& condition_id, const std::string& toke
     }
 
     // book context (R8.4 freshness)
-    intent.book_depth_l1_usdc = book_depth_l1;
+    // 单位对齐 (A2 修): RM check_liquidity_ 比 size_pUSD_micro vs book_depth_l1_usdc,
+    //   后者须同为 micro pUSD. book_depth_l1 来自 feat.best_ask_size() (pUSD), × 1e6 转 micro.
+    intent.book_depth_l1_usdc = book_depth_l1 * 1'000'000.0;
     intent.book_snapshot_ts_ns = feat.ingestion_ts_ns;
     intent.tick_size = 0.01;
 

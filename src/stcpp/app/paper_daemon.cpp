@@ -195,12 +195,16 @@ BuildResult PaperDaemon::Build() {
 
     // paper RiskGateway (paper 专用; 与 live RM 隔离; NullAuditEmitter 不落真 WAL)
     paper_audit_emitter_ = std::make_shared<NullAuditEmitter>();
-    risk::RiskConfig paper_rm_cfg;               // M1 demo cap (逐字对齐原 main)
-    paper_rm_cfg.per_order_cap_usdc = 10;        // 10 pUSD demo cap
-    paper_rm_cfg.market_exposure_cap_usdc = 50;  // 50 pUSD
-    paper_rm_cfg.per_outcome_cap_usdc = 25;      // 25 pUSD
-    paper_rm_cfg.bankroll_usdc = 1000;           // 1K pUSD demo bankroll
-    paper_rm_cfg.edge_ci_lower_floor = -1.0;     // M1 放宽 CI 门
+    // A2 单位修 (老雷 2026-05-30): RM caps/bankroll 与 OrderIntent.size_pUSD_micro 同为
+    //   micro pUSD (RM check_position_caps_ 直接比 size_pUSD_micro). 原 main 把 cap 当 pUSD
+    //   设成 10/50/25/1000 → A2 解封后任何订单 size(micro)远超 → 永远拒. 改 × 1e6 对齐 micro.
+    //   (此 bug 因 advisory gate 长期挡着未暴露; A2 第一笔成交才现形.)
+    risk::RiskConfig paper_rm_cfg;
+    paper_rm_cfg.per_order_cap_usdc = 10'000'000;        // 10 pUSD (micro)
+    paper_rm_cfg.market_exposure_cap_usdc = 50'000'000;  // 50 pUSD (micro)
+    paper_rm_cfg.per_outcome_cap_usdc = 25'000'000;      // 25 pUSD (micro)
+    paper_rm_cfg.bankroll_usdc = 1'000'000'000;          // 1K pUSD (micro)
+    paper_rm_cfg.edge_ci_lower_floor = -1.0;             // M1 放宽 CI 门
     paper_rm_cfg.enable_moneyline = true;
     paper_rm_ = std::make_unique<risk::RiskGateway>(paper_rm_cfg, paper_audit_emitter_);
 
@@ -211,6 +215,9 @@ BuildResult PaperDaemon::Build() {
     // ---- Step 2c: PaperLoop (构造, 不 Start) ----
     // [R-12] PaperLoop 内部 std::jthread, 不进 WSS event loop.
     // [R-11] paper_position_ledger_ 与 live 物理隔离.
+    // A2 (老韩红线1): advisory gate 翻转收口在此. enable_paper_fills=true → 解封 paper 成交;
+    //   PaperLoop::Start() 内有运行期 mode 交叉断言 (非 paper mode + 解封 → abort).
+    cfg_.paper_loop.advisory_markets_no_intent = !cfg_.enable_paper_fills;
     paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
                                                      token_map_, cfg_.paper_loop);

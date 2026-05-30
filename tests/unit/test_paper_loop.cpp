@@ -87,6 +87,19 @@ static OrderBookFeatures MakeSyntheticBook(double bid, double ask, double bid_si
     return f;
 }
 
+// 新鲜 ts 合成 book (A2: book_snapshot_ts 须 recent, 否则 RM STALE_DATA 拒单).
+static OrderBookFeatures MakeFreshBook(double bid, double ask) {
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+    OrderBookFeatures f = MakeSyntheticBook(bid, ask);
+    f.event_ts_ns = now_ns - 3'000'000'000LL;  // 3s 前
+    f.data_source_ts_ns = now_ns - 2'000'000'000LL;
+    f.ingestion_ts_ns = now_ns - 1'000'000'000LL;  // book_snapshot_ts (RM freshness 用)
+    f.as_of_ts_ns = now_ns;
+    return f;
+}
+
 // ---------------------------------------------------------------------------
 // 辅助: Null AuditEmitter (M1 不需要 WAL)
 // ---------------------------------------------------------------------------
@@ -110,12 +123,13 @@ protected:
         position_ledger_ = std::make_unique<PositionLedger>();
 
         // RM: 放宽 cap 以便 demo 场景产生成交
+        // 单位 (A2 修): RM caps/bankroll 与 size_pUSD_micro 同为 micro pUSD (× 1e6).
         RiskConfig rm_cfg;
-        rm_cfg.per_order_cap_usdc = 10;  // 10 pUSD demo cap
-        rm_cfg.market_exposure_cap_usdc = 50;
-        rm_cfg.per_outcome_cap_usdc = 25;
-        rm_cfg.bankroll_usdc = 1000;
-        rm_cfg.edge_ci_lower_floor = -1.0;  // 放宽 CI 门
+        rm_cfg.per_order_cap_usdc = 10'000'000;        // 10 pUSD (micro)
+        rm_cfg.market_exposure_cap_usdc = 50'000'000;  // 50 pUSD (micro)
+        rm_cfg.per_outcome_cap_usdc = 25'000'000;      // 25 pUSD (micro)
+        rm_cfg.bankroll_usdc = 1'000'000'000;          // 1K pUSD (micro)
+        rm_cfg.edge_ci_lower_floor = -1.0;             // 放宽 CI 门
         rm_cfg.enable_moneyline = true;
 
         auto emitter = std::make_shared<NullAuditEmitter>();
@@ -125,7 +139,7 @@ protected:
         fv_model_ = std::make_unique<BaselineFairValueModel>(ScorePriorParams{0.30, 0.50}, 0.20);
 
         // token_map
-        token_map_["cond-test-001"] = {"token-yes-001", "token-no-001"};
+        token_map_["cond-test-001"] = {"1001", "1002"};
 
         // PaperLoopConfig
         cfg_.tick_interval_ms = 50;  // 快速 tick (50ms, 单测友好)
@@ -235,7 +249,7 @@ TEST_F(PaperLoopTest, T03_R20_TsChain) {
 TEST_F(PaperLoopTest, T04_LedgerHubVisible) {
     // Publish 合成 book (fair=0.65, ask=0.55 → edge=0.10, 足够大)
     const auto feat = MakeSyntheticBook(0.53, 0.55);
-    hub_->Publish("token-yes-001", feat);
+    hub_->Publish("1001", feat);
 
     loop_ = MakeLoop();
     loop_->Start();
@@ -260,7 +274,7 @@ TEST_F(PaperLoopTest, T04_LedgerHubVisible) {
 TEST_F(PaperLoopTest, T05_QuoteHubVisible) {
     // fair=0.65, ask=0.55 → edge=100bps
     const auto feat = MakeSyntheticBook(0.53, 0.55);
-    hub_->Publish("token-yes-001", feat);
+    hub_->Publish("1001", feat);
 
     loop_ = MakeLoop();
     loop_->Start();
@@ -351,7 +365,7 @@ TEST_F(PaperLoopTest, T06_EdgeCiLower_Numerical) {
 TEST_F(PaperLoopTest, T07_CiGating_NoOrder) {
     // fair=0.51, ask=0.50 → tiny edge → CI gating 拒
     const auto feat = MakeSyntheticBook(0.49, 0.50);
-    hub_->Publish("token-yes-001", feat);
+    hub_->Publish("1001", feat);
 
     // FairValueEstimator 在无 game_row 时用纯 book 先验, microprice ≈ 0.495
     // 即使 fair_value 稍高 (sigmoid 先验 50%), edge 也很小
@@ -474,7 +488,7 @@ TEST_F(PaperLoopTest, T12_P0_1_RejectNoDuplicate) {
     // 发布合成 book: 低价 outright (Spain mid=0.169), 对应 P0-3 的典型假信号场景
     // fair 将被拉高, 边 CI gating 可能通过; 但 RM INVALID_INTENT 或其他规则会拒
     const auto feat = MakeSyntheticBook(0.16, 0.18);  // mid=0.17 (低价 outright)
-    hub_->Publish("token-yes-001", feat);
+    hub_->Publish("1001", feat);
 
     // 禁用 advisory gate, 让 intent 进 RM (测试 RM 侧 push_reject 不双写)
     cfg_.advisory_markets_no_intent = false;
@@ -532,7 +546,7 @@ TEST_F(PaperLoopTest, T13_P0_3_FakeFairGate) {
     // 低价 outright: mid=0.169, stub fair 会被拉到 ~0.434 (edge=0.265)
     // 修复后: quote.edge_bps/kelly/notional/signal 全 0, predict_ok=false
     const auto feat = MakeSyntheticBook(0.16, 0.18);  // bid=0.16, ask=0.18
-    hub_->Publish("token-yes-001", feat);
+    hub_->Publish("1001", feat);
 
     cfg_.advisory_markets_no_intent = false;  // 允许进 quote publish 流程
     loop_ = MakeLoop();
@@ -580,7 +594,7 @@ TEST_F(PaperLoopTest, T13_P0_3_FakeFairGate) {
 TEST_F(PaperLoopTest, T14_P0_4_AdvisoryGate) {
     // 发布有效 book (mid=0.545 — 接近 0.5 的 hockey 市场)
     const auto feat = MakeSyntheticBook(0.53, 0.56);
-    hub_->Publish("token-yes-001", feat);
+    hub_->Publish("1001", feat);
 
     // advisory_markets_no_intent=true (默认; M1 paper 期所有市场)
     cfg_.advisory_markets_no_intent = true;
@@ -662,7 +676,7 @@ TEST_F(PaperLoopTest, T15_A1_RealGoalserveScore_PredictOk) {
 
     // 市场低估 YES (mid≈0.30); YesTeam 2:0 领先 → 真 fair 应 > mid
     const auto feat = MakeSyntheticBook(0.28, 0.32);
-    hub_->Publish("token-yes-001", feat);
+    hub_->Publish("1001", feat);
 
     loop_ = MakeLoop();
     loop_->SetScoreStore(&store);
@@ -717,7 +731,7 @@ TEST_F(PaperLoopTest, T16_A1_StaleScore_FailClosedToStub) {
     (*emap)["cond-test-001"] = EventMapEntry{"gs-match-stale", true};
 
     const auto feat = MakeSyntheticBook(0.28, 0.32);
-    hub_->Publish("token-yes-001", feat);
+    hub_->Publish("1001", feat);
 
     loop_ = MakeLoop();
     loop_->SetScoreStore(&store);
@@ -731,4 +745,184 @@ TEST_F(PaperLoopTest, T16_A1_StaleScore_FailClosedToStub) {
     // 陈旧比分 → 退回 stub → predict_ok=false (老韩 D4 #8: 冻结比分不当 live fair)
     EXPECT_FALSE(opt->predict_ok)
         << "A1: stale score (data_source_ts > staleness limit) must fail-closed to stub";
+}
+
+// ---------------------------------------------------------------------------
+// A2 测试辅助: 构造 fresh in-play EventScore
+// ---------------------------------------------------------------------------
+static stcpp::debug_api::EventScore MakeFreshScore(const std::string& id, int home, int away) {
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+    stcpp::debug_api::EventScore es;
+    es.found = true;
+    es.event_id = id;
+    es.status = "inplay";
+    es.home = "YesTeam";
+    es.away = "NoTeam";
+    es.home_score = home;
+    es.away_score = away;
+    es.kickoff_ts_sec = now_ns / 1'000'000'000LL - 3600;
+    es.ts.event_ts_ns = now_ns - 3'600'000'000'000LL;
+    es.ts.data_source_ts_ns = now_ns - 1'000'000'000LL;
+    es.ts.ingestion_ts_ns = now_ns - 500'000'000LL;
+    es.ts.as_of_ts_ns = now_ns;
+    return es;
+}
+
+// ---------------------------------------------------------------------------
+// T17: A2 第一笔 paper 成交 — advisory 解封 + 真实 fair + 市场低估 → 产生成交
+//   核心: orders_approved>0 (intent 过 gate+RM) + fills>0 (第一笔 paper 成交).
+//   ② (老韩 D4): quote.advisory 仍恒 true (ML-R2 不受解封影响).
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T17_A2_FirstPaperFill_AdvisoryUnlocked) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    // YesTeam 2:0 领先, 市场低估 (ask=0.32) → fair > ask → buy YES
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-1"] = MakeFreshScore("gs-1", 2, 0);
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-1", true};
+
+    hub_->Publish("1001", MakeFreshBook(0.28, 0.32));
+
+    cfg_.advisory_markets_no_intent = false;  // A2: 解封 paper 成交
+    cfg_.n_effective = 500;                   // 测试用紧 CI 让真实 edge 过门 (生产 n_eff 由小梁量化调)
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(700));  // ~14 ticks (Bernoulli fill 近必然)
+    loop_->Stop();
+
+    // A2 核心: intent 过 advisory gate + RM 批准 (解封证明)
+    EXPECT_GT(loop_->stats().orders_approved.load(), static_cast<std::uint64_t>(0))
+        << "A2: advisory 解封 + 真实 fair → intent 应过 gate 并被 RM 批准";
+    // 第一笔 paper 成交
+    EXPECT_GT(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
+        << "A2: 应产生 ≥1 笔 paper 成交 (MVP 第一笔成交)";
+
+    // ② ML-R2: quote.advisory 仍恒 true (解封不撕 advisory 展示契约)
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    EXPECT_TRUE(opt->advisory)
+        << "老韩 D4 ②: quote.advisory 必须恒 true (解封 paper fill 不影响 ML-R2 展示标志)";
+    EXPECT_TRUE(opt->predict_ok) << "A2: 真实 fair → predict_ok=true";
+}
+
+// ---------------------------------------------------------------------------
+// T18: 红线2 (老韩) — advisory 解封但无真实 fair → 仍零 intent (拆 gate ≠ 无脑下单)
+//   has_real_fair gate (Step 4c) 是解封后唯一兜底.
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T18_A2_Unlocked_NoRealFair_StillZeroIntent) {
+    // 有有效 book 但无 score_store / 无映射 → has_real_fair=false
+    hub_->Publish("1001", MakeFreshBook(0.28, 0.32));
+
+    cfg_.advisory_markets_no_intent = false;  // 解封
+    attach_rm_debug_snapshot(rm_snap_.get());
+    loop_ = MakeLoop();
+    // 故意不 SetScoreStore → has_real_fair 恒 false
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();
+    detach_rm_debug_snapshot();
+
+    // 红线2: 解封 gate 后, has_real_fair gate 仍拦 → 零 intent 进 RM
+    EXPECT_EQ(loop_->stats().orders_approved.load(), static_cast<std::uint64_t>(0))
+        << "红线2: advisory 解封但 has_real_fair=false → 仍不下单 (Step 4c 兜底)";
+    EXPECT_EQ(rm_snap_->count(), static_cast<std::uint64_t>(0)) << "红线2: 无真实 fair 时 RM 不应被调用";
+}
+
+// ---------------------------------------------------------------------------
+// T19: ④ (老韩) — 极端高 edge (大比分 + 低价) → Kelly notional 被 demo 上限 clamp, 不爆 size
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T19_A2_ExtremeEdge_NotionalClamped) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    // YesTeam 5:0 大比分领先 + 市场极低估 (ask=0.10) → fair≈0.9 → edge 巨大
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-x"] = MakeFreshScore("gs-x", 5, 0);
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-x", true};
+
+    hub_->Publish("1001", MakeFreshBook(0.08, 0.10));
+
+    cfg_.advisory_markets_no_intent = false;
+    cfg_.n_effective = 500;
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    loop_->Stop();
+
+    // ④: 即便 Kelly 想要巨量 size, demo 上限 (10 pUSD) clamp 住 → RM per_order_cap=10 不拒.
+    //   orders_approved>0 证明 size 被 clamp 到 ≤10 (否则 RM 会以 per_order cap 拒).
+    EXPECT_GT(loop_->stats().orders_approved.load(), static_cast<std::uint64_t>(0))
+        << "④: 极端 edge 下 notional 应被 demo 上限 clamp ≤10 pUSD → RM 批准 (未爆 size)";
+    EXPECT_EQ(loop_->stats().orders_rejected.load(), static_cast<std::uint64_t>(0))
+        << "④: clamp 后 size ≤ per_order_cap, 不应触发 RM cap 拒单";
+}
+
+// ---------------------------------------------------------------------------
+// T20: ③ (老韩) — 真实 fair ≈ 市场 (无真实 edge) → 无假阳性 → 不下单
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T20_A2_FairMatchesMarket_NoFalsePositive) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    // 0:0 平局 (无领先) → fair≈0.5; 市场 mid≈0.5 (bid0.49/ask0.51) → edge≈0
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-tie"] = MakeFreshScore("gs-tie", 0, 0);
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-tie", true};
+
+    hub_->Publish("1001", MakeFreshBook(0.49, 0.51));
+
+    cfg_.advisory_markets_no_intent = false;
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();
+
+    // ③: fair 与市场一致 → edge_ci_lower 不应假阳性 → 不产生成交
+    EXPECT_EQ(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
+        << "③: 真实 fair ≈ 市场 (无 edge) → 无假阳性, 不应成交";
+}
+
+// ---------------------------------------------------------------------------
+// T21: 红线3 (老韩) — PositionLedger::apply_fill 对非 paper fill (mode_tag!=0) 运行期 fail-closed
+//   R-11「不污染真账本」运行期守卫 (release build 也 enforce, 非 debug assert).
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T21_R11_ApplyFill_RejectsNonPaperModeTag) {
+    PositionLedger ledger;
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+
+    execution::VirtualFill fill{};
+    fill.reject = execution::MatchReject::Ok;
+    fill.fill_size_usdc = 5.0;
+    fill.fill_price = 0.5;
+    fill.as_of_ts_ns = now_ns;
+    fill.mode_tag = 1;  // 非 paper (e.g. live) → 红线3 应拒, 不记账
+
+    ledger.apply_fill("cond-x", "1001", Outcome::Yes, fill);
+    EXPECT_TRUE(ledger.get_all_positions().empty())
+        << "红线3: mode_tag!=0 (非 paper) → apply_fill 运行期拒, 不写真账本";
+
+    // 对照: mode_tag=0 (paper) → 正常记账
+    fill.mode_tag = 0;
+    ledger.apply_fill("cond-x", "1001", Outcome::Yes, fill);
+    EXPECT_FALSE(ledger.get_all_positions().empty()) << "对照: paper fill (mode_tag=0) 应正常记账";
 }

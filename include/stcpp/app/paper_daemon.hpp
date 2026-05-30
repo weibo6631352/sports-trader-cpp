@@ -111,6 +111,12 @@ struct PaperDaemonConfig {
     // 仅观测不交易 (老周: 替代 ObserverOnly 枚举档). true=起 PaperLoop (默认).
     bool enable_paper_trading{true};
 
+    // A2 (老韩 D3/D4 签字放行): 解封 paper 成交. true → advisory_markets_no_intent=false
+    //   (has_real_fair=true 时产生 paper intent → RM → VirtualFill → 写私有 paper ledger).
+    //   false → 仅观测 (advisory gate 拦 intent, 零成交). qf.advisory 恒 true 不受影响 (ML-R2).
+    //   收口在此 (老韩红线1): PaperLoopConfig 默认仍 true (backward compat), 仅 daemon 显式翻.
+    bool enable_paper_fills{true};
+
     // 离线测试 seam (小宋): false → Start() 不起真 WSS/inplay 网络线程.
     // Build() 仍完整装配 (供装配正确性单测, 不发外网请求).
     bool start_live_feeds{true};
