@@ -64,6 +64,7 @@
 // 消费真实 live book → paper 成交 → LedgerSnapshotHub/QuoteSnapshotHub
 // R-11: paper 不污染真账本; R-12: 独立线程; R-20: 4 ts 透传
 // ToS: 仅 paper 虚拟成交, 不向 Polymarket CLOB 下单
+#include "stcpp/ml/feature_recorder.hpp"           // FeatureRecorder (ML 训练数据采集, GM)
 #include "stcpp/paper/paper_loop.hpp"              // PaperLoop (小肖)
 #include "stcpp/pricing/fair_value_estimator.hpp"  // BaselineFairValueModel
 #include "stcpp/risk/position_ledger.hpp"          // PositionLedger (paper 专用)
@@ -582,6 +583,8 @@ int main(int argc, char** argv) {
     std::uint16_t port = 8080;
     std::string host = "127.0.0.1";
     bool verbose = false;
+    bool record_ml = true;  // 默认开 (老板 2026-05-30: 自建 ML 训练数据集)
+    std::string ml_path = "data/ml_capture/quotes.jsonl";
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
@@ -591,6 +594,10 @@ int main(int argc, char** argv) {
             host = argv[++i];
         } else if (a == "--verbose" || a == "-v") {
             verbose = true;
+        } else if (a == "--no-record-ml") {
+            record_ml = false;
+        } else if (a == "--ml-path" && i + 1 < argc) {
+            ml_path = argv[++i];
         } else if (a == "--help" || a == "-h") {
             std::printf(
                 "usage: stcpp_debug_server [--port N] [--host ADDR] [--verbose]\n"
@@ -887,6 +894,30 @@ int main(int argc, char** argv) {
     paper_loop->Start();
 
     // -------------------------------------------------------------------------
+    // Step 4c: FeatureRecorder — ML 训练数据采集 (老板 2026-05-30: 自建数据集)
+    //   读 quote_hub 决策快照, 去重落 JSONL 到 data/ml_capture/. 边跑边攒训练数据,
+    //   解决"无历史数据"。R-12: 独立线程 5s 低频; R-11: 只读快照不写真账本。
+    // -------------------------------------------------------------------------
+    std::unique_ptr<stcpp::ml::FeatureRecorder> ml_recorder;
+    if (record_ml) {
+        stcpp::ml::FeatureRecorder::Config rec_cfg;
+        rec_cfg.output_path = ml_path;
+        rec_cfg.poll_interval_sec = 5;
+        // 采集所有已发现盘口的 condition_id (= token_map 的 key 集合)
+        std::vector<std::string> ml_cond_ids;
+        ml_cond_ids.reserve(token_map.size());
+        for (const auto& [cond_id, _tok] : token_map) {
+            ml_cond_ids.push_back(cond_id);
+        }
+        ml_recorder =
+            std::make_unique<stcpp::ml::FeatureRecorder>(*quote_hub_owned, std::move(ml_cond_ids), rec_cfg);
+        ml_recorder->Start();
+        std::printf("[debug_server] ML 训练数据采集启动 (FeatureRecorder -> %s)\n", ml_path.c_str());
+    } else {
+        std::printf("[debug_server] ML 训练数据采集已禁用 (--no-record-ml)\n");
+    }
+
+    // -------------------------------------------------------------------------
     // Step 5: HttpServer (R-12: 独立 server_thread_)
     // -------------------------------------------------------------------------
     HttpServer server{port, real_provider.get(), host.c_str()};
@@ -925,6 +956,13 @@ int main(int argc, char** argv) {
 
     std::printf("\n[debug_server] 收到停止信号, 关闭...\n");
     server.stop();
+
+    // 停止 FeatureRecorder (先于 quote_hub 析构; Stop() 内含 join)
+    if (ml_recorder) {
+        std::printf("[debug_server] 停止 ML 采集 (已写 %llu 条训练样本)...\n",
+                    static_cast<unsigned long long>(ml_recorder->records_written()));
+        ml_recorder->Stop();
+    }
 
     // 停止 PaperLoop (先于 hub / ledger_hub / rm 析构; Stop() 内含 jthread join)
     std::printf("[debug_server] 停止 PaperLoop...\n");
