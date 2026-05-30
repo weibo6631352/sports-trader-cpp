@@ -70,6 +70,7 @@
 | P1-6 | 测试参数脱节: 测试 n_eff=30, 生产 edge_ci_lower_floor=-1.0; **无「生产真实参数成交率」测试**; fill_rate/slippage 硬编码常数 → paper fill 分布不代表实盘但正被当 ML 训练数据存 | test_paper_loop.cpp:147 / paper_loop.cpp:404 | 小宋 + 小梁 |
 | P1-7 | 更多名实不符垫片: market/condition 双写 / halt_usdc vs hard_pct 二选一靠注释 / market_id=condition_id alias | risk_gateway.cpp:161 / .hpp:305 | 老韩随 c2-c5 收 |
 | P1-8 | de-vig/mid/microprice 派生量多处散落字面公式 | paper_loop.cpp:268,345 / state_provider.hpp:405 | 小梁定 SSOT inline |
+| **P1-9** | **RM slippage gate 单位失配 (A2 bench 暴露, 2026-05-30)**: `check_liquidity_` 把 `(double)it.size_pUSD_micro` 直接当 whole-pUSD 喂 `SlippageModel.order_size_usdc`, 对 `book_depth_l1_usdc`(whole pUSD) 比较 → **v0.6 size_usdc→size_pUSD_micro rename 漏 /1e6**。被现有 test 极小 size(1'000 micro=0.001pUSD) 掩盖; 真实 size(500 pUSD=5e8 micro) 恒触 EXCEED_BOOK_DEPTH → 实盘任何正常单被 RM liquidity gate 误拒 (同 A1 micro 债根)。**修需重算 SlippageModel 入参单位 (除 1e6 / 走 .to_pusd()) + 重校依赖旧行为的 EXCEED_BOOK_DEPTH/LOW_FILL_RATE test(会破), 属 RM 主权** | risk_gateway.cpp:526 | **老韩 (RM 主权) + GM**, M1 前 (实盘安全网) |
 
 ## 3. P2 — nitpick / 卫生
 

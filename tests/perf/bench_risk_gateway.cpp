@@ -18,9 +18,11 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <benchmark/benchmark.h>
 
+#include "stcpp/domain/micro_pusd.hpp"  // A2: MicroPUSD cap 字段 (OrderIntent v0.6 + RiskConfig)
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/risk/risk_gateway.hpp"
 
@@ -32,8 +34,8 @@ class NoopEmitter : public AuditEmitter {
 public:
     [[nodiscard]] bool emit(AuditRecord const& r) noexcept override {
         // 不调 benchmark::DoNotOptimize(r) — Google Benchmark v1.8 标 const-ref 版 deprecated.
-        // 只读字段防被优化掉:
-        last_market_size_ = r.market_id.size();
+        // 只读字段防被优化掉 (A2: v0.4 market_id → v0.5 condition_id):
+        last_market_size_ = r.condition_id.size();
         ++count_;
         return true;
     }
@@ -46,24 +48,34 @@ private:
 
 constexpr std::int64_t NS_PER_MS = 1'000'000LL;
 
-// 合法 4 ts intent (R-20 单调) + book fresh + 价格 / size 合理
+// A2: v0.5/v0.6 OrderIntent 字段对齐 (mirror tests/unit/test_risk_gateway.cpp make_ok_intent)
+//   market_id→condition_id, is_buy→side, size_usdc→size_pUSD_micro (micro), +token_id/outcome/timestamp_ms
+constexpr const char* kMockTokenId = "1234567890";  // uint256 string, 纯数字 ≤77 位
+constexpr const char* kMockConditionId =
+    "0xa9db600590209698097db2fb8382989ea1cf6a9b91f0428b2e1d4f35d724c3ff";  // bytes32 hex
+
+// 合法 4 ts intent (R-20 单调) + book fresh + 价格 / size 合理 + V2 timestamp_ms 非零
 OrderIntent make_ok_intent(std::int64_t now, std::string sig) {
     OrderIntent it;
     it.event_ts_ns = now - 500 * NS_PER_MS;
     it.data_source_ts_ns = now - 400 * NS_PER_MS;
     it.ingestion_ts_ns = now - 100 * NS_PER_MS;
     it.as_of_ts_ns = now - 10 * NS_PER_MS;
-    it.market_id = "mkt_bench";
+    it.condition_id = kMockConditionId;  // v0.5: was market_id
+    it.token_id = kMockTokenId;          // v0.5: new
+    it.outcome = Outcome::Yes;           // v0.5: new
+    it.side = Side::Buy;                 // v0.5: was is_buy=true
     it.strategy_id = "strat_a";
     it.signal_id = std::move(sig);
     it.feature_snapshot_id = "fs_01H";
-    it.is_buy = true;
     it.price = 0.50;
-    it.size_usdc = 1'000;
+    it.size_pUSD_micro = 1'000;  // 0.001 pUSD micro < per_order_cap (0.01 pUSD), 热路径 Approved
     it.book_depth_l1_usdc = 5'000;
     it.book_snapshot_ts_ns = now - 200 * NS_PER_MS;
     it.tick_size = 0.01;
     it.is_close = false;
+    // v0.6 Wave 3: V2 CLOB timestamp_ms 必须非零且在 [now_ms-60s, now_ms+5s] 窗口 (否则 TS_V2_MISSING 拒)
+    it.timestamp_ms = now / NS_PER_MS;
     return it;
 }
 
@@ -71,8 +83,9 @@ RiskConfig make_cfg() {
     RiskConfig c;
     c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(10'000);
     c.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000);
-    c.bankroll_usdc = 100'000;
-    c.daily_loss_halt_usdc = 5'000;
+    c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(25'000);
+    c.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);       // c2b 100k pUSD
+    c.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_pusd(5'000.0);  // c2b 5k pUSD
     c.consec_loss_halt_count = 5;
     c.excessive_slippage_bps = 200;
     c.enable_moneyline = true;
@@ -84,15 +97,15 @@ struct Fx {
     std::shared_ptr<NoopEmitter> emitter;
     std::unique_ptr<RiskGateway> rm;
 
-    explicit Fx(std::string const& market = "mkt_bench") {
+    explicit Fx(std::string const& cid = kMockConditionId) {
         emitter = std::make_shared<NoopEmitter>();
         rm = std::make_unique<RiskGateway>(make_cfg(), emitter);
         rm->set_state(RmState::RUNNING);
-        rm->set_market_active(market, true);
-        rm->set_market_state(market, MarketState::PREGAME);
-        rm->set_market_freshness_ms(market, 100);  // < 5000 warn
-        rm->set_market_exposure(market, 0);
-        rm->set_bankroll(100'000);
+        rm->set_market_active(cid, true);
+        rm->set_market_state(cid, MarketState::PREGAME);
+        rm->set_market_freshness_ms(cid, 100);  // < 5000 warn
+        rm->set_condition_exposure(cid, 0);     // A2: micro exposure (v0.5 condition 级)
+        rm->set_bankroll(stcpp::domain::MicroPUSD::from_pusd(100'000.0).v);  // A2: micro
         rm->set_daily_pnl(0);
         rm->set_consec_loss(0);
     }
@@ -159,8 +172,8 @@ BENCHMARK(BM_RiskGateway_Reject_Duplicate);
 // ---------- 5. Reject: STALE_DATA (market freshness > halt) ----------
 void BM_RiskGateway_Reject_StaleData(benchmark::State& state) {
     Fx fx;
-    fx.rm->set_market_state("mkt_bench", MarketState::INPLAY_HOT_CRIT);
-    fx.rm->set_market_freshness_ms("mkt_bench", 1'500);  // > 800ms halt for HOT_CRIT
+    fx.rm->set_market_state(kMockConditionId, MarketState::INPLAY_HOT_CRIT);
+    fx.rm->set_market_freshness_ms(kMockConditionId, 1'500);  // > 800ms halt for HOT_CRIT
     std::int64_t i = 0;
     for (auto _ : state) {
         const auto now = ::stcpp::infra::wal::pit::NowRealtimeNs();
@@ -178,7 +191,7 @@ void BM_RiskGateway_Reject_PerOrderCap(benchmark::State& state) {
     for (auto _ : state) {
         const auto now = ::stcpp::infra::wal::pit::NowRealtimeNs();
         auto it = make_ok_intent(now, "sig_cap_" + std::to_string(i++));
-        it.size_usdc = 50'000;  // > per_order_cap 10'000
+        it.size_pUSD_micro = 50'000;  // > per_order_cap 10'000 (micro)
         auto d = fx.rm->evaluate(it);
         benchmark::DoNotOptimize(d);
     }
@@ -199,6 +212,36 @@ void BM_RiskGateway_Reject_LowFillRate(benchmark::State& state) {
     }
 }
 BENCHMARK(BM_RiskGateway_Reject_LowFillRate);
+
+// ---------- 8. BM_RmFeed: FeedRiskGateway O(N) 喂数基线 (synthesis §3) --------
+// paper_loop FeedRiskGateway 每 tick 把 N 个仓位的 condition/outcome exposure 灌进 RM
+// (set_condition_exposure + set_outcome_exposure)。每次调用走 s_->mu 锁, 故 O(N) × 锁。
+// 此 bench 量 N 次 set_*_exposure 的纯成本 (不含 ledger 遍历), 给 N 退化基线。
+// MVP N<20 可忽略 (~10-20us/500ms tick); N=500 看锁累积。Range: 1 / 20 / 100 / 500。
+void BM_RmFeed_NPositions(benchmark::State& state) {
+    Fx fx;
+    const auto n = static_cast<int>(state.range(0));
+    // 预生成 N 个不同 condition_id / token_id (避免 loop 内 string 构造污染计时)
+    std::vector<std::string> cids, tids;
+    cids.reserve(static_cast<std::size_t>(n));
+    tids.reserve(static_cast<std::size_t>(n));
+    for (int k = 0; k < n; ++k) {
+        cids.push_back("0xcond" + std::to_string(k));
+        tids.push_back(std::to_string(1'000'000 + k));
+    }
+    std::int64_t v = 0;
+    for (auto _ : state) {
+        for (int k = 0; k < n; ++k) {
+            // micro exposure (A1: 直喂 micro, 无 ×1e6)
+            fx.rm->set_condition_exposure(cids[static_cast<std::size_t>(k)], v + k);
+            fx.rm->set_outcome_exposure(tids[static_cast<std::size_t>(k)], v + k);
+        }
+        ++v;
+        benchmark::DoNotOptimize(v);
+    }
+    state.SetItemsProcessed(state.iterations() * n);
+}
+BENCHMARK(BM_RmFeed_NPositions)->Arg(1)->Arg(20)->Arg(100)->Arg(500);
 
 }  // namespace
 

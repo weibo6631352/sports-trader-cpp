@@ -67,7 +67,7 @@ owner: 老雷 (GM) | last_review: 2026-05-30
 | # | 行动 | owner | 优先级 |
 |---|---|---|---|
 | A1 | **PositionLedger + VirtualFill micro 根治(R-4)** — 单位债真源,解锁 DD + 消 PnL bug + 消 <1pUSD 截断 | 老韩 spec / 老周审计 / 老郭 ADR / GM | 🔴 下一个大件 |
-| A2 | **修 bench**(bench_risk_gateway / bench_e2e_latency 编译断裂)+ 补 BM_Feed/BM_Approved | 老姜 + GM | 🔴 性能门哑了 |
+| A2 | **修 bench**(bench_risk_gateway / bench_e2e_latency 编译断裂)+ 补 BM_Feed/BM_Approved | 老姜 + GM | ✅ 2026-05-30 — 两 bench v0.6 字段对齐编译通 (build-bench 全绿); BM_Approved 修 timestamp_ms 走真热路径(294ns); BM_RmFeed_NPositions O(N) 基线 (N=20→485ns / N=500→14.4us, MVP 可忽略); E2E 真产 fill (fill_count=1). **副产: P1-9 RM slippage gate 单位失配 (risk_gateway.cpp:526 漏/1e6) → 老韩** |
 | A3 | **Goalserve 白名单**(挂 Elastic IP + 报白名单) | 用户(运营) | 🔴 M1 唯一外部 blocker |
 | A4 | **RM feed-liveness 自检** + 风控状态逐条标(防假已活) | 老韩 + GM | 🟠 |
 | A5 | DD 喂数(A1 完成后)/ c4 闭合(sizing 取 RM 真值,M2 前)/ consec(M2) | 老韩 + GM | 🟠 排在 A1 后 |
