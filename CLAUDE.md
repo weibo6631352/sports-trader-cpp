@@ -173,6 +173,24 @@ docs/
 - **协作：** 遇到不懂的跨域问题 → 召唤相关专家（不耻下问），不要硬猜
 - **拒接：** 越界任务回写 "派给 XX"，不接
 
+### 10.1 Worktree 并行集成纪律（2026-05-30 立，GM 自身事故配套，护栏化不靠自觉）
+
+> **背景：** 2026-05-30 GM 在 worktree 并行派单中连犯两类错：① 把两个 agent 派去改同一冻结文件 → 自造合并冲突；② 基于"合并成功"的错误假设，对**未提交**的 worktree 跑 `git worktree remove --force` → 永久丢失两个 agent 各 40-50 万 token 的成果（git 无对象，fsck/reflog 救不回）。agent 交付本身合格（942/964 测试），**崩点全在 GM 集成层**。故以下固化为强制门禁，由 GM 自检 + 小米抽查。
+
+**派单前（防冲突）：**
+1. **文件域物理切开** — 并行 agent 的可改目录**必须互不重叠**。派单 prompt 显式写死"只改 X/，绝不碰 Y/"。两线交集为空 = 合并零冲突。
+2. **冻结契约文件单一 owner 串行改** — `state_provider.hpp` 等被多模块 include 的 G-FREEZE-W 文件，**禁止多 agent 并行加字段**；要加排队走唯一 owner。
+3. **worktree 必从最新 main 切** — 派单前 `git fetch` + 确认 worktree merge-base == 最新 main HEAD（基线陈旧 = 冲突面放大）。
+
+**派单 prompt 必含（防丢失）：**
+4. **显式要求 `git add -A && git commit`** — 哪怕同时说"不要 push/merge"，也**必须 commit**。未提交的活随时会丢。
+
+**集成时（防误删 + 防假成功）：**
+5. **合并前验 `git rev-list --count main..<branch>` > 0** — 等于 0 说明 agent 没 commit，**先抢救别清理**。
+6. **merge 后必须验"非 no-op"** — ctest 数变化、文件 diff 符合预期，才算真合入。"already up-to-date / 已经是最新" + ctest 数没变 = 没合进去，立即排查。
+7. **cleanup 绝不与 merge/build/push 同批** — 先确认已落 main，再**单独**删 worktree。`worktree remove --force` 前先 `git -C <wt> status` 看有无未提交改动。
+8. **删除前先看清目标**（红线复用）— 删 worktree/分支/文件前，先确认它不是唯一载体。
+
 ---
 
 ## 11. 当前阶段（2026-05-28 起）
