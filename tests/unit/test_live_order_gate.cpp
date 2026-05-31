@@ -135,10 +135,34 @@ TEST(LiveOrderGateTranslate, SellAmountsAndNegRisk) {
     EXPECT_TRUE(req.neg_risk);
 }
 
-// 红线核心: RM HALTED → 下单 sink 零调用, 不触达 CLOB。
+// 门1 fail-closed: 默认未开闸 → sink 零调用, RM 都不进。
+TEST_F(LiveOrderGateTest, DisarmedBlocksBeforeRm) {
+    LiveOrderGate gate(*rm_, make_counting_sink());
+    EXPECT_FALSE(gate.Armed());
+    const auto gr = gate.Submit(make_ok_intent(), false);
+    EXPECT_FALSE(gr.submitted);
+    EXPECT_EQ(gr.gate_block, GateBlock::DISARMED);
+    EXPECT_FALSE(gr.rm_approved);
+    EXPECT_EQ(sink_calls_, 0);
+}
+
+// Disarm = kill: 开闸成功一笔后 Disarm → 立即停发。
+TEST_F(LiveOrderGateTest, DisarmKillsSubmit) {
+    LiveOrderGate gate(*rm_, make_counting_sink());
+    gate.Arm();
+    EXPECT_TRUE(gate.Submit(make_ok_intent("s1"), false).submitted);
+    gate.Disarm();
+    const auto gr = gate.Submit(make_ok_intent("s2"), false);
+    EXPECT_FALSE(gr.submitted);
+    EXPECT_EQ(gr.gate_block, GateBlock::DISARMED);
+    EXPECT_EQ(sink_calls_, 1);
+}
+
+// 红线核心: armed 后 RM HALTED → 下单 sink 零调用, 不触达 CLOB。
 TEST_F(LiveOrderGateTest, HaltedBlocksSubmit) {
     rm_->set_state(RmState::HALTED);
     LiveOrderGate gate(*rm_, make_counting_sink());
+    gate.Arm();
     const auto gr = gate.Submit(make_ok_intent(), /*neg_risk=*/false);
     EXPECT_FALSE(gr.submitted);
     EXPECT_FALSE(gr.rm_approved);
@@ -150,18 +174,21 @@ TEST_F(LiveOrderGateTest, HaltedBlocksSubmit) {
 TEST_F(LiveOrderGateTest, SafeModeBlocksSubmit) {
     rm_->set_state(RmState::SAFE_MODE);
     LiveOrderGate gate(*rm_, make_counting_sink());
+    gate.Arm();
     const auto gr = gate.Submit(make_ok_intent(), false);
     EXPECT_FALSE(gr.submitted);
     EXPECT_EQ(sink_calls_, 0);
 }
 
-// RM 放行 → sink 恰好调用一次, 且请求已正确翻译。
+// armed + RM 放行 → sink 恰好调用一次, 且请求已正确翻译。
 TEST_F(LiveOrderGateTest, ApprovedSubmitsOnce) {
     LiveOrderGate gate(*rm_, make_counting_sink());
+    gate.Arm();
     const auto gr = gate.Submit(make_ok_intent(), false);
     ASSERT_TRUE(gr.rm_approved) << "make_ok_intent 应被 RM 放行";
     EXPECT_TRUE(gr.submitted);
     EXPECT_EQ(sink_calls_, 1);
+    EXPECT_EQ(gate.OrdersToday(), 1);
     EXPECT_EQ(last_req_.token_id, kTokenId);
     EXPECT_TRUE(last_req_.is_buy);
     EXPECT_TRUE(gr.order.success);
@@ -170,12 +197,40 @@ TEST_F(LiveOrderGateTest, ApprovedSubmitsOnce) {
 // 重复 intent (同 signal_id) → 第二次被 RM duplicate 拒 → sink 不再调用。
 TEST_F(LiveOrderGateTest, DuplicateIntentBlocksSecondSubmit) {
     LiveOrderGate gate(*rm_, make_counting_sink());
+    gate.Arm();
     const auto it = make_ok_intent("dup_sig");
     const auto g1 = gate.Submit(it, false);
     EXPECT_TRUE(g1.submitted);
     const auto g2 = gate.Submit(it, false);
     EXPECT_FALSE(g2.submitted) << "重复 intent 应被 RM 拒";
     EXPECT_EQ(sink_calls_, 1) << "重复单不得再次触达 CLOB";
+}
+
+// 门2 OrderRateCap: 日单数超限 → 拦截, 不进 RM。
+TEST_F(LiveOrderGateTest, RateCapBlocks) {
+    LiveGateConfig cfg;
+    cfg.max_orders_per_day = 2;
+    LiveOrderGate gate(*rm_, make_counting_sink(), cfg);
+    gate.Arm();
+    EXPECT_TRUE(gate.Submit(make_ok_intent("r1"), false).submitted);
+    EXPECT_TRUE(gate.Submit(make_ok_intent("r2"), false).submitted);
+    const auto gr = gate.Submit(make_ok_intent("r3"), false);
+    EXPECT_FALSE(gr.submitted);
+    EXPECT_EQ(gr.gate_block, GateBlock::RATE_CAP);
+    EXPECT_EQ(sink_calls_, 2) << "超限单不得触达 CLOB";
+    gate.ResetDailyCount();
+    EXPECT_TRUE(gate.Submit(make_ok_intent("r4"), false).submitted) << "日切后恢复";
+}
+
+// 灰度 RiskConfig 工厂: 老韩灰度值 (绝不复用 paper 100k)。
+TEST(LiveOrderGateGray, GrayLaunchConfigValues) {
+    const auto c = MakeGrayLaunchRiskConfig();
+    EXPECT_EQ(c.per_order_cap_usdc.v, 1'000'000);       // $1
+    EXPECT_EQ(c.market_exposure_cap_usdc.v, 2'000'000); // $2
+    EXPECT_EQ(c.per_outcome_cap_usdc.v, 2'000'000);     // $2
+    EXPECT_EQ(c.bankroll_usdc.v, 25'000'000);           // $25
+    EXPECT_EQ(c.daily_loss_halt_usdc.v, 5'000'000);     // $5
+    EXPECT_EQ(c.consec_loss_halt_count, 3);
 }
 
 }  // namespace stcpp::polymarket::test
