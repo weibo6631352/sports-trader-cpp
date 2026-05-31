@@ -93,6 +93,10 @@ struct QuoteFeatures {
     double market_mid{0.0};
     // edge_bps: net edge = |fair_value - market_mid| × 10000 (bps)
     double edge_bps{0.0};
+    // fee_rate_coef: per-market 手续费系数 (gamma feeSchedule.rate; fee=rate×p×(1-p))。
+    //   R-fee-2 (老雷): fee 吃净 edge 且 per-market 变化, 进 ML 训练特征 + 推理 (feature #32)。
+    //   体育0.03/加密0.072/老市场0; 默认 0.03 (调用方未填则保守)。
+    double fee_rate_coef{0.03};
     // kelly_fraction: Kelly 仓位比例 (已 cap; 来自 SizingCalculator)
     double kelly_fraction{0.0};
     // suggested_notional: 建议名义仓位 (USDC; 来自 SizingCalculator)

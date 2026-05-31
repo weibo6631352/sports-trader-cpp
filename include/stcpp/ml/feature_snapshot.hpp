@@ -39,8 +39,8 @@
 #include <span>
 #include <string_view>
 
-#include "stcpp/infra/wal/wal_record_header.hpp"   // 4 ts WAL header offset 校验同源
-#include "stcpp/infra/wal/wal_writer.hpp"          // WalRecord concept
+#include "stcpp/infra/wal/wal_record_header.hpp"  // 4 ts WAL header offset 校验同源
+#include "stcpp/infra/wal/wal_writer.hpp"         // WalRecord concept
 
 namespace stcpp::ml {
 
@@ -51,91 +51,130 @@ namespace stcpp::ml {
 
 enum class FeatureName : std::uint8_t {
     // --- Polymarket 报价 / 簿深 (0..3) ---
-    PM_mid_bid                  = 0,    // PM YES bid (USDC / dollar prob)
-    PM_mid_ask                  = 1,    // PM YES ask
-    PM_book_depth_top3_yes      = 2,    // top-3 levels yes 总 USDC
-    PM_book_depth_top3_no       = 3,    // top-3 levels no 总 USDC
+    PM_mid_bid = 0,              // PM YES bid (USDC / dollar prob)
+    PM_mid_ask = 1,              // PM YES ask
+    PM_book_depth_top3_yes = 2,  // top-3 levels yes 总 USDC
+    PM_book_depth_top3_no = 3,   // top-3 levels no 总 USDC
 
     // --- Goalserve de-vig (4..5) — ADR-008 W6 Wave 28 (小卢) ---
     // 字段名 cascade: Pinnacle_p_yes_fair → Goalserve_devig_p_yes_fair
     //                 Pinnacle_overround  → Goalserve_overround_avg
     // 列顺序 / enum 值不动 (ML 训练 column index 锁死, 小邓 ML-R5).
-    Goalserve_devig_p_yes_fair  = 4,    // ADR-008 multiplicative de-vig fair prob (8-9 家均值)
-    Goalserve_overround_avg     = 5,    // 跨 8-9 家 overround 均值
+    Goalserve_devig_p_yes_fair = 4,  // ADR-008 multiplicative de-vig fair prob (8-9 家均值)
+    Goalserve_overround_avg = 5,     // 跨 8-9 家 overround 均值
 
     // --- 信号 / 滑点 (6..9) ---
-    edge_bps                    = 6,    // signal edge 单位 bps
-    kelly_full                  = 7,    // Kelly full (未 ·0.25)
-    expected_fill_rate          = 8,    // SlippageModel
-    slippage_bps                = 9,    // SlippageModel.compute
+    edge_bps = 6,            // signal edge 单位 bps
+    kelly_full = 7,          // Kelly full (未 ·0.25)
+    expected_fill_rate = 8,  // SlippageModel
+    slippage_bps = 9,        // SlippageModel.compute
 
     // --- LiveSection / GameState (10..15) ---
-    live_section                = 10,   // LiveSection enum cast → float (Live=0..Future=4)
-    game_state                  = 11,   // GameState bitmask: bit0=live bit1=ended bit2=delayed
-    kickoff_seconds_until       = 12,   // (kickoff_ts - now) / 1e9, 负值 = 已开赛
-    inplay_minutes              = 13,   // 已比赛分钟 (开赛后)
-    score_home                  = 14,
-    score_away                  = 15,
+    live_section = 10,           // LiveSection enum cast → float (Live=0..Future=4)
+    game_state = 11,             // GameState bitmask: bit0=live bit1=ended bit2=delayed
+    kickoff_seconds_until = 12,  // (kickoff_ts - now) / 1e9, 负值 = 已开赛
+    inplay_minutes = 13,         // 已比赛分钟 (开赛后)
+    score_home = 14,
+    score_away = 15,
 
     // --- 微观结构 (16..21) ---
-    period                      = 16,   // 当前 period / quarter / inning (sport dependent)
-    vol_24h                     = 17,   // 该 market 24h 成交量 (USDC)
-    vol_1h                      = 18,
-    vol_5m                      = 19,
-    spread_bps                  = 20,   // (ask - bid) / mid * 10000
-    quote_half_life_ms          = 21,   // 报价稳定度估计
+    period = 16,   // 当前 period / quarter / inning (sport dependent)
+    vol_24h = 17,  // 该 market 24h 成交量 (USDC)
+    vol_1h = 18,
+    vol_5m = 19,
+    spread_bps = 20,          // (ask - bid) / mid * 10000
+    quote_half_life_ms = 21,  // 报价稳定度估计
 
     // --- RM 状态 (22..26) ---
-    rm_state                    = 22,   // RmState enum (RUNNING=0..DRAIN=4)
-    rm_consec_loss              = 23,
-    rm_bankroll                 = 24,
-    rm_exposure_pct             = 25,   // market_exposure_usdc / bankroll
-    signal_confidence           = 26,   // clamp(edge/0.10, 0, 1)
+    rm_state = 22,  // RmState enum (RUNNING=0..DRAIN=4)
+    rm_consec_loss = 23,
+    rm_bankroll = 24,
+    rm_exposure_pct = 25,    // market_exposure_usdc / bankroll
+    signal_confidence = 26,  // clamp(edge/0.10, 0, 1)
 
     // --- 不确定性 / CI (27..31) ---
-    ci_lower                    = 27,   // edge CI 下界 (小肖 W5)
-    ci_upper                    = 28,
-    N_pretrade                  = 29,   // pretrade observation count
-    N_inplay                    = 30,
-    N_settled                   = 31,   // 该 market 历史结算样本数 (drift)
+    ci_lower = 27,  // edge CI 下界 (小肖 W5)
+    ci_upper = 28,
+    N_pretrade = 29,  // pretrade observation count
+    N_inplay = 30,
+    N_settled = 31,  // 该 market 历史结算样本数 (drift)
+
+    // --- 手续费 (32) — R-fee-2 老雷; gamma feeSchedule.rate (体育0.03/加密0.072/老市场0) ---
+    //   fee 直接吃净 edge 且 per-market 变化: 模型若不知 fee, 把不同费率市场的相同 edge 混学。
+    //   末尾追加 (不renumber 0..31, 旧 schema 仍有效; spec_version bump 标新列)。
+    fee_rate_coef = 32,
 };
 
-inline constexpr std::size_t kFeatureCount = 32;
+inline constexpr std::size_t kFeatureCount = 33;  // R-fee-2: +fee_rate_coef (was 32)
 
 [[nodiscard]] constexpr std::string_view to_string(FeatureName f) noexcept {
     switch (f) {
-        case FeatureName::PM_mid_bid:              return "PM_mid_bid";
-        case FeatureName::PM_mid_ask:              return "PM_mid_ask";
-        case FeatureName::PM_book_depth_top3_yes:  return "PM_book_depth_top3_yes";
-        case FeatureName::PM_book_depth_top3_no:   return "PM_book_depth_top3_no";
-        case FeatureName::Goalserve_devig_p_yes_fair: return "Goalserve_devig_p_yes_fair";
-        case FeatureName::Goalserve_overround_avg:    return "Goalserve_overround_avg";
-        case FeatureName::edge_bps:                return "edge_bps";
-        case FeatureName::kelly_full:              return "kelly_full";
-        case FeatureName::expected_fill_rate:      return "expected_fill_rate";
-        case FeatureName::slippage_bps:            return "slippage_bps";
-        case FeatureName::live_section:            return "live_section";
-        case FeatureName::game_state:              return "game_state";
-        case FeatureName::kickoff_seconds_until:   return "kickoff_seconds_until";
-        case FeatureName::inplay_minutes:          return "inplay_minutes";
-        case FeatureName::score_home:              return "score_home";
-        case FeatureName::score_away:              return "score_away";
-        case FeatureName::period:                  return "period";
-        case FeatureName::vol_24h:                 return "vol_24h";
-        case FeatureName::vol_1h:                  return "vol_1h";
-        case FeatureName::vol_5m:                  return "vol_5m";
-        case FeatureName::spread_bps:              return "spread_bps";
-        case FeatureName::quote_half_life_ms:      return "quote_half_life_ms";
-        case FeatureName::rm_state:                return "rm_state";
-        case FeatureName::rm_consec_loss:          return "rm_consec_loss";
-        case FeatureName::rm_bankroll:             return "rm_bankroll";
-        case FeatureName::rm_exposure_pct:         return "rm_exposure_pct";
-        case FeatureName::signal_confidence:       return "signal_confidence";
-        case FeatureName::ci_lower:                return "ci_lower";
-        case FeatureName::ci_upper:                return "ci_upper";
-        case FeatureName::N_pretrade:              return "N_pretrade";
-        case FeatureName::N_inplay:                return "N_inplay";
-        case FeatureName::N_settled:               return "N_settled";
+        case FeatureName::PM_mid_bid:
+            return "PM_mid_bid";
+        case FeatureName::PM_mid_ask:
+            return "PM_mid_ask";
+        case FeatureName::PM_book_depth_top3_yes:
+            return "PM_book_depth_top3_yes";
+        case FeatureName::PM_book_depth_top3_no:
+            return "PM_book_depth_top3_no";
+        case FeatureName::Goalserve_devig_p_yes_fair:
+            return "Goalserve_devig_p_yes_fair";
+        case FeatureName::Goalserve_overround_avg:
+            return "Goalserve_overround_avg";
+        case FeatureName::edge_bps:
+            return "edge_bps";
+        case FeatureName::kelly_full:
+            return "kelly_full";
+        case FeatureName::expected_fill_rate:
+            return "expected_fill_rate";
+        case FeatureName::slippage_bps:
+            return "slippage_bps";
+        case FeatureName::live_section:
+            return "live_section";
+        case FeatureName::game_state:
+            return "game_state";
+        case FeatureName::kickoff_seconds_until:
+            return "kickoff_seconds_until";
+        case FeatureName::inplay_minutes:
+            return "inplay_minutes";
+        case FeatureName::score_home:
+            return "score_home";
+        case FeatureName::score_away:
+            return "score_away";
+        case FeatureName::period:
+            return "period";
+        case FeatureName::vol_24h:
+            return "vol_24h";
+        case FeatureName::vol_1h:
+            return "vol_1h";
+        case FeatureName::vol_5m:
+            return "vol_5m";
+        case FeatureName::spread_bps:
+            return "spread_bps";
+        case FeatureName::quote_half_life_ms:
+            return "quote_half_life_ms";
+        case FeatureName::rm_state:
+            return "rm_state";
+        case FeatureName::rm_consec_loss:
+            return "rm_consec_loss";
+        case FeatureName::rm_bankroll:
+            return "rm_bankroll";
+        case FeatureName::rm_exposure_pct:
+            return "rm_exposure_pct";
+        case FeatureName::signal_confidence:
+            return "signal_confidence";
+        case FeatureName::ci_lower:
+            return "ci_lower";
+        case FeatureName::ci_upper:
+            return "ci_upper";
+        case FeatureName::N_pretrade:
+            return "N_pretrade";
+        case FeatureName::N_inplay:
+            return "N_inplay";
+        case FeatureName::N_settled:
+            return "N_settled";
+        case FeatureName::fee_rate_coef:
+            return "fee_rate_coef";
     }
     return "unknown";
 }
@@ -156,17 +195,17 @@ inline constexpr std::size_t kMarketIdMax = 32;
 
 struct FeatureSnapshot {
     // ---- R-20 4 ts (与 WAL header v2 offset 16/24/32/40 一致) ----
-    std::int64_t event_ts        = 0;
-    std::int64_t data_source_ts  = 0;
-    std::int64_t ingestion_ts    = 0;
-    std::int64_t as_of_ts        = 0;
+    std::int64_t event_ts = 0;
+    std::int64_t data_source_ts = 0;
+    std::int64_t ingestion_ts = 0;
+    std::int64_t as_of_ts = 0;
 
     // ---- PIT 锚 (ML-R8) ----
-    std::uint64_t feature_snapshot_id = 0;   // 老周 PIT: hash(market_id || as_of_ts || signal_id)
+    std::uint64_t feature_snapshot_id = 0;  // 老周 PIT: hash(market_id || as_of_ts || signal_id)
 
     // ---- 业务键 ----
-    std::array<std::uint8_t, 16>   audit_id_bytes{};   // ULID, RM/signer/matcher 同链
-    std::uint8_t                   signal_id_u8 = 0;   // SignalId enum 值 cast (避免 header 引 signal_iface)
+    std::array<std::uint8_t, 16> audit_id_bytes{};  // ULID, RM/signer/matcher 同链
+    std::uint8_t signal_id_u8 = 0;                  // SignalId enum 值 cast (避免 header 引 signal_iface)
     std::array<char, kMarketIdMax> market_id{};
 
     // ---- 32 feature (float32, sparse NaN = missing) ----
@@ -174,58 +213,52 @@ struct FeatureSnapshot {
 
     // ---- ctor: 默认所有 feature = NaN (sparse) ----
     FeatureSnapshot() noexcept {
-        for (auto& v : features) v = std::numeric_limits<float>::quiet_NaN();
+        for (auto& v : features)
+            v = std::numeric_limits<float>::quiet_NaN();
     }
 
     // ---- accessor by enum (零开销, 编译器 inline) ----
-    [[nodiscard]] float  get(FeatureName f) const noexcept {
-        return features[static_cast<std::size_t>(f)];
-    }
-    void set(FeatureName f, float v) noexcept {
-        features[static_cast<std::size_t>(f)] = v;
-    }
+    [[nodiscard]] float get(FeatureName f) const noexcept { return features[static_cast<std::size_t>(f)]; }
+    void set(FeatureName f, float v) noexcept { features[static_cast<std::size_t>(f)] = v; }
 
     // ---- WalRecord concept 适配 ----
-    [[nodiscard]] std::int64_t event_ts_ns()       const noexcept { return event_ts; }
+    [[nodiscard]] std::int64_t event_ts_ns() const noexcept { return event_ts; }
     [[nodiscard]] std::int64_t data_source_ts_ns() const noexcept { return data_source_ts; }
-    [[nodiscard]] std::int64_t ingestion_ts_ns()   const noexcept { return ingestion_ts; }
-    [[nodiscard]] std::int64_t as_of_ts_ns()       const noexcept { return as_of_ts; }
+    [[nodiscard]] std::int64_t ingestion_ts_ns() const noexcept { return ingestion_ts; }
+    [[nodiscard]] std::int64_t as_of_ts_ns() const noexcept { return as_of_ts; }
     [[nodiscard]] std::array<std::uint8_t, 16> audit_id() const noexcept { return audit_id_bytes; }
 
     // serialize_into: POD memcpy (W4 stub, W5 切 Parquet flat).
     // 注: 单 record W5 仍走 WAL framework, Parquet 由小田 DWH 离线消费 WAL bytes 再翻译.
     [[nodiscard]] std::size_t serialize_into(std::span<std::byte> out) const noexcept {
         const std::size_t n = sizeof(FeatureSnapshot);
-        if (out.size() < n) return 0;
+        if (out.size() < n)
+            return 0;
         std::memcpy(out.data(), this, n);
         return n;
     }
-    static constexpr std::size_t max_serialized_size() noexcept {
-        return sizeof(FeatureSnapshot);
-    }
+    static constexpr std::size_t max_serialized_size() noexcept { return sizeof(FeatureSnapshot); }
 
     // ---- 4 ts 不等式自检 (R-20, 不调 framework PIT, 仅 caller 入口校验) ----
     [[nodiscard]] bool ts_chain_ok() const noexcept {
-        return (event_ts        >  0)
-            && (data_source_ts >= event_ts)
-            && (ingestion_ts   >= data_source_ts)
-            && (as_of_ts       >= ingestion_ts);
+        return (event_ts > 0) && (data_source_ts >= event_ts) && (ingestion_ts >= data_source_ts) &&
+               (as_of_ts >= ingestion_ts);
     }
 
     // ---- 全字段填充检查 (debug 用: NaN count) ----
     [[nodiscard]] std::size_t nan_count() const noexcept {
         std::size_t n = 0;
-        for (auto v : features) if (std::isnan(v)) ++n;
+        for (auto v : features)
+            if (std::isnan(v))
+                ++n;
         return n;
     }
     [[nodiscard]] bool all_filled() const noexcept { return nan_count() == 0; }
 };
 
 // 单条 ≤ u16 LEN (framework 约束)
-static_assert(sizeof(FeatureSnapshot) <= 65535,
-              "FeatureSnapshot 单条 ≤ u16 LEN");
+static_assert(sizeof(FeatureSnapshot) <= 65535, "FeatureSnapshot 单条 ≤ u16 LEN");
 // concept 静态自检
-static_assert(stcpp::infra::wal::WalRecord<FeatureSnapshot>,
-              "FeatureSnapshot 必须满足 WalRecord concept");
+static_assert(stcpp::infra::wal::WalRecord<FeatureSnapshot>, "FeatureSnapshot 必须满足 WalRecord concept");
 
 }  // namespace stcpp::ml

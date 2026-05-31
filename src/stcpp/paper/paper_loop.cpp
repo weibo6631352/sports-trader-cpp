@@ -861,6 +861,9 @@ void PaperLoop::PublishQuoteSnapshot(const std::string& condition_id,
     // fair_value: 始终输出 (fv_result.p_yes()), 但 predict_ok=false 时消费方不可据此决策.
     qf.fair_value = fv_result.p_yes();
     qf.market_mid = mark_price;
+    // R-fee-2: per-market 手续费系数 (始终输出, fee 是 market 元数据非决策派生, 不受 has_real_fair gate)。
+    //   进 ML 训练数据 (FeatureRecorder) + 前端 /quote。与 RM/sizing 同源 FeeCoefFor(condition)。
+    qf.fee_rate_coef = FeeCoefFor(condition_id);
 
     if (has_real_fair) {
         // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.

@@ -109,12 +109,15 @@ TEST(FeatureSnapshot, FillAll32Features) {
     }
 }
 
-TEST(FeatureSnapshot, FeatureCountIs32) {
-    EXPECT_EQ(kFeatureCount, 32u);
+TEST(FeatureSnapshot, FeatureCountIs33) {
+    // R-fee-2 (老雷): 32 → 33, 末尾追加 fee_rate_coef[32] (gamma feeSchedule.rate)。
+    EXPECT_EQ(kFeatureCount, 33u);
+    EXPECT_EQ(to_string(FeatureName::fee_rate_coef), "fee_rate_coef");
+    EXPECT_EQ(static_cast<std::size_t>(FeatureName::fee_rate_coef), 32u);
 }
 
 TEST(FeatureSnapshot, EnumToStringMonotone) {
-    // 32 enum 字符串都非空 (生成 Parquet schema 时用)
+    // kFeatureCount(33) enum 字符串都非空 (生成 Parquet schema 时用)
     for (std::size_t i = 0; i < kFeatureCount; ++i) {
         const auto sv = to_string(static_cast<FeatureName>(i));
         EXPECT_FALSE(sv.empty());

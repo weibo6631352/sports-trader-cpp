@@ -130,7 +130,8 @@ private:
         // JSONL 一行一决策快照. 字段为受控数值/hex, 无需 JSON 转义.
         out << "{\"condition_id\":\"" << cond << "\""
             << ",\"fair_value\":" << q.fair_value << ",\"market_mid\":" << q.market_mid
-            << ",\"edge_bps\":" << q.edge_bps << ",\"kelly_fraction\":" << q.kelly_fraction
+            << ",\"edge_bps\":" << q.edge_bps << ",\"fee_rate_coef\":" << q.fee_rate_coef
+            << ",\"kelly_fraction\":" << q.kelly_fraction
             << ",\"suggested_notional\":" << q.suggested_notional
             << ",\"signal_strength\":" << q.signal_strength << ",\"model_confidence\":" << q.model_confidence
             << ",\"fair_ci_lower\":" << q.fair_ci_lower << ",\"fair_ci_upper\":" << q.fair_ci_upper

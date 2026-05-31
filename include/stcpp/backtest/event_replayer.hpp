@@ -36,10 +36,10 @@
 #include <vector>
 
 #include "stcpp/backtest/types.hpp"
-#include "stcpp/strategy/edge_ci.hpp"  // Phase4 阻塞3: 回测-实盘共用 ComputeEdgeCiLower
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
 #include "stcpp/numerical/slippage_model.hpp"
+#include "stcpp/strategy/edge_ci.hpp"  // Phase4 阻塞3: 回测-实盘共用 ComputeEdgeCiLower
 
 namespace stcpp::backtest {
 
@@ -68,6 +68,10 @@ struct SignalEvent {
     double gross_edge{0.0};  // |pm_mid - fair_value|
     TradeSide side{TradeSide::BuyYes};
     double kelly_size_usdc{0.0};  // Kelly sizing 后的计划下单量
+    // R-fee-2 (老雷): per-market 手续费系数 (gamma feeSchedule.rate; 录制数据带入)。
+    //   sentinel <0 = 该 event 无 fee 数据 (legacy 录制) → 回退 cfg_.fee_rate。
+    //   >=0 = 用录制的真实 per-market fee → 回测/实盘 fee 同源 (BR-1)。
+    double fee_rate{-1.0};
 
     // CLOB 快照 (复用 FillRateModel::compute_from_clob_book)
     stcpp::microstructure::OrderBookSnapshot book{};
@@ -191,7 +195,8 @@ private:
         t.fair_value = ev.fair_value;
         t.pm_mid = ev.pm_mid;
         t.gross_edge = ev.gross_edge;
-        t.fee_rate = cfg_.fee_rate;
+        // R-fee-2: 用录制的 per-market fee (>=0); legacy 无 fee 数据 → 回退 cfg 默认 (BR-1 同源)。
+        t.fee_rate = (ev.fee_rate >= 0.0) ? ev.fee_rate : cfg_.fee_rate;
         t.size_usdc = ev.kelly_size_usdc;
 
         // --- R-20 PIT 校验 ---
