@@ -569,12 +569,18 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         }
 
         // 2. 对每个 market 跑 EventMatcher → 构建新映射 (fail-closed: 未匹配不入)
+        // A5: 记录 match_confidence(team_score) + match_as_of_ns(本刷新时刻) — join 边质量一等暴露
+        // (观测/输入)。
+        const std::int64_t refresh_now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                                std::chrono::system_clock::now().time_since_epoch())
+                                                .count();
         auto new_map = std::make_shared<paper::ConditionEventMap>();
         std::size_t matched = 0;
         for (const auto& [cond_id, in] : market_match_inputs_) {
             const auto r = event_matcher_.Match(in, candidates);
             if (r.matched) {
-                (*new_map)[cond_id] = paper::EventMapEntry{r.inplay_match_id, r.yes_is_home};
+                (*new_map)[cond_id] =
+                    paper::EventMapEntry{r.inplay_match_id, r.yes_is_home, r.team_score, refresh_now_ns};
                 ++matched;
             }
         }

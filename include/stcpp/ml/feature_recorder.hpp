@@ -130,8 +130,13 @@ private:
         // JSONL 一行一决策快照. 字段为受控数值/hex, 无需 JSON 转义.
         out << "{\"condition_id\":\"" << cond << "\""
             << ",\"fair_value\":" << q.fair_value << ",\"market_mid\":" << q.market_mid
-            << ",\"edge_bps\":" << q.edge_bps << ",\"fee_rate_coef\":" << q.fee_rate_coef
-            << ",\"kelly_fraction\":" << q.kelly_fraction
+            << ",\"edge_bps\":" << q.edge_bps << ",\"fee_rate_coef\":"
+            << q.fee_rate_coef
+            // 盘口上下文 / 双边微观结构 (模型输入, 不 gate; 2026-05-31)
+            << ",\"cross_spread\":" << q.cross_spread << ",\"no_microprice\":" << q.no_microprice
+            << ",\"yes_imbalance\":" << q.yes_imbalance << ",\"no_imbalance\":" << q.no_imbalance
+            << ",\"devig_ok\":" << (q.devig_ok ? "true" : "false")
+            << ",\"joint_as_of_ts_ns\":" << q.joint_as_of_ts_ns << ",\"kelly_fraction\":" << q.kelly_fraction
             << ",\"suggested_notional\":" << q.suggested_notional
             << ",\"signal_strength\":" << q.signal_strength << ",\"model_confidence\":" << q.model_confidence
             << ",\"fair_ci_lower\":" << q.fair_ci_lower << ",\"fair_ci_upper\":" << q.fair_ci_upper

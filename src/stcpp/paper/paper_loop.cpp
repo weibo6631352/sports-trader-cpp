@@ -39,6 +39,7 @@
 
 #include "stcpp/paper/paper_loop.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cmath>
@@ -230,6 +231,12 @@ void PaperLoop::RunLoop(std::stop_token st) {
 // ---------------------------------------------------------------------------
 
 void PaperLoop::TickAll() {
+    // A4 (老板「他们相对都是最近刷新的就行」): tick 入口冻结一次比分快照 + 映射, 整轮全子盘口共享同版本。
+    //   消除 read-skew: 否则同 event 的 moneyline/spread 各自 Get(), 采集线程中途 swap → 看不同比分版本。
+    //   GetSnapshot()/LoadEventMap() 都是只读 RCU 单次 load (不碰 R-12); shared_ptr 持有保活整 tick。
+    tick_event_map_ = LoadEventMap();
+    tick_score_snap_ = (score_store_ != nullptr) ? score_store_->GetSnapshot() : nullptr;
+
     for (const auto& [cond_id, tok_pair] : token_map_) {
         const std::string& yes_tok = tok_pair.first;  // YES token
         const std::string& no_tok = tok_pair.second;  // NO token
@@ -321,6 +328,16 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
     }
 
+    // ---- A1: cross_spread (= vig, 双边 ask 和 − 1) — 流动性/定价健康度指示, 复用于 CI 调宽 + quote 发布。
+    //   仅双边 book 都在时可算; 单边缺 → NaN(不调 CI, 不发布 vig)。
+    double cross_spread = std::numeric_limits<double>::quiet_NaN();
+    if (mkt.no.present) {
+        const double no_ask = mkt.no.book.best_ask();
+        if (std::isfinite(best_ask) && best_ask > 0.0 && std::isfinite(no_ask) && no_ask > 0.0) {
+            cross_spread = best_ask + no_ask - 1.0;
+        }
+    }
+
     // ---- P1-8 de-vig: edge 锚 = 去 overround 的 fair 概率, 非裸 mid/ask --------
     // yes_mid 用 YES token microprice (无效则回退 L1 mid); no_token_mid 来自对边 book.
     // 双边无效 → devig_binary 返 nullopt → 无可用市场锚 → fail-closed (不产 intent).
@@ -342,16 +359,18 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     game_row.ingestion_ts_ns = feat.ingestion_ts_ns;
     game_row.as_of_ts_ns = feat.as_of_ts_ns;
 
-    // ---- A1: 解析真实 Goalserve 比分 (condition→event 映射 + score_store.Get) ----
+    // ---- A1: 解析真实 Goalserve 比分 (condition→event 映射 + tick-local 共享快照) ----
     // fail-closed: 无 score_store / 无映射 / 未匹配 / 陈旧 / 非 in-play → 保持 stub.
-    if (score_store_ != nullptr) {
-        const std::shared_ptr<const ConditionEventMap> map = LoadEventMap();
-        if (map) {
-            const auto it = map->find(condition_id);
-            if (it != map->end() && !it->second.inplay_match_id.empty()) {
-                const auto es_opt = score_store_->Get(it->second.inplay_match_id);
-                if (es_opt.has_value() && es_opt->found) {
-                    const auto& es = *es_opt;
+    // A4: 用 TickAll 入口冻结的 tick_score_snap_/tick_event_map_ (整 tick 同版本, 消 read-skew),
+    //     不再 per-condition 各自 Get()/LoadEventMap()。
+    if (tick_score_snap_ != nullptr && tick_event_map_ != nullptr) {
+        const ConditionEventMap& map = *tick_event_map_;
+        {
+            const auto it = map.find(condition_id);
+            if (it != map.end() && !it->second.inplay_match_id.empty()) {
+                const auto sit = tick_score_snap_->find(it->second.inplay_match_id);
+                if (sit != tick_score_snap_->end() && sit->second.found) {
+                    const auto& es = sit->second;
                     const auto ev_ts = MapEventScoreStatus(es.status);
                     // 新鲜度: data_source_ts 不能太旧 (老韩 D4 #8 + 老周 R-20: 冻结比分不当 live fair).
                     const std::int64_t now_ns = NowNs();
@@ -461,6 +480,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //    YES 路径 == 旧 ComputeEdgeCiLower(p_fair, p_market_devig) 逐位不变。)
     const double p_fair_selected = is_yes ? p_fair : (1.0 - p_fair);
     const double p_devig_selected = is_yes ? p_market_devig : (1.0 - p_market_devig);
+    // 注 (老板「别草率守门」2026-05-31): cross_spread(vig) 不接 CI 硬收紧 — 只作模型输入(进 QuoteFeatures),
+    //   让模型/策略学 vig 影响, 是否用它调门留给「守门审计 + 小梁/老韩」定。这里维持原 n_eff (不加守门)。
     const double edge_ci_lower =
         ComputeEdgeCiLower(p_fair_selected, p_devig_selected, cfg_.n_effective, cfg_.z_90);
 
@@ -512,7 +533,13 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // ---- Step 4: QuoteSnapshotHub::Publish ---------------------------------
     // 无论下单与否, 发布 quote 快照 (供 /api/v1/quote 端点显示真实估值)
     // P0-3: has_real_fair=false 时, 传递 suppress_edge=true → 清零伪 edge 字段.
-    PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair);
+    // A2: 双边微观结构 + 联合新鲜度透传 (全部模型输入+观测, 不接 gate)。
+    //   joint_as_of = min(score.as_of, book.as_of) — 联合新鲜度 (老板「相对最近刷新」; 绝不 gate)。
+    const double no_imbalance =
+        mkt.no.present ? mkt.no.book.imbalance : std::numeric_limits<double>::quiet_NaN();
+    const std::int64_t joint_as_of_ts_ns = std::min(game_row.as_of_ts_ns, feat.as_of_ts_ns);
+    PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair,
+                         cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns);
     stats_.quote_publishes.fetch_add(1, std::memory_order_relaxed);
 
     // ---- P0-4: advisory gate -----------------------------------------------
@@ -849,8 +876,9 @@ void PaperLoop::PublishQuoteSnapshot(const std::string& condition_id,
                                      const pricing::FairValueResult& fv_result,
                                      const sizing::SizingOutput& sizing_out, double mark_price,
                                      double edge_ci_lower,
-                                     const polymarket::clob_wss::OrderBookFeatures& feat,
-                                     bool has_real_fair) noexcept {
+                                     const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair,
+                                     double cross_spread, double no_microprice, double no_imbalance,
+                                     bool devig_ok, std::int64_t joint_as_of_ts_ns) noexcept {
     sizing::QuoteFeatures qf{};
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
@@ -864,6 +892,16 @@ void PaperLoop::PublishQuoteSnapshot(const std::string& condition_id,
     // R-fee-2: per-market 手续费系数 (始终输出, fee 是 market 元数据非决策派生, 不受 has_real_fair gate)。
     //   进 ML 训练数据 (FeatureRecorder) + 前端 /quote。与 RM/sizing 同源 FeeCoefFor(condition)。
     qf.fee_rate_coef = FeeCoefFor(condition_id);
+
+    // A2: 盘口上下文 / 双边微观结构 (模型输入 + 观测, 绝不 gate — 老板 2026-05-31)。
+    std::strncpy(qf.condition_id, condition_id.c_str(), sizeof(qf.condition_id) - 1);
+    qf.condition_id[sizeof(qf.condition_id) - 1] = '\0';
+    qf.no_microprice = no_microprice;
+    qf.cross_spread = cross_spread;
+    qf.yes_imbalance = feat.imbalance;  // YES L1 失衡 (本边 book)
+    qf.no_imbalance = no_imbalance;     // NO  L1 失衡 (对边 book; 单边缺=NaN)
+    qf.devig_ok = devig_ok;
+    qf.joint_as_of_ts_ns = joint_as_of_ts_ns;  // 联合新鲜度 (min(score,book) as_of); 输入不 gate
 
     if (has_real_fair) {
         // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.

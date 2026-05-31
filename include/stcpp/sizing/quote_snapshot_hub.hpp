@@ -97,6 +97,16 @@ struct QuoteFeatures {
     //   R-fee-2 (老雷): fee 吃净 edge 且 per-market 变化, 进 ML 训练特征 + 推理 (feature #32)。
     //   体育0.03/加密0.072/老市场0; 默认 0.03 (调用方未填则保守)。
     double fee_rate_coef{0.03};
+
+    // ---- 盘口上下文 / 双边微观结构 (2026-05-31 盘口上下文会) ----
+    //   全部「模型输入 + 观测」, 绝不接任何 gate (老板 2026-05-31: 新鲜度/信号质量是输入不是草率守门)。
+    char condition_id[72]{};            // 自身主键 (bytes32 hex 66 char; 冗余进值 → ML/序列化自包含)
+    double no_microprice{0.0};          // NO 边 microprice (de-vig 对边输入, 原当帧丢弃 → 回收)
+    double cross_spread{0.0};           // = YES_ask + NO_ask − 1 (等效 vig; 流动性/定价健康度信号)
+    double yes_imbalance{0.0};          // YES L1 簿口失衡 ∈ [−1,1]
+    double no_imbalance{0.0};           // NO  L1 簿口失衡 ∈ [−1,1]
+    bool devig_ok{false};               // de-vig 成功? (观测: 区分「de-vig 失败」vs「edge 不足」)
+    std::int64_t joint_as_of_ts_ns{0};  // 联合新鲜度 = min(score.as_of, book.as_of); 模型输入+观测, 绝不 gate
     // kelly_fraction: Kelly 仓位比例 (已 cap; 来自 SizingCalculator)
     double kelly_fraction{0.0};
     // suggested_notional: 建议名义仓位 (USDC; 来自 SizingCalculator)

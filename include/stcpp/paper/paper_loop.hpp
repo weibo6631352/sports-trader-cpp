@@ -69,6 +69,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "stcpp/data/score_snapshot_store.hpp"  // A4: ScoreMap (tick-local 共享比分快照, 消 read-skew)
 #include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
 #include "stcpp/paper/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
@@ -99,6 +100,9 @@ namespace stcpp::paper {
 struct EventMapEntry {
     std::string inplay_match_id;
     bool yes_is_home{true};
+    // A5 (小余 round-2): join 边是概率性 fuzzy 匹配, 会断会翻转 → 一等暴露质量 (观测/模型输入, 不 gate)。
+    double match_confidence{0.0};    // EventMatcher team_score (双队 overlap 和; 越高越确信)
+    std::int64_t match_as_of_ns{0};  // 映射上次刷新时刻 (本地 now; 数据新鲜度观测, 绝不守门)
 };
 using ConditionEventMap = std::unordered_map<std::string, EventMapEntry>;
 
@@ -278,6 +282,12 @@ private:
     mutable std::mutex event_map_mu_;
     std::shared_ptr<const ConditionEventMap> event_map_;
 
+    // A4 (老周/老板「相对最近刷新」): tick-local 冻结快照 — TickAll 入口取一次, 整 tick 全子盘口共享同版本。
+    //   根除 read-skew (同 event 的 moneyline/spread 看不同比分版本)。loop_thread_ 单线程, 无需锁;
+    //   shared_ptr 持有保证 tick 内不被采集线程 swap 掉 (引用计数)。
+    std::shared_ptr<const ConditionEventMap> tick_event_map_;
+    std::shared_ptr<const data::ScoreMap> tick_score_snap_;
+
     // LoadEventMap — 短锁拷当前映射 ptr (loop_thread_ 用; nullptr 若未注入).
     [[nodiscard]] std::shared_ptr<const ConditionEventMap> LoadEventMap() const noexcept {
         std::lock_guard<std::mutex> lk(event_map_mu_);
@@ -345,8 +355,9 @@ private:
     // P0-3: has_real_fair=false → 清零 edge/kelly/notional/signal/predict_ok (宁可空不可假)
     void PublishQuoteSnapshot(const std::string& condition_id, const pricing::FairValueResult& fv_result,
                               const sizing::SizingOutput& sizing_out, double mark_price, double edge_ci_lower,
-                              const polymarket::clob_wss::OrderBookFeatures& feat,
-                              bool has_real_fair) noexcept;
+                              const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair,
+                              double cross_spread, double no_microprice, double no_imbalance, bool devig_ok,
+                              std::int64_t joint_as_of_ts_ns) noexcept;
 };
 
 }  // namespace stcpp::paper
