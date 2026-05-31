@@ -104,6 +104,8 @@ PaperLoop::PaperLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk
       token_map_(std::move(token_map)),
       cfg_(std::move(cfg)) {
     (void)rm_snap_;  // 只写不读字段: 抑制 clang -Wunused-private-field (跨 gcc/clang 可移植)
+    // G-1: 默认注入 VirtualExecutor (包 matcher_, 行为逐位不变)。live 注入留待开闸后 (老韩签字)。
+    executor_ = std::make_unique<execution::VirtualExecutor>(matcher_);
 }
 
 // ---------------------------------------------------------------------------
@@ -656,7 +658,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     vord.as_of_ts_ns = sign_req.as_of_ts_ns;
     vord.wall_now_ns = NowNs();
 
-    const execution::VirtualFill fill = matcher_.Match(vord);
+    // G-1: 经执行器 (默认 VirtualExecutor → matcher_.Match, 行为逐位不变)。
+    const execution::VirtualFill fill = executor_->Execute(vord);
 
     // R-11: VirtualFill.mode_tag 必须为 0 (paper 标记; VirtualMatcher 内部硬填)
     assert(fill.mode_tag == 0u);  // 防御性校验 (debug build)

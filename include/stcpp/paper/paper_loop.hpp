@@ -69,6 +69,7 @@
 #include <unordered_map>
 #include <utility>
 
+#include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
 #include "stcpp/paper/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
@@ -245,6 +246,10 @@ private:
 
     // ---- VirtualMatcher (Mode A++) ----
     execution::VirtualMatcher matcher_;
+
+    // ---- 订单执行器 (G-1 executor 注入; 默认 VirtualExecutor 包 matcher_, 行为逐位不变) ----
+    //   声明在 matcher_ 之后 → 析构先于 matcher_ (executor_ 持 matcher_ 引用)。
+    std::unique_ptr<execution::IOrderExecutor> executor_;
 
     // ---- 配置与 token map ----
     std::unordered_map<std::string, std::pair<std::string, std::string>> token_map_;
