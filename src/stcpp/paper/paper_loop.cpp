@@ -597,11 +597,25 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   H-1 signed cap magnitude 放行减仓 + H-2 反向穿零不触发 + avg_entry 归零 (现成账本, 无需 reverse 修)。
     //   churn 自抑: 刚买的边 bid<fair+margin → reservation_sell 平不 marketable → 不会买完立刻平
     //   (限价不追内生防抖; 仅当旧边真 overpriced=bid≥fair+margin 才平 = 取利平仓)。
-    // M2-b (sell-to-open 空头 target<0 / 反向穿零 avg_entry / 空仓 VWAP) 仍 → 后续 (需 C1 重裁 + 会签)。
+    // M2-b 注: sell-to-open 真开空对二元市场结构性 N/A (CTF 不能持负余额; 空 YES≡持 NO; signed
+    //   target 已由两腿 long-only 张成)。老郭 C1: 负 delta 跨零才令 condition cap 失真, M2-a 只平不开空
+    //   不触发。故 M2-b 仅留「强制穿越防抖」(下方; 真开空机器不建)。详见 spec §11.6。
+
+    // 强制穿越 (小梁 Q-梁-2): YES-canonical p_fair 较上 tick 大跳 (|Δ|>阈, e.g. 进球) → 绕死区不堵。
+    //   loop_thread_ 单 writer, last_p_fair_ 无锁读写。两腿共用本 condition 的 force 标志。
+    bool force_cross = false;
+    {
+        const auto fit = last_p_fair_.find(condition_id);
+        if (fit != last_p_fair_.end()) {
+            force_cross = std::abs(p_fair - fit->second) > cfg_.force_cross_fair_delta;
+        }
+        last_p_fair_[condition_id] = p_fair;  // 更新 (YES-canonical, 选边前的稳定信号)
+    }
 
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
-                          exec_feat, book_depth_l1, p_fair_selected, target_mag, sz_in.fee_rate_coef);
+                          exec_feat, book_depth_l1, p_fair_selected, target_mag, sz_in.fee_rate_coef,
+                          force_cross);
 
     // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
     const SideView& other = is_yes ? mkt.no : mkt.yes;
@@ -624,7 +638,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             ExecuteControllerSide(condition_id, other_token,
                                   is_yes ? strategy::Outcome::No : strategy::Outcome::Yes, other_feat,
                                   other_depth, 1.0 - p_fair_selected, /*target_mag=*/0.0,
-                                  FeeCoefFor(condition_id));
+                                  FeeCoefFor(condition_id), force_cross);
         }
     }
 }
@@ -641,7 +655,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
                                       strategy::Outcome outcome,
                                       const polymarket::clob_wss::OrderBookFeatures& side_book,
                                       double book_depth_l1, double p_fair_side, double target_mag,
-                                      double fee_coef) noexcept {
+                                      double fee_coef, bool force_cross) noexcept {
     const double exec_ask = side_book.best_ask();
     const double exec_bid = side_book.best_bid();
     const double mark_price = std::isfinite(side_book.microprice) ? side_book.microprice : side_book.mid;
@@ -678,7 +692,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     cin.best_bid = exec_bid;  // 本边 bid (卖出触价 + 限价不追门)
     cin.min_rebalance_pusd = min_rebalance;
     cin.per_order_cap_pusd = cfg_.per_order_cap_usdc;
-    cin.allow_short = false;  // 空头 clamp 0 (sell-to-open → M2-b)
+    cin.allow_short = false;       // 空头 clamp 0 (sell-to-open 对二元市场 N/A; 见 spec §11.6)
+    cin.force_cross = force_cross;  // 小梁 Q-梁-2: fair 大跳绕死区
 
     const control::ControlAction action = control::Decide(cin);
     if (!action.act) {

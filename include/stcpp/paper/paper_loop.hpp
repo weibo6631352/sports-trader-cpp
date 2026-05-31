@@ -139,6 +139,9 @@ struct PaperLoopConfig {
     //     |gap| < threshold 不动 (避免高频小额 rebalance 被 fee 侵蚀)。
     double edge_ci_lower_floor{0.0};
     double min_rebalance_floor_pusd{1.0};
+    //   force_cross_fair_delta: |fair_new − fair_old| 超此值 → 强制穿越死区 (小梁 Q-梁-2;
+    //     比分大跳/进球令 fair 突变时不被防抖死区堵住)。YES-canonical p_fair 逐 condition 比较。
+    double force_cross_fair_delta{0.02};
 
     // CI 参数 (z=1.645 = 90%)。
     // n_effective: 2026-05-31 30→200 (小程量化方案, Phase4 阻塞1)。
@@ -350,6 +353,10 @@ private:
     // ---- intent_id 单调递增 (loop_thread_ 单写) ----
     std::uint64_t intent_seq_{0};
 
+    // ---- 强制穿越状态 (小梁 Q-梁-2): condition_id → 上 tick YES-canonical p_fair ----
+    //   loop_thread_ 单 writer (TickOne 读+写), 无需锁。本 tick |p_fair − last| > 阈 → force_cross。
+    std::unordered_map<std::string, double> last_p_fair_;
+
     // ---- A5 (老韩 spec §4): 累计已付 taker fee (whole pUSD, 单调加) ----
     //   DD 喂数: daily_pnl = 时点净 MtM − cum_fee。PublishLedgerSnapshot 算 pnl_fee 后累加,
     //   FeedRiskGateway 读。loop_thread_ 单 writer (两者同线程顺序调), 无需 atomic。
@@ -373,7 +380,7 @@ private:
                                strategy::Outcome outcome,
                                const polymarket::clob_wss::OrderBookFeatures& side_book,
                                double book_depth_l1, double p_fair_side, double target_mag,
-                               double fee_coef) noexcept;
+                               double fee_coef, bool force_cross) noexcept;
 
     // CI 下界: edge_ci_lower = (p_fair - p_ask) - z * sqrt(p*(1-p)/n)
     [[nodiscard]] static double ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept;

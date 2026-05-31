@@ -43,6 +43,7 @@ struct ControlInput {
     double min_rebalance_pusd{1.0};   // 防抖死区 (绝对 pUSD; 小梁 = max(1, 0.1·|target|))
     double per_order_cap_pusd{0.0};   // 单笔上限 (clamp; RM per_order_cap 同源)
     bool allow_short{false};          // v1=false (空头 clamp 0); M2 开
+    bool force_cross{false};          // 强制穿越 (小梁 Q-梁-2: |Δfair|>0.02 → 绕死区; 比分大跳不堵)
 };
 
 // 控制器输出 (TickOne 据此构造 OrderIntent 或 skip)。
@@ -126,8 +127,9 @@ struct ReservationPrices {
     const double abs_gap = std::abs(gap);
 
     // 防抖死区 (小梁 Q-梁-2): |gap| 太小不动 (避免高频小额 rebalance 被 fee 侵蚀)。
+    //   强制穿越 (小梁 Q-梁-2): fair 大跳 (|Δfair|>0.02, e.g. 进球) → force_cross 绕死区, 不堵突变。
     const double threshold = (in.min_rebalance_pusd > 0.0) ? in.min_rebalance_pusd : 0.0;
-    if (abs_gap < threshold) {
+    if (!in.force_cross && abs_gap < threshold) {
         a.reason = NoActReason::BelowThreshold;
         return a;
     }

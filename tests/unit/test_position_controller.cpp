@@ -94,6 +94,24 @@ TEST(PositionController, PC05_BelowThreshold) {
     EXPECT_EQ(a.reason, NoActReason::BelowThreshold);
 }
 
+// PC-05b: 强制穿越 (小梁 Q-梁-2) — |gap| < 死区, 但 force_cross=true (fair 大跳) → 绕死区下单
+TEST(PositionController, PC05b_ForceCrossBypassesDeadZone) {
+    auto in = base();
+    in.target_pusd = 10.5;
+    in.current_pusd = 10.0;  // gap=0.5 < 1.0 死区
+    in.force_cross = true;   // 进球/fair 大跳 → 强制穿越
+    const auto a = Decide(in);
+    EXPECT_TRUE(a.act) << "force_cross 应绕过死区";
+    EXPECT_EQ(a.side, Side::Buy);
+    EXPECT_DOUBLE_EQ(a.size_pusd, 0.5);  // 小额买增 (死区内但强制穿越)
+    // force_cross 不绕限价门: ask 仍须 ≤ reservation_buy (只绕防抖, 不绕限价不追)
+    auto in2 = in;
+    in2.best_ask = 0.99;  // 远高于 reservation_buy 0.53
+    const auto a2 = Decide(in2);
+    EXPECT_FALSE(a2.act) << "force_cross 只绕死区, 不绕限价不追门";
+    EXPECT_EQ(a2.reason, NoActReason::NotMarketable);
+}
+
 // PC-06: 限价不追 (买) — ask > reservation_buy → 不买 (价格涨了不硬追)
 TEST(PositionController, PC06_BuyNotMarketable) {
     auto in = base();
