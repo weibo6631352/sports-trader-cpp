@@ -1453,6 +1453,7 @@ void PaperLoop::PublishQuoteSnapshot(
         rec.as_of_ts_ns = qf.as_of_ts_ns;  // 决策时刻 (dedup + PIT; 同 FeatureRecorder 语义)
         rec.set_spec(fv.spec_version);
         rec.set_values(fv.values);
+        rec.baseline_fair = qf.fair_value;  // 缺口B: 残差训练 y=label−baseline 的锚 (非 X 列)
         rec.valid = true;
         fv_hub_->Publish(rec);
     }

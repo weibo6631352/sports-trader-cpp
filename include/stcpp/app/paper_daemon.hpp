@@ -58,8 +58,9 @@ class LiveBookPublisher;
 }  // namespace stcpp::debug_api
 namespace stcpp::data {
 class InplayFeedThread;
-class SettlementStore;   // M2 收盘/结算 store (forward; .cpp 实体化)
-class SettlementPoller;  // M2 结算轮询线程 (forward)
+class SettlementStore;     // M2 收盘/结算 store (forward; .cpp 实体化)
+class SettlementPoller;    // M2 结算轮询线程 (forward)
+class SettlementRecorder;  // Phase 2 缺口E 结算落盘 (forward; label y 来源)
 namespace livescore {
 class LiveStatsStore;     // live_stats 快照 store (forward; .cpp 实体化)
 class CommentariesPoller;  // commentaries 轮询线程 (forward)
@@ -325,6 +326,7 @@ private:
     //   须先析构); paper_loop_ 持 fv_hub_ 裸指针 (Shutdown 已先 Stop, 析构序无访问)。
     std::unique_ptr<ml::FeatureVectorHub> fv_hub_;
     std::unique_ptr<ml::FeatureVectorRecorder> fv_recorder_;
+    std::unique_ptr<data::SettlementRecorder> settlement_recorder_;  // Phase 2 缺口E: 结算落盘 (label y)
 
     // HTTP 观测端 (最后声明, 最先析构; 仅 RunMode::PaperDaemon)
     std::unique_ptr<debug_api::HttpServer> server_;

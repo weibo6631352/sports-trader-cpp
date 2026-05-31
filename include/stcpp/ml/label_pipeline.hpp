@@ -77,6 +77,46 @@ using LabelStore = std::unordered_map<std::string, OutcomeLabel>;
     return std::string(line.substr(vstart, vend - vstart));
 }
 
+// LoadLabelStoreFromJsonl — 从 settlement.jsonl (SettlementRecorder 落) 离线建 LabelStore。
+//   行: {"condition_id":"..","closed":1,"settlement_value":N,...}。只收 closed + value∈{0,1}。
+//   离线 join 的 y 来源 (内存 SettlementStore 不可用时走此; 缺口E 闭合)。
+[[nodiscard]] inline LabelStore LoadLabelStoreFromJsonl(const std::string& settlement_jsonl_path) {
+    LabelStore s;
+    std::ifstream in(settlement_jsonl_path);
+    if (!in.is_open()) return s;
+    auto find_int = [](std::string_view l, std::string_view key) -> std::optional<int> {
+        const auto k = l.find(key);
+        if (k == std::string_view::npos) return std::nullopt;
+        std::size_t pos = k + key.size();
+        while (pos < l.size() && (l[pos] == ':' || l[pos] == ' ')) ++pos;
+        bool neg = false;
+        if (pos < l.size() && l[pos] == '-') {
+            neg = true;
+            ++pos;
+        }
+        if (pos >= l.size() || l[pos] < '0' || l[pos] > '9') return std::nullopt;
+        int v = 0;
+        while (pos < l.size() && l[pos] >= '0' && l[pos] <= '9') v = v * 10 + (l[pos++] - '0');
+        return neg ? -v : v;
+    };
+    std::string line;
+    while (std::getline(in, line)) {
+        if (line.empty()) continue;
+        const auto cid = ExtractConditionId(line);
+        if (!cid) continue;
+        const auto closed = find_int(line, "\"closed\"");
+        const auto val = find_int(line, "\"settlement_value\"");
+        if (closed.value_or(0) == 1 && val && (*val == 0 || *val == 1)) {
+            OutcomeLabel l;
+            l.settlement_value = static_cast<std::int8_t>(*val);
+            l.y = static_cast<double>(*val);
+            l.valid = true;
+            s.emplace(*cid, l);
+        }
+    }
+    return s;
+}
+
 // AppendLabel — 把 label 追加进 X 行 (插在末尾 '}' 前): X + ,"label":y,"label_valid":b。
 //   X 原样保留 (source-agnostic); 训练侧读 "label" 列作 y。
 [[nodiscard]] inline std::string AppendLabel(std::string_view feature_line, const OutcomeLabel& l) {

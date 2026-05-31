@@ -19,6 +19,7 @@
 #include "stcpp/data/inplay_feed_thread.hpp"    // InplayFeedThread / InplayFeedConfig
 #include "stcpp/data/live_stats_store.hpp"      // live_stats LiveStatsStore
 #include "stcpp/data/settlement_poller.hpp"     // M2 SettlementPoller (clob /markets 轮询)
+#include "stcpp/data/settlement_recorder.hpp"   // Phase 2 缺口E 结算落盘 (label y)
 #include "stcpp/data/settlement_store.hpp"      // M2 SettlementStore
 #include "stcpp/data/score_snapshot_store.hpp"  // A1b: ScoreSnapshotStore::GetSnapshot
 #include "stcpp/ml/fair_value_model.hpp"        // 步④ make_onnx_fair_value_model / StubFairValueModel
@@ -490,6 +491,13 @@ BuildResult PaperDaemon::Build() {
         fv_cfg.output_path = cfg_.ml_path + ".fv.jsonl";  // 与 quotes.jsonl 并列
         fv_cfg.poll_interval_sec = 5;
         fv_recorder_ = std::make_unique<ml::FeatureVectorRecorder>(*fv_hub_, fv_cfg);
+
+        // Phase 2 缺口E: 结算落盘 (离线 label join 的 y 来源)。读 settlement_store_ 落 settlements.jsonl。
+        if (settlement_store_) {
+            data::SettlementRecorder::Config se_cfg;
+            se_cfg.output_path = cfg_.ml_path + ".settlements.jsonl";
+            settlement_recorder_ = std::make_unique<data::SettlementRecorder>(*settlement_store_, se_cfg);
+        }
     }
 
     // ---- Step 5: HttpServer (仅 RunMode::PaperDaemon; Headless 无 HTTP) ----
@@ -587,6 +595,11 @@ void PaperDaemon::Start() {
         std::printf("[paper_daemon] 完整 75 列向量采集启动 (FeatureVectorRecorder -> %s.fv.jsonl)\n",
                     cfg_.ml_path.c_str());
     }
+    if (settlement_recorder_) {
+        settlement_recorder_->Start();
+        std::printf("[paper_daemon] 结算落盘启动 (SettlementRecorder -> %s.settlements.jsonl, label y)\n",
+                    cfg_.ml_path.c_str());
+    }
 
     // ---- Step 5 start: HttpServer ----
     if (server_) {
@@ -662,6 +675,9 @@ void PaperDaemon::Shutdown() noexcept {
     }
     if (fv_recorder_) {
         fv_recorder_->Stop();  // 停读 fv_hub_ (paper_loop 随后 Stop 停写; 二者先于 fv_hub_ 析构)
+    }
+    if (settlement_recorder_) {
+        settlement_recorder_->Stop();  // 停读 settlement_store_ (先于其析构)
     }
 
     // 3. PaperLoop (先于 hub/ledger/rm 析构; Stop 内含 jthread join)

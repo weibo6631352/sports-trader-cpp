@@ -117,3 +117,24 @@ TEST(LabelPipeline, LP06_JoinFile) {
     std::remove(in_path.c_str());
     std::remove(out_path.c_str());
 }
+
+// LP07 (缺口E): 从 settlement.jsonl (SettlementRecorder 格式) 离线建 LabelStore
+TEST(LabelPipeline, LP07_LoadFromSettlementJsonl) {
+    const std::string path = "/tmp/stcpp_lp_settle.jsonl";
+    {
+        std::ofstream f(path, std::ios::trunc);
+        f << R"({"condition_id":"won","closed":1,"settlement_value":1,"end_date_ts_ns":100})" << '\n';
+        f << R"({"condition_id":"lost","closed":1,"settlement_value":0,"end_date_ts_ns":200})" << '\n';
+        f << R"({"condition_id":"unknown","closed":1,"settlement_value":-1,"end_date_ts_ns":300})" << '\n';
+    }
+    const auto store = ml::LoadLabelStoreFromJsonl(path);
+    EXPECT_EQ(store.size(), 2u) << "settlement_value=-1 (未知赢家) 不入";
+    EXPECT_DOUBLE_EQ(store.at("won").y, 1.0);
+    EXPECT_DOUBLE_EQ(store.at("lost").y, 0.0);
+    EXPECT_EQ(store.count("unknown"), 0u);
+    // 端到端: settlement.jsonl → LabelStore → join 特征行
+    const auto j = ml::JoinLine(FeatLine("won", 0.8), store, /*drop=*/true);
+    ASSERT_TRUE(j.has_value());
+    EXPECT_NE(j->find("\"label\":1"), std::string::npos);
+    std::remove(path.c_str());
+}
