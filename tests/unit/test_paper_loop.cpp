@@ -1535,3 +1535,74 @@ TEST_F(PaperLoopTest, TC2_Controller_ConvergesToTarget_NoUnboundedAccumulation) 
     EXPECT_LE(net_qty, 10.0 + 1e-6)
         << "TC-2: 持仓收敛到 target (≤ per_order_cap 10), 不无界累加到 exposure cap";
 }
+
+// ===========================================================================
+// M2-a: 选边翻转平旧边 (老雷 spec §11.6; 老韩 C1 不触发 + 老周 Q-周-2 范围内)
+//   持有被低估边 → 市场反转令该边 overpriced (另一边变低估) → 选边翻转 → 旧边自动平仓。
+//   验证: 旧边 (YES) 持仓被卖回 (减仓/趋零) + 新边 (NO) 建仓。这是 Step3-5 发现的真实 de-risk 路径。
+// ===========================================================================
+TEST_F(PaperLoopTest, TM2a_SideFlip_ClosesOldSide) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    // 比分恒定: YES 2:0 领先 (fair_YES~0.55, 60min soccer)。fair 不变, 只动市场价格制造翻转。
+    auto es = MakeFreshScore("gs-flip", 2, 0);
+    es.sport = "soccer";
+    es.clock_sec = 60 * 60;
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-flip"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-flip", true};
+
+    cfg_.advisory_markets_no_intent = false;
+    cfg_.n_effective = 500;
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+
+    // ---- Phase 1: 市场低估 YES (ask_YES=0.30), 高估 NO (ask_NO=0.70) → 选 YES, 建 YES 多仓 ----
+    hub_->Publish("1001", MakeFreshBook(0.28, 0.30));  // YES 被低估
+    hub_->Publish("1002", MakeFreshBook(0.68, 0.70));  // NO 高估
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(450));  // ~9 ticks: 建 YES 仓
+
+    double yes_after_p1 = 0.0;
+    for (const auto& pv : position_ledger_->get_all_positions()) {
+        if (pv.token_id == "1001") yes_after_p1 = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+    }
+    ASSERT_GT(yes_after_p1, 0.0) << "M2-a Phase1: 应先建立 YES 多仓 (被低估边)";
+
+    // ---- Phase 2: 比分翻转 (YES 队 0:3 落败) → fair_YES 暴跌, 市场未追上 (仍 ~0.54) ----
+    //   现实 de-risk 场景: 领先丢失 → fair 翻 → 旧持仓的边 overpriced (市场滞后) → 平旧边。
+    //   fair_YES~0.32 < devig_YES~0.54 → 选边翻转到 NO。
+    //   旧边 YES: 非选边 + 持仓 + bid 0.53 ≥ reservation_sell(YES)≈0.36 → 平 YES (减仓趋零)。
+    //   新边 NO: 低估 (ask_NO 0.47 < fair_NO 0.68) → 建 NO 多仓。
+    auto es2 = MakeFreshScore("gs-flip", 0, 3);  // YES 队 0:3 落败 (领先丢失 → 翻转)
+    es2.sport = "soccer";
+    es2.clock_sec = 60 * 60;
+    auto sm2 = std::make_shared<ScoreMap>();
+    (*sm2)["gs-flip"] = es2;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm2));  // 热刷比分 (loop 下个 tick 读新值)
+    hub_->Publish("1001", MakeFreshBook(0.52, 0.54));  // YES 市场滞后 (仍高于新 fair → overpriced)
+    hub_->Publish("1002", MakeFreshBook(0.45, 0.47));  // NO 现被低估 (fair_NO~0.68)
+    std::this_thread::sleep_for(std::chrono::milliseconds(550));  // ~11 ticks: 平 YES + 建 NO
+    loop_->Stop();
+
+    double yes_final = 0.0, no_final = 0.0;
+    for (const auto& pv : position_ledger_->get_all_positions()) {
+        if (pv.token_id == "1001") yes_final = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        if (pv.token_id == "1002") no_final = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+    }
+    std::fprintf(stderr, "[M2a] YES: %.4f(p1) → %.4f(final); NO final=%.4f\n", yes_after_p1, yes_final,
+                 no_final);
+
+    // 核心: 选边翻转后旧边 (YES) 被平掉 (减仓 → 显著低于 Phase1; 趋零)
+    EXPECT_LT(yes_final, yes_after_p1)
+        << "M2-a: 选边翻转后旧边 YES 应被平仓 (减仓; bid 高 → reservation_sell 可成交)";
+    // 新边 (NO) 建仓 (买被低估的 NO)
+    EXPECT_GT(no_final, 0.0) << "M2-a: 翻转后新被低估边 NO 应建仓";
+    // 旧边不穿零不开空 (H-2): YES 持仓 ≥ 0 (减仓 clamp ≤ 持仓, 绝不变负)
+    EXPECT_GE(yes_final, 0.0) << "M2-a/H-2: 平旧边绝不穿零开空 (long→0, 不反向)";
+}

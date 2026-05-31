@@ -366,6 +366,15 @@ private:
     //   是否真下单 (edge 够不够) 由下游 sizing/CI gate 定 (edge_ci<=0 → suggested=0 → 不产 intent)。
     [[nodiscard]] DecisionSide SelectSide(double p_fair_yes, double p_market_devig) const noexcept;
 
+    // 目标仓位控制器单边执行 (Step 4-8; 被选边 target=Kelly / 非选边平旧边 target=0 共用)。
+    //   M2-a 选边翻转平旧边: TickOne 对盘口两边各调一次驱动到目标。reservation/Decide/intent/RM/
+    //   sign/match/apply_fill(卖负 delta)/ledger 全收进来。loop_thread_ 串行 (R-12 不触碰)。
+    void ExecuteControllerSide(const std::string& condition_id, const std::string& token_id,
+                               strategy::Outcome outcome,
+                               const polymarket::clob_wss::OrderBookFeatures& side_book,
+                               double book_depth_l1, double p_fair_side, double target_mag,
+                               double fee_coef) noexcept;
+
     // CI 下界: edge_ci_lower = (p_fair - p_ask) - z * sqrt(p*(1-p)/n)
     [[nodiscard]] static double ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept;
 

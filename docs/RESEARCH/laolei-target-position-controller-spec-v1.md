@@ -135,6 +135,8 @@ is_close = (|target| < |current| 且同向)  // 减仓/平仓 = 收敛, 非新�
 5. ✅ **DONE** (`提交`, TC1/TC2 + 1155 全绿) **测试**: ComputeReservation 4 测 + 限价不追 hold (TC1) + 目标收敛不无界 (TC2); 重写 T17 (旧 2¢ raw-edge 场景被限价门正确拦, 改用 60min 时钟拉高 fair); matcher 1119 bit-identical 保住。
 
 > **Step 3-5 实施发现 (2026-05-31, 老雷; 待小梁/老周确认)**: reservation_buy 门比的是**真实付价 raw best_ask**, 而 sizing 的 edge 锚是 **de-vig 共识** (去 overround)。两者差一个 vig (~2¢)。故 raw edge < fee+margin 的薄单, sizing 看似有 edge (suggested>0) 但控制器判 NotMarketable → hold。**这是正确收紧 (vig 是真实成本, 限价不追), 非 bug。** 推论: v1 **卖减仓路径在 de-vig 选边下近乎不可达** —— 长被选(低估)边时 `best_bid ≤ devig ≤ fair < fair+margin = reservation_sell`, 卖永不 marketable。真实 de-risk 走「选边翻转」= 反向 = **M2**。v1 持仓只增/持平, 减仓由 §11.6 M2 反向接管。Decide 纯函数已覆盖卖侧逻辑 (PC03/04/13)。
-6. ⬜ **M2**: 反向/空仓 VWAP/sell-to-open (老韩 C1 condition cap signed 重裁 + 老周会签)。**含 Step 3-5 发现的卖减仓真实触发路径 (选边翻转→平旧边)。** + 小梁 Q-梁-2 的 `|fair_new−fair_old|>0.02 强制穿越防抖` (需 per-condition last_fair 状态, v1 暂缺, 死区 max(1,0.1|target|) 已生效)。
+6. **M2 — 拆 M2-a / M2-b:**
+   - ✅ **M2-a DONE** (`提交`, TM2a + 1156 全绿) **选边翻转平旧边** (Step 3-5 发现的真实 de-risk 路径): TickOne 对盘口**两边**各驱动到目标 —— 被选(低估)边 target=Kelly 买增; 非选(高估)边 target=0 平旧边 (若有持仓)。抽 `ExecuteControllerSide` 单边执行 helper (被选/非选共用)。**安全证明: 平旧边是减仓 (long→0, 不穿零跨0, 不开空) → 老韩 H-1 signed cap 放行 + H-2 反向穿零不触发 + avg_entry 归零现成 → 不需 C1 重裁/短仓 VWAP。** churn 自抑: 刚买的边 bid<fair+margin → 平不 marketable (限价不追内生防抖); 仅旧边真 overpriced (bid≥fair+margin, 典型=比分翻转令 fair 暴跌而市场滞后) 才平 = 取利平仓。TM2a 端到端: 比分 2:0→0:3 翻转 → YES 9.89 平到 0.10 + NO 建到 9.90。
+   - ⬜ **M2-b**: **sell-to-open 空头** (target<0, 老韩 C1 condition cap signed 重裁 + 老周会签) + **反向穿零 avg_entry 修** (多→空跨0, 现账本错) + **空仓 VWAP** + 小梁 Q-梁-2 的 `|fair_new−fair_old|>0.02 强制穿越防抖` (需 per-condition last_fair 状态; 死区 max(1,0.1|target|) 已生效)。
 
-**Step 1-5 全部落地生效。** 下轮入口: M2 (§11.6) — 反向/选边翻转平仓 + 强制穿越防抖 + 空仓 VWAP。
+**Step 1-5 + M2-a 全部落地生效。** 下轮入口: M2-b — sell-to-open 空头 (C1 重裁 + 会签) + 反向 avg_entry + 空仓 VWAP + 强制穿越防抖。

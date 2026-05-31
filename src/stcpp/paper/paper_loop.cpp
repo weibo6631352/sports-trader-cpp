@@ -589,8 +589,75 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         return;
     }
 
-    // ---- Step 4 (老雷 controller spec v1): 目标仓位控制器 (order = 目标 − 现仓) ----
-    // current = 被选边 token 当前持仓 (ledger per-outcome, micro→whole pUSD; 被选边 long ≥0)。
+    // ---- Step 4 (老雷 controller spec v1) + M2-a (选边翻转平旧边): 双边目标仓位控制 ----
+    // 每 tick 对盘口两边各驱动到目标 (目标仓位范式的完整形态):
+    //   被选(低估)边: target = Kelly magnitude → 买增至目标。
+    //   非选(高估)边: target = 0 → 平旧边 (若有持仓)。选边翻转后旧边自动变非选边, 由此收敛回 flat。
+    // 安全 (老韩 C1 不触发 / 老周 Q-周-2 范围内): 平旧边是**减仓** (long→0, 不穿零跨 0, 不开空) →
+    //   H-1 signed cap magnitude 放行减仓 + H-2 反向穿零不触发 + avg_entry 归零 (现成账本, 无需 reverse 修)。
+    //   churn 自抑: 刚买的边 bid<fair+margin → reservation_sell 平不 marketable → 不会买完立刻平
+    //   (限价不追内生防抖; 仅当旧边真 overpriced=bid≥fair+margin 才平 = 取利平仓)。
+    // M2-b (sell-to-open 空头 target<0 / 反向穿零 avg_entry / 空仓 VWAP) 仍 → 后续 (需 C1 重裁 + 会签)。
+
+    // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
+    ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
+                          exec_feat, book_depth_l1, p_fair_selected, target_mag, sz_in.fee_rate_coef);
+
+    // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
+    const SideView& other = is_yes ? mkt.no : mkt.yes;
+    if (other.present) {
+        const std::string& other_token = is_yes ? mkt.no_token_id : mkt.yes_token_id;
+        bool other_held = false;
+        {
+            const auto tok_exp = position_ledger_.get_per_outcome_exposure();
+            const auto tit = tok_exp.find(other_token);
+            other_held = (tit != tok_exp.end() && tit->second != 0);
+        }
+        if (other_held) {
+            const auto& other_feat = other.book;
+            // 平旧边走卖出 → 深度看 bid 侧 (best_bid_size); 无效则 fallback 1000 pUSD。
+            const double other_depth =
+                (std::isfinite(other_feat.best_bid_size()) && other_feat.best_bid_size() > 0.0)
+                    ? other_feat.best_bid_size()
+                    : 1000.0;
+            // 非选边 fair = 1 − 被选边 fair (de-vig 互余, YES/NO 对称)。target=0 → 仅平仓。
+            ExecuteControllerSide(condition_id, other_token,
+                                  is_yes ? strategy::Outcome::No : strategy::Outcome::Yes, other_feat,
+                                  other_depth, 1.0 - p_fair_selected, /*target_mag=*/0.0,
+                                  FeeCoefFor(condition_id));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ExecuteControllerSide — 对单边 token 执行一次目标仓位控制 (Step 4-8 共用; BR-1 形态)。
+//   被选边 (target=Kelly) 与非选边平旧边 (target=0) 共用同一执行路径, 消重复 + 保一致。
+//   流程: ledger current → ComputeReservation → Decide → (act) intent → RM → sign → match →
+//          apply_fill (卖负 delta) → ledger publish → FeedRM。!act / reject / miss → 计数 return。
+//   side_book: 本边 book 快照 (4ts/depth/touch 全取自此, R-20 禁 now() 替代上游)。
+//   p_fair_side: 本边 fair prob (被选边 = p_fair_selected; 非选边 = 1 − p_fair_selected)。
+// ---------------------------------------------------------------------------
+void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std::string& token_id,
+                                      strategy::Outcome outcome,
+                                      const polymarket::clob_wss::OrderBookFeatures& side_book,
+                                      double book_depth_l1, double p_fair_side, double target_mag,
+                                      double fee_coef) noexcept {
+    const double exec_ask = side_book.best_ask();
+    const double exec_bid = side_book.best_bid();
+    const double mark_price = std::isfinite(side_book.microprice) ? side_book.microprice : side_book.mid;
+
+    // reservation 限价界 (小梁 Q-梁-1; BR-1 纯函数)。
+    const control::ReservationPrices reservation = control::ComputeReservation(control::ReservationInput{
+        /*fair=*/p_fair_side,
+        /*exec_ask=*/exec_ask,
+        /*exec_bid=*/exec_bid,
+        /*fee_coef=*/fee_coef,
+        /*margin_floor=*/cfg_.edge_ci_lower_floor,
+        /*z=*/cfg_.z_90,
+        /*n_eff=*/cfg_.n_effective,
+    });
+
+    // current = 本边 token 当前持仓 (ledger per-outcome, micro→whole pUSD; long ≥0)。
     double current_pusd = 0.0;
     {
         const auto tok_exp = position_ledger_.get_per_outcome_exposure();
@@ -600,19 +667,18 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
     }
     // 防抖死区 (小梁 Q-梁-2): threshold = max(floor, 0.10×|target|)。
-    const double min_rebalance =
-        std::max(cfg_.min_rebalance_floor_pusd, 0.10 * std::abs(target_mag));
+    const double min_rebalance = std::max(cfg_.min_rebalance_floor_pusd, 0.10 * std::abs(target_mag));
 
     control::ControlInput cin;
-    cin.target_pusd = target_mag;  // 被选边 long magnitude (H-3: 无真 fair/无效 sizing → 0)
+    cin.target_pusd = target_mag;  // 被选边 = Kelly; 非选边平旧边 = 0
     cin.current_pusd = current_pusd;
     cin.reservation_buy_px = reservation.buy_px;
     cin.reservation_sell_px = reservation.sell_px;
-    cin.best_ask = exec_ask;  // 被选边 ask (买入触价 + 限价不追门)
-    cin.best_bid = exec_bid;  // 被选边 bid (卖出触价 + 限价不追门)
+    cin.best_ask = exec_ask;  // 本边 ask (买入触价 + 限价不追门)
+    cin.best_bid = exec_bid;  // 本边 bid (卖出触价 + 限价不追门)
     cin.min_rebalance_pusd = min_rebalance;
     cin.per_order_cap_pusd = cfg_.per_order_cap_usdc;
-    cin.allow_short = false;  // v1: 空头 clamp 0 (反向/开空 → M2)
+    cin.allow_short = false;  // 空头 clamp 0 (sell-to-open → M2-b)
 
     const control::ControlAction action = control::Decide(cin);
     if (!action.act) {
@@ -622,77 +688,51 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     }
 
     // ---- Step 5: 构造 OrderIntent v0.6 (按控制器动作: side/size/is_close/限价) -----
-    // R-20: as_of_ts_ns = 信号评估时刻 (>= ingestion_ts_ns)
     const std::int64_t as_of_now = NowNs();
-
-    // 校验 4 ts 链 (调试保护; release build 仍执行但不 abort)。Phase B: intent 成交标的是被选边,
-    //   4ts 来自被选边 book exec_feat (R-20: 数据源 = 被交易 token 的 hub 快照, 禁 now() 替代)。
-    if (exec_feat.event_ts_ns <= 0 || exec_feat.data_source_ts_ns < exec_feat.event_ts_ns ||
-        exec_feat.ingestion_ts_ns < exec_feat.data_source_ts_ns || as_of_now < exec_feat.ingestion_ts_ns) {
-        // ts 链违规: 跳过 (不构造 intent, 不送 RM)
-        return;
+    // 校验 4 ts 链 (R-20: 数据源 = 被交易 token 的 hub 快照, 禁 now() 替代)。
+    if (side_book.event_ts_ns <= 0 || side_book.data_source_ts_ns < side_book.event_ts_ns ||
+        side_book.ingestion_ts_ns < side_book.data_source_ts_ns || as_of_now < side_book.ingestion_ts_ns) {
+        return;  // ts 链违规: 跳过 (不构造 intent, 不送 RM)
     }
 
     const std::uint64_t intent_id = ++intent_seq_;
 
     risk::OrderIntent intent;
-    // R-20 4 ts (被选边 book)
-    intent.event_ts_ns = exec_feat.event_ts_ns;
-    intent.data_source_ts_ns = exec_feat.data_source_ts_ns;
-    intent.ingestion_ts_ns = exec_feat.ingestion_ts_ns;
+    intent.event_ts_ns = side_book.event_ts_ns;
+    intent.data_source_ts_ns = side_book.data_source_ts_ns;
+    intent.ingestion_ts_ns = side_book.ingestion_ts_ns;
     intent.as_of_ts_ns = as_of_now;
-
-    // 市场标识
     intent.condition_id = condition_id;
     intent.token_id = token_id;
-    intent.outcome = is_yes ? strategy::Outcome::Yes : strategy::Outcome::No;  // 被选边
-    intent.side = action.side;                                                 // 控制器: 买增 / 卖减
-    intent.is_close = action.is_close;  // 减仓 (降敞口) → RM cap 放行 + DD 软熔断放行 (老韩 H-1)
-
-    // 业务 ID (去重: intent_seq_ 单调)
+    intent.outcome = outcome;
+    intent.side = action.side;          // 买增 / 卖减
+    intent.is_close = action.is_close;  // 减仓 → RM cap 放行 + DD 软熔断放行 (老韩 H-1)
     intent.strategy_id = cfg_.strategy_id;
     intent.signal_id = cfg_.strategy_id + "-" + std::to_string(intent_id);
     intent.feature_snapshot_id = "paper-m1-no-snapshot";
-
-    // 定价 (老周 Q-周-1 限价不追 = 控制器前置门已过): marketable-limit @ reservation 实际成交在触价
-    //   (买取 best_ask / 卖取 best_bid; 控制器已保证触价在 reservation 界内 → 价格改善)。intent.price =
-    //   触价 = 真实成交价 (RM 净 edge + matcher fill 真实); reservation 是保护限价界 (已进 QuoteFeatures)。
+    // 定价 (老周 Q-周-1 限价不追前置门已过): marketable-limit 实际成交在触价 (买 ask / 卖 bid)。
     intent.price = (action.side == strategy::Side::Buy) ? exec_ask : exec_bid;
-
-    // 仓位大小: 控制器动作 size (已 clamp per_order_cap + 卖不超持仓), 转 micro pUSD。
+    // size: 控制器动作 (已 clamp per_order_cap + 卖不超持仓), 转 micro pUSD。
     intent.size_pUSD_micro = static_cast<std::int64_t>(action.size_pusd * 1'000'000.0);
     if (intent.size_pUSD_micro <= 0) {
-        // size 舍入到 0 micro (< 1e-6 pUSD, 防抖死区下罕见) → 不下单 (不臆造 size, 防卖侧超卖)。
         stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
-        return;
+        return;  // size 舍入到 0 micro → 不臆造 size (防卖侧超卖)
     }
-
-    // book context (R8.4 freshness)
-    // 单位对齐 (A2 修): RM check_liquidity_ 比 size_pUSD_micro vs book_depth_l1_usdc,
-    //   后者须同为 micro pUSD. book_depth_l1 来自 exec_feat.best_ask_size() (被选边, pUSD), × 1e6 转 micro.
-    intent.book_depth_l1_usdc = book_depth_l1 * 1'000'000.0;  // book_depth_l1 已切被选边 (Step H)
-    intent.book_snapshot_ts_ns = exec_feat.ingestion_ts_ns;   // 被选边 book ts (R8.4 + R-20)
+    intent.book_depth_l1_usdc = book_depth_l1 * 1'000'000.0;  // micro 对齐 (RM check_liquidity_)
+    intent.book_snapshot_ts_ns = side_book.ingestion_ts_ns;
     intent.tick_size = 0.01;
-    intent.fee_rate_coef = sz_in.fee_rate_coef;  // R-fee-2: 与 sizing 同源 (RM check_signal_ 用)
-
-    // V2 EIP-712 字段 (timestamp_ms = 当前毫秒, spec-10 必须 != 0)
+    intent.fee_rate_coef = fee_coef;  // R-fee-2: per-market 真值 (RM check_signal_ 用)
     intent.timestamp_ms = as_of_now / 1'000'000LL;
     intent.metadata = "0x0000000000000000000000000000000000000000000000000000000000000000";
     intent.builder = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
-    // ---- Step 6: RiskGateway::evaluate ------------------------------------
+    // ---- Step 6: RiskGateway::evaluate (减仓单不绕 RM 保命门, 老韩 Q-韩-4) ----
     const risk::RiskDecision rd = rm_.evaluate(intent);
-
     if (rd.is_rejected()) {
         stats_.orders_rejected.fetch_add(1, std::memory_order_relaxed);
-        // P0-1 去重修复: risk_gateway.cpp::evaluate() 内部的 reject_here() lambda 已经
-        // 通过 g_rm_debug_snapshot 全局指针调用 push_reject 一次.
-        // paper_loop 不再重复调用 rm_snap_->push_reject, 防止双写.
-        // rm_snap_ 字段保留 (供 snapshot() 读取), 但写操作交由 RM 单独负责.
+        // P0-1: RM 内部 reject_here() 已 push_reject 一次; paper_loop 不重复写。
         return;
     }
-
-    // APPROVED
     stats_.orders_approved.fetch_add(1, std::memory_order_relaxed);
 
     // ---- Step 7: PaperSigner::Sign ----------------------------------------
@@ -707,56 +747,40 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     sign_req.timestamp_ms = intent.timestamp_ms;
     sign_req.metadata = intent.metadata;
     sign_req.builder = intent.builder;
-    // R-20 4 ts 透传
     sign_req.event_ts_ns = intent.event_ts_ns;
     sign_req.data_source_ts_ns = intent.data_source_ts_ns;
     sign_req.ingestion_ts_ns = intent.ingestion_ts_ns;
     sign_req.as_of_ts_ns = intent.as_of_ts_ns;
-
     const signer::SignResponse sign_resp = psigner_.Sign(sign_req);
-
     if (sign_resp.error != signer::SignerError::Ok) {
-        // Sign 失败 (PIT 违规等) → fail-closed, 不撮合
-        return;
+        return;  // Sign 失败 → fail-closed, 不撮合
     }
 
-    // ---- Step 7b: VirtualMatcher::MatchWithBook (Mode A++) -----------------
-    // 使用 Mode A++ (Bernoulli) 因为 FeatureStoreBookRow 已经包含了 L1 信息
-    // 构造 VirtualOrder 从 SignRequest
+    // ---- Step 7b: VirtualMatcher (Mode A++; ABI 零改, 1119 bit-identical) -----
     execution::VirtualOrder vord;
     vord.audit_id = sign_req.audit_id;
     vord.intent_id = sign_req.intent_id;
     vord.market_id = sign_req.condition_id;
-    vord.outcome = is_yes ? "YES" : "NO";  // 参数化 (M1 桩 YES)
+    vord.outcome = (outcome == strategy::Outcome::Yes) ? "YES" : "NO";
     vord.size_usdc = static_cast<double>(sign_req.size_pUSD_micro) / 1'000'000.0;
     vord.quote_price = sign_req.price;
     vord.book_depth_l1_usdc = book_depth_l1;
     vord.tick_size = 0.01;
-    // R-20 4 ts 透传
     vord.event_ts_ns = sign_req.event_ts_ns;
     vord.data_source_ts_ns = sign_req.data_source_ts_ns;
     vord.ingestion_ts_ns = sign_req.ingestion_ts_ns;
     vord.as_of_ts_ns = sign_req.as_of_ts_ns;
     vord.wall_now_ns = NowNs();
-
-    // G-1: 经执行器 (默认 VirtualExecutor → matcher_.Match, 行为逐位不变)。
     const execution::VirtualFill fill = executor_->Execute(vord);
-
-    // R-11: VirtualFill.mode_tag 必须为 0 (paper 标记; VirtualMatcher 内部硬填)
-    assert(fill.mode_tag == 0u);  // 防御性校验 (debug build)
-
-    if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {  // A1: micro int64
+    assert(fill.mode_tag == 0u);  // R-11 (debug build)
+    if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-
     stats_.fills_completed.fetch_add(1, std::memory_order_relaxed);
 
-    // ---- Step 8: PositionLedger::apply_fill --------------------------------
-    // R-11: position_ledger_ 是 paper 专用账本 (调用方构建时物理隔离)。
-    // 老周 Q-周-2: 卖减仓 → 负 delta 定在 apply_fill 入口 (filled_size_micro 喂负; 账本算术一行不改)。
-    //   matcher 出 fill_size_usdc 恒正 (ABI 零改, 守 1119 ctest bit-identical); 符号在此按 side 定。
-    //   v1: 卖量已被控制器 clamp ≤ 当前持仓 → new_size≥0 (不穿零, 不开空)。
+    // ---- Step 8: PositionLedger::apply_fill (卖负 delta, 老周 Q-周-2) ----------
+    //   matcher 出 fill_size_usdc 恒正; 符号在此按 side 定。减仓量已被控制器 clamp ≤ 持仓 → new_size≥0。
     risk::FillEvent ev;
     ev.filled_size_micro =
         (intent.side == strategy::Side::Sell) ? -fill.fill_size_usdc : fill.fill_size_usdc;
@@ -768,20 +792,17 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     ev.as_of_ts_ns = fill.as_of_ts_ns;  // R-20 透传
     position_ledger_.apply_fill(condition_id, token_id, intent.outcome, ev);
 
-    // ---- Step 8b: LedgerSnapshotHub::Publish (positions/pnl 可见) ----------
-    PublishLedgerSnapshot(condition_id, fill, mark_price, exec_feat);  // 被选边 mark + 4ts
+    // ---- Step 8b/8c: 账本快照 + 喂 RM 敞口 ----------------------------------
+    PublishLedgerSnapshot(condition_id, fill, mark_price, side_book);
     stats_.ledger_publishes.fetch_add(1, std::memory_order_relaxed);
-
-    // ---- Step 8c: 喂 RM (P0-1) — apply_fill 后回喂敞口, 激活 exposure 红线 ----
-    //   全量覆盖 (PL 已增量维护 → RM 全量 = PL 真值, 自愈)。loop_thread_ 串行, R-12 满足。
     FeedRiskGateway();
 
     std::fprintf(stderr,
-                 "[paper_loop] FILL cond=%.24s... tok=%.16s... "
-                 "fill_sz=%.4f fill_px=%.4f p_fair=%.4f edge=%.1fbps\n",
+                 "[paper_loop] FILL cond=%.24s... tok=%.16s... side=%s is_close=%d "
+                 "fill_sz=%.4f fill_px=%.4f fair=%.4f\n",
                  condition_id.c_str(), token_id.c_str(),
-                 static_cast<double>(fill.fill_size_usdc) / 1'000'000.0,  // A1: micro→pUSD 显示
-                 fill.fill_price, p_fair, sz_in.edge_bps);
+                 (intent.side == strategy::Side::Buy) ? "BUY" : "SELL", intent.is_close ? 1 : 0,
+                 static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.fill_price, p_fair_side);
 }
 
 // ---------------------------------------------------------------------------
