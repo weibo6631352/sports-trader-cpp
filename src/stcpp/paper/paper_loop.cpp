@@ -1351,15 +1351,22 @@ void PaperLoop::PublishQuoteSnapshot(
     }
 
     // 当前持仓 (老板: 持仓入模型; 库存感知)。目标仓位范式: 模型需知现仓 → 控制器算 order=目标−现仓。
+    //   老板「各边买了多少, 可能两边都买」: per-token 双边读 (旧码 break 在首个 token = 只取一边,
+    //   丢 NO; 现按 token_map_ 的 YES/NO 各读各量)。pos_net_qty = YES − NO (净方向便利量)。
     {
-        const auto positions = position_ledger_.get_all_positions();
-        for (const auto& pv : positions) {
-            if (pv.condition_id == condition_id) {
-                qf.pos_net_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
-                qf.pos_avg_entry = pv.avg_entry_price;
-                break;
+        const auto tmit = token_map_.find(condition_id);
+        if (tmit != token_map_.end()) {
+            if (const auto yp = position_ledger_.get_position(tmit->second.first)) {  // YES token
+                qf.pos_yes_qty = static_cast<double>(yp->size_usdc) / 1'000'000.0;
+                qf.pos_yes_avg_entry = yp->avg_entry_price;
+            }
+            if (const auto np = position_ledger_.get_position(tmit->second.second)) {  // NO token
+                qf.pos_no_qty = static_cast<double>(np->size_usdc) / 1'000'000.0;
+                qf.pos_no_avg_entry = np->avg_entry_price;
             }
         }
+        qf.pos_net_qty = qf.pos_yes_qty - qf.pos_no_qty;  // 净 YES 方向 (NO 持仓 = 反向 YES 敞口)
+        qf.pos_avg_entry = qf.pos_yes_avg_entry;          // 向后兼容 (YES 边; 双边见 pos_yes/no_avg_entry)
         const auto cond_exp = position_ledger_.get_per_condition_exposure();
         const auto cit = cond_exp.find(condition_id);
         qf.pos_condition_exposure_usdc =

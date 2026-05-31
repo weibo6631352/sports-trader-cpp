@@ -111,9 +111,15 @@ struct QuoteFeatures {
     std::int64_t joint_as_of_ts_ns{0};  // 联合新鲜度 = min(score.as_of, book.as_of); 模型输入+观测, 绝不 gate
 
     // ---- 当前持仓 (老板 2026-05-31: 持仓入模型; 库存感知 — 目标仓位范式控制器需知现仓才能定调整) ----
-    double pos_net_qty{0.0};                  // 本盘口净持仓 (signed; ledger size_usdc/1e6, 正=多 YES)
-    double pos_avg_entry{0.0};                // 加权平均入场价
-    double pos_condition_exposure_usdc{0.0};  // 本 condition 累计敞口 (whole pUSD)
+    //   老板 2026-05-31「各边买了多少, 可能两边都买, 不能只说买哪一边」: per-token 双边量, 不塌单边/净。
+    //   二元市场 YES/NO 是两个独立 token, 做市/对冲会两边都持; 30 YES+30 NO = 30 锁定对 (风险≠净 0)。
+    double pos_yes_qty{0.0};        // YES token 持仓量 (whole pUSD; signed, ledger size_usdc/1e6)
+    double pos_no_qty{0.0};         // NO  token 持仓量 (whole pUSD; signed)
+    double pos_yes_avg_entry{0.0};  // YES 加权平均入场价
+    double pos_no_avg_entry{0.0};   // NO  加权平均入场价
+    double pos_net_qty{0.0};        // 净 YES 方向 = pos_yes_qty − pos_no_qty (便利; 正=净多 YES)
+    double pos_avg_entry{0.0};      // 向后兼容: = YES 边 avg (双边明细见 pos_yes/no_avg_entry)
+    double pos_condition_exposure_usdc{0.0};  // 本 condition 累计敞口 (whole pUSD, 净)
     // kelly_fraction: Kelly 仓位比例 (已 cap; 来自 SizingCalculator)
     double kelly_fraction{0.0};
     // suggested_notional: 建议名义仓位 (USDC; 来自 SizingCalculator)

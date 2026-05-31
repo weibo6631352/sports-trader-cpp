@@ -510,6 +510,40 @@ TEST_F(PaperLoopTest, T11c_NoSideMicrostructure_Captured) {
 }
 
 // ---------------------------------------------------------------------------
+// T11d (老板「各边买了多少, 可能两边都买」): 双边持仓 — YES + NO 各自量都进 QuoteFeatures,
+//   不塌成单边/净。旧码 break 在首 token 只取一边丢 NO; 现 per-token 双边读。
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T11d_BothSidePositions_Captured) {
+    hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));  // YES book 有效 → quote 发布
+    // 两边都建仓: YES token 1001 持 100 pUSD, NO token 1002 持 30 pUSD (做市/对冲场景)。
+    auto mk_fill = [](double px, double whole_pusd) {
+        execution::VirtualFill f{};
+        f.reject = execution::MatchReject::Ok;
+        f.fill_price = px;
+        f.fill_size_usdc = static_cast<std::int64_t>(whole_pusd * 1'000'000.0);  // micro
+        f.as_of_ts_ns = kAsOfTs;
+        f.mode_tag = 0;  // paper
+        return f;
+    };
+    position_ledger_->apply_fill("cond-test-001", "1001", Outcome::Yes, mk_fill(0.55, 100.0));
+    position_ledger_->apply_fill("cond-test-001", "1002", Outcome::No, mk_fill(0.45, 30.0));
+
+    loop_ = MakeLoop();
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    loop_->Stop();
+
+    const auto opt = quote_hub_->Read("cond-test-001");
+    if (opt.has_value() && opt->valid) {
+        EXPECT_NEAR(opt->pos_yes_qty, 100.0, 1e-6) << "YES 边持仓量 (各边各量)";
+        EXPECT_NEAR(opt->pos_no_qty, 30.0, 1e-6) << "NO 边持仓量 (不能丢, 两边都买了)";
+        EXPECT_NEAR(opt->pos_net_qty, 70.0, 1e-6) << "净 YES = 100 − 30";
+        EXPECT_GT(opt->pos_yes_avg_entry, 0.0);
+        EXPECT_GT(opt->pos_no_avg_entry, 0.0) << "NO 边 avg entry 也要有";
+    }
+}
+
+// ---------------------------------------------------------------------------
 // T11b (步④): 注入 ml::FairValueModel → 推理路径跑通, ml_advisory_p_yes 填充, provenance
 //   反映 ML 模型; ML-R1/R2: 推理 advisory, fair_value 仍由 baseline 定 (不被 ML 驱动)。
 // ---------------------------------------------------------------------------

@@ -140,7 +140,10 @@ private:
             << ",\"yes_imbalance\":" << q.yes_imbalance << ",\"no_imbalance\":" << q.no_imbalance
             << ",\"devig_ok\":" << (q.devig_ok ? "true" : "false") << ",\"joint_as_of_ts_ns\":"
             << q.joint_as_of_ts_ns
-            // 当前持仓 (库存感知; 目标仓位范式)
+            // 当前持仓 (库存感知; 目标仓位范式)。双边量 (老板「各边买了多少」): YES/NO 各持仓 + avg。
+            << ",\"pos_yes_qty\":" << q.pos_yes_qty << ",\"pos_no_qty\":" << q.pos_no_qty
+            << ",\"pos_yes_avg_entry\":" << q.pos_yes_avg_entry
+            << ",\"pos_no_avg_entry\":" << q.pos_no_avg_entry
             << ",\"pos_net_qty\":" << q.pos_net_qty << ",\"pos_avg_entry\":" << q.pos_avg_entry
             << ",\"pos_condition_exposure_usdc\":" << q.pos_condition_exposure_usdc
             << ",\"kelly_fraction\":" << q.kelly_fraction
