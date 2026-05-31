@@ -913,6 +913,22 @@ void PaperLoop::PublishQuoteSnapshot(
     qf.devig_ok = devig_ok;
     qf.joint_as_of_ts_ns = joint_as_of_ts_ns;  // 联合新鲜度 (min(score,book) as_of); 输入不 gate
 
+    // 当前持仓 (老板: 持仓入模型; 库存感知)。目标仓位范式: 模型需知现仓 → 控制器算 order=目标−现仓。
+    {
+        const auto positions = position_ledger_.get_all_positions();
+        for (const auto& pv : positions) {
+            if (pv.condition_id == condition_id) {
+                qf.pos_net_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+                qf.pos_avg_entry = pv.avg_entry_price;
+                break;
+            }
+        }
+        const auto cond_exp = position_ledger_.get_per_condition_exposure();
+        const auto cit = cond_exp.find(condition_id);
+        qf.pos_condition_exposure_usdc =
+            (cit != cond_exp.end()) ? static_cast<double>(cit->second) / 1'000'000.0 : 0.0;
+    }
+
     if (has_real_fair) {
         // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.
         qf.edge_bps = sizing_out.valid ? sizing_out.net_ci_edge * 10'000.0 : 0.0;

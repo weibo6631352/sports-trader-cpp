@@ -109,6 +109,11 @@ struct QuoteFeatures {
     double no_imbalance{0.0};           // NO  L1 簿口失衡 ∈ [−1,1]
     bool devig_ok{false};               // de-vig 成功? (观测: 区分「de-vig 失败」vs「edge 不足」)
     std::int64_t joint_as_of_ts_ns{0};  // 联合新鲜度 = min(score.as_of, book.as_of); 模型输入+观测, 绝不 gate
+
+    // ---- 当前持仓 (老板 2026-05-31: 持仓入模型; 库存感知 — 目标仓位范式控制器需知现仓才能定调整) ----
+    double pos_net_qty{0.0};                  // 本盘口净持仓 (signed; ledger size_usdc/1e6, 正=多 YES)
+    double pos_avg_entry{0.0};                // 加权平均入场价
+    double pos_condition_exposure_usdc{0.0};  // 本 condition 累计敞口 (whole pUSD)
     // kelly_fraction: Kelly 仓位比例 (已 cap; 来自 SizingCalculator)
     double kelly_fraction{0.0};
     // suggested_notional: 建议名义仓位 (USDC; 来自 SizingCalculator)

@@ -138,8 +138,12 @@ private:
             << ",\"neg_risk_market_id\":\"" << q.neg_risk_market_id << "\""
             << ",\"cross_spread\":" << q.cross_spread << ",\"no_microprice\":" << q.no_microprice
             << ",\"yes_imbalance\":" << q.yes_imbalance << ",\"no_imbalance\":" << q.no_imbalance
-            << ",\"devig_ok\":" << (q.devig_ok ? "true" : "false")
-            << ",\"joint_as_of_ts_ns\":" << q.joint_as_of_ts_ns << ",\"kelly_fraction\":" << q.kelly_fraction
+            << ",\"devig_ok\":" << (q.devig_ok ? "true" : "false") << ",\"joint_as_of_ts_ns\":"
+            << q.joint_as_of_ts_ns
+            // 当前持仓 (库存感知; 目标仓位范式)
+            << ",\"pos_net_qty\":" << q.pos_net_qty << ",\"pos_avg_entry\":" << q.pos_avg_entry
+            << ",\"pos_condition_exposure_usdc\":" << q.pos_condition_exposure_usdc
+            << ",\"kelly_fraction\":" << q.kelly_fraction
             << ",\"suggested_notional\":" << q.suggested_notional
             << ",\"signal_strength\":" << q.signal_strength << ",\"model_confidence\":" << q.model_confidence
             << ",\"fair_ci_lower\":" << q.fair_ci_lower << ",\"fair_ci_upper\":" << q.fair_ci_upper
