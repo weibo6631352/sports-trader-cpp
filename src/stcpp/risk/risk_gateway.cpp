@@ -516,7 +516,18 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
             if (me_it != s_->market_exposure_usdc.end())
                 cur = me_it->second;
         }
-        if (domain::MicroPUSD::from_micro(cur + it.size_pUSD_micro) > cfg_.market_exposure_cap_usdc) {
+        // 老韩 H-1/H-2 (目标仓位范式): cap 按敞口**绝对值**比较, signed delta 由 side 定符号。
+        //   旧码无视 side 恒 `cur + size` → 一旦卖出(应 −size)caps 被静默架空 (§8.1 #3 同型, 符号维度)。
+        //   减仓(降 |敞口|)放行; 仅升敞口才比 cap; 反向穿零(多↔空跨0)M1 拒(controller clamp 兜底)。
+        const std::int64_t delta = (it.side == Side::Sell) ? -it.size_pUSD_micro : it.size_pUSD_micro;
+        const std::int64_t new_exp = cur + delta;
+        if (cur != 0 && new_exp != 0 && ((cur > 0) != (new_exp > 0))) {
+            d.reject = RejectCode::EXCEED_CONDITION_EXPOSURE;  // H-2 复用 caps 族 (老韩允许; M2 专用码)
+            return true;
+        }
+        const std::int64_t abs_new = new_exp < 0 ? -new_exp : new_exp;
+        const std::int64_t abs_cur = cur < 0 ? -cur : cur;
+        if (abs_new > abs_cur && domain::MicroPUSD::from_micro(abs_new) > cfg_.market_exposure_cap_usdc) {
             d.reject = RejectCode::EXCEED_CONDITION_EXPOSURE;
             return true;
         }
@@ -529,7 +540,17 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
         auto te_it = s_->token_exposure_usdc.find(it.token_id);
         if (te_it != s_->token_exposure_usdc.end())
             cur_tok = te_it->second;
-        if (domain::MicroPUSD::from_micro(cur_tok + it.size_pUSD_micro) > cfg_.per_outcome_cap_usdc) {
+        // 老韩 H-1/H-2 (同 per_condition): signed delta + magnitude cap + 反向穿零拒。
+        const std::int64_t delta_tok = (it.side == Side::Sell) ? -it.size_pUSD_micro : it.size_pUSD_micro;
+        const std::int64_t new_tok = cur_tok + delta_tok;
+        if (cur_tok != 0 && new_tok != 0 && ((cur_tok > 0) != (new_tok > 0))) {
+            d.reject = RejectCode::EXCEED_PER_OUTCOME_CAP;  // H-2 复用 (M2 专用码)
+            return true;
+        }
+        const std::int64_t abs_new_tok = new_tok < 0 ? -new_tok : new_tok;
+        const std::int64_t abs_cur_tok = cur_tok < 0 ? -cur_tok : cur_tok;
+        if (abs_new_tok > abs_cur_tok &&
+            domain::MicroPUSD::from_micro(abs_new_tok) > cfg_.per_outcome_cap_usdc) {
             d.reject = RejectCode::EXCEED_PER_OUTCOME_CAP;
             return true;
         }

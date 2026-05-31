@@ -345,6 +345,32 @@ TEST_F(RiskGatewayTest, R08_EXCEED_MARKET_EXPOSURE) {
         << "R08: expected EXCEED_CONDITION_EXPOSURE(7) or EXCEED_MARKET_EXPOSURE(7)";
 }
 
+// H-1 (老韩, 目标仓位范式): 卖出减仓不应被 condition cap 拒。
+//   敞口 49'500 接近 cap; 卖 1'000 减仓 → |敞口| 降到 48'500 → 放行 (旧 signed 码会 49500+1000>cap 误拒)。
+TEST_F(RiskGatewayTest, H1_SellReduce_PassesConditionCap) {
+    rm_->set_market_exposure(kMockConditionId, 49'500);
+    auto it = make_ok_intent();
+    it.side = Side::Sell;  // 卖出减仓
+    it.is_close = true;
+    it.size_pUSD_micro = 1'000;
+    auto d = rm_->evaluate(it);
+    // 关键: 不因 condition cap 被拒 (减仓降敞口, magnitude 比较放行)。
+    EXPECT_NE(d.reject, RejectCode::EXCEED_CONDITION_EXPOSURE)
+        << "H-1: 卖减仓降 |敞口| 不应触 condition cap (旧 signed cur+size 会误拒)";
+}
+
+// H-1: 买入加仓仍正常受 cap (回归 — 升敞口行为不变)。
+TEST_F(RiskGatewayTest, H1_BuyIncrease_StillCapped) {
+    rm_->set_market_exposure(kMockConditionId, 49'500);
+    auto it = make_ok_intent();
+    it.side = Side::Buy;
+    it.size_pUSD_micro = 1'000;  // 49'500+1'000 > 50'000 cap → 仍拒 (升敞口比 cap)
+    auto d = rm_->evaluate(it);
+    EXPECT_EQ(d.decision, Decision::REJECTED);
+    EXPECT_TRUE(d.reject == RejectCode::EXCEED_CONDITION_EXPOSURE ||
+                d.reject == RejectCode::EXCEED_MARKET_EXPOSURE);
+}
+
 TEST_F(RiskGatewayTest, R09_DAILY_LOSS_HALT) {
     rm_->set_daily_pnl(-6'000 * 1'000'000LL);
     auto d = rm_->evaluate(make_ok_intent());
