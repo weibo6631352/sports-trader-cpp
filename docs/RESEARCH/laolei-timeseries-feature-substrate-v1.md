@@ -84,9 +84,21 @@ devig…)，**零时序维度**。单点切片看不到「动态」：变化率�
 
 `OrderBookFeatures.resolution_status` (uint8, 加性 POD, §8.1 #5) + 流到 `QuoteFeatures.resolution_status`。**决策路径现可消费** (TS3 合成注入 kResolving=1 验证流通)。**剩 1 跳**: `orderbook_adapter` 接 `kOutcomes` 事件 (market-keyed → 需 market→token 映射, 属 live-path 设计), 把真 WSS resolution 填进 `OrderBookFeatures`。dormant 安全 (默认 0=Open, fail-closed)。
 
-### slice-3b 账本结算 realize (⬜ 下轮, PnL 敏感单独做)
+### slice-3b 账本结算 realize (✅ DONE)
 
-市场 resolve 时持仓→0 或 ×$1 payout 是**事实**, 账本须正确记 (现 paper MtM 用 fair, terminal fair→0/1 已近似; realized 结算缺)。触发 = terminal (Goalserve) 或 resolution_status=kResolved (PM)。winner 从终态比分 + orientation 派生 (moneyline)。**PnL 正确性 plumbing, 非交易硬门, 单独精做。** 范式自然涌现 (临近结算 fair→0/1 + 退出流动性→0 → Kelly target 自然趋小), 不写「if 临近结算 then 平仓」硬规则。
+市场 resolve 时持仓→0 或 ×$1 payout 是**事实**, 账本须正确记 (旧: 持仓永远挂账本, 结算时无 bid → MtM 贡献 0, paper PnL 错)。
+
+**实现**: 比赛 **Ended** (Goalserve 终态) → `SettleCondition`: winner 从终态比分 + orientation 派生 (`score_home_total` = YES 边比分; yes>opp → YES=1/NO=0; 平局 → 0.5 push)。`SettleToken`: realize = (settle − avg_entry) × qty 累加进 `cum_realized_pnl_pusd_`, apply_fill 负 delta 平仓归零。`FeedRiskGateway` 的 daily_pnl 并入 realized (兑现其早留的 M2 口子: `pnl = 开仓 MtM + realized − cum_fee`)。幂等 (`settled_conditions_`), 已定盘口跳过决策 (市场已定不交易)。仅 Ended (清晰 winner); Postponed/Cancelled 留作 refund edge。**PnL 正确性 plumbing, 非交易硬门** —— 范式自然涌现 (临近结算 fair→0/1 → Kelly target 自然趋小), 不写硬平仓规则。
+
+TS4 端到端: 买 YES @0.30 → 2:0 终场 → realize +6.92 pUSD + 平仓 + `positions_settled`。1172/1172 全绿。
+
+### slice-3c-ingest live resolution 接入 (⬜ 摸底定位, 非现在硬塞)
+
+老板「接着上 3c-ingest」—— 摸底后**诚实定位**: 最后一公里**不在 orderbook_adapter** (它出 `OrderBookSnapshot`, 非 hub 的 `OrderBookFeatures`), 而在 **`live_book_publisher.hpp:286`** (CLOB WSS JSON → `OrderBookFeatures` → hub.Publish)。它 line 207 **只收 `event_type=="book"`, 直接丢 outcomes 帧**。
+
+要接 = publisher 加: ① 解析 `event_type=="outcomes"` 帧的 `resolution_status` 字段; ② per-token 状态记住; ③ 后续 book publish 时 attach 到 `feat.resolution_status`。
+
+**为何没现在硬塞** (一致于 §10.2 反过度设计): ① `live_book_publisher` **零测试覆盖** —— 写未测的 live JSON 解析 = 投机 plumbing; ② 仓里有**两个并行 WSS client** (`live_book_publisher` debug_api / `pm_wss_subscriber` polymarket/wss), 得先确认哪个真喂 live hub; ③ 需 outcomes 帧真实 JSON shape。**字段+特征已就位** (决策路径 ready, TS3 注入验证流通), 此跳留给 live WSS 端到端验证时连 publisher 测试夹具一起做 (届时 kResolved 还能当 3b 的权威触发器补充 Goalserve Ended)。
 
 ## 3. 决策记录
 

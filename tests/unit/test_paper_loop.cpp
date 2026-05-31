@@ -1729,3 +1729,70 @@ TEST_F(PaperLoopTest, TS3_ResolutionFeatures) {
     // 3c 载体: resolution_status 从 book 流到 quote (字段接通)
     EXPECT_EQ(opt->resolution_status, 1) << "TS3: PM 结算状态从 OrderBookFeatures 流到 QuoteFeatures";
 }
+
+// TS4 (slice-3b 结算 realize): 建 YES 仓 → 比赛 Ended (YES 胜) → 持仓 realize 到 1.0 + 平仓。
+//   验证: 持仓平掉 (账本归零) + realized PnL > 0 (买便宜→结算 1.0) + positions_settled 计数。
+//   现实修复: 此前持仓在账本永远挂着, paper PnL 结算时错 (无 bid → MtM 贡献 0)。
+TEST_F(PaperLoopTest, TS4_Settlement_RealizesAndCloses) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    // ---- Phase 1: in-play YES 2:0 领先 + 市场低估 (ask 0.30) → 建 YES 多仓 ----
+    auto es = MakeFreshScore("gs-settle", 2, 0);
+    es.sport = "soccer";
+    es.clock_sec = 60 * 60;
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-settle"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-settle", true};
+
+    cfg_.advisory_markets_no_intent = false;
+    cfg_.n_effective = 500;
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+
+    hub_->Publish("1001", MakeFreshBook(0.28, 0.30));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(450));
+
+    double yes_qty = 0.0, avg = 0.0;
+    for (const auto& pv : position_ledger_->get_all_positions()) {
+        if (pv.token_id == "1001") {
+            yes_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+            avg = pv.avg_entry_price;
+        }
+    }
+    ASSERT_GT(yes_qty, 0.0) << "TS4 Phase1: 应先建 YES 多仓";
+
+    // ---- Phase 2: 比赛结束 (status final → Ended), YES 2:0 胜 → 结算 YES=1.0 ----
+    auto es2 = MakeFreshScore("gs-settle", 2, 0);
+    es2.status = "final";  // → TimeStatus::Ended (终态)
+    es2.sport = "soccer";
+    es2.clock_sec = 90 * 60;
+    auto sm2 = std::make_shared<ScoreMap>();
+    (*sm2)["gs-settle"] = es2;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm2));  // 热刷终态
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();
+
+    std::fprintf(stderr, "[TS4] yes_qty(p1)=%.4f avg=%.4f realized=%.4f settled=%llu\n", yes_qty, avg,
+                 loop_->cum_realized_pnl_pusd(),
+                 static_cast<unsigned long long>(loop_->stats().positions_settled.load()));
+
+    // 核心: 持仓被平掉 (结算归零账本)
+    double yes_final = 0.0;
+    for (const auto& pv : position_ledger_->get_all_positions()) {
+        if (pv.token_id == "1001") yes_final = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+    }
+    EXPECT_DOUBLE_EQ(yes_final, 0.0) << "TS4: 结算后 YES 持仓平掉 (不再永远挂账本)";
+    EXPECT_GT(loop_->stats().positions_settled.load(), static_cast<std::uint64_t>(0))
+        << "TS4: positions_settled 计数 > 0";
+    // realized = (1.0 − avg) × qty > 0 (买 ~0.30 → 结算 1.0)
+    EXPECT_GT(loop_->cum_realized_pnl_pusd(), 0.0)
+        << "TS4: YES 胜 → realized PnL > 0 (买便宜结算 1.0); 现实 PnL 结算正确性修复";
+    EXPECT_NEAR(loop_->cum_realized_pnl_pusd(), (1.0 - avg) * yes_qty, 1e-6)
+        << "TS4: realized = (1.0 − avg_entry) × qty";
+}

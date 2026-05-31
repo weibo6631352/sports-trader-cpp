@@ -90,6 +90,11 @@ namespace stcpp::data {
 class ScoreSnapshotStore;
 }  // namespace stcpp::data
 
+// slice-3b: FeatureStoreGameRow 前向声明 (结算方法按 const& 取终态比分; 实体在 .cpp include)。
+namespace stcpp::data::feature_store {
+struct FeatureStoreGameRow;
+}  // namespace stcpp::data::feature_store
+
 namespace stcpp::paper {
 
 // ---------------------------------------------------------------------------
@@ -191,6 +196,8 @@ struct PaperLoopStats {
     std::atomic<std::uint64_t> fills_missed{0};
     // 目标仓位控制器 (老雷 spec v1): 控制器决定本 tick 不动 (死区/限价不可成交/已达目标)。
     std::atomic<std::uint64_t> orders_held{0};
+    // slice-3b: 比赛结算时被 realize+平仓的持仓笔数 (winner→1 / loser→0)。
+    std::atomic<std::uint64_t> positions_settled{0};
     std::atomic<std::uint64_t> hub_reads_empty{0};
     std::atomic<std::uint64_t> quote_publishes{0};
     std::atomic<std::uint64_t> ledger_publishes{0};
@@ -238,6 +245,9 @@ public:
     [[nodiscard]] bool is_running() const noexcept { return running_.load(std::memory_order_acquire); }
 
     [[nodiscard]] const PaperLoopStats& stats() const noexcept { return stats_; }
+
+    // slice-3b: 累计已实现 PnL (whole pUSD; 含结算)。观测/dashboard/测试 (loop_thread_ 写, 读时近似)。
+    [[nodiscard]] double cum_realized_pnl_pusd() const noexcept { return cum_realized_pnl_pusd_; }
 
     // A1: 注入真实 Goalserve 比分源 (可空; nullptr → 恒 stub 路径, 行为同 A1 前).
     //   单 writer: 仅主线程在 Start() 前调用一次 (score_store_ 之后只读).
@@ -372,6 +382,13 @@ private:
     //   FeedRiskGateway 读。loop_thread_ 单 writer (两者同线程顺序调), 无需 atomic。
     double cum_fee_pusd_{0.0};
 
+    // ---- slice-3b 结算 (老板 2026-05-31): 累计已实现 PnL + 已结算盘口 ----
+    //   FeedRiskGateway 早留口子 (M2 注释): daily_pnl = 开仓 MtM + realized − cum_fee。
+    //   比赛 Ended → 按终态比分把持仓 realize 到结算值 (winner 1 / loser 0) + 平仓; 之后不再交易。
+    //   loop_thread_ 单 writer。settled_conditions_: 幂等 + 已定盘口跳过决策。
+    double cum_realized_pnl_pusd_{0.0};
+    std::unordered_map<std::string, char> settled_conditions_;
+
     // ---- 内部实现 ----
     void RunLoop(std::stop_token st);
     void TickAll();
@@ -391,6 +408,17 @@ private:
                                const polymarket::clob_wss::OrderBookFeatures& side_book,
                                double book_depth_l1, double p_fair_side, double target_mag,
                                double fee_coef, bool force_cross) noexcept;
+
+    // slice-3b 结算: 比赛 Ended → 按终态比分把 YES/NO 持仓 realize 到结算值 (winner 1 / loser 0) +
+    //   平仓 (apply_fill 负 delta), realized PnL 累加进 cum_realized_pnl_pusd_。loop_thread_ 单 writer。
+    //   winner 从 game_row 终态比分 + orientation 派生 (score_home_total = YES 边比分); 平局 → 0.5 push。
+    void SettleCondition(const std::string& condition_id, const std::string& yes_token_id,
+                         const std::string& no_token_id,
+                         const data::feature_store::FeatureStoreGameRow& game_row) noexcept;
+    // 单 token 结算 (无仓 → no-op)。realize = (settle − avg_entry) × qty。
+    void SettleToken(const std::string& condition_id, const std::string& token_id,
+                     strategy::Outcome outcome, double settle_price,
+                     const data::feature_store::FeatureStoreGameRow& game_row) noexcept;
 
     // CI 下界: edge_ci_lower = (p_fair - p_ask) - z * sqrt(p*(1-p)/n)
     [[nodiscard]] static double ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept;

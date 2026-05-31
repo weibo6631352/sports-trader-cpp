@@ -424,6 +424,18 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 注: A1 仅打通 fair 计算 + quote 真 edge; advisory gate (Step 4b) 仍拦 intent (A2 解封).
     const bool has_real_fair = (game_row.time_status != stcpp::data::goalserve::TimeStatus::NotStarted);
 
+    // ---- slice-3b 结算 (老板 2026-05-31): 比赛 Ended → 按终态比分 realize 持仓 + 平仓, 之后不交易 ----
+    //   市场已定 (outcome 确定): 持仓最终值 = winner 1 / loser 0。realize → cum_realized; 平仓 → 账本归零。
+    //   幂等 (settled_conditions_): 首次 Ended 结算一次, 之后该盘口跳过决策 (已定不再交易)。
+    //   仅 Ended (有清晰比分 winner); Postponed/Cancelled 留作 edge (refund 逻辑, 后续)。
+    if (game_row.time_status == stcpp::data::goalserve::TimeStatus::Ended) {
+        if (settled_conditions_.find(condition_id) == settled_conditions_.end()) {
+            SettleCondition(condition_id, mkt.yes_token_id, mkt.no_token_id, game_row);
+            settled_conditions_.emplace(condition_id, char{1});
+        }
+        return;  // 已定盘口: 不产 quote/intent (持仓已 realize)
+    }
+
     FeatureStoreBookRow book_row{};
     // token_side 始终 YES-canonical (小梁 §3 Step C: FairValueEstimator 只支持 YES 输入;
     // fair_NO=1-fair_YES)。
@@ -840,6 +852,68 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
 }
 
 // ---------------------------------------------------------------------------
+// SettleCondition / SettleToken (slice-3b 结算, 老板 2026-05-31)
+//
+// 比赛 Ended → outcome 确定 → 持仓最终值 = winner 1 / loser 0。winner 从终态比分 + orientation:
+//   game_row.score_home_total = YES 边比分 (TickOne 已按 yes_is_home 填), score_away_total = 对手。
+//   yes_score > opp → YES 胜 (settle YES=1/NO=0); < → NO 胜; = → 平局 push (各 0.5)。
+// realize = (settle − avg_entry) × qty 累加进 cum_realized_pnl_pusd_; apply_fill 负 delta 平仓归零。
+// R-11: paper 账本; R-20: 4ts 用终态比分 ts (禁 now() 替代 data_source)。loop_thread_ 单 writer。
+// ---------------------------------------------------------------------------
+void PaperLoop::SettleCondition(const std::string& condition_id, const std::string& yes_token_id,
+                                const std::string& no_token_id,
+                                const data::feature_store::FeatureStoreGameRow& game_row) noexcept {
+    const int yes_sc = game_row.score_home_total;  // YES 边比分 (orientation 已应用)
+    const int opp_sc = game_row.score_away_total;
+    double settle_yes = 0.5, settle_no = 0.5;  // 平局 push 默认
+    if (yes_sc > opp_sc) {
+        settle_yes = 1.0;
+        settle_no = 0.0;
+    } else if (yes_sc < opp_sc) {
+        settle_yes = 0.0;
+        settle_no = 1.0;
+    }
+    SettleToken(condition_id, yes_token_id, strategy::Outcome::Yes, settle_yes, game_row);
+    SettleToken(condition_id, no_token_id, strategy::Outcome::No, settle_no, game_row);
+    // 结算后喂 RM: realized 进 daily_pnl + 敞口归零 (loop_thread_ 串行, R-12 满足)。
+    FeedRiskGateway();
+}
+
+void PaperLoop::SettleToken(const std::string& condition_id, const std::string& token_id,
+                            strategy::Outcome outcome, double settle_price,
+                            const data::feature_store::FeatureStoreGameRow& game_row) noexcept {
+    // 当前持仓 (signed micro; v1 long-only ≥0)。无仓 → no-op。
+    const auto pos_opt = position_ledger_.get_position(token_id);
+    if (!pos_opt.has_value() || pos_opt->size_usdc == 0) {
+        return;
+    }
+    const std::int64_t qty_micro = pos_opt->size_usdc;
+    const double qty = static_cast<double>(qty_micro) / 1'000'000.0;
+    const double avg = pos_opt->avg_entry_price;
+    // realize PnL = (结算值 − 加权入场价) × qty (qty signed; v1 long → 正)。
+    cum_realized_pnl_pusd_ += (settle_price - avg) * qty;
+
+    // 平仓: apply_fill 负 delta 到 0 (settle_price 作 fill_price; 平仓 avg 归零, R-11 paper)。
+    risk::FillEvent ev;
+    ev.filled_size_micro = -qty_micro;  // 平掉全部 (→ 0, 不穿零)
+    ev.fill_price = settle_price;
+    ev.mode_tag = 0;  // R-11 paper
+    // R-20: 4ts 用终态比分 ts (禁 now() 替代 data_source); as_of = NowNs (结算时刻 ≥ ingestion)。
+    ev.event_ts_ns = game_row.event_ts_ns;
+    ev.data_source_ts_ns = game_row.data_source_ts_ns;
+    ev.ingestion_ts_ns = game_row.ingestion_ts_ns;
+    ev.as_of_ts_ns = NowNs();
+    position_ledger_.apply_fill(condition_id, token_id, outcome, ev);
+
+    stats_.positions_settled.fetch_add(1, std::memory_order_relaxed);
+    std::fprintf(stderr,
+                 "[paper_loop] SETTLE cond=%.24s... tok=%.16s... settle=%.2f avg=%.4f qty=%.4f "
+                 "realized=%.4f cum_realized=%.4f\n",
+                 condition_id.c_str(), token_id.c_str(), settle_price, avg, qty,
+                 (settle_price - avg) * qty, cum_realized_pnl_pusd_);
+}
+
+// ---------------------------------------------------------------------------
 // ComputeEdgeCiLower — CI 下界 (§10.3)
 //
 // edge_ci_lower = (p_fair - p_ask) - z * sqrt(p_fair * (1 - p_fair) / n_eff)
@@ -972,6 +1046,9 @@ void PaperLoop::FeedRiskGateway() noexcept {
             // 无效 bid: 跳过浮盈贡献 (保守, 不臆造正值; 该仓位仍承担下方 cum_fee)
         }
     }
+    // slice-3b: 接平仓后 daily_pnl = 开仓时点 MtM + 已实现 (含结算) − cum_fee (兑现 FeedRiskGateway
+    //   早留的 M2 口子)。realized 在结算/平仓时一次性累加进 cum_realized_pnl_pusd_, 此处并入。
+    pnl_pusd += cum_realized_pnl_pusd_;  // 已实现 PnL (结算 winner→1/loser→0 兑现的盈亏)
     pnl_pusd -= cum_fee_pusd_;  // 减累计已付 fee (spec §1.3/§4)
     // unit-contract-ok: pUSD → micro (×1e6 唯一通道; signed PnL 不走 MicroPUSD 非负 cap helper)。
     //   防 P0-2/P1-9 同型单位 bug: 漏 ×1e6 → 喂入小 1e6 → 阈值不咬 (T-A5-1 单位门守护)。
