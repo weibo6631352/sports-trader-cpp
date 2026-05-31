@@ -944,6 +944,52 @@ TEST_F(PaperLoopTest, T17_TotalsMarket_DerivativePricing) {
 }
 
 // ---------------------------------------------------------------------------
+// T18: 模块5 短时套利 advisory 接线 — 注入产信号的 mock SeqArbModel → quote.arb_* 填充。
+//   验证: predict → ComputeArbSignal → qf.arb_actionable 端到端通 (旁路, 不驱动真单)。
+// ---------------------------------------------------------------------------
+namespace {
+class MockArbModel final : public stcpp::ml::SeqArbModel {
+public:
+    [[nodiscard]] stcpp::ml::ArbPrediction predict(const stcpp::ml::FeatureVector& fv) const noexcept override {
+        stcpp::ml::ArbPrediction p;
+        p.ok = true;
+        p.as_of_ts_ns = fv.as_of_ts_ns;
+        p.model_id = "mock-arb";
+        p.wall[6].dmid = 0.10;  // 30s horizon (idx6): 强多头, 延迟充裕不 stale
+        p.wall[6].ci_low = 0.09;
+        p.wall[6].ci_high = 0.11;
+        p.wall[6].confidence = 0.8;
+        return p;
+    }
+    [[nodiscard]] std::size_t expected_feature_count() const noexcept override {
+        return stcpp::ml::kMlFeatureCount;
+    }
+    [[nodiscard]] stcpp::ml::ModelKind kind() const noexcept override { return stcpp::ml::ModelKind::Onnx; }
+    [[nodiscard]] std::string_view model_id() const noexcept override { return "mock-arb"; }
+    [[nodiscard]] bool ready() const noexcept override { return true; }
+};
+}  // namespace
+
+TEST_F(PaperLoopTest, T18_SeqArbAdvisoryWired) {
+    MockArbModel mock;
+    // BE = fee(2·0.03·0.5·0.5=0.015) + slip(0.5·0.04=0.02) + spread(0.04) = 0.075; ci_low 0.09 > BE → 够本。
+    hub_->Publish("1001", MakeSyntheticBook(0.48, 0.52));  // bid 0.48 / ask 0.52, L1 size 500
+    cfg_.arb_max_notional_usdc = 300.0;  // desired ≤ 300 ≤ depth 500 → 过退出深度门
+    loop_ = MakeLoop();
+    loop_->SetSeqArbModel(&mock);  // Start 前注入
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    loop_->Stop();
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    EXPECT_EQ(opt->arb_actionable, 1) << "mock 强信号 + 够本 + 过门 → 可操作";
+    EXPECT_EQ(opt->arb_horizon_sec, 30) << "选中 30s horizon";
+    EXPECT_NEAR(opt->arb_net_edge, 0.09 - 0.075, 1e-6) << "保守净 edge = ci_low − BE";
+    EXPECT_GT(opt->arb_suggested_notional, 0.0);
+    EXPECT_GT(opt->arb_signal_quality, 0.0);
+}
+
+// ---------------------------------------------------------------------------
 // T16: A1 fail-closed — 陈旧比分 (data_source_ts 超 staleness) → 退回 stub
 // ---------------------------------------------------------------------------
 TEST_F(PaperLoopTest, T16_A1_StaleScore_FailClosedToStub) {

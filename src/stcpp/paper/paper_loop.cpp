@@ -38,6 +38,7 @@
 //         验证: /api/v1/risk/rejects 中 advisory 市场不应再出现 INVALID_INTENT.
 
 #include "stcpp/paper/paper_loop.hpp"
+#include "stcpp/risk/arb_signal.hpp"  // 模块5: 短时套利 advisory 信号
 
 #include <algorithm>
 #include <cassert>
@@ -1619,6 +1620,38 @@ void PaperLoop::PublishQuoteSnapshot(
         fv.size() == ml_model_->expected_feature_count()) {
         ml_pred_storage = ml_model_->predict(fv);
         ml_pred = &ml_pred_storage;
+    }
+
+    // 短时套利 advisory 分支 (模块5): seq_arb_model 同源 fv → 预测 → ComputeArbSignal → 填 qf.arb_*。
+    //   旁路: 绝不驱动真单 (stub 恒 ok=false; 真模型也止于 advisory 直到开闸)。与结算链物理隔离 (主计划 §5.2)。
+    if (seq_arb_model_ != nullptr && seq_arb_model_->ready() &&
+        fv.size() == seq_arb_model_->expected_feature_count()) {
+        const ml::ArbPrediction ap = seq_arb_model_->predict(fv);
+        risk::ArbMarketState ms;
+        ms.mid = qf.market_mid;
+        ms.best_ask = feat.best_ask();
+        ms.best_bid = feat.best_bid();
+        const auto dm = polymarket::clob_wss::compute_depth_metrics(feat);
+        ms.exit_depth_usdc = std::isfinite(dm.bid_depth_5lvl) ? dm.bid_depth_5lvl : 0.0;  // 卖出平仓深度
+        const double p = std::isfinite(qf.market_mid) ? qf.market_mid : 0.5;
+        ms.fee_roundtrip = 2.0 * qf.fee_rate_coef * p * (1.0 - p);  // 往返手续费 (价格单位)
+        ms.slip_est = std::isfinite(qf.cross_spread) ? 0.0 : 0.0;
+        ms.slip_est = 0.5 * std::max(0.0, ms.best_ask - ms.best_bid);  // 半 spread 滑点估计
+        ms.bankroll_usdc = cfg_.bankroll_usdc;
+        ms.max_notional_usdc = cfg_.arb_max_notional_usdc;
+        ms.lambda = cfg_.arb_lambda;
+        ms.pred_gen_ts_ns = qf.as_of_ts_ns;
+        ms.now_ns = NowNs();
+        ms.est_rtt_ns = static_cast<std::int64_t>(cfg_.arb_est_rtt_ns);
+        ms.max_open_legs = cfg_.arb_max_open_legs;
+        const risk::ArbSignal sig = risk::ComputeArbSignal(ap, ms);
+        qf.arb_actionable = sig.actionable ? 1 : 0;
+        qf.arb_horizon_sec = sig.horizon_sec;
+        qf.arb_predicted_dmid = sig.predicted_dmid;
+        qf.arb_net_edge = sig.net_edge;
+        qf.arb_signal_quality = sig.signal_quality;
+        qf.arb_suggested_notional = sig.suggested_notional;
+        qf.arb_reject_code = static_cast<std::int32_t>(sig.reject);
     }
 
     // ML provenance.

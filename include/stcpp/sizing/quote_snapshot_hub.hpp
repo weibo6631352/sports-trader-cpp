@@ -147,6 +147,14 @@ struct QuoteFeatures {
     double b_ofi_10s{std::numeric_limits<double>::quiet_NaN()};          // 10s 短窗 OFI
     double b_realized_vol_10s{std::numeric_limits<double>::quiet_NaN()}; // 10s 短窗波动 (预测幅度 σ)
     double b_mp_accel{std::numeric_limits<double>::quiet_NaN()};         // 动量加速度 roc(5s)−roc(15s)
+    // 短时套利信号 (advisory; seq_arb_model 旁路 — 绝不驱动真单直到 LiveOrderGate 开闸; ML-R 同纪律)。
+    std::int32_t arb_actionable{0};     // 1 = 有可操作套利信号
+    std::int32_t arb_horizon_sec{0};    // 选中 horizon (秒)
+    double arb_predicted_dmid{std::numeric_limits<double>::quiet_NaN()};  // 预测 mid 移动
+    double arb_net_edge{std::numeric_limits<double>::quiet_NaN()};        // 保守净 edge (ci_low−BE)
+    double arb_signal_quality{0.0};     // 置信度×|edge|×深度
+    double arb_suggested_notional{0.0}; // 建议下单额 (advisory)
+    std::int32_t arb_reject_code{0};    // 无信号时的代表拒因 (ArbRejectCode)
 
     // ---- 当前持仓 (老板 2026-05-31: 持仓入模型; 库存感知 — 目标仓位范式控制器需知现仓才能定调整) ----
     //   老板 2026-05-31「各边买了多少, 可能两边都买, 不能只说买哪一边」: per-token 双边量, 不塌单边/净。

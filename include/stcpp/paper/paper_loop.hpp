@@ -76,6 +76,7 @@
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
 #include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量)
 #include "stcpp/ml/fair_value_model.hpp"         // ml::FairValueModel/ModelPrediction (步④ 推理接线)
+#include "stcpp/ml/seq_arb_model.hpp"            // ml::SeqArbModel (短时套利 advisory 旁路)
 #include "stcpp/ml/feature_vector_hub.hpp"       // Phase 2 项6: 完整 75 列向量发布 (训练捕获)
 #include "stcpp/ml/model_feature_spec.hpp"       // extract_joined (game_row+book_row → FeatureVector)
 #include "stcpp/execution/order_executor.hpp"
@@ -229,6 +230,12 @@ struct PaperLoopConfig {
     //   PaperLoop 天然 paper (不花真钱); live 路径不复用此 blend。daemon 生产可设 1.0 (有模型时 ML 全驱动)。
     double ml_fair_blend_weight{0.0};
 
+    // 短时套利 advisory 配置 (seq_arb_model 旁路信号; 不驱动真单)。
+    double arb_est_rtt_ns{50'000'000.0};  // 预估端到端 RTT (含成交确认); 就近部署 ~50ms 默认 (G1 实测后调)
+    double arb_max_notional_usdc{2'000.0};
+    int arb_max_open_legs{20};
+    double arb_lambda{0.10};  // 套利 Kelly 分数 (老韩 RM 联签起 0.10)
+
     // strategy_id / signal_id (audit / RM 去重用)
     std::string strategy_id{"paper-demo-v1"};
 
@@ -360,6 +367,10 @@ public:
     //   只填 QuoteFeatures.ml_advisory_p_yes + provenance, 绝不改 fair_value/决策。owner 是 daemon。
     void SetMlModel(const ml::FairValueModel* m) noexcept { ml_model_ = m; }
 
+    // 注入短时套利序列模型 (ml::SeqArbModel; daemon 装配 Stub/ONNX)。advisory 旁路: 只填 qf.arb_* 观测,
+    //   绝不驱动真单 (stub 恒 ok=false 不发; 真模型也止于 advisory 直到 LiveOrderGate 开闸)。
+    void SetSeqArbModel(const ml::SeqArbModel* m) noexcept { seq_arb_model_ = m; }
+
     // Phase 2 项6: 注入完整 75 列向量 hub (daemon 持有 + recorder 线程消费)。nullptr = 不捕获。
     //   PublishQuoteSnapshot 算完 extract_full 后 Publish 进来 (训练 X 含 0-17 原始列)。单 writer loop_thread_。
     void SetFeatureVectorHub(ml::FeatureVectorHub* h) noexcept { fv_hub_ = h; }
@@ -446,6 +457,7 @@ private:
     }
     // 步④: ML 推理模型 (非自有; daemon 注入 + 持有)。loop_thread_ 只读。nullptr = baseline only。
     const ml::FairValueModel* ml_model_{nullptr};
+    const ml::SeqArbModel* seq_arb_model_{nullptr};  // 短时套利序列模型 (advisory 旁路)
     // Phase 2 项6: 完整向量 hub (非自有; daemon 注入)。loop_thread_ 单 writer Publish。nullptr = 不捕获。
     ml::FeatureVectorHub* fv_hub_{nullptr};
 
