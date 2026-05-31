@@ -97,3 +97,27 @@ TEST(InplayOdds, IO07_SuspendedHome_FailClosed) {
     EXPECT_FALSE(ParseInplayOddsDevig(suspended_home, "1").valid)
         << "home 腿暂停 → fail-closed, 宁可 NaN 不喂 stale 赔率";
 }
+
+// ---- orientation: Goalserve home/away 视角 → Polymarket YES-canonical (消 home/YES 混淆) ----
+using stcpp::data::ToYesCanonical;
+
+// IO-08: yes_is_home=true → YES=home (home_fair 不动)。
+TEST(InplayOdds, IO08_YesIsHome_NoFlip) {
+    const auto yc = ToYesCanonical(/*yes_is_home=*/true, /*home=*/0.70, /*away=*/0.20);
+    EXPECT_DOUBLE_EQ(yc.yes_fair, 0.70) << "YES=home → yes_fair=home_fair";
+    EXPECT_DOUBLE_EQ(yc.opp_fair, 0.20);
+}
+
+// IO-09: yes_is_home=false → YES=away (镜像翻转! 这正是旧 bug 漏掉的)。
+TEST(InplayOdds, IO09_YesIsAway_Flip) {
+    const auto yc = ToYesCanonical(/*yes_is_home=*/false, /*home=*/0.70, /*away=*/0.20);
+    EXPECT_DOUBLE_EQ(yc.yes_fair, 0.20) << "YES=away → yes_fair=away_fair (翻转, 不再取 home)";
+    EXPECT_DOUBLE_EQ(yc.opp_fair, 0.70);
+}
+
+// IO-10: -1 (无 odds) 透传, 不被翻转污染。
+TEST(InplayOdds, IO10_NoData_Passthrough) {
+    const auto yc = ToYesCanonical(/*yes_is_home=*/false, -1.0, -1.0);
+    EXPECT_DOUBLE_EQ(yc.yes_fair, -1.0);
+    EXPECT_DOUBLE_EQ(yc.opp_fair, -1.0);
+}

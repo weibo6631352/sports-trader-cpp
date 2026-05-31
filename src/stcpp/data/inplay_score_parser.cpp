@@ -574,10 +574,12 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
             // 仍加入 scores, 但调用方应 alert
         }
 
-        // inplay bet365 odds → 单源 de-vig home(YES) fair (soccer 1X2 全场 market_id="1")。
+        // inplay bet365 odds → 单源 de-vig 三边 fair (soccer 1X2 全场 market_id="1")。
+        //   双边/三边完整透传 (home/away/draw), 不丢信息 — orientation 在 paper_loop 按
+        //   yes_is_home 翻成 YES-canonical (Goalserve home 视角 ≠ Polymarket YES 视角, 不可混淆)。
         //   从同一 event_block 切 odds 节点 (与 info 共享 updated_ts, 不引入新 ts, R-20 守法)。
         //   无 odds plan / market 缺 → -1.0 (sentinel, 与 game_row 默认对齐)。
-        double home_fair = -1.0;
+        double home_fair = -1.0, away_fair = -1.0, draw_fair = -1.0;
         if (sport == goalserve::GoalserveSport::Soccer) {
             const auto odds_key = event_block.find("\"odds\":");
             if (odds_key != std::string_view::npos) {
@@ -601,7 +603,11 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
                     if (d == 0) {
                         const auto devig = ParseInplayOddsDevig(
                             event_block.substr(ob, oe - ob + 1), kSoccerMarketId1x2Fulltime);
-                        if (devig.valid) home_fair = devig.home_fair;
+                        if (devig.valid) {
+                            home_fair = devig.home_fair;
+                            away_fair = devig.away_fair;
+                            draw_fair = devig.draw_fair;  // 无平局市场 = 0 (binary)
+                        }
                     }
                 }
             }
@@ -609,6 +615,8 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
 
         result.scores.push_back(std::move(rec));
         result.inplay_home_fairs.push_back(home_fair);  // 1:1 对齐 scores
+        result.inplay_away_fairs.push_back(away_fair);
+        result.inplay_draw_fairs.push_back(draw_fair);
     }
 
     return result;

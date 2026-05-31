@@ -300,9 +300,13 @@ struct EventScore {
     //     start_ts<=now 不触发 R-20 clamp, 故 event_ts_ns 即真实 kickoff). 时间窗口锚定用.
     std::string league_id;
     std::int64_t kickoff_ts_sec{0};
-    // inplay bet365 单源 de-vig home(YES) fair (InplayFeedThread 从 ParseResult.inplay_home_fairs 填;
-    //   -1=无 odds; → paper_loop game_row.inplay_bet365_home_fair → g_bm_inplay_fair 特征)。
+    // inplay bet365 单源 de-vig 三边 fair — Goalserve home/away/draw 视角 (双边完整, 不丢信息)。
+    //   InplayFeedThread 从 ParseResult.inplay_{home,away,draw}_fairs 填; -1=无 odds。
+    //   ⚠ orientation: 这是 home/away 视角, 非 Polymarket YES 视角。paper_loop 按 yes_is_home
+    //   翻成 YES-canonical 才进 game_row/特征 (away=YES 盘口若不翻 = 镜像反, 绝不可混淆)。
     double inplay_bet365_home_fair{-1.0};
+    double inplay_bet365_away_fair{-1.0};
+    double inplay_bet365_draw_fair{-1.0};
 };
 
 // ============================================================

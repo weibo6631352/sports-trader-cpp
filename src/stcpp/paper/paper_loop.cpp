@@ -51,6 +51,7 @@
 
 #include "stcpp/control/position_controller.hpp"  // 目标仓位控制器 (Decide + ComputeReservation, BR-1)
 #include "stcpp/data/feature_store_contract.hpp"
+#include "stcpp/data/inplay_odds_parser.hpp"    // ToYesCanonical (inplay 赔率 orientation 翻转)
 #include "stcpp/data/live_stats_parser.hpp"     // FillLiveStats (live_stats 采集 hop join)
 #include "stcpp/data/score_snapshot_store.hpp"  // A1: ScoreSnapshotStore::Get(inplay_match_id)
 #include "stcpp/execution/execution_mode.hpp"   // A2 红线1: kCompiledMode 运行期 mode 断言
@@ -424,8 +425,14 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                         game_row.data_source_ts_ns = es.ts.data_source_ts_ns;
                         game_row.ingestion_ts_ns = es.ts.ingestion_ts_ns;
                         game_row.as_of_ts_ns = es.ts.as_of_ts_ns;
-                        // inplay bet365 de-vig fair → game_row (→ g_bm_inplay_fair 特征; -1=无 odds)。
-                        game_row.inplay_bet365_home_fair = es.inplay_bet365_home_fair;
+                        // inplay bet365 de-vig fair → game_row, 按 yes_is_home 翻成 YES-canonical
+                        //   (与上面比分同源翻转, 消 home/YES 混淆)。ToYesCanonical 纯函数 BR-1 共用。
+                        const auto inplay_yc = stcpp::data::ToYesCanonical(
+                            it->second.yes_is_home, es.inplay_bet365_home_fair,
+                            es.inplay_bet365_away_fair);
+                        game_row.inplay_bet365_home_fair = inplay_yc.yes_fair;  // YES 边胜率
+                        game_row.inplay_bet365_away_fair = inplay_yc.opp_fair;  // 对手边胜率
+                        game_row.inplay_bet365_draw_fair = es.inplay_bet365_draw_fair;  // 平局 (与边无关)
                         // live_stats 采集 hop: 按 (league|home|away) exact join commentaries live_stats
                         //   → game_row.soccer_* (→ g_danger_attack_diff/g_shot_on_target_diff/
                         //   g_possession_home/g_red_card_diff/g_corner_diff 特征)。同源 Goalserve 队名一致;

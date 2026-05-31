@@ -163,4 +163,21 @@ namespace inplay_odds_detail {
     return out;
 }
 
+// InplayYesCanonical — Goalserve home/away 视角 → Polymarket YES/对手 视角的翻转结果。
+struct InplayYesCanonical {
+    double yes_fair{-1.0};  // YES 边 (被交易盘口的 "YES" 结果) de-vig 胜率
+    double opp_fair{-1.0};  // 对手边
+};
+
+// ToYesCanonical — 按 yes_is_home 把 Goalserve home/away fair 翻成 YES-canonical (消 home/YES 混淆)。
+//   yes_is_home=true:  YES token = home 队胜 → yes=home_fair, opp=away_fair
+//   yes_is_home=false: YES token = away 队胜 → yes=away_fair, opp=home_fair (镜像翻转!)
+//   -1 (无 odds) 自然透传。纯函数, BR-1 回测/实盘共用, 与比分翻转 (yes_is_home) 同源, 保证
+//   g_bm_inplay_fair 与 g_score_diff 视角一致 (否则 away=YES 盘口两特征方向相反)。
+[[nodiscard]] inline InplayYesCanonical ToYesCanonical(bool yes_is_home, double home_fair,
+                                                       double away_fair) noexcept {
+    return yes_is_home ? InplayYesCanonical{home_fair, away_fair}
+                       : InplayYesCanonical{away_fair, home_fair};
+}
+
 }  // namespace stcpp::data

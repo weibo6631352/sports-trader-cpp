@@ -31,9 +31,17 @@ TEST(InplayScoreOdds, IOI01_BothParsed) {
     const double fair = pr.inplay_home_fairs[0];
     // de-vig: home = (1/1.20) / (1/1.20 + 1/6.50 + 1/9.00)
     const double ih = 1.0 / 1.20, id = 1.0 / 6.50, ia = 1.0 / 9.00;
-    EXPECT_NEAR(fair, ih / (ih + id + ia), 1e-9) << "inplay bet365 单源 de-vig home fair";
+    const double sum = ih + id + ia;
+    EXPECT_NEAR(fair, ih / sum, 1e-9) << "inplay bet365 单源 de-vig home fair";
     EXPECT_GT(fair, 0.0);
     EXPECT_LT(fair, 1.0);
+    // 双边/三边完整透传 (不丢信息; orientation 翻转在 paper_loop 按 yes_is_home 做)。
+    ASSERT_EQ(pr.inplay_away_fairs.size(), pr.scores.size());
+    ASSERT_EQ(pr.inplay_draw_fairs.size(), pr.scores.size());
+    EXPECT_NEAR(pr.inplay_away_fairs[0], ia / sum, 1e-9) << "away de-vig fair (双边完整)";
+    EXPECT_NEAR(pr.inplay_draw_fairs[0], id / sum, 1e-9) << "draw de-vig fair (3-way 完整)";
+    // 三边和 = 1 (de-vig 归一; 完整无遗漏)。
+    EXPECT_NEAR(fair + pr.inplay_away_fairs[0] + pr.inplay_draw_fairs[0], 1.0, 1e-9);
 }
 
 // IOI-02: 无 market "1" → -1 sentinel (fail-closed, 与 game_row 默认对齐)

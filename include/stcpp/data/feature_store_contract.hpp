@@ -163,8 +163,12 @@ struct FeatureStoreGameRow {
     std::int32_t soccer_throw_ins_away         = -1;
 
     // ---- inplay bet365 单源 de-vig fair (老雷; ParseInplayOddsDevig 填; -1=无 odds 数据) ----
-    //   inplay 赔率 home(YES) 胜率 de-vig 后; 待 InplayScoreParser 接 ParseInplayOddsDevig + odds plan+白名单。
-    double inplay_bet365_home_fair = -1.0;
+    //   ⚠ YES-canonical: game_row 全部字段以 YES 边为 "home" (score_home_total = YES队比分,
+    //   paper_loop 已按 yes_is_home 翻)。故此处 home = YES 边, away = 对手边 (双边完整, 不模糊)。
+    //   inplay_bet365_home_fair = P(YES 边胜); away = 对手胜; draw = 平局 (3-way; binary 无平=0)。
+    double inplay_bet365_home_fair = -1.0;  // = YES 边 de-vig 胜率 (已 canonical 翻转)
+    double inplay_bet365_away_fair = -1.0;  // = 对手边 de-vig 胜率
+    double inplay_bet365_draw_fair = -1.0;  // = 平局 de-vig 概率 (3-way; binary=0)
 
     // ---- ABI 版本 (写入 Parquet metadata 用) ----
     std::string_view bm_abi_version = goalserve::kBookmakerAbiVersion;

@@ -72,9 +72,13 @@ struct ParseResult {
     // sport (传入 parser 时设置, 方便 caller 区分)
     goalserve::GoalserveSport sport = goalserve::GoalserveSport::Soccer;
 
-    // inplay bet365 单源 de-vig home(YES) 胜率, 与 scores 1:1 对齐 (index i ↔ scores[i])。
-    //   -1.0 = 该 event 无 odds 数据 (无 odds plan / market 缺)。caller 填 game_row.inplay_bet365_home_fair。
+    // inplay bet365 单源 de-vig 三边胜率 (home/away/draw), 与 scores 1:1 对齐 (index i ↔ scores[i])。
+    //   双边/三边完整透传 (不丢信息); -1.0 = 该 event 无 odds (无 odds plan / market 缺)。
+    //   orientation: 这是 Goalserve home/away 视角; caller (paper_loop) 按 yes_is_home 翻成
+    //   Polymarket YES-canonical (home 视角 ≠ YES 视角, 绝不可直接当 YES 用 — 否则 away=YES 盘口镜像反)。
     std::vector<double> inplay_home_fairs;
+    std::vector<double> inplay_away_fairs;
+    std::vector<double> inplay_draw_fairs;  // binary 无平局市场 = 0
 };
 
 // soccer 1X2 (Full Time) inplay market_id (SSOT xiaoduan-w8 §4.3: "1"=1X2全场)。
