@@ -27,6 +27,10 @@ struct LiveOrderResult {
     std::string error;            // errorMsg / error
     std::string transaction_hash;
     std::string raw_response;     // 已可安全 log (不含私钥/HMAC)
+    // 回执实际成交量 (老韩硬要求: 账本/RM 必须 apply 实际成交, 非请求量)。
+    //   BUY : making=USDC 实付, taking=shares 实得; SELL 反之。decimal (非 micro)。
+    double making_amount{0.0};
+    double taking_amount{0.0};
 };
 
 }  // namespace stcpp::polymarket

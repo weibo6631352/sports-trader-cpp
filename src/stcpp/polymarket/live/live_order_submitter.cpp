@@ -217,6 +217,12 @@ LiveOrderResult LiveOrderSubmitter::Submit(const LiveOrderRequest& req) noexcept
             if (end != std::string::npos) r.transaction_hash = resp.substr(start, end - start);
         }
     }
+    {  // 回执实际成交量 (老韩: 以 CLOB 回执为唯一真相, 非请求量)
+        const std::string mk = ExtractStr(resp, "makingAmount");
+        const std::string tk = ExtractStr(resp, "takingAmount");
+        if (!mk.empty()) r.making_amount = std::strtod(mk.c_str(), nullptr);
+        if (!tk.empty()) r.taking_amount = std::strtod(tk.c_str(), nullptr);
+    }
     const std::string errmsg = ExtractStr(resp, "errorMsg");
     const std::string err = ExtractStr(resp, "error");
     r.error = !errmsg.empty() ? errmsg : err;

@@ -5,6 +5,7 @@
 # 下单 sink 注入: 生产绑 LiveOrderSubmitter, 测试注入 stub → gate 逻辑离线可测。
 add_library(stcpp_polymarket_order_gate STATIC
     live_order_gate.cpp
+    live_executor.cpp
 )
 target_include_directories(stcpp_polymarket_order_gate
     PUBLIC ${CMAKE_SOURCE_DIR}/include
