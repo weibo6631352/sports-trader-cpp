@@ -475,7 +475,8 @@ private:
                               std::int64_t joint_as_of_ts_ns, const std::string& event_id,
                               const std::string& neg_risk_market_id, double target_signed_notional,
                               double reservation_buy_px, double reservation_sell_px,
-                              double required_margin, double time_to_resolution_frac) noexcept;
+                              double required_margin, double time_to_resolution_frac,
+                              double g_time_x_lead, double g_fld_signal) noexcept;
 };
 
 }  // namespace stcpp::paper

@@ -143,6 +143,20 @@ struct QuoteFeatures {
     double time_to_resolution_frac{0.0};   // 结算临近度 ∈[0,1] (1=刚开赛 0=已结算; 体育从时钟派生; NaN=无时钟)
     std::uint8_t resolution_status{0};     // 市场结算状态 0=Open/1=Resolving/2=Resolved (PM WSS; 默认 0)
 
+    // ---- 批1 微结构/cross/sports 特征 (全员评审; 老郭 g_/b_/x_ 血缘命名; 全部现有数据派生) ----
+    //   x_ = game×book/fair 派生; b_ = book 时序微结构; g_ = game 侧。全部加性 (§8.1 #5), 候选捕获区。
+    double x_log_odds_fair{0.0};    // logit(fair) — ML 线性度 (小肖 P0; 中等概率区更线性)
+    double x_log_odds_edge{0.0};    // logit(fair) − logit(mid) — log-odds 空间 edge (尺度不变)
+    double x_pin_risk{0.0};         // min(fair, 1−fair) — 距单边距离 (临近结算流动性枯竭风险)
+    double x_pin_x_expiry{0.0};     // pin_risk × time_to_resolution — 「临近结算∧接近确定」归零陷阱
+    double b_dislocation{0.0};      // microprice − mid — 买卖压力 (正=买压)
+    double b_amihud{0.0};           // 窗口 mean(|Δmp|/bid_size) — 流动性冲击代理 (薄=高)
+    double b_bid_depth_vol{0.0};    // 窗口 bid 深度变化 RMS — 流动性稳定性 (高=间歇幌子盘)
+    double b_ofi{0.0};              // 窗口 order flow imbalance (Cont-Kukanov-Stoikov; 正=买压, 微结构最强信号)
+    double b_vol_ratio{0.0};        // 短窗 vol / 长窗 vol — 波动率制度切换 (>1=短期波动激增)
+    double g_time_x_lead{0.0};      // score_diff × (1−time_frac) — 时间感知领先 (体育最大未捕捉非线性)
+    double g_fld_signal{0.0};       // devig_mult − devig_power — favorite-longshot 偏差强度信号
+
     // ---- ML provenance (小邓 spec v1 §3.2; 对应 QuoteParams ML 字段) ----
     // model_id: char 数组 (空 = 无模型; 对应 ModelPrediction.model_id)
     char model_id[64]{};  // 最长 model_id ~48 char; 留余量

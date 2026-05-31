@@ -253,6 +253,41 @@ public:
     return clamp_prob(yes_mid / denom);
 }
 
+// logit(p) = log(p/(1−p)) — 对数赔率空间 (小肖: ML 对中等概率区更线性; 尺度不变)。
+//   p 内部 clamp 到 (eps, 1−eps) 防溢出。
+[[nodiscard]] inline double logit(double p) noexcept {
+    const double pc = clamp_prob(p);
+    return std::log(pc / (1.0 - pc));
+}
+
+// devig_binary_power: power de-vig (小肖 g_fld_signal) — 解 yes^n + no^n = 1 (Newton), 返 yes^n。
+//   修 favorite-longshot 偏差 (比 multiplicative 对热门压缩更准)。退化同 devig_binary。
+//   与 multiplicative 的差 = favorite-longshot 偏差强度信号 (不替换主 fair, 当特征)。
+[[nodiscard]] inline std::optional<double> devig_binary_power(double yes_mid, double no_mid) noexcept {
+    const bool yes_ok = std::isfinite(yes_mid) && yes_mid > 0.0 && yes_mid < 1.0;
+    const bool no_ok = std::isfinite(no_mid) && no_mid > 0.0 && no_mid < 1.0;
+    if (!yes_ok || !no_ok) {
+        // 单边/退化: 回落 multiplicative (power 无意义)。
+        return devig_binary(yes_mid, no_mid);
+    }
+    // Newton 求 n: f(n) = yes^n + no^n − 1 = 0。初值 n=1 (= 等效 raw 和); 3-5 次收敛。
+    double n = 1.0;
+    for (int iter = 0; iter < 12; ++iter) {
+        const double yp = std::pow(yes_mid, n);
+        const double np = std::pow(no_mid, n);
+        const double f = yp + np - 1.0;
+        const double fp = yp * std::log(yes_mid) + np * std::log(no_mid);  // f'(n)
+        if (!std::isfinite(fp) || std::abs(fp) < 1e-15) break;
+        const double step = f / fp;
+        n -= step;
+        if (!std::isfinite(n) || n <= 0.0) {
+            return devig_binary(yes_mid, no_mid);  // 发散 → 回落
+        }
+        if (std::abs(step) < 1e-10) break;
+    }
+    return clamp_prob(std::pow(yes_mid, n));
+}
+
 // prior_confidence: in-play 先验置信 ramp — time_frac ∈ [0,1] 线性映射到
 //   [kBasePriorConfidence, kMaxPriorConfidence]. 越界自动 clamp 到端点.
 [[nodiscard]] inline double prior_confidence(double time_frac) noexcept {

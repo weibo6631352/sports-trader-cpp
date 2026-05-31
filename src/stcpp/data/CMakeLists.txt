@@ -121,6 +121,33 @@ target_link_libraries(stcpp_data_score_store
 # R-12: 独立 std::thread per sport, 绝不在 WSS event loop 调用
 # R-20: data_source_ts = updated_ts (ms) × 1e6; event_ts = start_ts (sec) × 1e9
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# stcpp_data_live_stats_parser: Soccer live_stats KV parser (小段 2026-05-31)
+#
+# 解析 livescore.goalserve.com <live_stats> pipe-separated KV 字符串
+#   → LiveStatsFields → FillLiveStats(FeatureStoreGameRow)
+#
+# 接入点: livescore soccer client 解析 <match> 节点时调用 ParseLiveStats()
+# 当前: 白名单未开放, 代码就位等白名单 (build 通过, 零网络依赖)
+#
+# 零外部依赖: std::from_chars + std::string_view, 无 IO, R-12 合规
+# vendor-agnostic: LiveStatsFields / FeatureStoreGameRow 字段名不含 Goalserve 原始名
+# ---------------------------------------------------------------------------
+add_library(stcpp_data_live_stats_parser STATIC
+    live_stats_parser.cpp
+)
+
+target_include_directories(stcpp_data_live_stats_parser
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+)
+
+target_compile_features(stcpp_data_live_stats_parser PUBLIC cxx_std_20)
+
+target_link_libraries(stcpp_data_live_stats_parser
+    PUBLIC stcpp_data_contract  # feature_store_contract.hpp (FeatureStoreGameRow)
+)
+
+# ---------------------------------------------------------------------------
 add_library(stcpp_data_inplay_feed STATIC
     inplay_feed_thread.cpp
 )

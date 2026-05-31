@@ -1648,6 +1648,15 @@ TEST_F(PaperLoopTest, TS1_TimeSeriesFeatures_Populate) {
     EXPECT_GT(opt->mp_roc_per_sec, 0.0) << "TS1: 价格上行 → 变化率 > 0 (方向正确)";
     ASSERT_TRUE(std::isfinite(opt->realized_vol)) << "TS1: realized vol 应 populate";
     EXPECT_GT(opt->realized_vol, 0.0) << "TS1: 价格在动 → vol > 0";
+
+    // 批1 微结构: Amihud / OFI / depth_vol 应 populate (推进 book + bid/ask 在 ring)。
+    EXPECT_TRUE(std::isfinite(opt->b_amihud)) << "TS1: b_amihud 应 populate (现有 ring 派生)";
+    EXPECT_TRUE(std::isfinite(opt->b_ofi)) << "TS1: b_ofi 应 populate (best_ask_size 已入 ring)";
+    EXPECT_TRUE(std::isfinite(opt->b_bid_depth_vol)) << "TS1: b_bid_depth_vol 应 populate";
+    // 批1 cross: log_odds / pin_risk 点特征 (从 fair 现算, 恒有值)。
+    EXPECT_TRUE(std::isfinite(opt->x_log_odds_fair)) << "TS1: x_log_odds_fair 应 populate";
+    EXPECT_GT(opt->x_pin_risk, 0.0) << "TS1: x_pin_risk = min(fair,1−fair) > 0";
+    EXPECT_LE(opt->x_pin_risk, 0.5) << "TS1: pin_risk ≤ 0.5";
 }
 
 // TS2 (slice-2 卖不出): observe-always 捕获无 bid tick (旧码 early-return 会审查掉) →

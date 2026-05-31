@@ -127,6 +127,41 @@ struct FeatureStoreGameRow {
     std::array<BookmakerOddsOptional, goalserve::kNumBookmakers> bm_slots{};
     std::string bm_market_id;  // 1x2 / OU_2.5 / AH_-0.5; 空串=无赔率
 
+    // ---- Soccer live_stats (livescore.goalserve.com <live_stats> KV pipe feed) ----
+    //
+    // 来源: livescore.goalserve.com/getfeed/<KEY>/soccernew/home
+    //   <live_stats> 节点, 格式: "IDangerousAttacks=home:N,away:N|IOnTarget=home:N,away:N|..."
+    //
+    // 命名规则: vendor-agnostic (不含 Goalserve 原始 I-prefix 字段名)
+    //   -1 = 本次 feed 无此字段 (白名单开放前或该 key 缺失)
+    //
+    // 实测 KV 键集 (2026-05-30 livescore feed):
+    //   IDangerousAttacks / IOnTarget / IPosession / IRedCard / IYellowCard
+    //   ICorner / IFreeKick / IAttacks / IGoalKick / IThrowIn
+    //
+    // 加性追加: 末尾新增字段, 无重命名/单位/语义变更 → 不触发 R-4 全审计
+    // 对应 adapter 入口: ParseLiveStats() → fill_live_stats_into_row()
+    std::int32_t soccer_dangerous_attacks_home = -1;
+    std::int32_t soccer_dangerous_attacks_away = -1;
+    std::int32_t soccer_shots_on_target_home   = -1;
+    std::int32_t soccer_shots_on_target_away   = -1;
+    std::int32_t soccer_possession_home_pct    = -1;  // 0-100 整数
+    std::int32_t soccer_possession_away_pct    = -1;
+    std::int32_t soccer_red_cards_home         = -1;
+    std::int32_t soccer_red_cards_away         = -1;
+    std::int32_t soccer_yellow_cards_home      = -1;
+    std::int32_t soccer_yellow_cards_away      = -1;
+    std::int32_t soccer_corners_home           = -1;
+    std::int32_t soccer_corners_away           = -1;
+    std::int32_t soccer_free_kicks_home        = -1;
+    std::int32_t soccer_free_kicks_away        = -1;
+    std::int32_t soccer_attacks_home           = -1;
+    std::int32_t soccer_attacks_away           = -1;
+    std::int32_t soccer_goal_kicks_home        = -1;
+    std::int32_t soccer_goal_kicks_away        = -1;
+    std::int32_t soccer_throw_ins_home         = -1;
+    std::int32_t soccer_throw_ins_away         = -1;
+
     // ---- ABI 版本 (写入 Parquet metadata 用) ----
     std::string_view bm_abi_version = goalserve::kBookmakerAbiVersion;
     std::string_view schema_version = kFeatureStoreSchemaVersion;

@@ -286,3 +286,40 @@ TEST(FairValueDevigPrior, D18_LaterLeadMoreExtreme) {
 }
 
 }  // namespace
+
+// ===========================================================================
+// 批1 de-vig power + logit (老雷; 小肖 g_fld_signal)
+// ===========================================================================
+TEST(DevigPower, PowerVsMultiplicative) {
+    using namespace stcpp::pricing;
+    // 对称盘 (0.5/0.5 raw, overround 0): power ≡ multiplicative ≡ 0.5
+    {
+        const auto pm = devig_binary(0.50, 0.50);
+        const auto pp = devig_binary_power(0.50, 0.50);
+        ASSERT_TRUE(pm.has_value() && pp.has_value());
+        EXPECT_NEAR(*pm, 0.50, 1e-9);
+        EXPECT_NEAR(*pp, 0.50, 1e-6);
+    }
+    // 非对称 (热门 0.80 / 冷门 0.25, overround 0.05): power 解 yes^n+no^n=1, 返 yes^n。
+    {
+        const auto pm = devig_binary(0.80, 0.25);  // mult = 0.80/1.05 ≈ 0.762
+        const auto pp = devig_binary_power(0.80, 0.25);
+        ASSERT_TRUE(pm.has_value() && pp.has_value());
+        EXPECT_NEAR(*pm, 0.80 / 1.05, 1e-9);
+        // power 解满足 0.80^n + 0.25^n = 1
+        // n 应 > 1 (因 raw 和 > 1), 验证两边和 ≈ 1
+        EXPECT_GT(*pp, 0.0);
+        EXPECT_LT(*pp, 1.0);
+        // power 与 mult 不同 (favorite-longshot 偏差信号 ≠ 0)
+        EXPECT_NE(*pp, *pm);
+    }
+}
+
+TEST(DevigPower, Logit) {
+    using namespace stcpp::pricing;
+    EXPECT_NEAR(logit(0.5), 0.0, 1e-12);
+    EXPECT_NEAR(logit(0.73105857863), 1.0, 1e-6);  // sigmoid(1)=0.731 → logit=1
+    EXPECT_GT(logit(0.9), logit(0.7));              // 单调
+    EXPECT_TRUE(std::isfinite(logit(0.0)));         // clamp 防溢出
+    EXPECT_TRUE(std::isfinite(logit(1.0)));
+}

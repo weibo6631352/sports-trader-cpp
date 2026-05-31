@@ -163,3 +163,35 @@ TEST(FeatureHistory, FH11_ExitLiquidityWindowPIT) {
         << "PIT: 近期卖不出不被老的充裕流动性掩盖";
     EXPECT_NEAR(h.ExitDepthMean(30 * kSec), 0.0, 1e-12);
 }
+
+// FH-12: Amihud 近似 — mean(|Δmp|/bid_size)。价动 0.02 / 深度 500 → 0.00004
+TEST(FeatureHistory, FH12_Amihud) {
+    FeatureHistory h;
+    h.Push(10 * kSec, 0.50, 0.49, 500.0, 0.51, 500.0);
+    h.Push(11 * kSec, 0.52, 0.51, 500.0, 0.53, 500.0);  // Δmp=0.02 / bid 500
+    h.Push(12 * kSec, 0.50, 0.49, 250.0, 0.51, 250.0);  // Δmp=0.02 / bid 250
+    // mean(0.02/500, 0.02/250) = (0.00004 + 0.00008)/2 = 0.00006
+    EXPECT_NEAR(h.AmihudApprox(30 * kSec), 0.00006, 1e-12);
+}
+
+// FH-13: bid 深度波动 — bid_size {500,500,200} → Δ{0,-300} RMS=sqrt((0+90000)/2)
+TEST(FeatureHistory, FH13_BidDepthVol) {
+    FeatureHistory h;
+    h.Push(10 * kSec, 0.50, 0.49, 500.0);
+    h.Push(11 * kSec, 0.50, 0.49, 500.0);  // Δ 0
+    h.Push(12 * kSec, 0.50, 0.49, 200.0);  // Δ -300
+    EXPECT_NEAR(h.BidDepthVol(30 * kSec), std::sqrt((0.0 + 90000.0) / 2.0), 1e-9);
+}
+
+// FH-14: OFI — bid 增厚 (买压) → OFI 正; ask 增厚 (卖压) → 负
+TEST(FeatureHistory, FH14_OFI) {
+    FeatureHistory up;
+    up.Push(10 * kSec, 0.50, 0.49, 100.0, 0.51, 100.0);
+    up.Push(11 * kSec, 0.50, 0.49, 300.0, 0.51, 100.0);  // bid 同价增 100→300: ΔW_bid=300-100=+200, ask 不变 ΔW_ask=100-100=0 → OFI +200
+    EXPECT_GT(up.OFI(30 * kSec), 0.0) << "bid 增厚 = 买压 → OFI 正";
+
+    FeatureHistory dn;
+    dn.Push(10 * kSec, 0.50, 0.49, 100.0, 0.51, 100.0);
+    dn.Push(11 * kSec, 0.50, 0.49, 100.0, 0.51, 300.0);  // ask 同价增: ΔW_ask=300-100=+200 → OFI -200
+    EXPECT_LT(dn.OFI(30 * kSec), 0.0) << "ask 增厚 = 卖压 → OFI 负";
+}

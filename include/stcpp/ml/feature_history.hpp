@@ -46,6 +46,8 @@ public:
         double microprice{0.0};     // 被观测微价 (可 NaN/越界: 单边/无价时; 价 derive 自动跳过)
         double best_bid{0.0};       // 退出价 (卖出触价; ≤0 = 无 bid)
         double best_bid_size{0.0};  // 退出深度 (bid L1 size pUSD; ≤0 = 无 bid = 卖不出)
+        double best_ask{0.0};       // 买入触价 (≤0 = 无 ask); OFI/dislocation 用
+        double best_ask_size{0.0};  // ask L1 size pUSD; OFI (Δbid−Δask) 用
     };
 
     FeatureHistory() = default;
@@ -54,9 +56,10 @@ public:
     //   价/bid 无效也记录 —— 「卖不出」(bid 没了) 正是要观测的事件, 提前丢弃 = 特征被审查偏置。
     //   PIT 保护: ts ≤ last_ts_ (乱序/重复) → 跳过 (停滞 book 重复读不污染; 事件序违规不入)。
     //   价 derive (变化率/vol) 内部跳过 microprice ∉(0,1) 样本; 流动性 derive 用 bid 字段 (含无 bid)。
-    void Push(std::int64_t ts_ns, double microprice, double best_bid, double best_bid_size) noexcept {
+    void Push(std::int64_t ts_ns, double microprice, double best_bid, double best_bid_size,
+              double best_ask = 0.0, double best_ask_size = 0.0) noexcept {
         if (ts_ns <= last_ts_) return;  // 单调 + 去重 (PIT)
-        buf_[head_] = Sample{ts_ns, microprice, best_bid, best_bid_size};
+        buf_[head_] = Sample{ts_ns, microprice, best_bid, best_bid_size, best_ask, best_ask_size};
         head_ = (head_ + 1) % kCapacity;
         if (count_ < kCapacity) ++count_;
         last_ts_ = ts_ns;
@@ -155,6 +158,86 @@ public:
         }
         if (total == 0) return kNaN();
         return sum / static_cast<double>(total);
+    }
+
+    // ---- 批1 微结构派生 (老郭 b_ 血缘; 小袁/小肖公式; 全部现有 ring 可派生) ----
+
+    // Amihud 非流动性近似 (小肖 P1): mean(|Δmicroprice| / bid_size)。每单位退出深度的价格冲击,
+    //   高 = 流动性薄 (小深度驱动大价动)。窗口内有效 (价∈(0,1) + bid>0) 相邻对 < 1 → NaN。
+    [[nodiscard]] double AmihudApprox(std::int64_t window_ns) const noexcept {
+        if (count_ < 2 || window_ns <= 0) return kNaN();
+        const std::int64_t cutoff = last_ts_ - window_ns;
+        double sum = 0.0;
+        std::size_t n = 0;
+        bool have_prev = false;
+        double prev_mp = 0.0;
+        for (std::size_t i = 0; i < count_; ++i) {
+            const Sample& s = at_(i);
+            if (s.ts_ns < cutoff || !price_valid_(s.microprice)) continue;
+            if (have_prev && s.best_bid_size > 0.0) {
+                sum += std::abs(s.microprice - prev_mp) / s.best_bid_size;
+                ++n;
+            }
+            prev_mp = s.microprice;
+            have_prev = true;
+        }
+        return (n == 0) ? kNaN() : sum / static_cast<double>(n);
+    }
+
+    // 退出深度波动 (小袁): 相邻 bid_size 变化的 RMS。高 = 流动性不稳定 (间歇幌子盘, 不可依赖)。
+    [[nodiscard]] double BidDepthVol(std::int64_t window_ns) const noexcept {
+        if (count_ < 2 || window_ns <= 0) return kNaN();
+        const std::int64_t cutoff = last_ts_ - window_ns;
+        double sum_sq = 0.0;
+        std::size_t n = 0;
+        bool have_prev = false;
+        double prev = 0.0;
+        for (std::size_t i = 0; i < count_; ++i) {
+            const Sample& s = at_(i);
+            if (s.ts_ns < cutoff) continue;
+            if (have_prev) {
+                const double d = s.best_bid_size - prev;
+                sum_sq += d * d;
+                ++n;
+            }
+            prev = s.best_bid_size;
+            have_prev = true;
+        }
+        return (n == 0) ? kNaN() : std::sqrt(sum_sq / static_cast<double>(n));
+    }
+
+    // Order Flow Imbalance (Cont-Kukanov-Stoikov 2014, L1; 小袁/小程 P0 微结构最强信号):
+    //   ΔW_bid = (bid≥bid_prev)·bid_size − (bid≤bid_prev)·bid_size_prev
+    //   ΔW_ask = (ask≤ask_prev)·ask_size − (ask≥ask_prev)·ask_size_prev
+    //   OFI_t = ΔW_bid − ΔW_ask; 窗口累加 (正=买压)。需双边有效 (bid/ask>0)。
+    [[nodiscard]] double OFI(std::int64_t window_ns) const noexcept {
+        if (count_ < 2 || window_ns <= 0) return kNaN();
+        const std::int64_t cutoff = last_ts_ - window_ns;
+        double ofi = 0.0;
+        std::size_t n = 0;
+        bool have_prev = false;
+        double pb = 0.0, pbs = 0.0, pa = 0.0, pas = 0.0;
+        for (std::size_t i = 0; i < count_; ++i) {
+            const Sample& s = at_(i);
+            if (s.ts_ns < cutoff) continue;
+            const bool ok = s.best_bid > 0.0 && s.best_ask > 0.0;
+            if (have_prev && ok) {
+                const double dW_bid =
+                    (s.best_bid >= pb ? s.best_bid_size : 0.0) - (s.best_bid <= pb ? pbs : 0.0);
+                const double dW_ask =
+                    (s.best_ask <= pa ? s.best_ask_size : 0.0) - (s.best_ask >= pa ? pas : 0.0);
+                ofi += dW_bid - dW_ask;
+                ++n;
+            }
+            if (ok) {
+                pb = s.best_bid;
+                pbs = s.best_bid_size;
+                pa = s.best_ask;
+                pas = s.best_ask_size;
+                have_prev = true;
+            }
+        }
+        return (n == 0) ? kNaN() : ofi;
     }
 
     void Reset() noexcept {
