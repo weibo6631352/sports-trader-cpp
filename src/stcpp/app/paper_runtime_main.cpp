@@ -128,15 +128,15 @@ int main(int argc, char** argv) {
     // SIGHUP: logrotate postrotate 不断链路 (老吴部署对齐 §3); 忽略即可 (stderr fd 不重开).
     std::signal(SIGHUP, SIG_IGN);
 
-    // 程序级防多开 (PID file + flock; paper.pid)。同 mode 只许一个实例 —
-    //   防双订阅 WSS (ToS) / 双写 paper 账本污染状态。R-12: 仅启动期 acquire。
+    // 程序级防多开 (全局引擎锁; GM 决议: 任意 mode 只许一个引擎, 省资源)。
+    //   防双订阅 WSS (ToS) / 双写账本污染状态。R-12: 仅启动期 acquire。
     std::optional<stcpp::infra::process::SingleInstanceLock> instance_lock;
     try {
-        instance_lock.emplace(stcpp::execution::ExecutionMode::Paper);
+        instance_lock.emplace(stcpp::infra::process::kGlobalEngine);
     } catch (const stcpp::infra::process::SingleInstanceLockFailure& e) {
         std::fprintf(stderr,
-                     "[paper_runtime] 拒绝多开: 已有 paper 实例运行中 (PID %lld)。先停旧实例再起。\n",
-                     static_cast<long long>(e.existing_pid));
+                     "[paper_runtime] 拒绝多开: 已有引擎实例 (mode=%s) 运行中 (PID %lld)。先停旧实例再起。\n",
+                     e.exec_mode_str.c_str(), static_cast<long long>(e.existing_pid));
         return 3;
     }
 

@@ -201,17 +201,9 @@ extern "C" void SigtermHandlerImpl(int /*sig*/) {
 // ---------------------------------------------------------------------------
 // SingleInstanceLock::path_for
 // ---------------------------------------------------------------------------
-std::string SingleInstanceLock::path_for(stcpp::execution::ExecutionMode mode) {
-    // Production: use compile-time STCPP_PID_DIR (R-7 compliant).
-    // Test builds (STCPP_TEST_BUILD=1): use per-process tmpdir based on PID,
-    //   so concurrent ctest processes each get an isolated PID dir and never
-    //   compete for the same flock.  This does NOT relax R-7 in production.
+// 锁文件 base dir (R-7: 生产用 STCPP_PID_DIR; 测试用 per-process tmpdir 防 ctest 误争锁)。
+static std::string lock_base_dir() {
 #ifdef STCPP_TEST_BUILD
-    // Test isolation strategy:
-    //   1. If STCPP_TEST_PID_DIR env var is set, use it (allows deliberate
-    //      cross-process contention in T7 / PositionLedger.T7 style tests).
-    //   2. Otherwise fall back to per-process /tmp/stcpp_test_<PID> so that
-    //      concurrent ctest processes never compete unintentionally.
     const char* env_override = ::getenv("STCPP_TEST_PID_DIR");
     char pid_dir_buf[64];
     if (!env_override) {
@@ -219,13 +211,14 @@ std::string SingleInstanceLock::path_for(stcpp::execution::ExecutionMode mode) {
                    "/tmp/stcpp_test_%d", static_cast<int>(::getpid()));
         env_override = pid_dir_buf;
     }
-    const std::string_view base = env_override;
+    return std::string(env_override);
 #else
-    constexpr std::string_view base = STCPP_PID_DIR;
+    return std::string(STCPP_PID_DIR);
 #endif
-    std::string path;
-    path.reserve(base.size() + 16);
-    path.append(base);
+}
+
+std::string SingleInstanceLock::path_for(stcpp::execution::ExecutionMode mode) {
+    std::string path = lock_base_dir();
     path += '/';
     switch (mode) {
         case stcpp::execution::ExecutionMode::Live:
@@ -241,15 +234,29 @@ std::string SingleInstanceLock::path_for(stcpp::execution::ExecutionMode mode) {
     return path;
 }
 
+// 全局引擎锁 path: <BASE>/engine.pid (任意 mode 共用 → 一台机只一个引擎)。
+std::string SingleInstanceLock::global_engine_path() {
+    return lock_base_dir() + "/engine.pid";
+}
+
 // ---------------------------------------------------------------------------
 // SingleInstanceLock constructor — acquire
 // ---------------------------------------------------------------------------
 SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
-    // 1. 解析 path (STCPP_TEST_BUILD: runtime env override 用于测试进程隔离)
-    pid_path_ = path_for(mode);
+    acquire_(path_for(mode), std::string(stcpp::execution::ToString(mode)));
+}
+
+SingleInstanceLock::SingleInstanceLock(GlobalEngineTag) {
+    // 全局引擎锁: engine.pid, 任意 mode 只许一个引擎 (GM 决议: 省资源, 不分模式)。
+    acquire_(global_engine_path(), "engine");
+}
+
+// 共享 acquire: mkdir + open + flock(NB) + write pid。两 ctor 复用。失败抛 SingleInstanceLockFailure。
+void SingleInstanceLock::acquire_(const std::string& path, const std::string& mode_str) {
+    // 1. path (STCPP_TEST_BUILD: runtime env override 用于测试进程隔离)
+    pid_path_ = path;
 
     // 2. mkdir -p <BASE>
-    //    Use same base as path_for() — extract dir from pid_path_
     const auto last_slash = pid_path_.rfind('/');
     const std::string pid_dir = (last_slash != std::string::npos)
         ? pid_path_.substr(0, last_slash)
@@ -259,8 +266,7 @@ SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
         throw SingleInstanceLockFailure(
             std::string("[single-instance] FATAL: cannot create pid dir: ") +
                 pid_dir + " errno=" + std::to_string(errno),
-            0, 0, std::string(stcpp::execution::ToString(mode)),
-            STCPP_BUILD_COMMIT);
+            0, 0, mode_str, STCPP_BUILD_COMMIT);
     }
 
     // 3. open — O_CLOEXEC 防 fork+exec fd 泄漏 (老沈 review 点)
@@ -271,8 +277,7 @@ SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
         throw SingleInstanceLockFailure(
             std::string("[single-instance] FATAL: open(") + pid_path_ +
                 ") failed errno=" + std::to_string(errno),
-            0, 0, std::string(stcpp::execution::ToString(mode)),
-            STCPP_BUILD_COMMIT);
+            0, 0, mode_str, STCPP_BUILD_COMMIT);
     }
 
     // 4. flock — LOCK_NB: 立即失败不阻塞
@@ -282,8 +287,7 @@ SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
             const auto c = ReadPidFile(fd_guard_.get());
             fd_guard_.close_now();  // RAII close: releases flock
             throw SingleInstanceLockFailure(
-                std::string("[single-instance] FATAL: ") +
-                    std::string(stcpp::execution::ToString(mode)) +
+                std::string("[single-instance] FATAL: ") + mode_str +
                     " already running pid=" + std::to_string(c.pid) +
                     " since=" + std::to_string(c.start_ts_ns) +
                     " commit=" + c.commit,
@@ -295,8 +299,7 @@ SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
         throw SingleInstanceLockFailure(
             std::string("[single-instance] FATAL: flock failed errno=") +
                 std::to_string(saved),
-            0, 0, std::string(stcpp::execution::ToString(mode)),
-            STCPP_BUILD_COMMIT);
+            0, 0, mode_str, STCPP_BUILD_COMMIT);
     }
 
     // 5. 写 PID file 内容
@@ -304,11 +307,10 @@ SingleInstanceLock::SingleInstanceLock(stcpp::execution::ExecutionMode mode) {
     WritePidFile(fd_guard_.get(),
                  static_cast<std::int64_t>(::getpid()),
                  start_ts,
-                 stcpp::execution::ToString(mode),
+                 mode_str,
                  STCPP_BUILD_COMMIT);
 
-    // 6. 注入 fd 到 SIGTERM handler state (修 P1-03 死代码)
-    //    InstallSigtermHandler() 后续注册 sigaction 时, handler 已能 close 真 fd.
+    // 6. 注入 fd 到 SIGTERM handler state
     inject_lock_fd_for_handler(fd_guard_.get());
 }
 

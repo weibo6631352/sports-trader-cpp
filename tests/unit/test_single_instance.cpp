@@ -683,3 +683,25 @@ TEST(SingleInstanceLock, T9_SigtermHandler_ClosesLockFd) {
 
     ::unsetenv("STCPP_TEST_PID_DIR");
 }
+
+// ===========================================================================
+// T8: 全局引擎锁 (GM 2026-05-31) — 任意 mode 只许一个引擎实例
+//     in-process 持锁时再 acquire 全局锁 → flock EWOULDBLOCK → 抛异常
+// ===========================================================================
+TEST(SingleInstanceLock, T8_GlobalEngineLock_SecondFails) {
+    EnsureTestDir();
+    const std::string gpath = stcpp::infra::process::SingleInstanceLock::global_engine_path();
+    EXPECT_NE(gpath.find("engine.pid"), std::string::npos) << "全局锁路径应为 engine.pid";
+    UnlinkIfExists(gpath);
+
+    stcpp::infra::process::SingleInstanceLock g1{stcpp::infra::process::kGlobalEngine};
+    EXPECT_EQ(::access(gpath.c_str(), F_OK), 0) << "全局锁 PID file 应存在";
+
+    // 持锁时第二个全局锁 → 必失败 (flock EWOULDBLOCK)
+    EXPECT_THROW(
+        { stcpp::infra::process::SingleInstanceLock g2{stcpp::infra::process::kGlobalEngine}; },
+        stcpp::infra::process::SingleInstanceLockFailure)
+        << "第二个引擎实例必须被全局锁拒绝";
+
+    UnlinkIfExists(gpath);
+}

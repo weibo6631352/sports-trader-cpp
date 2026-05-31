@@ -41,14 +41,6 @@ void handle_signal(int /*sig*/) {
     }
 }
 
-// build-time STCPP_EXEC_MODE_STR → execution::ExecutionMode (防多开锁用; paper.pid/live.pid 隔离).
-stcpp::execution::ExecutionMode lock_mode_from_build() noexcept {
-    using EM = stcpp::execution::ExecutionMode;
-    if (std::strcmp(STCPP_EXEC_MODE_STR, "live") == 0) return EM::Live;
-    if (std::strcmp(STCPP_EXEC_MODE_STR, "backtest") == 0) return EM::Backtest;
-    return EM::Paper;
-}
-
 // build-time STCPP_EXEC_MODE_STR → ExecMode (R-7 真相源).
 stcpp::debug_api::ExecMode mode_from_build() noexcept {
     using stcpp::debug_api::ExecMode;
@@ -108,18 +100,18 @@ int main(int argc, char** argv) {
         }
     }
 
-    // 程序级防多开 (PID file + flock; R-11 paper.pid/live.pid 物理隔离)。
-    //   同一 mode 只允许一个实例 — 防双订阅 WSS (ToS) / 双写账本污染状态 / (live) 双下真单。
-    //   --help 在上方已 return, 不会走到这里, 锁仅真启动时 acquire (R-12: 仅启动期)。
+    // 程序级防多开 (全局引擎锁; GM 决议: 任意 mode 只许一个引擎实例, 省资源)。
+    //   防双订阅 WSS (ToS) / 双写账本污染状态 / (live) 双下真单。
+    //   --help 在上方已 return; 锁仅真启动时 acquire (R-12: 仅启动期)。
     std::optional<stcpp::infra::process::SingleInstanceLock> instance_lock;
     try {
-        instance_lock.emplace(lock_mode_from_build());
+        instance_lock.emplace(stcpp::infra::process::kGlobalEngine);
     } catch (const stcpp::infra::process::SingleInstanceLockFailure& e) {
         std::fprintf(stderr,
-                     "[paper_server] 拒绝多开: 已有 %s 实例运行中 (PID %lld)。\n"
-                     "  锁文件: %s\n  同 mode 只许一个实例; 先停旧实例再起。\n",
+                     "[paper_server] 拒绝多开: 已有引擎实例 (mode=%s) 运行中 (PID %lld)。\n"
+                     "  锁文件: %s\n  一台机只许一个引擎; 先停旧实例再起。\n",
                      e.exec_mode_str.c_str(), static_cast<long long>(e.existing_pid),
-                     stcpp::infra::process::SingleInstanceLock::path_for(lock_mode_from_build()).c_str());
+                     stcpp::infra::process::SingleInstanceLock::global_engine_path().c_str());
         return 3;
     }
 

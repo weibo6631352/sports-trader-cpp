@@ -70,11 +70,19 @@ struct SingleInstanceLockFailure : std::runtime_error {
 //   SingleInstanceLock lock{stcpp::execution::ExecutionMode::Paper};
 //   // throws SingleInstanceLockFailure if another instance is running
 // ---------------------------------------------------------------------------
+// 全局引擎锁 tag: 任意 mode 只允许一个引擎实例 (GM 2026-05-31 决议: 省资源, 不分模式)。
+//   锁 <BASE>/engine.pid — paper/live/backtest 任一在跑, 第二个引擎即被拒。
+struct GlobalEngineTag {};
+inline constexpr GlobalEngineTag kGlobalEngine{};
+
 class SingleInstanceLock {
  public:
     // 构造即 acquire.  失败抛 SingleInstanceLockFailure.
-    // mode 决定 PID file path (path_for(mode)) — R-7 物理隔离.
+    // mode 决定 PID file path (path_for(mode)) — R-7 物理隔离 (按模式).
     explicit SingleInstanceLock(stcpp::execution::ExecutionMode mode);
+
+    // 全局引擎锁: 锁 <BASE>/engine.pid, 任意 mode 只许一个引擎实例 (GM 决议: 省资源)。
+    explicit SingleInstanceLock(GlobalEngineTag);
 
     // 析构即 release: FdGuard 析构自动 close fd → POSIX flock 自动释放.
     // SIGTERM handler 另行 unlink PID file (优雅退出).
@@ -92,10 +100,16 @@ class SingleInstanceLock {
     // backtest → STCPP_PID_DIR/backtest.pid
     [[nodiscard]] static std::string path_for(stcpp::execution::ExecutionMode mode);
 
+    // 全局引擎锁 path: <BASE>/engine.pid (任意 mode 共用)。
+    [[nodiscard]] static std::string global_engine_path();
+
     // 已持锁的 PID file path (构造成功后有效)
     [[nodiscard]] std::string_view pid_path() const noexcept { return pid_path_; }
 
  private:
+    // 共享 acquire 逻辑 (mkdir + open + flock + write pid)。两 ctor 复用。
+    void acquire_(const std::string& path, const std::string& mode_str);
+
     FdGuard     fd_guard_;
     std::string pid_path_;
 };
