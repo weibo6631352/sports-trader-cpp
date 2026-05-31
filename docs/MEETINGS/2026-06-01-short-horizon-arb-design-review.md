@@ -35,6 +35,28 @@ G1 = 实测**就近部署的端到端延迟** (WSS 接收 → 特征 → 推理 
 
 ---
 
+## §0.1 触发源 + 多窗口网格 (老板 2026-06-01 二次补充)
+
+### 触发源 = WSS book 更新 ∪ Goalserve 比赛事件 (进球/比分变动) — 后者是核心 alpha
+老板: "触发不只是 WS 订阅, 还有直播源的事件, 比如进球、比分变动。"
+- 原方案 §5.1 触发 = `OrderBookSnapshotHub::Publish` (PM book 更新)。**补充: ScoreSnapshotStore 更新 (进球/比分变动) 也触发决策。**
+- **进球触发 = 信息优势套利, 大概率是最强 alpha 来源**: Goalserve 直播源先于 PM 散户市场知道进球 → sharp fair 瞬间跳变, PM mid 滞后几秒~几十秒收敛 → 这个 gap = 套利窗口。我们抢在散户反应【之前】(因, 非果)。
+- **与刚加的 `x_inplay_fair_minus_mid` (102-103) 完美咬合**: 进球瞬间 sharp-vs-market gap 最大, 该特征直接是触发信号 + 方向。
+- 实现: score store 更新检测 score_diff 跳变 → push 该 condition 进决策队列 (同 §5.1 book-event notify 范式; score 注入 `SetScoreStore`/`ts_history` paper_loop.cpp:331 已存)。R-12 守: notify 端只 push+notify。
+- 套利升级为【微结构 + 信息优势】双引擎; 信息优势侧可验证性更强 (进球离散可标注)。
+
+### 多窗口网格 — 短期密集, 越往后越稀疏 (老板)
+老板: "更关注短期, 短期内时间稍密一点: 2s/3s/5s/10s/12s/15s/30s/1min, 越往后越稀疏。延时很低。"
+- **预测 horizon 网格 = {2, 3, 5, 10, 12, 15, 30, 60}s** (近似对数间隔, 短期密集长期稀疏)。
+- 模型 = **8-horizon 多输出** (LightGBM 多 head, 共享 104 列输入), 每 tick 造 8 个标签 (mid_{t+Δ} − mid_t) → 标签效率极高 (每 tick 8 标签 × book 帧密度)。
+- 延迟低 → **2s/3s 短窗回到桌上** (评审排除 3s/5s 是基于跨洋延迟, 已失效); 实盘上哪些 horizon 由 G1 实测端到端 (含成交确认) + G2 各 horizon 净期望逐一决定。全 8 窗都采集标签 (标签便宜), 实盘按"net-of-cost 正期望 ∧ 端到端延迟 < horizon×安全系数"筛选放行。
+- 进球事件后单独按 horizon 看 mid 收敛曲线 (进球后 2s/5s/15s/30s 各收敛多少) → 定进球套利的最优 entry/exit horizon。
+
+### G2 体检聚焦进球事件 + 逐 horizon (修正)
+- 原 G2 = 通用多窗净期望。**修正: 优先验证"进球/比分变动后, PM mid 在每个 horizon {2..60}s 的移动分布"** — 进球离散可标注 (g_goal_freshness / score_diff 跳变), 验证最干净: 逐 horizon 算扣成本后正期望 + 收敛速度, 直接定哪些窗口实盘放行。
+
+---
+
 # 以下为 8 维度评审 + 老郭综合原文 (前提以 §0 修正为准)
 
 三处关键事实核对完毕, 与各维度的转述有几处出入需要在裁决里点名纠正:
