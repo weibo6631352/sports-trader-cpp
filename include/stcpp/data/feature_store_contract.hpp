@@ -162,6 +162,10 @@ struct FeatureStoreGameRow {
     std::int32_t soccer_throw_ins_home         = -1;
     std::int32_t soccer_throw_ins_away         = -1;
 
+    // ---- inplay bet365 单源 de-vig fair (老雷; ParseInplayOddsDevig 填; -1=无 odds 数据) ----
+    //   inplay 赔率 home(YES) 胜率 de-vig 后; 待 InplayScoreParser 接 ParseInplayOddsDevig + odds plan+白名单。
+    double inplay_bet365_home_fair = -1.0;
+
     // ---- ABI 版本 (写入 Parquet metadata 用) ----
     std::string_view bm_abi_version = goalserve::kBookmakerAbiVersion;
     std::string_view schema_version = kFeatureStoreSchemaVersion;

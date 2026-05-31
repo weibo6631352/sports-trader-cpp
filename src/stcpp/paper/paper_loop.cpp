@@ -566,6 +566,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                      : std::numeric_limits<double>::quiet_NaN();
         sports.red_card_diff = sdiff(game_row.soccer_red_cards_home, game_row.soccer_red_cards_away);
         sports.corner_diff = sdiff(game_row.soccer_corners_home, game_row.soccer_corners_away);
+        // inplay bet365 de-vig fair (ParseInplayOddsDevig 填 game_row; -1=无 odds → NaN)。
+        sports.bm_inplay_fair = (game_row.inplay_bet365_home_fair >= 0.0)
+                                    ? game_row.inplay_bet365_home_fair
+                                    : std::numeric_limits<double>::quiet_NaN();
     }
 
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
@@ -1259,6 +1263,7 @@ void PaperLoop::PublishQuoteSnapshot(
         qf.g_possession_home = sports.possession_home;
         qf.g_red_card_diff = sports.red_card_diff;
         qf.g_corner_diff = sports.corner_diff;
+        qf.g_bm_inplay_fair = sports.bm_inplay_fair;
     }
 
     // 当前持仓 (老板: 持仓入模型; 库存感知)。目标仓位范式: 模型需知现仓 → 控制器算 order=目标−现仓。

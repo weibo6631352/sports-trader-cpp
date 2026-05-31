@@ -144,6 +144,7 @@ struct SportsFeatures {
     double possession_home{std::numeric_limits<double>::quiet_NaN()};
     double red_card_diff{std::numeric_limits<double>::quiet_NaN()};
     double corner_diff{std::numeric_limits<double>::quiet_NaN()};
+    double bm_inplay_fair{std::numeric_limits<double>::quiet_NaN()};  // inplay bet365 de-vig fair
 };
 
 // ---------------------------------------------------------------------------

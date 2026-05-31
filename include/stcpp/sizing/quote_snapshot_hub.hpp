@@ -176,6 +176,7 @@ struct QuoteFeatures {
     double g_possession_home{0.0};      // 主队控球率 0-100
     double g_red_card_diff{0.0};        // 红牌差 home−away (红牌后胜率剧变)
     double g_corner_diff{0.0};          // 角球差 home−away
+    double g_bm_inplay_fair{0.0};       // inplay bet365 单源 de-vig home/YES 胜率 (sharp live 锚; 待 odds plan+白名单)
 
     // ---- ML provenance (小邓 spec v1 §3.2; 对应 QuoteParams ML 字段) ----
     // model_id: char 数组 (空 = 无模型; 对应 ModelPrediction.model_id)
