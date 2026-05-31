@@ -19,11 +19,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "stcpp/app/paper_daemon.hpp"
 #include "stcpp/execution/execution_mode.hpp"
+#include "stcpp/infra/process/single_instance.hpp"  // 程序级防多开 (PID+flock)
 
 namespace {
 
@@ -125,6 +127,18 @@ int main(int argc, char** argv) {
 
     // SIGHUP: logrotate postrotate 不断链路 (老吴部署对齐 §3); 忽略即可 (stderr fd 不重开).
     std::signal(SIGHUP, SIG_IGN);
+
+    // 程序级防多开 (PID file + flock; paper.pid)。同 mode 只许一个实例 —
+    //   防双订阅 WSS (ToS) / 双写 paper 账本污染状态。R-12: 仅启动期 acquire。
+    std::optional<stcpp::infra::process::SingleInstanceLock> instance_lock;
+    try {
+        instance_lock.emplace(stcpp::execution::ExecutionMode::Paper);
+    } catch (const stcpp::infra::process::SingleInstanceLockFailure& e) {
+        std::fprintf(stderr,
+                     "[paper_runtime] 拒绝多开: 已有 paper 实例运行中 (PID %lld)。先停旧实例再起。\n",
+                     static_cast<long long>(e.existing_pid));
+        return 3;
+    }
 
     stcpp::app::PaperDaemon daemon(std::move(cfg));
     g_daemon.store(&daemon, std::memory_order_release);

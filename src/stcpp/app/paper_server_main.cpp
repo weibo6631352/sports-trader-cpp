@@ -22,10 +22,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "stcpp/app/paper_daemon.hpp"
+#include "stcpp/execution/execution_mode.hpp"
+#include "stcpp/infra/process/single_instance.hpp"  // 程序级防多开 (PID+flock)
 
 namespace {
 
@@ -36,6 +39,14 @@ void handle_signal(int /*sig*/) {
     if (auto* d = g_daemon.load(std::memory_order_acquire)) {
         d->RequestStop();
     }
+}
+
+// build-time STCPP_EXEC_MODE_STR → execution::ExecutionMode (防多开锁用; paper.pid/live.pid 隔离).
+stcpp::execution::ExecutionMode lock_mode_from_build() noexcept {
+    using EM = stcpp::execution::ExecutionMode;
+    if (std::strcmp(STCPP_EXEC_MODE_STR, "live") == 0) return EM::Live;
+    if (std::strcmp(STCPP_EXEC_MODE_STR, "backtest") == 0) return EM::Backtest;
+    return EM::Paper;
 }
 
 // build-time STCPP_EXEC_MODE_STR → ExecMode (R-7 真相源).
@@ -95,6 +106,21 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "[paper_server] unknown arg: %s (try --help)\n", a.c_str());
             return 2;
         }
+    }
+
+    // 程序级防多开 (PID file + flock; R-11 paper.pid/live.pid 物理隔离)。
+    //   同一 mode 只允许一个实例 — 防双订阅 WSS (ToS) / 双写账本污染状态 / (live) 双下真单。
+    //   --help 在上方已 return, 不会走到这里, 锁仅真启动时 acquire (R-12: 仅启动期)。
+    std::optional<stcpp::infra::process::SingleInstanceLock> instance_lock;
+    try {
+        instance_lock.emplace(lock_mode_from_build());
+    } catch (const stcpp::infra::process::SingleInstanceLockFailure& e) {
+        std::fprintf(stderr,
+                     "[paper_server] 拒绝多开: 已有 %s 实例运行中 (PID %lld)。\n"
+                     "  锁文件: %s\n  同 mode 只许一个实例; 先停旧实例再起。\n",
+                     e.exec_mode_str.c_str(), static_cast<long long>(e.existing_pid),
+                     stcpp::infra::process::SingleInstanceLock::path_for(lock_mode_from_build()).c_str());
+        return 3;
     }
 
     stcpp::app::PaperDaemon daemon(std::move(cfg));

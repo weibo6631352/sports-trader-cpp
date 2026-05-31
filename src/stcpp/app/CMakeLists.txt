@@ -60,6 +60,7 @@ target_link_libraries(stcpp_paper_app PUBLIC
     stcpp_pricing
     stcpp_signer_paper
     stcpp_execution_paper
+    stcpp_process_lock         # 程序级防多开 (SingleInstanceLock; paper_server/runtime main 用)
 )
 # OpenSSL link (LiveWssTransport)
 if(OpenSSL_FOUND)
