@@ -60,6 +60,10 @@ namespace stcpp::data {
 class InplayFeedThread;
 class SettlementStore;   // M2 收盘/结算 store (forward; .cpp 实体化)
 class SettlementPoller;  // M2 结算轮询线程 (forward)
+namespace livescore {
+class LiveStatsStore;     // live_stats 快照 store (forward; .cpp 实体化)
+class CommentariesPoller;  // commentaries 轮询线程 (forward)
+}  // namespace livescore
 }  // namespace stcpp::data
 namespace stcpp::ml {
 class FeatureRecorder;
@@ -237,6 +241,10 @@ private:
     //   paper_loop_->SetResolutionByCondition() (喂 3b 权威结算 + CLV 收盘信号)。
     void RefreshResolution(std::stop_token st);
 
+    // live_stats 刷新线程: 周期从 score store 收集活跃 league → poller; LiveStatsStore 快照 →
+    //   paper_loop_->SetLiveStatsByTeams() (喂 5 个 g_*_diff 特征)。
+    void RefreshLiveStats(std::stop_token st);
+
     PaperDaemonConfig cfg_;
 
     // ---- 测试注入的 markets (空 → Build 走真发现) ----
@@ -255,6 +263,7 @@ private:
     std::unordered_map<std::string, EventMatchInput> market_match_inputs_;
     std::jthread mapping_refresh_thread_;
     std::jthread settlement_refresh_thread_;  // M2 结算刷新 (SettlementStore → SetResolutionByCondition)
+    std::jthread live_stats_refresh_thread_;  // live_stats 刷新 (LiveStatsStore → SetLiveStatsByTeams)
     std::jthread seed_thread_;  // REST 快照打底后台线程 (jthread: 析构自动 request_stop + join)
 
     // =====================================================================
@@ -287,6 +296,8 @@ private:
     std::unique_ptr<data::InplayFeedThread> inplay_feed_;
     std::unique_ptr<data::SettlementStore> settlement_store_;    // M2 收盘/结算快照
     std::unique_ptr<data::SettlementPoller> settlement_poller_;  // M2 clob /markets 轮询
+    std::unique_ptr<data::livescore::LiveStatsStore> live_stats_store_;        // live_stats 快照
+    std::unique_ptr<data::livescore::CommentariesPoller> commentaries_poller_;  // commentaries 30s 轮询
     std::unique_ptr<debug_api::LiveBookPublisher> live_publisher_;
     std::unique_ptr<debug_api::LiveWssTransport> live_transport_;
 

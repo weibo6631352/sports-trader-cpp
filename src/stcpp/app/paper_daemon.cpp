@@ -10,10 +10,14 @@
 
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 
+#include "stcpp/data/commentaries_poller.hpp"   // live_stats CommentariesPoller (commentaries 轮询)
 #include "stcpp/data/inplay_feed_thread.hpp"    // InplayFeedThread / InplayFeedConfig
+#include "stcpp/data/live_stats_store.hpp"      // live_stats LiveStatsStore
 #include "stcpp/data/settlement_poller.hpp"     // M2 SettlementPoller (clob /markets 轮询)
 #include "stcpp/data/settlement_store.hpp"      // M2 SettlementStore
 #include "stcpp/data/score_snapshot_store.hpp"  // A1b: ScoreSnapshotStore::GetSnapshot
@@ -351,6 +355,47 @@ BuildResult PaperDaemon::Build() {
             *settlement_store_, std::move(settle_cids), std::move(fetcher), /*poll_interval_ms=*/60'000);
     }
 
+    // ---- live_stats: LiveStatsStore + CommentariesPoller (commentaries Feed → 5 个 g_*_diff 特征) ----
+    //   fetcher: popen curl https www.goalserve.com/getfeed/{KEY}/commentaries/{league}.xml。
+    //   key 在 URL → https + GOALSERVE_PROXY 保护 (小白审计: 明文泄 key)。league 校验纯数字防注入 (安全红线)。
+    //   R-12: poller 独立 jthread, popen 阻塞 IO 在本线程。白名单未开 → curl 空 → store 空 → 特征 sentinel。
+    {
+        live_stats_store_ = std::make_unique<data::livescore::LiveStatsStore>();
+        const char* gs_key_env = std::getenv("GOALSERVE_API_KEY");
+        std::string gs_key = gs_key_env ? gs_key_env : "";
+        const char* gs_proxy_env = std::getenv("GOALSERVE_PROXY");
+        std::string gs_proxy = gs_proxy_env ? gs_proxy_env : "";
+        auto ls_fetcher = [gs_key, gs_proxy](const std::string& league) -> std::string {
+            if (gs_key.empty() || league.empty()) return {};
+            // 安全红线: league 进 popen 命令 → 必须纯数字 (Goalserve league_id 全数字), 否则拒 (防 shell 注入)。
+            for (char c : league) {
+                if (c < '0' || c > '9') return {};
+            }
+            std::string cmd = "curl -s --max-time 15 ";
+            if (!gs_proxy.empty()) {
+                cmd += "-x '";
+                cmd += gs_proxy;
+                cmd += "' ";
+            }
+            cmd += "'https://www.goalserve.com/getfeed/";
+            cmd += gs_key;  // hex key (.env), 无 shell 特殊字符
+            cmd += "/commentaries/";
+            cmd += league;  // 已校验纯数字
+            cmd += ".xml'";
+            std::string out;
+            if (FILE* p = ::popen(cmd.c_str(), "r")) {
+                char buf[4096];
+                std::size_t n;
+                while ((n = std::fread(buf, 1, sizeof(buf), p)) > 0) out.append(buf, n);
+                ::pclose(p);
+            }
+            return out;
+        };
+        commentaries_poller_ = std::make_unique<data::livescore::CommentariesPoller>(
+            *live_stats_store_, std::vector<std::string>{}, std::move(ls_fetcher),
+            /*poll_interval_ms=*/30'000);
+    }
+
     // ---- Step 4: LiveWssTransport + LiveBookPublisher (构造 + 设回调, 不 AsyncConnect) ----
     if (!all_token_ids_.empty()) {
         live_publisher_ = std::make_unique<debug_api::LiveBookPublisher>(*hub_, all_token_ids_, cfg_.verbose);
@@ -449,6 +494,16 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
+    // ---- live_stats start: CommentariesPoller + 刷新线程 (喂 5 个 g_*_diff 特征) ----
+    if (cfg_.start_live_feeds && commentaries_poller_) {
+        commentaries_poller_->Start();
+        if (cfg_.enable_paper_trading && paper_loop_) {
+            live_stats_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshLiveStats(st); });
+        }
+        std::printf("[paper_daemon] live_stats CommentariesPoller + 刷新线程启动 (commentaries 30s 轮询)\n");
+        std::fflush(stdout);
+    }
+
     // ---- Step 4 start: WSS AsyncConnect ----
     if (cfg_.start_live_feeds && live_transport_) {
         const std::string wss_url = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
@@ -536,6 +591,14 @@ void PaperDaemon::Shutdown() noexcept {
     if (settlement_refresh_thread_.joinable()) {
         settlement_refresh_thread_.request_stop();
         settlement_refresh_thread_.join();
+    }
+    // 0a'. live_stats 刷新线程先停 (它 touch paper_loop_ + live_stats_store_ + score_store_ + poller).
+    if (live_stats_refresh_thread_.joinable()) {
+        live_stats_refresh_thread_.request_stop();
+        live_stats_refresh_thread_.join();
+    }
+    if (commentaries_poller_) {
+        commentaries_poller_->Stop();  // poller jthread join (先于 live_stats_store_ 析构)
     }
     // 0b. REST 快照打底线程先停 (它 touch live_publisher_/hub_, 必在二者析构前 join; st 令其提前退出).
     if (seed_thread_.joinable()) {
@@ -684,6 +747,40 @@ void PaperDaemon::RefreshResolution(std::stop_token st) {
                 paper_loop_->SetResolutionByCondition(std::move(res_map));
                 std::fprintf(stderr, "[paper_daemon] 结算刷新: %zu market (%zu resolved)\n", snap->size(),
                              resolved);
+            }
+        }
+        const auto deadline = steady_clock::now() + seconds(30);
+        while (steady_clock::now() < deadline) {
+            if (st.stop_requested()) return;
+            std::this_thread::sleep_for(milliseconds(100));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RefreshLiveStats — live_stats 刷新线程主体
+//   每周期: ① 从 score store 收集当前活跃 league_id → 更新 poller 轮询集 (league 仅运行期才知);
+//           ② live_stats_store 快照 → paper_loop_->SetLiveStatsByTeams (join_key→LiveStatsFields)。
+//   poller 自身线程负责 fetch/parse; 本线程只做 league 收集 + 快照转交。喂 5 个 g_*_diff 特征。
+// ---------------------------------------------------------------------------
+void PaperDaemon::RefreshLiveStats(std::stop_token st) {
+    using namespace std::chrono;
+    while (!st.stop_requested()) {
+        if (live_stats_store_ && commentaries_poller_ && paper_loop_ && score_store_) {
+            // ① 活跃 league_id (去重) → poller
+            if (const auto score_snap = score_store_->GetSnapshot()) {
+                std::vector<std::string> leagues;
+                std::unordered_set<std::string> seen;
+                for (const auto& [mid, es] : *score_snap) {
+                    if (!es.league_id.empty() && seen.insert(es.league_id).second) {
+                        leagues.push_back(es.league_id);
+                    }
+                }
+                commentaries_poller_->SetLeagues(std::move(leagues));
+            }
+            // ② live_stats 快照 → paper_loop join 表
+            if (const auto ls_snap = live_stats_store_->GetSnapshot()) {
+                paper_loop_->SetLiveStatsByTeams(*ls_snap);
             }
         }
         const auto deadline = steady_clock::now() + seconds(30);

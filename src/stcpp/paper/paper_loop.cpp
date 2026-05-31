@@ -51,6 +51,7 @@
 
 #include "stcpp/control/position_controller.hpp"  // 目标仓位控制器 (Decide + ComputeReservation, BR-1)
 #include "stcpp/data/feature_store_contract.hpp"
+#include "stcpp/data/live_stats_parser.hpp"     // FillLiveStats (live_stats 采集 hop join)
 #include "stcpp/data/score_snapshot_store.hpp"  // A1: ScoreSnapshotStore::Get(inplay_match_id)
 #include "stcpp/execution/execution_mode.hpp"   // A2 红线1: kCompiledMode 运行期 mode 断言
 #include "stcpp/infra/wal/pit.hpp"
@@ -425,6 +426,17 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                         game_row.as_of_ts_ns = es.ts.as_of_ts_ns;
                         // inplay bet365 de-vig fair → game_row (→ g_bm_inplay_fair 特征; -1=无 odds)。
                         game_row.inplay_bet365_home_fair = es.inplay_bet365_home_fair;
+                        // live_stats 采集 hop: 按 (league|home|away) exact join commentaries live_stats
+                        //   → game_row.soccer_* (→ g_danger_attack_diff/g_shot_on_target_diff/
+                        //   g_possession_home/g_red_card_diff/g_corner_diff 特征)。同源 Goalserve 队名一致;
+                        //   查不到 → soccer_* 保持 -1 (fail-safe, 特征 NaN, 绝不造假)。
+                        if (!es.home.empty() && !es.away.empty()) {
+                            const std::string ls_key = stcpp::data::livescore::MakeLiveStatsJoinKey(
+                                es.league_id, es.home, es.away);
+                            if (const auto* ls = LiveStatsFor(ls_key)) {
+                                stcpp::data::livescore::FillLiveStats(game_row, *ls);
+                            }
+                        }
                     }
                 }
             }

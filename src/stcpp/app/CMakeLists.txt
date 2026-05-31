@@ -56,6 +56,7 @@ target_link_libraries(stcpp_paper_app PUBLIC
     stcpp_quote_snapshot_hub
     stcpp_data_score_store
     stcpp_data_inplay_feed
+    stcpp_data_live_stats_parser  # live_stats: CommentariesParser→LiveStatsParser::Parse (commentaries Feed)
     stcpp_paper_loop
     stcpp_pricing
     stcpp_signer_paper

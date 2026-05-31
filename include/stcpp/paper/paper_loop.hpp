@@ -70,6 +70,7 @@
 #include <utility>
 
 #include "stcpp/data/score_snapshot_store.hpp"  // A4: ScoreMap (tick-local 共享比分快照, 消 read-skew)
+#include "stcpp/data/live_stats_store.hpp"      // live_stats 采集 hop: LiveStatsMap/LiveStatsFields join
 #include "stcpp/eval/clv_tracker.hpp"            // CLV 测量 harness (成果尺子, 离线评估)
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
 #include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量)
@@ -298,6 +299,13 @@ public:
         resolution_by_condition_ = std::move(m);
     }
 
+    // live_stats 采集 hop: 注入 join_key(league|home|away) → LiveStatsFields (app 层轮询
+    //   commentaries Feed → 此处注入)。单 writer: Start() 前注入 / 周期热刷 (loop_thread_ 只读)。
+    //   game_row 填充时按 es 队名 join → FillLiveStats → g_*_diff 特征。查不到 → soccer_* 保持 -1。
+    void SetLiveStatsByTeams(data::livescore::LiveStatsMap m) noexcept {
+        live_stats_by_teams_ = std::move(m);
+    }
+
     // 统一数据树: 注入 condition → 父级引用 (event_id / neg_risk_market_id)。
     //   单 writer: Start() 前注入一次, 之后 loop_thread_ 只读。盘口决策/模型带父级 (兄弟经 event_id 导航)。
     void SetParentRefs(std::unordered_map<std::string, ParentRef> m) noexcept {
@@ -364,6 +372,13 @@ private:
     [[nodiscard]] const ResolutionEntry* ResolutionFor(const std::string& condition_id) const noexcept {
         auto it = resolution_by_condition_.find(condition_id);
         return (it != resolution_by_condition_.end()) ? &it->second : nullptr;
+    }
+    // live_stats 采集 hop: join_key → LiveStatsFields (REST 注入; 查不到 → nullptr = 无 live_stats)。
+    data::livescore::LiveStatsMap live_stats_by_teams_;
+    [[nodiscard]] const data::livescore::LiveStatsFields* LiveStatsFor(
+        const std::string& join_key) const noexcept {
+        auto it = live_stats_by_teams_.find(join_key);
+        return (it != live_stats_by_teams_.end()) ? &it->second : nullptr;
     }
 
     // ---- A1: 真实比分源 + 映射 ----
