@@ -163,6 +163,20 @@ struct QuoteFeatures {
     std::int32_t g_periods_won_home{0}; // 已完成节中主队领先节数 (score_*_periods[]; 已有数据没用)
     std::int32_t g_periods_won_away{0};
 
+    // ---- 批1 体育动态 (体育主权; game_row.score 派生 — 现有数据非想象) ----
+    double g_game_phase{0.0};        // floor(elapsed_frac×3): 0早/1中/2末段 (非线性分段)
+    double g_garbage_time{0.0};      // 垃圾时间 flag (末段大比分; 风控信号)
+    double g_clutch{0.0};            // 关键时段 flag (末段比分接近; edge 最浓)
+    double g_goal_freshness{0.0};    // 进球新鲜度 exp(−Δt/120s) (进球后 30-120s = 延迟 edge 窗口!)
+    double g_net_momentum_5m{0.0};   // 最近 5min 净进球 (势头; game 侧 ring)
+
+    // ---- 批1 live_stats 暴露 (小段 parser 就位; -1/NaN 直到 livescore client+白名单, 接线先齐) ----
+    double g_danger_attack_diff{0.0};   // 危险进攻差 home−away (xG 代理)
+    double g_shot_on_target_diff{0.0};  // 射正差 home−away
+    double g_possession_home{0.0};      // 主队控球率 0-100
+    double g_red_card_diff{0.0};        // 红牌差 home−away (红牌后胜率剧变)
+    double g_corner_diff{0.0};          // 角球差 home−away
+
     // ---- ML provenance (小邓 spec v1 §3.2; 对应 QuoteParams ML 字段) ----
     // model_id: char 数组 (空 = 无模型; 对应 ModelPrediction.model_id)
     char model_id[64]{};  // 最长 model_id ~48 char; 留余量

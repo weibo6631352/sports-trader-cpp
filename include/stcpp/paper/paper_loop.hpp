@@ -72,6 +72,7 @@
 #include "stcpp/data/score_snapshot_store.hpp"  // A4: ScoreMap (tick-local 共享比分快照, 消 read-skew)
 #include "stcpp/eval/clv_tracker.hpp"            // CLV 测量 harness (成果尺子, 离线评估)
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
+#include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量)
 #include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
 #include "stcpp/paper/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
@@ -128,6 +129,21 @@ struct ParentRef {
 struct ResolutionEntry {
     std::uint8_t status{0};
     std::int8_t winner{-1};
+};
+
+// 批1 体育动态特征 (TickOne 算好, 一struct 传 PublishQuoteSnapshot, 避免 param 爆炸)。
+//   全部 game_row.score / live_stats 派生; 无真比分 → NaN。
+struct SportsFeatures {
+    double game_phase{std::numeric_limits<double>::quiet_NaN()};
+    double garbage_time{0.0};
+    double clutch{0.0};
+    double goal_freshness{std::numeric_limits<double>::quiet_NaN()};
+    double net_momentum_5m{std::numeric_limits<double>::quiet_NaN()};
+    double danger_attack_diff{std::numeric_limits<double>::quiet_NaN()};
+    double shot_on_target_diff{std::numeric_limits<double>::quiet_NaN()};
+    double possession_home{std::numeric_limits<double>::quiet_NaN()};
+    double red_card_diff{std::numeric_limits<double>::quiet_NaN()};
+    double corner_diff{std::numeric_limits<double>::quiet_NaN()};
 };
 
 // ---------------------------------------------------------------------------
@@ -404,6 +420,9 @@ private:
     //   每 condition 一个定长 ring; 派生微价变化率 + realized vol 进 QuoteFeatures (训练捕获 + 观测)。
     std::unordered_map<std::string, ml::FeatureHistory> ts_history_;
 
+    // ---- 批1 体育动态: 比分时序 (进球新鲜度/动量; game_row.score 派生) ----
+    std::unordered_map<std::string, ml::GameScoreHistory> game_history_;
+
     // ---- A5 (老韩 spec §4): 累计已付 taker fee (whole pUSD, 单调加) ----
     //   DD 喂数: daily_pnl = 时点净 MtM − cum_fee。PublishLedgerSnapshot 算 pnl_fee 后累加,
     //   FeedRiskGateway 读。loop_thread_ 单 writer (两者同线程顺序调), 无需 atomic。
@@ -477,7 +496,8 @@ private:
                               double reservation_buy_px, double reservation_sell_px,
                               double required_margin, double time_to_resolution_frac,
                               double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
-                              std::int32_t g_periods_won_home, std::int32_t g_periods_won_away) noexcept;
+                              std::int32_t g_periods_won_home, std::int32_t g_periods_won_away,
+                              const SportsFeatures& sports) noexcept;
 };
 
 }  // namespace stcpp::paper

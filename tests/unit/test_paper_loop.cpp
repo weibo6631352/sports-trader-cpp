@@ -984,6 +984,17 @@ TEST_F(PaperLoopTest, T22_A15_TimeFrac_UnlocksFillAtProductionNeff) {
     // A1.5: time_frac 拉高先验置信 → 生产级 n_eff 下真实领先即成交 (T17 同场景需 n=500)
     EXPECT_GT(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
         << "A1.5: 真 time_frac (60min 2:0) → conf 升 → n_eff=150 即成交 (证明 time_frac 解锁)";
+
+    // 批1 体育动态: 真实 in-play (60min 2:0) → game 特征 populate。
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    EXPECT_TRUE(std::isfinite(opt->g_goal_freshness)) << "批1: g_goal_freshness 应 populate (有比分时序)";
+    EXPECT_TRUE(std::isfinite(opt->g_game_phase)) << "批1: g_game_phase 应 populate";
+    EXPECT_NEAR(opt->g_game_phase, 2.0, 1e-9) << "60/90min → time_frac 0.67 → 末段 phase=2";
+    EXPECT_TRUE(std::isfinite(opt->g_remaining_sec)) << "批1: g_remaining_sec 应 populate";
+    EXPECT_TRUE(std::isfinite(opt->g_time_x_lead)) << "批1: g_time_x_lead 应 populate";
+    // live_stats 差: 存档无 live_stats → game_row -1 → NaN (接线就位, 等白名单流入)
+    EXPECT_TRUE(std::isnan(opt->g_danger_attack_diff)) << "批1: live_stats 未流入 → NaN (接线就位)";
 }
 
 // ---------------------------------------------------------------------------

@@ -510,6 +510,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     double time_to_resolution_frac = std::numeric_limits<double>::quiet_NaN();
     double g_time_x_lead = std::numeric_limits<double>::quiet_NaN();  // 批1: 时间感知领先 (体育最大非线性)
     double g_remaining_sec = std::numeric_limits<double>::quiet_NaN();  // 批1 补漏: 剩余秒
+    SportsFeatures sports;  // 批1 体育动态 (game_row.score/live_stats 派生; 无真比分→NaN)
     // 批1 补漏 g_periods_won: 已完成节中各队领先节数 (score_*_periods[]; 有真实比分才有意义)。
     std::int32_t g_periods_won_home = 0, g_periods_won_away = 0;
     if (has_real_fair) {
@@ -541,6 +542,30 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         g_time_x_lead = score_diff * std::clamp(1.0 - time_frac, 0.0, 1.0);
         // 批1 补漏 g_remaining_sec: 剩余秒 = total × 剩余占比。
         g_remaining_sec = (total_sec > 0) ? static_cast<double>(total_sec) * time_to_resolution_frac : 0.0;
+
+        // 批1 体育动态: 比赛阶段/垃圾时间/关键时段 (点) + 进球新鲜度/动量 (game ring) + live_stats 差。
+        sports.game_phase = std::floor(std::clamp(time_frac, 0.0, 0.999) * 3.0);  // 0早/1中/2末
+        const double abs_diff = std::abs(score_diff);
+        sports.garbage_time = (time_frac > 0.85 && abs_diff >= 3.0) ? 1.0 : 0.0;
+        sports.clutch = (time_frac > 0.85 && abs_diff <= 1.0) ? 1.0 : 0.0;
+        // 比分时序 ring: Observe (as_of 上游观测刻, 禁 now()) → 进球新鲜度 + 5min 动量。
+        auto& gh = game_history_[condition_id];
+        gh.Observe(feat.as_of_ts_ns, game_row.score_home_total, game_row.score_away_total);
+        sports.goal_freshness = gh.GoalFreshness(feat.as_of_ts_ns);
+        sports.net_momentum_5m = gh.NetMomentum(300'000'000'000LL);
+        // live_stats 差 (小段字段; -1=无数据→NaN; 白名单+livescore client 后流入)。
+        auto sdiff = [](std::int32_t h, std::int32_t a) -> double {
+            return (h >= 0 && a >= 0) ? static_cast<double>(h - a) : std::numeric_limits<double>::quiet_NaN();
+        };
+        sports.danger_attack_diff =
+            sdiff(game_row.soccer_dangerous_attacks_home, game_row.soccer_dangerous_attacks_away);
+        sports.shot_on_target_diff =
+            sdiff(game_row.soccer_shots_on_target_home, game_row.soccer_shots_on_target_away);
+        sports.possession_home = (game_row.soccer_possession_home_pct >= 0)
+                                     ? static_cast<double>(game_row.soccer_possession_home_pct)
+                                     : std::numeric_limits<double>::quiet_NaN();
+        sports.red_card_diff = sdiff(game_row.soccer_red_cards_home, game_row.soccer_red_cards_away);
+        sports.corner_diff = sdiff(game_row.soccer_corners_home, game_row.soccer_corners_away);
     }
 
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
@@ -649,7 +674,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                          cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns, mkt.event_id,
                          mkt.neg_risk_market_id, target_signed, reservation.buy_px, reservation.sell_px,
                          reservation.required_margin, time_to_resolution_frac, g_time_x_lead, g_fld_signal,
-                         g_remaining_sec, g_periods_won_home, g_periods_won_away);
+                         g_remaining_sec, g_periods_won_home, g_periods_won_away, sports);
     stats_.quote_publishes.fetch_add(1, std::memory_order_relaxed);
 
     // ---- P0-4: advisory gate -----------------------------------------------
@@ -1129,7 +1154,7 @@ void PaperLoop::PublishQuoteSnapshot(
     const std::string& event_id, const std::string& neg_risk_market_id, double target_signed_notional,
     double reservation_buy_px, double reservation_sell_px, double required_margin,
     double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
-    std::int32_t g_periods_won_home, std::int32_t g_periods_won_away) noexcept {
+    std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports) noexcept {
     sizing::QuoteFeatures qf{};
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
@@ -1223,6 +1248,17 @@ void PaperLoop::PublishQuoteSnapshot(
         qf.g_remaining_sec = g_remaining_sec;        // 批1 补漏: 剩余秒
         qf.g_periods_won_home = g_periods_won_home;  // 批1 补漏: 各节胜负
         qf.g_periods_won_away = g_periods_won_away;
+        // 批1 体育动态 (TickOne 算好的 sports struct 透传)。
+        qf.g_game_phase = sports.game_phase;
+        qf.g_garbage_time = sports.garbage_time;
+        qf.g_clutch = sports.clutch;
+        qf.g_goal_freshness = sports.goal_freshness;
+        qf.g_net_momentum_5m = sports.net_momentum_5m;
+        qf.g_danger_attack_diff = sports.danger_attack_diff;
+        qf.g_shot_on_target_diff = sports.shot_on_target_diff;
+        qf.g_possession_home = sports.possession_home;
+        qf.g_red_card_diff = sports.red_card_diff;
+        qf.g_corner_diff = sports.corner_diff;
     }
 
     // 当前持仓 (老板: 持仓入模型; 库存感知)。目标仓位范式: 模型需知现仓 → 控制器算 order=目标−现仓。
