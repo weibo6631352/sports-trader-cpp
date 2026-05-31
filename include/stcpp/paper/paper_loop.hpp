@@ -77,6 +77,7 @@
 #include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量)
 #include "stcpp/ml/fair_value_model.hpp"         // ml::FairValueModel/ModelPrediction (步④ 推理接线)
 #include "stcpp/ml/seq_arb_model.hpp"            // ml::SeqArbModel (短时套利 advisory 旁路)
+#include "stcpp/ml/hot_swap_model.hpp"           // ml::HotSwapHolder (模型热加载)
 #include "stcpp/ml/feature_vector_hub.hpp"       // Phase 2 项6: 完整 75 列向量发布 (训练捕获)
 #include "stcpp/ml/model_feature_spec.hpp"       // extract_joined (game_row+book_row → FeatureVector)
 #include "stcpp/execution/order_executor.hpp"
@@ -369,7 +370,14 @@ public:
 
     // 注入短时套利序列模型 (ml::SeqArbModel; daemon 装配 Stub/ONNX)。advisory 旁路: 只填 qf.arb_* 观测,
     //   绝不驱动真单 (stub 恒 ok=false 不发; 真模型也止于 advisory 直到 LiveOrderGate 开闸)。
-    void SetSeqArbModel(const ml::SeqArbModel* m) noexcept { seq_arb_model_ = m; }
+    //   非占有注入 (调用方管生命周期; 启动期用)。
+    void SetSeqArbModel(const ml::SeqArbModel* m) noexcept { seq_arb_holder_.StoreNonOwning(m); }
+
+    // 热加载换模型 ("边跑边训": 旁边离线训练进程产新 ONNX → 不停盘原子换上)。占有式 (holder 持引用,
+    //   旧模型最后引用释放时回收)。任意线程可调; 推理线程 Load 拿 copy 期内旧模型不被删。
+    void SetSeqArbModelShared(std::shared_ptr<const ml::SeqArbModel> m) noexcept {
+        seq_arb_holder_.Store(std::move(m));
+    }
 
     // Phase 2 项6: 注入完整 75 列向量 hub (daemon 持有 + recorder 线程消费)。nullptr = 不捕获。
     //   PublishQuoteSnapshot 算完 extract_full 后 Publish 进来 (训练 X 含 0-17 原始列)。单 writer loop_thread_。
@@ -457,7 +465,7 @@ private:
     }
     // 步④: ML 推理模型 (非自有; daemon 注入 + 持有)。loop_thread_ 只读。nullptr = baseline only。
     const ml::FairValueModel* ml_model_{nullptr};
-    const ml::SeqArbModel* seq_arb_model_{nullptr};  // 短时套利序列模型 (advisory 旁路)
+    ml::HotSwapHolder<ml::SeqArbModel> seq_arb_holder_;  // 短时套利模型 (advisory 旁路; 支持热加载换模型)
     // Phase 2 项6: 完整向量 hub (非自有; daemon 注入)。loop_thread_ 单 writer Publish。nullptr = 不捕获。
     ml::FeatureVectorHub* fv_hub_{nullptr};
 

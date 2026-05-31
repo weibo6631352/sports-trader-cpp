@@ -1624,9 +1624,10 @@ void PaperLoop::PublishQuoteSnapshot(
 
     // 短时套利 advisory 分支 (模块5): seq_arb_model 同源 fv → 预测 → ComputeArbSignal → 填 qf.arb_*。
     //   旁路: 绝不驱动真单 (stub 恒 ok=false; 真模型也止于 advisory 直到开闸)。与结算链物理隔离 (主计划 §5.2)。
-    if (seq_arb_model_ != nullptr && seq_arb_model_->ready() &&
-        fv.size() == seq_arb_model_->expected_feature_count()) {
-        const ml::ArbPrediction ap = seq_arb_model_->predict(fv);
+    const auto seq_arb_model = seq_arb_holder_.Load();  // 热加载: 拿当前模型 copy (期内不被换走删)
+    if (seq_arb_model != nullptr && seq_arb_model->ready() &&
+        fv.size() == seq_arb_model->expected_feature_count()) {
+        const ml::ArbPrediction ap = seq_arb_model->predict(fv);
         risk::ArbMarketState ms;
         ms.mid = qf.market_mid;
         ms.best_ask = feat.best_ask();
