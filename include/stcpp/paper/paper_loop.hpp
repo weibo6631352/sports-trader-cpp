@@ -120,8 +120,12 @@ struct PaperLoopConfig {
     double market_exposure_cap_usdc{50.0};
     double per_outcome_cap_usdc{25.0};
 
-    // CI 参数 (§10.3 保守值 n=30, z=1.645)
-    int n_effective{30};
+    // CI 参数 (z=1.645 = 90%)。
+    // n_effective: 2026-05-31 30→200 (小程量化方案, Phase4 阻塞1)。
+    //   n=30 时 CI half-width≈15¢@p=0.5 → 6-14¢ 正常 edge 全被 NO_EDGE 误杀 (系统零成交根因)。
+    //   n=200 → half-width≈5.8¢, 6¢ edge 的 ci_lower≈+0.002 可放行; 与回测 ParamSet.n_effective 对齐。
+    //   过渡值: 原则值应 = books_used × stability(需 books_used 透传, 后续); 待小梁终签。
+    int n_effective{200};
     double z_90{1.645};
 
     // strategy_id / signal_id (audit / RM 去重用)

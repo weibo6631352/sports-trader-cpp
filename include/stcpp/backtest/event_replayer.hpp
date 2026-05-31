@@ -36,6 +36,7 @@
 #include <vector>
 
 #include "stcpp/backtest/types.hpp"
+#include "stcpp/strategy/edge_ci.hpp"  // Phase4 阻塞3: 回测-实盘共用 ComputeEdgeCiLower
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
 #include "stcpp/numerical/slippage_model.hpp"
@@ -209,6 +210,18 @@ private:
         if (ev.gross_edge < cfg_.params.gross_edge_threshold) {
             t.filtered_out = true;
             return t;
+        }
+        // --- Phase4 阻塞3: edge_ci_lower 门 (红线 §8: 与实盘同一 CI 逻辑/同一实现) ---
+        //   实盘 raw_edge=(p_fair-p_ask); 回测 gross_edge 即被选边失配幅度, p_fair=fair_value。
+        //   令 p_ask = fair_value - gross_edge → raw_edge = gross_edge; sigma 用 fair_value
+        //   (对 p↔1-p 对称, 与实盘被选边 sigma 一致)。共用 strategy::ComputeEdgeCiLower 消漂移。
+        {
+            const double ci_lower = stcpp::strategy::ComputeEdgeCiLower(
+                ev.fair_value, ev.fair_value - ev.gross_edge, cfg_.params.n_effective, cfg_.params.z_90);
+            if (ci_lower <= 0.0) {
+                t.filtered_out = true;
+                return t;
+            }
         }
         // 死区: fair_value > (1 - threshold) 或 < threshold
         if (ev.fair_value > (1.0 - cfg_.params.dead_zone_threshold) ||

@@ -52,6 +52,7 @@
 #include "stcpp/data/score_snapshot_store.hpp"  // A1: ScoreSnapshotStore::Get(inplay_match_id)
 #include "stcpp/execution/execution_mode.hpp"   // A2 红线1: kCompiledMode 运行期 mode 断言
 #include "stcpp/infra/wal/pit.hpp"
+#include "stcpp/strategy/edge_ci.hpp"  // 单一 ComputeEdgeCiLower (回测-实盘共用)
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
 #include "stcpp/pricing/fair_value_estimator.hpp"
@@ -696,22 +697,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
 
 /*static*/
 double PaperLoop::ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept {
-    if (!std::isfinite(p_fair) || !std::isfinite(p_ask) || n_eff <= 0) {
-        return -1.0;  // fail-closed
-    }
-    const double raw_edge = p_fair - p_ask;
-    // sigma_approx = sqrt(p_fair * (1 - p_fair) / n_eff)
-    const double var = p_fair * (1.0 - p_fair);
-    if (!std::isfinite(var) || var < 0.0) {
-        return -1.0;
-    }
-    const double sigma = std::sqrt(var / static_cast<double>(n_eff));
-    const double ci_lower = raw_edge - z * sigma;
-    if (!std::isfinite(ci_lower)) {
-        return -1.0;
-    }
-    // clamp [-1, 1] (数值边界)
-    return ci_lower < -1.0 ? -1.0 : (ci_lower > 1.0 ? 1.0 : ci_lower);
+    // 单一实现: stcpp/strategy/edge_ci.hpp (回测-实盘共用同一公式, 消两处漂移; Phase4 阻塞3 修复)。
+    return stcpp::strategy::ComputeEdgeCiLower(p_fair, p_ask, n_eff, z);
 }
 
 // ---------------------------------------------------------------------------

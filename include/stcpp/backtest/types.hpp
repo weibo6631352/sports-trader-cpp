@@ -196,10 +196,13 @@ struct BootstrapResult {
 // ---------------------------------------------------------------------------
 
 struct ParamSet {
-    double gross_edge_threshold{0.06};  // C2 gross_edge 门 (5/6/7¢)
+    double gross_edge_threshold{0.06};  // C2 gross_edge 粗筛门 (5/6/7¢)
     int min_bookmakers{3};              // MIN_BOOKMAKERS (3/4/5)
     double kelly_fraction{0.20};        // Kelly fraction (0.15/0.20/0.25)
     double dead_zone_threshold{0.25};   // 死区阈值 (0.20/0.25/0.30)
+    // Phase4 阻塞3: 与实盘 edge_ci_lower 门对齐 (红线 §8 回测=实盘同逻辑)。默认同 PaperLoopConfig。
+    int n_effective{200};  // CI 有效样本量 (实盘 PaperLoopConfig.n_effective 对齐)
+    double z_90{1.645};    // CI z (90%)
 };
 
 // ---------------------------------------------------------------------------
