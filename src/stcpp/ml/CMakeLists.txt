@@ -52,6 +52,7 @@ endif()
 # ---------------------------------------------------------------------------
 add_library(stcpp_ml_inference STATIC
     fair_value_model.cpp
+    seq_arb_model.cpp
 )
 
 target_include_directories(stcpp_ml_inference
