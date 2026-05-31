@@ -103,6 +103,24 @@ public:
         // else: unexpected format, ignore
     }
 
+    // REST 快照打底 (订阅时先拉一次, 不靠 WSS 推初始 book — 修"稳定盘/漏接初始快照永远空"问题)。
+    //   payload = POST /books 的数组 [{market,asset_id,timestamp,bids,asks,...},...] 或 GET /book 单对象。
+    //   from_rest=true → 跳过 event_type 检查 (REST 对象无此字段)。其余 (asset_id/timestamp/bids/asks)
+    //   与 WSS book 同形, 复用同一解析 + hub.Publish。线程安全: hub.Publish 是 R-12 原子双缓冲。
+    void SeedFromRestBooks(std::string_view payload, std::int64_t recv_ts_ns) {
+        std::size_t start = 0;
+        while (start < payload.size() && std::isspace(static_cast<unsigned char>(payload[start]))) {
+            ++start;
+        }
+        if (start >= payload.size())
+            return;
+        if (payload[start] == '[') {
+            ParseArray(payload, recv_ts_ns, /*from_rest=*/true);
+        } else if (payload[start] == '{') {
+            ParseObject(payload, recv_ts_ns, /*from_rest=*/true);
+        }
+    }
+
     // Metrics
     [[nodiscard]] std::uint64_t frames_received() const noexcept {
         return frames_received_.load(std::memory_order_relaxed);
@@ -118,7 +136,7 @@ private:
     // -----------------------------------------------------------------------
     // ParseArray — handle JSON array [...] containing one or more event objects
     // -----------------------------------------------------------------------
-    void ParseArray(std::string_view payload, std::int64_t recv_ts_ns) {
+    void ParseArray(std::string_view payload, std::int64_t recv_ts_ns, bool from_rest = false) {
         // Find each top-level '{' inside the array, extract sub-object, parse.
         // Simple depth-tracking approach (no full JSON parser needed for this structure).
         std::size_t pos = 0;
@@ -174,7 +192,7 @@ private:
                 break;
 
             auto obj = payload.substr(obj_start, obj_end - obj_start + 1);
-            ParseObject(obj, recv_ts_ns);
+            ParseObject(obj, recv_ts_ns, from_rest);
             pos = obj_end + 1;
         }
     }
@@ -182,12 +200,14 @@ private:
     // -----------------------------------------------------------------------
     // ParseObject — parse single CLOB book event object
     // -----------------------------------------------------------------------
-    void ParseObject(std::string_view obj, std::int64_t recv_ts_ns) {
-        // Check event_type == "book"
-        std::string_view etype = ExtractStringField(obj, "event_type");
-        if (etype != "book") {
-            // price_change, last_trade_price, etc. — not handled here (no full L2 delta)
-            return;
+    void ParseObject(std::string_view obj, std::int64_t recv_ts_ns, bool from_rest = false) {
+        // WSS 路径要求 event_type=="book"; REST 快照(GET/POST /book(s))对象无 event_type, 直接当 book。
+        if (!from_rest) {
+            std::string_view etype = ExtractStringField(obj, "event_type");
+            if (etype != "book") {
+                // price_change, last_trade_price, etc. — not handled here (no full L2 delta)
+                return;
+            }
         }
 
         // Extract asset_id (= token_id)

@@ -139,6 +139,57 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
 }
 
 // ---------------------------------------------------------------------------
+// SeedInitialBooksFromRest — 订阅时拉一次初始 book 快照 (REST), seed 进 hub.
+//   修 WSS-only 的缺陷: 稳定盘/漏接初始快照 → hub 永远空。POST /books 批量拉,
+//   交给 live_publisher_->SeedFromRestBooks (与 WSS book 同解析路径)。
+//   非热路径 (Start 一次, 阻塞 ~秒级 popen curl); 失败优雅降级 (回落 WSS-only)。
+//   recv_ts = 本地 now (= ingestion ts, 合法; data_source_ts 取自 REST 响应的 timestamp, 非 now)。
+// ---------------------------------------------------------------------------
+void PaperDaemon::SeedInitialBooksFromRest(std::stop_token st) {
+    if (!live_publisher_ || all_token_ids_.empty())
+        return;
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+    constexpr std::size_t kChunk = 50;  // POST /books 分批 (避免单请求过大)
+    std::size_t chunks_ok = 0;
+    for (std::size_t i = 0; i < all_token_ids_.size(); i += kChunk) {
+        if (st.stop_requested())  // 关停时提前退出 (不卡 shutdown)
+            return;
+        const std::size_t end = (i + kChunk < all_token_ids_.size()) ? i + kChunk : all_token_ids_.size();
+        std::string body = "[";
+        for (std::size_t j = i; j < end; ++j) {
+            if (j > i)
+                body += ',';
+            body += "{\"token_id\":\"";
+            body += all_token_ids_[j];  // uint256 十进制, 无 shell 特殊字符
+            body += "\"}";
+        }
+        body += "]";
+        // popen curl POST /books (token_id 全数字 → 单引号 body 安全; 沿用 discovery 的 popen 模式)
+        const std::string cmd =
+            "curl -s --max-time 15 -X POST 'https://clob.polymarket.com/books' "
+            "-H 'Content-Type: application/json' --data '" + body + "' 2>/dev/null";
+        std::string resp;
+        if (FILE* p = ::popen(cmd.c_str(), "r")) {
+            char buf[8192];
+            std::size_t n = 0;
+            while ((n = ::fread(buf, 1, sizeof(buf), p)) > 0)
+                resp.append(buf, n);
+            ::pclose(p);
+        }
+        if (!resp.empty() && resp.front() == '[') {
+            live_publisher_->SeedFromRestBooks(resp, now_ns);
+            ++chunks_ok;
+        }
+    }
+    std::printf("[paper_daemon] REST 快照打底: %zu tokens (%zu 批 OK), 累计 books_published=%llu\n",
+                all_token_ids_.size(), chunks_ok,
+                static_cast<unsigned long long>(live_publisher_->books_published()));
+    std::fflush(stdout);
+}
+
+// ---------------------------------------------------------------------------
 // Build — 发现 + 装配 (不起线程). 幂等.
 // ---------------------------------------------------------------------------
 
@@ -349,6 +400,9 @@ void PaperDaemon::Start() {
         live_transport_->AsyncConnect(wss_url);
         std::printf("[paper_daemon] WSS io_thread_ 已启动, 等待 book 数据 (通常 1-5s)...\n");
         std::fflush(stdout);
+        // REST 快照打底: 订阅时先拉一次初始 book, 不靠 WSS 推 (修"稳定盘/漏接初始快照永远空")。
+        //   后台 jthread (不阻塞 HTTP/loop 启动, ~20s 完成; hub.Publish 线程安全)。WSS delta 随后更新。
+        seed_thread_ = std::jthread([this](std::stop_token st) { SeedInitialBooksFromRest(st); });
     }
 
     // ---- Step 4b start: PaperLoop (enable_paper_trading; "仅观测" flag=false 时不起) ----
@@ -420,6 +474,11 @@ void PaperDaemon::Shutdown() noexcept {
     if (mapping_refresh_thread_.joinable()) {
         mapping_refresh_thread_.request_stop();
         mapping_refresh_thread_.join();
+    }
+    // 0b. REST 快照打底线程先停 (它 touch live_publisher_/hub_, 必在二者析构前 join; st 令其提前退出).
+    if (seed_thread_.joinable()) {
+        seed_thread_.request_stop();
+        seed_thread_.join();
     }
 
     // 1. HttpServer 先停 (停止读端, 不再读 real_provider_)

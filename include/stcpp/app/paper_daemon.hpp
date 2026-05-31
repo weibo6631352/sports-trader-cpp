@@ -222,6 +222,10 @@ private:
     // 发现 → token_map_/market_catalog_/event_infos_/all_token_ids_ (gamma 或注入).
     void PopulateCatalog(const std::vector<DiscoveredEvent>& discovered);
 
+    // REST 快照打底 (Start 起后台 jthread): POST /books 批量拉初始 book → SeedFromRestBooks。
+    //   修"稳定盘/漏接 WSS 初始快照永远空"。后台跑 (不阻塞启动), st 关停时提前退出, 失败优雅降级。
+    void SeedInitialBooksFromRest(std::stop_token st);
+
     // A1b: 映射刷新线程主体 — 周期跑 EventMatcher (score_store 快照 × market 元数据)
     //   → 构建 condition→event 映射 → paper_loop_->SetEventMapping(). Goalserve event
     //   动态出现, 故周期重匹配 (非 boot 一次性)。
@@ -244,6 +248,7 @@ private:
     // condition_id → market 锚定输入 (两队名 + kickoff + sport; Build 从 DiscoveredMarket 填).
     std::unordered_map<std::string, EventMatchInput> market_match_inputs_;
     std::jthread mapping_refresh_thread_;
+    std::jthread seed_thread_;  // REST 快照打底后台线程 (jthread: 析构自动 request_stop + join)
 
     // =====================================================================
     // 装配组件 —— 声明顺序即析构逆序的逆 (老韩 R-11 INV-1 + 老周钉死1):
