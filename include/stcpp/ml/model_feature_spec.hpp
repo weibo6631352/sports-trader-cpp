@@ -50,7 +50,7 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.11";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.12";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
 //     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
 //   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
@@ -220,9 +220,18 @@ enum class MlFeature : std::uint8_t {
     //   sharp 庄家 vs 散户市场定价差: 偏离=市场没跟上 sharp(机会) 或 数据陈旧(质量)。生产白名单有/开发 NaN。
     x_inplay_fair_minus_mid = 102,   // sharp inplay YES fair − PM mid (带符号; >0=市场低估 YES)
     x_inplay_market_absdev = 103,    // |偏离| (分歧强度 = 机会/数据质量)
+
+    // ---- v0.12 append (双边定价一致性/锁定 + 短窗时序; 老板 2026-06-01「YES+NO<1 / 更多时序」) ----
+    //   老板设计哲学: 喂信号给模型自主决策, 少硬编码守卫。这些是特征 (非硬规则)。
+    x_yes_no_bid_sum = 104,          // YES_bid+NO_bid (>1=卖双边锁利; 平仓锁损代价代理)
+    x_arb_free_edge = 105,           // 无风险锁定空间 max(1−(YES_ask+NO_ask),(YES_bid+NO_bid)−1,0)
+    b_mp_roc_5s = 106,               // 5s 微价动量 (套利尺度短窗, 补 per_sec/30s/5m 之间空档)
+    b_ofi_10s = 107,                 // 10s 短窗 OFI (比 5min trade_flow 快)
+    b_realized_vol_10s = 108,        // 10s 短窗波动 (短时预测幅度的 σ)
+    b_mp_accel = 109,                // 动量加速度 = roc(5s)−roc(15s) (>0=动量加速)
 };
 
-inline constexpr std::size_t kMlFeatureCount = 104;
+inline constexpr std::size_t kMlFeatureCount = 110;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -354,6 +363,12 @@ inline constexpr std::size_t kMlFeatureCount = 104;
         case MlFeature::no_b_trade_intensity_5m: return "no_b_trade_intensity_5m";
         case MlFeature::x_inplay_fair_minus_mid: return "x_inplay_fair_minus_mid";
         case MlFeature::x_inplay_market_absdev: return "x_inplay_market_absdev";
+        case MlFeature::x_yes_no_bid_sum: return "x_yes_no_bid_sum";
+        case MlFeature::x_arb_free_edge: return "x_arb_free_edge";
+        case MlFeature::b_mp_roc_5s: return "b_mp_roc_5s";
+        case MlFeature::b_ofi_10s: return "b_ofi_10s";
+        case MlFeature::b_realized_vol_10s: return "b_realized_vol_10s";
+        case MlFeature::b_mp_accel: return "b_mp_accel";
     }
     return "unknown";
 }
@@ -628,6 +643,13 @@ inline void extract_from_quote(const stcpp::sizing::QuoteFeatures& q, std::vecto
     const double ip_dev = (ip_ok && md_ok) ? (ip - md) : dnan;
     put(MlFeature::x_inplay_fair_minus_mid, ip_dev);
     put(MlFeature::x_inplay_market_absdev, (ip_dev == ip_dev) ? std::fabs(ip_dev) : dnan);
+    // v0.12 双边一致性/锁定 + 短窗时序 (源 QuoteFeatures 载体, paper_loop 算)
+    put(MlFeature::x_yes_no_bid_sum, q.x_yes_no_bid_sum);
+    put(MlFeature::x_arb_free_edge, q.x_arb_free_edge);
+    put(MlFeature::b_mp_roc_5s, q.b_mp_roc_5s);
+    put(MlFeature::b_ofi_10s, q.b_ofi_10s);
+    put(MlFeature::b_realized_vol_10s, q.b_realized_vol_10s);
+    put(MlFeature::b_mp_accel, q.b_mp_accel);
 }
 
 // ---------------------------------------------------------------------------
@@ -706,9 +728,11 @@ inline void fill_categorical_context(const stcpp::sizing::QuoteFeatures& q,
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 104, "MlFeature count must be 104 (v0.11; append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::x_inplay_market_absdev) == kMlFeatureCount - 1,
-              "最后一列必须是 x_inplay_market_absdev (append-only 约束; v0.11 末列)");
+static_assert(kMlFeatureCount == 110, "MlFeature count must be 110 (v0.12; append + bump spec)");
+static_assert(static_cast<std::size_t>(MlFeature::b_mp_accel) == kMlFeatureCount - 1,
+              "最后一列必须是 b_mp_accel (append-only 约束; v0.12 末列)");
+static_assert(static_cast<std::size_t>(MlFeature::x_inplay_market_absdev) == 103,
+              "x_inplay_market_absdev 必须恒为 103 (v0.11 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::no_b_trade_intensity_5m) == 101,
               "no_b_trade_intensity_5m 必须恒为 101 (v0.10 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::mkt_liquidity_usdc) == 95,

@@ -140,6 +140,13 @@ struct QuoteFeatures {
     double no_b_trade_signed_vol_5m{std::numeric_limits<double>::quiet_NaN()};
     double no_b_trade_buy_ratio_5m{std::numeric_limits<double>::quiet_NaN()};
     double no_b_trade_intensity_5m{std::numeric_limits<double>::quiet_NaN()};
+    // v0.12 双边定价一致性/无风险锁定 (老板: YES+NO<1 套利/锁损信号) + 短窗时序 (套利尺度)。
+    double x_yes_no_bid_sum{std::numeric_limits<double>::quiet_NaN()};   // YES_bid+NO_bid (>1=卖双边锁利空间)
+    double x_arb_free_edge{std::numeric_limits<double>::quiet_NaN()};    // 无风险锁定空间 max(1−asksum,bidsum−1,0)
+    double b_mp_roc_5s{std::numeric_limits<double>::quiet_NaN()};        // 5s 微价动量 (套利尺度)
+    double b_ofi_10s{std::numeric_limits<double>::quiet_NaN()};          // 10s 短窗 OFI
+    double b_realized_vol_10s{std::numeric_limits<double>::quiet_NaN()}; // 10s 短窗波动 (预测幅度 σ)
+    double b_mp_accel{std::numeric_limits<double>::quiet_NaN()};         // 动量加速度 roc(5s)−roc(15s)
 
     // ---- 当前持仓 (老板 2026-05-31: 持仓入模型; 库存感知 — 目标仓位范式控制器需知现仓才能定调整) ----
     //   老板 2026-05-31「各边买了多少, 可能两边都买, 不能只说买哪一边」: per-token 双边量, 不塌单边/净。

@@ -1354,6 +1354,17 @@ void PaperLoop::PopulateFeatureColumns(
         qf.no_b_trade_signed_vol_5m = no_book_full->trade_signed_vol_5m;
         qf.no_b_trade_buy_ratio_5m = no_book_full->trade_buy_ratio_5m;
         qf.no_b_trade_intensity_5m = no_book_full->trade_intensity_5m;
+        // v0.12 双边定价一致性/无风险锁定 (老板: YES+NO<1 套利/锁损 → 喂特征让模型自主判断, 非硬规则)。
+        const double y_bid = feat.best_bid(), y_ask = feat.best_ask();
+        const double n_bid = no_book_full->best_bid(), n_ask = no_book_full->best_ask();
+        if (std::isfinite(y_bid) && std::isfinite(n_bid) && y_bid > 0.0 && n_bid > 0.0)
+            qf.x_yes_no_bid_sum = y_bid + n_bid;  // >1 = 卖双边锁利 / 平仓锁损空间
+        double lock = 0.0;
+        if (std::isfinite(y_ask) && std::isfinite(n_ask) && y_ask > 0.0 && n_ask > 0.0)
+            lock = std::max(lock, 1.0 - (y_ask + n_ask));  // 买双边锁利 (YES+NO ask < 1)
+        if (std::isfinite(y_bid) && std::isfinite(n_bid) && y_bid > 0.0 && n_bid > 0.0)
+            lock = std::max(lock, (y_bid + n_bid) - 1.0);  // 卖双边锁利 (YES+NO bid > 1)
+        qf.x_arb_free_edge = lock;  // >0 = 当前存在无风险锁定空间 (套利或锁损)
     }
 
     // fair_value: 始终输出 (fv_result.p_yes()), 但 predict_ok=false 时消费方不可据此决策.
@@ -1424,6 +1435,14 @@ void PaperLoop::PopulateFeatureColumns(
             // 批1 补漏: 多尺度动量 (30s 短期 / 5min 中期)。
             qf.b_mp_roc_30s = hit->second.RateOfChangePerSec(30'000'000'000LL);
             qf.b_mp_roc_5m = hit->second.RateOfChangePerSec(300'000'000'000LL);
+            // v0.12 套利尺度短窗时序 (老板「更多时序特征」; 补 per_sec/30s/5m 之间的 5-15s 空档)。
+            qf.b_mp_roc_5s = hit->second.RateOfChangePerSec(5'000'000'000LL);
+            qf.b_ofi_10s = hit->second.OFI(10'000'000'000LL);
+            qf.b_realized_vol_10s = hit->second.RealizedVol(10'000'000'000LL);
+            const double roc15 = hit->second.RateOfChangePerSec(15'000'000'000LL);
+            qf.b_mp_accel = (std::isfinite(qf.b_mp_roc_5s) && std::isfinite(roc15))
+                                ? (qf.b_mp_roc_5s - roc15)
+                                : std::numeric_limits<double>::quiet_NaN();
         } else {
             qf.mp_roc_per_sec = std::numeric_limits<double>::quiet_NaN();
             qf.realized_vol = std::numeric_limits<double>::quiet_NaN();

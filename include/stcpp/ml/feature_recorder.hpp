@@ -211,6 +211,12 @@ private:
             << ",\"no_b_ask_depth_5lvl\":" << JsonNum(q.no_b_ask_depth_5lvl)
             << ",\"no_b_l1_concentration\":" << JsonNum(q.no_b_l1_concentration)
             << ",\"no_b_depth_imbalance_5lvl\":" << JsonNum(q.no_b_depth_imbalance_5lvl)
+            // v0.12 双边一致性/锁定 + 短窗时序
+            << ",\"x_yes_no_bid_sum\":" << JsonNum(q.x_yes_no_bid_sum)
+            << ",\"x_arb_free_edge\":" << JsonNum(q.x_arb_free_edge)
+            << ",\"b_mp_roc_5s\":" << JsonNum(q.b_mp_roc_5s) << ",\"b_ofi_10s\":" << JsonNum(q.b_ofi_10s)
+            << ",\"b_realized_vol_10s\":" << JsonNum(q.b_realized_vol_10s)
+            << ",\"b_mp_accel\":" << JsonNum(q.b_mp_accel)
             // v0.9 市场活跃度/流动性 (gamma REST)
             << ",\"mkt_volume_24h_usdc\":" << JsonNum(q.mkt_volume_24h_usdc)
             << ",\"mkt_liquidity_usdc\":" << JsonNum(q.mkt_liquidity_usdc)

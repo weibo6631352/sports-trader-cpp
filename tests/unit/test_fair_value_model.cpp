@@ -111,10 +111,13 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_trade_intensity_5m), 101u);  // v0.10 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_trade_signed_vol_5m), 96u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_trade_signed_vol_5m), 99u);
-    // v0.11 新末列 = x_inplay_market_absdev (103; 直播源 sharp vs PM 市场 交叉校验).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_inplay_market_absdev), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_inplay_market_absdev), 103u);  // v0.11 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_inplay_fair_minus_mid), 102u);
-    EXPECT_EQ(kMlFeatureCount, 104u);
+    // v0.12 新末列 = b_mp_accel (109; 双边一致性/锁定 + 短窗时序).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_mp_accel), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_yes_no_bid_sum), 104u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_arb_free_edge), 105u);
+    EXPECT_EQ(kMlFeatureCount, 110u);
     // 双边对称 + v0.5 延迟特征抽查 (双边 book 龄独立).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);

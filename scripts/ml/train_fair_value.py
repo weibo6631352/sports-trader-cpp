@@ -18,7 +18,7 @@ import argparse
 import json
 import sys
 
-N_TOTAL = 104  # = kMlFeatureCount (ml-feature-spec v0.11); +inplay交叉校验 102-103
+N_TOTAL = 110  # = kMlFeatureCount (ml-feature-spec v0.12); +双边一致性/锁定+短窗时序 104-109
 # 类别上下文列 (82-85): categorical 非 ordinal — 必须声明 categorical_feature, 否则 LightGBM
 #   把 league=104(CBA) 当 "比 34(NBA) 大" 的有序数值 (错)。整数码仅作 level; unknown=-1 独立 level。
 #   82 cat_asset_class / 83 cat_sport(家族) / 84 cat_market_type / 85 cat_league(Polymarket sport.id)
