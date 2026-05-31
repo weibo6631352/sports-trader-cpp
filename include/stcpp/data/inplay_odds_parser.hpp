@@ -3,16 +3,24 @@
 // Owner: 老雷 (GM) — 按文档接口建 (xiaoduan-goalserve-adapter-schema-v1 §odds + cross-source-mapping)
 // last_review: 2026-05-31
 //
-// 文档结构 (events.<id>.odds.<market_id>.participants.<pid>):
-//   { "odds": { "<market_id>": { "name": "...", "participants": {
-//       "<pid_home>": { "value_eu": "1.85", "suspend": false, ... },
-//       "<pid_draw>": { "value_eu": "3.40", ... },
-//       "<pid_away>": { "value_eu": "4.20", ... } } } } }
-//   implied_p = 1.0 / value_eu;  inplay = 单源 bet365 → multiplicative de-vig (p_i = implied_i / Σ)。
-//   home/YES = participants 第一个 (cross-source-mapping: "Home"→YES token)。
+// 真实结构 (xiaoduan-w8 §3.2 实测样本 inplay.goalserve.com/inplay-soccer.gz, 2026-05-28):
+//   { "odds": { "<market_id>": { "name": "1x2 (Full Time)", "participants": {
+//       "<pid>": { "name": "Home", "value_eu": "8.5", "suspend": "0" },
+//       "<pid>": { "name": "Draw", "value_eu": "...",  "suspend": "0" },
+//       "<pid>": { "name": "Away", "value_eu": "...",  "suspend": "0" } } } } }
+//   pid = 长数字串 (非 1/2/3); participant 靠 name (Home/Draw/Away) 区分, 非位置 (Goalserve 不保证序)。
+//   market_id "1"=1X2(Full Time), "27"=1X2(1st Half) (xiaoduan-w8 §4.3 字典)。
+//   implied_p = 1.0/value_eu;  inplay 单源 bet365 → multiplicative de-vig (p_i = implied_i / Σ)。
+//   home/YES = name=="Home" 腿; suspend=="1"/true 的腿剔除 (fail-closed: home/away 缺活跃腿 → invalid)。
 //
-// ⚠ 数据现状 (xiaoduan-goalserve-odds-by-sport-v2.1): 当前 key **无 odds plan**, 五大运动 NO_ODDS。
-//   本 parser 代码就位, 待 odds plan 升级 + inplay 白名单后数据流入。结构按文档, 非想象。
+// 加固史 (2026-05-31, 老雷 — 老板纠正"那份归档数据不全, inplay 有赔率"后核对真结构):
+//   ① market_id 锚 `"<id>":` (旧 `"<id>"` 会误匹配 `"suspend":"1"` 暂停值)。
+//   ② participant 按 name 匹配 (旧靠位置 implied[0]=home, Goalserve 换序则静默取错 → 喂模型错值)。
+//   ③ suspend 感知 (暂停腿剔除)。无 name 的旧合成结构 → 位置回退 (兼容旧单测)。
+//
+// ⚠ 数据现状: inplay.goalserve.com/inplay-soccer.gz **有 odds** (老板确认 + w8 实测样本);
+//   v2.1 的 NO_ODDS 是 www 节点 base feed (soccernew/home 只比分), 非此 EU Sofia odds 源。
+//   待 inplay 白名单 (403) + 有在赛比赛时数据流入。结构按 w8 实测样本, 非想象。
 //
 // 红线: 纯函数无 IO; vendor-agnostic (输出语义 fair prob, 不泄原始结构)。
 #pragma once
@@ -56,28 +64,55 @@ namespace inplay_odds_detail {
     return std::strtod(buf, nullptr);
 }
 
+// 提取 participant 的 "name" 值 (Home/Draw/Away)。无 → 空 view。
+[[nodiscard]] inline std::string_view ExtractName(std::string_view obj) noexcept {
+    const std::size_t k = obj.find("\"name\"");
+    if (k == std::string_view::npos) return {};
+    std::size_t pos = k + 6;
+    while (pos < obj.size() && (obj[pos] == ':' || obj[pos] == ' ')) ++pos;
+    if (pos >= obj.size() || obj[pos] != '"') return {};
+    ++pos;
+    const std::size_t start = pos;
+    while (pos < obj.size() && obj[pos] != '"') ++pos;
+    return (pos <= obj.size()) ? obj.substr(start, pos - start) : std::string_view{};
+}
+
+// 暂停? "suspend":"1" 或 "suspend":true → true (该腿剔除)。缺/"0"/false → false (活跃)。
+[[nodiscard]] inline bool ExtractSuspended(std::string_view obj) noexcept {
+    const std::size_t k = obj.find("\"suspend\"");
+    if (k == std::string_view::npos) return false;
+    std::size_t pos = k + 9;
+    while (pos < obj.size() && (obj[pos] == ':' || obj[pos] == ' ' || obj[pos] == '"')) ++pos;
+    return (pos < obj.size() && (obj[pos] == '1' || obj[pos] == 't'));  // "1" / true
+}
+
 }  // namespace inplay_odds_detail
 
-// ParseInplayOddsDevig — 从一个 event 的 odds JSON 抽指定 market 的 participants value_eu → 单源 de-vig。
-//   odds_json: events.<id>.odds 节点 (或含它的更大串); market_id: 目标盘口 (1x2/moneyline, 查字典定)。
-//   纯函数。无该 market / value_eu 全无效 → valid=false (fail-closed)。
+// ParseInplayOddsDevig — 从一个 event 的 odds JSON 抽指定 market 的 participants → 单源 de-vig。
+//   odds_json: events.<id>.odds 节点 (或含它的更大串); market_id: 目标盘口 (查 w8 §4.3 字典, "1"=1X2全场)。
+//   纯函数。按 name (Home/Draw/Away) 匹配腿; 无 name → 位置回退。暂停腿剔除。
+//   home/away 缺活跃腿 / 无该 market → valid=false (fail-closed, 喂模型 NaN 不喂错值)。
 [[nodiscard]] inline InplayOddsDevig ParseInplayOddsDevig(std::string_view odds_json,
                                                           std::string_view market_id) noexcept {
     using namespace inplay_odds_detail;
     InplayOddsDevig out;
-    // 定位 "<market_id>" 节点。
+    // ① 锚定 market KEY `"<id>":` (含冒号 → 不误匹配 `"suspend":"1"` / value 里的 "1")。
     std::string needle = "\"";
     needle.append(market_id);
-    needle.append("\"");
+    needle.append("\":");
     const std::size_t mpos = odds_json.find(needle);
     if (mpos == std::string_view::npos) return out;
-    // participants 节点。
     const std::size_t ppos = odds_json.find("\"participants\"", mpos);
     if (ppos == std::string_view::npos) return out;
-    // 逐 participant 子对象抽 value_eu (顺序 = home/[draw]/away, cross-source-mapping)。
-    std::vector<double> implied;
-    std::size_t scan = odds_json.find('{', ppos + 14);  // participants 的 '{'
+    const std::size_t scan = odds_json.find('{', ppos + 14);  // participants 的 '{'
     if (scan == std::string_view::npos) return out;
+
+    // ② 逐 participant 子对象, 收集 {name, value_eu, suspended} (保序, 供位置回退)。
+    struct Leg {
+        std::string_view name;
+        double value_eu;
+    };
+    std::vector<Leg> legs;
     std::size_t depth = 0;
     std::size_t obj_start = std::string_view::npos;
     for (std::size_t i = scan; i < odds_json.size(); ++i) {
@@ -88,21 +123,42 @@ namespace inplay_odds_detail {
         } else if (c == '}') {
             --depth;
             if (depth == 1 && obj_start != std::string_view::npos) {
-                const double v = ExtractValueEu(odds_json.substr(obj_start, i - obj_start + 1));
-                if (v > 1.0) implied.push_back(1.0 / v);  // implied prob
+                const std::string_view obj = odds_json.substr(obj_start, i - obj_start + 1);
+                const double v = ExtractValueEu(obj);
+                if (v > 1.0 && !ExtractSuspended(obj)) {  // 暂停腿剔除
+                    legs.push_back({ExtractName(obj), v});
+                }
                 obj_start = std::string_view::npos;
             }
             if (depth == 0) break;  // participants 对象结束
         }
     }
-    if (implied.size() < 2) return out;  // 至少 2-way
-    double sum = 0.0;
-    for (double p : implied) sum += p;
+    if (legs.size() < 2) return out;  // 至少 2-way (home+away)
+
+    // ③ 按 name 匹配 Home/Away/Draw; 无 name → 位置回退 (first=home, last=away, mid=draw)。
+    double home_eu = 0.0, away_eu = 0.0, draw_eu = 0.0;
+    bool by_name = false;
+    for (const auto& l : legs) {
+        if (l.name == "Home") { home_eu = l.value_eu; by_name = true; }
+        else if (l.name == "Away") { away_eu = l.value_eu; by_name = true; }
+        else if (l.name == "Draw") { draw_eu = l.value_eu; }
+    }
+    if (!by_name) {  // 旧合成结构 / 无 name → 位置回退
+        home_eu = legs.front().value_eu;
+        away_eu = legs.back().value_eu;
+        if (legs.size() >= 3) draw_eu = legs[1].value_eu;
+    }
+    if (!(home_eu > 1.0 && away_eu > 1.0)) return out;  // home/away 必须有活跃腿
+
+    const double ih = 1.0 / home_eu;
+    const double ia = 1.0 / away_eu;
+    const double idr = (draw_eu > 1.0) ? (1.0 / draw_eu) : 0.0;
+    const double sum = ih + ia + idr;
     if (!(sum > 0.0)) return out;
-    out.n_participants = implied.size();
-    out.home_fair = implied[0] / sum;             // 第一个 = home/YES
-    out.away_fair = implied[implied.size() - 1] / sum;  // 最后 = away
-    if (implied.size() >= 3) out.draw_fair = implied[1] / sum;  // 中间 = draw (3-way)
+    out.n_participants = legs.size();
+    out.home_fair = ih / sum;  // de-vig home(YES) 胜率
+    out.away_fair = ia / sum;
+    out.draw_fair = idr / sum;  // 无 draw → 0
     out.valid = true;
     return out;
 }
