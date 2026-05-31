@@ -635,10 +635,11 @@ TEST_F(PaperLoopTest, T11b_MlInferenceAdvisoryWired) {
     EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0));
     const auto opt = quote_hub_->Read("cond-test-001");
     if (opt.has_value() && opt->valid) {
-        // 推理结果填进 advisory 列 (stub logistic 输出 ∈ (0,1), 非 NaN)。
+        // 推理结果填进 advisory 列 (stub logistic 输出 ∈ (0,1]; 合成 book 固定旧 ts → 延迟特征巨大
+        //   → stub 可能饱和到 1.0, 测试用 LE; 真数据 data_source_ts 近实时, 延迟小不饱和)。
         EXPECT_FALSE(std::isnan(opt->ml_advisory_p_yes)) << "ML 推理应填 ml_advisory_p_yes";
         EXPECT_GT(opt->ml_advisory_p_yes, 0.0);
-        EXPECT_LT(opt->ml_advisory_p_yes, 1.0);
+        EXPECT_LE(opt->ml_advisory_p_yes, 1.0);
         // provenance 反映注入的 ML 模型 (非 baseline)。
         EXPECT_EQ(opt->model_kind, ModelKindTag::kStub);
         EXPECT_STREQ(opt->model_id, "stub-fair-value-v0.1");

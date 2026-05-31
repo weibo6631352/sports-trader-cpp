@@ -95,15 +95,16 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid), 17u);  // v0.1 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_corner_diff), 23u);           // v0.2 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_condition_exposure), 53u);  // v0.3 末列
-    // v0.4 新末列 = g_net_momentum_5m (74).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_net_momentum_5m), kMlFeatureCount - 1);
-    EXPECT_EQ(kMlFeatureCount, 75u);
-    // 双边对称 + v0.4 抽查.
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_net_momentum_5m), 74u);       // v0.4 末列
+    // v0.5 新末列 = x_joint_staleness_sec (81).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_joint_staleness_sec), kMlFeatureCount - 1);
+    EXPECT_EQ(kMlFeatureCount, 82u);
+    // 双边对称 + v0.5 延迟特征抽查 (双边 book 龄独立).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_yes_qty), 48u);
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::fee_rate_coef), 54u);
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_clutch), 72u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_book_age_sec), 75u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_book_age_sec), 76u);  // 双边独立
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_yes_no_book_skew_sec), 78u);
 }
 
 TEST(ModelFeatureSpec, V03Columns_FromQuoteFeatures_DoubleSided) {
@@ -138,6 +139,30 @@ TEST(ModelFeatureSpec, V03Columns_FromQuoteFeatures_DoubleSided) {
     EXPECT_FLOAT_EQ(at(MlFeature::pos_condition_exposure), 130.0f);
     // 0-23 仍由 game_row/book_row 填 (extract_full 含原始 game/book 列)。
     EXPECT_FLOAT_EQ(at(MlFeature::g_score_diff), 7.0f);
+}
+
+TEST(ModelFeatureSpec, V05Columns_DataLatency_DoubleSided) {
+    // 数据延迟/新鲜度: 决策 as_of − 数据 data_source = 龄。YES/NO book 时间独立。
+    auto g = make_game_row();
+    auto b = make_book_row();
+    const std::int64_t as_of = 10'000'000'000LL;  // 10s
+    g.data_source_ts_ns = 7'000'000'000LL;        // 比分 3s 前
+    b.data_source_ts_ns = 9'500'000'000LL;        // YES book 0.5s 前
+    b.ingestion_ts_ns = 9'600'000'000LL;          // YES ingestion lag 100ms
+    stcpp::sizing::QuoteFeatures qf{};
+    qf.as_of_ts_ns = as_of;
+    qf.no_book_data_source_ts_ns = 2'000'000'000LL;  // NO book 8s 前 (双边独立! 比 YES 旧得多)
+    qf.no_book_ingestion_ts_ns = 2'050'000'000LL;    // NO ingestion lag 50ms
+
+    const FeatureVector fv = stcpp::ml::extract_full(g, b, qf);
+    auto at = [&](MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
+    EXPECT_NEAR(at(MlFeature::b_book_age_sec), 0.5, 1e-6);    // YES book 0.5s
+    EXPECT_NEAR(at(MlFeature::no_b_book_age_sec), 8.0, 1e-6);  // NO book 8s (双边独立)
+    EXPECT_NEAR(at(MlFeature::g_score_age_sec), 3.0, 1e-6);    // 比分 3s
+    EXPECT_NEAR(at(MlFeature::x_yes_no_book_skew_sec), 7.5, 1e-6) << "YES.ds−NO.ds = 9.5−2.0";
+    EXPECT_NEAR(at(MlFeature::b_ingestion_lag_ms), 100.0, 1e-3);   // YES 传输 100ms
+    EXPECT_NEAR(at(MlFeature::no_b_ingestion_lag_ms), 50.0, 1e-3);  // NO 传输 50ms (双边独立)
+    EXPECT_NEAR(at(MlFeature::x_joint_staleness_sec), 8.0, 1e-6) << "max(0.5,8,3)=8 最弱环节";
 }
 
 TEST(ModelFeatureSpec, V04Columns_RemainingSignals) {

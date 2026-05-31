@@ -109,6 +109,10 @@ struct QuoteFeatures {
     double no_imbalance{0.0};           // NO  L1 簿口失衡 ∈ [−1,1]
     bool devig_ok{false};               // de-vig 成功? (观测: 区分「de-vig 失败」vs「edge 不足」)
     std::int64_t joint_as_of_ts_ns{0};  // 联合新鲜度 = min(score.as_of, book.as_of); 模型输入+观测, 绝不 gate
+    // NO book 时间戳载体 (双边 book 时间独立; YES book ts 在 extract_full 的 book_row, NO 经此传)。
+    //   裸 ts 非 MlFeature 特征 (同 4ts 排除); 仅供 extract_full.fill_latency_features 算 NO book 龄/延迟。
+    std::int64_t no_book_data_source_ts_ns{0};
+    std::int64_t no_book_ingestion_ts_ns{0};
 
     // ---- 当前持仓 (老板 2026-05-31: 持仓入模型; 库存感知 — 目标仓位范式控制器需知现仓才能定调整) ----
     //   老板 2026-05-31「各边买了多少, 可能两边都买, 不能只说买哪一边」: per-token 双边量, 不塌单边/净。

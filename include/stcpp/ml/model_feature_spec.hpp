@@ -50,7 +50,7 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.4";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.5";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
 //     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
 //   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
@@ -163,9 +163,20 @@ enum class MlFeature : std::uint8_t {
     g_clutch = 72,                 // 关键时段 flag (末段比分接近)
     g_goal_freshness = 73,         // 进球新鲜度 exp(−Δt/120s)
     g_net_momentum_5m = 74,        // 最近 5min 净进球 (势头)
+
+    // ---- v0.5 append (数据延迟/新鲜度, 双边独立; extract_full 从 4ts 派生 — 数据可信度感知) ----
+    //   老板「数据是几秒/几毫秒前的」+「订单簿双边时间独立 (YES/NO 各自更新, 不同步)」。
+    //   龄 = as_of(决策时刻) − data_source(上游采集)。R-20 守法: data_source 仍真上游, as_of 决策锚。
+    b_book_age_sec = 75,           // YES book 数据龄秒 = as_of − yes_book.data_source_ts
+    no_b_book_age_sec = 76,        // NO  book 数据龄秒 (双边独立! YES/NO WSS 各自推送, 龄不同)
+    g_score_age_sec = 77,          // 比分数据龄秒 = as_of − score.data_source_ts
+    x_yes_no_book_skew_sec = 78,   // YES vs NO book 新鲜度错位 = yes.ds − no.ds (双边更新不同步信号)
+    b_ingestion_lag_ms = 79,       // YES book 传输延迟毫秒 = ingestion − data_source (跨洋链路)
+    no_b_ingestion_lag_ms = 80,    // NO  book 传输延迟毫秒 (双边独立)
+    x_joint_staleness_sec = 81,    // 联合最旧 = max(yes_age, no_age, score_age) (整体最弱环节)
 };
 
-inline constexpr std::size_t kMlFeatureCount = 75;
+inline constexpr std::size_t kMlFeatureCount = 82;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -268,6 +279,13 @@ inline constexpr std::size_t kMlFeatureCount = 75;
         case MlFeature::g_clutch: return "g_clutch";
         case MlFeature::g_goal_freshness: return "g_goal_freshness";
         case MlFeature::g_net_momentum_5m: return "g_net_momentum_5m";
+        case MlFeature::b_book_age_sec: return "b_book_age_sec";
+        case MlFeature::no_b_book_age_sec: return "no_b_book_age_sec";
+        case MlFeature::g_score_age_sec: return "g_score_age_sec";
+        case MlFeature::x_yes_no_book_skew_sec: return "x_yes_no_book_skew_sec";
+        case MlFeature::b_ingestion_lag_ms: return "b_ingestion_lag_ms";
+        case MlFeature::no_b_ingestion_lag_ms: return "no_b_ingestion_lag_ms";
+        case MlFeature::x_joint_staleness_sec: return "x_joint_staleness_sec";
     }
     return "unknown";
 }
@@ -516,6 +534,46 @@ inline void extract_from_quote(const stcpp::sizing::QuoteFeatures& q, std::vecto
 }
 
 // ---------------------------------------------------------------------------
+// fill_latency_features — 数据延迟/新鲜度列 (75-81; 双边 book 独立)。
+//   龄 = as_of(决策时刻) − data_source(上游采集)。R-20 守法 (data_source 真上游, as_of 决策锚)。
+//   YES book ts ← book_row; NO book ts ← qf (双边 WSS 各自推送, 时间独立); score ts ← game_row。
+// ---------------------------------------------------------------------------
+inline void fill_latency_features(const stcpp::data::feature_store::FeatureStoreGameRow& g,
+                                  const stcpp::data::feature_store::FeatureStoreBookRow& b,
+                                  const stcpp::sizing::QuoteFeatures& q,
+                                  std::vector<float>& out) noexcept {
+    const float nanf = detail::kNaNf;
+    const double dnan = std::numeric_limits<double>::quiet_NaN();
+    auto put = [&out, nanf](MlFeature f, double v) noexcept {
+        out[static_cast<std::size_t>(f)] = (v == v) ? static_cast<float>(v) : nanf;
+    };
+    const std::int64_t as_of = q.as_of_ts_ns;
+    auto age_s = [as_of, dnan](std::int64_t ds) -> double {
+        return (as_of > 0 && ds > 0 && as_of >= ds) ? static_cast<double>(as_of - ds) / 1e9 : dnan;
+    };
+    auto lag_ms = [dnan](std::int64_t ing, std::int64_t ds) -> double {
+        return (ing > 0 && ds > 0 && ing >= ds) ? static_cast<double>(ing - ds) / 1e6 : dnan;
+    };
+    const double yes_age = age_s(b.data_source_ts_ns);          // YES book (book_row)
+    const double no_age = age_s(q.no_book_data_source_ts_ns);   // NO book (经 qf 传, 双边独立)
+    const double score_age = age_s(g.data_source_ts_ns);        // 比分 (game_row)
+    put(MlFeature::b_book_age_sec, yes_age);
+    put(MlFeature::no_b_book_age_sec, no_age);
+    put(MlFeature::g_score_age_sec, score_age);
+    put(MlFeature::x_yes_no_book_skew_sec,
+        (b.data_source_ts_ns > 0 && q.no_book_data_source_ts_ns > 0)
+            ? static_cast<double>(b.data_source_ts_ns - q.no_book_data_source_ts_ns) / 1e9
+            : dnan);  // 正 = YES book 更旧 / NO 更新 (双边更新不同步)
+    put(MlFeature::b_ingestion_lag_ms, lag_ms(b.ingestion_ts_ns, b.data_source_ts_ns));
+    put(MlFeature::no_b_ingestion_lag_ms, lag_ms(q.no_book_ingestion_ts_ns, q.no_book_data_source_ts_ns));
+    double joint = -1.0;  // 联合最旧 = max(三者中有限的)
+    for (double a : {yes_age, no_age, score_age}) {
+        if (a == a && a > joint) joint = a;
+    }
+    put(MlFeature::x_joint_staleness_sec, joint >= 0.0 ? joint : dnan);
+}
+
+// ---------------------------------------------------------------------------
 // extract_full — game_row + book_row (0..23) + QuoteFeatures (24..53) → 完整 FeatureVector。
 //   在线推理用 (paper_loop): qf 含双边时序/持仓, game_row/book_row 含原始 game/book 列。
 // ---------------------------------------------------------------------------
@@ -529,15 +587,16 @@ inline void extract_from_quote(const stcpp::sizing::QuoteFeatures& q, std::vecto
     extract_from_game_row(g, fv.values);   // 0-7, 18-23
     extract_from_book_row(b, fv.values);   // 8-15
     fill_cross_features(fv.values);        // 16-17
-    extract_from_quote(q, fv.values);      // 24-53 (双边时序/持仓)
+    extract_from_quote(q, fv.values);      // 24-74 (双边时序/持仓/cross/sports/fee/resolution)
+    fill_latency_features(g, b, q, fv.values);  // 75-81 (数据延迟/新鲜度, 双边 book 独立)
     fv.as_of_ts_ns = (g.as_of_ts_ns > b.as_of_ts_ns) ? g.as_of_ts_ns : b.as_of_ts_ns;
     return fv;
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 75, "MlFeature count must be 75 (v0.4; append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::g_net_momentum_5m) == kMlFeatureCount - 1,
-              "最后一列必须是 g_net_momentum_5m (append-only 约束; v0.4 末列)");
+static_assert(kMlFeatureCount == 82, "MlFeature count must be 82 (v0.5; append + bump spec)");
+static_assert(static_cast<std::size_t>(MlFeature::x_joint_staleness_sec) == kMlFeatureCount - 1,
+              "最后一列必须是 x_joint_staleness_sec (append-only 约束; v0.5 末列)");
 // append-only 不变量: 旧列 index 永不变 (训练 column index 锁死)。
 static_assert(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid) == 17,
               "x_microprice_minus_mid 必须恒为 17 (v0.1 末列, append 后不得移位)");
@@ -545,5 +604,7 @@ static_assert(static_cast<std::size_t>(MlFeature::g_corner_diff) == 23,
               "g_corner_diff 必须恒为 23 (v0.2 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::pos_condition_exposure) == 53,
               "pos_condition_exposure 必须恒为 53 (v0.3 末列, append 后不得移位)");
+static_assert(static_cast<std::size_t>(MlFeature::g_net_momentum_5m) == 74,
+              "g_net_momentum_5m 必须恒为 74 (v0.4 末列, append 后不得移位)");
 
 }  // namespace stcpp::ml

@@ -4,7 +4,7 @@
 Owner: 老雷 (GM) — Phase 2 残差 LightGBM → ONNX (替 StubFairValueModel)
 last_review: 2026-05-31
 
-输入: 标签管道 JoinFile 产的 training jsonl (X = f0..f74 完整向量列 + label/label_valid),
+输入: 标签管道 JoinFile 产的 training jsonl (X = f0..f81 完整向量列(含数据延迟) + label/label_valid),
    或 *.fv.jsonl + 单独 label。列序 = MlFeature enum (训练 X = C++ 推理向量, BR-1 零漂移)。
 模式:
    regress (默认): LGBMRegressor 直接预测 p_yes (y=label∈{0,1} 当回归). 输出单 float ∈ [0,1],
@@ -18,7 +18,7 @@ import argparse
 import json
 import sys
 
-N_FEATURES = 75  # = kMlFeatureCount (ml-feature-spec v0.4); C++ 与训练必须一致
+N_FEATURES = 82  # = kMlFeatureCount (ml-feature-spec v0.5); C++ 与训练必须一致
 
 
 def load_jsonl(path):
@@ -37,7 +37,7 @@ def build_xy(rows, mode):
     for r in rows:
         if not r.get("label_valid", 0):
             continue  # 只用已结算
-        # 优先 f0..f74 (完整向量列序锁); 否则跳过 (需完整 X)
+        # 优先 f0..f81 (完整向量列序锁); 否则跳过 (需完整 X)
         if "f0" not in r:
             continue
         feats = [float(r.get(f"f{i}", 0.0)) for i in range(N_FEATURES)]
