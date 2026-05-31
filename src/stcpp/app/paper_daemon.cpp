@@ -14,6 +14,8 @@
 #include <utility>
 
 #include "stcpp/data/inplay_feed_thread.hpp"    // InplayFeedThread / InplayFeedConfig
+#include "stcpp/data/settlement_poller.hpp"     // M2 SettlementPoller (clob /markets 轮询)
+#include "stcpp/data/settlement_store.hpp"      // M2 SettlementStore
 #include "stcpp/data/score_snapshot_store.hpp"  // A1b: ScoreSnapshotStore::GetSnapshot
 #include "stcpp/ml/feature_recorder.hpp"        // FeatureRecorder
 
@@ -324,6 +326,31 @@ BuildResult PaperDaemon::Build() {
     };
     inplay_feed_ = std::make_unique<data::InplayFeedThread>(*score_store_, feed_cfg);
 
+    // ---- M2: SettlementStore + SettlementPoller (clob /markets 轮询 → 3b 权威结算 + CLV 收盘) ----
+    //   fetcher: popen curl GET /markets/{cid} (cid 是 bytes32 hex, 单引号 body 安全, 沿用 discovery 模式)。
+    //   R-12: poller 独立 jthread, popen 阻塞 IO 在本线程, 不进 WSS event loop。
+    {
+        settlement_store_ = std::make_unique<data::SettlementStore>();
+        std::vector<std::string> settle_cids;
+        settle_cids.reserve(token_map_.size());
+        for (const auto& [cid, _tok] : token_map_) settle_cids.push_back(cid);
+        auto fetcher = [](const std::string& cid) -> std::string {
+            std::string cmd = "curl -s --max-time 15 'https://clob.polymarket.com/markets/";
+            cmd += cid;  // bytes32 hex (0-9a-fx), 无 shell 特殊字符
+            cmd += "'";
+            std::string out;
+            if (FILE* p = ::popen(cmd.c_str(), "r")) {
+                char buf[4096];
+                std::size_t n;
+                while ((n = std::fread(buf, 1, sizeof(buf), p)) > 0) out.append(buf, n);
+                ::pclose(p);
+            }
+            return out;
+        };
+        settlement_poller_ = std::make_unique<data::SettlementPoller>(
+            *settlement_store_, std::move(settle_cids), std::move(fetcher), /*poll_interval_ms=*/60'000);
+    }
+
     // ---- Step 4: LiveWssTransport + LiveBookPublisher (构造 + 设回调, 不 AsyncConnect) ----
     if (!all_token_ids_.empty()) {
         live_publisher_ = std::make_unique<debug_api::LiveBookPublisher>(*hub_, all_token_ids_, cfg_.verbose);
@@ -412,6 +439,16 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
+    // ---- M2 start: SettlementPoller + 结算刷新线程 (喂 3b 权威结算 + CLV 收盘信号) ----
+    if (cfg_.start_live_feeds && settlement_poller_) {
+        settlement_poller_->Start();
+        if (cfg_.enable_paper_trading && paper_loop_) {
+            settlement_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshResolution(st); });
+        }
+        std::printf("[paper_daemon] M2 SettlementPoller + 结算刷新线程启动 (clob /markets 60s 轮询)\n");
+        std::fflush(stdout);
+    }
+
     // ---- Step 4 start: WSS AsyncConnect ----
     if (cfg_.start_live_feeds && live_transport_) {
         const std::string wss_url = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
@@ -495,6 +532,11 @@ void PaperDaemon::Shutdown() noexcept {
         mapping_refresh_thread_.request_stop();
         mapping_refresh_thread_.join();
     }
+    // 0a. M2 结算刷新线程先停 (它 touch paper_loop_ + settlement_store_, 必在二者前 join).
+    if (settlement_refresh_thread_.joinable()) {
+        settlement_refresh_thread_.request_stop();
+        settlement_refresh_thread_.join();
+    }
     // 0b. REST 快照打底线程先停 (它 touch live_publisher_/hub_, 必在二者析构前 join; st 令其提前退出).
     if (seed_thread_.joinable()) {
         seed_thread_.request_stop();
@@ -526,6 +568,11 @@ void PaperDaemon::Shutdown() noexcept {
     // 5. InplayFeedThread (先于 score_store_ 析构; Stop 内含 join)
     if (inplay_feed_) {
         inplay_feed_->Stop();
+    }
+
+    // 5a. M2 SettlementPoller (先于 settlement_store_ 析构; Stop 内含 jthread join)
+    if (settlement_poller_) {
+        settlement_poller_->Stop();
     }
 
     // 6. LiveWssTransport (Close 内含 join io_thread_ + send_thread_)
@@ -607,6 +654,41 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
             if (st.stop_requested()) {
                 return;
             }
+            std::this_thread::sleep_for(milliseconds(100));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RefreshResolution — M2 结算刷新线程主体
+//   周期取 SettlementStore 快照 → 构建 condition→ResolutionEntry → SetResolutionByCondition。
+//   ResolutionEntry.status = SettlementRecord.resolution_status() (0Open/1Resolving/2Resolved);
+//   .winner = settlement_value (-1/0/1, 语义直对齐)。3b 权威结算 (SettleCondition) 已接, 此线喂数。
+// ---------------------------------------------------------------------------
+void PaperDaemon::RefreshResolution(std::stop_token st) {
+    using namespace std::chrono;
+    while (!st.stop_requested()) {
+        if (settlement_store_ && paper_loop_) {
+            const auto snap = settlement_store_->GetSnapshot();  // shared_ptr<const SettlementMap>
+            if (snap) {
+                std::unordered_map<std::string, paper::ResolutionEntry> res_map;
+                res_map.reserve(snap->size());
+                std::size_t resolved = 0;
+                for (const auto& [cid, rec] : *snap) {
+                    paper::ResolutionEntry e;
+                    e.status = rec.resolution_status();
+                    e.winner = rec.settlement_value;  // -1/0/1 直对齐 ResolutionEntry.winner
+                    res_map[cid] = e;
+                    if (e.status == 2) ++resolved;
+                }
+                paper_loop_->SetResolutionByCondition(std::move(res_map));
+                std::fprintf(stderr, "[paper_daemon] 结算刷新: %zu market (%zu resolved)\n", snap->size(),
+                             resolved);
+            }
+        }
+        const auto deadline = steady_clock::now() + seconds(30);
+        while (steady_clock::now() < deadline) {
+            if (st.stop_requested()) return;
             std::this_thread::sleep_for(milliseconds(100));
         }
     }

@@ -58,6 +58,8 @@ class LiveBookPublisher;
 }  // namespace stcpp::debug_api
 namespace stcpp::data {
 class InplayFeedThread;
+class SettlementStore;   // M2 收盘/结算 store (forward; .cpp 实体化)
+class SettlementPoller;  // M2 结算轮询线程 (forward)
 }  // namespace stcpp::data
 namespace stcpp::ml {
 class FeatureRecorder;
@@ -231,6 +233,10 @@ private:
     //   动态出现, 故周期重匹配 (非 boot 一次性)。
     void RefreshEventMapping(std::stop_token st);
 
+    // M2 结算刷新线程: 周期取 SettlementStore 快照 → 构建 ResolutionEntry map →
+    //   paper_loop_->SetResolutionByCondition() (喂 3b 权威结算 + CLV 收盘信号)。
+    void RefreshResolution(std::stop_token st);
+
     PaperDaemonConfig cfg_;
 
     // ---- 测试注入的 markets (空 → Build 走真发现) ----
@@ -248,6 +254,7 @@ private:
     // condition_id → market 锚定输入 (两队名 + kickoff + sport; Build 从 DiscoveredMarket 填).
     std::unordered_map<std::string, EventMatchInput> market_match_inputs_;
     std::jthread mapping_refresh_thread_;
+    std::jthread settlement_refresh_thread_;  // M2 结算刷新 (SettlementStore → SetResolutionByCondition)
     std::jthread seed_thread_;  // REST 快照打底后台线程 (jthread: 析构自动 request_stop + join)
 
     // =====================================================================
@@ -278,6 +285,8 @@ private:
 
     // feeds & transport
     std::unique_ptr<data::InplayFeedThread> inplay_feed_;
+    std::unique_ptr<data::SettlementStore> settlement_store_;    // M2 收盘/结算快照
+    std::unique_ptr<data::SettlementPoller> settlement_poller_;  // M2 clob /markets 轮询
     std::unique_ptr<debug_api::LiveBookPublisher> live_publisher_;
     std::unique_ptr<debug_api::LiveWssTransport> live_transport_;
 
