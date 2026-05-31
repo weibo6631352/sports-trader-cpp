@@ -45,12 +45,15 @@ def build_xy(rows, mode):
         # 优先 f0..f84 (完整向量列序锁; 含类别上下文); 否则跳过 (需完整 X)
         if "f0" not in r:
             continue
-        feats = [float(r.get(f"f{i}", 0.0)) for i in range(N_TOTAL)]
-        # NaN → 0 (LightGBM 原生 missing 也可; 这里保守填 0, 与 C++ 推理一致性留训练侧定)
+        # 缺失/NaN → 0: recorder 把 NaN 写成 JSON null (合法 JSON; C++ << 的 "nan" 非法), 读回为 None。
+        #   None/NaN 统一填 0 (LightGBM 原生 missing 也可; 这里保守填 0, 与 C++ 推理一致性留训练侧定)。
+        def num(v, d=0.0):
+            return d if v is None else float(v)
+        feats = [num(r.get(f"f{i}")) for i in range(N_TOTAL)]
         feats = [0.0 if (x != x) else x for x in feats]
         label = float(r["label"])
         if mode == "residual":
-            base = float(r.get("fair_value", 0.5))
+            base = num(r.get("fair_value"), 0.5)
             y.append(label - base)
         else:
             y.append(label)

@@ -35,6 +35,7 @@
 #include <fstream>
 #include <string>
 #include <thread>
+#include <type_traits>
 #include <unordered_map>
 #include <vector>
 
@@ -127,88 +128,103 @@ private:
         }
     }
 
-    // NaN → "null" (合法 JSON; C++ << 对 NaN 输出小写 "nan" 破坏 Python json.loads)。line 在 moneyline
-    //   市场恒 NaN (无线值), 必须 null 保护。其余有限数值用 %g 与 << 同口径。
-    static std::string JsonNullable(double v) {
-        if (std::isnan(v))
-            return "null";
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%g", v);
+    // 数值 → JSON 安全串。浮点 NaN/Inf → "null" (C++ << 对 NaN 输出小写 "nan"/"inf" 是非法 JSON,
+    //   破坏 Python json.loads 整行; loader 逐行 json.loads, 一行坏全炸)。有限浮点 %g (与 << 同 6 位
+    //   有效口径); 整数 %lld 全精度 (ts_ns 用 %g 会科学计数丢精度)。所有数值字段统一过此, 杜绝 nan 泄漏。
+    template <class T>
+    static std::string JsonNum(T v) {
+        char buf[40];
+        if constexpr (std::is_floating_point_v<T>) {
+            if (!std::isfinite(static_cast<double>(v)))
+                return "null";
+            std::snprintf(buf, sizeof(buf), "%g", static_cast<double>(v));
+        } else {
+            std::snprintf(buf, sizeof(buf), "%lld", static_cast<long long>(v));
+        }
         return buf;
     }
 
     static void WriteLine(std::ofstream& out, const std::string& cond, const sizing::QuoteFeatures& q) {
-        // JSONL 一行一决策快照. 字段为受控数值/hex, 无需 JSON 转义.
+        // JSONL 一行一决策快照. 字段为受控数值/hex, 无需 JSON 转义. 数值全过 JsonNum (NaN→null)。
         out << "{\"condition_id\":\"" << cond << "\""
-            << ",\"fair_value\":" << q.fair_value << ",\"market_mid\":" << q.market_mid
-            << ",\"edge_bps\":" << q.edge_bps << ",\"fee_rate_coef\":"
-            << q.fee_rate_coef
+            << ",\"fair_value\":" << JsonNum(q.fair_value) << ",\"market_mid\":" << JsonNum(q.market_mid)
+            << ",\"edge_bps\":" << JsonNum(q.edge_bps) << ",\"fee_rate_coef\":" << JsonNum(q.fee_rate_coef)
             // v0.7 类别上下文码 (真实 Polymarket 市场结构; 与 fv.jsonl 82-85 列同源 QuoteFeatures 载体,
             //   此处对齐写入 quotes.jsonl — 离线分析/join 免再去查 fv 向量)。unknown=-1。
-            << ",\"cat_asset_class_id\":" << q.cat_asset_class_id
-            << ",\"cat_sport_family_id\":" << q.cat_sport_family_id
-            << ",\"cat_league_id\":" << q.cat_league_id
-            << ",\"cat_market_type_id\":" << q.cat_market_type_id << ",\"line\":" << JsonNullable(q.line)
+            << ",\"cat_asset_class_id\":" << JsonNum(q.cat_asset_class_id)
+            << ",\"cat_sport_family_id\":" << JsonNum(q.cat_sport_family_id)
+            << ",\"cat_league_id\":" << JsonNum(q.cat_league_id)
+            << ",\"cat_market_type_id\":" << JsonNum(q.cat_market_type_id) << ",\"line\":" << JsonNum(q.line)
             // 树父级引用 (按 event join 兄弟盘口; neg_risk 一致性) + 双边微观结构 (模型输入, 不 gate;
             // 2026-05-31)
             << ",\"event_id\":\"" << q.event_id << "\""
             << ",\"neg_risk_market_id\":\"" << q.neg_risk_market_id << "\""
-            << ",\"cross_spread\":" << q.cross_spread << ",\"no_microprice\":" << q.no_microprice
-            << ",\"yes_imbalance\":" << q.yes_imbalance << ",\"no_imbalance\":" << q.no_imbalance
-            << ",\"devig_ok\":" << (q.devig_ok ? "true" : "false") << ",\"joint_as_of_ts_ns\":"
-            << q.joint_as_of_ts_ns
+            << ",\"cross_spread\":" << JsonNum(q.cross_spread) << ",\"no_microprice\":" << JsonNum(q.no_microprice)
+            << ",\"yes_imbalance\":" << JsonNum(q.yes_imbalance) << ",\"no_imbalance\":" << JsonNum(q.no_imbalance)
+            << ",\"devig_ok\":" << (q.devig_ok ? "true" : "false")
+            << ",\"joint_as_of_ts_ns\":" << JsonNum(q.joint_as_of_ts_ns)
             // 当前持仓 (库存感知; 目标仓位范式)。双边量 (老板「各边买了多少」): YES/NO 各持仓 + avg。
-            << ",\"pos_yes_qty\":" << q.pos_yes_qty << ",\"pos_no_qty\":" << q.pos_no_qty
-            << ",\"pos_yes_avg_entry\":" << q.pos_yes_avg_entry
-            << ",\"pos_no_avg_entry\":" << q.pos_no_avg_entry
-            << ",\"pos_net_qty\":" << q.pos_net_qty << ",\"pos_avg_entry\":" << q.pos_avg_entry
-            << ",\"pos_condition_exposure_usdc\":" << q.pos_condition_exposure_usdc
-            << ",\"kelly_fraction\":" << q.kelly_fraction
-            << ",\"suggested_notional\":" << q.suggested_notional
-            << ",\"signal_strength\":" << q.signal_strength << ",\"model_confidence\":" << q.model_confidence
-            << ",\"fair_ci_lower\":" << q.fair_ci_lower << ",\"fair_ci_upper\":" << q.fair_ci_upper
+            << ",\"pos_yes_qty\":" << JsonNum(q.pos_yes_qty) << ",\"pos_no_qty\":" << JsonNum(q.pos_no_qty)
+            << ",\"pos_yes_avg_entry\":" << JsonNum(q.pos_yes_avg_entry)
+            << ",\"pos_no_avg_entry\":" << JsonNum(q.pos_no_avg_entry)
+            << ",\"pos_net_qty\":" << JsonNum(q.pos_net_qty) << ",\"pos_avg_entry\":" << JsonNum(q.pos_avg_entry)
+            << ",\"pos_condition_exposure_usdc\":" << JsonNum(q.pos_condition_exposure_usdc)
+            << ",\"kelly_fraction\":" << JsonNum(q.kelly_fraction)
+            << ",\"suggested_notional\":" << JsonNum(q.suggested_notional)
+            << ",\"signal_strength\":" << JsonNum(q.signal_strength)
+            << ",\"model_confidence\":" << JsonNum(q.model_confidence)
+            << ",\"fair_ci_lower\":" << JsonNum(q.fair_ci_lower) << ",\"fair_ci_upper\":" << JsonNum(q.fair_ci_upper)
             << ",\"predict_ok\":" << (q.predict_ok ? "true" : "false")
             << ",\"advisory\":" << (q.advisory ? "true" : "false")
             << ",\"model_calibrated\":" << (q.model_calibrated ? "true" : "false")
-            << ",\"ml_advisory_p_yes\":" << q.ml_advisory_p_yes
+            << ",\"ml_advisory_p_yes\":" << JsonNum(q.ml_advisory_p_yes)
             // 时序微结构 YES 边 (Phase 2: 训练 X 含第一梯队 alpha b_ofi; 联合评审 2026-05-31)
-            << ",\"mp_roc_per_sec\":" << q.mp_roc_per_sec << ",\"realized_vol\":" << q.realized_vol
-            << ",\"ts_window_samples\":" << q.ts_window_samples
-            << ",\"bid_absence_frac\":" << q.bid_absence_frac << ",\"exit_depth_mean\":" << q.exit_depth_mean
-            << ",\"b_amihud\":" << q.b_amihud << ",\"b_bid_depth_vol\":" << q.b_bid_depth_vol
-            << ",\"b_ofi\":" << q.b_ofi << ",\"b_vol_ratio\":" << q.b_vol_ratio
-            << ",\"b_mp_roc_30s\":" << q.b_mp_roc_30s << ",\"b_mp_roc_5m\":" << q.b_mp_roc_5m
+            << ",\"mp_roc_per_sec\":" << JsonNum(q.mp_roc_per_sec) << ",\"realized_vol\":" << JsonNum(q.realized_vol)
+            << ",\"ts_window_samples\":" << JsonNum(q.ts_window_samples)
+            << ",\"bid_absence_frac\":" << JsonNum(q.bid_absence_frac)
+            << ",\"exit_depth_mean\":" << JsonNum(q.exit_depth_mean)
+            << ",\"b_amihud\":" << JsonNum(q.b_amihud) << ",\"b_bid_depth_vol\":" << JsonNum(q.b_bid_depth_vol)
+            << ",\"b_ofi\":" << JsonNum(q.b_ofi) << ",\"b_vol_ratio\":" << JsonNum(q.b_vol_ratio)
+            << ",\"b_mp_roc_30s\":" << JsonNum(q.b_mp_roc_30s) << ",\"b_mp_roc_5m\":" << JsonNum(q.b_mp_roc_5m)
             // 时序微结构 NO 边 (双边对称; 独立信号)
-            << ",\"no_mp_roc_per_sec\":" << q.no_mp_roc_per_sec << ",\"no_realized_vol\":" << q.no_realized_vol
-            << ",\"no_ts_window_samples\":" << q.no_ts_window_samples
-            << ",\"no_bid_absence_frac\":" << q.no_bid_absence_frac
-            << ",\"no_exit_depth_mean\":" << q.no_exit_depth_mean << ",\"no_b_amihud\":" << q.no_b_amihud
-            << ",\"no_b_bid_depth_vol\":" << q.no_b_bid_depth_vol << ",\"no_b_ofi\":" << q.no_b_ofi
-            << ",\"no_b_vol_ratio\":" << q.no_b_vol_ratio << ",\"no_b_mp_roc_30s\":" << q.no_b_mp_roc_30s
-            << ",\"no_b_mp_roc_5m\":" << q.no_b_mp_roc_5m
+            << ",\"no_mp_roc_per_sec\":" << JsonNum(q.no_mp_roc_per_sec)
+            << ",\"no_realized_vol\":" << JsonNum(q.no_realized_vol)
+            << ",\"no_ts_window_samples\":" << JsonNum(q.no_ts_window_samples)
+            << ",\"no_bid_absence_frac\":" << JsonNum(q.no_bid_absence_frac)
+            << ",\"no_exit_depth_mean\":" << JsonNum(q.no_exit_depth_mean)
+            << ",\"no_b_amihud\":" << JsonNum(q.no_b_amihud)
+            << ",\"no_b_bid_depth_vol\":" << JsonNum(q.no_b_bid_depth_vol) << ",\"no_b_ofi\":" << JsonNum(q.no_b_ofi)
+            << ",\"no_b_vol_ratio\":" << JsonNum(q.no_b_vol_ratio)
+            << ",\"no_b_mp_roc_30s\":" << JsonNum(q.no_b_mp_roc_30s)
+            << ",\"no_b_mp_roc_5m\":" << JsonNum(q.no_b_mp_roc_5m)
             // cross / log-odds (残差框架 base 特征)
-            << ",\"x_log_odds_fair\":" << q.x_log_odds_fair << ",\"x_log_odds_edge\":" << q.x_log_odds_edge
-            << ",\"x_pin_risk\":" << q.x_pin_risk << ",\"x_pin_x_expiry\":" << q.x_pin_x_expiry
-            << ",\"b_dislocation\":" << q.b_dislocation
+            << ",\"x_log_odds_fair\":" << JsonNum(q.x_log_odds_fair)
+            << ",\"x_log_odds_edge\":" << JsonNum(q.x_log_odds_edge)
+            << ",\"x_pin_risk\":" << JsonNum(q.x_pin_risk) << ",\"x_pin_x_expiry\":" << JsonNum(q.x_pin_x_expiry)
+            << ",\"b_dislocation\":" << JsonNum(q.b_dislocation)
             // sports 动态 (第一梯队 alpha: g_time_x_lead / g_goal_freshness)
-            << ",\"g_time_x_lead\":" << q.g_time_x_lead << ",\"g_fld_signal\":" << q.g_fld_signal
-            << ",\"g_remaining_sec\":" << q.g_remaining_sec
-            << ",\"g_periods_won_home\":" << q.g_periods_won_home
-            << ",\"g_periods_won_away\":" << q.g_periods_won_away << ",\"g_game_phase\":" << q.g_game_phase
-            << ",\"g_garbage_time\":" << q.g_garbage_time << ",\"g_clutch\":" << q.g_clutch
-            << ",\"g_goal_freshness\":" << q.g_goal_freshness
-            << ",\"g_net_momentum_5m\":" << q.g_net_momentum_5m
+            << ",\"g_time_x_lead\":" << JsonNum(q.g_time_x_lead) << ",\"g_fld_signal\":" << JsonNum(q.g_fld_signal)
+            << ",\"g_remaining_sec\":" << JsonNum(q.g_remaining_sec)
+            << ",\"g_periods_won_home\":" << JsonNum(q.g_periods_won_home)
+            << ",\"g_periods_won_away\":" << JsonNum(q.g_periods_won_away)
+            << ",\"g_game_phase\":" << JsonNum(q.g_game_phase)
+            << ",\"g_garbage_time\":" << JsonNum(q.g_garbage_time) << ",\"g_clutch\":" << JsonNum(q.g_clutch)
+            << ",\"g_goal_freshness\":" << JsonNum(q.g_goal_freshness)
+            << ",\"g_net_momentum_5m\":" << JsonNum(q.g_net_momentum_5m)
             // inplay 赔率 + live_stats (sharp 锚 g_bm_inplay_fair)
-            << ",\"g_bm_inplay_fair\":" << q.g_bm_inplay_fair
-            << ",\"g_danger_attack_diff\":" << q.g_danger_attack_diff
-            << ",\"g_shot_on_target_diff\":" << q.g_shot_on_target_diff
-            << ",\"g_possession_home\":" << q.g_possession_home
-            << ",\"g_red_card_diff\":" << q.g_red_card_diff << ",\"g_corner_diff\":" << q.g_corner_diff
+            << ",\"g_bm_inplay_fair\":" << JsonNum(q.g_bm_inplay_fair)
+            << ",\"g_danger_attack_diff\":" << JsonNum(q.g_danger_attack_diff)
+            << ",\"g_shot_on_target_diff\":" << JsonNum(q.g_shot_on_target_diff)
+            << ",\"g_possession_home\":" << JsonNum(q.g_possession_home)
+            << ",\"g_red_card_diff\":" << JsonNum(q.g_red_card_diff)
+            << ",\"g_corner_diff\":" << JsonNum(q.g_corner_diff)
             // 市场生命周期
-            << ",\"time_to_resolution_frac\":" << q.time_to_resolution_frac
+            << ",\"time_to_resolution_frac\":" << JsonNum(q.time_to_resolution_frac)
             << ",\"resolution_status\":" << static_cast<int>(q.resolution_status)
-            << ",\"event_ts_ns\":" << q.event_ts_ns << ",\"data_source_ts_ns\":" << q.data_source_ts_ns
-            << ",\"ingestion_ts_ns\":" << q.ingestion_ts_ns << ",\"as_of_ts_ns\":" << q.as_of_ts_ns << "}\n";
+            << ",\"event_ts_ns\":" << JsonNum(q.event_ts_ns)
+            << ",\"data_source_ts_ns\":" << JsonNum(q.data_source_ts_ns)
+            << ",\"ingestion_ts_ns\":" << JsonNum(q.ingestion_ts_ns)
+            << ",\"as_of_ts_ns\":" << JsonNum(q.as_of_ts_ns) << "}\n";
     }
 
     const sizing::QuoteSnapshotHub& quote_hub_;

@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <type_traits>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -86,21 +87,27 @@ private:
         out.flush();
     }
 
-    // NaN → "null" (合法 JSON; line 在 moneyline 恒 NaN, << 输出小写 "nan" 破坏 Python json)。
-    static std::string JsonNullable(double v) {
-        if (std::isnan(v))
-            return "null";
-        char buf[32];
-        std::snprintf(buf, sizeof(buf), "%g", v);
+    // 数值 → JSON 安全串。浮点 NaN/Inf → "null" (C++ << 对 NaN 输出小写 "nan" 是非法 JSON, 破坏 Python
+    //   json.loads 整行)。values[] 经 extract_full 常含 NaN (缺失特征), 全过此杜绝 nan 泄漏。整数全精度。
+    template <class T>
+    static std::string JsonNum(T v) {
+        char buf[40];
+        if constexpr (std::is_floating_point_v<T>) {
+            if (!std::isfinite(static_cast<double>(v)))
+                return "null";
+            std::snprintf(buf, sizeof(buf), "%g", static_cast<double>(v));
+        } else {
+            std::snprintf(buf, sizeof(buf), "%lld", static_cast<long long>(v));
+        }
         return buf;
     }
 
     static void WriteLine(std::ofstream& out, const FeatureVectorRecord& r) {
-        out << "{\"condition_id\":\"" << r.condition_id << "\",\"as_of_ts_ns\":" << r.as_of_ts_ns
-            << ",\"spec_version\":\"" << r.spec_version << "\",\"fair_value\":" << r.baseline_fair
-            << ",\"line\":" << JsonNullable(r.line);
+        out << "{\"condition_id\":\"" << r.condition_id << "\",\"as_of_ts_ns\":" << JsonNum(r.as_of_ts_ns)
+            << ",\"spec_version\":\"" << r.spec_version << "\",\"fair_value\":" << JsonNum(r.baseline_fair)
+            << ",\"line\":" << JsonNum(r.line);
         for (std::uint16_t i = 0; i < r.count; ++i) {
-            out << ",\"f" << i << "\":" << r.values[i];  // f0..f85 (含 cat 82-85), 列序 = MlFeature enum
+            out << ",\"f" << i << "\":" << JsonNum(r.values[i]);  // f0..f85 (含 cat 82-85), NaN→null
         }
         out << "}\n";  // fair_value = 残差训练 baseline 锚 (非 X 列; 训练侧 y=label−fair_value)
     }
