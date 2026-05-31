@@ -134,6 +134,11 @@ struct OrderBookFeatures {
     // WSS 连接状态
     WssConnState wss_state{WssConnState::kUnknown};
 
+    // 市场结算状态 (老板 2026-05-31: WSS kOutcomes 已订阅+解析, 此前缺字段没载进决策路径)。
+    //   0=kOpen / 1=kResolving / 2=kResolved (= wss::ResolutionStatus cast)。adapter 从 OutcomesUpdate
+    //   填; 合成/未填默认 0=kOpen。结算临近度信号 (喂模型 + 触发账本结算)。加性 POD (§8.1 #5)。
+    std::uint8_t resolution_status{0};
+
     // 有效性标记 (首次 snapshot 后为 true)
     bool valid{false};
 

@@ -1687,3 +1687,45 @@ TEST_F(PaperLoopTest, TS2_ExitLiquidity_CapturesNoBid) {
     EXPECT_LT(opt->bid_absence_frac, 1.0) << "TS2: 非整窗卖不出 (有 bid 样本也在)";
     EXPECT_TRUE(std::isfinite(opt->exit_depth_mean)) << "TS2: 退出深度均值 populate";
 }
+
+// TS3 (slice-3 结算, feature-first): 真时钟 → time_to_resolution_frac 派生 (体育免新数据源) +
+//   resolution_status 从 book 快照流到 quote (字段载体接通, 旧码缺字段载不了)。
+TEST_F(PaperLoopTest, TS3_ResolutionFeatures) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    auto es = MakeFreshScore("gs-res", 2, 0);
+    es.sport = "soccer";     // total_game_seconds = 5400
+    es.clock_sec = 60 * 60;  // 60min → time_frac≈0.667 → time_to_resolution_frac≈0.333
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-res"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-res", true};
+
+    // book 带 resolution_status = kResolving(1) — 验证字段从 OrderBookFeatures 流到 QuoteFeatures
+    auto f = MakeFreshBook(0.28, 0.30);
+    f.resolution_status = 1;  // PM WSS kResolving (合成注入; 真路径待 adapter 接 kOutcomes)
+    hub_->Publish("1001", f);
+
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();
+
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    ASSERT_TRUE(opt->predict_ok) << "TS3: 真 in-play 比分 → has_real_fair";
+    std::fprintf(stderr, "[TS3] ttr=%.4f res_status=%u\n", opt->time_to_resolution_frac,
+                 opt->resolution_status);
+    // 3a: 结算临近度从时钟派生 (60min/90min → ~0.33)
+    ASSERT_TRUE(std::isfinite(opt->time_to_resolution_frac)) << "TS3: 真时钟 → 临近度 populate";
+    EXPECT_GT(opt->time_to_resolution_frac, 0.0);
+    EXPECT_LT(opt->time_to_resolution_frac, 1.0);
+    EXPECT_NEAR(opt->time_to_resolution_frac, 1.0 - 3600.0 / 5400.0, 0.02) << "TS3: ≈0.333 (1−60/90min)";
+    // 3c 载体: resolution_status 从 book 流到 quote (字段接通)
+    EXPECT_EQ(opt->resolution_status, 1) << "TS3: PM 结算状态从 OrderBookFeatures 流到 QuoteFeatures";
+}

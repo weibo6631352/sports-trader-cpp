@@ -458,6 +458,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 有真实 in-play game_row 时: 用 score-prior 置信加权混合到 de-vig 市场锚上,
     //   置信随时钟从 kBasePriorConfidence 升到 kMaxPriorConfidence; 终态 conf=1.0.
     double p_fair = p_market_devig;
+    // 3a 时序: 结算临近度 (老板 2026-05-31, feature-first; 体育免新数据源 — 从 Goalserve 时钟派生)。
+    //   = clamp(1 − time_frac, 0, 1); terminal → 0 (结算已定); 无真 fair/无时钟 → NaN。喂模型 +
+    //   与 bid_absence_frac 组合 = 「临近结算 ∧ 卖不出」归零陷阱信号 (模型学, 不硬门)。
+    double time_to_resolution_frac = std::numeric_limits<double>::quiet_NaN();
     if (has_real_fair) {
         const double score_diff =
             static_cast<double>(game_row.score_home_total) - static_cast<double>(game_row.score_away_total);
@@ -474,6 +478,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         const double conf = terminal ? 1.0 : pricing::prior_confidence(time_frac);
         (void)score_diff;  // 方向已含于 prior_yes; 保留以备未来 explicit prior 切换
         p_fair = pricing::blend_prob(p_prior, p_market_devig, conf);
+        time_to_resolution_frac = terminal ? 0.0 : std::clamp(1.0 - time_frac, 0.0, 1.0);
     }
 
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
@@ -581,7 +586,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair,
                          cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns, mkt.event_id,
                          mkt.neg_risk_market_id, target_signed, reservation.buy_px, reservation.sell_px,
-                         reservation.required_margin);
+                         reservation.required_margin, time_to_resolution_frac);
     stats_.quote_publishes.fetch_add(1, std::memory_order_relaxed);
 
     // ---- P0-4: advisory gate -----------------------------------------------
@@ -992,7 +997,8 @@ void PaperLoop::PublishQuoteSnapshot(
     const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair, double cross_spread,
     double no_microprice, double no_imbalance, bool devig_ok, std::int64_t joint_as_of_ts_ns,
     const std::string& event_id, const std::string& neg_risk_market_id, double target_signed_notional,
-    double reservation_buy_px, double reservation_sell_px, double required_margin) noexcept {
+    double reservation_buy_px, double reservation_sell_px, double required_margin,
+    double time_to_resolution_frac) noexcept {
     sizing::QuoteFeatures qf{};
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
@@ -1021,6 +1027,11 @@ void PaperLoop::PublishQuoteSnapshot(
     qf.no_imbalance = no_imbalance;     // NO  L1 失衡 (对边 book; 单边缺=NaN)
     qf.devig_ok = devig_ok;
     qf.joint_as_of_ts_ns = joint_as_of_ts_ns;  // 联合新鲜度 (min(score,book) as_of); 输入不 gate
+
+    // slice-3 结算特征 (老板 2026-05-31, feature-first): 临近度 (体育时钟派生) + PM WSS 结算状态。
+    //   始终输出 (市场生命周期非决策派生, 不受 has_real_fair gate)。time_to_resolution 无时钟 → NaN。
+    qf.time_to_resolution_frac = time_to_resolution_frac;
+    qf.resolution_status = feat.resolution_status;  // PM WSS kOutcomes (现合成默认 0=Open; 待 adapter 接入)
 
     // 时序特征 (老板 2026-05-31): 从 condition 环形缓冲派生 (PIT 窗口; 样本不足 → NaN)。
     //   fee 同, 始终输出 (市场动态非决策派生, 不受 has_real_fair gate); 训练数据捕获 + 观测。

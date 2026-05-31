@@ -138,6 +138,10 @@ struct QuoteFeatures {
     // slice-2 「卖不出」退出流动性 (老板: 量化模型包含, 非硬门; observe-always 记录无 bid tick)。
     double bid_absence_frac{0.0};          // 窗口内无可执行 bid 占比 ∈[0,1] (1=整窗卖不出/单边倒挂)
     double exit_depth_mean{0.0};           // 窗口内 best_bid_size 均值 (pUSD; 低=难卖出/退出流动性薄)
+    // slice-3 结算 (老板: 量化模型包含, 非硬门)。time_to_resolution_frac 与 bid_absence_frac 组合 =
+    //   「临近结算 ∧ 卖不出」归零陷阱信号 (模型学)。resolution_status 来自 Polymarket WSS kOutcomes。
+    double time_to_resolution_frac{0.0};   // 结算临近度 ∈[0,1] (1=刚开赛 0=已结算; 体育从时钟派生; NaN=无时钟)
+    std::uint8_t resolution_status{0};     // 市场结算状态 0=Open/1=Resolving/2=Resolved (PM WSS; 默认 0)
 
     // ---- ML provenance (小邓 spec v1 §3.2; 对应 QuoteParams ML 字段) ----
     // model_id: char 数组 (空 = 无模型; 对应 ModelPrediction.model_id)

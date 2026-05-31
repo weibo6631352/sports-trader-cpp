@@ -61,14 +61,32 @@ devig…)，**零时序维度**。单点切片看不到「动态」：变化率�
 
 > 注: 老韩曾提「退出流动性进 sizing 硬规则」—— 按老板校准**降级为模型特征**。若未来量化证明需硬保命门 (e.g. 退出流动性 0 时账户级拦), 另立, 不在本时序特征层。
 
-## 3. slice-3 「被结算归零」(下轮, **feature-first**)
+## 3. slice-3 「被结算归零」(feature-first)
 
-老板校准同样适用: 做成**量化特征**, 让模型学临近结算的归零风险, 而非硬逻辑。三层 (尽量特征化):
-- **特征 (主)**: time-to-resolution / resolution-proximity (离结算多久) + 与卖不出组合 (「临近结算 ∧ 卖不出」= 归零陷阱信号)。**喂模型**。
-- **账本结算口径 (不可避免的 plumbing, 非决策)**: 市场 resolve 时持仓→0 或 ×$1 payout 是**事实**, 账本须正确记 (现 paper MtM 用 fair, terminal 时 fair→0/1 已近似捕获; 但 realized 结算口径**待查**)。这是正确性 plumbing, 不是交易硬门。
-- **范式自然涌现 (非硬断点)**: 临近结算 fair→0/1 + 退出流动性→0 → Kelly target 自然趋小 (edge 与可调整性都塌)。让它**涌现**, 不写「if 临近结算 then 平仓」硬规则 (一致于目标仓位范式: 出场是目标变小的副产品)。
+老板校准同样适用: 做成**量化特征**, 让模型学临近结算的归零风险, 而非硬逻辑。
 
-resolution 数据源 (Goalserve terminal / Polymarket market end_date) 待小余确认接入路径。
+### resolution 数据源摸底 (2026-05-31)
+
+| 信号 | 解析? | 到决策路径? |
+|---|---|---|
+| Goalserve 终态 `IsTerminal` | ✅ | ✅ (fair conf=1.0) |
+| Goalserve 时钟 `elapsed/total → time_frac` | ✅ | ✅ (**临近度可直接派生**) |
+| Polymarket `ResolutionStatus` (kOpen/Resolving/Resolved) | ✅ WSS kOutcomes 已订阅+解析 | ⚠ 此前缺字段载体 |
+| 账本结算 realize | — | ❌ (无 settle/redeem) |
+
+**关键澄清 (老板质疑「市场 WSS 为什么不通, 没白名单啊」)**: **不是白名单/连通问题。** `pm_wss_subscriber.cpp:178` 连上即 `Subscribe(kOutcomes)`, resolution_status 也解析进 `WssEvent`。"不通" 纯粹是**最后一公里**: ① `OrderBookFeatures` (paper_loop 读的 POD) 缺 resolution 字段; ② `orderbook_adapter.cpp:82` 只处理 `kBook`, market-keyed 的 `OutcomesUpdate` 流过不消费。信号到了 sink 就停。
+
+### slice-3a 临近度特征 (✅ DONE, 体育免新数据源)
+
+`time_to_resolution_frac` = clamp(1 − time_frac, 0, 1); terminal → 0; 无时钟 → NaN。从 Goalserve 时钟派生 (已在 paper_loop)。进 `QuoteFeatures`。与 `bid_absence_frac` 组合 = 「临近结算 ∧ 卖不出」归零陷阱 (**模型学, 不硬门**)。TS3 端到端 (60min soccer → 0.333)。
+
+### slice-3c 载体 (✅ 字段接通 / ⚠ live ingest 待接)
+
+`OrderBookFeatures.resolution_status` (uint8, 加性 POD, §8.1 #5) + 流到 `QuoteFeatures.resolution_status`。**决策路径现可消费** (TS3 合成注入 kResolving=1 验证流通)。**剩 1 跳**: `orderbook_adapter` 接 `kOutcomes` 事件 (market-keyed → 需 market→token 映射, 属 live-path 设计), 把真 WSS resolution 填进 `OrderBookFeatures`。dormant 安全 (默认 0=Open, fail-closed)。
+
+### slice-3b 账本结算 realize (⬜ 下轮, PnL 敏感单独做)
+
+市场 resolve 时持仓→0 或 ×$1 payout 是**事实**, 账本须正确记 (现 paper MtM 用 fair, terminal fair→0/1 已近似; realized 结算缺)。触发 = terminal (Goalserve) 或 resolution_status=kResolved (PM)。winner 从终态比分 + orientation 派生 (moneyline)。**PnL 正确性 plumbing, 非交易硬门, 单独精做。** 范式自然涌现 (临近结算 fair→0/1 + 退出流动性→0 → Kelly target 自然趋小), 不写「if 临近结算 then 平仓」硬规则。
 
 ## 3. 决策记录
 
