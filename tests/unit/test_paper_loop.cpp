@@ -796,15 +796,21 @@ TEST_F(PaperLoopTest, T17_A2_FirstPaperFill_AdvisoryUnlocked) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
-    // YesTeam 2:0 领先, 市场低估 (ask=0.32) → fair > ask → buy YES
+    // YesTeam 2:0 领先 (60min soccer → conf~0.45 → fair 拉高), 市场显著低估 (ask=0.30) →
+    //   控制器范式: reservation_buy = fair − fee − margin 比 **真实付价 raw ask** (非 de-vig 共识);
+    //   raw edge 须 ≥ fee+margin (~4¢) 才过限价门。0.30 ask vs fair~0.54 → 24¢ raw edge → 成交。
+    //   (注: 老 T17 的 2¢ raw edge 被控制器正确判 NotMarketable — vig 是真实成本, 限价不追。)
+    auto es17 = MakeFreshScore("gs-1", 2, 0);
+    es17.sport = "soccer";
+    es17.clock_sec = 60 * 60;  // 60min → time_frac≈0.67 → conf≈0.45 (先验拉力足)
     auto sm = std::make_shared<ScoreMap>();
-    (*sm)["gs-1"] = MakeFreshScore("gs-1", 2, 0);
+    (*sm)["gs-1"] = es17;
     ScoreSnapshotStore store;
     store.Publish(std::shared_ptr<const ScoreMap>(sm));
     auto emap = std::make_shared<ConditionEventMap>();
     (*emap)["cond-test-001"] = EventMapEntry{"gs-1", true};
 
-    hub_->Publish("1001", MakeFreshBook(0.28, 0.32));
+    hub_->Publish("1001", MakeFreshBook(0.28, 0.30));
 
     cfg_.advisory_markets_no_intent = false;  // A2: 解封 paper 成交
     cfg_.n_effective = 500;                   // 测试用紧 CI 让真实 edge 过门 (生产 n_eff 由小梁量化调)
@@ -1435,4 +1441,97 @@ TEST_F(PaperLoopTest, T_Profit_PipelineProducesProfit) {
                  converged_bid);
     EXPECT_GE(total_pnl, 500.0)
         << "流水线盈利能力: 买被低估 YES + 市场收敛 fair → MtM PnL ≥ 500 pUSD (运行 + 盈利演示)";
+}
+
+// ===========================================================================
+// 目标仓位控制器 wire 集成测试 (老雷 controller spec v1 §11 Step 5)
+//   控制器替换一次性 BUY: order = 目标 − 现仓; 限价不追 (reservation 门); 收敛后死区不动。
+// ===========================================================================
+
+// TC-1: 限价不追 (老周 Q-周-1) — raw edge 薄 (vig 吃光净 edge) → reservation_buy < best_ask →
+//   控制器判 NotMarketable → 不下单 (orders_held>0, 零成交)。即老 T17 的 2¢ edge 场景被正确拦。
+//   关键: de-vig 共识看似有 edge (sizing 可能 suggested>0), 但**真实付价 raw ask** 越过 reservation。
+TEST_F(PaperLoopTest, TC1_Controller_LimitNotChase_Holds) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    // YES 2:0 但**无时钟** (time_frac=0 → conf 压在 base 0.15 → fair 仅微高于市场);
+    //   ask=0.32 raw edge ~2¢ < fee+margin (~4¢) → reservation_buy < 0.32 → 限价不追。
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-thin"] = MakeFreshScore("gs-thin", 2, 0);  // 无 sport/clock → time_frac=0
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-thin", true};
+
+    hub_->Publish("1001", MakeFreshBook(0.28, 0.32));
+
+    cfg_.advisory_markets_no_intent = false;
+    cfg_.n_effective = 500;
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    loop_->Stop();
+
+    EXPECT_EQ(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
+        << "TC-1: raw edge 薄 → reservation_buy < best_ask → 限价不追, 零成交";
+    EXPECT_EQ(loop_->stats().orders_approved.load(), static_cast<std::uint64_t>(0))
+        << "TC-1: 不可成交价不构造 intent (老周 Q-周-1 控制器前置门, 不进 RM)";
+    EXPECT_GT(loop_->stats().orders_held.load(), static_cast<std::uint64_t>(0))
+        << "TC-1: 控制器主动 hold (NotMarketable/死区) → orders_held 计数";
+
+    // 验 quote: reservation_buy_px < best_ask (0.32) — 限价门拦截的直接证据
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    EXPECT_TRUE(opt->predict_ok) << "TC-1: 有真实 fair (in-play 比分), 仅 raw edge 不足";
+    EXPECT_LT(opt->reservation_buy_px, 0.32)
+        << "TC-1: reservation_buy = fair − fee − margin < 付价 0.32 → 越界无净 edge (限价不追根因)";
+}
+
+// TC-2: 目标仓位收敛 (老板范式核心) — 持续 tick 不再无界累加; 到目标后控制器进死区 hold。
+//   旧一次性 BUY: 每 tick 都下单 → 敞口涨到 cap 才停。新控制器: order=目标−现仓 → 收敛即停。
+//   判据: orders_held>0 (收敛后死区生效) 且 持仓 ≈ target (≤ per_order_cap, 不爆 exposure)。
+TEST_F(PaperLoopTest, TC2_Controller_ConvergesToTarget_NoUnboundedAccumulation) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+
+    auto es = MakeFreshScore("gs-conv", 2, 0);
+    es.sport = "soccer";
+    es.clock_sec = 60 * 60;  // conf~0.45 → fair 足够高 → 有真实 edge → 先买到目标
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-conv"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-conv", true};
+
+    hub_->Publish("1001", MakeFreshBook(0.28, 0.30));  // 显著低估 → 限价门过
+
+    cfg_.advisory_markets_no_intent = false;
+    cfg_.n_effective = 500;
+    // per_order_cap=10 pUSD (fixture 默认): target = Kelly ∧ ≤10 → 持仓收敛到 ≤10, 不涨到 exposure 50
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(800));  // ~16 ticks (足够收敛 + 多次死区 hold)
+    loop_->Stop();
+
+    EXPECT_GT(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
+        << "TC-2: 有真实 edge + 低估 → 先买到目标 (≥1 成交)";
+    EXPECT_GT(loop_->stats().orders_held.load(), static_cast<std::uint64_t>(0))
+        << "TC-2: 收敛到目标后控制器进死区 hold (证明非旧一次性 BUY 的每 tick 下单)";
+
+    // 持仓收敛到 target (≤ per_order_cap 10 pUSD), 绝不爆 exposure cap (50 pUSD)
+    double net_qty = 0.0;
+    for (const auto& pv : position_ledger_->get_all_positions()) {
+        if (pv.token_id == "1001") {
+            net_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        }
+    }
+    EXPECT_GT(net_qty, 0.0) << "TC-2: 应建立 YES 多仓";
+    EXPECT_LE(net_qty, 10.0 + 1e-6)
+        << "TC-2: 持仓收敛到 target (≤ per_order_cap 10), 不无界累加到 exposure cap";
 }

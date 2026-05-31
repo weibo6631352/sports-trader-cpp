@@ -132,6 +132,14 @@ struct PaperLoopConfig {
     double market_exposure_cap_usdc{50.0};
     double per_outcome_cap_usdc{25.0};
 
+    // ---- 目标仓位控制器参数 (老雷 controller spec v1 §11 Step 3; 小梁 Q-梁-1/Q-梁-2) ----
+    //   edge_ci_lower_floor: reservation required_margin 下限 (与 RM 同名门同源; 默认 0)。
+    //     required_margin = max(edge_ci_lower_floor, z_90×sqrt(p(1−p)/n_eff))。
+    //   min_rebalance_floor_pusd: 防抖死区绝对下限; 实际 threshold = max(floor, 0.10×|target|)。
+    //     |gap| < threshold 不动 (避免高频小额 rebalance 被 fee 侵蚀)。
+    double edge_ci_lower_floor{0.0};
+    double min_rebalance_floor_pusd{1.0};
+
     // CI 参数 (z=1.645 = 90%)。
     // n_effective: 2026-05-31 30→200 (小程量化方案, Phase4 阻塞1)。
     //   n=30 时 CI half-width≈15¢@p=0.5 → 6-14¢ 正常 edge 全被 NO_EDGE 误杀 (系统零成交根因)。
@@ -173,6 +181,8 @@ struct PaperLoopStats {
     std::atomic<std::uint64_t> orders_rejected{0};
     std::atomic<std::uint64_t> fills_completed{0};
     std::atomic<std::uint64_t> fills_missed{0};
+    // 目标仓位控制器 (老雷 spec v1): 控制器决定本 tick 不动 (死区/限价不可成交/已达目标)。
+    std::atomic<std::uint64_t> orders_held{0};
     std::atomic<std::uint64_t> hub_reads_empty{0};
     std::atomic<std::uint64_t> quote_publishes{0};
     std::atomic<std::uint64_t> ledger_publishes{0};
@@ -377,7 +387,9 @@ private:
                               const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair,
                               double cross_spread, double no_microprice, double no_imbalance, bool devig_ok,
                               std::int64_t joint_as_of_ts_ns, const std::string& event_id,
-                              const std::string& neg_risk_market_id) noexcept;
+                              const std::string& neg_risk_market_id, double target_signed_notional,
+                              double reservation_buy_px, double reservation_sell_px,
+                              double required_margin) noexcept;
 };
 
 }  // namespace stcpp::paper

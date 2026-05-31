@@ -3,6 +3,7 @@
 // Owner: 老雷 (GM) — spec docs/RESEARCH/laolei-target-position-controller-spec-v1.md §11 步骤4
 // 覆盖: 买增 / 卖减 / 死区防抖 / 限价不追 / 空头clamp / 不超持仓 / cap / 零gap / 非法输入
 
+#include <cmath>
 #include <limits>
 
 #include <gtest/gtest.h>
@@ -189,4 +190,79 @@ TEST(PositionController, PC14_AllowShortOpensSell) {
     EXPECT_TRUE(a.act);
     EXPECT_EQ(a.side, Side::Sell);
     EXPECT_DOUBLE_EQ(a.size_pusd, 30.0);  // 开空 30 (无持仓约束)
+}
+
+// ===========================================================================
+// ComputeReservation — reservation 公式纯函数 (小梁 Q-梁-1)
+//   required_margin = max(margin_floor, z×sqrt(fair(1−fair)/n))
+//   reservation_buy  = fair − fee×ask(1−ask) − margin;  sell 对称 (+fee×bid(1−bid) + margin)
+// ===========================================================================
+
+// CR-01: 正常路径 — buy < fair < sell, margin = CI 半宽 (> floor 时)
+TEST(ReservationFormula, CR01_Symmetric) {
+    ReservationInput in;
+    in.fair = 0.50;
+    in.exec_ask = 0.51;
+    in.exec_bid = 0.49;
+    in.fee_coef = 0.03;
+    in.margin_floor = 0.0;
+    in.z = 1.645;
+    in.n_eff = 200;
+    const auto r = ComputeReservation(in);
+    const double sigma = std::sqrt(0.50 * 0.50 / 200.0);
+    EXPECT_DOUBLE_EQ(r.required_margin, 1.645 * sigma);
+    const double fee_buy = 0.03 * 0.51 * 0.49;
+    const double fee_sell = 0.03 * 0.49 * 0.51;
+    EXPECT_DOUBLE_EQ(r.buy_px, 0.50 - fee_buy - r.required_margin);
+    EXPECT_DOUBLE_EQ(r.sell_px, 0.50 + fee_sell + r.required_margin);
+    EXPECT_LT(r.buy_px, 0.50);   // 买保留价 < fair (净 edge>0 才买)
+    EXPECT_GT(r.sell_px, 0.50);  // 卖保留价 > fair
+}
+
+// CR-02: margin_floor 主导 — floor 高于 CI 半宽时取 floor (小梁: edge_ci_lower_floor 同源)
+TEST(ReservationFormula, CR02_FloorDominates) {
+    ReservationInput in;
+    in.fair = 0.50;
+    in.exec_ask = 0.50;
+    in.exec_bid = 0.50;
+    in.fee_coef = 0.0;  // 隔离 fee, 只看 margin
+    in.margin_floor = 0.10;
+    in.z = 1.645;
+    in.n_eff = 200;  // CI 半宽 ≈ 0.058 < 0.10 floor
+    const auto r = ComputeReservation(in);
+    EXPECT_DOUBLE_EQ(r.required_margin, 0.10);
+    EXPECT_DOUBLE_EQ(r.buy_px, 0.40);
+    EXPECT_DOUBLE_EQ(r.sell_px, 0.60);
+}
+
+// CR-03: fail-closed — 退化 fair → buy_px=0 (永不可买) + sell_px=1 (永不可卖)
+TEST(ReservationFormula, CR03_FailClosed) {
+    for (double bad : {0.0, 1.0, -0.1, 1.5, std::numeric_limits<double>::quiet_NaN()}) {
+        ReservationInput in;
+        in.fair = bad;
+        const auto r = ComputeReservation(in);
+        EXPECT_DOUBLE_EQ(r.buy_px, 0.0) << "fair=" << bad;
+        EXPECT_DOUBLE_EQ(r.sell_px, 1.0) << "fair=" << bad;
+    }
+    // n_eff<=0 同样 fail-closed
+    ReservationInput in;
+    in.fair = 0.5;
+    in.n_eff = 0;
+    const auto r = ComputeReservation(in);
+    EXPECT_DOUBLE_EQ(r.buy_px, 0.0);
+    EXPECT_DOUBLE_EQ(r.sell_px, 1.0);
+}
+
+// CR-04: n 越大 margin 越小 → reservation 越宽 (买保留价升, 越易成交)
+TEST(ReservationFormula, CR04_MarginShrinksWithN) {
+    ReservationInput lo;
+    lo.fair = 0.5;
+    lo.exec_ask = 0.5;
+    lo.exec_bid = 0.5;
+    lo.fee_coef = 0.0;
+    lo.n_eff = 50;
+    ReservationInput hi = lo;
+    hi.n_eff = 500;
+    EXPECT_GT(ComputeReservation(hi).buy_px, ComputeReservation(lo).buy_px);
+    EXPECT_LT(ComputeReservation(hi).required_margin, ComputeReservation(lo).required_margin);
 }

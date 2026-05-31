@@ -121,6 +121,14 @@ struct QuoteFeatures {
     // signal_strength: α 信号强度 ∈ [0, 1]
     double signal_strength{0.0};
 
+    // ---- 目标仓位范式 (老雷 controller spec v1, 2026-05-31; 观测 + 训练, 不守门) ----
+    //   控制器把当前仓位连续调到 target; reservation 是限价不追的净 edge=0 临界价。
+    //   全部加性字段 (§8.1 carve-out #5: struct 末尾增, 无重命名/单位变更; 消费方忽略即旧行为)。
+    double target_signed_notional{0.0};  // 目标净仓位 (signed pUSD; +多YES −多NO=空YES; 控制器目标)
+    double reservation_buy_px{0.0};      // 买入保留价上界 (fair − fee − margin; best_ask≤它才买)
+    double reservation_sell_px{0.0};     // 卖出保留价下界 (fair + fee + margin; best_bid≥它才卖)
+    double required_margin{0.0};         // reservation 安全边际 (小梁 Q-梁-1; CI 半宽与 floor 取大)
+
     // ---- ML provenance (小邓 spec v1 §3.2; 对应 QuoteParams ML 字段) ----
     // model_id: char 数组 (空 = 无模型; 对应 ModelPrediction.model_id)
     char model_id[64]{};  // 最长 model_id ~48 char; 留余量

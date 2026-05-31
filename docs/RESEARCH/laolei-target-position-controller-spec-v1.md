@@ -130,9 +130,11 @@ is_close = (|target| < |current| 且同向)  // 减仓/平仓 = 收敛, 非新�
 
 1. ✅ **DONE** (`提交`, 14 测) **`Controller::Decide` 纯函数模块** (include/stcpp/control/position_controller.hpp) — ControlInput → ControlAction。gap/limit门/is_close/min_rebalance/空头clamp0/卖不超持仓。穷举单测。
 2. ✅ **DONE** (`提交`, 2 测, 1149 绿) **H-1+H-2: RM cap signed→magnitude + 反向穿零拒** (risk_gateway.cpp:519/532)。买入字节不变, 卖减仓过 cap。
-3. ⬜ **TODO (下轮)** **reservation 公式** (小梁): `required_margin = max(cfg.edge_ci_lower_floor, z_90×sqrt(p(1−p)/n_eff))`; `reservation_buy = p_fair − fee_per_unit(exec_ask) − margin`; sell 对称。算进决策 → 进 QuoteFeatures (观测/训练 + target_signed) + 喂 Controller。**注: PaperLoopConfig 需加 edge_ci_lower_floor + min_rebalance 参数。**
-4. ⬜ **TODO (下轮)** **wire**: TickOne 组装 ControlInput (target=has_real_fair&&valid? sizing:0 [H-3 非对称]; current=ledger per-outcome[selected token]/1e6) → Decide → 按 action 构造 intent(限价 price=reservation, side/size/is_close)/skip; **sell 负 delta 定 apply_fill 入口** (position_ledger sell 减仓符号, 老周 Q-周-2)。清掉一次性 BUY (size=notional/side=Buy/price=exec_ask)。
-5. ⬜ **TODO (下轮)** **测试**: 多/平/减/限价不追/穿零拒 各路径 + **重写 paper_loop 集成测试** (现断言旧一次性 BUY 行为会红) + 回归 + matcher 1119 bit-identical。
-6. ⬜ **M2**: 反向/空仓 VWAP/sell-to-open (老韩 C1 condition cap signed 重裁 + 老周会签)。
+3. ✅ **DONE** (`提交`, 4 测) **reservation 公式** (小梁 Q-梁-1): `control::ComputeReservation` 纯函数 (BR-1 共用, position_controller.hpp)。`required_margin = max(edge_ci_lower_floor, z_90×sqrt(p(1−p)/n_eff))`; `reservation_buy = fair − fee_coef×ask(1−ask) − margin`; sell 对称。QuoteFeatures 加 4 字段 (target_signed_notional/reservation_buy_px/reservation_sell_px/required_margin, 加性 §8.1 #5)。PaperLoopConfig 加 `edge_ci_lower_floor` + `min_rebalance_floor_pusd`。
+4. ✅ **DONE** (`提交`) **wire**: TickOne 组装 ControlInput (target=has_real_fair&&valid&&devig_ok? sizing:0 [H-3 非对称]; current=ledger per-outcome[selected token]/1e6) → `control::Decide` → 按 action 构造 intent(side/size/is_close)/skip(orders_held++)。**sell 负 delta 定 apply_fill 入口** (FillEvent.filled_size_micro 喂负, 账本一行不改, matcher ABI 零改, 老周 Q-周-2)。清掉一次性 BUY。`!has_real_fair` 不再早退 (H-3: stub→target0→只减不开)。
+5. ✅ **DONE** (`提交`, TC1/TC2 + 1155 全绿) **测试**: ComputeReservation 4 测 + 限价不追 hold (TC1) + 目标收敛不无界 (TC2); 重写 T17 (旧 2¢ raw-edge 场景被限价门正确拦, 改用 60min 时钟拉高 fair); matcher 1119 bit-identical 保住。
 
-**下轮入口**: Step 3 起。所有评审/公式/红线已定 (§9/§10), 直接实现。控制器纯函数 + RM cap 修复 (Step 1-2) 已落地生效。
+> **Step 3-5 实施发现 (2026-05-31, 老雷; 待小梁/老周确认)**: reservation_buy 门比的是**真实付价 raw best_ask**, 而 sizing 的 edge 锚是 **de-vig 共识** (去 overround)。两者差一个 vig (~2¢)。故 raw edge < fee+margin 的薄单, sizing 看似有 edge (suggested>0) 但控制器判 NotMarketable → hold。**这是正确收紧 (vig 是真实成本, 限价不追), 非 bug。** 推论: v1 **卖减仓路径在 de-vig 选边下近乎不可达** —— 长被选(低估)边时 `best_bid ≤ devig ≤ fair < fair+margin = reservation_sell`, 卖永不 marketable。真实 de-risk 走「选边翻转」= 反向 = **M2**。v1 持仓只增/持平, 减仓由 §11.6 M2 反向接管。Decide 纯函数已覆盖卖侧逻辑 (PC03/04/13)。
+6. ⬜ **M2**: 反向/空仓 VWAP/sell-to-open (老韩 C1 condition cap signed 重裁 + 老周会签)。**含 Step 3-5 发现的卖减仓真实触发路径 (选边翻转→平旧边)。** + 小梁 Q-梁-2 的 `|fair_new−fair_old|>0.02 强制穿越防抖` (需 per-condition last_fair 状态, v1 暂缺, 死区 max(1,0.1|target|) 已生效)。
+
+**Step 1-5 全部落地生效。** 下轮入口: M2 (§11.6) — 反向/选边翻转平仓 + 强制穿越防抖 + 空仓 VWAP。

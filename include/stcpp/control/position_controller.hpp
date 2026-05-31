@@ -55,6 +55,53 @@ struct ControlAction {
     NoActReason reason{NoActReason::None};
 };
 
+// ---------------------------------------------------------------------------
+// reservation 公式 (小梁 Q-梁-1, 2026-05-31 三主权评审) — BR-1 共用 (回测/实盘/paper)。
+//   required_margin = max(margin_floor, z × sqrt(fair·(1−fair)/n_eff))
+//   reservation_buy  = fair − fee_per_unit(exec_ask) − required_margin  (买不超过此价)
+//   reservation_sell = fair + fee_per_unit(exec_bid) + required_margin  (卖不低于此价)
+//   fee_per_unit(p)  = fee_coef × p × (1−p)   (R-fee-2: per-market gamma feeSchedule.rate)
+// 老板「价格涨了还硬买就赔」: reservation 是净 edge=0 的临界价, 越界即无 edge → 限价不追。
+// ---------------------------------------------------------------------------
+struct ReservationInput {
+    double fair{0.5};         // 被选边 fair prob ∈ (0,1) (p_fair_selected)
+    double exec_ask{0.0};     // 被选边 best ask (买入 fee 锚 + 执行触价)
+    double exec_bid{0.0};     // 被选边 best bid (卖出 fee 锚 + 执行触价)
+    double fee_coef{0.03};    // per-market 手续费系数 (gamma feeSchedule.rate)
+    double margin_floor{0.0}; // required_margin 下限 (小梁: edge_ci_lower_floor 同源)
+    double z{1.645};          // CI z (90% = 1.645)
+    int n_eff{200};           // 有效样本数
+};
+
+struct ReservationPrices {
+    double buy_px{0.0};          // reservation_buy
+    double sell_px{1.0};         // reservation_sell
+    double required_margin{0.0}; // 安全边际 (观测/训练)
+};
+
+[[nodiscard]] inline ReservationPrices ComputeReservation(const ReservationInput& in) noexcept {
+    ReservationPrices out;
+    // fail-closed: 非有限 / 退化 → buy_px=0 (永不可买) + sell_px=1 (永不可卖)。
+    if (!std::isfinite(in.fair) || in.fair <= 0.0 || in.fair >= 1.0 || in.n_eff <= 0) {
+        out.buy_px = 0.0;
+        out.sell_px = 1.0;
+        out.required_margin = 0.0;
+        return out;
+    }
+    const double sigma = std::sqrt(in.fair * (1.0 - in.fair) / static_cast<double>(in.n_eff));
+    const double floor = std::isfinite(in.margin_floor) ? in.margin_floor : 0.0;
+    out.required_margin = std::max(floor, in.z * sigma);
+    const double coef = std::isfinite(in.fee_coef) ? std::max(0.0, in.fee_coef) : 0.0;
+    // fee 锚在各自触价 (买 ask / 卖 bid); 触价非有限则退回 fair 锚 (保守)。
+    const double pa = (std::isfinite(in.exec_ask) && in.exec_ask > 0.0 && in.exec_ask < 1.0) ? in.exec_ask : in.fair;
+    const double pb = (std::isfinite(in.exec_bid) && in.exec_bid > 0.0 && in.exec_bid < 1.0) ? in.exec_bid : in.fair;
+    const double fee_buy = coef * pa * (1.0 - pa);
+    const double fee_sell = coef * pb * (1.0 - pb);
+    out.buy_px = in.fair - fee_buy - out.required_margin;
+    out.sell_px = in.fair + fee_sell + out.required_margin;
+    return out;
+}
+
 // Decide — 纯函数: 目标仓位 + 限价 → 控制动作。无副作用。
 //   gap = target − current; 死区内不动; 限价不可成交不动; 否则 买增(gap>0)/卖减(gap<0)。
 //   v1: 空头 clamp 0 (老韩 H); 卖不超过持仓 (不开空); 减仓 is_close=true (RM cap 放行)。
