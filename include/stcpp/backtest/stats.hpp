@@ -23,6 +23,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "stcpp/backtest/types.hpp"
@@ -223,6 +224,64 @@ struct ScanResult {
         out.push_back(e);
     }
     return out;
+}
+
+// ---------------------------------------------------------------------------
+// Spearman rank-IC (信号质量核心指标; 小蒋评审 P0: 特征/预测 与 未来收益的秩相关)
+//   ∈ [−1,1]; <2 有效样本 / 常数序列 → NaN。ties 用平均秩, NaN 对剔除。
+// ---------------------------------------------------------------------------
+[[nodiscard]] inline std::vector<double> average_ranks(std::vector<double> const& x) {
+    std::size_t const n = x.size();
+    std::vector<std::size_t> idx(n);
+    for (std::size_t i = 0; i < n; ++i) idx[i] = i;
+    std::sort(idx.begin(), idx.end(), [&](std::size_t a, std::size_t b) { return x[a] < x[b]; });
+    std::vector<double> ranks(n, 0.0);
+    std::size_t i = 0;
+    while (i < n) {
+        std::size_t j = i;
+        while (j + 1 < n && x[idx[j + 1]] == x[idx[i]]) ++j;  // tie group [i,j]
+        double const avg = (static_cast<double>(i) + static_cast<double>(j)) / 2.0 + 1.0;  // 1-based 平均秩
+        for (std::size_t k = i; k <= j; ++k) ranks[idx[k]] = avg;
+        i = j + 1;
+    }
+    return ranks;
+}
+
+[[nodiscard]] inline double pearson_corr(std::vector<double> const& a, std::vector<double> const& b) noexcept {
+    std::size_t const n = a.size();
+    if (n < 2 || b.size() != n) return std::numeric_limits<double>::quiet_NaN();
+    double ma = 0.0, mb = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        ma += a[i];
+        mb += b[i];
+    }
+    ma /= static_cast<double>(n);
+    mb /= static_cast<double>(n);
+    double cov = 0.0, va = 0.0, vb = 0.0;
+    for (std::size_t i = 0; i < n; ++i) {
+        double const da = a[i] - ma, db = b[i] - mb;
+        cov += da * db;
+        va += da * da;
+        vb += db * db;
+    }
+    if (!(va > 0.0) || !(vb > 0.0)) return std::numeric_limits<double>::quiet_NaN();  // 常数 → 无定义
+    return cov / std::sqrt(va * vb);
+}
+
+// rank_ic — pred 与 realized 的 Spearman 秩相关。两序列等长; NaN 对剔除; <2 → NaN。
+[[nodiscard]] inline double rank_ic(std::vector<double> const& pred, std::vector<double> const& realized) {
+    if (pred.size() != realized.size()) return std::numeric_limits<double>::quiet_NaN();
+    std::vector<double> p, r;
+    p.reserve(pred.size());
+    r.reserve(pred.size());
+    for (std::size_t i = 0; i < pred.size(); ++i) {
+        if (std::isfinite(pred[i]) && std::isfinite(realized[i])) {
+            p.push_back(pred[i]);
+            r.push_back(realized[i]);
+        }
+    }
+    if (p.size() < 2) return std::numeric_limits<double>::quiet_NaN();
+    return pearson_corr(average_ranks(p), average_ranks(r));
 }
 
 }  // namespace stcpp::backtest::stats

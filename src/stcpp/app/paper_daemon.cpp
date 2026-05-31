@@ -302,9 +302,11 @@ BuildResult PaperDaemon::Build() {
     //   仅换工厂返回值, paper_loop 推理路径零改码。白名单决定特征是真值还是 NaN。
     {
         ml::OnnxModelConfig onnx_cfg;
+        onnx_cfg.onnx_path = cfg_.onnx_model_path;  // 配置路径: 放训好的 .onnx 即激活 (零改码)
         onnx_cfg.expected_feature_count = ml::kMlFeatureCount;
         onnx_cfg.output_outcome_count = 2;  // Moneyline YES/NO
-        fair_value_model_ = ml::make_onnx_fair_value_model(onnx_cfg);
+        onnx_cfg.model_id = "paper-onnx-fair";
+        fair_value_model_ = ml::make_onnx_fair_value_model(onnx_cfg);  // 空路径/无文件 → nullptr → stub
         if (!fair_value_model_) {
             fair_value_model_ =
                 std::make_unique<ml::StubFairValueModel>(ml::kMlFeatureCount, /*outcome_count=*/2);

@@ -115,6 +115,10 @@ struct PaperDaemonConfig {
 
     // ML 训练数据采集 (FeatureRecorder)
     bool record_ml{true};
+
+    // Phase 2: 训好的 ONNX fair value 模型路径 (空 → make_onnx 返 nullptr → StubFairValueModel)。
+    //   放 model.onnx + 设此路径 → OnnxFairValueModel 激活, 推理路径零改码 (advisory, ML-R1/R2)。
+    std::string onnx_model_path{};
     std::string ml_path{"data/ml_capture/quotes.jsonl"};
 
     // 仅观测不交易 (老周: 替代 ObserverOnly 枚举档). true=起 PaperLoop (默认).
