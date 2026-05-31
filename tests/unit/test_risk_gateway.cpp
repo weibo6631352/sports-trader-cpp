@@ -417,18 +417,8 @@ TEST_F(RiskGatewayTest, R13_EDGE_NEGATED_BY_SLIPPAGE) {
 
 // ---- 市场 -------------------------------------------------------------------
 
-TEST_F(RiskGatewayTest, R14_MARKET_TYPE_NOT_ENABLED) {
-    RiskConfig c = cfg_;
-    c.enable_moneyline = false;
-    c.enable_totals = false;
-    c.enable_spreads = false;
-    auto local_emitter = std::make_shared<InMemoryEmitter>();
-    RiskGateway local(c, local_emitter);
-    local.set_state(RmState::RUNNING);
-    auto d = local.evaluate(make_ok_intent());
-    EXPECT_EQ(d.decision, Decision::REJECTED);
-    EXPECT_EQ(d.reject, RejectCode::MARKET_TYPE_NOT_ENABLED);
-}
+// R14 (MARKET_TYPE_NOT_ENABLED) 已删: 盘口类型 enable gate 是空壳, 2026-05-31 老板令删,
+//   盘口准入移到定价层 (paper_loop 非 moneyline fail-closed)。MARKET_NOT_ACTIVE 仍是真 gate。
 
 TEST_F(RiskGatewayTest, R15_MARKET_NOT_ACTIVE) {
     rm_->set_market_active(kMockConditionId, false);

@@ -285,7 +285,7 @@ BuildResult PaperDaemon::Build() {
     paper_rm_cfg.bankroll_usdc =
         domain::MicroPUSD::from_pusd(cfg_.paper_loop.bankroll_usdc);  // c2b: 与 cap 对称
     paper_rm_cfg.edge_ci_lower_floor = -1.0;                          // M1 放宽 CI 门
-    paper_rm_cfg.enable_moneyline = true;
+    // 盘口准入已移到定价层 (paper_loop: 非 moneyline 无专属定价 → fail-closed); RM enable_xxx 已删。
     paper_rm_ = std::make_unique<risk::RiskGateway>(paper_rm_cfg, paper_audit_emitter_);
 
     // BaselineFairValueModel (小肖 pricing v0.1; 先验 sigmoid)

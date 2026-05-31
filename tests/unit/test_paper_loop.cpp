@@ -135,7 +135,6 @@ protected:
         rm_cfg.bankroll_usdc =
             stcpp::domain::MicroPUSD::from_micro(1'000'000'000);  // c2b 保值 // 1K pUSD (micro)
         rm_cfg.edge_ci_lower_floor = -1.0;                        // 放宽 CI 门
-        rm_cfg.enable_moneyline = true;
 
         auto emitter = std::make_shared<NullAuditEmitter>();
         rm_ = std::make_unique<RiskGateway>(rm_cfg, emitter);
@@ -176,7 +175,6 @@ protected:
         c.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);
         c.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_pusd(hard_pusd);  // DD 硬阈值
         c.edge_ci_lower_floor = -1.0;                                             // 放宽信号门
-        c.enable_moneyline = true;
         auto emitter = std::make_shared<NullAuditEmitter>();
         rm_ = std::make_unique<RiskGateway>(c, emitter);
     }
@@ -1563,7 +1561,6 @@ TEST_F(PaperLoopTest, T_Profit_PipelineProducesProfit) {
     c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);
     c.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000'000.0);
     c.edge_ci_lower_floor = -1.0;
-    c.enable_moneyline = true;
     rm_ = std::make_unique<RiskGateway>(c, std::make_shared<NullAuditEmitter>());
     cfg_.bankroll_usdc = 1'000'000.0;
     cfg_.per_order_cap_usdc = 10'000.0;

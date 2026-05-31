@@ -106,9 +106,6 @@ std::pair<std::shared_ptr<RiskGateway>, std::shared_ptr<NullEmitter>> make_gw() 
     cfg.daily_loss_soft_pct = 0.03;
     cfg.daily_loss_hard_pct = 0.05;
     cfg.consec_loss_halt_count = 100;
-    cfg.enable_moneyline = true;
-    cfg.enable_totals = true;
-    cfg.enable_spreads = true;
     cfg.edge_ci_lower_floor = 0.0;
     cfg.strategy_decay_min_ev_ratio = 0.0;
 

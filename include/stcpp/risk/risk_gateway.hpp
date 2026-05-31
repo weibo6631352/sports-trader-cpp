@@ -327,10 +327,10 @@ struct RiskConfig {
     std::int32_t consec_loss_halt_count = 5;
     std::int32_t excessive_slippage_bps = 200;  // 小肖 v1 默认
     double edge_ci_lower_floor = 0.0;           // CI 下界 > 0 才放行
-    // 市场类型白名单 (MVP 只开 MONEYLINE; 用 bitmap 表示, 此处简化为 bool)
-    bool enable_moneyline = true;
-    bool enable_totals = false;
-    bool enable_spreads = false;
+    // 注: 盘口类型准入已从此处删除 (2026-05-31 老板「没意义的 gate 都删了」)。原 enable_moneyline/
+    //   totals/spreads 三布尔是空壳 (check_market_ 只看「至少启用一种」, 不按 order 的 market_type 逐单卡,
+    //   OrderIntent 也无 market_type 字段)。盘口准入已移到定价层真 gate (paper_loop: 非 moneyline 暂无
+    //   专属定价 → fail-closed)。MARKET_NOT_ACTIVE (市场关闭/结算) 仍保留。
     // STRATEGY_DECAYED (v0.3 §16 OQ-D13)
     double strategy_decay_min_ev_ratio = 0.3;  // EV(realized) / EV(forecast) < 0.3
 };

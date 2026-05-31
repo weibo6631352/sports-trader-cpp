@@ -478,11 +478,10 @@ bool RiskGateway::check_stale_data_(OrderIntent const& it, RiskDecision& d) cons
 
 // 5. market
 bool RiskGateway::check_market_(OrderIntent const& it, RiskDecision& d) const noexcept {
-    if (!cfg_.enable_moneyline && !cfg_.enable_totals && !cfg_.enable_spreads) {
-        d.reject = RejectCode::MARKET_TYPE_NOT_ENABLED;
-        return true;
-    }
-    // v0.5: 按 condition_id 查 market_active
+    // 盘口类型 enable gate 已删 (2026-05-31 老板「没意义的 gate 都删了」): 原 enable_xxx 是空壳
+    //   (不按 order 的 market_type 逐单卡)。盘口准入移到定价层 (paper_loop: 非 moneyline 无专属定价 →
+    //   fail-closed)。MARKET_TYPE_NOT_ENABLED 拒单码保留 (RJ- 码契约稳定), 仅不再产生。
+    // 按 condition_id 查 market_active (市场关闭/结算 → 不下单; 真有意义的市场状态 gate)。
     std::lock_guard<std::mutex> g(s_->mu);
     std::string const& key = it.condition_id.empty() ? it.condition_id : it.condition_id;
     auto a_it = s_->market_active.find(key);

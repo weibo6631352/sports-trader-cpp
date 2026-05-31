@@ -536,6 +536,17 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         return;
     }
 
+    // 盘口定价准入 (数据驱动真 gate, 替代 RM 已删的空壳 enable_xxx 布尔):
+    //   FairValueEstimator 是胜负盘 (moneyline) 语义 (score_diff→p_yes)。非 moneyline 盘口
+    //   (totals 大小分 / spread 让分 / outright / prop / series) 定价语义不同, 套胜负盘模型会错误下单。
+    //   → 暂无专属定价的盘口 fail-closed (不下单), 等量化上线对应定价。市场全盘口发现/订阅, 仅交易准入分盘口。
+    //   market_type_id: 0=moneyline 放行 / >0 非 moneyline fail-closed / -1 未注入元数据 (保守当 moneyline)。
+    //   ★ totals/spread 专属定价接入点: 此处按 mkt_type 分派对应 estimator (老板 2026-05-31)。
+    const std::int32_t mkt_type = MarketCatFor(condition_id).market_type_id;
+    if (mkt_type > 0) {
+        return;  // 非 moneyline 盘口暂无专属定价 → 不交易 (防胜负盘定价错误下单)
+    }
+
     // ---- P0-3 / P1-8 fair 锚定 --------------------------------------------
     // 默认 (无真实 Goalserve 先验, M1 stub 路径): p_fair = p_market_devig.
     //   → edge ≈ 0 (锚在去 vig 的市场上自己跟自己比), 配合 has_real_fair gate 不产 intent.

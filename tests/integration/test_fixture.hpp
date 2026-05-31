@@ -223,7 +223,6 @@ protected:
         rcfg.consec_loss_halt_count = 5;
         rcfg.excessive_slippage_bps = 200;
         rcfg.edge_ci_lower_floor = 0.0;
-        rcfg.enable_moneyline = true;
         rcfg.strategy_decay_min_ev_ratio = 0.3;
 
         audit_emitter_ = std::make_shared<CountingAuditEmitter>(paper_audit_.get());

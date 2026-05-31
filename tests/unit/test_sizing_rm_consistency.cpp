@@ -108,7 +108,6 @@ static std::pair<risk::RiskConfig, std::shared_ptr<risk::RiskGateway>> make_rm(
         stcpp::domain::MicroPUSD::from_pusd(static_cast<double>(bankroll_usdc));  // c2b: whole→micro
     cfg.edge_ci_lower_floor = 0.0;
     cfg.excessive_slippage_bps = 10'000;  // 松弛 slippage 上限 (单测不关注)
-    cfg.enable_moneyline = true;
 
     auto emitter = std::make_shared<NoopAuditEmitter>();
     auto gw = std::make_shared<risk::RiskGateway>(cfg, emitter);

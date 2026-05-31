@@ -103,7 +103,6 @@ struct E2EFixture {
         cfg.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_pusd(50'000.0);       // 50k pUSD
         cfg.consec_loss_halt_count = 50;
         cfg.excessive_slippage_bps = 300;
-        cfg.enable_moneyline = true;
         rm = std::make_unique<risk::RiskGateway>(cfg, emitter);
         rm->set_state(risk::RmState::RUNNING);
         rm->set_market_active(kE2ECondId, true);
@@ -219,7 +218,6 @@ void BM_E2E_LowerGuard(benchmark::State& state) {
     risk::RiskConfig cfg;
     cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000.0);
     cfg.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000'000.0);
-    cfg.enable_moneyline = true;
     auto rm = std::make_unique<risk::RiskGateway>(cfg, emitter);
     rm->set_state(risk::RmState::RUNNING);
     rm->set_market_active(kE2ECondId, true);

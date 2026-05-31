@@ -88,7 +88,6 @@ RiskConfig make_cfg() {
     c.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_pusd(5'000.0);  // c2b 5k pUSD
     c.consec_loss_halt_count = 5;
     c.excessive_slippage_bps = 200;
-    c.enable_moneyline = true;
     return c;
 }
 
