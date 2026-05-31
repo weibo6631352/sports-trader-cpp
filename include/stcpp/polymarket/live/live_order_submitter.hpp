@@ -10,6 +10,8 @@
 //   R-12: 非 hot path (下单链路, 非 WSS event loop)。
 #pragma once
 
+#include "stcpp/polymarket/live_order_types.hpp"  // LiveOrderRequest / LiveOrderResult
+
 #include <array>
 #include <cstdint>
 #include <string>
@@ -28,26 +30,6 @@ struct LiveCredentials {
     //   POLYMARKET_API_KEY / POLYMARKET_API_SECRET / POLYMARKET_API_PASSPHRASE。
     // 缺任一 → false + err 写明缺哪个 (不含值)。
     [[nodiscard]] static bool FromEnv(LiveCredentials& out, std::string& err);
-};
-
-struct LiveOrderRequest {
-    std::string token_id;             // decimal ERC1155 outcome token
-    bool is_buy{true};                // true=BUY false=SELL
-    std::uint64_t maker_amount{0};    // micro (BUY:USDC / SELL:shares)
-    std::uint64_t taker_amount{0};    // micro (BUY:shares / SELL:USDC)
-    bool neg_risk{false};             // 决定 verifyingContract (V2 normal vs negRisk)
-    std::uint32_t signature_type{1};  // 1=POLY_PROXY
-    std::string order_type{"FOK"};    // FOK/GTC
-};
-
-struct LiveOrderResult {
-    bool success{false};
-    int http_status{0};
-    std::string order_id;
-    std::string status;            // "matched"/"live"/"unmatched"
-    std::string error;            // errorMsg / error
-    std::string transaction_hash;
-    std::string raw_response;     // 已可安全 log (不含私钥/HMAC)
 };
 
 class LiveOrderSubmitter {
