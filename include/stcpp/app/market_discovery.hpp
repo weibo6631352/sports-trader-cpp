@@ -51,6 +51,11 @@ struct DiscoveredMarket {
     std::string outcome0_name;
     std::string outcome1_name;
     std::int64_t game_start_ts_sec{0};
+    // 手续费系数 (gamma feeSchedule.rate; fee = shares × rate × p × (1-p))。
+    //   feesEnabled=false (老市场免费) → 0.0; 缺字段 → 0.03 默认 (体育保守)。
+    //   官方明确: 别硬编码, 从 market 数据 feeSchedule 取 (docs.polymarket 2026-03-31)。R-fee-2 RM/sizing
+    //   用此真值。
+    double fee_rate_coef{0.03};
 };
 
 // 单个 event (含 markets[])
@@ -101,6 +106,12 @@ namespace discovery_detail {
 
 // 最小 JSON string 值提取 ("key":"value"). 找不到返 "".
 [[nodiscard]] std::string ExtractJsonStr(const std::string& json, const std::string& key);
+
+// gamma 手续费系数提取 — 解析 feeSchedule.rate + feesEnabled.
+//   feesEnabled:false → 0.0 (老市场免费); feeSchedule.rate 存在 → 返该值;
+//   均缺 → fallback_default (体育 0.03 保守)。返回值钳在 [0, 0.10] (防脏数据).
+//   fee = shares × rate × p × (1-p); 官方禁硬编码 (docs.polymarket).
+[[nodiscard]] double ExtractFeeRateCoef(const std::string& obj, double fallback_default = 0.03);
 
 // 提取某 key 的 2-string 数组 — 处理两种 gamma 编码:
 //   原生数组:    "key":["a","b"]

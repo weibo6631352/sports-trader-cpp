@@ -623,3 +623,66 @@ TEST(ParseSportsEvents, PartialMarkets_OnlyValidKept) {
     EXPECT_EQ(result[0].markets.size(), 1u);
     EXPECT_EQ(result[0].markets[0].condition_id, "cond-pv1");
 }
+
+// ============================================================================
+// §2.5  ExtractFeeRateCoef — gamma feeSchedule.rate (R-fee-2, 老雷)
+//   官方禁硬编码: 从 market feeSchedule 取真值 (docs.polymarket 2026-03-31)
+// ============================================================================
+
+// MD-FEE-01: feeSchedule.rate 正常提取 (general 0.05)
+TEST(ExtractFeeRateCoef, MDFEE01_NestedRate) {
+    const std::string obj =
+        R"({"question":"Q","feesEnabled":true,"feeSchedule":{"exponent":1,"rate":0.05,"takerOnly":true,"rebateRate":0.25}})";
+    EXPECT_DOUBLE_EQ(ExtractFeeRateCoef(obj), 0.05);
+}
+
+// MD-FEE-02: 体育 0.03
+TEST(ExtractFeeRateCoef, MDFEE02_SportsRate) {
+    const std::string obj = R"({"feesEnabled":true,"feeSchedule":{"rate":0.03,"takerOnly":true}})";
+    EXPECT_DOUBLE_EQ(ExtractFeeRateCoef(obj), 0.03);
+}
+
+// MD-FEE-03: 加密 0.072
+TEST(ExtractFeeRateCoef, MDFEE03_CryptoRate) {
+    const std::string obj = R"({"feeSchedule":{"rate":0.072}})";
+    EXPECT_DOUBLE_EQ(ExtractFeeRateCoef(obj), 0.072);
+}
+
+// MD-FEE-04: feesEnabled:false (老市场免费) → 0.0, 不取 schedule
+TEST(ExtractFeeRateCoef, MDFEE04_FeesDisabledZero) {
+    const std::string obj = R"({"feesEnabled":false,"feeSchedule":{"rate":0.05}})";
+    EXPECT_DOUBLE_EQ(ExtractFeeRateCoef(obj), 0.0);
+}
+
+// MD-FEE-05: 无 fee 信息 → fallback 默认 0.03 (体育保守)
+TEST(ExtractFeeRateCoef, MDFEE05_MissingFallback) {
+    const std::string obj = R"({"question":"Q","conditionId":"cond-x"})";
+    EXPECT_DOUBLE_EQ(ExtractFeeRateCoef(obj), 0.03);
+    EXPECT_DOUBLE_EQ(ExtractFeeRateCoef(obj, 0.04), 0.04);  // 自定义 fallback
+}
+
+// MD-FEE-06: 带空格编码 "rate": 0.05
+TEST(ExtractFeeRateCoef, MDFEE06_SpaceAfterColon) {
+    const std::string obj = R"({"feeSchedule":{"rate": 0.05}})";
+    EXPECT_DOUBLE_EQ(ExtractFeeRateCoef(obj), 0.05);
+}
+
+// MD-FEE-07: 脏数据 (rate 过大) → 钳 [0,0.10]
+TEST(ExtractFeeRateCoef, MDFEE07_ClampDirty) {
+    const std::string obj = R"({"feeSchedule":{"rate":0.9}})";
+    EXPECT_DOUBLE_EQ(ExtractFeeRateCoef(obj), 0.10);  // 钳上界
+}
+
+// MD-FEE-08: DiscoveredMarket.fee_rate_coef 端到端 (ParseSportsEvents 填充)
+TEST(ParseSportsEvents, MDFEE08_MarketCarriesFeeRate) {
+    const std::string m =
+        "{\"conditionId\":\"cond-fee\",\"question\":\"NBA Q\","
+        "\"clobTokenIds\":[\"ty\",\"tn\"],"
+        "\"feesEnabled\":true,\"feeSchedule\":{\"rate\":0.03,\"takerOnly\":true}}";
+    const std::string ev = MakeEvent("ev-fee", "NBA Game", "basketball", m);
+    const std::string json = "[" + ev + "]";
+    auto result = ParseSportsEvents(json, 30);
+    ASSERT_EQ(result.size(), 1u);
+    ASSERT_EQ(result[0].markets.size(), 1u);
+    EXPECT_DOUBLE_EQ(result[0].markets[0].fee_rate_coef, 0.03);
+}

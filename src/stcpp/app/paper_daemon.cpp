@@ -98,7 +98,7 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             mi.condition_id = dm.condition_id;
             mi.market_id = dm.condition_id;  // deprecated alias
             mi.tick_size = 0.01;             // Polymarket 默认 tick
-            mi.fee_rate = 0.0;               // outright/futures: 无 maker fee
+            mi.fee_rate = dm.fee_rate_coef;  // R-fee-2: gamma feeSchedule.rate (体育0.03/加密0.072/老市场0)
             mi.neg_risk = !ev.neg_risk_market_id.empty();
             mi.neg_risk_market_id = ev.neg_risk_market_id;
             mi.accepting_orders = true;  // gamma active=true 时默认接单
@@ -169,7 +169,8 @@ void PaperDaemon::SeedInitialBooksFromRest(std::stop_token st) {
         // popen curl POST /books (token_id 全数字 → 单引号 body 安全; 沿用 discovery 的 popen 模式)
         const std::string cmd =
             "curl -s --max-time 15 -X POST 'https://clob.polymarket.com/books' "
-            "-H 'Content-Type: application/json' --data '" + body + "' 2>/dev/null";
+            "-H 'Content-Type: application/json' --data '" +
+            body + "' 2>/dev/null";
         std::string resp;
         if (FILE* p = ::popen(cmd.c_str(), "r")) {
             char buf[8192];
@@ -280,6 +281,16 @@ BuildResult PaperDaemon::Build() {
                                                      token_map_, cfg_.paper_loop);
     // A1b: 注入真实比分源 (Start 前; 之后 loop_thread_ 只读). 映射由刷新线程 SetEventMapping.
     paper_loop_->SetScoreStore(score_store_.get());
+
+    // R-fee-2: 注入 per-market 手续费系数 (condition_id → gamma feeSchedule.rate)。
+    //   Start 前一次性注入, 之后 loop_thread_ 只读。官方禁硬编码 (docs.polymarket)。
+    {
+        std::unordered_map<std::string, double> fee_map;
+        fee_map.reserve(market_catalog_.size());
+        for (const auto& [cid, mi] : market_catalog_)
+            fee_map[cid] = mi.fee_rate;
+        paper_loop_->SetFeeByCondition(std::move(fee_map));
+    }
 
     // ---- Step 2d: RealStateProvider (读模型) ----
     risk::RiskConfig rsp_risk_cfg;

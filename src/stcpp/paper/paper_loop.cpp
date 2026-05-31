@@ -52,11 +52,11 @@
 #include "stcpp/data/score_snapshot_store.hpp"  // A1: ScoreSnapshotStore::Get(inplay_match_id)
 #include "stcpp/execution/execution_mode.hpp"   // A2 红线1: kCompiledMode 运行期 mode 断言
 #include "stcpp/infra/wal/pit.hpp"
-#include "stcpp/strategy/edge_ci.hpp"  // 单一 ComputeEdgeCiLower (回测-实盘共用)
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/rm_debug_snapshot.hpp"
+#include "stcpp/strategy/edge_ci.hpp"  // 单一 ComputeEdgeCiLower (回测-实盘共用)
 #include "stcpp/strategy/signal_iface.hpp"
 
 namespace stcpp::paper {
@@ -482,6 +482,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     sz_in.fill_rate = 0.65;    // 保守固定 (M1)
     sz_in.slippage_bps = 8.0;  // 保守固定 (M1)
     sz_in.buy_yes = is_yes;
+    sz_in.fee_rate_coef = FeeCoefFor(condition_id);  // R-fee-2: per-market 真值 (gamma feeSchedule.rate)
 
     // c4 (P0-2 隐患#1 闭合, 老韩 review): sizing 必须看 RM 同源的真实累计 exposure。否则第 2 笔起
     //   sizing 以为满 headroom (硬编码 0) 而 RM 按真实 exposure 拒 → surprise-reject + sizing 无感分叉
@@ -592,6 +593,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     intent.book_depth_l1_usdc = book_depth_l1 * 1'000'000.0;  // book_depth_l1 已切被选边 (Step H)
     intent.book_snapshot_ts_ns = exec_feat.ingestion_ts_ns;   // 被选边 book ts (R8.4 + R-20)
     intent.tick_size = 0.01;
+    intent.fee_rate_coef = sz_in.fee_rate_coef;  // R-fee-2: 与 sizing 同源 (RM check_signal_ 用)
 
     // V2 EIP-712 字段 (timestamp_ms = 当前毫秒, spec-10 必须 != 0)
     intent.timestamp_ms = as_of_now / 1'000'000LL;
@@ -748,8 +750,10 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
     // 真实 realized 在平仓时产生; M1 买入阶段 realized = 0
     const double pnl_realized = 0.0;
     // A1: fill_size_usdc micro → /1e6 转 pUSD 算 fee (unit-contract-ok: micro→pUSD)
+    // R-fee-2: fee 系数 per-market (gamma feeSchedule.rate), 与 RM/sizing 同源 FeeCoefFor(condition).
+    //   未填 → kDefaultFeeCoef(0.03), 与旧 sizing::kSportsTakerFeeRate 逐位不变。
     const double pnl_fee = (static_cast<double>(fill.fill_size_usdc) / 1'000'000.0) *
-                           sizing::kSportsTakerFeeRate * fill.fill_price * (1.0 - fill.fill_price);
+                           FeeCoefFor(condition_id) * fill.fill_price * (1.0 - fill.fill_price);
     const double pnl_gross = pnl_realized + pnl_unrealized;
 
     // A5 (老韩 spec §4): 累计已付 fee (单调加, whole pUSD)。FeedRiskGateway 的 DD 喂数读它

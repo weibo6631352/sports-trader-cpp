@@ -578,4 +578,43 @@ TEST(SizingCalculatorTest, NetCIEdge_Inf_Input) {
     EXPECT_DOUBLE_EQ(result, 0.0);
 }
 
+// ---------------------------------------------------------------------------
+// R-fee-2: compute_net_ci_edge 用 per-market fee_coef (gamma feeSchedule.rate)
+//   官方禁硬编码; 老市场 fee=0 应放行 0.03 会错杀的薄利单 (老雷)
+// ---------------------------------------------------------------------------
+
+// 默认 (省略 fee_coef) = 0.03, 与旧行为逐位不变
+TEST(SizingCalculatorTest, NetCIEdge_DefaultIs0p03) {
+    double const p = 0.5;
+    double const edge = 0.01;
+    double const got = SizingCalculator::compute_net_ci_edge(edge, p);  // 省略 → 0.03
+    EXPECT_DOUBLE_EQ(got, edge - 0.03 * p * (1.0 - p));                 // 0.01 - 0.0075 = 0.0025
+}
+
+// 老市场 fee=0: 薄利单净 edge = 毛 edge (0.03 会扣成负)
+TEST(SizingCalculatorTest, NetCIEdge_ZeroFeeMarketPassesThin) {
+    double const p = 0.5;
+    double const edge = 0.006;  // 60 bps 薄利
+    double const net_03 = SizingCalculator::compute_net_ci_edge(edge, p, 0.03);
+    double const net_00 = SizingCalculator::compute_net_ci_edge(edge, p, 0.0);
+    EXPECT_LT(net_03, 0.0);           // 0.006 - 0.0075 = -0.0015 → 0.03 错杀
+    EXPECT_DOUBLE_EQ(net_00, 0.006);  // fee=0 老市场: 净=毛, 放行
+}
+
+// 加密 0.072: 高费率扣更多
+TEST(SizingCalculatorTest, NetCIEdge_CryptoHigherFee) {
+    double const p = 0.5;
+    double const edge = 0.02;
+    double const got = SizingCalculator::compute_net_ci_edge(edge, p, 0.072);
+    EXPECT_DOUBLE_EQ(got, edge - 0.072 * p * (1.0 - p));  // 0.02 - 0.018 = 0.002
+}
+
+// 脏数据 fee_coef 钳 [0,0.10]
+TEST(SizingCalculatorTest, NetCIEdge_ClampDirtyFee) {
+    double const p = 0.5;
+    double const edge = 0.05;
+    double const got = SizingCalculator::compute_net_ci_edge(edge, p, 0.9);  // → 钳 0.10
+    EXPECT_DOUBLE_EQ(got, edge - 0.10 * p * (1.0 - p));                      // 0.05 - 0.025 = 0.025
+}
+
 }  // namespace stcpp::sizing::test

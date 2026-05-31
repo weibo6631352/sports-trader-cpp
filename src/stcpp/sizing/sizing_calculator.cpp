@@ -125,7 +125,7 @@ SizingOutput SizingCalculator::compute(risk::RiskConfig const& cfg, SizingInput 
     //     原用 fair_value 与 RM 不一致, 极小 edge 下方向分歧 (37/9863, 老韩裁定 fee 锚 price)
     //   net_ci_edge <= floor → NO_EDGE
     // ------------------------------------------------------------------
-    double const net_ci_edge = compute_net_ci_edge(in.edge_ci_lower, c);
+    double const net_ci_edge = compute_net_ci_edge(in.edge_ci_lower, c, in.fee_rate_coef);
     if (net_ci_edge <= floor) {
         return make_fail(in, CappedBy::NO_EDGE);
     }

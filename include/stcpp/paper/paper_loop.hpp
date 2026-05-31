@@ -214,6 +214,13 @@ public:
     //   单 writer: 仅主线程在 Start() 前调用一次 (score_store_ 之后只读).
     void SetScoreStore(const data::ScoreSnapshotStore* s) noexcept { score_store_ = s; }
 
+    // R-fee-2: 注入 per-market 手续费系数 (condition_id → gamma feeSchedule.rate)。
+    //   单 writer: Start() 前注入一次, 之后 loop_thread_ 只读。空/查不到 → kDefaultFeeCoef (0.03)。
+    //   官方禁硬编码 (docs.polymarket): 体育 0.03 / 加密 0.072 / 老市场 0 各异。
+    void SetFeeByCondition(std::unordered_map<std::string, double> m) noexcept {
+        fee_by_condition_ = std::move(m);
+    }
+
     // A1: 注入/热刷 condition_id→event 映射 (app 层 EventMatcher 解析后周期推送).
     //   线程安全: shared_ptr + mutex 短锁 swap (同 ScoreSnapshotStore 模式; libc++ 无
     //   atomic<shared_ptr>). loop_thread_ 读时短锁拷 ptr, app 层写时短锁换 ptr.
@@ -254,6 +261,15 @@ private:
     // ---- 配置与 token map ----
     std::unordered_map<std::string, std::pair<std::string, std::string>> token_map_;
     PaperLoopConfig cfg_;
+
+    // ---- R-fee-2: per-market 手续费系数 (condition_id → feeSchedule.rate) ----
+    //   Start 前注入, 之后只读。查不到 → kDefaultFeeCoef。RM/sizing/PnL 同源用此值。
+    static constexpr double kDefaultFeeCoef = 0.03;  // 体育保守 (= RM kSportsTakerFeeRate)
+    std::unordered_map<std::string, double> fee_by_condition_;
+    [[nodiscard]] double FeeCoefFor(const std::string& condition_id) const noexcept {
+        auto it = fee_by_condition_.find(condition_id);
+        return (it != fee_by_condition_.end()) ? it->second : kDefaultFeeCoef;
+    }
 
     // ---- A1: 真实比分源 + 映射 ----
     // score_store_: 单 writer (Start 前注入), 之后 loop_thread_ 只读 Get(). 可空 → stub 路径.

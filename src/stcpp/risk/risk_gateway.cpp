@@ -30,6 +30,7 @@
 
 #include "stcpp/risk/risk_gateway.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cmath>
@@ -654,10 +655,16 @@ bool RiskGateway::check_signal_(OrderIntent const& it, RiskDecision& d) const no
         // net_edge_after_fee = edge_ci_lower - fee / size
         //   = edge_ci_lower - kSportsTakerFeeRate × p × (1-p)
         // 注: fee 是局部变量, 不写出 intent/signedorder/eip712 (spec §5.3 安全隔离)
-        // kSportsTakerFeeRate 硬编码常量, 不入 RiskConfig (防配置注入)
+        // fee 系数 per-market (gamma feeSchedule.rate, 经 OrderIntent.fee_rate_coef 传入).
+        //   官方禁硬编码 (docs.polymarket 2026-03-31): 体育 0.03 / 加密 0.072 / 老市场 0(免费) 各异.
+        //   仍钳 [0,0.10] 防脏数据 (来源是 Polymarket 自家 gamma, 非不可信 RiskConfig; 钳是纵深防御).
+        //   未填 (=0.03 默认) 时行为与旧 kSportsTakerFeeRate 逐位不变.
         {
             double const p = it.price;
-            double const fee_per_unit = kSportsTakerFeeRate * p * (1.0 - p);
+            // 非有限 → 回退 kSportsTakerFeeRate (canonical 默认); 否则钳 [0,0.10] 防脏数据.
+            double const raw_coef = std::isfinite(it.fee_rate_coef) ? it.fee_rate_coef : kSportsTakerFeeRate;
+            double const fee_coef = std::clamp(raw_coef, 0.0, 0.10);
+            double const fee_per_unit = fee_coef * p * (1.0 - p);
             double const net_edge_after_fee = edge_ci_lower - fee_per_unit;
             if (net_edge_after_fee <= cfg_.edge_ci_lower_floor) {
                 d.reject = RejectCode::EDGE_NEGATED_BY_SLIPPAGE;  // 复用 (spec §2.3.2)

@@ -32,6 +32,7 @@
 
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 
@@ -76,6 +77,10 @@ struct SizingInput {
     // fill_rate / slippage (来自 FillRateModel / SlippageModel; 调用方已算)
     double fill_rate{1.0};     // ∈ [0,1], 来自 FillRateModel
     double slippage_bps{0.0};  // 来自 SlippageModel (门 A: edge_ci_lower < slippage)
+
+    // 手续费系数 (per-market, gamma feeSchedule.rate; 门 B: net_ci = edge − rate×p×(1-p))。
+    //   默认 0.03 = 体育保守 (= RM 同源); 调用方填真值。与 RM check_signal_ 同源 (必须同值)。
+    double fee_rate_coef{0.03};
 
     // 当前敞口 (cap 2/3 headroom 计算用; 单位 USDC 与 RiskConfig cap 同)
     double current_token_exposure_usdc{0.0};      // 当前 token 累计敞口
@@ -140,13 +145,16 @@ public:
     [[nodiscard]] static SizingOutput compute(risk::RiskConfig const& cfg, SizingInput const& in) noexcept;
 
     // 净 edge 计算 helper (暴露给单测 / RM 一致性验证)
-    // net_ci_edge = edge_ci_lower − kSportsTakerFeeRate × p × (1 − p)
-    // 与 RM check_signal_ L585 公式完全同源
-    [[nodiscard]] static double compute_net_ci_edge(double edge_ci_lower, double p) noexcept {
-        if (!std::isfinite(edge_ci_lower) || !std::isfinite(p)) {
+    // net_ci_edge = edge_ci_lower − fee_coef × p × (1 − p)
+    // fee_coef: per-market (gamma feeSchedule.rate; 默认 kSportsTakerFeeRate 保留旧行为)。
+    //   钳 [0,0.10] 与 RM check_signal_ 同源 (官方禁硬编码 docs.polymarket)。
+    [[nodiscard]] static double compute_net_ci_edge(double edge_ci_lower, double p,
+                                                    double fee_coef = kSportsTakerFeeRate) noexcept {
+        if (!std::isfinite(edge_ci_lower) || !std::isfinite(p) || !std::isfinite(fee_coef)) {
             return 0.0;
         }
-        double const fee_per_unit = kSportsTakerFeeRate * p * (1.0 - p);
+        double const coef = std::clamp(fee_coef, 0.0, 0.10);
+        double const fee_per_unit = coef * p * (1.0 - p);
         return edge_ci_lower - fee_per_unit;
     }
 

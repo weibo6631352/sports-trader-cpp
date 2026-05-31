@@ -9,9 +9,11 @@
 
 #include "stcpp/app/market_discovery.hpp"
 
+#include <algorithm>
 #include <cctype>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <ctime>
 
 namespace stcpp::app {
@@ -52,6 +54,54 @@ std::string ExtractJsonStr(const std::string& json, const std::string& key) {
         ++end;
     }
     return json.substr(pos, end - pos);
+}
+
+// Extract a numeric value under `key` ("key":<num> 或 "key": <num>). 找不到/非法返 fallback.
+// 只在 [scan_from, scan_to) 区间内找 (用于限定 feeSchedule 子对象). 处理负号/小数/科学计数.
+static double ExtractJsonNumIn(const std::string& json, const std::string& key, std::size_t scan_from,
+                               std::size_t scan_to, double fallback) {
+    const std::string needle = "\"" + key + "\":";
+    std::size_t pos = json.find(needle, scan_from);
+    if (pos == std::string::npos || pos >= scan_to)
+        return fallback;
+    pos += needle.size();
+    while (pos < scan_to && (json[pos] == ' ' || json[pos] == '\t'))
+        ++pos;
+    if (pos >= scan_to)
+        return fallback;
+    const char* start = json.c_str() + pos;
+    char* end = nullptr;
+    const double v = std::strtod(start, &end);
+    if (end == start)
+        return fallback;  // 非数字 (e.g. null/true)
+    return v;
+}
+
+// gamma 手续费系数提取 — feeSchedule.rate + feesEnabled (见 hpp 注释).
+double ExtractFeeRateCoef(const std::string& obj, double fallback_default) {
+    // feesEnabled:false → 老市场免费, fee=0 (硬编 0.03 会错杀薄利单).
+    const std::size_t fe = obj.find("\"feesEnabled\":");
+    if (fe != std::string::npos) {
+        // 取 "feesEnabled": 后第一个非空白 token 是否 'f' (false).
+        std::size_t p = fe + std::string("\"feesEnabled\":").size();
+        while (p < obj.size() && (obj[p] == ' ' || obj[p] == '\t'))
+            ++p;
+        if (p < obj.size() && obj[p] == 'f')
+            return 0.0;
+    }
+    // feeSchedule.rate — 限定在 feeSchedule {...} 子对象内取 rate (防撞外层同名 key).
+    const std::size_t fs = obj.find("\"feeSchedule\":");
+    if (fs != std::string::npos) {
+        const std::size_t brace = obj.find('{', fs);
+        if (brace != std::string::npos) {
+            const std::size_t close = obj.find('}', brace);
+            const std::size_t scan_to = (close == std::string::npos) ? obj.size() : close;
+            const double rate = ExtractJsonNumIn(obj, "rate", brace, scan_to, -1.0);
+            if (rate >= 0.0)
+                return std::clamp(rate, 0.0, 0.10);  // 钳脏数据
+        }
+    }
+    return std::clamp(fallback_default, 0.0, 0.10);
 }
 
 // Extract a 2-string array under `key` — handles TWO gamma API encodings:
@@ -394,6 +444,7 @@ std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int 
             // A0 映射桥锚定字段 (best-effort; 缺失不阻塞发现, 仅降匹配率)
             (void)ExtractOutcomes(mobj, dm.outcome0_name, dm.outcome1_name);
             dm.game_start_ts_sec = ParseGammaTimeToEpochSec(ExtractJsonStr(mobj, "gameStartTime"));
+            dm.fee_rate_coef = ExtractFeeRateCoef(mobj);  // gamma feeSchedule.rate (R-fee-2 真值)
 
             ev.markets.push_back(std::move(dm));
         }
@@ -460,6 +511,7 @@ std::vector<DiscoveredEvent> ParseSportsMarketsFlat(const std::string& json_buf,
         // A0 映射桥锚定字段 (best-effort)
         (void)ExtractOutcomes(mobj, dm.outcome0_name, dm.outcome1_name);
         dm.game_start_ts_sec = ParseGammaTimeToEpochSec(ExtractJsonStr(mobj, "gameStartTime"));
+        dm.fee_rate_coef = ExtractFeeRateCoef(mobj);  // gamma feeSchedule.rate (R-fee-2 真值)
 
         // Wrap in synthetic event (event_id = condition_id, slug/title = question)
         DiscoveredEvent ev;

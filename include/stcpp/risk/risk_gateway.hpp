@@ -142,6 +142,12 @@ struct OrderIntent {
     double book_depth_l1_usdc{0.0};
     std::int64_t book_snapshot_ts_ns{0};  // R8 signal validity: book_ts ↔ token_id 对齐
     double tick_size{0.01};               // per-token (SSOT §5 T-07: 不恒为 0.01)
+    // 手续费系数 (per-market, gamma feeSchedule.rate; fee = rate × p × (1-p))。
+    //   默认 0.03 = 体育保守 (= 旧 kSportsTakerFeeRate, 调用方未填则行为不变)。
+    //   feesEnabled=false 老市场 → 0.0; 加密 0.072 等品类各异。RM check_signal_ 用此值 (钳 [0,0.10])。
+    //   官方禁硬编码 (docs.polymarket 2026-03-31); 来源是 Polymarket 自家 gamma, 非不可信 config
+    //   (仍钳防脏数据)。
+    double fee_rate_coef{0.03};
 
     // ---- V2 新增: timestamp_ms (替代 nonce, EIP-712 Order.timestamp) -----------
     // V2 CLOB 订单唯一性: 同地址同 ms 不可重复. Orchestrator 填入系统毫秒时间.
