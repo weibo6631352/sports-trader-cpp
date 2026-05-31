@@ -49,3 +49,4 @@ Testing/
 __pycache__/
 *.pyc
 frontend/dist/
+.browser_test/
