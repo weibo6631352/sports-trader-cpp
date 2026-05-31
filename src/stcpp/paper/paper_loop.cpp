@@ -325,6 +325,19 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         ts_history_[condition_id].Push(feat.data_source_ts_ns, mp_obs, best_bid, feat.best_bid_size(),
                                        best_ask, feat.best_ask_size());
     }
+    // NO 边时序 push (双边对称, 老板「双边都要有」): NO book 独立微结构。同 observe-always 语义
+    //   (价无效→NaN; bid 无→退出流动性观测)。NO 缺快照则本 tick 不 push (样本不足派生→NaN)。
+    if (mkt.no.present) {
+        const auto& nbook = mkt.no.book;
+        const double n_bid = nbook.best_bid(), n_ask = nbook.best_ask();
+        const bool n_px_ok = std::isfinite(n_ask) && n_ask > 0.0 && n_ask < 1.0 &&
+                             std::isfinite(n_bid) && n_bid > 0.0;
+        const double n_mp =
+            n_px_ok ? (std::isfinite(nbook.microprice) ? nbook.microprice : (n_bid + n_ask) * 0.5)
+                    : std::numeric_limits<double>::quiet_NaN();
+        ts_history_no_[condition_id].Push(nbook.data_source_ts_ns, n_mp, n_bid, nbook.best_bid_size(),
+                                          n_ask, nbook.best_ask_size());
+    }
 
     // L1 价格有效性门 (YES book) — 仅 gate 交易决策 (观测已在上方记录, 不受此 return 审查)。
     if (!std::isfinite(best_ask) || best_ask <= 0.0 || best_ask >= 1.0) {
@@ -1267,6 +1280,42 @@ void PaperLoop::PublishQuoteSnapshot(
             qf.b_vol_ratio = std::numeric_limits<double>::quiet_NaN();
             qf.b_mp_roc_30s = std::numeric_limits<double>::quiet_NaN();
             qf.b_mp_roc_5m = std::numeric_limits<double>::quiet_NaN();
+        }
+    }
+
+    // NO 边时序微结构 (老板「双边都要有」): 与上方 YES 块严格对称, 从 ts_history_no_ 派生。
+    //   NO 边无环 (NO book 缺) → 全 NaN (样本不足语义一致)。
+    {
+        const double nan = std::numeric_limits<double>::quiet_NaN();
+        const auto nhit = ts_history_no_.find(condition_id);
+        if (nhit != ts_history_no_.end()) {
+            const std::int64_t w = cfg_.ts_feature_window_ns;
+            qf.no_mp_roc_per_sec = nhit->second.RateOfChangePerSec(w);
+            qf.no_realized_vol = nhit->second.RealizedVol(w);
+            qf.no_ts_window_samples = static_cast<std::int32_t>(nhit->second.WindowSampleCount(w));
+            qf.no_bid_absence_frac = nhit->second.BidAbsenceFrac(w);
+            qf.no_exit_depth_mean = nhit->second.ExitDepthMean(w);
+            qf.no_b_amihud = nhit->second.AmihudApprox(w);
+            qf.no_b_bid_depth_vol = nhit->second.BidDepthVol(w);
+            qf.no_b_ofi = nhit->second.OFI(w);
+            const double nvs = nhit->second.RealizedVol(w / 3);
+            const double nvl = nhit->second.RealizedVol(w);
+            qf.no_b_vol_ratio =
+                (std::isfinite(nvs) && std::isfinite(nvl) && nvl > 0.0) ? nvs / nvl : nan;
+            qf.no_b_mp_roc_30s = nhit->second.RateOfChangePerSec(30'000'000'000LL);
+            qf.no_b_mp_roc_5m = nhit->second.RateOfChangePerSec(300'000'000'000LL);
+        } else {
+            qf.no_mp_roc_per_sec = nan;
+            qf.no_realized_vol = nan;
+            qf.no_ts_window_samples = 0;
+            qf.no_bid_absence_frac = nan;
+            qf.no_exit_depth_mean = nan;
+            qf.no_b_amihud = nan;
+            qf.no_b_bid_depth_vol = nan;
+            qf.no_b_ofi = nan;
+            qf.no_b_vol_ratio = nan;
+            qf.no_b_mp_roc_30s = nan;
+            qf.no_b_mp_roc_5m = nan;
         }
     }
 

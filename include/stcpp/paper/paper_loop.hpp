@@ -444,6 +444,9 @@ private:
     //   PIT-safe / BR-1 共用; loop_thread_ 单 writer (TickOne push + PublishQuoteSnapshot 读)。
     //   每 condition 一个定长 ring; 派生微价变化率 + realized vol 进 QuoteFeatures (训练捕获 + 观测)。
     std::unordered_map<std::string, ml::FeatureHistory> ts_history_;
+    // NO 边时序环 (老板 2026-05-31「双边信息都要有」): NO book 独立微结构 (OFI/amihud/depth 非
+    //   YES 镜像, 各有 vig/流)。与 ts_history_ 对称, 派生 no_* 特征 (双边完整, 不只一边)。
+    std::unordered_map<std::string, ml::FeatureHistory> ts_history_no_;
 
     // ---- 批1 体育动态: 比分时序 (进球新鲜度/动量; game_row.score 派生) ----
     std::unordered_map<std::string, ml::GameScoreHistory> game_history_;

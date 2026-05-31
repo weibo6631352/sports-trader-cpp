@@ -163,6 +163,21 @@ struct QuoteFeatures {
     std::int32_t g_periods_won_home{0}; // 已完成节中主队领先节数 (score_*_periods[]; 已有数据没用)
     std::int32_t g_periods_won_away{0};
 
+    // ---- NO 边时序微结构 (老板 2026-05-31「双边信息都要有, 不能模糊」; ts_history_no_ 派生) ----
+    //   与上方 YES 边 (mp_roc_per_sec/realized_vol/b_ofi/...) 严格对称, 前缀 no_。NO book 独立
+    //   订单流/深度 (OFI/amihud/depth 非 YES 镜像, 各有 vig); 样本不足 → NaN。观测 + 训练捕获 (加性)。
+    double no_mp_roc_per_sec{0.0};       // NO 微价变化率 (prob/sec)
+    double no_realized_vol{0.0};         // NO 窗口 realized vol
+    std::int32_t no_ts_window_samples{0};
+    double no_bid_absence_frac{0.0};     // NO 边「卖不出」占比
+    double no_exit_depth_mean{0.0};      // NO best_bid_size 均值 (退出流动性)
+    double no_b_amihud{0.0};             // NO Amihud 流动性冲击
+    double no_b_bid_depth_vol{0.0};      // NO bid 深度波动
+    double no_b_ofi{0.0};                // NO order flow imbalance (独立信号)
+    double no_b_vol_ratio{0.0};          // NO 短/长窗 vol 比
+    double no_b_mp_roc_30s{0.0};         // NO 30s 动量
+    double no_b_mp_roc_5m{0.0};          // NO 5min 趋势
+
     // ---- 批1 体育动态 (体育主权; game_row.score 派生 — 现有数据非想象) ----
     double g_game_phase{0.0};        // floor(elapsed_frac×3): 0早/1中/2末段 (非线性分段)
     double g_garbage_time{0.0};      // 垃圾时间 flag (末段大比分; 风控信号)

@@ -487,6 +487,29 @@ TEST_F(PaperLoopTest, T11_QuoteAdvisory) {
 }
 
 // ---------------------------------------------------------------------------
+// T11c (老板「双边都要有」): 双边 book 都在 → NO 边时序微结构 (no_*) 也被捕获, 不只 YES。
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T11c_NoSideMicrostructure_Captured) {
+    // YES book (token 1001) + NO book (token 1002) 都发布 → 双边 ring 都 push。
+    hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));
+    hub_->Publish("1002", MakeSyntheticBook(0.45, 0.47));  // NO 边独立 book
+    loop_ = MakeLoop();
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));  // 多 tick → NO ring 累样本
+    loop_->Stop();
+
+    const auto opt = quote_hub_->Read("cond-test-001");
+    if (opt.has_value() && opt->valid) {
+        // 双边都有: YES 边 + NO 边时序样本都 > 0 (NO 边不再缺失)。
+        EXPECT_GT(opt->ts_window_samples, 0) << "YES 边时序应有样本";
+        EXPECT_GT(opt->no_ts_window_samples, 0) << "NO 边时序应也有样本 (双边都要有)";
+        // no_* 字段已定义 (有限或 NaN, 但不是未初始化垃圾); realized_vol 双边都可读。
+        EXPECT_FALSE(std::isnan(opt->no_realized_vol) && opt->no_ts_window_samples >= 2)
+            << "NO 边样本足 → no_realized_vol 应有值";
+    }
+}
+
+// ---------------------------------------------------------------------------
 // T11b (步④): 注入 ml::FairValueModel → 推理路径跑通, ml_advisory_p_yes 填充, provenance
 //   反映 ML 模型; ML-R1/R2: 推理 advisory, fair_value 仍由 baseline 定 (不被 ML 驱动)。
 // ---------------------------------------------------------------------------
