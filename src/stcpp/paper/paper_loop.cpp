@@ -247,6 +247,11 @@ void PaperLoop::TickAll() {
         mkt.condition_id = cond_id;
         mkt.yes_token_id = yes_tok;
         mkt.no_token_id = no_tok;
+        // 统一数据树: 带上父级引用 (event_id / neg_risk; 决策+模型用, 兄弟经 event_id 导航)。
+        if (const ParentRef* pr = ParentRefFor(cond_id); pr != nullptr) {
+            mkt.event_id = pr->event_id;
+            mkt.neg_risk_market_id = pr->neg_risk_market_id;
+        }
         if (const auto yo = hub_.Read(yes_tok); yo.has_value() && yo->valid) {
             mkt.yes.present = true;
             mkt.yes.book = *yo;
@@ -539,7 +544,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         mkt.no.present ? mkt.no.book.imbalance : std::numeric_limits<double>::quiet_NaN();
     const std::int64_t joint_as_of_ts_ns = std::min(game_row.as_of_ts_ns, feat.as_of_ts_ns);
     PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair,
-                         cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns);
+                         cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns, mkt.event_id,
+                         mkt.neg_risk_market_id);
     stats_.quote_publishes.fetch_add(1, std::memory_order_relaxed);
 
     // ---- P0-4: advisory gate -----------------------------------------------
@@ -872,13 +878,12 @@ void PaperLoop::FeedRiskGateway() noexcept {
 //   宁可空不可假: 消费方 (前端/API) 见 predict_ok=false 应灰显数值, 不渲染 edge/notional.
 // ---------------------------------------------------------------------------
 
-void PaperLoop::PublishQuoteSnapshot(const std::string& condition_id,
-                                     const pricing::FairValueResult& fv_result,
-                                     const sizing::SizingOutput& sizing_out, double mark_price,
-                                     double edge_ci_lower,
-                                     const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair,
-                                     double cross_spread, double no_microprice, double no_imbalance,
-                                     bool devig_ok, std::int64_t joint_as_of_ts_ns) noexcept {
+void PaperLoop::PublishQuoteSnapshot(
+    const std::string& condition_id, const pricing::FairValueResult& fv_result,
+    const sizing::SizingOutput& sizing_out, double mark_price, double edge_ci_lower,
+    const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair, double cross_spread,
+    double no_microprice, double no_imbalance, bool devig_ok, std::int64_t joint_as_of_ts_ns,
+    const std::string& event_id, const std::string& neg_risk_market_id) noexcept {
     sizing::QuoteFeatures qf{};
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
@@ -896,6 +901,11 @@ void PaperLoop::PublishQuoteSnapshot(const std::string& condition_id,
     // A2: 盘口上下文 / 双边微观结构 (模型输入 + 观测, 绝不 gate — 老板 2026-05-31)。
     std::strncpy(qf.condition_id, condition_id.c_str(), sizeof(qf.condition_id) - 1);
     qf.condition_id[sizeof(qf.condition_id) - 1] = '\0';
+    // 统一数据树: 父级引用进 quote (ML 按 event join 兄弟盘口; neg_risk 一致性锚)。
+    std::strncpy(qf.event_id, event_id.c_str(), sizeof(qf.event_id) - 1);
+    qf.event_id[sizeof(qf.event_id) - 1] = '\0';
+    std::strncpy(qf.neg_risk_market_id, neg_risk_market_id.c_str(), sizeof(qf.neg_risk_market_id) - 1);
+    qf.neg_risk_market_id[sizeof(qf.neg_risk_market_id) - 1] = '\0';
     qf.no_microprice = no_microprice;
     qf.cross_spread = cross_spread;
     qf.yes_imbalance = feat.imbalance;  // YES L1 失衡 (本边 book)

@@ -106,6 +106,13 @@ struct EventMapEntry {
 };
 using ConditionEventMap = std::unordered_map<std::string, EventMapEntry>;
 
+// 统一数据树: 盘口 → 父级引用 (event_id / neg_risk_market_id)。app 层从 catalog 注入。
+//   兄弟盘口不内嵌 (变长; 经 event_id 在目录导航)。
+struct ParentRef {
+    std::string event_id;
+    std::string neg_risk_market_id;
+};
+
 // ---------------------------------------------------------------------------
 // PaperLoopConfig — 运行参数
 // ---------------------------------------------------------------------------
@@ -225,6 +232,12 @@ public:
         fee_by_condition_ = std::move(m);
     }
 
+    // 统一数据树: 注入 condition → 父级引用 (event_id / neg_risk_market_id)。
+    //   单 writer: Start() 前注入一次, 之后 loop_thread_ 只读。盘口决策/模型带父级 (兄弟经 event_id 导航)。
+    void SetParentRefs(std::unordered_map<std::string, ParentRef> m) noexcept {
+        parent_by_condition_ = std::move(m);
+    }
+
     // A1: 注入/热刷 condition_id→event 映射 (app 层 EventMatcher 解析后周期推送).
     //   线程安全: shared_ptr + mutex 短锁 swap (同 ScoreSnapshotStore 模式; libc++ 无
     //   atomic<shared_ptr>). loop_thread_ 读时短锁拷 ptr, app 层写时短锁换 ptr.
@@ -270,6 +283,12 @@ private:
     //   Start 前注入, 之后只读。查不到 → kDefaultFeeCoef。RM/sizing/PnL 同源用此值。
     static constexpr double kDefaultFeeCoef = 0.03;  // 体育保守 (= RM kSportsTakerFeeRate)
     std::unordered_map<std::string, double> fee_by_condition_;
+    // 统一数据树: 父级引用 (Start 前注入, 之后只读)。查不到 → 空 ParentRef。
+    std::unordered_map<std::string, ParentRef> parent_by_condition_;
+    [[nodiscard]] const ParentRef* ParentRefFor(const std::string& condition_id) const noexcept {
+        auto it = parent_by_condition_.find(condition_id);
+        return (it != parent_by_condition_.end()) ? &it->second : nullptr;
+    }
     [[nodiscard]] double FeeCoefFor(const std::string& condition_id) const noexcept {
         auto it = fee_by_condition_.find(condition_id);
         return (it != fee_by_condition_.end()) ? it->second : kDefaultFeeCoef;
@@ -357,7 +376,8 @@ private:
                               const sizing::SizingOutput& sizing_out, double mark_price, double edge_ci_lower,
                               const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair,
                               double cross_spread, double no_microprice, double no_imbalance, bool devig_ok,
-                              std::int64_t joint_as_of_ts_ns) noexcept;
+                              std::int64_t joint_as_of_ts_ns, const std::string& event_id,
+                              const std::string& neg_risk_market_id) noexcept;
 };
 
 }  // namespace stcpp::paper

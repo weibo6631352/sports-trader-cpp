@@ -101,6 +101,8 @@ struct QuoteFeatures {
     // ---- 盘口上下文 / 双边微观结构 (2026-05-31 盘口上下文会) ----
     //   全部「模型输入 + 观测」, 绝不接任何 gate (老板 2026-05-31: 新鲜度/信号质量是输入不是草率守门)。
     char condition_id[72]{};            // 自身主键 (bytes32 hex 66 char; 冗余进值 → ML/序列化自包含)
+    char event_id[64]{};                // 树上行: 父 event (同场比赛多盘口共享; ML 按 event join 兄弟盘口)
+    char neg_risk_market_id[72]{};      // 树上行: negRisk 互斥组父合约 (可空; neg_risk 一致性信号锚)
     double no_microprice{0.0};          // NO 边 microprice (de-vig 对边输入, 原当帧丢弃 → 回收)
     double cross_spread{0.0};           // = YES_ask + NO_ask − 1 (等效 vig; 流动性/定价健康度信号)
     double yes_imbalance{0.0};          // YES L1 簿口失衡 ∈ [−1,1]

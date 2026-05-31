@@ -59,6 +59,12 @@
 
 **Kelly 怎么协调 (老板问的点):** Kelly 不是"要不要下单"的开关,是"目标仓位该多大"的标尺。模型给 edge + 置信 → Kelly 算最优 bankroll fraction → ×bankroll = 目标仓位规模;被低估边定方向(双边二元:净多 YES = 净空 NO)。**Kelly 决定 target_pos 的大小, 模型决定 target_pos 的方向/存在, 控制器决定怎么从 current 走到 target。**三者各司其职。
 
+**模型输出不止仓位, 必须带价格 (老板 2026-05-31 verbatim: "价格涨了我们还硬买那不就赔了"):**
+目标仓位光有"量"不够 — 没有价格界限 = market order 追价, 价格涨了照买 = 赔。两层价格保护:
+1. **目标仓位本身是价格的函数**: target = Kelly(edge), edge = fair − price。价格涨向 fair → edge 缩 → 目标自然缩;到/超 fair → 目标归零/转负。**量这一层已经price-aware, 自动后撤。**
+2. **执行必须带 reservation/limit 价 (硬防追价)**: 控制器**绝不下 market order**, 一律挂 **limit order 在保留价** = fair − 要求margin(买) / fair + 要求margin(卖)。价格涨过保留价 → 单子根本不成交 → 不追、不赔。
+→ **模型输出 = (fair value, 目标仓位曲线, 买/卖保留价)。** 控制器沿这条价格schedule挂被动限价单, 只在价格有利时向目标 rebalance — 这正是做市商报价的方式(demand curve), 不是无脑 market order。这条进 P2 控制器设计。
+
 ---
 
 ## 3. 现状 → 目标 的差距 (delta)

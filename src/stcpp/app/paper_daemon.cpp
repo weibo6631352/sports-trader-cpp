@@ -292,6 +292,15 @@ BuildResult PaperDaemon::Build() {
         paper_loop_->SetFeeByCondition(std::move(fee_map));
     }
 
+    // 统一数据树: 注入 condition → 父级引用 (event_id / neg_risk_market_id), 决策/模型带父级。
+    {
+        std::unordered_map<std::string, paper::ParentRef> parent_map;
+        parent_map.reserve(market_catalog_.size());
+        for (const auto& [cid, mi] : market_catalog_)
+            parent_map[cid] = paper::ParentRef{mi.event_id, mi.neg_risk_market_id};
+        paper_loop_->SetParentRefs(std::move(parent_map));
+    }
+
     // ---- Step 2d: RealStateProvider (读模型) ----
     risk::RiskConfig rsp_risk_cfg;
     real_provider_ = std::make_unique<debug_api::RealStateProvider>(

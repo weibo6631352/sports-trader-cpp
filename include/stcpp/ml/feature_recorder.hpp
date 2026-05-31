@@ -132,7 +132,10 @@ private:
             << ",\"fair_value\":" << q.fair_value << ",\"market_mid\":" << q.market_mid
             << ",\"edge_bps\":" << q.edge_bps << ",\"fee_rate_coef\":"
             << q.fee_rate_coef
-            // 盘口上下文 / 双边微观结构 (模型输入, 不 gate; 2026-05-31)
+            // 树父级引用 (按 event join 兄弟盘口; neg_risk 一致性) + 双边微观结构 (模型输入, 不 gate;
+            // 2026-05-31)
+            << ",\"event_id\":\"" << q.event_id << "\""
+            << ",\"neg_risk_market_id\":\"" << q.neg_risk_market_id << "\""
             << ",\"cross_spread\":" << q.cross_spread << ",\"no_microprice\":" << q.no_microprice
             << ",\"yes_imbalance\":" << q.yes_imbalance << ",\"no_imbalance\":" << q.no_imbalance
             << ",\"devig_ok\":" << (q.devig_ok ? "true" : "false")

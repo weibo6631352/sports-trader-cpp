@@ -42,6 +42,10 @@ struct BinaryMarketSnapshot {
     std::string condition_id;
     std::string yes_token_id;
     std::string no_token_id;
+    // 树上行引用 (盘口→event 父节点; 2026-05-31 统一数据树)。兄弟盘口经 event_id 在目录里导航 (不内嵌变长)。
+    //   event_id: gamma Event (同场比赛多盘口共享父); neg_risk_market_id: negRisk 互斥组父合约 (可空)。
+    std::string event_id;
+    std::string neg_risk_market_id;
     SideView yes;  // present=false 表示该侧 hub 无快照 / invalid
     SideView no;   // 单边可用即可决策 (退化), 双边可用走完整双边逻辑
 
