@@ -510,6 +510,26 @@ TEST_F(PaperLoopTest, T11c_NoSideMicrostructure_Captured) {
 }
 
 // ---------------------------------------------------------------------------
+// T11e (Phase 0 联合评审): 项5 组合度量接入 TickAll (权益每周期采样) + 项1-3 门 ON 路径不崩。
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T11e_Phase0_PortfolioMetricsAndGatesWired) {
+    hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));
+    cfg_.dynamic_reservation = true;  // 项1+2 动态 reservation ON
+    cfg_.net_ev_gate = true;          // 项3 net-EV 门 ON
+    loop_ = MakeLoop();
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();
+
+    // 项5: TickAll 每周期 RecordEquity → portfolio_report 有样本 (北极星 KPI 采集打通)。
+    const auto pr = loop_->portfolio_report(/*ppy=*/1.0);
+    EXPECT_GT(pr.samples, static_cast<std::size_t>(0)) << "TickAll 每周期采权益曲线";
+    EXPECT_GE(pr.last_equity, 0.0);
+    // 项1-3 门 ON 路径正常运行不崩 (thin data → 保守; 仅验证管线不崩)。
+    EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0));
+}
+
+// ---------------------------------------------------------------------------
 // T11d (老板「各边买了多少, 可能两边都买」): 双边持仓 — YES + NO 各自量都进 QuoteFeatures,
 //   不塌成单边/净。旧码 break 在首 token 只取一边丢 NO; 现 per-token 双边读。
 // ---------------------------------------------------------------------------

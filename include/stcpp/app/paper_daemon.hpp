@@ -126,6 +126,11 @@ struct PaperDaemonConfig {
     //   价值观 #1/#2 (实盘优先 + 纪律>收益): 解封成交必须运维显式开, 非编译期默认.**
     bool enable_paper_fills{false};
 
+    // Phase 0 联合评审 (2026-05-31): 生产开启动态 reservation (n_eff/margin 接时序+vig) + net-EV 门。
+    //   true (生产默认) → daemon 置 PaperLoopConfig.dynamic_reservation/net_ev_gate=true。
+    //   false → 用 lib 静态默认 (n=200/static floor; 管线机制测试关掉新门, 单测新门另测)。
+    bool enable_phase0_gates{true};
+
     // 离线测试 seam (小宋): false → Start() 不起真 WSS/inplay 网络线程.
     // Build() 仍完整装配 (供装配正确性单测, 不发外网请求).
     bool start_live_feeds{true};

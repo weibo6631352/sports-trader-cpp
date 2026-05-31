@@ -284,6 +284,10 @@ BuildResult PaperDaemon::Build() {
     // A2 (老韩红线1): advisory gate 翻转收口在此. enable_paper_fills=true → 解封 paper 成交;
     //   PaperLoop::Start() 内有运行期 mode 交叉断言 (非 paper mode + 解封 → abort).
     cfg_.paper_loop.advisory_markets_no_intent = !cfg_.enable_paper_fills;
+    // Phase 0 联合评审 (2026-05-31): 生产开启动态 reservation (n_eff/margin 接时序+vig) + net-EV 门。
+    //   lib 默认 false (向后兼容契约测试); 生产 daemon 置 true (可经 enable_phase0_gates 关, 供管线测试)。
+    cfg_.paper_loop.dynamic_reservation = cfg_.enable_phase0_gates;
+    cfg_.paper_loop.net_ev_gate = cfg_.enable_phase0_gates;
     paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
                                                      token_map_, cfg_.paper_loop);

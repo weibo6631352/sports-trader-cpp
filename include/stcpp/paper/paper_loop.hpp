@@ -72,6 +72,7 @@
 #include "stcpp/data/score_snapshot_store.hpp"  // A4: ScoreMap (tick-local 共享比分快照, 消 read-skew)
 #include "stcpp/data/live_stats_store.hpp"      // live_stats 采集 hop: LiveStatsMap/LiveStatsFields join
 #include "stcpp/eval/clv_tracker.hpp"            // CLV 测量 harness (成果尺子, 离线评估)
+#include "stcpp/eval/portfolio_metrics.hpp"      // Phase 0 项5: Sharpe/maxDD/VaR (北极星 KPI)
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
 #include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量)
 #include "stcpp/ml/fair_value_model.hpp"         // ml::FairValueModel/ModelPrediction (步④ 推理接线)
@@ -192,6 +193,22 @@ struct PaperLoopConfig {
     int n_effective{200};
     double z_90{1.645};
 
+    // ---- Phase 0 联合评审 (2026-05-31, 6 团队): 动态 n_eff + margin + net-EV 门 + goal force_cross ----
+    //   项1+2: 动态 reservation (n_eff = clamp(min(YES,NO 样本), min, max) + margin 接半 vig/amihud)。
+    //     默认 false (lib 向后兼容: 现有契约测试用静态 n=200/static floor); daemon 生产置 true。
+    //     数值小肖: samples=1 时 sigma=0.5 reservation 永不成交 → 必配 n_eff_min 下限防静默失效。
+    bool dynamic_reservation{false};
+    int n_eff_min{10};
+    int n_eff_max{500};
+    //     vig_term=0.5×cross_spread 经济地基 (至少赚回付出的半边 vig); amihud_coef 待数据校准默认 0=off。
+    double amihud_margin_coef{0.0};
+    //   项3 (微观/小梁): SelectSide 后 net-EV 预筛 — edge < 2×fee+slippage 不开新仓 (防 fee 流血)。
+    //     默认 false (向后兼容; daemon 生产置 true)。
+    bool net_ev_gate{false};
+    //   项4 (微观 P1): 进球新鲜度 + OFI → force_cross 绕死区 (打通 inplay 延迟 edge 窗口)。
+    double goal_freshness_force_thr{0.6};
+    double ofi_force_thr{0.0};  // |OFI|≥此值 (默认 0 = 进球新鲜即触发; force_cross 仅绕死区, 仍受限价门约束)
+
     // strategy_id / signal_id (audit / RM 去重用)
     std::string strategy_id{"paper-demo-v1"};
 
@@ -282,6 +299,10 @@ public:
 
     // M3 成果尺子: CLV 聚合报告 (G1 验收: clv_close_mean>1.5% + positive_rate>55%)。
     [[nodiscard]] eval::CLVTracker::Report clv_report() const noexcept { return clv_tracker_.report(); }
+    // Phase 0 项5: 组合度量 (Sharpe/maxDD/VaR; periods_per_year 由调用方按 tick 间隔传)。
+    [[nodiscard]] eval::PortfolioMetrics::Report portfolio_report(double periods_per_year = 0.0) const noexcept {
+        return portfolio_metrics_.report(periods_per_year);
+    }
 
     // A1: 注入真实 Goalserve 比分源 (可空; nullptr → 恒 stub 路径, 行为同 A1 前).
     //   单 writer: 仅主线程在 Start() 前调用一次 (score_store_ 之后只读).
@@ -467,6 +488,7 @@ private:
     //   每笔买入成交记 entry; 每 tick 更新 mid; 结算时算 CLV (close mid / 0-1 settle)。
     //   离线评估 only (小蒋前视红线: 绝不回喂决策)。loop_thread_ 单 writer。
     eval::CLVTracker clv_tracker_;
+    eval::PortfolioMetrics portfolio_metrics_;  // Phase 0 项5: 权益曲线 → Sharpe/maxDD/VaR
 
     // ---- 内部实现 ----
     void RunLoop(std::stop_token st);
@@ -486,7 +508,8 @@ private:
                                strategy::Outcome outcome,
                                const polymarket::clob_wss::OrderBookFeatures& side_book,
                                double book_depth_l1, double p_fair_side, double target_mag,
-                               double fee_coef, bool force_cross) noexcept;
+                               double fee_coef, bool force_cross, int n_eff,
+                               double margin_floor) noexcept;
 
     // slice-3b 结算: 比赛 Ended → 按终态比分把 YES/NO 持仓 realize 到结算值 (winner 1 / loser 0) +
     //   平仓 (apply_fill 负 delta), realized PnL 累加进 cum_realized_pnl_pusd_。loop_thread_ 单 writer。

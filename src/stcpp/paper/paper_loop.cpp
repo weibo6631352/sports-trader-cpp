@@ -268,6 +268,11 @@ void PaperLoop::TickAll() {
         // 价格有效性门 + 选边后退化 fail-closed 全在 TickOne (按被交易边判, 支持 C4 反向桩测试)。
         TickOne(mkt);
     }
+
+    // Phase 0 项5 (联合评审, 小梁): 每 tick 周期采一次组合权益 → Sharpe/maxDD/VaR。
+    //   equity = bankroll + 累计 realized PnL (未实现 MtM 后续接入)。北极星 KPI 采集, 离线/监控用。
+    //   R-20: ts 用 NowNs (本地决策时刻, 非上游数据 ts; 权益曲线是策略侧时序, 不涉数据源契约)。
+    portfolio_metrics_.RecordEquity(NowNs(), cfg_.bankroll_usdc + cum_realized_pnl_pusd_);
 }
 
 // ---------------------------------------------------------------------------
@@ -623,6 +628,38 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     }
     const double exec_mark = std::isfinite(exec_feat.microprice) ? exec_feat.microprice : exec_feat.mid;
 
+    // ---- Phase 0 联合评审 (2026-05-31): 动态 n_eff (项1) + margin_floor (项2) + OFI (项4) ----
+    //   从 condition 时序环派生, 替静态 cfg_。BR-1 仅决定 reservation/CI 宽度, 不碰 fair。
+    const std::int64_t ts_w = cfg_.ts_feature_window_ns;
+    int n_eff_dyn = cfg_.n_effective;
+    double margin_floor_dyn = cfg_.edge_ci_lower_floor;
+    double b_ofi_dyn = std::numeric_limits<double>::quiet_NaN();
+    {
+        const auto yh = ts_history_.find(condition_id);
+        if (yh != ts_history_.end()) {
+            b_ofi_dyn = yh->second.OFI(ts_w);  // 项4 force_cross 用 (always; 仅读不改门)
+            if (cfg_.dynamic_reservation) {     // 项1+2 生产开关 (lib 默认 false 向后兼容)
+                const int ys = static_cast<int>(yh->second.WindowSampleCount(ts_w));
+                const auto nh = ts_history_no_.find(condition_id);
+                const int ns = (nh != ts_history_no_.end())
+                                   ? static_cast<int>(nh->second.WindowSampleCount(ts_w))
+                                   : ys;
+                // 项1: n_eff = clamp(min(YES,NO 样本), n_eff_min, n_eff_max)。样本足→收窄 CI, 稀疏→展宽;
+                //   clamp 下限防 samples=1 时 sigma=0.5 reservation 永不成交 (数值小肖静默失效护栏)。
+                n_eff_dyn = std::clamp(std::min(ys, ns), cfg_.n_eff_min, cfg_.n_eff_max);
+                // 项2: margin_floor = max(static_floor, amihud_coef×amihud, 0.5×cross_spread)。
+                //   半 vig (0.5×cross_spread) 经济地基: 至少赚回付出的半边 vig 才有净 edge。amihud 待校准。
+                const double amh = yh->second.AmihudApprox(ts_w);
+                const double amh_term = (std::isfinite(amh) && cfg_.amihud_margin_coef > 0.0)
+                                            ? cfg_.amihud_margin_coef * amh
+                                            : 0.0;
+                const double vig_term =
+                    std::isfinite(cross_spread) ? std::max(0.0, 0.5 * cross_spread) : 0.0;
+                margin_floor_dyn = std::max({cfg_.edge_ci_lower_floor, amh_term, vig_term});
+            }
+        }
+    }
+
     // ---- Step G: 被选边 fair / edge_ci (小梁 §2 de-vig 对称代数) ----
     //   被选边 fair/共识互余 (fair_NO=1-fair_YES, devig_NO=1-devig_YES) → edge_ci 用 canonical
     //   ComputeEdgeCiLower(被选边 fair, 被选边共识) 即对; de-vig 互余 → sigma 两边相等。
@@ -633,7 +670,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 注 (老板「别草率守门」2026-05-31): cross_spread(vig) 不接 CI 硬收紧 — 只作模型输入(进 QuoteFeatures),
     //   让模型/策略学 vig 影响, 是否用它调门留给「守门审计 + 小梁/老韩」定。这里维持原 n_eff (不加守门)。
     const double edge_ci_lower =
-        ComputeEdgeCiLower(p_fair_selected, p_devig_selected, cfg_.n_effective, cfg_.z_90);
+        ComputeEdgeCiLower(p_fair_selected, p_devig_selected, n_eff_dyn, cfg_.z_90);
 
     const double mark_price = exec_mark;  // 真实 mark (被选边 hub)
 
@@ -689,15 +726,21 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         /*exec_ask=*/exec_ask,
         /*exec_bid=*/exec_bid,
         /*fee_coef=*/sz_in.fee_rate_coef,
-        /*margin_floor=*/cfg_.edge_ci_lower_floor,
+        /*margin_floor=*/margin_floor_dyn,
         /*z=*/cfg_.z_90,
-        /*n_eff=*/cfg_.n_effective,
+        /*n_eff=*/n_eff_dyn,
     });
     // 目标仓位 (老板 2026-05-31): |target| = Kelly suggested_notional (受 cap/bankroll 约束)。
     //   H-3 非对称: 无真实 fair / sizing 无效 / de-vig 失败 → target=0 (不开新仓; 减仓由 gap<0 涌现)。
     //   target_signed: +多 YES / −多 NO(=空 YES) (观测/训练; 控制器按被选边 long magnitude 运行)。
+    // Phase 0 项3 (net-EV 预筛): edge < 2×fee_per_unit + slippage → 不开新仓 (防 fee 流血;
+    //   微观/小梁评审)。fee_per_unit 锚在 exec_ask; slippage 用 sizing 同值。仅 gate 开仓, 减仓由 gap<0 涌现。
+    const double fee_pu = sz_in.fee_rate_coef * exec_ask * (1.0 - exec_ask);
+    const double slippage_frac = sz_in.slippage_bps / 10'000.0;
+    const double net_ev_edge = std::abs(p_fair_selected - p_devig_selected);
+    const bool net_ev_ok = !cfg_.net_ev_gate || (net_ev_edge >= (2.0 * fee_pu + slippage_frac));
     const double target_mag =
-        (has_real_fair && sizing_out.valid && devig_ok) ? sizing_out.suggested_notional : 0.0;
+        (has_real_fair && sizing_out.valid && devig_ok && net_ev_ok) ? sizing_out.suggested_notional : 0.0;
     const double target_signed = is_yes ? target_mag : -target_mag;
 
     // ---- Step 4: QuoteSnapshotHub::Publish ---------------------------------
@@ -758,11 +801,17 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
         last_p_fair_[condition_id] = p_fair;  // 更新 (YES-canonical, 选边前的稳定信号)
     }
+    // Phase 0 项4: 进球新鲜 (goal_freshness) + OFI 确认 → force_cross 绕死区 (打通进球后 30-120s
+    //   延迟 edge 窗口; 微观评审)。force_cross 仅绕死区, 仍受 reservation 限价门约束 → 宽松触发安全。
+    if (sports.goal_freshness > cfg_.goal_freshness_force_thr && std::isfinite(b_ofi_dyn) &&
+        std::abs(b_ofi_dyn) >= cfg_.ofi_force_thr) {
+        force_cross = true;
+    }
 
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, target_mag, sz_in.fee_rate_coef,
-                          force_cross);
+                          force_cross, n_eff_dyn, margin_floor_dyn);
 
     // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
     const SideView& other = is_yes ? mkt.no : mkt.yes;
@@ -785,7 +834,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             ExecuteControllerSide(condition_id, other_token,
                                   is_yes ? strategy::Outcome::No : strategy::Outcome::Yes, other_feat,
                                   other_depth, 1.0 - p_fair_selected, /*target_mag=*/0.0,
-                                  FeeCoefFor(condition_id), force_cross);
+                                  FeeCoefFor(condition_id), force_cross, n_eff_dyn, margin_floor_dyn);
         }
     }
 }
@@ -802,7 +851,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
                                       strategy::Outcome outcome,
                                       const polymarket::clob_wss::OrderBookFeatures& side_book,
                                       double book_depth_l1, double p_fair_side, double target_mag,
-                                      double fee_coef, bool force_cross) noexcept {
+                                      double fee_coef, bool force_cross, int n_eff,
+                                      double margin_floor) noexcept {
     const double exec_ask = side_book.best_ask();
     const double exec_bid = side_book.best_bid();
     const double mark_price = std::isfinite(side_book.microprice) ? side_book.microprice : side_book.mid;
@@ -816,9 +866,9 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         /*exec_ask=*/exec_ask,
         /*exec_bid=*/exec_bid,
         /*fee_coef=*/fee_coef,
-        /*margin_floor=*/cfg_.edge_ci_lower_floor,
+        /*margin_floor=*/margin_floor,  // Phase 0 项2: 动态 (半 vig + amihud); 调用方算好传入
         /*z=*/cfg_.z_90,
-        /*n_eff=*/cfg_.n_effective,
+        /*n_eff=*/n_eff,  // Phase 0 项1: 动态 (min YES/NO 样本, clamp)
     });
 
     // current = 本边 token 当前持仓 (ledger per-outcome, micro→whole pUSD; long ≥0)。
