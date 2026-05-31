@@ -29,6 +29,7 @@
 #include <vector>
 
 #include "stcpp/execution/virtual_matcher.hpp"  // VirtualFill
+#include "stcpp/risk/fill_event.hpp"             // FillEvent (中性化重载)
 #include "stcpp/risk/position_view.hpp"
 #include "stcpp/strategy/signal_iface.hpp"       // Outcome
 
@@ -56,6 +57,13 @@ class PositionLedger {
                     std::string const& token_id,
                     Outcome             outcome,
                     execution::VirtualFill const& fill) noexcept;
+
+    // 中性化重载 (老郭 R-4 审计放行): apply_fill 接中性 FillEvent (paper/live 共用形态)。
+    //   R-11 守卫方向不变 (mode_tag!=0 → 拒, 仍 paper 专用账本)。VirtualFill 版委托至此。
+    void apply_fill(std::string const& condition_id,
+                    std::string const& token_id,
+                    Outcome             outcome,
+                    FillEvent const&    ev) noexcept;
 
     // ---------- Read API (老韩 spec §2, 快照一致性 TC-01) ----------------------
 

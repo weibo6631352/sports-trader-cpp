@@ -32,33 +32,37 @@ namespace stcpp::risk {
 
 void PositionLedger::apply_fill(std::string const& condition_id, std::string const& token_id, Outcome outcome,
                                 execution::VirtualFill const& fill) noexcept {
-    // R-11 (老韩 A2 红线3): mode_tag 运行期 fail-closed — 仅 paper fill (mode_tag==0) 记账.
-    //   非 paper fill (mode_tag!=0) 直接拒, 不写仓位. release build 也 enforce
-    //   (paper_loop 的 debug assert 不够; 这里是 R-11「不污染真账本」的运行期实际守卫).
-    if (fill.mode_tag != 0)
-        return;
-
-    // 仅处理成功成交 (BernoulliMissed / SlippageModelReject 不更新仓位)
+    // 仅处理成功成交 (BernoulliMissed / SlippageModelReject 不更新仓位)。
+    //   reject 是 VirtualFill 专有语义 → 在此过滤; 中性 FillEvent 不带 reject (已成交事实)。
     if (fill.reject != execution::MatchReject::Ok)
         return;
-    if (fill.fill_size_usdc == 0)
+    // VirtualFill → 中性 FillEvent (直拷无 cast; A1: fill_size_usdc 已 int64 micro, 不丢仓)。
+    FillEvent ev;
+    ev.filled_size_micro = fill.fill_size_usdc;
+    ev.fill_price = fill.fill_price;
+    ev.mode_tag = fill.mode_tag;  // R-11 载体平移
+    ev.event_ts_ns = fill.event_ts_ns;
+    ev.data_source_ts_ns = fill.data_source_ts_ns;
+    ev.ingestion_ts_ns = fill.ingestion_ts_ns;
+    ev.as_of_ts_ns = fill.as_of_ts_ns;  // R-20 透传
+    apply_fill(condition_id, token_id, outcome, ev);
+}
+
+void PositionLedger::apply_fill(std::string const& condition_id, std::string const& token_id, Outcome outcome,
+                                FillEvent const& ev) noexcept {
+    // R-11 (老韩 A2 红线3): mode_tag 运行期 fail-closed — 仅 paper fill (mode_tag==0) 记账。
+    //   非 paper (mode_tag!=0) 直接拒, 不写仓位 (release build 也 enforce)。**方向不变** (老郭审计)。
+    //   live fill 走另一条真账本, 不该流向此 paper 专用账本。
+    if (ev.mode_tag != 0)
+        return;
+    // size==0 最后防线 (调用方应已过滤成功/非零; 防漏判)。
+    if (ev.filled_size_micro == 0)
         return;
 
-    // side 语义: VirtualFill 无 side 字段; 调用方约定:
-    //   BUY  → delta = +fill_size_usdc (round to int, signed)
-    //   SELL → delta = -fill_size_usdc
-    // Wave 76: PositionLedger apply_fill 仅接 delta 符号由 fill_size_usdc 决定
-    // 平仓 (SELL) 调用方传 fill_size_usdc 为正值, delta_usdc 负由 is_close 派送:
-    // 此处统一用 +fill_size_usdc; 平仓语义由 REST /drain 端 DRAIN state 保证
-    // TODO W9 W5: 当 side 信息透传入 VirtualFill 后更新符号逻辑
-    // A1: fill_size_usdc 已是 int64 micro pUSD, 直存无 cast (消原 (int64)whole 的 <1pUSD 截断丢仓)。
-    auto const delta_raw = fill.fill_size_usdc;
-
-    // R-20: 严格透传 as_of_ts_ns, 禁 now()
-    auto const ts = fill.as_of_ts_ns;
-
+    // side 语义同前: delta 符号由 filled_size_micro 决定 (平仓语义由 DRAIN state 保证)。
+    // A1: filled_size_micro 已 int64 micro pUSD, 直存无 cast。R-20: 透传 as_of_ts_ns, 禁 now()。
     std::unique_lock<std::shared_mutex> lk(mu_);
-    update_position_locked_(condition_id, token_id, outcome, delta_raw, fill.fill_price, ts);
+    update_position_locked_(condition_id, token_id, outcome, ev.filled_size_micro, ev.fill_price, ev.as_of_ts_ns);
 }
 
 void PositionLedger::update_position_locked_(std::string const& condition_id, std::string const& token_id,
