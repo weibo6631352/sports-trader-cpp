@@ -1649,3 +1649,41 @@ TEST_F(PaperLoopTest, TS1_TimeSeriesFeatures_Populate) {
     ASSERT_TRUE(std::isfinite(opt->realized_vol)) << "TS1: realized vol 应 populate";
     EXPECT_GT(opt->realized_vol, 0.0) << "TS1: 价格在动 → vol > 0";
 }
+
+// TS2 (slice-2 卖不出): observe-always 捕获无 bid tick (旧码 early-return 会审查掉) →
+//   bid_absence_frac > 0。证明「卖不出」被量化成特征 (老板: 模型包含, 非硬门)。
+TEST_F(PaperLoopTest, TS2_ExitLiquidity_CapturesNoBid) {
+    const std::int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
+    auto book_at = [&](double bid, double ask, double bid_size, std::int64_t ds_ts) {
+        auto f = MakeSyntheticBook(bid, ask, bid_size, 500.0);
+        f.event_ts_ns = now - 10'000'000'000LL;
+        f.data_source_ts_ns = ds_ts;
+        f.ingestion_ts_ns = now - 1'000'000'000LL;
+        f.as_of_ts_ns = now;
+        return f;
+    };
+
+    loop_ = MakeLoop();
+    loop_->Start();
+    hub_->Publish("1001", book_at(0.49, 0.51, 500.0, now - 5'000'000'000LL));  // 有 bid
+    std::this_thread::sleep_for(std::chrono::milliseconds(140));
+    hub_->Publish("1001", book_at(0.0, 0.51, 0.0, now - 4'000'000'000LL));  // 卖不出 (无 bid; 旧码 bail)
+    std::this_thread::sleep_for(std::chrono::milliseconds(140));
+    hub_->Publish("1001", book_at(0.49, 0.51, 500.0, now - 3'000'000'000LL));  // 有 bid (触发 quote 发布)
+    std::this_thread::sleep_for(std::chrono::milliseconds(140));
+    loop_->Stop();
+
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    std::fprintf(stderr, "[TS2] samples=%d absence=%.4f exit_depth=%.2f\n", opt->ts_window_samples,
+                 opt->bid_absence_frac, opt->exit_depth_mean);
+
+    EXPECT_GE(opt->ts_window_samples, 3) << "TS2: 3 个推进-ts book (含无 bid) 都被 observe-always 记录";
+    ASSERT_TRUE(std::isfinite(opt->bid_absence_frac));
+    EXPECT_GT(opt->bid_absence_frac, 0.0)
+        << "TS2: 无 bid tick 被捕获 (旧码 early-return 会审查掉这个卖不出事件)";
+    EXPECT_LT(opt->bid_absence_frac, 1.0) << "TS2: 非整窗卖不出 (有 bid 样本也在)";
+    EXPECT_TRUE(std::isfinite(opt->exit_depth_mean)) << "TS2: 退出深度均值 populate";
+}

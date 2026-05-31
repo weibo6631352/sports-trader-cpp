@@ -18,9 +18,12 @@
 //
 // 缺失语义: 样本不足 → NaN (与 ml::FeatureVector / MlFeature NaN 约定一致)。
 //
-// v0.1 范围 (老板「先 2 个最稳时序特征」): microprice 变化率 (per sec) + realized vol (窗口内
-//   相邻微价变化 RMS)。样本只存 (ts, microprice)。后续"卖不出"流动性留存特征 → 扩 Sample 即可
-//   (per-token ephemeral state, 无迁移)。
+// 范围:
+//   slice-1 (老板「先 2 个最稳」): microprice 变化率 (per sec) + realized vol (相邻微价变化 RMS)。
+//   slice-2 「卖不出」(老板「希望被量化模型包含」, 非硬门): 无 bid 占比 + 退出深度均值。
+//     observe-always: 样本含无 bid/无价的 tick (卖不出正是要观测的事件); 价 derive 跳过无效价,
+//     流动性 derive 用 bid 字段。两特征喂模型, 退出流动性如何影响规模由模型/小梁学, 不在此设硬 gate。
+//   样本存 (ts, microprice, best_bid, best_bid_size)。后续 (结算临近度) 再扩。
 #pragma once
 
 #include <array>
@@ -39,19 +42,21 @@ public:
     static constexpr std::size_t kCapacity = 128;
 
     struct Sample {
-        std::int64_t ts_ns{0};   // 上游 data_source_ts_ns (PIT 锚; 禁 now())
-        double microprice{0.0};  // 被观测微价 ∈ (0,1)
+        std::int64_t ts_ns{0};      // 上游 data_source_ts_ns (PIT 锚; 禁 now())
+        double microprice{0.0};     // 被观测微价 (可 NaN/越界: 单边/无价时; 价 derive 自动跳过)
+        double best_bid{0.0};       // 退出价 (卖出触价; ≤0 = 无 bid)
+        double best_bid_size{0.0};  // 退出深度 (bid L1 size pUSD; ≤0 = 无 bid = 卖不出)
     };
 
     FeatureHistory() = default;
 
-    // Push — 推入一个已观测样本 (loop_thread_ / replay 单 writer)。
-    //   PIT 保护: ts ≤ last_ts_ (乱序/重复) → 跳过 (停滞 book 重复读不污染 vol; 事件序违规不入)。
-    //   microprice 非有限 / 越界 (0,1) → 跳过 (脏样本不入缓冲)。
-    void Push(std::int64_t ts_ns, double microprice) noexcept {
+    // Push — 推入一个已观测样本 (loop_thread_ / replay 单 writer)。**observe-always**: 即便
+    //   价/bid 无效也记录 —— 「卖不出」(bid 没了) 正是要观测的事件, 提前丢弃 = 特征被审查偏置。
+    //   PIT 保护: ts ≤ last_ts_ (乱序/重复) → 跳过 (停滞 book 重复读不污染; 事件序违规不入)。
+    //   价 derive (变化率/vol) 内部跳过 microprice ∉(0,1) 样本; 流动性 derive 用 bid 字段 (含无 bid)。
+    void Push(std::int64_t ts_ns, double microprice, double best_bid, double best_bid_size) noexcept {
         if (ts_ns <= last_ts_) return;  // 单调 + 去重 (PIT)
-        if (!std::isfinite(microprice) || microprice <= 0.0 || microprice >= 1.0) return;
-        buf_[head_] = Sample{ts_ns, microprice};
+        buf_[head_] = Sample{ts_ns, microprice, best_bid, best_bid_size};
         head_ = (head_ + 1) % kCapacity;
         if (count_ < kCapacity) ++count_;
         last_ts_ = ts_ns;
@@ -72,30 +77,28 @@ public:
         return n;
     }
 
-    // 变化率 (prob/sec): (mp_last − mp_first_in_window) / Δsec。
-    //   窗口内 < 2 样本 或 Δt ≤ 0 → NaN。as_of = 最新样本 ts (无前视)。
+    // 变化率 (prob/sec): (mp_last − mp_first_in_window) / Δsec。窗口内**有效价** < 2 → NaN。
+    //   有效价 = microprice ∈ (0,1) (单边/无价样本跳过)。as_of = 最新样本 ts (无前视)。
     [[nodiscard]] double RateOfChangePerSec(std::int64_t window_ns) const noexcept {
         if (count_ < 2 || window_ns <= 0) return kNaN();
         const std::int64_t cutoff = last_ts_ - window_ns;
-        // 最旧的"窗口内"样本 (oldest→newest 遍历, 第一个 ts≥cutoff)。
-        const Sample* first = nullptr;
+        const Sample* first = nullptr;  // 窗口内最旧有效价
+        const Sample* last = nullptr;   // 窗口内最新有效价
         for (std::size_t i = 0; i < count_; ++i) {
             const Sample& s = at_(i);
-            if (s.ts_ns >= cutoff) {
-                first = &s;
-                break;
-            }
+            if (s.ts_ns < cutoff || !price_valid_(s.microprice)) continue;
+            if (first == nullptr) first = &s;
+            last = &s;
         }
-        const Sample& last = at_(count_ - 1);
-        if (first == nullptr || first->ts_ns >= last.ts_ns) return kNaN();
-        const double dt_sec = static_cast<double>(last.ts_ns - first->ts_ns) / 1e9;
+        if (first == nullptr || last == nullptr || first->ts_ns >= last->ts_ns) return kNaN();
+        const double dt_sec = static_cast<double>(last->ts_ns - first->ts_ns) / 1e9;
         if (dt_sec <= 0.0) return kNaN();
-        return (last.microprice - first->microprice) / dt_sec;
+        return (last->microprice - first->microprice) / dt_sec;
     }
 
-    // realized vol (prob 单位): 窗口内相邻微价变化的 RMS = sqrt(mean(Δp_i^2))。
+    // realized vol (prob 单位): 窗口内相邻**有效价**变化的 RMS = sqrt(mean(Δp_i^2))。
     //   零均值假设 (金融 realized vol 惯例); 样本数无关 (per-update 口径, 非 sum)。
-    //   prob 价用绝对变化 (非 return), 规避 p→0/1 的 return 爆炸。窗口内 < 2 样本 → NaN。
+    //   prob 价用绝对变化 (非 return), 规避 p→0/1 的 return 爆炸。窗口内 < 2 有效价 → NaN。
     [[nodiscard]] double RealizedVol(std::int64_t window_ns) const noexcept {
         if (count_ < 2 || window_ns <= 0) return kNaN();
         const std::int64_t cutoff = last_ts_ - window_ns;
@@ -105,7 +108,7 @@ public:
         double prev = 0.0;
         for (std::size_t i = 0; i < count_; ++i) {
             const Sample& s = at_(i);
-            if (s.ts_ns < cutoff) continue;  // 窗口外不计 (PIT)
+            if (s.ts_ns < cutoff || !price_valid_(s.microprice)) continue;  // 窗口外/无效价跳过 (PIT)
             if (have_prev) {
                 const double d = s.microprice - prev;
                 sum_sq += d * d;
@@ -118,6 +121,42 @@ public:
         return std::sqrt(sum_sq / static_cast<double>(n_diff));
     }
 
+    // ---- slice-2 「卖不出」流动性留存 (老板: 量化模型包含, 非硬门) ----
+    //   两特征喂模型, 让模型学退出流动性对定价/规模的影响 (不在此设硬 gate; sizing 用不用由模型/小梁定)。
+
+    // 无 bid 占比 ∈ [0,1]: 窗口内无可执行 bid (best_bid≤0 或 size≤0) 的样本占比。
+    //   = 1.0 → 整窗都卖不出 (单边倒挂); = 0 → 一直有退出流动性。窗口内 0 样本 → NaN。
+    [[nodiscard]] double BidAbsenceFrac(std::int64_t window_ns) const noexcept {
+        if (count_ == 0 || window_ns <= 0) return kNaN();
+        const std::int64_t cutoff = last_ts_ - window_ns;
+        std::size_t total = 0, absent = 0;
+        for (std::size_t i = 0; i < count_; ++i) {
+            const Sample& s = at_(i);
+            if (s.ts_ns < cutoff) continue;
+            ++total;
+            if (!(s.best_bid > 0.0) || !(s.best_bid_size > 0.0)) ++absent;
+        }
+        if (total == 0) return kNaN();
+        return static_cast<double>(absent) / static_cast<double>(total);
+    }
+
+    // 退出深度均值 (pUSD): 窗口内 best_bid_size 均值 (无 bid 计 0)。低 = 难卖出 (退出流动性薄)。
+    //   窗口内 0 样本 → NaN。模型/sizing 可据此对「进得去出不来」的仓位定更小目标 (由模型学, 不硬钳)。
+    [[nodiscard]] double ExitDepthMean(std::int64_t window_ns) const noexcept {
+        if (count_ == 0 || window_ns <= 0) return kNaN();
+        const std::int64_t cutoff = last_ts_ - window_ns;
+        double sum = 0.0;
+        std::size_t total = 0;
+        for (std::size_t i = 0; i < count_; ++i) {
+            const Sample& s = at_(i);
+            if (s.ts_ns < cutoff) continue;
+            ++total;
+            sum += (s.best_bid_size > 0.0 && std::isfinite(s.best_bid_size)) ? s.best_bid_size : 0.0;
+        }
+        if (total == 0) return kNaN();
+        return sum / static_cast<double>(total);
+    }
+
     void Reset() noexcept {
         head_ = 0;
         count_ = 0;
@@ -126,6 +165,11 @@ public:
 
 private:
     static constexpr double kNaN() noexcept { return std::numeric_limits<double>::quiet_NaN(); }
+
+    // 有效价: microprice ∈ (0,1) 且有限 (单边/无价样本 → false, 价 derive 跳过, 仍计流动性)。
+    [[nodiscard]] static bool price_valid_(double mp) noexcept {
+        return std::isfinite(mp) && mp > 0.0 && mp < 1.0;
+    }
 
     // 逻辑索引 i (0=最旧, count_-1=最新) → 物理 buf_ 下标。
     [[nodiscard]] const Sample& at_(std::size_t logical) const noexcept {

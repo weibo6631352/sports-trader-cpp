@@ -309,7 +309,21 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
 
     const double best_ask = feat.best_ask();  // YES ask (fair 段; 执行 ask 选边后定 exec_ask)
     const double best_bid = feat.best_bid();
-    // L1 价格有效性门 (YES book)。
+
+    // ---- 时序特征 observe-always (老板 2026-05-31 slice-1+2): 在交易门之前记录 ----
+    //   「卖不出」(bid 没了) 正是要观测的事件 —— 旧码在 best_bid 无效时 early-return, 会把它审查掉。
+    //   故在价有效性门之前 push: ts=上游 data_source_ts (禁 now()); 价无效→存 NaN (价 derive 跳过);
+    //   bid 字段记录退出流动性 (含无 bid)。loop_thread_ 单 writer 无锁; 派生在 PublishQuoteSnapshot 读。
+    {
+        const bool px_ok = std::isfinite(best_ask) && best_ask > 0.0 && best_ask < 1.0 &&
+                           std::isfinite(best_bid) && best_bid > 0.0;
+        const double mp_obs =
+            px_ok ? (std::isfinite(feat.microprice) ? feat.microprice : (best_bid + best_ask) * 0.5)
+                  : std::numeric_limits<double>::quiet_NaN();
+        ts_history_[condition_id].Push(feat.data_source_ts_ns, mp_obs, best_bid, feat.best_bid_size());
+    }
+
+    // L1 价格有效性门 (YES book) — 仅 gate 交易决策 (观测已在上方记录, 不受此 return 审查)。
     if (!std::isfinite(best_ask) || best_ask <= 0.0 || best_ask >= 1.0) {
         return;
     }
@@ -321,11 +335,6 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     stats_.orders_attempted.fetch_add(1, std::memory_order_relaxed);
 
     const double microprice = std::isfinite(feat.microprice) ? feat.microprice : (best_bid + best_ask) * 0.5;
-
-    // ---- 时序特征 (老板 2026-05-31): push YES-canonical 微价样本进 condition 的环形缓冲 ----
-    //   PIT: ts = 上游 data_source_ts_ns (禁 now()); 单调门去重停滞 book。loop_thread_ 单 writer 无锁。
-    //   派生 (变化率/realized vol) 在 PublishQuoteSnapshot 读 (push-then-read 事件序)。
-    ts_history_[condition_id].Push(feat.data_source_ts_ns, microprice);
 
     // no_token_mid: NO book microprice 优先 / mid 回退 (de-vig 对边; 单边退化 devig_binary 处理)。
     double no_token_mid = std::numeric_limits<double>::quiet_NaN();
@@ -1022,10 +1031,14 @@ void PaperLoop::PublishQuoteSnapshot(
             qf.mp_roc_per_sec = hit->second.RateOfChangePerSec(w);
             qf.realized_vol = hit->second.RealizedVol(w);
             qf.ts_window_samples = static_cast<std::int32_t>(hit->second.WindowSampleCount(w));
+            qf.bid_absence_frac = hit->second.BidAbsenceFrac(w);  // slice-2 卖不出 (观测/训练, 非硬门)
+            qf.exit_depth_mean = hit->second.ExitDepthMean(w);
         } else {
             qf.mp_roc_per_sec = std::numeric_limits<double>::quiet_NaN();
             qf.realized_vol = std::numeric_limits<double>::quiet_NaN();
             qf.ts_window_samples = 0;
+            qf.bid_absence_frac = std::numeric_limits<double>::quiet_NaN();
+            qf.exit_depth_mean = std::numeric_limits<double>::quiet_NaN();
         }
     }
 

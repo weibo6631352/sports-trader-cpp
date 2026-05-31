@@ -46,10 +46,29 @@ devig…)，**零时序维度**。单点切片看不到「动态」：变化率�
 - **未进 live `MlFeature` enum**: 现 ML 推理是 baseline/stub (无训练模型)。时序特征先在 `QuoteFeatures` 捕获进训练数据**积累**; 待真 ONNX 模型训练时再 append 进 `MlFeature` (列序锁 + bump kSpecVersion + retrain, 小邓契约)。**先积累数据，后接推理** = 安全增量路径。
 - **未接回测**: 组件 BR-1-ready (纯 + 无依赖)，但回测引擎 (小蒋) 的 replay 喂数尚未接。回测接入时复用同一 `FeatureHistory` (这正是 BR-1 的意义)。
 
-## 2. 路线 (下两块硬骨头, 独立立项)
+## 2. slice-2 「卖不出」退出流动性 (✅ DONE, **feature-first**)
 
-- **slice-2 「卖不出」流动性留存** (特征 + 风控双归属): 扩 `FeatureHistory.Sample` 存 (best_bid, bid_size) → 派生「窗口内无 bid tick 占比 / bid 留存率 / 退出流动性窗口均值」。**关键: 不只喂模型 —— 进 sizing**: 退出流动性薄 → target 该更小 (目标仓位范式假设「能连续 rebalance 调回目标」, 退出流动性塌了这假设就塌)。owner: 小程 (特征) + 老韩 (sizing 口径) + 小袁 (microstructure)。
-- **slice-3 「被结算归零」生命周期**: ① time-to-resolution / resolution-proximity 特征; ② **账本结算口径** (持仓→0 或 ×$1 payout; 现 paper PnL 在结算时是否正确? 待查); ③ **范式断点**: 临近结算 + 无退出流动性时, 仓位退化为「hold-to-settlement 二元赌注」, reservation/限价不追 (假设有连续退出) 失效 → 模型/风控须识别并切二元盈亏口径。owner: 老韩 (账本/风控) + 小梁 (sizing) + 小余 (resolution 数据源)。
+> **老板 2026-05-31 校准**: "我说的卖不出和结算归零写硬逻辑，希望他们也是能被量化模型包含的。"
+> → 卖不出/结算归零**做成量化特征喂模型, 不写硬门**。一致于老板「新鲜度/信号质量是输入不是草率守门」。
+
+**observe-always 架构修正 (关键)**: 旧 `TickOne` 在 YES `best_bid` 无效时 **early-return** —— 「卖不出」(bid 没了) 这个**恰恰要观测的事件被代码提前 bail 掉、根本没记录** = 特征审查偏置 (censoring bias)。修正: 把时序样本 push 移到**交易有效性门之前** (观测永远发生, 交易决策另说)。`FeatureHistory.Push` 改 observe-always (不因价/bid 无效拒绝; 价无效存 NaN, 价 derive 内部跳过)。
+
+**两特征 (进 `QuoteFeatures`, 喂模型, 非硬门)**:
+- `bid_absence_frac` ∈[0,1]: 窗口内无可执行 bid 占比 (1=整窗卖不出/单边倒挂)。
+- `exit_depth_mean`: 窗口内 best_bid_size 均值 (退出流动性薄 = 难卖出)。
+
+**明确不设硬 gate**: 退出流动性如何影响规模 (target 是否该更小) **由模型/sizing 学**, 不在控制器/账本钉硬规则。Sample 扩存 (best_bid, best_bid_size)。测试: FH06 observe-always / FH10 卖不出 / FH11 流动性窗口 PIT + `TS2` 端到端 (无 bid tick 被捕获, 旧码会审查掉)。1170/1170 全绿。
+
+> 注: 老韩曾提「退出流动性进 sizing 硬规则」—— 按老板校准**降级为模型特征**。若未来量化证明需硬保命门 (e.g. 退出流动性 0 时账户级拦), 另立, 不在本时序特征层。
+
+## 3. slice-3 「被结算归零」(下轮, **feature-first**)
+
+老板校准同样适用: 做成**量化特征**, 让模型学临近结算的归零风险, 而非硬逻辑。三层 (尽量特征化):
+- **特征 (主)**: time-to-resolution / resolution-proximity (离结算多久) + 与卖不出组合 (「临近结算 ∧ 卖不出」= 归零陷阱信号)。**喂模型**。
+- **账本结算口径 (不可避免的 plumbing, 非决策)**: 市场 resolve 时持仓→0 或 ×$1 payout 是**事实**, 账本须正确记 (现 paper MtM 用 fair, terminal 时 fair→0/1 已近似捕获; 但 realized 结算口径**待查**)。这是正确性 plumbing, 不是交易硬门。
+- **范式自然涌现 (非硬断点)**: 临近结算 fair→0/1 + 退出流动性→0 → Kelly target 自然趋小 (edge 与可调整性都塌)。让它**涌现**, 不写「if 临近结算 then 平仓」硬规则 (一致于目标仓位范式: 出场是目标变小的副产品)。
+
+resolution 数据源 (Goalserve terminal / Polymarket market end_date) 待小余确认接入路径。
 
 ## 3. 决策记录
 

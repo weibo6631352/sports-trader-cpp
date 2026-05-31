@@ -135,6 +135,9 @@ struct QuoteFeatures {
     double mp_roc_per_sec{0.0};            // 微价变化率 (prob/sec; +涨 −跌; 动量/方向压力)
     double realized_vol{0.0};              // 窗口内相邻微价变化 RMS (prob 单位; 波动率)
     std::int32_t ts_window_samples{0};     // 窗口内时序样本数 (观测质量代理; <2 则上面 NaN)
+    // slice-2 「卖不出」退出流动性 (老板: 量化模型包含, 非硬门; observe-always 记录无 bid tick)。
+    double bid_absence_frac{0.0};          // 窗口内无可执行 bid 占比 ∈[0,1] (1=整窗卖不出/单边倒挂)
+    double exit_depth_mean{0.0};           // 窗口内 best_bid_size 均值 (pUSD; 低=难卖出/退出流动性薄)
 
     // ---- ML provenance (小邓 spec v1 §3.2; 对应 QuoteParams ML 字段) ----
     // model_id: char 数组 (空 = 无模型; 对应 ModelPrediction.model_id)
