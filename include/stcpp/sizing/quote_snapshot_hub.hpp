@@ -156,6 +156,12 @@ struct QuoteFeatures {
     double b_vol_ratio{0.0};        // 短窗 vol / 长窗 vol — 波动率制度切换 (>1=短期波动激增)
     double g_time_x_lead{0.0};      // score_diff × (1−time_frac) — 时间感知领先 (体育最大未捕捉非线性)
     double g_fld_signal{0.0};       // devig_mult − devig_power — favorite-longshot 偏差强度信号
+    // 批1 补漏 (panel §3 立即可做, 上轮漏): 归一化进度 + 多尺度动量 + 各节胜负。
+    double g_remaining_sec{0.0};        // 剩余秒 = total_game_sec × time_to_resolution_frac (时间特征分母)
+    double b_mp_roc_30s{0.0};           // 30s 窗微价变化率 (短期动量; 多尺度)
+    double b_mp_roc_5m{0.0};            // 5min 窗微价变化率 (中期趋势)
+    std::int32_t g_periods_won_home{0}; // 已完成节中主队领先节数 (score_*_periods[]; 已有数据没用)
+    std::int32_t g_periods_won_away{0};
 
     // ---- ML provenance (小邓 spec v1 §3.2; 对应 QuoteParams ML 字段) ----
     // model_id: char 数组 (空 = 无模型; 对应 ModelPrediction.model_id)

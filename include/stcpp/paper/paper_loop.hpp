@@ -476,7 +476,8 @@ private:
                               const std::string& neg_risk_market_id, double target_signed_notional,
                               double reservation_buy_px, double reservation_sell_px,
                               double required_margin, double time_to_resolution_frac,
-                              double g_time_x_lead, double g_fld_signal) noexcept;
+                              double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
+                              std::int32_t g_periods_won_home, std::int32_t g_periods_won_away) noexcept;
 };
 
 }  // namespace stcpp::paper

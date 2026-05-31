@@ -509,6 +509,18 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   与 bid_absence_frac 组合 = 「临近结算 ∧ 卖不出」归零陷阱信号 (模型学, 不硬门)。
     double time_to_resolution_frac = std::numeric_limits<double>::quiet_NaN();
     double g_time_x_lead = std::numeric_limits<double>::quiet_NaN();  // 批1: 时间感知领先 (体育最大非线性)
+    double g_remaining_sec = std::numeric_limits<double>::quiet_NaN();  // 批1 补漏: 剩余秒
+    // 批1 补漏 g_periods_won: 已完成节中各队领先节数 (score_*_periods[]; 有真实比分才有意义)。
+    std::int32_t g_periods_won_home = 0, g_periods_won_away = 0;
+    if (has_real_fair) {
+        const std::uint8_t np = game_row.last_completed_period;
+        for (std::uint8_t i = 0; i < np && i < game_row.score_home_periods.size(); ++i) {
+            if (game_row.score_home_periods[i] > game_row.score_away_periods[i])
+                ++g_periods_won_home;
+            else if (game_row.score_away_periods[i] > game_row.score_home_periods[i])
+                ++g_periods_won_away;
+        }
+    }
     if (has_real_fair) {
         const double score_diff =
             static_cast<double>(game_row.score_home_total) - static_cast<double>(game_row.score_away_total);
@@ -527,6 +539,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         time_to_resolution_frac = terminal ? 0.0 : std::clamp(1.0 - time_frac, 0.0, 1.0);
         // 批1 g_time_x_lead: 领先 × 剩余时间占比 (领先 1 球在 80min vs 20min 价值天差地别)。
         g_time_x_lead = score_diff * std::clamp(1.0 - time_frac, 0.0, 1.0);
+        // 批1 补漏 g_remaining_sec: 剩余秒 = total × 剩余占比。
+        g_remaining_sec = (total_sec > 0) ? static_cast<double>(total_sec) * time_to_resolution_frac : 0.0;
     }
 
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
@@ -634,7 +648,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair,
                          cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns, mkt.event_id,
                          mkt.neg_risk_market_id, target_signed, reservation.buy_px, reservation.sell_px,
-                         reservation.required_margin, time_to_resolution_frac, g_time_x_lead, g_fld_signal);
+                         reservation.required_margin, time_to_resolution_frac, g_time_x_lead, g_fld_signal,
+                         g_remaining_sec, g_periods_won_home, g_periods_won_away);
     stats_.quote_publishes.fetch_add(1, std::memory_order_relaxed);
 
     // ---- P0-4: advisory gate -----------------------------------------------
@@ -1113,7 +1128,8 @@ void PaperLoop::PublishQuoteSnapshot(
     double no_microprice, double no_imbalance, bool devig_ok, std::int64_t joint_as_of_ts_ns,
     const std::string& event_id, const std::string& neg_risk_market_id, double target_signed_notional,
     double reservation_buy_px, double reservation_sell_px, double required_margin,
-    double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal) noexcept {
+    double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
+    std::int32_t g_periods_won_home, std::int32_t g_periods_won_away) noexcept {
     sizing::QuoteFeatures qf{};
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
@@ -1172,6 +1188,9 @@ void PaperLoop::PublishQuoteSnapshot(
             qf.b_vol_ratio = (std::isfinite(vol_short) && std::isfinite(vol_long) && vol_long > 0.0)
                                  ? vol_short / vol_long
                                  : std::numeric_limits<double>::quiet_NaN();
+            // 批1 补漏: 多尺度动量 (30s 短期 / 5min 中期)。
+            qf.b_mp_roc_30s = hit->second.RateOfChangePerSec(30'000'000'000LL);
+            qf.b_mp_roc_5m = hit->second.RateOfChangePerSec(300'000'000'000LL);
         } else {
             qf.mp_roc_per_sec = std::numeric_limits<double>::quiet_NaN();
             qf.realized_vol = std::numeric_limits<double>::quiet_NaN();
@@ -1182,6 +1201,8 @@ void PaperLoop::PublishQuoteSnapshot(
             qf.b_bid_depth_vol = std::numeric_limits<double>::quiet_NaN();
             qf.b_ofi = std::numeric_limits<double>::quiet_NaN();
             qf.b_vol_ratio = std::numeric_limits<double>::quiet_NaN();
+            qf.b_mp_roc_30s = std::numeric_limits<double>::quiet_NaN();
+            qf.b_mp_roc_5m = std::numeric_limits<double>::quiet_NaN();
         }
     }
 
@@ -1199,6 +1220,9 @@ void PaperLoop::PublishQuoteSnapshot(
                                : std::numeric_limits<double>::quiet_NaN();
         qf.g_time_x_lead = g_time_x_lead;    // TickOne 传入 (有真 fair 才有值, 否则 NaN)
         qf.g_fld_signal = g_fld_signal;      // favorite-longshot 偏差信号
+        qf.g_remaining_sec = g_remaining_sec;        // 批1 补漏: 剩余秒
+        qf.g_periods_won_home = g_periods_won_home;  // 批1 补漏: 各节胜负
+        qf.g_periods_won_away = g_periods_won_away;
     }
 
     // 当前持仓 (老板: 持仓入模型; 库存感知)。目标仓位范式: 模型需知现仓 → 控制器算 order=目标−现仓。
