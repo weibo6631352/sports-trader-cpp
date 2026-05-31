@@ -801,8 +801,10 @@ function CoverageSection() {
 
   // ---- 市场覆盖 ----
   const discovered  = () => parseMetricVal(m(), 'stcpp_markets_discovered_total');
-  const subscribed  = () => parseMetricVal(m(), 'stcpp_markets_subscribed_total');
-  const tokensSubbed = () => parseMetricVal(m(), 'stcpp_tokens_subscribed_total');
+  // 2026-05-31 修: 对齐后端真名 (endpoint_metrics.cpp:112/109) — 原 stcpp_markets_subscribed_total/
+  //   stcpp_tokens_subscribed_total 错位致 CoverageSection 永久空 (前后端接口核查发现)。
+  const subscribed  = () => parseMetricVal(m(), 'stcpp_subscribed_markets_total');
+  const tokensSubbed = () => parseMetricVal(m(), 'stcpp_subscribed_tokens_total');
   const coverPct = () => {
     const d = discovered(); const s = subscribed();
     if (d == null || s == null || d === 0) return 0;
@@ -825,7 +827,8 @@ function CoverageSection() {
 
   // ---- 比分匹配率 ----
   const scoreMatched  = () => parseMetricVal(m(), 'stcpp_score_matched_total');
-  const marketsTotal  = () => parseMetricVal(m(), 'stcpp_markets_total');
+  // 2026-05-31 修: 后端无 stcpp_markets_total; 比分匹配率分母用 discovered (endpoint_metrics.cpp:138)。
+  const marketsTotal  = () => parseMetricVal(m(), 'stcpp_markets_discovered_total');
   const scorePct = () => {
     const t = marketsTotal(); const r = scoreMatched();
     if (t == null || r == null || t === 0) return 0;
