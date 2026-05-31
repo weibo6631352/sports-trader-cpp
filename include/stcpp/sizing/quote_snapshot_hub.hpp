@@ -120,6 +120,7 @@ struct QuoteFeatures {
     std::int32_t cat_sport_family_id{-1};  // 粗运动家族 (soccer=0/basket=1/tennis=2/.../-1 unk)
     std::int32_t cat_league_id{-1};        // 细联赛 = Polymarket sport.id (nba=34/bkcba=104; NBA≠CBA)
     std::int32_t cat_market_type_id{-1};   // 盘口 moneyline=0/spread=1/totals=2/outright=3/prop=4/series=5
+    double line{std::numeric_limits<double>::quiet_NaN()};  // totals/spreads 线值 (元数据旁注; 非 MlFeature 列)
 
     // ---- 当前持仓 (老板 2026-05-31: 持仓入模型; 库存感知 — 目标仓位范式控制器需知现仓才能定调整) ----
     //   老板 2026-05-31「各边买了多少, 可能两边都买, 不能只说买哪一边」: per-token 双边量, 不塌单边/净。

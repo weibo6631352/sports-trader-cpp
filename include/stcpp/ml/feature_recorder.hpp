@@ -28,6 +28,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -126,6 +127,16 @@ private:
         }
     }
 
+    // NaN → "null" (合法 JSON; C++ << 对 NaN 输出小写 "nan" 破坏 Python json.loads)。line 在 moneyline
+    //   市场恒 NaN (无线值), 必须 null 保护。其余有限数值用 %g 与 << 同口径。
+    static std::string JsonNullable(double v) {
+        if (std::isnan(v))
+            return "null";
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%g", v);
+        return buf;
+    }
+
     static void WriteLine(std::ofstream& out, const std::string& cond, const sizing::QuoteFeatures& q) {
         // JSONL 一行一决策快照. 字段为受控数值/hex, 无需 JSON 转义.
         out << "{\"condition_id\":\"" << cond << "\""
@@ -137,7 +148,7 @@ private:
             << ",\"cat_asset_class_id\":" << q.cat_asset_class_id
             << ",\"cat_sport_family_id\":" << q.cat_sport_family_id
             << ",\"cat_league_id\":" << q.cat_league_id
-            << ",\"cat_market_type_id\":" << q.cat_market_type_id
+            << ",\"cat_market_type_id\":" << q.cat_market_type_id << ",\"line\":" << JsonNullable(q.line)
             // 树父级引用 (按 event join 兄弟盘口; neg_risk 一致性) + 双边微观结构 (模型输入, 不 gate;
             // 2026-05-31)
             << ",\"event_id\":\"" << q.event_id << "\""

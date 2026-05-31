@@ -11,6 +11,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -85,9 +86,19 @@ private:
         out.flush();
     }
 
+    // NaN → "null" (合法 JSON; line 在 moneyline 恒 NaN, << 输出小写 "nan" 破坏 Python json)。
+    static std::string JsonNullable(double v) {
+        if (std::isnan(v))
+            return "null";
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "%g", v);
+        return buf;
+    }
+
     static void WriteLine(std::ofstream& out, const FeatureVectorRecord& r) {
         out << "{\"condition_id\":\"" << r.condition_id << "\",\"as_of_ts_ns\":" << r.as_of_ts_ns
-            << ",\"spec_version\":\"" << r.spec_version << "\",\"fair_value\":" << r.baseline_fair;
+            << ",\"spec_version\":\"" << r.spec_version << "\",\"fair_value\":" << r.baseline_fair
+            << ",\"line\":" << JsonNullable(r.line);
         for (std::uint16_t i = 0; i < r.count; ++i) {
             out << ",\"f" << i << "\":" << r.values[i];  // f0..f85 (含 cat 82-85), 列序 = MlFeature enum
         }

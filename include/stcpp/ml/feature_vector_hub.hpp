@@ -40,6 +40,7 @@ struct FeatureVectorRecord {
     float values[kMlFeatureCount]{};    // 75 列 (列序 = MlFeature enum)
     double baseline_fair{0.0};          // 缺口B: baseline fair (qf.fair_value; 残差训练 y=label−baseline 用,
                                         //   非 MlFeature 列 — 是泄漏目标不入 X, 仅作残差标签锚)
+    double line{std::numeric_limits<double>::quiet_NaN()};  // totals/spreads 线值 (元数据旁注; 解释派生盘口)
     bool valid{false};
 
     void set_condition(std::string_view cid) noexcept {

@@ -1349,6 +1349,7 @@ void PaperLoop::PopulateFeatureColumns(
     qf.cat_sport_family_id = mc.sport_family_id;
     qf.cat_league_id = mc.league_id;
     qf.cat_market_type_id = mc.market_type_id;
+    qf.line = mc.line;  // totals/spreads 线值 (元数据旁注; 解释派生盘口 quote 用)
 
     // A2: 盘口上下文 / 双边微观结构 (模型输入 + 观测, 绝不 gate — 老板 2026-05-31)。
     std::strncpy(qf.condition_id, condition_id.c_str(), sizeof(qf.condition_id) - 1);
@@ -1562,6 +1563,7 @@ void PaperLoop::PublishQuoteSnapshot(
         rec.set_spec(fv.spec_version);
         rec.set_values(fv.values);
         rec.baseline_fair = qf.fair_value;  // 缺口B: 残差训练 y=label−baseline 的锚 (非 X 列)
+        rec.line = qf.line;                 // totals/spreads 线值 (元数据旁注)
         rec.valid = true;
         fv_hub_->Publish(rec);
     }
