@@ -50,7 +50,7 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.7";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.8";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
 //     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
 //   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
@@ -187,9 +187,21 @@ enum class MlFeature : std::uint8_t {
     cat_market_type = 84,          // 盘口类型: moneyline=0/spread=1/totals=2/outright=3/prop=4/series=5/-1
     // v0.7: 细联赛级 (真实 Polymarket sport.id) — 老板「篮球?NBA 还是 CBA?」要的就是这粒度。
     cat_league = 85,               // 联赛 = Polymarket sport.id (nba=34/bkcba=104=CBA/atp=45/wta=46; -1 unk)
+
+    // ---- v0.8 append (L2-L5 深度分布; 老板 2026-06-01「5 档都存了但只用 L1」) ----
+    //   LiveBookPublisher 已解析 5 档真值, 此前只 L1 进特征。双边独立 (YES book=b_ / NO book=no_b_)。
+    //   源: QuoteFeatures 载体 (paper_loop TickOne 从 feat / mkt.no.book 算 compute_depth_metrics)。
+    b_bid_depth_5lvl = 86,         // YES book Σ5档买深 (各档分布总量)
+    b_ask_depth_5lvl = 87,         // YES book Σ5档卖深
+    b_l1_concentration = 88,       // YES book L1占5档总 (撑门面/悬崖: 高=L1后断档)
+    b_depth_imbalance_5lvl = 89,   // YES book 5档买卖失衡 (深层方向)
+    no_b_bid_depth_5lvl = 90,      // NO book Σ5档买深 (双边独立)
+    no_b_ask_depth_5lvl = 91,      // NO book Σ5档卖深
+    no_b_l1_concentration = 92,    // NO book L1集中度
+    no_b_depth_imbalance_5lvl = 93,  // NO book 5档失衡
 };
 
-inline constexpr std::size_t kMlFeatureCount = 86;
+inline constexpr std::size_t kMlFeatureCount = 94;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -303,6 +315,14 @@ inline constexpr std::size_t kMlFeatureCount = 86;
         case MlFeature::cat_sport: return "cat_sport";
         case MlFeature::cat_market_type: return "cat_market_type";
         case MlFeature::cat_league: return "cat_league";
+        case MlFeature::b_bid_depth_5lvl: return "b_bid_depth_5lvl";
+        case MlFeature::b_ask_depth_5lvl: return "b_ask_depth_5lvl";
+        case MlFeature::b_l1_concentration: return "b_l1_concentration";
+        case MlFeature::b_depth_imbalance_5lvl: return "b_depth_imbalance_5lvl";
+        case MlFeature::no_b_bid_depth_5lvl: return "no_b_bid_depth_5lvl";
+        case MlFeature::no_b_ask_depth_5lvl: return "no_b_ask_depth_5lvl";
+        case MlFeature::no_b_l1_concentration: return "no_b_l1_concentration";
+        case MlFeature::no_b_depth_imbalance_5lvl: return "no_b_depth_imbalance_5lvl";
     }
     return "unknown";
 }
@@ -548,6 +568,15 @@ inline void extract_from_quote(const stcpp::sizing::QuoteFeatures& q, std::vecto
     put(MlFeature::g_clutch, q.g_clutch);
     put(MlFeature::g_goal_freshness, q.g_goal_freshness);
     put(MlFeature::g_net_momentum_5m, q.g_net_momentum_5m);
+    // v0.8 L2-L5 深度分布 (双边独立; 源 compute_depth_metrics → QuoteFeatures 载体)
+    put(MlFeature::b_bid_depth_5lvl, q.b_bid_depth_5lvl);
+    put(MlFeature::b_ask_depth_5lvl, q.b_ask_depth_5lvl);
+    put(MlFeature::b_l1_concentration, q.b_l1_concentration);
+    put(MlFeature::b_depth_imbalance_5lvl, q.b_depth_imbalance_5lvl);
+    put(MlFeature::no_b_bid_depth_5lvl, q.no_b_bid_depth_5lvl);
+    put(MlFeature::no_b_ask_depth_5lvl, q.no_b_ask_depth_5lvl);
+    put(MlFeature::no_b_l1_concentration, q.no_b_l1_concentration);
+    put(MlFeature::no_b_depth_imbalance_5lvl, q.no_b_depth_imbalance_5lvl);
 }
 
 // ---------------------------------------------------------------------------
@@ -626,9 +655,11 @@ inline void fill_categorical_context(const stcpp::sizing::QuoteFeatures& q,
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 86, "MlFeature count must be 86 (v0.7; append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::cat_league) == kMlFeatureCount - 1,
-              "最后一列必须是 cat_league (append-only 约束; v0.7 末列)");
+static_assert(kMlFeatureCount == 94, "MlFeature count must be 94 (v0.8; append + bump spec)");
+static_assert(static_cast<std::size_t>(MlFeature::no_b_depth_imbalance_5lvl) == kMlFeatureCount - 1,
+              "最后一列必须是 no_b_depth_imbalance_5lvl (append-only 约束; v0.8 末列)");
+static_assert(static_cast<std::size_t>(MlFeature::cat_league) == 85,
+              "cat_league 必须恒为 85 (v0.7 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::cat_market_type) == 84,
               "cat_market_type 必须恒为 84 (v0.6 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::x_joint_staleness_sec) == 81,

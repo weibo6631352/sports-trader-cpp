@@ -60,6 +60,7 @@
 #pragma once
 
 #include <array>
+#include <cmath>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -157,6 +158,47 @@ struct OrderBookFeatures {
 
 static_assert(std::is_trivially_copyable_v<OrderBookFeatures>,
               "OrderBookFeatures must be trivially copyable for lock-free double-buffer");
+
+// ---------------------------------------------------------------------------
+// L2-L5 深度分布度量 (老板 2026-06-01: 5 档都存了但只用 L1 — 各档深度/集中度/悬崖没进特征)。
+//   LiveBookPublisher 已解析 5 档 (bids/asks[0..4] 真值); 此处聚合成深度结构信号。纯函数, 可单测。
+// ---------------------------------------------------------------------------
+struct DepthMetrics {
+    double bid_depth_5lvl{std::numeric_limits<double>::quiet_NaN()};       // Σ 5 档买深 (notional)
+    double ask_depth_5lvl{std::numeric_limits<double>::quiet_NaN()};       // Σ 5 档卖深
+    double l1_concentration{std::numeric_limits<double>::quiet_NaN()};     // L1 size / 5档总; 高=L1撑门面/后断档
+    double depth_imbalance_5lvl{std::numeric_limits<double>::quiet_NaN()};  // (买深−卖深)/总; 深层方向 (vs L1失衡)
+};
+
+[[nodiscard]] inline DepthMetrics compute_depth_metrics(const OrderBookFeatures& f) noexcept {
+    double bid_sum = 0.0, ask_sum = 0.0;
+    bool any = false;
+    for (std::size_t i = 0; i < kBookDepthLevels; ++i) {
+        const double bs = f.bids[i].size_usdc;
+        const double as_ = f.asks[i].size_usdc;
+        if (std::isfinite(bs) && bs > 0.0) {
+            bid_sum += bs;
+            any = true;
+        }
+        if (std::isfinite(as_) && as_ > 0.0) {
+            ask_sum += as_;
+            any = true;
+        }
+    }
+    DepthMetrics m;
+    if (!any)
+        return m;  // 全 NaN (空 book)
+    m.bid_depth_5lvl = bid_sum;
+    m.ask_depth_5lvl = ask_sum;
+    const double total = bid_sum + ask_sum;
+    if (total > 0.0) {
+        const double b0 = std::isfinite(f.bids[0].size_usdc) ? f.bids[0].size_usdc : 0.0;
+        const double a0 = std::isfinite(f.asks[0].size_usdc) ? f.asks[0].size_usdc : 0.0;
+        m.l1_concentration = (b0 + a0) / total;            // 1.0 = 全在 L1 (L1后断档/撑门面); 低 = 深度铺开
+        m.depth_imbalance_5lvl = (bid_sum - ask_sum) / total;  // 5档买卖失衡 (深层方向, 比 L1 imbalance 厚)
+    }
+    return m;
+}
 
 // ---------------------------------------------------------------------------
 // OrderBookSnapshotHub — per-token double-buffer 快照发布/读取

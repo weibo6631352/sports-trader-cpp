@@ -587,7 +587,8 @@ private:
                               const SportsFeatures& sports,
                               const data::feature_store::FeatureStoreGameRow& ml_game_row,
                               const data::feature_store::FeatureStoreBookRow& ml_book_row,
-                              std::int64_t no_book_ds_ts, std::int64_t no_book_ing_ts) noexcept;
+                              std::int64_t no_book_ds_ts, std::int64_t no_book_ing_ts,
+                              const polymarket::clob_wss::OrderBookFeatures* no_book_full = nullptr) noexcept;
 
     // 填 QuoteFeatures 的观测特征列 (MlFeature 18-74 + 4ts/ids/fair/fee/micro/pos/resolution)。
     //   TickOne (决策前 blend predict) 与 PublishQuoteSnapshot (发布) 共用 → 训练=推理同源, 无漂移。
@@ -601,7 +602,8 @@ private:
                                 double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
                                 std::int32_t g_periods_won_home, std::int32_t g_periods_won_away,
                                 const SportsFeatures& sports, std::int64_t no_book_ds_ts,
-                                std::int64_t no_book_ing_ts) noexcept;
+                                std::int64_t no_book_ing_ts,
+                                const polymarket::clob_wss::OrderBookFeatures* no_book_full = nullptr) noexcept;
 };
 
 }  // namespace stcpp::paper

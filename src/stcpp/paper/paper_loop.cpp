@@ -661,7 +661,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         PopulateFeatureColumns(fqf, condition_id, fv_result, microprice, feat, cross_spread, no_token_mid,
                                blend_no_imb, devig_ok, blend_joint, mkt.event_id, mkt.neg_risk_market_id,
                                time_to_resolution_frac, g_time_x_lead, g_fld_signal, g_remaining_sec,
-                               g_periods_won_home, g_periods_won_away, sports, blend_no_ds, blend_no_ing);
+                               g_periods_won_home, g_periods_won_away, sports, blend_no_ds, blend_no_ing,
+                               mkt.no.present ? &mkt.no.book : nullptr);
         const ml::FeatureVector fv = ml::extract_full(game_row, book_row, fqf);
         if (fv.size() == ml_model_->expected_feature_count()) {
             const auto mp = ml_model_->predict(fv);
@@ -831,7 +832,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                          reservation.required_margin, time_to_resolution_frac, g_time_x_lead, g_fld_signal,
                          g_remaining_sec, g_periods_won_home, g_periods_won_away, sports, game_row, book_row,
                          mkt.no.present ? mkt.no.book.data_source_ts_ns : 0,
-                         mkt.no.present ? mkt.no.book.ingestion_ts_ns : 0);
+                         mkt.no.present ? mkt.no.book.ingestion_ts_ns : 0,
+                         mkt.no.present ? &mkt.no.book : nullptr);  // v0.8 NO book 5档深度
     stats_.quote_publishes.fetch_add(1, std::memory_order_relaxed);
 
     // ---- P0-4: advisory gate -----------------------------------------------
@@ -1322,7 +1324,8 @@ void PaperLoop::PopulateFeatureColumns(
     const std::string& neg_risk_market_id, double time_to_resolution_frac, double g_time_x_lead,
     double g_fld_signal, double g_remaining_sec, std::int32_t g_periods_won_home,
     std::int32_t g_periods_won_away, const SportsFeatures& sports, std::int64_t no_book_ds_ts,
-    std::int64_t no_book_ing_ts) noexcept {
+    std::int64_t no_book_ing_ts,
+    const polymarket::clob_wss::OrderBookFeatures* no_book_full) noexcept {
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
     qf.data_source_ts_ns = feat.data_source_ts_ns;
@@ -1331,6 +1334,20 @@ void PaperLoop::PopulateFeatureColumns(
     // NO book 时间戳载体 (双边 book 时间独立; extract_full.fill_latency_features 算 NO book 龄/延迟)。
     qf.no_book_data_source_ts_ns = no_book_ds_ts;
     qf.no_book_ingestion_ts_ns = no_book_ing_ts;
+
+    // v0.8 L2-L5 深度分布 (双边独立; LiveBookPublisher 5 档真值 → compute_depth_metrics 聚合)。
+    const auto yd = polymarket::clob_wss::compute_depth_metrics(feat);  // YES book
+    qf.b_bid_depth_5lvl = yd.bid_depth_5lvl;
+    qf.b_ask_depth_5lvl = yd.ask_depth_5lvl;
+    qf.b_l1_concentration = yd.l1_concentration;
+    qf.b_depth_imbalance_5lvl = yd.depth_imbalance_5lvl;
+    if (no_book_full != nullptr) {  // NO book (单边缺则保持 NaN)
+        const auto nd = polymarket::clob_wss::compute_depth_metrics(*no_book_full);
+        qf.no_b_bid_depth_5lvl = nd.bid_depth_5lvl;
+        qf.no_b_ask_depth_5lvl = nd.ask_depth_5lvl;
+        qf.no_b_l1_concentration = nd.l1_concentration;
+        qf.no_b_depth_imbalance_5lvl = nd.depth_imbalance_5lvl;
+    }
 
     // fair_value: 始终输出 (fv_result.p_yes()), 但 predict_ok=false 时消费方不可据此决策.
     qf.fair_value = fv_result.p_yes();
@@ -1515,12 +1532,13 @@ void PaperLoop::PublishQuoteSnapshot(
     std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports,
     const data::feature_store::FeatureStoreGameRow& ml_game_row,
     const data::feature_store::FeatureStoreBookRow& ml_book_row, std::int64_t no_book_ds_ts,
-    std::int64_t no_book_ing_ts) noexcept {
+    std::int64_t no_book_ing_ts, const polymarket::clob_wss::OrderBookFeatures* no_book_full) noexcept {
     sizing::QuoteFeatures qf{};
     PopulateFeatureColumns(qf, condition_id, fv_result, mark_price, feat, cross_spread, no_microprice,
                            no_imbalance, devig_ok, joint_as_of_ts_ns, event_id, neg_risk_market_id,
                            time_to_resolution_frac, g_time_x_lead, g_fld_signal, g_remaining_sec,
-                           g_periods_won_home, g_periods_won_away, sports, no_book_ds_ts, no_book_ing_ts);
+                           g_periods_won_home, g_periods_won_away, sports, no_book_ds_ts, no_book_ing_ts,
+                           no_book_full);
 
     if (has_real_fair) {
         // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.

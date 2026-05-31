@@ -18,12 +18,12 @@ import argparse
 import json
 import sys
 
-N_FEATURES = 82  # 数值特征 0..81 (延迟/微结构/比分/赔率派生)
-# v0.7 类别上下文列 (82-85): categorical 非 ordinal — 必须声明 categorical_feature, 否则 LightGBM
+N_TOTAL = 94  # = kMlFeatureCount (ml-feature-spec v0.8); 数值 0-81 + cat 82-85 + L2-L5 深度 86-93
+# 类别上下文列 (82-85): categorical 非 ordinal — 必须声明 categorical_feature, 否则 LightGBM
 #   把 league=104(CBA) 当 "比 34(NBA) 大" 的有序数值 (错)。整数码仅作 level; unknown=-1 独立 level。
 #   82 cat_asset_class / 83 cat_sport(家族) / 84 cat_market_type / 85 cat_league(Polymarket sport.id)
+#   86-93 = L2-L5 双边深度分布 (数值, 非 cat)。
 CAT_FEATURES = [82, 83, 84, 85]
-N_TOTAL = N_FEATURES + len(CAT_FEATURES)  # = 86 = kMlFeatureCount (ml-feature-spec v0.7)
 
 
 def load_jsonl(path):

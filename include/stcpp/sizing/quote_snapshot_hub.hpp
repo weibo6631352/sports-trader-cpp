@@ -121,6 +121,15 @@ struct QuoteFeatures {
     std::int32_t cat_league_id{-1};        // 细联赛 = Polymarket sport.id (nba=34/bkcba=104; NBA≠CBA)
     std::int32_t cat_market_type_id{-1};   // 盘口 moneyline=0/spread=1/totals=2/outright=3/prop=4/series=5
     double line{std::numeric_limits<double>::quiet_NaN()};  // totals/spreads 线值 (元数据旁注; 非 MlFeature 列)
+    // L2-L5 深度分布 (v0.8; LiveBookPublisher 已解析 5 档, 此前只用 L1)。双边独立 (YES=b_ / NO=no_b_)。
+    double b_bid_depth_5lvl{std::numeric_limits<double>::quiet_NaN()};
+    double b_ask_depth_5lvl{std::numeric_limits<double>::quiet_NaN()};
+    double b_l1_concentration{std::numeric_limits<double>::quiet_NaN()};
+    double b_depth_imbalance_5lvl{std::numeric_limits<double>::quiet_NaN()};
+    double no_b_bid_depth_5lvl{std::numeric_limits<double>::quiet_NaN()};
+    double no_b_ask_depth_5lvl{std::numeric_limits<double>::quiet_NaN()};
+    double no_b_l1_concentration{std::numeric_limits<double>::quiet_NaN()};
+    double no_b_depth_imbalance_5lvl{std::numeric_limits<double>::quiet_NaN()};
 
     // ---- 当前持仓 (老板 2026-05-31: 持仓入模型; 库存感知 — 目标仓位范式控制器需知现仓才能定调整) ----
     //   老板 2026-05-31「各边买了多少, 可能两边都买, 不能只说买哪一边」: per-token 双边量, 不塌单边/净。

@@ -20,6 +20,7 @@
 #include "stcpp/ml/fair_value_model.hpp"
 #include "stcpp/ml/model_feature_spec.hpp"
 #include "stcpp/data/market_taxonomy.hpp"
+#include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 
 namespace {
 
@@ -99,11 +100,14 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_net_momentum_5m), 74u);       // v0.4 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_joint_staleness_sec), 81u);   // v0.5 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_market_type), 84u);         // v0.6 末列
-    // v0.7 新末列 = cat_league (85; Polymarket sport.id, NBA≠CBA).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_league), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_league), 85u);              // v0.7 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_asset_class), 82u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_sport), 83u);
-    EXPECT_EQ(kMlFeatureCount, 86u);
+    // v0.8 新末列 = no_b_depth_imbalance_5lvl (93; L2-L5 双边深度分布).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_depth_imbalance_5lvl), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_bid_depth_5lvl), 86u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_bid_depth_5lvl), 90u);
+    EXPECT_EQ(kMlFeatureCount, 94u);
     // 双边对称 + v0.5 延迟特征抽查 (双边 book 龄独立).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);
@@ -191,6 +195,35 @@ TEST(ModelFeatureSpec, V07Columns_CategoricalContext_RealStructure) {
     fv = stcpp::ml::extract_full(g, b, qf2);
     EXPECT_EQ(at(MlFeature::cat_sport), -1.0F) << "未注入 → unknown=-1";
     EXPECT_EQ(at(MlFeature::cat_league), -1.0F) << "未注入 → unknown=-1";
+}
+
+TEST(DepthMetrics, FiveLevelAggregation) {
+    using stcpp::polymarket::clob_wss::OrderBookFeatures;
+    OrderBookFeatures f{};
+    // bids 5档: 100/50/30/20/0(NaN); asks: 40/10(其余NaN) — 买深厚, L1 不撑门面。
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    double bsz[5] = {100, 50, 30, 20, nan};
+    double asz[5] = {40, 10, nan, nan, nan};
+    for (std::size_t i = 0; i < 5; ++i) {
+        f.bids[i].size_usdc = bsz[i];
+        f.bids[i].price = 0.5;
+        f.asks[i].size_usdc = asz[i];
+        f.asks[i].price = 0.51;
+    }
+    const auto m = stcpp::polymarket::clob_wss::compute_depth_metrics(f);
+    EXPECT_DOUBLE_EQ(m.bid_depth_5lvl, 200.0) << "Σ 100+50+30+20";
+    EXPECT_DOUBLE_EQ(m.ask_depth_5lvl, 50.0) << "Σ 40+10";
+    EXPECT_DOUBLE_EQ(m.l1_concentration, (100.0 + 40.0) / 250.0) << "L1/总";
+    EXPECT_DOUBLE_EQ(m.depth_imbalance_5lvl, (200.0 - 50.0) / 250.0) << "5档买卖失衡";
+    // 空 book → 全 NaN (fail-safe)。
+    OrderBookFeatures empty{};
+    for (std::size_t i = 0; i < 5; ++i) {
+        empty.bids[i].size_usdc = nan;
+        empty.asks[i].size_usdc = nan;
+    }
+    const auto me = stcpp::polymarket::clob_wss::compute_depth_metrics(empty);
+    EXPECT_TRUE(std::isnan(me.bid_depth_5lvl));
+    EXPECT_TRUE(std::isnan(me.l1_concentration));
 }
 
 TEST(MarketTaxonomy, RealPolymarketVocabulary) {
