@@ -276,4 +276,42 @@ docs/
 
 ---
 
-**最后更新：** 2026-05-31 by 老雷 (红线复评 — 9 条 §8 核心红线全留, 补 §8.1 两 carve-out: 加性/非重大免全审计会签 + 人签门画在真钱开闸非写代码; ADR 2026-05-31-redline-application-carveout)
+## 13. 部署节点连接 (云服务器)
+
+**部署节点 (生产/采集就近运行):**
+- 区域 **eu-west-2 (伦敦)** | 实例 `i-0048c3718099c5f0c` | Amazon Linux 2023 | **4 vCPU / 15 GiB / 128 GB**
+- 登录 `ec2-user` | 公网 IP 见 `~/stcpp-ops/server.env` 的 `HOST` (动态, 见下)
+- 安全组 `sg-0a72766a2079079a4` | 仓库已克隆在 `/home/ec2-user/sports-trader-cpp`
+- **白名单已生效** (实测 Goalserve inplay 返 200 非 403; Polymarket CLOB ~31ms) → 采集真数据可跑
+
+**连接工具在仓库外 `~/stcpp-ops/`** (私钥绝不进 git — §8 红线):
+```
+~/stcpp-ops/
+├── server.env          # 连接配置 (HOST/用户/AWS 元信息); 服务器 IP 变了改这里
+├── keys/66313527a.pem  # SSH 私钥 (chmod 400; 绝不读内容/进 git/进日志 — §8 红线)
+├── connect.sh          # 交互式登录 (终端里跑)
+└── run.sh              # 非交互执行远端命令 (自动化/Claude 用)
+```
+
+**用法 (sub-agent / 自动化 / Claude 直接用 run.sh):**
+```bash
+~/stcpp-ops/connect.sh                       # 开远端 shell (交互)
+~/stcpp-ops/run.sh 'nproc; df -h /'          # 跑一条远端命令 (只读检查安全)
+~/stcpp-ops/run.sh < local_setup.sh          # 喂本地脚本给远端 bash
+```
+
+**连不上先查两个动态 IP (README 在 `~/stcpp-ops/README.md`):**
+1. **服务器 IP 变了** (实例 stop/start) → 改 `server.env` 的 `HOST`。根治: 挂 Elastic IP。
+2. **本机出口 IP 变了** (宽带重拨) → 改安全组 `sg-0a72766a2079079a4` 入站 22 的源。
+   查当前出口: `curl --noproxy '*' https://checkip.amazonaws.com`
+- 直连不走代理 (`ProxyCommand=none`; 代理屏蔽 22); 退路 = SSM Session Manager (走 443)。
+
+**纪律:**
+- **私钥红线 (§8):** `~/stcpp-ops/keys/*.pem` 是 SSH 私钥, **绝不 cat / 不进 git / 不进日志**。运维包整个在仓库外。
+- **改服务器状态前确认** (拉代码/装依赖/编译/起进程 = outward-facing); 只读检查 (uname/df/curl 探活) 低风险可直接跑。
+- **R-11:** systemd unit 强制 `PAPER_MODE=1`; 真钱开闸 (`LiveOrderGate.Arm()`) 需老韩 RM + 小白安全会签 (§8.1)。
+- 服务器环境: gcc 11.5 / cmake 3.30 / ninja / python3.9 / aws-cli 已装; **onnxruntime 待装** (真模型推理); clang 缺 (用 gcc)。
+
+---
+
+**最后更新：** 2026-06-01 by 老雷 (加 §13 部署节点连接: eu-west-2 伦敦实例 + ~/stcpp-ops/ 连接工具 + 白名单已生效 + 私钥红线); 前: 2026-05-31 (红线复评 — 9 条 §8 核心红线全留, 补 §8.1 两 carve-out: 加性/非重大免全审计会签 + 人签门画在真钱开闸非写代码; ADR 2026-05-31-redline-application-carveout)
