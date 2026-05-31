@@ -140,6 +140,13 @@ struct OrderBookFeatures {
     //   填; 合成/未填默认 0=kOpen。结算临近度信号 (喂模型 + 触发账本结算)。加性 POD (§8.1 #5)。
     std::uint8_t resolution_status{0};
 
+    // v0.10 trade-flow (老板 2026-06-01: 成交方向/量没进特征)。LiveBookPublisher 从 last_trade_price 事件
+    //   (side=taker 主动方 + size) 滚动 5min 聚合 → book publish 时填。per-token (此 feat 即 per-token)。
+    //   NaN = 无成交/未接 trade 流。加性 POD (§8.1 #5)。
+    double trade_signed_vol_5m{std::numeric_limits<double>::quiet_NaN()};  // 买主动−卖主动 净流 (notional)
+    double trade_buy_ratio_5m{std::numeric_limits<double>::quiet_NaN()};   // 买主动占比 ∈[0,1] (>0.5=买压)
+    double trade_intensity_5m{std::numeric_limits<double>::quiet_NaN()};   // 5min 成交笔数 (活跃度)
+
     // 有效性标记 (首次 snapshot 后为 true)
     bool valid{false};
 

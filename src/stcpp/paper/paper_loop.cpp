@@ -1341,12 +1341,19 @@ void PaperLoop::PopulateFeatureColumns(
     qf.b_ask_depth_5lvl = yd.ask_depth_5lvl;
     qf.b_l1_concentration = yd.l1_concentration;
     qf.b_depth_imbalance_5lvl = yd.depth_imbalance_5lvl;
+    // v0.10 trade-flow (LiveBookPublisher 已填进 feat; 双边独立)。
+    qf.b_trade_signed_vol_5m = feat.trade_signed_vol_5m;
+    qf.b_trade_buy_ratio_5m = feat.trade_buy_ratio_5m;
+    qf.b_trade_intensity_5m = feat.trade_intensity_5m;
     if (no_book_full != nullptr) {  // NO book (单边缺则保持 NaN)
         const auto nd = polymarket::clob_wss::compute_depth_metrics(*no_book_full);
         qf.no_b_bid_depth_5lvl = nd.bid_depth_5lvl;
         qf.no_b_ask_depth_5lvl = nd.ask_depth_5lvl;
         qf.no_b_l1_concentration = nd.l1_concentration;
         qf.no_b_depth_imbalance_5lvl = nd.depth_imbalance_5lvl;
+        qf.no_b_trade_signed_vol_5m = no_book_full->trade_signed_vol_5m;
+        qf.no_b_trade_buy_ratio_5m = no_book_full->trade_buy_ratio_5m;
+        qf.no_b_trade_intensity_5m = no_book_full->trade_intensity_5m;
     }
 
     // fair_value: 始终输出 (fv_result.p_yes()), 但 predict_ok=false 时消费方不可据此决策.

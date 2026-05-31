@@ -35,6 +35,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <unordered_map>
 #include <cctype>
 #include <charconv>
 #include <cmath>
@@ -47,6 +48,7 @@
 #include <string_view>
 #include <vector>
 
+#include "stcpp/microstructure/trade_flow.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/polymarket/wss/wss_event.hpp"  // FourTs, DataSourceTsOrigin
 
@@ -204,8 +206,12 @@ private:
         // WSS 路径要求 event_type=="book"; REST 快照(GET/POST /book(s))对象无 event_type, 直接当 book。
         if (!from_rest) {
             std::string_view etype = ExtractStringField(obj, "event_type");
+            if (etype == "last_trade_price") {
+                HandleTradeFrame(obj);  // v0.10: trade-flow 聚合 (side+size)
+                return;
+            }
             if (etype != "book") {
-                // price_change, last_trade_price, etc. — not handled here (no full L2 delta)
+                // price_change 等 — not handled here (no full L2 delta)
                 return;
             }
         }
@@ -282,6 +288,15 @@ private:
             }
         }
 
+        // v0.10: 填 trade-flow (该 token 滚动 5min 聚合; now = book data_source_ts, R-20 同源)。
+        auto tit = trade_agg_.find(token_id);
+        if (tit != trade_agg_.end()) {
+            const auto tm = tit->second.snapshot(feat.data_source_ts_ns);
+            feat.trade_signed_vol_5m = tm.signed_vol;
+            feat.trade_buy_ratio_5m = tm.buy_ratio;
+            feat.trade_intensity_5m = tm.intensity;
+        }
+
         // hub.Publish (even if !valid, so hub knows the token exists with invalid state)
         hub_.Publish(token_id, feat);
         books_published_.fetch_add(1, std::memory_order_relaxed);
@@ -291,6 +306,26 @@ private:
                          token_id.c_str(), feat.bids[0].price, feat.asks[0].price,
                          static_cast<long long>(ts_ms));
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // HandleTradeFrame — last_trade_price 事件 → per-token trade-flow 聚合 (side+size)。
+    //   不 Publish (无 book 数据); 下次该 token book 帧 publish 时带出聚合值。单线程 (OnFrame)。
+    // -----------------------------------------------------------------------
+    void HandleTradeFrame(std::string_view obj) {
+        std::string_view asset_id = ExtractStringField(obj, "asset_id");
+        if (asset_id.empty())
+            return;
+        std::int64_t ts_ms = 0;
+        if (!ExtractInt64(obj, "timestamp", ts_ms) || ts_ms <= 0)
+            return;  // R-20: 无上游 ts → 丢 (禁 now() fallback)
+        const double size = ParseDoubleField(obj, "size");
+        if (!(size > 0.0))
+            return;
+        std::string_view side = ExtractStringField(obj, "side");  // taker 主动方 "BUY"/"SELL"
+        const bool is_buy = (side == "BUY" || side == "buy" || side == "Buy");
+        trade_agg_[std::string(asset_id)].observe(ts_ms * 1'000'000LL, size, is_buy);
+        trades_observed_.fetch_add(1, std::memory_order_relaxed);
     }
 
     // -----------------------------------------------------------------------
@@ -549,6 +584,10 @@ private:
     std::atomic<std::uint64_t> frames_received_{0};
     std::atomic<std::uint64_t> books_published_{0};
     std::atomic<std::uint64_t> frames_dropped_{0};
+    std::atomic<std::uint64_t> trades_observed_{0};
+
+    // v0.10: per-token trade-flow 聚合 (单线程 OnFrame 读写, 无锁; book publish 时 snapshot 填 feat)。
+    std::unordered_map<std::string, stcpp::microstructure::TradeFlowWindow> trade_agg_;
 };
 
 }  // namespace stcpp::debug_api

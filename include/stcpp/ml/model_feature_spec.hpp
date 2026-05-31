@@ -50,7 +50,7 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.9";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.10";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
 //     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
 //   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
@@ -204,9 +204,19 @@ enum class MlFeature : std::uint8_t {
     //   gamma REST (非 WSS — outcomes 只推 resolution)。越活跃信号越可靠/滑点越小 → Kelly 定仓参考。
     mkt_volume_24h_usdc = 94,      // 24h 成交量 (市场活跃度代理)
     mkt_liquidity_usdc = 95,       // book 流动性 (滑点代理)
+
+    // ---- v0.10 append (trade-flow; 老板 2026-06-01: 成交方向/量没进特征) ----
+    //   WSS last_trade_price 的 side(taker 主动方)+size 滚动 5min 聚合 (最干净的流量方向信号)。
+    //   双边独立 (YES token=b_ / NO token=no_b_; LiveBookPublisher per-token 聚合 → feat → qf)。
+    b_trade_signed_vol_5m = 96,    // YES 买主动−卖主动 净流 (notional)
+    b_trade_buy_ratio_5m = 97,     // YES 买主动占比 ∈[0,1] (>0.5=买压)
+    b_trade_intensity_5m = 98,     // YES 5min 成交笔数 (活跃度)
+    no_b_trade_signed_vol_5m = 99,   // NO 净流 (双边独立)
+    no_b_trade_buy_ratio_5m = 100,   // NO 买主动占比
+    no_b_trade_intensity_5m = 101,   // NO 成交笔数
 };
 
-inline constexpr std::size_t kMlFeatureCount = 96;
+inline constexpr std::size_t kMlFeatureCount = 102;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -330,6 +340,12 @@ inline constexpr std::size_t kMlFeatureCount = 96;
         case MlFeature::no_b_depth_imbalance_5lvl: return "no_b_depth_imbalance_5lvl";
         case MlFeature::mkt_volume_24h_usdc: return "mkt_volume_24h_usdc";
         case MlFeature::mkt_liquidity_usdc: return "mkt_liquidity_usdc";
+        case MlFeature::b_trade_signed_vol_5m: return "b_trade_signed_vol_5m";
+        case MlFeature::b_trade_buy_ratio_5m: return "b_trade_buy_ratio_5m";
+        case MlFeature::b_trade_intensity_5m: return "b_trade_intensity_5m";
+        case MlFeature::no_b_trade_signed_vol_5m: return "no_b_trade_signed_vol_5m";
+        case MlFeature::no_b_trade_buy_ratio_5m: return "no_b_trade_buy_ratio_5m";
+        case MlFeature::no_b_trade_intensity_5m: return "no_b_trade_intensity_5m";
     }
     return "unknown";
 }
@@ -587,6 +603,13 @@ inline void extract_from_quote(const stcpp::sizing::QuoteFeatures& q, std::vecto
     // v0.9 市场活跃度/流动性 (gamma REST → QuoteFeatures 载体)
     put(MlFeature::mkt_volume_24h_usdc, q.mkt_volume_24h_usdc);
     put(MlFeature::mkt_liquidity_usdc, q.mkt_liquidity_usdc);
+    // v0.10 trade-flow (双边独立; WSS last_trade side+size 滚动聚合 → QuoteFeatures 载体)
+    put(MlFeature::b_trade_signed_vol_5m, q.b_trade_signed_vol_5m);
+    put(MlFeature::b_trade_buy_ratio_5m, q.b_trade_buy_ratio_5m);
+    put(MlFeature::b_trade_intensity_5m, q.b_trade_intensity_5m);
+    put(MlFeature::no_b_trade_signed_vol_5m, q.no_b_trade_signed_vol_5m);
+    put(MlFeature::no_b_trade_buy_ratio_5m, q.no_b_trade_buy_ratio_5m);
+    put(MlFeature::no_b_trade_intensity_5m, q.no_b_trade_intensity_5m);
 }
 
 // ---------------------------------------------------------------------------
@@ -665,9 +688,11 @@ inline void fill_categorical_context(const stcpp::sizing::QuoteFeatures& q,
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 96, "MlFeature count must be 96 (v0.9; append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::mkt_liquidity_usdc) == kMlFeatureCount - 1,
-              "最后一列必须是 mkt_liquidity_usdc (append-only 约束; v0.9 末列)");
+static_assert(kMlFeatureCount == 102, "MlFeature count must be 102 (v0.10; append + bump spec)");
+static_assert(static_cast<std::size_t>(MlFeature::no_b_trade_intensity_5m) == kMlFeatureCount - 1,
+              "最后一列必须是 no_b_trade_intensity_5m (append-only 约束; v0.10 末列)");
+static_assert(static_cast<std::size_t>(MlFeature::mkt_liquidity_usdc) == 95,
+              "mkt_liquidity_usdc 必须恒为 95 (v0.9 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::no_b_depth_imbalance_5lvl) == 93,
               "no_b_depth_imbalance_5lvl 必须恒为 93 (v0.8 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::cat_league) == 85,

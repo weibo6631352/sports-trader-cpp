@@ -106,10 +106,13 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_depth_imbalance_5lvl), 93u);  // v0.8 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_bid_depth_5lvl), 86u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_bid_depth_5lvl), 90u);
-    // v0.9 新末列 = mkt_liquidity_usdc (95; 市场活跃度/流动性, gamma REST).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::mkt_liquidity_usdc), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::mkt_liquidity_usdc), 95u);  // v0.9 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::mkt_volume_24h_usdc), 94u);
-    EXPECT_EQ(kMlFeatureCount, 96u);
+    // v0.10 新末列 = no_b_trade_intensity_5m (101; trade-flow 双边).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_trade_intensity_5m), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_trade_signed_vol_5m), 96u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_trade_signed_vol_5m), 99u);
+    EXPECT_EQ(kMlFeatureCount, 102u);
     // 双边对称 + v0.5 延迟特征抽查 (双边 book 龄独立).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);
