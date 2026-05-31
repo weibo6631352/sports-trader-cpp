@@ -97,6 +97,12 @@
 | ✅ **D-A** | `LiveOrderGate` 强制风控门 —— 策略到 CLOB 唯一通路,RM 拒→下单 sink 零调用(6 单测守红线) | Phase4 D-A |
 | ✅ **量化阻塞3(红线)** | 回测-实盘 CI 口径统一:抽 `strategy/edge_ci.hpp` 单一 `ComputeEdgeCiLower`,paper+backtest 共用;回测加 edge_ci_lower 门 | b10f28c |
 | ✅ **量化阻塞1** | `n_effective` 30→200(实盘+回测对齐),解开 6-14¢ edge 被误杀 | b10f28c |
+| ✅ **开闸前安全控制** | LiveOrderGate 加 arm/kill 开关(默认 disarmed)+ OrderRateCap 日单数(老韩新红线)+ `MakeGrayLaunchRiskConfig`(老韩灰度值,独立不复用 paper 100k) | 8b760f0 |
+
+**GM 会后拍板(2026-05-31):** A=稳健+并行 / B=executor 注入(MVP 过渡)/ C=接受老韩灰度值。
+
+**安全下单地基已完整:** 下单管道(真网验证)→ RM 强制门(D-A)→ arm/kill/频控/灰度配置。
+下一步是把 gate 接进策略执行路径(自动交易)—— **此步老韩明确未放行**,门禁见下。
 
 待办(需 GM 拍板 / 跨域 / 外部依赖,未做):
 
