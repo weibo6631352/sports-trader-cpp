@@ -733,7 +733,7 @@ TEST(SignerV52, NewT6_SignVerifyRoundTripConsistentViaCryptoApi) {
     // 篡改消息: verify 应返回 false
     if (!msg.empty()) {
         std::vector<std::uint8_t> tampered = msg;
-        tampered[0] ^= 0xFFU;
+        if (!tampered.empty()) tampered[0] ^= 0xFFU;  // 冗余 guard 帮 gcc -O2 证非空 (避 null-dereference 误报)
         const bool bad = crypto::Ed25519::verify(
             std::span<const std::uint8_t, crypto::kEd25519PublicKeyBytes>{pk_arr},
             std::span<const std::uint8_t>{tampered.data(), tampered.size()},
