@@ -7,6 +7,11 @@ namespace stcpp::polymarket {
 
 ExecReport LiveExecutor::Execute(const stcpp::risk::OrderIntent& intent, bool neg_risk) noexcept {
     ExecReport rep;
+    // R-20: 透传 intent 上游 4ts (非 now() 替代上游 ts; carve-out C-1)。
+    rep.event_ts_ns = intent.event_ts_ns;
+    rep.data_source_ts_ns = intent.data_source_ts_ns;
+    rep.ingestion_ts_ns = intent.ingestion_ts_ns;
+    rep.as_of_ts_ns = intent.as_of_ts_ns;
     const GateResult gr = gate_.Submit(intent, neg_risk);
     rep.gate_block = gr.gate_block;
     rep.rm_approved = gr.rm_approved;

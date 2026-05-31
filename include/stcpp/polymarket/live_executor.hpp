@@ -30,6 +30,11 @@ struct ExecReport {
     double fill_price{0.0};                 // = filled_usdc / filled_shares
     std::string order_id;
     std::string tx_hash;
+    // R-20 4ts (carve-out C-1 解阻; 透传 intent 上游 4ts, 非 now() 替代): live FillEvent 合规所需。
+    std::int64_t event_ts_ns{0};
+    std::int64_t data_source_ts_ns{0};
+    std::int64_t ingestion_ts_ns{0};
+    std::int64_t as_of_ts_ns{0};
 };
 
 class LiveExecutor {

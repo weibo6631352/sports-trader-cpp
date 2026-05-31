@@ -140,6 +140,23 @@ TEST_F(LiveExecutorTest, SellFillMapping) {
     EXPECT_DOUBLE_EQ(rep.filled_shares, 13.78);  // making (shares 实卖)
 }
 
+// R-20: ExecReport 透传 intent 上游 4ts (carve-out C-1; live FillEvent 合规)。
+TEST_F(LiveExecutorTest, Ts4Passthrough) {
+    LiveOrderGate gate(*rm_, matched_sink());
+    gate.Arm();
+    LiveExecutor ex(gate);
+    const auto it = intent(Side::Buy, "ts1");
+    const auto rep = ex.Execute(it, false);
+    EXPECT_EQ(rep.event_ts_ns, it.event_ts_ns);
+    EXPECT_EQ(rep.data_source_ts_ns, it.data_source_ts_ns);
+    EXPECT_EQ(rep.ingestion_ts_ns, it.ingestion_ts_ns);
+    EXPECT_EQ(rep.as_of_ts_ns, it.as_of_ts_ns);
+    // R-20 序: event ≤ data_source ≤ ingestion ≤ as_of
+    EXPECT_LE(rep.event_ts_ns, rep.data_source_ts_ns);
+    EXPECT_LE(rep.data_source_ts_ns, rep.ingestion_ts_ns);
+    EXPECT_LE(rep.ingestion_ts_ns, rep.as_of_ts_ns);
+}
+
 // unmatched (FOK 未成交) → 不写账本。
 TEST_F(LiveExecutorTest, UnmatchedNoFill) {
     auto sink = [](const LiveOrderRequest&) -> LiveOrderResult {
