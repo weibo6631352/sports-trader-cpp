@@ -86,4 +86,26 @@
 | **D-H** | Prometheus Phase 4 同期部署 + 4 告警阈值 | 老郑 | 同期(零引擎改动) |
 | **D-I** | M1 demo 6-25 是否顺延 | 小杜 | 收老周/老韩工期后定 |
 
+---
+
+## 执行进展(2026-05-31 会后,GM 落地)
+
+已做完(主干 + 测试 + commit,全程 1108 ctest 绿):
+
+| 项 | 内容 | commit |
+|---|---|---|
+| ✅ **D-A** | `LiveOrderGate` 强制风控门 —— 策略到 CLOB 唯一通路,RM 拒→下单 sink 零调用(6 单测守红线) | Phase4 D-A |
+| ✅ **量化阻塞3(红线)** | 回测-实盘 CI 口径统一:抽 `strategy/edge_ci.hpp` 单一 `ComputeEdgeCiLower`,paper+backtest 共用;回测加 edge_ci_lower 门 | b10f28c |
+| ✅ **量化阻塞1** | `n_effective` 30→200(实盘+回测对齐),解开 6-14¢ edge 被误杀 | b10f28c |
+
+待办(需 GM 拍板 / 跨域 / 外部依赖,未做):
+
+| 项 | 阻塞原因 | owner |
+|---|---|---|
+| 量化阻塞2 advisory 解除 | 需 Goalserve 数据跑 50 笔(数据源白名单协商中) | GM + 小梁 |
+| LiveRiskConfig 独立灰度值 + OrderRateCap 新红线 | 灰度阈值待小梁/老钱定;OrderRateCap 需老韩 spec | 老韩 |
+| Phase 4 接线(executor 抽象 / FillEvent 中性化 / in-flight 去重 / 独立下单线程) | 需 GM 拍 G-1(executor 注入 vs DecisionCore);G-2 是 R-4 schema 变更走审计 | 老周 + IC |
+| 前端 arm/kill 控制端点 + fill 流水 + 风控余量仪表 | 需老韩+小白定 arm 权限模型;后端需加 POST 写端点 | 小苏 + 老韩 |
+| 可观测 P0(cum_net_pnl 真值 / 下单失败 counter / Goalserve WSS 状态) | 部分依赖 live 接线完成 | 老郑 |
+
 > **owner:** 老雷 / **last_review:** 2026-05-31
