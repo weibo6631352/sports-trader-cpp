@@ -198,6 +198,10 @@ struct QuoteFeatures {
     bool advisory{true};
     // model_calibrated: confidence 是否已校准
     bool model_calibrated{false};
+    // ml_advisory_p_yes: ML 模型 (ml::FairValueModel) 推理的 YES fair prob。
+    //   ML-R1/R2 红线: 旁路/观测/训练捕获, 绝不驱动决策 (fair_value 仍由 baseline 定)。
+    //   NaN = 无 ML 模型 / 维度不匹配 / 推理失败。白名单+ONNX 一到即非 NaN, 零改码。
+    double ml_advisory_p_yes{std::numeric_limits<double>::quiet_NaN()};
 
     // ---- 有效性标记 (首次 Publish 后为 true) ----
     bool valid{false};

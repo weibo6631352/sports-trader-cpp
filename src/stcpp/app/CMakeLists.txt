@@ -57,6 +57,7 @@ target_link_libraries(stcpp_paper_app PUBLIC
     stcpp_data_score_store
     stcpp_data_inplay_feed
     stcpp_data_live_stats_parser  # live_stats: CommentariesParser→LiveStatsParser::Parse (commentaries Feed)
+    stcpp_ml_inference            # 步④ make_onnx_fair_value_model (Stub/ONNX 推理工厂)
     stcpp_paper_loop
     stcpp_pricing
     stcpp_signer_paper

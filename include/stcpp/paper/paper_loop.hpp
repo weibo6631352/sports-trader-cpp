@@ -74,6 +74,8 @@
 #include "stcpp/eval/clv_tracker.hpp"            // CLV 测量 harness (成果尺子, 离线评估)
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
 #include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量)
+#include "stcpp/ml/fair_value_model.hpp"         // ml::FairValueModel/ModelPrediction (步④ 推理接线)
+#include "stcpp/ml/model_feature_spec.hpp"       // extract_joined (game_row+book_row → FeatureVector)
 #include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
 #include "stcpp/paper/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
@@ -306,6 +308,11 @@ public:
         live_stats_by_teams_ = std::move(m);
     }
 
+    // 步④: 注入 ML 推理模型 (ml::FairValueModel; daemon 装配 Stub/ONNX)。单 writer: Start() 前注入,
+    //   loop_thread_ 只读。nullptr = 无模型 → 走 baseline provenance。ML-R1/R2: 推理结果 advisory,
+    //   只填 QuoteFeatures.ml_advisory_p_yes + provenance, 绝不改 fair_value/决策。owner 是 daemon。
+    void SetMlModel(const ml::FairValueModel* m) noexcept { ml_model_ = m; }
+
     // 统一数据树: 注入 condition → 父级引用 (event_id / neg_risk_market_id)。
     //   单 writer: Start() 前注入一次, 之后 loop_thread_ 只读。盘口决策/模型带父级 (兄弟经 event_id 导航)。
     void SetParentRefs(std::unordered_map<std::string, ParentRef> m) noexcept {
@@ -380,6 +387,8 @@ private:
         auto it = live_stats_by_teams_.find(join_key);
         return (it != live_stats_by_teams_.end()) ? &it->second : nullptr;
     }
+    // 步④: ML 推理模型 (非自有; daemon 注入 + 持有)。loop_thread_ 只读。nullptr = baseline only。
+    const ml::FairValueModel* ml_model_{nullptr};
 
     // ---- A1: 真实比分源 + 映射 ----
     // score_store_: 单 writer (Start 前注入), 之后 loop_thread_ 只读 Get(). 可空 → stub 路径.
@@ -513,7 +522,8 @@ private:
                               double required_margin, double time_to_resolution_frac,
                               double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
                               std::int32_t g_periods_won_home, std::int32_t g_periods_won_away,
-                              const SportsFeatures& sports) noexcept;
+                              const SportsFeatures& sports,
+                              const ml::ModelPrediction* ml_pred) noexcept;
 };
 
 }  // namespace stcpp::paper

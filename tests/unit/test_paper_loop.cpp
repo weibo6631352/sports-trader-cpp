@@ -49,6 +49,8 @@
 #include "stcpp/risk/risk_gateway.hpp"
 #include "stcpp/risk/rm_debug_snapshot.hpp"
 #include "stcpp/sizing/quote_snapshot_hub.hpp"
+#include "stcpp/ml/fair_value_model.hpp"    // 步④ StubFairValueModel (ML 推理接线测试)
+#include "stcpp/ml/model_feature_spec.hpp"  // kMlFeatureCount
 
 using namespace stcpp;
 using namespace stcpp::paper;
@@ -482,6 +484,40 @@ TEST_F(PaperLoopTest, T11_QuoteAdvisory) {
     ASSERT_TRUE(opt.has_value());
     EXPECT_TRUE(opt->advisory) << "ML-R2: advisory must be true in paper mode";
     EXPECT_TRUE(opt->ts_chain_ok()) << "R-20: ts_chain must be valid";
+}
+
+// ---------------------------------------------------------------------------
+// T11b (步④): 注入 ml::FairValueModel → 推理路径跑通, ml_advisory_p_yes 填充, provenance
+//   反映 ML 模型; ML-R1/R2: 推理 advisory, fair_value 仍由 baseline 定 (不被 ML 驱动)。
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T11b_MlInferenceAdvisoryWired) {
+    const auto feat = MakeSyntheticBook(0.53, 0.55);
+    hub_->Publish("1001", feat);
+
+    // StubFairValueModel(24) — 必与 kMlFeatureCount/extract_joined 维度一致, 否则 predict ok=false。
+    stcpp::ml::StubFairValueModel stub(stcpp::ml::kMlFeatureCount, /*outcome_count=*/2);
+    loop_ = MakeLoop();
+    loop_->SetMlModel(&stub);  // Start 前注入 (单 writer)
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();  // join loop_thread_ 先于 stub 析构 (stub 是本测局部)
+
+    EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0));
+    const auto opt = quote_hub_->Read("cond-test-001");
+    if (opt.has_value() && opt->valid) {
+        // 推理结果填进 advisory 列 (stub logistic 输出 ∈ (0,1), 非 NaN)。
+        EXPECT_FALSE(std::isnan(opt->ml_advisory_p_yes)) << "ML 推理应填 ml_advisory_p_yes";
+        EXPECT_GT(opt->ml_advisory_p_yes, 0.0);
+        EXPECT_LT(opt->ml_advisory_p_yes, 1.0);
+        // provenance 反映注入的 ML 模型 (非 baseline)。
+        EXPECT_EQ(opt->model_kind, ModelKindTag::kStub);
+        EXPECT_STREQ(opt->model_id, "stub-fair-value-v0.1");
+        EXPECT_STREQ(opt->spec_version, std::string(stcpp::ml::kSpecVersion).c_str());
+        // ML-R1/R2: fair_value 仍是 baseline 产出 (∈ (0,1)), 未被 ML advisory 覆盖。
+        EXPECT_GT(opt->fair_value, 0.0);
+        EXPECT_LE(opt->fair_value, 1.0);
+        EXPECT_TRUE(opt->advisory) << "ML-R2: 推理 advisory";
+    }
 }
 
 // ---------------------------------------------------------------------------

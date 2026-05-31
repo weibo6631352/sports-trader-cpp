@@ -67,6 +67,7 @@ class CommentariesPoller;  // commentaries 轮询线程 (forward)
 }  // namespace stcpp::data
 namespace stcpp::ml {
 class FeatureRecorder;
+class FairValueModel;  // 步④ ML 推理模型 (forward; .cpp 实体化 Stub/ONNX)
 }  // namespace stcpp::ml
 
 namespace stcpp::app {
@@ -288,6 +289,8 @@ private:
     std::shared_ptr<risk::AuditEmitter> paper_audit_emitter_;
     std::unique_ptr<risk::RiskGateway> paper_rm_;
     std::unique_ptr<pricing::BaselineFairValueModel> paper_fv_model_;
+    // 步④ ML 推理模型 (Stub/ONNX; paper_loop_ 持其裸指针 → 必在 paper_loop_ 前声明 = 析构在其后)。
+    std::unique_ptr<ml::FairValueModel> fair_value_model_;
 
     // PaperLoop (用上述全部; 必在 paper_rm_snap_ 之后声明)
     std::unique_ptr<paper::PaperLoop> paper_loop_;

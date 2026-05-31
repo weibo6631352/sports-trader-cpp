@@ -21,7 +21,9 @@
 #include "stcpp/data/settlement_poller.hpp"     // M2 SettlementPoller (clob /markets 轮询)
 #include "stcpp/data/settlement_store.hpp"      // M2 SettlementStore
 #include "stcpp/data/score_snapshot_store.hpp"  // A1b: ScoreSnapshotStore::GetSnapshot
+#include "stcpp/ml/fair_value_model.hpp"        // 步④ make_onnx_fair_value_model / StubFairValueModel
 #include "stcpp/ml/feature_recorder.hpp"        // FeatureRecorder
+#include "stcpp/ml/model_feature_spec.hpp"      // kMlFeatureCount (ML 模型维度契约)
 
 #include "src/stcpp/debug_api/live_book_publisher.hpp"  // LiveBookPublisher
 #include "src/stcpp/debug_api/live_wss_transport.hpp"   // LiveWssTransport
@@ -287,6 +289,28 @@ BuildResult PaperDaemon::Build() {
                                                      token_map_, cfg_.paper_loop);
     // A1b: 注入真实比分源 (Start 前; 之后 loop_thread_ 只读). 映射由刷新线程 SetEventMapping.
     paper_loop_->SetScoreStore(score_store_.get());
+
+    // 步④: ML 推理模型装配 + 注入 (advisory, ML-R1/R2 — 旁路, 不进决策)。
+    //   优先 ONNX (make_onnx_fair_value_model; W11+ 接 ONNXRuntime, 当前返 nullptr) →
+    //   回落 StubFairValueModel(kMlFeatureCount=24) 管道占位, 跑通 inplay 赔率+live_stats →
+    //   FeatureVector → predict → QuoteFeatures.ml_advisory_p_yes 全路径。训出真 ONNX 后,
+    //   仅换工厂返回值, paper_loop 推理路径零改码。白名单决定特征是真值还是 NaN。
+    {
+        ml::OnnxModelConfig onnx_cfg;
+        onnx_cfg.expected_feature_count = ml::kMlFeatureCount;
+        onnx_cfg.output_outcome_count = 2;  // Moneyline YES/NO
+        fair_value_model_ = ml::make_onnx_fair_value_model(onnx_cfg);
+        if (!fair_value_model_) {
+            fair_value_model_ =
+                std::make_unique<ml::StubFairValueModel>(ml::kMlFeatureCount, /*outcome_count=*/2);
+        }
+        paper_loop_->SetMlModel(fair_value_model_.get());
+        std::printf("[paper_daemon] 步④ ML 推理模型注入: kind=%s id=%.*s feat=%zu (advisory ML-R2)\n",
+                    std::string(ml::to_string(fair_value_model_->kind())).c_str(),
+                    static_cast<int>(fair_value_model_->model_id().size()),
+                    fair_value_model_->model_id().data(), fair_value_model_->expected_feature_count());
+        std::fflush(stdout);
+    }
 
     // R-fee-2: 注入 per-market 手续费系数 (condition_id → gamma feeSchedule.rate)。
     //   Start 前一次性注入, 之后 loop_thread_ 只读。官方禁硬编码 (docs.polymarket)。

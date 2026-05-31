@@ -688,11 +688,24 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const double no_imbalance =
         mkt.no.present ? mkt.no.book.imbalance : std::numeric_limits<double>::quiet_NaN();
     const std::int64_t joint_as_of_ts_ns = std::min(game_row.as_of_ts_ns, feat.as_of_ts_ns);
+    // 步④: ML 推理 (advisory, ML-R1/R2 — 旁路, 不驱动决策)。注入模型且维度匹配 → predict, 否则
+    //   nullptr → baseline provenance。extract_joined(game_row, book_row) 产 kMlFeatureCount(24) 列
+    //   FeatureVector (含 v0.2 inplay 赔率 + live_stats)。R-12: paper loop_thread_ 非 WSS event loop;
+    //   Stub 廉价 / ONNX 单线程旁路。维度不符 (spec_version 错配) → 跳过, 宁可空不可假。
+    ml::ModelPrediction ml_pred_storage;
+    const ml::ModelPrediction* ml_pred = nullptr;
+    if (ml_model_ != nullptr && ml_model_->ready()) {
+        const ml::FeatureVector fv = ml::extract_joined(game_row, book_row);
+        if (fv.size() == ml_model_->expected_feature_count()) {
+            ml_pred_storage = ml_model_->predict(fv);
+            ml_pred = &ml_pred_storage;
+        }
+    }
     PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair,
                          cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns, mkt.event_id,
                          mkt.neg_risk_market_id, target_signed, reservation.buy_px, reservation.sell_px,
                          reservation.required_margin, time_to_resolution_frac, g_time_x_lead, g_fld_signal,
-                         g_remaining_sec, g_periods_won_home, g_periods_won_away, sports);
+                         g_remaining_sec, g_periods_won_home, g_periods_won_away, sports, ml_pred);
     stats_.quote_publishes.fetch_add(1, std::memory_order_relaxed);
 
     // ---- P0-4: advisory gate -----------------------------------------------
@@ -1172,7 +1185,8 @@ void PaperLoop::PublishQuoteSnapshot(
     const std::string& event_id, const std::string& neg_risk_market_id, double target_signed_notional,
     double reservation_buy_px, double reservation_sell_px, double required_margin,
     double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
-    std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports) noexcept {
+    std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports,
+    const ml::ModelPrediction* ml_pred) noexcept {
     sizing::QuoteFeatures qf{};
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
@@ -1324,20 +1338,42 @@ void PaperLoop::PublishQuoteSnapshot(
         qf.required_margin = 0.0;
     }
 
-    // ML provenance (M1 stub 标记; 非真实 ML 模型)
-    qf.model_kind = sizing::ModelKindTag::kStub;
-    // model_id: "paper-fv-baseline" (NUL terminated)
-    std::strncpy(qf.model_id, "paper-fv-baseline", sizeof(qf.model_id) - 1);
-    qf.model_id[sizeof(qf.model_id) - 1] = '\0';
-    std::strncpy(qf.spec_version, "m1-paper-v0.1", sizeof(qf.spec_version) - 1);
-    qf.spec_version[sizeof(qf.spec_version) - 1] = '\0';
-
-    qf.model_confidence = 0.0;                    // M1 stub: 无置信度
-    qf.fair_ci_lower = fv_result.p_yes() - 0.05;  // ±5% 近似 (M1)
-    qf.fair_ci_upper = fv_result.p_yes() + 0.05;
-    qf.advisory = true;           // ML-R2: paper 期恒 true
-    qf.model_calibrated = false;  // M1 stub: 未校准
-    qf.model_as_of_ts_ns = feat.ingestion_ts_ns;
+    // ML provenance.
+    //   步④: 若注入了 ml::FairValueModel (Stub/ONNX) 且推理成功 → 填 ML 模型 provenance +
+    //     advisory 输出 (ml_advisory_p_yes)。ML-R1/R2 红线: 推理结果旁路, 绝不改 fair_value/决策
+    //     (上方 fair_value/edge/sizing 全来自 baseline fv_result, 此处只写 provenance + advisory 列)。
+    //   否则: 回落 baseline provenance (无 ML 模型时的 M1 行为, 逐位不变)。
+    if (ml_pred != nullptr && ml_pred->ok) {
+        qf.ml_advisory_p_yes = ml_pred->prob(0);  // ML 模型 YES fair (advisory; 不驱动决策)
+        // ml::ModelKind → sizing::ModelKindTag (同值 0/1/2: Stub/Onnx/Treelite)。
+        qf.model_kind = (ml_model_ != nullptr)
+                            ? static_cast<sizing::ModelKindTag>(static_cast<std::uint8_t>(ml_model_->kind()))
+                            : sizing::ModelKindTag::kStub;
+        std::strncpy(qf.model_id, ml_pred->model_id.data(),
+                     std::min(ml_pred->model_id.size(), sizeof(qf.model_id) - 1));
+        qf.model_id[std::min(ml_pred->model_id.size(), sizeof(qf.model_id) - 1)] = '\0';
+        std::strncpy(qf.spec_version, ml_pred->spec_version.data(),
+                     std::min(ml_pred->spec_version.size(), sizeof(qf.spec_version) - 1));
+        qf.spec_version[std::min(ml_pred->spec_version.size(), sizeof(qf.spec_version) - 1)] = '\0';
+        qf.model_confidence = ml_pred->confidence;
+        qf.fair_ci_lower = ml_pred->ci_low;
+        qf.fair_ci_upper = ml_pred->ci_high;
+        qf.model_calibrated = ml_pred->calibrated;
+        qf.model_as_of_ts_ns = ml_pred->as_of_ts_ns;
+    } else {
+        // baseline provenance (无 ML 模型; M1 行为不变)
+        qf.model_kind = sizing::ModelKindTag::kStub;
+        std::strncpy(qf.model_id, "paper-fv-baseline", sizeof(qf.model_id) - 1);
+        qf.model_id[sizeof(qf.model_id) - 1] = '\0';
+        std::strncpy(qf.spec_version, "m1-paper-v0.1", sizeof(qf.spec_version) - 1);
+        qf.spec_version[sizeof(qf.spec_version) - 1] = '\0';
+        qf.model_confidence = 0.0;                    // M1 stub: 无置信度
+        qf.fair_ci_lower = fv_result.p_yes() - 0.05;  // ±5% 近似 (M1)
+        qf.fair_ci_upper = fv_result.p_yes() + 0.05;
+        qf.model_calibrated = false;  // M1 stub: 未校准
+        qf.model_as_of_ts_ns = feat.ingestion_ts_ns;
+    }
+    qf.advisory = true;  // ML-R2: paper 期恒 true (ML 推理不进生产决策)
 
     qf.valid = fv_result.valid;
 
