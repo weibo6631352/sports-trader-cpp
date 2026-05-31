@@ -49,7 +49,10 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.1";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.2";
+//   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
+//     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow,
+//     语义与 paper_loop SportsFeatures 捕获列逐位一致 (训练列=捕获列)。列序锁 append-only。
 
 // ---------------------------------------------------------------------------
 // MlFeature — 抽取出来的 feature 列 (顺序锁死 = 训练 column index).
@@ -57,6 +60,7 @@ inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.1";
 //   game 侧 (0..7)  : 来自 FeatureStoreGameRow (Goalserve 归一化)
 //   book 侧 (8..15) : 来自 FeatureStoreBookRow  (Polymarket 归一化)
 //   cross (16..17)  : game/book join 派生 (de-vig fair vs market mid 偏离)
+//   v0.2  (18..23)  : inplay bet365 de-vig 赔率 + 5 live_stats 差 (game 侧; -1→NaN)
 //
 //   新增 feature: 只在末尾 append, 不插中间; 同步 bump kSpecVersion + 训练侧 retrain.
 // ---------------------------------------------------------------------------
@@ -84,9 +88,17 @@ enum class MlFeature : std::uint8_t {
     // ---- cross (game/book join 派生) ----
     x_devig_minus_mid = 16,       // g_bm_devig_p_yes - b_mid (模型 / 市场偏离)
     x_microprice_minus_mid = 17,  // b_microprice - b_mid (短期方向压力)
+
+    // ---- v0.2 append (game 侧, FeatureStoreGameRow 源; -1→NaN; append-only 列序锁) ----
+    g_bm_inplay_fair = 18,        // inplay bet365 单源 de-vig home/YES 胜率 (sharp live 锚; 待 odds plan)
+    g_danger_attack_diff = 19,    // 危险进攻差 home-away (xG 代理; 待 livescore client)
+    g_shot_on_target_diff = 20,   // 射正差 home-away
+    g_possession_home = 21,       // 主队控球率 0-100
+    g_red_card_diff = 22,         // 红牌差 home-away (红牌后胜率剧变)
+    g_corner_diff = 23,           // 角球差 home-away
 };
 
-inline constexpr std::size_t kMlFeatureCount = 18;
+inline constexpr std::size_t kMlFeatureCount = 24;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -126,6 +138,18 @@ inline constexpr std::size_t kMlFeatureCount = 18;
             return "x_devig_minus_mid";
         case MlFeature::x_microprice_minus_mid:
             return "x_microprice_minus_mid";
+        case MlFeature::g_bm_inplay_fair:
+            return "g_bm_inplay_fair";
+        case MlFeature::g_danger_attack_diff:
+            return "g_danger_attack_diff";
+        case MlFeature::g_shot_on_target_diff:
+            return "g_shot_on_target_diff";
+        case MlFeature::g_possession_home:
+            return "g_possession_home";
+        case MlFeature::g_red_card_diff:
+            return "g_red_card_diff";
+        case MlFeature::g_corner_diff:
+            return "g_corner_diff";
     }
     return "unknown";
 }
@@ -203,6 +227,22 @@ inline void extract_from_game_row(const stcpp::data::feature_store::FeatureStore
         put(MlFeature::g_bm_overround_avg, kNaNf);
     }
     put(MlFeature::g_valid_bm_count, static_cast<float>(g.valid_bm_count()));
+
+    // ---- v0.2: inplay 赔率 + live_stats 差 (语义逐位对齐 paper_loop SportsFeatures; -1→NaN) ----
+    //   sdiff(h,a) = (h>=0 && a>=0) ? h-a : NaN — 任一缺数据则该差 NaN (与捕获列一致)。
+    auto sdiff = [](std::int32_t h, std::int32_t a) noexcept -> float {
+        return (h >= 0 && a >= 0) ? static_cast<float>(h - a) : kNaNf;
+    };
+    put(MlFeature::g_bm_inplay_fair,
+        (g.inplay_bet365_home_fair >= 0.0) ? static_cast<float>(g.inplay_bet365_home_fair) : kNaNf);
+    put(MlFeature::g_danger_attack_diff,
+        sdiff(g.soccer_dangerous_attacks_home, g.soccer_dangerous_attacks_away));
+    put(MlFeature::g_shot_on_target_diff,
+        sdiff(g.soccer_shots_on_target_home, g.soccer_shots_on_target_away));
+    put(MlFeature::g_possession_home,
+        (g.soccer_possession_home_pct >= 0) ? static_cast<float>(g.soccer_possession_home_pct) : kNaNf);
+    put(MlFeature::g_red_card_diff, sdiff(g.soccer_red_cards_home, g.soccer_red_cards_away));
+    put(MlFeature::g_corner_diff, sdiff(g.soccer_corners_home, g.soccer_corners_away));
 }
 
 // ---------------------------------------------------------------------------
@@ -290,8 +330,11 @@ inline void fill_cross_features(std::vector<float>& out) noexcept {
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 18, "MlFeature count must be 18 (列序锁; 新增 append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid) == kMlFeatureCount - 1,
-              "最后一列必须是 x_microprice_minus_mid (append-only 约束)");
+static_assert(kMlFeatureCount == 24, "MlFeature count must be 24 (列序锁; 新增 append + bump spec)");
+static_assert(static_cast<std::size_t>(MlFeature::g_corner_diff) == kMlFeatureCount - 1,
+              "最后一列必须是 g_corner_diff (append-only 约束; v0.2 末列)");
+// append-only 不变量: 旧列 index 永不变 (训练 column index 锁死)。
+static_assert(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid) == 17,
+              "x_microprice_minus_mid 必须恒为 17 (v0.1 末列, append 后不得移位)");
 
 }  // namespace stcpp::ml

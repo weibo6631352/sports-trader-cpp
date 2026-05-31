@@ -91,8 +91,55 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     // 列序锁: enum 值 = column index, 末列固定.
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_score_diff), 0u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_mid), 8u);
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid), kMlFeatureCount - 1);
-    EXPECT_EQ(kMlFeatureCount, 18u);
+    // append-only: 旧末列 x_microprice_minus_mid 恒 17 (v0.1), 不因 v0.2 append 移位.
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid), 17u);
+    // v0.2 新末列 = g_corner_diff (23).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_corner_diff), kMlFeatureCount - 1);
+    EXPECT_EQ(kMlFeatureCount, 24u);
+}
+
+TEST(ModelFeatureSpec, V02Columns_InplayOddsAndLiveStats) {
+    auto at = [](const FeatureVector& fv, MlFeature f) {
+        return fv.values[static_cast<std::size_t>(f)];
+    };
+    // 默认 game_row: inplay 赔率/live_stats 全缺 (-1) → 6 列全 NaN.
+    {
+        FeatureVector fv = stcpp::ml::extract_game_only(make_game_row());
+        EXPECT_TRUE(std::isnan(at(fv, MlFeature::g_bm_inplay_fair)));
+        EXPECT_TRUE(std::isnan(at(fv, MlFeature::g_danger_attack_diff)));
+        EXPECT_TRUE(std::isnan(at(fv, MlFeature::g_shot_on_target_diff)));
+        EXPECT_TRUE(std::isnan(at(fv, MlFeature::g_possession_home)));
+        EXPECT_TRUE(std::isnan(at(fv, MlFeature::g_red_card_diff)));
+        EXPECT_TRUE(std::isnan(at(fv, MlFeature::g_corner_diff)));
+    }
+    // 填充 game_row → 6 列按 paper_loop SportsFeatures 语义 (diff=home-away; -1→NaN) 抽取.
+    {
+        auto g = make_game_row();
+        g.inplay_bet365_home_fair = 0.62;            // de-vig home/YES fair
+        g.soccer_dangerous_attacks_home = 40;
+        g.soccer_dangerous_attacks_away = 43;        // diff = -3
+        g.soccer_shots_on_target_home = 6;
+        g.soccer_shots_on_target_away = 3;           // diff = +3
+        g.soccer_possession_home_pct = 57;
+        g.soccer_red_cards_home = 0;
+        g.soccer_red_cards_away = 1;                 // diff = -1
+        g.soccer_corners_home = 5;
+        g.soccer_corners_away = 3;                   // diff = +2
+        FeatureVector fv = stcpp::ml::extract_game_only(g);
+        EXPECT_FLOAT_EQ(at(fv, MlFeature::g_bm_inplay_fair), 0.62f);
+        EXPECT_FLOAT_EQ(at(fv, MlFeature::g_danger_attack_diff), -3.0f);
+        EXPECT_FLOAT_EQ(at(fv, MlFeature::g_shot_on_target_diff), 3.0f);
+        EXPECT_FLOAT_EQ(at(fv, MlFeature::g_possession_home), 57.0f);
+        EXPECT_FLOAT_EQ(at(fv, MlFeature::g_red_card_diff), -1.0f);
+        EXPECT_FLOAT_EQ(at(fv, MlFeature::g_corner_diff), 2.0f);
+    }
+    // 单边缺数据 (home 有 away 无) → diff NaN (sdiff 语义).
+    {
+        auto g = make_game_row();
+        g.soccer_corners_home = 5;  // away 保持 -1
+        FeatureVector fv = stcpp::ml::extract_game_only(g);
+        EXPECT_TRUE(std::isnan(at(fv, MlFeature::g_corner_diff)));
+    }
 }
 
 TEST(ModelFeatureSpec, ExtractGameRowFields) {
