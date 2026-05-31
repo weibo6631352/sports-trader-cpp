@@ -92,13 +92,24 @@ devig…)，**零时序维度**。单点切片看不到「动态」：变化率�
 
 TS4 端到端: 买 YES @0.30 → 2:0 终场 → realize +6.92 pUSD + 平仓 + `positions_settled`。1172/1172 全绿。
 
-### slice-3c-ingest live resolution 接入 (⬜ 摸底定位, 非现在硬塞)
+### slice-3c-ingest resolution 接入 (✅ DONE — REST 注入, 非 WSS)
 
-老板「接着上 3c-ingest」—— 摸底后**诚实定位**: 最后一公里**不在 orderbook_adapter** (它出 `OrderBookSnapshot`, 非 hub 的 `OrderBookFeatures`), 而在 **`live_book_publisher.hpp:286`** (CLOB WSS JSON → `OrderBookFeatures` → hub.Publish)。它 line 207 **只收 `event_type=="book"`, 直接丢 outcomes 帧**。
+老板「接着上 3c-ingest」+ 质疑「市场 WSS 为何不通, 没白名单」。**深挖后定论 (推翻 WSS 前提)**:
 
-要接 = publisher 加: ① 解析 `event_type=="outcomes"` 帧的 `resolution_status` 字段; ② per-token 状态记住; ③ 后续 book publish 时 attach 到 `feat.resolution_status`。
+**真答案: resolution 根本不在 market WSS。** 不是白名单、也不是漏接线 —— 是**数据源错了**:
+- **CLOB market WSS 频道只推 4 种事件** (SSOT [laoli-events-ws-mapping-spec](laoli-events-ws-mapping-spec-v1.md) §dispatch): `book` / `price_change` / `last_trade_price` / `tick_size_change`。**无 resolution 事件。**
+- `pm_wss_subscriber` (带 `kOutcomes`/resolution_status 解析的那个) **全仓零实例化** —— 未接入任何 app/daemon, 是死的 aspirational v0.1。
+- **Polymarket resolution 是 REST 字段**: gamma `closed` (bool) + clob `tokens[i].winner` (bool, 结算后赢方=true)。轮询拿, 非 WS 推。
 
-**为何没现在硬塞** (一致于 §10.2 反过度设计): ① `live_book_publisher` **零测试覆盖** —— 写未测的 live JSON 解析 = 投机 plumbing; ② 仓里有**两个并行 WSS client** (`live_book_publisher` debug_api / `pm_wss_subscriber` polymarket/wss), 得先确认哪个真喂 live hub; ③ 需 outcomes 帧真实 JSON shape。**字段+特征已就位** (决策路径 ready, TS3 注入验证流通), 此跳留给 live WSS 端到端验证时连 publisher 测试夹具一起做 (届时 kResolved 还能当 3b 的权威触发器补充 Goalserve Ended)。
+→ 「WSS 解析 outcomes 帧」是给**永不到达的幻影帧**写 parser。**正确做法 = REST 注入** (同 fee/event-mapping 注入范式: app 轮询 REST → `SetXxx`)。
+
+**实现**: `SetResolutionByCondition(map<cid, {status, winner}>)` 注入器 (镜像 `SetFeeByCondition`)。消费两处:
+- **特征**: `qf.resolution_status` 优先注入源 (REST 权威), 否则 book 载体 `feat.resolution_status`。
+- **3b 权威结算**: `status=Resolved(2) + winner` → 按 winner 结算 (**全 market type 通用**, 不靠 Goalserve 比分推断; moneyline 之外也对)。与 Goalserve Ended 兜底并存 (REST 优先)。
+
+app 层 REST 轮询 (gamma `closed` / clob `tokens[].winner` → 注入) 是 data-fetch hop (同 fee 注入由 paper_daemon 喂), 本层未接 (paper_daemon 装配活)。`OrderBookFeatures.resolution_status` 字段保留作未来 WSS 载体 (若 Polymarket 日后真推)。
+
+测试: TS5 (REST Resolved+winner → 权威结算 realized 3.0, 独立于 Goalserve)。1173/1173 全绿。
 
 ## 3. 决策记录
 

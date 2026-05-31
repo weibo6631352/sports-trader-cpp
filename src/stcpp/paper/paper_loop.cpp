@@ -424,16 +424,41 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 注: A1 仅打通 fair 计算 + quote 真 edge; advisory gate (Step 4b) 仍拦 intent (A2 解封).
     const bool has_real_fair = (game_row.time_status != stcpp::data::goalserve::TimeStatus::NotStarted);
 
-    // ---- slice-3b 结算 (老板 2026-05-31): 比赛 Ended → 按终态比分 realize 持仓 + 平仓, 之后不交易 ----
-    //   市场已定 (outcome 确定): 持仓最终值 = winner 1 / loser 0。realize → cum_realized; 平仓 → 账本归零。
-    //   幂等 (settled_conditions_): 首次 Ended 结算一次, 之后该盘口跳过决策 (已定不再交易)。
-    //   仅 Ended (有清晰比分 winner); Postponed/Cancelled 留作 edge (refund 逻辑, 后续)。
-    if (game_row.time_status == stcpp::data::goalserve::TimeStatus::Ended) {
-        if (settled_conditions_.find(condition_id) == settled_conditions_.end()) {
-            SettleCondition(condition_id, mkt.yes_token_id, mkt.no_token_id, game_row);
-            settled_conditions_.emplace(condition_id, char{1});
+    // ---- slice-3b/3c 结算 (老板 2026-05-31): 市场已定 → realize 持仓 + 平仓, 之后不交易 ----
+    //   触发 + winner 两源 (按权威性):
+    //     ① 注入的 REST resolution (3c, 权威): status=Resolved(2) + winner 已知 → 按 winner 结算
+    //        (gamma `closed` / clob `tokens[].winner`; 全 market type 通用, 不靠 Goalserve 比分推断)。
+    //     ② Goalserve 终态 (3b 兜底): Ended → 按终态比分 winner (moneyline; 无 REST 注入时用)。
+    //   持仓最终值 = winner 1 / loser 0。realize → cum_realized; 平仓 → 账本归零。
+    //   幂等 (settled_conditions_): 首次结算一次, 之后该盘口跳过决策 (已定不再交易)。
+    {
+        bool do_settle = false;
+        double settle_yes = 0.5, settle_no = 0.5;  // 平局/未知 → push
+        const ResolutionEntry* res = ResolutionFor(condition_id);
+        if (res != nullptr && res->status == 2 /*Resolved*/ && res->winner >= 0) {
+            do_settle = true;  // ① REST 权威
+            settle_yes = (res->winner == 1) ? 1.0 : 0.0;
+            settle_no = 1.0 - settle_yes;
+        } else if (game_row.time_status == stcpp::data::goalserve::TimeStatus::Ended) {
+            do_settle = true;  // ② Goalserve 比分兜底
+            const int yes_sc = game_row.score_home_total;  // YES 边比分 (orientation 已应用)
+            const int opp_sc = game_row.score_away_total;
+            if (yes_sc > opp_sc) {
+                settle_yes = 1.0;
+                settle_no = 0.0;
+            } else if (yes_sc < opp_sc) {
+                settle_yes = 0.0;
+                settle_no = 1.0;
+            }
         }
-        return;  // 已定盘口: 不产 quote/intent (持仓已 realize)
+        if (do_settle) {
+            if (settled_conditions_.find(condition_id) == settled_conditions_.end()) {
+                SettleCondition(condition_id, mkt.yes_token_id, mkt.no_token_id, settle_yes, settle_no,
+                                game_row);
+                settled_conditions_.emplace(condition_id, char{1});
+            }
+            return;  // 已定盘口: 不产 quote/intent (持仓已 realize)
+        }
     }
 
     FeatureStoreBookRow book_row{};
@@ -861,18 +886,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
 // R-11: paper 账本; R-20: 4ts 用终态比分 ts (禁 now() 替代 data_source)。loop_thread_ 单 writer。
 // ---------------------------------------------------------------------------
 void PaperLoop::SettleCondition(const std::string& condition_id, const std::string& yes_token_id,
-                                const std::string& no_token_id,
+                                const std::string& no_token_id, double settle_yes, double settle_no,
                                 const data::feature_store::FeatureStoreGameRow& game_row) noexcept {
-    const int yes_sc = game_row.score_home_total;  // YES 边比分 (orientation 已应用)
-    const int opp_sc = game_row.score_away_total;
-    double settle_yes = 0.5, settle_no = 0.5;  // 平局 push 默认
-    if (yes_sc > opp_sc) {
-        settle_yes = 1.0;
-        settle_no = 0.0;
-    } else if (yes_sc < opp_sc) {
-        settle_yes = 0.0;
-        settle_no = 1.0;
-    }
     SettleToken(condition_id, yes_token_id, strategy::Outcome::Yes, settle_yes, game_row);
     SettleToken(condition_id, no_token_id, strategy::Outcome::No, settle_no, game_row);
     // 结算后喂 RM: realized 进 daily_pnl + 敞口归零 (loop_thread_ 串行, R-12 满足)。
@@ -1108,7 +1123,11 @@ void PaperLoop::PublishQuoteSnapshot(
     // slice-3 结算特征 (老板 2026-05-31, feature-first): 临近度 (体育时钟派生) + PM WSS 结算状态。
     //   始终输出 (市场生命周期非决策派生, 不受 has_real_fair gate)。time_to_resolution 无时钟 → NaN。
     qf.time_to_resolution_frac = time_to_resolution_frac;
-    qf.resolution_status = feat.resolution_status;  // PM WSS kOutcomes (现合成默认 0=Open; 待 adapter 接入)
+    // resolution_status: 注入的 REST 源优先 (3c 权威, gamma closed/clob winner); 否则 book 载体 (feat)。
+    {
+        const ResolutionEntry* res = ResolutionFor(condition_id);
+        qf.resolution_status = (res != nullptr) ? res->status : feat.resolution_status;
+    }
 
     // 时序特征 (老板 2026-05-31): 从 condition 环形缓冲派生 (PIT 窗口; 样本不足 → NaN)。
     //   fee 同, 始终输出 (市场动态非决策派生, 不受 has_real_fair gate); 训练数据捕获 + 观测。

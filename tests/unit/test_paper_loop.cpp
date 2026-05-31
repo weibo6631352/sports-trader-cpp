@@ -1796,3 +1796,40 @@ TEST_F(PaperLoopTest, TS4_Settlement_RealizesAndCloses) {
     EXPECT_NEAR(loop_->cum_realized_pnl_pusd(), (1.0 - avg) * yes_qty, 1e-6)
         << "TS4: realized = (1.0 − avg_entry) × qty";
 }
+
+// TS5 (slice-3c REST resolution 注入 → 权威结算): app 层轮询 gamma closed/clob winner →
+//   SetResolutionByCondition 注入 (非 WSS — market 频道不推 resolution)。status=Resolved+winner →
+//   按 winner 权威结算 (全 market type 通用, 不靠 Goalserve 比分)。验证 REST 路径独立触发结算。
+TEST_F(PaperLoopTest, TS5_RestResolutionInjection_AuthoritativeSettle) {
+    // 直接 apply_fill 预建 YES 仓 (avg 0.40, qty 5) — 避免 mid-run 注入 race (Start 前注入)。
+    execution::VirtualFill fill{};
+    fill.fill_size_usdc = 5'000'000;  // 5 pUSD
+    fill.fill_price = 0.40;
+    fill.reject = execution::MatchReject::Ok;
+    position_ledger_->apply_fill("cond-test-001", "1001", strategy::Outcome::Yes, fill);
+
+    // 注入 REST 结算: condition resolved, YES 赢 (winner=1)。game 仍 stub (无 Goalserve) →
+    //   证明 REST 路径独立于 Goalserve 终态触发结算。
+    std::unordered_map<std::string, ResolutionEntry> resmap;
+    resmap["cond-test-001"] = ResolutionEntry{/*status=*/2, /*winner=*/1};
+
+    loop_ = MakeLoop();
+    loop_->SetResolutionByCondition(resmap);  // Start 前注入 (单 writer)
+    hub_->Publish("1001", MakeFreshBook(0.38, 0.42));  // 有效 book → TickOne 到结算块
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    loop_->Stop();
+
+    std::fprintf(stderr, "[TS5] realized=%.4f settled=%llu\n", loop_->cum_realized_pnl_pusd(),
+                 static_cast<unsigned long long>(loop_->stats().positions_settled.load()));
+
+    // REST 权威结算: YES 仓平掉 (account 归零) + realized = (1.0−0.40)×5 = 3.0
+    bool yes_open = false;
+    for (const auto& pv : position_ledger_->get_all_positions()) {
+        if (pv.token_id == "1001") yes_open = true;
+    }
+    EXPECT_FALSE(yes_open) << "TS5: REST Resolved → YES 仓被权威结算平掉 (不靠 Goalserve)";
+    EXPECT_GT(loop_->stats().positions_settled.load(), static_cast<std::uint64_t>(0));
+    EXPECT_NEAR(loop_->cum_realized_pnl_pusd(), (1.0 - 0.40) * 5.0, 1e-6)
+        << "TS5: realized = (1.0 − 0.40) × 5 = 3.0 (winner=YES 按 REST 注入)";
+}

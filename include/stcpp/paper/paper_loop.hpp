@@ -119,6 +119,16 @@ struct ParentRef {
     std::string neg_risk_market_id;
 };
 
+// slice-3c 结算注入 (老板 2026-05-31 摸底定论: Polymarket resolution **不在 market WSS**,
+//   是 REST 字段 — gamma `closed` + clob `tokens[i].winner`)。app 层轮询 REST → SetResolutionByCondition
+//   注入 (同 fee/event-mapping 注入范式), 非 WSS 解析 (market 频道只推 book/price/trade/tick)。
+//   status: 0=Open / 1=Resolving / 2=Resolved (= wss::ResolutionStatus 同枚举值, 喂模型特征)。
+//   winner: −1=未知 / 0=NO 赢 / 1=YES 赢 (Resolved 时填; 3b 权威结算 winner, 全 market type 通用)。
+struct ResolutionEntry {
+    std::uint8_t status{0};
+    std::int8_t winner{-1};
+};
+
 // ---------------------------------------------------------------------------
 // PaperLoopConfig — 运行参数
 // ---------------------------------------------------------------------------
@@ -260,6 +270,13 @@ public:
         fee_by_condition_ = std::move(m);
     }
 
+    // slice-3c: 注入 per-condition 结算状态 (app 层轮询 gamma `closed` / clob `tokens[].winner` →
+    //   此处注入)。单 writer: Start() 前注入 / 周期热刷 (loop_thread_ 只读)。喂 resolution_status 特征
+    //   + 给 3b 提供权威 winner (status=Resolved+winner → 按 winner 结算, 优于 Goalserve 比分推断)。
+    void SetResolutionByCondition(std::unordered_map<std::string, ResolutionEntry> m) noexcept {
+        resolution_by_condition_ = std::move(m);
+    }
+
     // 统一数据树: 注入 condition → 父级引用 (event_id / neg_risk_market_id)。
     //   单 writer: Start() 前注入一次, 之后 loop_thread_ 只读。盘口决策/模型带父级 (兄弟经 event_id 导航)。
     void SetParentRefs(std::unordered_map<std::string, ParentRef> m) noexcept {
@@ -320,6 +337,12 @@ private:
     [[nodiscard]] double FeeCoefFor(const std::string& condition_id) const noexcept {
         auto it = fee_by_condition_.find(condition_id);
         return (it != fee_by_condition_.end()) ? it->second : kDefaultFeeCoef;
+    }
+    // slice-3c: per-condition 结算状态 (REST 注入; 查不到 → nullptr = 未知/默认 Open)。
+    std::unordered_map<std::string, ResolutionEntry> resolution_by_condition_;
+    [[nodiscard]] const ResolutionEntry* ResolutionFor(const std::string& condition_id) const noexcept {
+        auto it = resolution_by_condition_.find(condition_id);
+        return (it != resolution_by_condition_.end()) ? &it->second : nullptr;
     }
 
     // ---- A1: 真实比分源 + 映射 ----
@@ -413,7 +436,7 @@ private:
     //   平仓 (apply_fill 负 delta), realized PnL 累加进 cum_realized_pnl_pusd_。loop_thread_ 单 writer。
     //   winner 从 game_row 终态比分 + orientation 派生 (score_home_total = YES 边比分); 平局 → 0.5 push。
     void SettleCondition(const std::string& condition_id, const std::string& yes_token_id,
-                         const std::string& no_token_id,
+                         const std::string& no_token_id, double settle_yes, double settle_no,
                          const data::feature_store::FeatureStoreGameRow& game_row) noexcept;
     // 单 token 结算 (无仓 → no-op)。realize = (settle − avg_entry) × qty。
     void SettleToken(const std::string& condition_id, const std::string& token_id,
