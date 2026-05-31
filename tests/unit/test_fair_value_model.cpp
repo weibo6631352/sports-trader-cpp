@@ -96,9 +96,12 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_corner_diff), 23u);           // v0.2 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_condition_exposure), 53u);  // v0.3 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_net_momentum_5m), 74u);       // v0.4 末列
-    // v0.5 新末列 = x_joint_staleness_sec (81).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_joint_staleness_sec), kMlFeatureCount - 1);
-    EXPECT_EQ(kMlFeatureCount, 82u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_joint_staleness_sec), 81u);   // v0.5 末列
+    // v0.6 新末列 = cat_market_type (84).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_market_type), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_asset_class), 82u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_sport), 83u);
+    EXPECT_EQ(kMlFeatureCount, 85u);
     // 双边对称 + v0.5 延迟特征抽查 (双边 book 龄独立).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);
@@ -163,6 +166,34 @@ TEST(ModelFeatureSpec, V05Columns_DataLatency_DoubleSided) {
     EXPECT_NEAR(at(MlFeature::b_ingestion_lag_ms), 100.0, 1e-3);   // YES 传输 100ms
     EXPECT_NEAR(at(MlFeature::no_b_ingestion_lag_ms), 50.0, 1e-3);  // NO 传输 50ms (双边独立)
     EXPECT_NEAR(at(MlFeature::x_joint_staleness_sec), 8.0, 1e-6) << "max(0.5,8,3)=8 最弱环节";
+}
+
+TEST(ModelFeatureSpec, V06Columns_CategoricalContext) {
+    // 类别上下文: 运动项目 (slug→GoalserveSport int) + 盘口类型 (string→code) + 资产大类。
+    // categorical level: Basketball=1, Moneyline=0, Sports=0; unknown=-1。
+    auto g = make_game_row();
+    auto b = make_book_row();
+    g.sport = "basket";          // inplay slug (生产用; SportInplaySlug(Basketball))
+    b.market_type = "Totals";    // 大小分盘
+    stcpp::sizing::QuoteFeatures qf{};
+    FeatureVector fv = stcpp::ml::extract_full(g, b, qf);
+    auto at = [&](MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
+    EXPECT_EQ(at(MlFeature::cat_asset_class), 0.0F) << "体育系统恒 Sports=0";
+    EXPECT_EQ(at(MlFeature::cat_sport), 1.0F) << "basket → Basketball=1";
+    EXPECT_EQ(at(MlFeature::cat_market_type), 1.0F) << "Totals=1 (大小分)";
+    // unknown 路径 (stub 无比分 / market_type 未注入) → -1 (独立 categorical level, 非 NaN)。
+    g.sport = "";
+    b.market_type = "";
+    fv = stcpp::ml::extract_full(g, b, qf);
+    EXPECT_EQ(at(MlFeature::cat_sport), -1.0F) << "空 slug → unknown=-1";
+    EXPECT_EQ(at(MlFeature::cat_market_type), -1.0F) << "未注入 → unknown=-1";
+    // 直接映射函数: 各运动 + 盘口枚举抽查。
+    EXPECT_EQ(stcpp::ml::SportCatCode("soccer"), 0.0);
+    EXPECT_EQ(stcpp::ml::SportCatCode("tennis"), 2.0);
+    EXPECT_EQ(stcpp::ml::SportCatCode("hockey"), 6.0);
+    EXPECT_EQ(stcpp::ml::MarketTypeCatCode("Moneyline"), 0.0);
+    EXPECT_EQ(stcpp::ml::MarketTypeCatCode("Spreads"), 2.0);
+    EXPECT_EQ(stcpp::ml::MarketTypeCatCode("Quarter"), 3.0);  // 分节家族
 }
 
 TEST(ModelFeatureSpec, V04Columns_RemainingSignals) {

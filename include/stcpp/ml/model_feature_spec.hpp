@@ -50,7 +50,7 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.5";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.6";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
 //     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
 //   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
@@ -174,9 +174,20 @@ enum class MlFeature : std::uint8_t {
     b_ingestion_lag_ms = 79,       // YES book 传输延迟毫秒 = ingestion − data_source (跨洋链路)
     no_b_ingestion_lag_ms = 80,    // NO  book 传输延迟毫秒 (双边独立)
     x_joint_staleness_sec = 81,    // 联合最旧 = max(yes_age, no_age, score_age) (整体最弱环节)
+
+    // ---- v0.6 append (类别上下文 categorical; 让单模型适配多盘口/多运动/多资产 — 老板 2026-05-31) ----
+    //   老板「体育/加密/政治大类 + 篮球 NBA/CBA + 大小分/谁赢盘口类型 也传进去, 适配更好」。
+    //   ⚠ categorical 非 ordinal: 训练侧须声明 LightGBM categorical_feature(见 train_fair_value.py),
+    //      整数码仅作 level 标识 (Basketball=1 ≠ "比 Soccer=0 大"); unknown=-1 作独立 level。
+    //   现状 (MVP 单盘口/体育): cat_sport 在 in-play 比分匹配时活, cat_asset_class 恒 Sports(占位扩展),
+    //      cat_market_type 待 book market_type 注入接通前为 -1(占位)。append 占位 → 多盘口上线即生效,
+    //      历史数据天然带列 (列序锁 append-only, 免日后回填)。
+    cat_asset_class = 82,          // 资产大类: 0=Sports / 1=Crypto / 2=Politics (现恒 Sports)
+    cat_sport = 83,                // 运动项目 = GoalserveSport(Soccer=0/Basket=1/Tennis=2/.../-1 unknown)
+    cat_market_type = 84,          // 盘口类型: 0=ML/1=Totals/2=Spreads/3=Period/4=Prop/5=Outright/-1 unk
 };
 
-inline constexpr std::size_t kMlFeatureCount = 82;
+inline constexpr std::size_t kMlFeatureCount = 85;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -286,6 +297,9 @@ inline constexpr std::size_t kMlFeatureCount = 82;
         case MlFeature::b_ingestion_lag_ms: return "b_ingestion_lag_ms";
         case MlFeature::no_b_ingestion_lag_ms: return "no_b_ingestion_lag_ms";
         case MlFeature::x_joint_staleness_sec: return "x_joint_staleness_sec";
+        case MlFeature::cat_asset_class: return "cat_asset_class";
+        case MlFeature::cat_sport: return "cat_sport";
+        case MlFeature::cat_market_type: return "cat_market_type";
     }
     return "unknown";
 }
@@ -574,6 +588,50 @@ inline void fill_latency_features(const stcpp::data::feature_store::FeatureStore
 }
 
 // ---------------------------------------------------------------------------
+// SportCatCode — game_row.sport (inplay slug) → GoalserveSport 整数码 (categorical level)。
+//   slug 见 goalserve_client.hpp SportInplaySlug(); 反向映射 (无现成函数)。unknown=-1。
+//   ⚠ 返回值是 categorical level 标识, 非有序数值 (训练侧声明 categorical_feature)。
+// ---------------------------------------------------------------------------
+[[nodiscard]] inline double SportCatCode(const std::string& slug) noexcept {
+    if (slug == "soccer") return 0.0;       // GoalserveSport::Soccer
+    if (slug == "basket") return 1.0;       // Basketball
+    if (slug == "tennis") return 2.0;       // Tennis
+    if (slug == "volleyball") return 3.0;   // Volleyball
+    if (slug == "amfootball") return 4.0;   // AmericanFootball
+    if (slug == "esports") return 5.0;      // Esports
+    if (slug == "hockey") return 6.0;       // Hockey
+    if (slug == "baseball") return 7.0;     // Baseball
+    return -1.0;                            // unknown (stub / 无比分匹配)
+}
+
+// MarketTypeCatCode — book_row.market_type 字符串 → 盘口类型 categorical level。unknown=-1。
+//   取值见 feature_store_contract.hpp ("Moneyline"/"Totals"/"Spreads" 等大写开头)。
+//   现状 MVP: book market_type 注入未接通 → 多为空 → -1 占位 (多盘口上线即活)。
+[[nodiscard]] inline double MarketTypeCatCode(const std::string& mt) noexcept {
+    if (mt == "Moneyline") return 0.0;
+    if (mt == "Totals") return 1.0;
+    if (mt == "Spreads") return 2.0;
+    if (mt == "Period" || mt == "Quarter" || mt == "Half") return 3.0;  // 分节家族
+    if (mt == "Prop") return 4.0;
+    if (mt == "Outright") return 5.0;
+    return -1.0;  // unknown / 未注入
+}
+
+// ---------------------------------------------------------------------------
+// fill_categorical_context — 类别上下文列 (82-84; 让单模型适配多盘口/运动/资产)。
+//   categorical 非 ordinal: 整数码作 level, unknown=-1 独立 level (非 NaN — categorical 不用 NaN)。
+//   cat_asset_class 恒 Sports=0 (体育系统, 占位扩展加密/政治)。
+// ---------------------------------------------------------------------------
+inline void fill_categorical_context(const stcpp::data::feature_store::FeatureStoreGameRow& g,
+                                     const stcpp::data::feature_store::FeatureStoreBookRow& b,
+                                     std::vector<float>& out) noexcept {
+    out[static_cast<std::size_t>(MlFeature::cat_asset_class)] = 0.0F;  // Sports (占位; 扩展时活)
+    out[static_cast<std::size_t>(MlFeature::cat_sport)] = static_cast<float>(SportCatCode(g.sport));
+    out[static_cast<std::size_t>(MlFeature::cat_market_type)] =
+        static_cast<float>(MarketTypeCatCode(b.market_type));
+}
+
+// ---------------------------------------------------------------------------
 // extract_full — game_row + book_row (0..23) + QuoteFeatures (24..53) → 完整 FeatureVector。
 //   在线推理用 (paper_loop): qf 含双边时序/持仓, game_row/book_row 含原始 game/book 列。
 // ---------------------------------------------------------------------------
@@ -589,14 +647,17 @@ inline void fill_latency_features(const stcpp::data::feature_store::FeatureStore
     fill_cross_features(fv.values);        // 16-17
     extract_from_quote(q, fv.values);      // 24-74 (双边时序/持仓/cross/sports/fee/resolution)
     fill_latency_features(g, b, q, fv.values);  // 75-81 (数据延迟/新鲜度, 双边 book 独立)
+    fill_categorical_context(g, b, fv.values);  // 82-84 (类别上下文: 资产/运动/盘口)
     fv.as_of_ts_ns = (g.as_of_ts_ns > b.as_of_ts_ns) ? g.as_of_ts_ns : b.as_of_ts_ns;
     return fv;
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 82, "MlFeature count must be 82 (v0.5; append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::x_joint_staleness_sec) == kMlFeatureCount - 1,
-              "最后一列必须是 x_joint_staleness_sec (append-only 约束; v0.5 末列)");
+static_assert(kMlFeatureCount == 85, "MlFeature count must be 85 (v0.6; append + bump spec)");
+static_assert(static_cast<std::size_t>(MlFeature::cat_market_type) == kMlFeatureCount - 1,
+              "最后一列必须是 cat_market_type (append-only 约束; v0.6 末列)");
+static_assert(static_cast<std::size_t>(MlFeature::x_joint_staleness_sec) == 81,
+              "x_joint_staleness_sec 必须恒为 81 (v0.5 末列, append 后不得移位)");
 // append-only 不变量: 旧列 index 永不变 (训练 column index 锁死)。
 static_assert(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid) == 17,
               "x_microprice_minus_mid 必须恒为 17 (v0.1 末列, append 后不得移位)");

@@ -18,7 +18,11 @@ import argparse
 import json
 import sys
 
-N_FEATURES = 82  # = kMlFeatureCount (ml-feature-spec v0.5); C++ 与训练必须一致
+N_FEATURES = 82  # 数值特征 0..81 (延迟/微结构/比分/赔率派生)
+# v0.6 类别上下文列 (82-84): categorical 非 ordinal — 必须声明 categorical_feature, 否则 LightGBM
+#   把 Basketball=1 当 "比 Soccer=0 大" 的有序数值 (错)。整数码仅作 level; unknown=-1 独立 level。
+CAT_FEATURES = [82, 83, 84]  # cat_asset_class / cat_sport / cat_market_type
+N_TOTAL = N_FEATURES + len(CAT_FEATURES)  # = 85 = kMlFeatureCount (ml-feature-spec v0.6)
 
 
 def load_jsonl(path):
@@ -37,10 +41,10 @@ def build_xy(rows, mode):
     for r in rows:
         if not r.get("label_valid", 0):
             continue  # 只用已结算
-        # 优先 f0..f81 (完整向量列序锁); 否则跳过 (需完整 X)
+        # 优先 f0..f84 (完整向量列序锁; 含类别上下文); 否则跳过 (需完整 X)
         if "f0" not in r:
             continue
-        feats = [float(r.get(f"f{i}", 0.0)) for i in range(N_FEATURES)]
+        feats = [float(r.get(f"f{i}", 0.0)) for i in range(N_TOTAL)]
         # NaN → 0 (LightGBM 原生 missing 也可; 这里保守填 0, 与 C++ 推理一致性留训练侧定)
         feats = [0.0 if (x != x) else x for x in feats]
         label = float(r["label"])
@@ -68,7 +72,11 @@ def train(X, y, out_path):
     import lightgbm as lgb
     model = lgb.LGBMRegressor(n_estimators=50, num_leaves=15, learning_rate=0.1,
                               min_child_samples=5, verbose=-1)
-    model.fit(X, y)
+    # categorical_feature: 类别列声明为 categorical, 树学 == 分裂而非有序阈值 (v0.6)。
+    # ⚠ 已知风险: onnxmltools 对 LightGBM categorical split 的 ONNX 导出支持度需验证;
+    #    若导出失败/不一致, fallback = 去掉 categorical_feature 当数值 (低基数下树仍可隔离)。
+    cat = [c for c in CAT_FEATURES if c < X.shape[1]]
+    model.fit(X, y, categorical_feature=cat)
     export_onnx(model, X.shape[1], out_path)
 
 
@@ -78,13 +86,17 @@ def selftest(out_path):
     import lightgbm as lgb
     rng = np.random.default_rng(42)
     n = 500
-    X = rng.standard_normal((n, N_FEATURES)).astype("float32")
-    # y = sigmoid(线性组合) ∈ (0,1), 让回归输出像 p_yes
-    z = X[:, 0] * 0.8 + X[:, 30] * 0.5 - X[:, 18] * 0.3
+    X = rng.standard_normal((n, N_TOTAL)).astype("float32")
+    # 类别列填整数 level (fixture 真实性; cat_asset_class 恒 0, sport 0-7, market_type -1/0/1)
+    X[:, 82] = 0.0
+    X[:, 83] = rng.integers(0, 8, n).astype("float32")
+    X[:, 84] = rng.integers(-1, 6, n).astype("float32")
+    # y = sigmoid(线性组合) ∈ (0,1), 让回归输出像 p_yes (含一个类别交互项)
+    z = X[:, 0] * 0.8 + X[:, 30] * 0.5 - X[:, 18] * 0.3 + (X[:, 83] == 1.0) * 0.2
     y = (1.0 / (1.0 + np.exp(-z))).astype("float32")
     model = lgb.LGBMRegressor(n_estimators=30, num_leaves=15, min_child_samples=5, verbose=-1)
-    model.fit(X, y)
-    export_onnx(model, N_FEATURES, out_path)
+    model.fit(X, y)  # selftest 不声明 categorical (保 ONNX 导出稳; 仅验列数/round-trip)
+    export_onnx(model, N_TOTAL, out_path)
     # 自检: ONNX 推理一致
     import onnxruntime as ort  # noqa
     print("[train] selftest OK")
@@ -92,7 +104,7 @@ def selftest(out_path):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--features", help="training jsonl (含 f0..f74 + label)")
+    ap.add_argument("--features", help="training jsonl (含 f0..f84 + label)")
     ap.add_argument("--out", default="model_fair_value.onnx")
     ap.add_argument("--mode", choices=["regress", "residual"], default="regress")
     ap.add_argument("--selftest", action="store_true", help="合成数据生成 fixture ONNX")
