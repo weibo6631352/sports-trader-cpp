@@ -181,6 +181,7 @@ export function fmtTs(epochNs: number | null | undefined): string {
 
 /** USDC 金额 */
 export function fmtUsdc(val: number | null | undefined): string {
+  if (val == null) return '—';  // #6 修: null(无数据) → 占位, 不当 0 显
   const n = Number(val);
   if (!Number.isFinite(n)) return '—';
   const sign = n >= 0 ? '+' : '';
@@ -194,6 +195,7 @@ export function fmtUsdc(val: number | null | undefined): string {
 
 /** bps 格式 */
 export function fmtBps(val: number | null | undefined): string {
+  if (val == null) return '—';  // #6 修: null(无数据) → 占位, 不当 0 显
   const n = Number(val);
   if (!Number.isFinite(n)) return '—';
   const sign = n >= 0 ? '+' : '';
@@ -202,6 +204,7 @@ export function fmtBps(val: number | null | undefined): string {
 
 /** 百分比 */
 export function fmtPct(val: number | null | undefined): string {
+  if (val == null) return '—';  // #6 修: null(无数据) → 占位, 不当 0 显
   const n = Number(val);
   if (!Number.isFinite(n)) return '—';
   return `${(n * 100).toFixed(2)}%`;
@@ -209,6 +212,7 @@ export function fmtPct(val: number | null | undefined): string {
 
 /** clock_sec → M:SS */
 export function fmtClock(sec: number | null | undefined): string {
+  if (sec == null) return '—';  // #6 修: null → 占位, 不当 0:00
   const s = Number(sec);
   if (!Number.isFinite(s) || s < 0) return '—';
   const m = Math.floor(s / 60);
