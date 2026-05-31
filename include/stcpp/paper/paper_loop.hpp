@@ -70,6 +70,7 @@
 #include <utility>
 
 #include "stcpp/data/score_snapshot_store.hpp"  // A4: ScoreMap (tick-local 共享比分快照, 消 read-skew)
+#include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
 #include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
 #include "stcpp/paper/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
@@ -142,6 +143,10 @@ struct PaperLoopConfig {
     //   force_cross_fair_delta: |fair_new − fair_old| 超此值 → 强制穿越死区 (小梁 Q-梁-2;
     //     比分大跳/进球令 fair 突变时不被防抖死区堵住)。YES-canonical p_fair 逐 condition 比较。
     double force_cross_fair_delta{0.02};
+
+    //   ts_feature_window_ns: 时序特征回看窗口 (老板 2026-05-31; 微价变化率/realized vol)。
+    //     默认 30s (book ~1-5s/更新 → 窗口内 ~6-30 样本)。PIT: [as_of−W, as_of] 只看过去。
+    std::int64_t ts_feature_window_ns{30'000'000'000LL};
 
     // CI 参数 (z=1.645 = 90%)。
     // n_effective: 2026-05-31 30→200 (小程量化方案, Phase4 阻塞1)。
@@ -356,6 +361,11 @@ private:
     // ---- 强制穿越状态 (小梁 Q-梁-2): condition_id → 上 tick YES-canonical p_fair ----
     //   loop_thread_ 单 writer (TickOne 读+写), 无需锁。本 tick |p_fair − last| > 阈 → force_cross。
     std::unordered_map<std::string, double> last_p_fair_;
+
+    // ---- 时序特征环形缓冲 (老板 2026-05-31): condition_id → YES-canonical 微价时序 ----
+    //   PIT-safe / BR-1 共用; loop_thread_ 单 writer (TickOne push + PublishQuoteSnapshot 读)。
+    //   每 condition 一个定长 ring; 派生微价变化率 + realized vol 进 QuoteFeatures (训练捕获 + 观测)。
+    std::unordered_map<std::string, ml::FeatureHistory> ts_history_;
 
     // ---- A5 (老韩 spec §4): 累计已付 taker fee (whole pUSD, 单调加) ----
     //   DD 喂数: daily_pnl = 时点净 MtM − cum_fee。PublishLedgerSnapshot 算 pnl_fee 后累加,

@@ -322,6 +322,11 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
 
     const double microprice = std::isfinite(feat.microprice) ? feat.microprice : (best_bid + best_ask) * 0.5;
 
+    // ---- 时序特征 (老板 2026-05-31): push YES-canonical 微价样本进 condition 的环形缓冲 ----
+    //   PIT: ts = 上游 data_source_ts_ns (禁 now()); 单调门去重停滞 book。loop_thread_ 单 writer 无锁。
+    //   派生 (变化率/realized vol) 在 PublishQuoteSnapshot 读 (push-then-read 事件序)。
+    ts_history_[condition_id].Push(feat.data_source_ts_ns, microprice);
+
     // no_token_mid: NO book microprice 优先 / mid 回退 (de-vig 对边; 单边退化 devig_binary 处理)。
     double no_token_mid = std::numeric_limits<double>::quiet_NaN();
     if (mkt.no.present) {
@@ -1007,6 +1012,22 @@ void PaperLoop::PublishQuoteSnapshot(
     qf.no_imbalance = no_imbalance;     // NO  L1 失衡 (对边 book; 单边缺=NaN)
     qf.devig_ok = devig_ok;
     qf.joint_as_of_ts_ns = joint_as_of_ts_ns;  // 联合新鲜度 (min(score,book) as_of); 输入不 gate
+
+    // 时序特征 (老板 2026-05-31): 从 condition 环形缓冲派生 (PIT 窗口; 样本不足 → NaN)。
+    //   fee 同, 始终输出 (市场动态非决策派生, 不受 has_real_fair gate); 训练数据捕获 + 观测。
+    {
+        const auto hit = ts_history_.find(condition_id);
+        if (hit != ts_history_.end()) {
+            const std::int64_t w = cfg_.ts_feature_window_ns;
+            qf.mp_roc_per_sec = hit->second.RateOfChangePerSec(w);
+            qf.realized_vol = hit->second.RealizedVol(w);
+            qf.ts_window_samples = static_cast<std::int32_t>(hit->second.WindowSampleCount(w));
+        } else {
+            qf.mp_roc_per_sec = std::numeric_limits<double>::quiet_NaN();
+            qf.realized_vol = std::numeric_limits<double>::quiet_NaN();
+            qf.ts_window_samples = 0;
+        }
+    }
 
     // 当前持仓 (老板: 持仓入模型; 库存感知)。目标仓位范式: 模型需知现仓 → 控制器算 order=目标−现仓。
     {

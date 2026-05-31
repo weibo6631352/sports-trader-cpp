@@ -1606,3 +1606,46 @@ TEST_F(PaperLoopTest, TM2a_SideFlip_ClosesOldSide) {
     // 旧边不穿零不开空 (H-2): YES 持仓 ≥ 0 (减仓 clamp ≤ 持仓, 绝不变负)
     EXPECT_GE(yes_final, 0.0) << "M2-a/H-2: 平旧边绝不穿零开空 (long→0, 不反向)";
 }
+
+// ===========================================================================
+// 时序地基 (老板 2026-05-31): ml::FeatureHistory 接入 paper_loop → 微价变化率/realized vol
+//   进 QuoteFeatures。验证: 推进 ts + 变价的 book 序列 → 时序特征端到端 populate (非 NaN)。
+// ===========================================================================
+TEST_F(PaperLoopTest, TS1_TimeSeriesFeatures_Populate) {
+    // 显式 ds_ts book: data_source_ts 推进 (时序样本去重靠单调门), 价格上行 → ROC>0。
+    //   4ts 链有效 + ingestion 新鲜 (RM 不 stale 拒); 仅 quote 路径需通 (ts 特征不受 has_real_fair gate)。
+    const std::int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
+    auto book_at = [&](double bid, double ask, std::int64_t ds_ts) {
+        auto f = MakeSyntheticBook(bid, ask);
+        f.event_ts_ns = now - 10'000'000'000LL;  // 10s 前
+        f.data_source_ts_ns = ds_ts;              // 显式推进 (时序锚)
+        f.ingestion_ts_ns = now - 1'000'000'000LL;  // 1s 前 (新鲜)
+        f.as_of_ts_ns = now;
+        return f;
+    };
+
+    loop_ = MakeLoop();  // advisory 默认 true 即可: quote 仍发布, ts 特征不受 gate
+    loop_->Start();
+    // 三个推进-ts + 上行价 book (间隔 > tick 50ms 确保 loop 各读到一次)。
+    hub_->Publish("1001", book_at(0.49, 0.51, now - 5'000'000'000LL));
+    std::this_thread::sleep_for(std::chrono::milliseconds(140));
+    hub_->Publish("1001", book_at(0.53, 0.55, now - 4'000'000'000LL));
+    std::this_thread::sleep_for(std::chrono::milliseconds(140));
+    hub_->Publish("1001", book_at(0.57, 0.59, now - 3'000'000'000LL));
+    std::this_thread::sleep_for(std::chrono::milliseconds(140));
+    loop_->Stop();
+
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    std::fprintf(stderr, "[TS1] samples=%d roc=%.6f vol=%.6f\n", opt->ts_window_samples,
+                 opt->mp_roc_per_sec, opt->realized_vol);
+
+    // 时序地基: 推进的 book 序列 → 窗口内 ≥2 样本 → 派生非 NaN。
+    EXPECT_GE(opt->ts_window_samples, 2) << "TS1: 3 个推进-ts book → 窗口内 ≥2 时序样本";
+    ASSERT_TRUE(std::isfinite(opt->mp_roc_per_sec)) << "TS1: 变化率应 populate (非 NaN)";
+    EXPECT_GT(opt->mp_roc_per_sec, 0.0) << "TS1: 价格上行 → 变化率 > 0 (方向正确)";
+    ASSERT_TRUE(std::isfinite(opt->realized_vol)) << "TS1: realized vol 应 populate";
+    EXPECT_GT(opt->realized_vol, 0.0) << "TS1: 价格在动 → vol > 0";
+}

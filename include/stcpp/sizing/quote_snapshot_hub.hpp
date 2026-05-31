@@ -129,6 +129,13 @@ struct QuoteFeatures {
     double reservation_sell_px{0.0};     // 卖出保留价下界 (fair + fee + margin; best_bid≥它才卖)
     double required_margin{0.0};         // reservation 安全边际 (小梁 Q-梁-1; CI 半宽与 floor 取大)
 
+    // ---- 时序特征 (老板 2026-05-31: 单点切片看不到动态; ml::FeatureHistory 派生) ----
+    //   PIT-safe 窗口派生 (BR-1 共用): 微价变化率 + realized vol。观测 + 训练数据捕获 (加性);
+    //   样本不足 → NaN (与 MlFeature NaN 约定一致)。窗口 = cfg.ts_feature_window_ns。
+    double mp_roc_per_sec{0.0};            // 微价变化率 (prob/sec; +涨 −跌; 动量/方向压力)
+    double realized_vol{0.0};              // 窗口内相邻微价变化 RMS (prob 单位; 波动率)
+    std::int32_t ts_window_samples{0};     // 窗口内时序样本数 (观测质量代理; <2 则上面 NaN)
+
     // ---- ML provenance (小邓 spec v1 §3.2; 对应 QuoteParams ML 字段) ----
     // model_id: char 数组 (空 = 无模型; 对应 ModelPrediction.model_id)
     char model_id[64]{};  // 最长 model_id ~48 char; 留余量
