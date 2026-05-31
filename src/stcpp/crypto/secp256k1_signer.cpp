@@ -23,8 +23,10 @@ public:
         std::uint8_t seed[32];
         const int fd = ::open("/dev/urandom", O_RDONLY);
         if (fd >= 0) {
-            if (::read(fd, seed, sizeof(seed)) == static_cast<ssize_t>(sizeof(seed)) && ctx_)
-                (void)secp256k1_context_randomize(ctx_, seed);
+            if (::read(fd, seed, sizeof(seed)) == static_cast<ssize_t>(sizeof(seed)) && ctx_) {
+                // 失败不致命 (签名仍正确); 赋值消费返回值避 gcc -Werror=unused-result ((void) 不抑制)。
+                [[maybe_unused]] const int rc = secp256k1_context_randomize(ctx_, seed);
+            }
             ::close(fd);
             std::memset(seed, 0, sizeof(seed));
         }

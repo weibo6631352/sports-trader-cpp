@@ -1,6 +1,8 @@
 // test_trade_flow.cpp — trade-flow 滚动聚合单测 (签名净流/买方占比/强度/窗口/方向)。
 #include <gtest/gtest.h>
 
+#include <cmath>  // std::isnan (gcc 需显式; clang 经 gtest 传递包含)
+
 #include "stcpp/microstructure/trade_flow.hpp"
 
 using stcpp::microstructure::TradeFlowWindow;

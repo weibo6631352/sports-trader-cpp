@@ -15,7 +15,8 @@ using stcpp::ml::ModelKind;
 using stcpp::ml::OnnxModelConfig;
 
 namespace {
-std::string FixturePath() {
+// [[maybe_unused]]: onnxruntime 未启用时 (gcc + 无 onnxruntime) 不被引用 → 避 -Werror=unused-function。
+[[maybe_unused]] std::string FixturePath() {
     // __FILE__ = .../tests/unit/test_onnx_fair_value.cpp → .../tests/fixtures/...
     const auto p = std::filesystem::path(__FILE__).parent_path().parent_path() / "fixtures" /
                    "fair_value_selftest.onnx";
