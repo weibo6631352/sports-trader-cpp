@@ -128,9 +128,11 @@ is_close = (|target| < |current| 且同向)  // 减仓/平仓 = 收敛, 非新�
 
 ## 11. 落地步骤 (评审通过, 按此建)
 
-1. **`Controller::Decide` 纯函数模块** (src/stcpp/control/) — ControlInput{target,current,reservation_buy/sell,best_ask/bid,cfg} → ControlAction{act,side,size,limit_price,is_close,no_act_reason}。含 gap/limit门/is_close/min_rebalance/空头clamp0。纯函数 + 穷举单测。
-2. **H-1+H-2: RM cap magnitude + 反向穿零拒** (risk_gateway.cpp, 老韩 spec) + 测。
-3. **reservation 公式** (小梁) 算进决策 → 进 QuoteFeatures (观测/训练) + 喂 Controller。
-4. **wire**: TickOne 退化为 组装 ControlInput → Decide → 按 action 构造 intent(限价)/skip; sell 负 delta 定 apply_fill 入口; H-3 stub 非对称。清掉一次性 BUY。
-5. **测试**: 多/平/减/限价不追/穿零拒 各路径 + 回归 1133 不破 + matcher 1119 bit-identical。
-6. 反向/空仓 VWAP/sell-to-open → M2 (老韩 C1 + 老周会签)。
+1. ✅ **DONE** (`提交`, 14 测) **`Controller::Decide` 纯函数模块** (include/stcpp/control/position_controller.hpp) — ControlInput → ControlAction。gap/limit门/is_close/min_rebalance/空头clamp0/卖不超持仓。穷举单测。
+2. ✅ **DONE** (`提交`, 2 测, 1149 绿) **H-1+H-2: RM cap signed→magnitude + 反向穿零拒** (risk_gateway.cpp:519/532)。买入字节不变, 卖减仓过 cap。
+3. ⬜ **TODO (下轮)** **reservation 公式** (小梁): `required_margin = max(cfg.edge_ci_lower_floor, z_90×sqrt(p(1−p)/n_eff))`; `reservation_buy = p_fair − fee_per_unit(exec_ask) − margin`; sell 对称。算进决策 → 进 QuoteFeatures (观测/训练 + target_signed) + 喂 Controller。**注: PaperLoopConfig 需加 edge_ci_lower_floor + min_rebalance 参数。**
+4. ⬜ **TODO (下轮)** **wire**: TickOne 组装 ControlInput (target=has_real_fair&&valid? sizing:0 [H-3 非对称]; current=ledger per-outcome[selected token]/1e6) → Decide → 按 action 构造 intent(限价 price=reservation, side/size/is_close)/skip; **sell 负 delta 定 apply_fill 入口** (position_ledger sell 减仓符号, 老周 Q-周-2)。清掉一次性 BUY (size=notional/side=Buy/price=exec_ask)。
+5. ⬜ **TODO (下轮)** **测试**: 多/平/减/限价不追/穿零拒 各路径 + **重写 paper_loop 集成测试** (现断言旧一次性 BUY 行为会红) + 回归 + matcher 1119 bit-identical。
+6. ⬜ **M2**: 反向/空仓 VWAP/sell-to-open (老韩 C1 condition cap signed 重裁 + 老周会签)。
+
+**下轮入口**: Step 3 起。所有评审/公式/红线已定 (§9/§10), 直接实现。控制器纯函数 + RM cap 修复 (Step 1-2) 已落地生效。
