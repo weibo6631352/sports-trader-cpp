@@ -82,7 +82,7 @@ void register_quote(httplib::Server& svr, const HttpServer& hs) {
         body += '}';
 
         res.set_content(body, "application/json; charset=utf-8");
-        res.status = q.found ? 200 : 404;
+        res.status = 200;  // #1 数据未就绪返 found:false(非404), 减轮询噪音
     });
 }
 

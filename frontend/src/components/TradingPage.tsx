@@ -662,7 +662,8 @@ function EventAccordion(props: { group: EventGroup }) {
     if (!sc) return '';
     const parts: string[] = [];
     if (sc.period) parts.push(sc.period);
-    if (sc.clock_sec != null) parts.push(fmtClock(sc.clock_sec));
+    // #2 修: 后端 clock_sec 用 0 表示"无计时"(不输出 null), 故 >0 才显示, 否则隐藏避免误显 "0:00"。
+    if (sc.clock_sec != null && sc.clock_sec > 0) parts.push(fmtClock(sc.clock_sec));
     return parts.join(' · ');
   };
 

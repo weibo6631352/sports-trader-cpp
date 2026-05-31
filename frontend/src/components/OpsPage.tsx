@@ -272,20 +272,20 @@ function SubscriptionSection() {
         <Grid container spacing={1.5} sx={{ mb: 2 }}>
           <Grid item xs={6} sm={3}>
             <StatCard
-              label="已订阅市场"
+              label="有报价市场"
               value={subMarkets() != null ? String(subMarkets()!) : `${condCount()} *`}
               sub={subMarkets() == null ? <span class="uncalib-chip">前端估算 · GAP-02</span> : undefined}
               pollHint="5s"
-              title="已订阅 condition_id 数 (每个 condition = 2 token)"
+              title="有 live book 数据的市场数 (hub slot/2)。注: ≠ 订阅总数 — 订阅了但无盘口流动的 niche 盘不计入。"
             />
           </Grid>
           <Grid item xs={6} sm={3}>
             <StatCard
-              label="已订阅 Token"
+              label="有报价 Token"
               value={subTokens() != null ? String(subTokens()!) : `${tokenEst()} *`}
               sub={subTokens() == null ? <span class="uncalib-chip">前端估算 · GAP-01</span> : undefined}
               pollHint="5s"
-              title="已订阅 CLOB token 数"
+              title="有 live book 数据的 token 数 (hub token_count)。≠ 订阅总数。"
             />
           </Grid>
           <Grid item xs={12} sm={6}>
@@ -964,11 +964,11 @@ function CoverageSection() {
           </Grid>
           <Grid item xs={6} sm={3}>
             <StatCard
-              label="已订阅市场"
+              label="有报价市场"
               value={subscribed() != null ? String(subscribed()!) : '—'}
               color={coverStatColor()}
               pollHint="30s"
-              title="stcpp_markets_subscribed_total"
+              title="stcpp_subscribed_markets_total — 有 live book 的市场数 (≠ 订阅总数)"
             />
           </Grid>
           <Grid item xs={6} sm={3}>

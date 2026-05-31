@@ -130,7 +130,7 @@ static void register_book_pair_endpoint(httplib::Server& svr, const HttpServer& 
         body += '}';
 
         res.set_content(body, "application/json; charset=utf-8");
-        res.status = bv.found ? 200 : 404;
+        res.status = 200;  // #1 数据未就绪返 found:false(非404), 减轮询噪音
     });
 }
 
@@ -153,7 +153,7 @@ static void register_book_by_token(httplib::Server& svr, const HttpServer& hs) {
         body += '}';
 
         res.set_content(body, "application/json; charset=utf-8");
-        res.status = b.found ? 200 : 404;
+        res.status = 200;  // #1 数据未就绪返 found:false(非404), 减轮询噪音
     });
 }
 
