@@ -58,6 +58,7 @@
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
+#include "stcpp/pricing/derivative_fair_value.hpp"
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/rm_debug_snapshot.hpp"
 #include "stcpp/strategy/edge_ci.hpp"  // 单一 ComputeEdgeCiLower (回测-实盘共用)
@@ -536,15 +537,21 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         return;
     }
 
-    // 盘口定价准入 (数据驱动真 gate, 替代 RM 已删的空壳 enable_xxx 布尔):
-    //   FairValueEstimator 是胜负盘 (moneyline) 语义 (score_diff→p_yes)。非 moneyline 盘口
-    //   (totals 大小分 / spread 让分 / outright / prop / series) 定价语义不同, 套胜负盘模型会错误下单。
-    //   → 暂无专属定价的盘口 fail-closed (不下单), 等量化上线对应定价。市场全盘口发现/订阅, 仅交易准入分盘口。
-    //   market_type_id: 0=moneyline 放行 / >0 非 moneyline fail-closed / -1 未注入元数据 (保守当 moneyline)。
-    //   ★ totals/spread 专属定价接入点: 此处按 mkt_type 分派对应 estimator (老板 2026-05-31)。
-    const std::int32_t mkt_type = MarketCatFor(condition_id).market_type_id;
-    if (mkt_type > 0) {
-        return;  // 非 moneyline 盘口暂无专属定价 → 不交易 (防胜负盘定价错误下单)
+    // 盘口定价分派 (数据驱动真 gate, 替代 RM 已删的空壳 enable_xxx 布尔):
+    //   moneyline 走 FairValueEstimator (score_diff→p_yes); totals/spreads 走专属派生定价模型
+    //   (derivative_fair_value: 终场分布建模 + line 比较 — 老板 2026-05-31「缺盘口模型就加」)。
+    //   outright/prop/series 暂无模型 → fail-closed。派生定价 invalid (赛前/太早/无时钟) 亦 fail-closed。
+    const MarketCat mc = MarketCatFor(condition_id);
+    const std::int32_t mkt_type = mc.market_type_id;
+    std::optional<double> derivative_p_yes;  // totals/spreads 专属定价 (有值 → 覆盖 moneyline p_fair)
+    if (mkt_type == 1 || mkt_type == 2) {  // spread / totals
+        const pricing::DerivativeFairResult dr = pricing::DerivativeFairYes(game_row, mkt_type, mc.line);
+        if (!dr.valid) {
+            return;  // 派生定价不可用 (赛前/太早/不支持运动/无 line) → 不交易
+        }
+        derivative_p_yes = dr.p_yes;
+    } else if (mkt_type > 2) {
+        return;  // outright/prop/series 暂无专属定价 → 不交易
     }
 
     // ---- P0-3 / P1-8 fair 锚定 --------------------------------------------
@@ -554,6 +561,11 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 有真实 in-play game_row 时: 用 score-prior 置信加权混合到 de-vig 市场锚上,
     //   置信随时钟从 kBasePriorConfidence 升到 kMaxPriorConfidence; 终态 conf=1.0.
     double p_fair = p_market_devig;
+    // 派生盘口 (totals/spreads): 用专属定价覆盖 p_fair, 跳过 moneyline score-prior blend。
+    //   edge = derivative_p_yes − p_market_devig (我们的终场分布定价 vs 市场对 YES=Over/cover 的去 vig 定价)。
+    if (derivative_p_yes) {
+        p_fair = *derivative_p_yes;
+    }
     // 3a 时序: 结算临近度 (老板 2026-05-31, feature-first; 体育免新数据源 — 从 Goalserve 时钟派生)。
     //   = clamp(1 − time_frac, 0, 1); terminal → 0 (结算已定); 无真 fair/无时钟 → NaN。喂模型 +
     //   与 bid_absence_frac 组合 = 「临近结算 ∧ 卖不出」归零陷阱信号 (模型学, 不硬门)。
@@ -586,7 +598,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                 : 0.0;
         const double p_prior = fv_result.prior_yes;
         const double conf = terminal ? 1.0 : pricing::prior_confidence(time_frac);
-        p_fair = pricing::blend_prob(p_prior, p_market_devig, conf);
+        // 派生盘口已用专属定价覆盖 p_fair, 不走 moneyline score-prior blend (但仍算下列体育/时序特征)。
+        if (!derivative_p_yes) {
+            p_fair = pricing::blend_prob(p_prior, p_market_devig, conf);
+        }
         time_to_resolution_frac = terminal ? 0.0 : std::clamp(1.0 - time_frac, 0.0, 1.0);
         // 批1 g_time_x_lead: 领先 × 剩余时间占比 (领先 1 球在 80min vs 20min 价值天差地别)。
         g_time_x_lead = score_diff * std::clamp(1.0 - time_frac, 0.0, 1.0);

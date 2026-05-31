@@ -13,6 +13,7 @@
 #include <cctype>
 #include <cstddef>
 #include <cstdio>
+#include <limits>
 #include <cstdlib>
 #include <ctime>
 
@@ -487,6 +488,8 @@ std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int 
             dm.question = ExtractJsonStr(mobj, "question");
             dm.group_item_title = ExtractJsonStr(mobj, "groupItemTitle");
             dm.sports_market_type = NormalizeSportsMarketType(ExtractJsonStr(mobj, "sportsMarketType"));
+            dm.line = ExtractJsonNumIn(mobj, "line", 0, mobj.size(),
+                                       std::numeric_limits<double>::quiet_NaN());  // totals/spreads 线值
 
             if (dm.condition_id.empty())
                 continue;
@@ -554,6 +557,8 @@ std::vector<DiscoveredEvent> ParseSportsMarketsFlat(const std::string& json_buf,
         dm.question = question;
         dm.group_item_title = ExtractJsonStr(mobj, "groupItemTitle");
         dm.sports_market_type = NormalizeSportsMarketType(ExtractJsonStr(mobj, "sportsMarketType"));
+        dm.line = ExtractJsonNumIn(mobj, "line", 0, mobj.size(),
+                                   std::numeric_limits<double>::quiet_NaN());  // totals/spreads 线值
 
         if (dm.condition_id.empty())
             continue;

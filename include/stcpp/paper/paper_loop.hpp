@@ -134,6 +134,7 @@ struct MarketCat {
     std::int32_t sport_family_id{-1};  // 粗家族 soccer=0/basket=1/tennis=2/...
     std::int32_t league_id{-1};        // 细联赛 = Polymarket sport.id
     std::int32_t market_type_id{-1};   // moneyline=0/spread=1/totals=2/outright=3/prop=4/series=5
+    double line{std::numeric_limits<double>::quiet_NaN()};  // totals/spreads 线值 (派生定价输入)
 };
 
 // slice-3c 结算注入 (老板 2026-05-31 摸底定论: Polymarket resolution **不在 market WSS**,

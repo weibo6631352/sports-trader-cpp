@@ -147,6 +147,7 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             cat.sport_family_id = tax::SportFamilyCode(ev.sport_code);
             cat.league_id = (ev.sport_id > 0) ? static_cast<std::int32_t>(ev.sport_id) : -1;
             cat.market_type_id = tax::MarketTypeCode(dm.sports_market_type);
+            cat.line = dm.line;  // totals/spreads 线值 → 派生定价
             market_cat_map_[dm.condition_id] = cat;
         }
         event_infos_.push_back(std::move(ei));

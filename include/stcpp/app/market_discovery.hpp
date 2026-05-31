@@ -27,6 +27,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -56,6 +57,9 @@ struct DiscoveredMarket {
     //   官方明确: 别硬编码, 从 market 数据 feeSchedule 取 (docs.polymarket 2026-03-31)。R-fee-2 RM/sizing
     //   用此真值。
     double fee_rate_coef{0.03};
+    // 派生盘口线值 (gamma market.line): totals 大小分线 (211.5) / spreads 让分线 (−3.5)。
+    //   moneyline 无 → NaN。totals/spreads 定价模型 (derivative_fair_value) 的核心输入。
+    double line{std::numeric_limits<double>::quiet_NaN()};
 };
 
 // 单个 event (含 markets[])
