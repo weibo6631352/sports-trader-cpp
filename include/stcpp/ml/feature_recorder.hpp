@@ -153,6 +153,43 @@ private:
             << ",\"predict_ok\":" << (q.predict_ok ? "true" : "false")
             << ",\"advisory\":" << (q.advisory ? "true" : "false")
             << ",\"model_calibrated\":" << (q.model_calibrated ? "true" : "false")
+            << ",\"ml_advisory_p_yes\":" << q.ml_advisory_p_yes
+            // 时序微结构 YES 边 (Phase 2: 训练 X 含第一梯队 alpha b_ofi; 联合评审 2026-05-31)
+            << ",\"mp_roc_per_sec\":" << q.mp_roc_per_sec << ",\"realized_vol\":" << q.realized_vol
+            << ",\"ts_window_samples\":" << q.ts_window_samples
+            << ",\"bid_absence_frac\":" << q.bid_absence_frac << ",\"exit_depth_mean\":" << q.exit_depth_mean
+            << ",\"b_amihud\":" << q.b_amihud << ",\"b_bid_depth_vol\":" << q.b_bid_depth_vol
+            << ",\"b_ofi\":" << q.b_ofi << ",\"b_vol_ratio\":" << q.b_vol_ratio
+            << ",\"b_mp_roc_30s\":" << q.b_mp_roc_30s << ",\"b_mp_roc_5m\":" << q.b_mp_roc_5m
+            // 时序微结构 NO 边 (双边对称; 独立信号)
+            << ",\"no_mp_roc_per_sec\":" << q.no_mp_roc_per_sec << ",\"no_realized_vol\":" << q.no_realized_vol
+            << ",\"no_ts_window_samples\":" << q.no_ts_window_samples
+            << ",\"no_bid_absence_frac\":" << q.no_bid_absence_frac
+            << ",\"no_exit_depth_mean\":" << q.no_exit_depth_mean << ",\"no_b_amihud\":" << q.no_b_amihud
+            << ",\"no_b_bid_depth_vol\":" << q.no_b_bid_depth_vol << ",\"no_b_ofi\":" << q.no_b_ofi
+            << ",\"no_b_vol_ratio\":" << q.no_b_vol_ratio << ",\"no_b_mp_roc_30s\":" << q.no_b_mp_roc_30s
+            << ",\"no_b_mp_roc_5m\":" << q.no_b_mp_roc_5m
+            // cross / log-odds (残差框架 base 特征)
+            << ",\"x_log_odds_fair\":" << q.x_log_odds_fair << ",\"x_log_odds_edge\":" << q.x_log_odds_edge
+            << ",\"x_pin_risk\":" << q.x_pin_risk << ",\"x_pin_x_expiry\":" << q.x_pin_x_expiry
+            << ",\"b_dislocation\":" << q.b_dislocation
+            // sports 动态 (第一梯队 alpha: g_time_x_lead / g_goal_freshness)
+            << ",\"g_time_x_lead\":" << q.g_time_x_lead << ",\"g_fld_signal\":" << q.g_fld_signal
+            << ",\"g_remaining_sec\":" << q.g_remaining_sec
+            << ",\"g_periods_won_home\":" << q.g_periods_won_home
+            << ",\"g_periods_won_away\":" << q.g_periods_won_away << ",\"g_game_phase\":" << q.g_game_phase
+            << ",\"g_garbage_time\":" << q.g_garbage_time << ",\"g_clutch\":" << q.g_clutch
+            << ",\"g_goal_freshness\":" << q.g_goal_freshness
+            << ",\"g_net_momentum_5m\":" << q.g_net_momentum_5m
+            // inplay 赔率 + live_stats (sharp 锚 g_bm_inplay_fair)
+            << ",\"g_bm_inplay_fair\":" << q.g_bm_inplay_fair
+            << ",\"g_danger_attack_diff\":" << q.g_danger_attack_diff
+            << ",\"g_shot_on_target_diff\":" << q.g_shot_on_target_diff
+            << ",\"g_possession_home\":" << q.g_possession_home
+            << ",\"g_red_card_diff\":" << q.g_red_card_diff << ",\"g_corner_diff\":" << q.g_corner_diff
+            // 市场生命周期
+            << ",\"time_to_resolution_frac\":" << q.time_to_resolution_frac
+            << ",\"resolution_status\":" << static_cast<int>(q.resolution_status)
             << ",\"event_ts_ns\":" << q.event_ts_ns << ",\"data_source_ts_ns\":" << q.data_source_ts_ns
             << ",\"ingestion_ts_ns\":" << q.ingestion_ts_ns << ",\"as_of_ts_ns\":" << q.as_of_ts_ns << "}\n";
     }
