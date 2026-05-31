@@ -101,6 +101,7 @@ set(EXTRA_LIBS_test_coverage_metrics
 )
 # 小段 2026-05-30: Goalserve inplay parser 安全加固单测 (gzip-bomb/max-depth/escape/log-injection)
 set(EXTRA_LIBS_test_inplay_parser_harden  stcpp_data_inplay_parser)
+set(EXTRA_LIBS_test_inplay_score_odds_integration  stcpp_data_inplay_parser)
 # 小段 2026-05-31: soccer live_stats KV parser 单测 (livescore endpoint, 15 case)
 set(EXTRA_LIBS_test_live_stats_parser     stcpp_data_live_stats_parser)
 set(EXTRA_LIBS_test_sizing_calculator     stcpp_sizing stcpp_risk)

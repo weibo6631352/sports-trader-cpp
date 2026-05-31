@@ -423,6 +423,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                         game_row.data_source_ts_ns = es.ts.data_source_ts_ns;
                         game_row.ingestion_ts_ns = es.ts.ingestion_ts_ns;
                         game_row.as_of_ts_ns = es.ts.as_of_ts_ns;
+                        // inplay bet365 de-vig fair → game_row (→ g_bm_inplay_fair 特征; -1=无 odds)。
+                        game_row.inplay_bet365_home_fair = es.inplay_bet365_home_fair;
                     }
                 }
             }

@@ -39,6 +39,8 @@
 
 #include "stcpp/data/inplay_score_parser.hpp"
 
+#include "stcpp/data/inplay_odds_parser.hpp"  // ParseInplayOddsDevig (inplay bet365 单源 de-vig)
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -572,7 +574,41 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
             // 仍加入 scores, 但调用方应 alert
         }
 
+        // inplay bet365 odds → 单源 de-vig home(YES) fair (soccer 1X2 全场 market_id="1")。
+        //   从同一 event_block 切 odds 节点 (与 info 共享 updated_ts, 不引入新 ts, R-20 守法)。
+        //   无 odds plan / market 缺 → -1.0 (sentinel, 与 game_row 默认对齐)。
+        double home_fair = -1.0;
+        if (sport == goalserve::GoalserveSport::Soccer) {
+            const auto odds_key = event_block.find("\"odds\":");
+            if (odds_key != std::string_view::npos) {
+                const auto ob = event_block.find('{', odds_key);
+                if (ob != std::string_view::npos) {
+                    int d = 0;
+                    std::size_t oe = ob;
+                    for (std::size_t i = ob; i < event_block.size(); ++i) {
+                        if (event_block[i] == '{') {
+                            if (++d > kMaxJsonDepth) {
+                                d = -1;
+                                break;
+                            }
+                        } else if (event_block[i] == '}') {
+                            if (--d == 0) {
+                                oe = i;
+                                break;
+                            }
+                        }
+                    }
+                    if (d == 0) {
+                        const auto devig = ParseInplayOddsDevig(
+                            event_block.substr(ob, oe - ob + 1), kSoccerMarketId1x2Fulltime);
+                        if (devig.valid) home_fair = devig.home_fair;
+                    }
+                }
+            }
+        }
+
         result.scores.push_back(std::move(rec));
+        result.inplay_home_fairs.push_back(home_fair);  // 1:1 对齐 scores
     }
 
     return result;

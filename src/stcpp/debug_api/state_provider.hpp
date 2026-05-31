@@ -300,6 +300,9 @@ struct EventScore {
     //     start_ts<=now 不触发 R-20 clamp, 故 event_ts_ns 即真实 kickoff). 时间窗口锚定用.
     std::string league_id;
     std::int64_t kickoff_ts_sec{0};
+    // inplay bet365 单源 de-vig home(YES) fair (InplayFeedThread 从 ParseResult.inplay_home_fairs 填;
+    //   -1=无 odds; → paper_loop game_row.inplay_bet365_home_fair → g_bm_inplay_fair 特征)。
+    double inplay_bet365_home_fair{-1.0};
 };
 
 // ============================================================

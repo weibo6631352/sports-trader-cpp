@@ -71,7 +71,14 @@ struct ParseResult {
 
     // sport (传入 parser 时设置, 方便 caller 区分)
     goalserve::GoalserveSport sport = goalserve::GoalserveSport::Soccer;
+
+    // inplay bet365 单源 de-vig home(YES) 胜率, 与 scores 1:1 对齐 (index i ↔ scores[i])。
+    //   -1.0 = 该 event 无 odds 数据 (无 odds plan / market 缺)。caller 填 game_row.inplay_bet365_home_fair。
+    std::vector<double> inplay_home_fairs;
 };
+
+// soccer 1X2 (Full Time) inplay market_id (SSOT xiaoduan-w8 §4.3: "1"=1X2全场)。
+inline constexpr std::string_view kSoccerMarketId1x2Fulltime = "1";
 
 // ============================================================================
 // InplayScoreParser — stateless, thread-safe (纯函数包装器)

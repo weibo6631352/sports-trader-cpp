@@ -611,8 +611,12 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
             }
             old_keys.clear();
             // 写入新 events
-            for (const auto& rec : parse_result.scores) {
+            for (std::size_t i = 0; i < parse_result.scores.size(); ++i) {
+                const auto& rec = parse_result.scores[i];
                 debug_api::EventScore es = ToEventScore(rec, sport);
+                // inplay bet365 de-vig fair (与 scores 1:1 对齐; -1=无 odds)。
+                if (i < parse_result.inplay_home_fairs.size())
+                    es.inplay_bet365_home_fair = parse_result.inplay_home_fairs[i];
                 const std::string& key = rec.match_id.inplay_match_id;
                 if (!key.empty()) {
                     merged_map_[key] = std::move(es);
