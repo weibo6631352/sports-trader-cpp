@@ -132,6 +132,12 @@ private:
             << ",\"fair_value\":" << q.fair_value << ",\"market_mid\":" << q.market_mid
             << ",\"edge_bps\":" << q.edge_bps << ",\"fee_rate_coef\":"
             << q.fee_rate_coef
+            // v0.7 类别上下文码 (真实 Polymarket 市场结构; 与 fv.jsonl 82-85 列同源 QuoteFeatures 载体,
+            //   此处对齐写入 quotes.jsonl — 离线分析/join 免再去查 fv 向量)。unknown=-1。
+            << ",\"cat_asset_class_id\":" << q.cat_asset_class_id
+            << ",\"cat_sport_family_id\":" << q.cat_sport_family_id
+            << ",\"cat_league_id\":" << q.cat_league_id
+            << ",\"cat_market_type_id\":" << q.cat_market_type_id
             // 树父级引用 (按 event join 兄弟盘口; neg_risk 一致性) + 双边微观结构 (模型输入, 不 gate;
             // 2026-05-31)
             << ",\"event_id\":\"" << q.event_id << "\""

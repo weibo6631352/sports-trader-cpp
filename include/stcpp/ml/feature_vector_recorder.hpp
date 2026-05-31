@@ -89,7 +89,7 @@ private:
         out << "{\"condition_id\":\"" << r.condition_id << "\",\"as_of_ts_ns\":" << r.as_of_ts_ns
             << ",\"spec_version\":\"" << r.spec_version << "\",\"fair_value\":" << r.baseline_fair;
         for (std::uint16_t i = 0; i < r.count; ++i) {
-            out << ",\"f" << i << "\":" << r.values[i];  // f0..f74, 列序 = MlFeature enum
+            out << ",\"f" << i << "\":" << r.values[i];  // f0..f85 (含 cat 82-85), 列序 = MlFeature enum
         }
         out << "}\n";  // fair_value = 残差训练 baseline 锚 (非 X 列; 训练侧 y=label−fair_value)
     }
