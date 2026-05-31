@@ -70,6 +70,7 @@
 #include <utility>
 
 #include "stcpp/data/score_snapshot_store.hpp"  // A4: ScoreMap (tick-local 共享比分快照, 消 read-skew)
+#include "stcpp/eval/clv_tracker.hpp"            // CLV 测量 harness (成果尺子, 离线评估)
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
 #include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
@@ -259,6 +260,9 @@ public:
     // slice-3b: 累计已实现 PnL (whole pUSD; 含结算)。观测/dashboard/测试 (loop_thread_ 写, 读时近似)。
     [[nodiscard]] double cum_realized_pnl_pusd() const noexcept { return cum_realized_pnl_pusd_; }
 
+    // M3 成果尺子: CLV 聚合报告 (G1 验收: clv_close_mean>1.5% + positive_rate>55%)。
+    [[nodiscard]] eval::CLVTracker::Report clv_report() const noexcept { return clv_tracker_.report(); }
+
     // A1: 注入真实 Goalserve 比分源 (可空; nullptr → 恒 stub 路径, 行为同 A1 前).
     //   单 writer: 仅主线程在 Start() 前调用一次 (score_store_ 之后只读).
     void SetScoreStore(const data::ScoreSnapshotStore* s) noexcept { score_store_ = s; }
@@ -411,6 +415,11 @@ private:
     //   loop_thread_ 单 writer。settled_conditions_: 幂等 + 已定盘口跳过决策。
     double cum_realized_pnl_pusd_{0.0};
     std::unordered_map<std::string, char> settled_conditions_;
+
+    // ---- M3 成果尺子 (老雷 results plan v1): CLV 测量 ----
+    //   每笔买入成交记 entry; 每 tick 更新 mid; 结算时算 CLV (close mid / 0-1 settle)。
+    //   离线评估 only (小蒋前视红线: 绝不回喂决策)。loop_thread_ 单 writer。
+    eval::CLVTracker clv_tracker_;
 
     // ---- 内部实现 ----
     void RunLoop(std::stop_token st);

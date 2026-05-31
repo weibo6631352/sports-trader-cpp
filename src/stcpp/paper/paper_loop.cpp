@@ -716,6 +716,9 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     const double exec_bid = side_book.best_bid();
     const double mark_price = std::isfinite(side_book.microprice) ? side_book.microprice : side_book.mid;
 
+    // M3 CLV 尺子: 每 tick 更新本 token 市场 mid (收盘参考价 = 结算前最后值)。离线评估, 不回喂决策。
+    clv_tracker_.UpdateMid(token_id, mark_price);
+
     // reservation 限价界 (小梁 Q-梁-1; BR-1 纯函数)。
     const control::ReservationPrices reservation = control::ComputeReservation(control::ReservationInput{
         /*fair=*/p_fair_side,
@@ -868,6 +871,12 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     stats_.ledger_publishes.fetch_add(1, std::memory_order_relaxed);
     FeedRiskGateway();
 
+    // M3 CLV 尺子: 记买入(建仓)成交 entry (卖减仓是退出非建仓, 不计 CLV)。离线评估 only。
+    if (intent.side == strategy::Side::Buy) {
+        clv_tracker_.RecordFill(token_id, fill.fill_price, mark_price,
+                                static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.as_of_ts_ns);
+    }
+
     std::fprintf(stderr,
                  "[paper_loop] FILL cond=%.24s... tok=%.16s... side=%s is_close=%d "
                  "fill_sz=%.4f fill_px=%.4f fair=%.4f\n",
@@ -919,6 +928,9 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
     ev.ingestion_ts_ns = game_row.ingestion_ts_ns;
     ev.as_of_ts_ns = NowNs();
     position_ledger_.apply_fill(condition_id, token_id, outcome, ev);
+
+    // M3 CLV 尺子: 结算 → 算该 token 全部建仓成交的 CLV (close mid / 0-1 settle)。离线评估 only。
+    clv_tracker_.OnSettle(token_id, settle_price);
 
     stats_.positions_settled.fetch_add(1, std::memory_order_relaxed);
     std::fprintf(stderr,

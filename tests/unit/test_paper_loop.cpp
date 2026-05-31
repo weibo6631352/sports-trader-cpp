@@ -1795,6 +1795,16 @@ TEST_F(PaperLoopTest, TS4_Settlement_RealizesAndCloses) {
         << "TS4: YES 胜 → realized PnL > 0 (买便宜结算 1.0); 现实 PnL 结算正确性修复";
     EXPECT_NEAR(loop_->cum_realized_pnl_pusd(), (1.0 - avg) * yes_qty, 1e-6)
         << "TS4: realized = (1.0 − avg_entry) × qty";
+
+    // M3 CLV 尺子: 结算后 CLV 报告应记录建仓成交 (买 ~0.30 → YES 胜结算 1.0 → CLV_settle 正)。
+    const auto clv = loop_->clv_report();
+    std::fprintf(stderr, "[TS4-CLV] n=%llu clv_close=%.4f clv_settle=%.4f pos_rate=%.2f\n",
+                 static_cast<unsigned long long>(clv.n_fills), clv.clv_close_mean, clv.clv_settle_mean,
+                 clv.clv_close_positive_rate);
+    EXPECT_GT(clv.n_fills, 0u) << "TS4: CLV 尺子应记录已结算的建仓成交";
+    EXPECT_GT(clv.clv_settle_mean, 0.0)
+        << "TS4: 买 ~0.30 → YES 胜结算 1.0 → CLV_settle = 1.0−0.30 ≈ +0.70 (正期望兑现)";
+    EXPECT_NEAR(clv.clv_settle_mean, 1.0 - avg, 0.02) << "TS4: CLV_settle ≈ 1.0 − avg_entry";
 }
 
 // TS5 (slice-3c REST resolution 注入 → 权威结算): app 层轮询 gamma closed/clob winner →
