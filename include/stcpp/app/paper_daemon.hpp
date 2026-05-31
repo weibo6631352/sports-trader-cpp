@@ -267,6 +267,7 @@ private:
     // ---- 发现结果 (Build 填) ----
     debug_api::MarketTokenMap token_map_;
     debug_api::MarketInfoMap market_catalog_;
+    std::unordered_map<std::string, paper::MarketCat> market_cat_map_;  // v0.7 类别上下文 (ML 特征 82-85)
     std::vector<debug_api::EventInfo> event_infos_;
     std::vector<std::string> all_token_ids_;
 

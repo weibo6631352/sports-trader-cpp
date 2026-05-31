@@ -113,6 +113,13 @@ struct QuoteFeatures {
     //   裸 ts 非 MlFeature 特征 (同 4ts 排除); 仅供 extract_full.fill_latency_features 算 NO book 龄/延迟。
     std::int64_t no_book_data_source_ts_ns{0};
     std::int64_t no_book_ingestion_ts_ns{0};
+    // 类别上下文码 (v0.7; 真实 Polymarket 市场结构 → 整数码, app 层算一次, 此处仅搬运)。
+    //   映射见 data/market_taxonomy.hpp; categorical level (非 ordinal), unknown=-1。
+    //   paper_loop 从 per-condition map (SetMarketCatByCondition) 查填 → extract_full 抽进 82-85 列。
+    std::int32_t cat_asset_class_id{0};    // 0=Sports/1=Crypto/2=Politics/3=Esports (现恒 Sports)
+    std::int32_t cat_sport_family_id{-1};  // 粗运动家族 (soccer=0/basket=1/tennis=2/.../-1 unk)
+    std::int32_t cat_league_id{-1};        // 细联赛 = Polymarket sport.id (nba=34/bkcba=104; NBA≠CBA)
+    std::int32_t cat_market_type_id{-1};   // 盘口 moneyline=0/spread=1/totals=2/outright=3/prop=4/series=5
 
     // ---- 当前持仓 (老板 2026-05-31: 持仓入模型; 库存感知 — 目标仓位范式控制器需知现仓才能定调整) ----
     //   老板 2026-05-31「各边买了多少, 可能两边都买, 不能只说买哪一边」: per-token 双边量, 不塌单边/净。

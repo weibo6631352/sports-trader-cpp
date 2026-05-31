@@ -56,6 +56,55 @@ std::string ExtractJsonStr(const std::string& json, const std::string& key) {
     return json.substr(pos, end - pos);
 }
 
+static double ExtractJsonNumIn(const std::string& json, const std::string& key, std::size_t scan_from,
+                               std::size_t scan_to, double fallback);  // 前置声明 (定义在下方)
+
+// Extract nested "sport" object → 联赛码 (sport.sport, e.g. "nba"/"bkcba") + 稳定 id (sport.id)。
+// 真实 gamma: "sport":{"id":34,"sport":"nba",...} (对象, 非 string)。找 "sport":{ 起的平衡对象再取内层。
+struct SportObj {
+    std::string code;
+    std::int64_t id{0};
+};
+static SportObj ExtractSportObject(const std::string& json) {
+    SportObj out;
+    const std::string needle = "\"sport\":{";
+    std::size_t pos = json.find(needle);
+    if (pos == std::string::npos)
+        return out;
+    std::size_t start = pos + needle.size() - 1;  // 指向 '{'
+    std::size_t depth = 0, i = start;
+    bool in_str = false, esc = false;
+    for (; i < json.size(); ++i) {
+        const char c = json[i];
+        if (esc) {
+            esc = false;
+            continue;
+        }
+        if (c == '\\') {
+            esc = true;
+            continue;
+        }
+        if (c == '"') {
+            in_str = !in_str;
+            continue;
+        }
+        if (in_str)
+            continue;
+        if (c == '{') {
+            ++depth;
+        } else if (c == '}') {
+            if (--depth == 0) {
+                ++i;
+                break;
+            }
+        }
+    }
+    const std::string obj = json.substr(start, i - start);
+    out.code = ExtractJsonStr(obj, "sport");                                              // 联赛码
+    out.id = static_cast<std::int64_t>(ExtractJsonNumIn(obj, "id", 0, obj.size(), 0.0));  // sport.id
+    return out;
+}
+
 // Extract a numeric value under `key` ("key":<num> 或 "key": <num>). 找不到/非法返 fallback.
 // 只在 [scan_from, scan_to) 区间内找 (用于限定 feeSchedule 子对象). 处理负号/小数/科学计数.
 static double ExtractJsonNumIn(const std::string& json, const std::string& key, std::size_t scan_from,
@@ -382,7 +431,12 @@ std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int 
         ev.event_id = ExtractJsonStr(event_obj, "id");
         ev.slug = ExtractJsonStr(event_obj, "slug");
         ev.title = ExtractJsonStr(event_obj, "title");
-        ev.sport = ExtractJsonStr(event_obj, "sport");
+        // 真实 sport 是对象 {id, sport, ...}: 取联赛码 (sport.sport) + 稳定 id (sport.id)。
+        const SportObj so = ExtractSportObject(event_obj);
+        ev.sport_code = so.code;  // "nba"/"bkcba"/"atp"/...
+        ev.sport_id = so.id;      // 34/104/45/... → cat_league (NBA≠CBA)
+        // is_sports 过滤兜底: 真对象码 > 旧 string sport (兼容) > tag。
+        ev.sport = !so.code.empty() ? so.code : ExtractJsonStr(event_obj, "sport");
         if (ev.sport.empty())
             ev.sport = ExtractJsonStr(event_obj, "tag");
         ev.neg_risk_market_id = ExtractJsonStr(event_obj, "negRiskMarketID");
@@ -518,7 +572,10 @@ std::vector<DiscoveredEvent> ParseSportsMarketsFlat(const std::string& json_buf,
         ev.event_id = dm.condition_id;
         ev.slug = ExtractJsonStr(mobj, "slug");
         ev.title = question;
-        ev.sport = ExtractJsonStr(mobj, "sport");
+        const SportObj so2 = ExtractSportObject(mobj);
+        ev.sport_code = so2.code;
+        ev.sport_id = so2.id;
+        ev.sport = !so2.code.empty() ? so2.code : ExtractJsonStr(mobj, "sport");
         ev.neg_risk_market_id = ExtractJsonStr(mobj, "negRiskMarketID");
         ev.markets.push_back(std::move(dm));
         result.push_back(std::move(ev));

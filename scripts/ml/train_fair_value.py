@@ -19,10 +19,11 @@ import json
 import sys
 
 N_FEATURES = 82  # 数值特征 0..81 (延迟/微结构/比分/赔率派生)
-# v0.6 类别上下文列 (82-84): categorical 非 ordinal — 必须声明 categorical_feature, 否则 LightGBM
-#   把 Basketball=1 当 "比 Soccer=0 大" 的有序数值 (错)。整数码仅作 level; unknown=-1 独立 level。
-CAT_FEATURES = [82, 83, 84]  # cat_asset_class / cat_sport / cat_market_type
-N_TOTAL = N_FEATURES + len(CAT_FEATURES)  # = 85 = kMlFeatureCount (ml-feature-spec v0.6)
+# v0.7 类别上下文列 (82-85): categorical 非 ordinal — 必须声明 categorical_feature, 否则 LightGBM
+#   把 league=104(CBA) 当 "比 34(NBA) 大" 的有序数值 (错)。整数码仅作 level; unknown=-1 独立 level。
+#   82 cat_asset_class / 83 cat_sport(家族) / 84 cat_market_type / 85 cat_league(Polymarket sport.id)
+CAT_FEATURES = [82, 83, 84, 85]
+N_TOTAL = N_FEATURES + len(CAT_FEATURES)  # = 86 = kMlFeatureCount (ml-feature-spec v0.7)
 
 
 def load_jsonl(path):
@@ -87,10 +88,11 @@ def selftest(out_path):
     rng = np.random.default_rng(42)
     n = 500
     X = rng.standard_normal((n, N_TOTAL)).astype("float32")
-    # 类别列填整数 level (fixture 真实性; cat_asset_class 恒 0, sport 0-7, market_type -1/0/1)
+    # 类别列填整数 level (fixture 真实性; asset 恒 0, sport 家族 0-8, market_type -1..5, league=sport.id)
     X[:, 82] = 0.0
-    X[:, 83] = rng.integers(0, 8, n).astype("float32")
+    X[:, 83] = rng.integers(-1, 9, n).astype("float32")
     X[:, 84] = rng.integers(-1, 6, n).astype("float32")
+    X[:, 85] = rng.choice([34, 104, 45, 46, 8, 35, 39], n).astype("float32")  # 真实 sport.id 样本
     # y = sigmoid(线性组合) ∈ (0,1), 让回归输出像 p_yes (含一个类别交互项)
     z = X[:, 0] * 0.8 + X[:, 30] * 0.5 - X[:, 18] * 0.3 + (X[:, 83] == 1.0) * 0.2
     y = (1.0 / (1.0 + np.exp(-z))).astype("float32")

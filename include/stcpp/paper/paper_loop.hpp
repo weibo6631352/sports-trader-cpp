@@ -126,6 +126,16 @@ struct ParentRef {
     std::string neg_risk_market_id;
 };
 
+// v0.7 类别上下文注入 (真实 Polymarket 市场结构 → categorical 码; app 层 market_taxonomy.hpp 算一次,
+//   per-condition 注入, 同 fee/parent 注入范式)。喂 ML 特征 82-85 (资产/运动家族/盘口/联赛)。
+//   联赛 = Polymarket sport.id (nba=34/bkcba=104), 天然区分 NBA vs CBA。unknown=-1。
+struct MarketCat {
+    std::int32_t asset_class_id{0};    // 0=Sports/1=Crypto/2=Politics/3=Esports
+    std::int32_t sport_family_id{-1};  // 粗家族 soccer=0/basket=1/tennis=2/...
+    std::int32_t league_id{-1};        // 细联赛 = Polymarket sport.id
+    std::int32_t market_type_id{-1};   // moneyline=0/spread=1/totals=2/outright=3/prop=4/series=5
+};
+
 // slice-3c 结算注入 (老板 2026-05-31 摸底定论: Polymarket resolution **不在 market WSS**,
 //   是 REST 字段 — gamma `closed` + clob `tokens[i].winner`)。app 层轮询 REST → SetResolutionByCondition
 //   注入 (同 fee/event-mapping 注入范式), 非 WSS 解析 (market 频道只推 book/price/trade/tick)。
@@ -321,6 +331,12 @@ public:
         fee_by_condition_ = std::move(m);
     }
 
+    // v0.7: 注入 per-condition 类别上下文码 (真实 Polymarket 市场结构 → ML 特征 82-85)。
+    //   单 writer: Start() 前注入 (market discovery 后); loop_thread_ 只读。查不到 → 默认 (sports/-1)。
+    void SetMarketCatByCondition(std::unordered_map<std::string, MarketCat> m) noexcept {
+        market_cat_by_condition_ = std::move(m);
+    }
+
     // slice-3c: 注入 per-condition 结算状态 (app 层轮询 gamma `closed` / clob `tokens[].winner` →
     //   此处注入)。单 writer: Start() 前注入 / 周期热刷 (loop_thread_ 只读)。喂 resolution_status 特征
     //   + 给 3b 提供权威 winner (status=Resolved+winner → 按 winner 结算, 优于 Goalserve 比分推断)。
@@ -404,6 +420,12 @@ private:
     [[nodiscard]] double FeeCoefFor(const std::string& condition_id) const noexcept {
         auto it = fee_by_condition_.find(condition_id);
         return (it != fee_by_condition_.end()) ? it->second : kDefaultFeeCoef;
+    }
+    // v0.7: per-condition 类别上下文 (market discovery 注入; 查不到 → 默认 sports/-1 占位)。
+    std::unordered_map<std::string, MarketCat> market_cat_by_condition_;
+    [[nodiscard]] MarketCat MarketCatFor(const std::string& condition_id) const noexcept {
+        auto it = market_cat_by_condition_.find(condition_id);
+        return (it != market_cat_by_condition_.end()) ? it->second : MarketCat{};
     }
     // slice-3c: per-condition 结算状态 (REST 注入; 查不到 → nullptr = 未知/默认 Open)。
     std::unordered_map<std::string, ResolutionEntry> resolution_by_condition_;

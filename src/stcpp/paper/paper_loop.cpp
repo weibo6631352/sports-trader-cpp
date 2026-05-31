@@ -1299,6 +1299,14 @@ void PaperLoop::PopulateFeatureColumns(
     //   进 ML 训练数据 (FeatureRecorder) + 前端 /quote。与 RM/sizing 同源 FeeCoefFor(condition)。
     qf.fee_rate_coef = FeeCoefFor(condition_id);
 
+    // v0.7: 类别上下文码 (真实 Polymarket 市场结构 → ML 特征 82-85; per-condition 注入查填)。
+    //   始终输出 (market 元数据非决策派生); 查不到 → 默认 sports/-1 (占位, 不影响 gate)。
+    const MarketCat mc = MarketCatFor(condition_id);
+    qf.cat_asset_class_id = mc.asset_class_id;
+    qf.cat_sport_family_id = mc.sport_family_id;
+    qf.cat_league_id = mc.league_id;
+    qf.cat_market_type_id = mc.market_type_id;
+
     // A2: 盘口上下文 / 双边微观结构 (模型输入 + 观测, 绝不 gate — 老板 2026-05-31)。
     std::strncpy(qf.condition_id, condition_id.c_str(), sizeof(qf.condition_id) - 1);
     qf.condition_id[sizeof(qf.condition_id) - 1] = '\0';

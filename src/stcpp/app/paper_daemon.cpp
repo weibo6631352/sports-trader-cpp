@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "stcpp/data/commentaries_poller.hpp"   // live_stats CommentariesPoller (commentaries 轮询)
+#include "stcpp/data/market_taxonomy.hpp"        // v0.7 类别码映射 (真实 Polymarket 结构 → categorical)
 #include "stcpp/data/inplay_feed_thread.hpp"    // InplayFeedThread / InplayFeedConfig
 #include "stcpp/data/live_stats_store.hpp"      // live_stats LiveStatsStore
 #include "stcpp/data/settlement_poller.hpp"     // M2 SettlementPoller (clob /markets 轮询)
@@ -136,6 +137,17 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             mi.tokens.push_back(std::move(tk1));
 
             market_catalog_[dm.condition_id] = std::move(mi);
+
+            // v0.7: 真实 Polymarket 市场结构 → 类别上下文码 (此处 ev+dm 在 scope, 算一次喂 ML 特征 82-85)。
+            //   联赛 = ev.sport_id (Polymarket sport.id, nba=34/bkcba=104=CBA); 家族 = ev.sport_code 滚动;
+            //   盘口 = dm.sports_market_type (已归一)。映射 SSOT: data/market_taxonomy.hpp。
+            namespace tax = stcpp::data::taxonomy;
+            paper::MarketCat cat;
+            cat.asset_class_id = static_cast<std::int32_t>(tax::AssetClass::kSports);  // 现仅发现体育
+            cat.sport_family_id = tax::SportFamilyCode(ev.sport_code);
+            cat.league_id = (ev.sport_id > 0) ? static_cast<std::int32_t>(ev.sport_id) : -1;
+            cat.market_type_id = tax::MarketTypeCode(dm.sports_market_type);
+            market_cat_map_[dm.condition_id] = cat;
         }
         event_infos_.push_back(std::move(ei));
     }
@@ -332,6 +344,11 @@ BuildResult PaperDaemon::Build() {
             fee_map[cid] = mi.fee_rate;
         paper_loop_->SetFeeByCondition(std::move(fee_map));
     }
+
+    // v0.7: 注入 per-condition 类别上下文码 (真实 Polymarket 市场结构 → ML 特征 82-85)。
+    //   PopulateCatalog 已算好 market_cat_map_ (ev.sport_id/sport_code + dm.sports_market_type)。
+    if (!market_cat_map_.empty())
+        paper_loop_->SetMarketCatByCondition(market_cat_map_);
 
     // 统一数据树: 注入 condition → 父级引用 (event_id / neg_risk_market_id), 决策/模型带父级。
     {

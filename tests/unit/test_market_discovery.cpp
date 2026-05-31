@@ -372,6 +372,26 @@ TEST(ParseSportsEvents, MD43_SportNullTitleNba) {
     EXPECT_EQ(result[0].sport, "null");
 }
 
+// MD-43b: 真实 gamma sport 对象 {id, sport} → sport_code/sport_id 解析 (NBA vs CBA 细粒度)。
+TEST(ParseSportsEvents, MD43b_RealSportObject_NbaVsCba) {
+    const std::string mnba = MakeMarket("cond-nba", "NBA Winner", "tok-nba-y", "tok-nba-n");
+    const std::string evnba =
+        "{\"id\":\"ev-nba\",\"slug\":\"nba-game\",\"title\":\"Lakers vs Celtics\","
+        "\"sport\":{\"id\":34,\"sport\":\"nba\",\"ordering\":\"away\"},"
+        "\"markets\":[" + mnba + "]}";
+    const std::string mcba = MakeMarket("cond-cba", "CBA Winner", "tok-cba-y", "tok-cba-n");
+    const std::string evcba =
+        "{\"id\":\"ev-cba\",\"slug\":\"cba-game\",\"title\":\"Beijing vs Guangdong\","
+        "\"sport\":{\"id\":104,\"sport\":\"bkcba\",\"ordering\":\"home\"},"
+        "\"markets\":[" + mcba + "]}";
+    auto result = ParseSportsEvents("[" + evnba + "," + evcba + "]", 30);
+    ASSERT_EQ(result.size(), 2u);
+    EXPECT_EQ(result[0].sport_code, "nba");
+    EXPECT_EQ(result[0].sport_id, 34);
+    EXPECT_EQ(result[1].sport_code, "bkcba");
+    EXPECT_EQ(result[1].sport_id, 104) << "CBA = Polymarket sport.id 104, ≠ NBA 34 (细粒度区分)";
+}
+
 // MD-44: sport 为空, title 无体育关键词 → event 被过滤
 TEST(ParseSportsEvents, MD44_NonSportEvent) {
     const std::string m = MakeMarket("cond-44", "Will X happen?", "tok-44-y", "tok-44-n");

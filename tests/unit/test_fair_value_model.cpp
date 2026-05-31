@@ -19,6 +19,7 @@
 #include "stcpp/data/feature_store_contract.hpp"
 #include "stcpp/ml/fair_value_model.hpp"
 #include "stcpp/ml/model_feature_spec.hpp"
+#include "stcpp/data/market_taxonomy.hpp"
 
 namespace {
 
@@ -97,11 +98,12 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_condition_exposure), 53u);  // v0.3 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_net_momentum_5m), 74u);       // v0.4 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_joint_staleness_sec), 81u);   // v0.5 末列
-    // v0.6 新末列 = cat_market_type (84).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_market_type), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_market_type), 84u);         // v0.6 末列
+    // v0.7 新末列 = cat_league (85; Polymarket sport.id, NBA≠CBA).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_league), kMlFeatureCount - 1);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_asset_class), 82u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_sport), 83u);
-    EXPECT_EQ(kMlFeatureCount, 85u);
+    EXPECT_EQ(kMlFeatureCount, 86u);
     // 双边对称 + v0.5 延迟特征抽查 (双边 book 龄独立).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);
@@ -168,32 +170,53 @@ TEST(ModelFeatureSpec, V05Columns_DataLatency_DoubleSided) {
     EXPECT_NEAR(at(MlFeature::x_joint_staleness_sec), 8.0, 1e-6) << "max(0.5,8,3)=8 最弱环节";
 }
 
-TEST(ModelFeatureSpec, V06Columns_CategoricalContext) {
-    // 类别上下文: 运动项目 (slug→GoalserveSport int) + 盘口类型 (string→code) + 资产大类。
-    // categorical level: Basketball=1, Moneyline=0, Sports=0; unknown=-1。
+TEST(ModelFeatureSpec, V07Columns_CategoricalContext_RealStructure) {
+    // v0.7: 类别码来自 QuoteFeatures 载体 (真实 Polymarket 结构, paper_loop 从 per-condition map 查填)。
+    // cat_league = Polymarket sport.id (nba=34, bkcba=104=CBA), 天然区分 NBA vs CBA — 老板要的细粒度。
     auto g = make_game_row();
     auto b = make_book_row();
-    g.sport = "basket";          // inplay slug (生产用; SportInplaySlug(Basketball))
-    b.market_type = "Totals";    // 大小分盘
     stcpp::sizing::QuoteFeatures qf{};
+    qf.cat_asset_class_id = 0;     // Sports
+    qf.cat_sport_family_id = 1;    // 篮球家族
+    qf.cat_market_type_id = 2;     // totals (大小分)
+    qf.cat_league_id = 104;        // bkcba = CBA (≠ NBA 34)
     FeatureVector fv = stcpp::ml::extract_full(g, b, qf);
     auto at = [&](MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
-    EXPECT_EQ(at(MlFeature::cat_asset_class), 0.0F) << "体育系统恒 Sports=0";
-    EXPECT_EQ(at(MlFeature::cat_sport), 1.0F) << "basket → Basketball=1";
-    EXPECT_EQ(at(MlFeature::cat_market_type), 1.0F) << "Totals=1 (大小分)";
-    // unknown 路径 (stub 无比分 / market_type 未注入) → -1 (独立 categorical level, 非 NaN)。
-    g.sport = "";
-    b.market_type = "";
-    fv = stcpp::ml::extract_full(g, b, qf);
-    EXPECT_EQ(at(MlFeature::cat_sport), -1.0F) << "空 slug → unknown=-1";
-    EXPECT_EQ(at(MlFeature::cat_market_type), -1.0F) << "未注入 → unknown=-1";
-    // 直接映射函数: 各运动 + 盘口枚举抽查。
-    EXPECT_EQ(stcpp::ml::SportCatCode("soccer"), 0.0);
-    EXPECT_EQ(stcpp::ml::SportCatCode("tennis"), 2.0);
-    EXPECT_EQ(stcpp::ml::SportCatCode("hockey"), 6.0);
-    EXPECT_EQ(stcpp::ml::MarketTypeCatCode("Moneyline"), 0.0);
-    EXPECT_EQ(stcpp::ml::MarketTypeCatCode("Spreads"), 2.0);
-    EXPECT_EQ(stcpp::ml::MarketTypeCatCode("Quarter"), 3.0);  // 分节家族
+    EXPECT_EQ(at(MlFeature::cat_asset_class), 0.0F) << "Sports";
+    EXPECT_EQ(at(MlFeature::cat_sport), 1.0F) << "篮球家族";
+    EXPECT_EQ(at(MlFeature::cat_market_type), 2.0F) << "totals 大小分";
+    EXPECT_EQ(at(MlFeature::cat_league), 104.0F) << "CBA (Polymarket sport.id 104, ≠ NBA 34)";
+    // unknown 默认 (未注入 condition) → -1 (独立 categorical level, 非 NaN)。
+    stcpp::sizing::QuoteFeatures qf2{};  // 默认: asset=0, 其余 -1
+    fv = stcpp::ml::extract_full(g, b, qf2);
+    EXPECT_EQ(at(MlFeature::cat_sport), -1.0F) << "未注入 → unknown=-1";
+    EXPECT_EQ(at(MlFeature::cat_league), -1.0F) << "未注入 → unknown=-1";
+}
+
+TEST(MarketTaxonomy, RealPolymarketVocabulary) {
+    namespace tax = stcpp::data::taxonomy;
+    // 盘口类型 (NormalizeSportsMarketType 归一值 → 码; 真实 sportsMarketType 集合)。
+    EXPECT_EQ(tax::MarketTypeCode("moneyline"), 0);
+    EXPECT_EQ(tax::MarketTypeCode("spread"), 1);
+    EXPECT_EQ(tax::MarketTypeCode("totals"), 2);
+    EXPECT_EQ(tax::MarketTypeCode("outright"), 3);
+    EXPECT_EQ(tax::MarketTypeCode("series"), 5);
+    EXPECT_EQ(tax::MarketTypeCode("map_handicap"), 1) << "raw 长尾 handicap → spread";
+    EXPECT_EQ(tax::MarketTypeCode("kill_over_under_game"), 2) << "over_under → totals";
+    EXPECT_EQ(tax::MarketTypeCode("lol_penta_kill"), 4) << "esports specials → prop";
+    EXPECT_EQ(tax::MarketTypeCode(""), -1);
+    // 运动家族 (真实联赛码 → 粗家族; cat_league 才是细 sport.id)。
+    EXPECT_EQ(tax::SportFamilyCode("nba"), 1);
+    EXPECT_EQ(tax::SportFamilyCode("bkcba"), 1) << "CBA 也是篮球家族";
+    EXPECT_EQ(tax::SportFamilyCode("atp"), 2);
+    EXPECT_EQ(tax::SportFamilyCode("wta"), 2) << "女子网球同家族";
+    EXPECT_EQ(tax::SportFamilyCode("mlb"), 3);
+    EXPECT_EQ(tax::SportFamilyCode("nhl"), 4);
+    EXPECT_EQ(tax::SportFamilyCode("lol"), 6) << "电竞";
+    EXPECT_EQ(tax::SportFamilyCode("dota2"), 6);
+    EXPECT_EQ(tax::SportFamilyCode("ufc"), 7) << "mma";
+    EXPECT_EQ(tax::SportFamilyCode("cricipl"), 8) << "板球";
+    EXPECT_EQ(tax::SportFamilyCode(""), -1);
 }
 
 TEST(ModelFeatureSpec, V04Columns_RemainingSignals) {
