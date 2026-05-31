@@ -36,6 +36,12 @@ static std::string bp_serialize_book_snapshot(const BookSnapshot& b) {
     // DEPRECATED alias
     s += ",\"market_id\":";
     s += json::str(b.market_id);
+    // wss_state / source 无论 found 均输出 (P1-3 对齐 endpoint_market.cpp; 修 found=false 时
+    //   前端热力格因 wss_state=undefined 全红的行为不一致, 2026-05-31 接口核查发现)。
+    s += ",\"wss_state\":";
+    s += json::str(b.wss_state);
+    s += ",\"source\":";
+    s += json::str(b.source);
     if (b.found) {
         s += ",\"best_bid\":";
         s += json::num(b.best_bid);
@@ -51,10 +57,6 @@ static std::string bp_serialize_book_snapshot(const BookSnapshot& b) {
         s += json::i64(b.sequence_no);
         s += ",\"gap_count\":";
         s += json::i64(b.gap_count);
-        s += ",\"wss_state\":";
-        s += json::str(b.wss_state);
-        s += ",\"source\":";
-        s += json::str(b.source);
         s += ",\"event_ts\":";
         s += json::i64(b.ts.event_ts_ns);
         s += ",\"data_source_ts\":";

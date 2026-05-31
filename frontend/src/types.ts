@@ -163,6 +163,9 @@ export interface Market {
   event_id: string;
   slug: string;
   polymarket_url: string;
+  // 2026-05-31 接口核查: 后端 endpoint_market.cpp:75-77 已输出, 前端原未声明 (信息丢失)。
+  sports_market_type?: string;
+  group_item_title?: string;
   tokens: Token[];
 }
 
@@ -288,6 +291,7 @@ export interface EventSummary {
 export interface EventsResponse {
   events: EventSummary[];
   as_of_ts: number;
+  data_source?: string;  // 2026-05-31 接口核查: 后端 endpoint_events.cpp:38 输出, 前端原未声明。
 }
 
 // ---------- 渲染用聚合类型 ----------
