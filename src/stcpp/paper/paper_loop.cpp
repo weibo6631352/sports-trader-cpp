@@ -1441,17 +1441,27 @@ void PaperLoop::PublishQuoteSnapshot(
         qf.required_margin = 0.0;
     }
 
-    // ML 推理 (步④/v0.3): qf 全特征就位 → extract_full(game_row, book_row, qf) 产完整
-    //   kMlFeatureCount(54) 列 (含双边时序微结构 + 双边持仓 24-53)。advisory, ML-R1/R2: 旁路,
-    //   绝不改 fair_value/决策。维度不符 → 跳过 (宁可空不可假)。R-12: paper loop_thread_, 非 WSS。
+    // ML 推理 (步④) + Phase 2 项6 完整向量捕获: qf 全特征就位 → extract_full 产完整
+    //   kMlFeatureCount(75) 列 (含 0-17 原始 game/book + 18-74 qf 派生)。一次算, 供 record + predict。
+    //   advisory, ML-R1/R2: 旁路, 绝不改 fair_value/决策。R-12: paper loop_thread_, 非 WSS。
+    const ml::FeatureVector fv = ml::extract_full(ml_game_row, ml_book_row, qf);
+    // 项6: 完整向量 Publish 进 fv_hub (短锁 POD copy; 独立 recorder 线程落盘, IO 离决策线程)。
+    //   训练 X 一列不缺 (含 score_diff/b_mid 等 FeatureRecorder 落不到的 0-17 原始列)。
+    if (fv_hub_ != nullptr && fv.size() == ml::kMlFeatureCount) {
+        ml::FeatureVectorRecord rec;
+        rec.set_condition(condition_id);
+        rec.as_of_ts_ns = qf.as_of_ts_ns;  // 决策时刻 (dedup + PIT; 同 FeatureRecorder 语义)
+        rec.set_spec(fv.spec_version);
+        rec.set_values(fv.values);
+        rec.valid = true;
+        fv_hub_->Publish(rec);
+    }
     ml::ModelPrediction ml_pred_storage;
     const ml::ModelPrediction* ml_pred = nullptr;
-    if (ml_model_ != nullptr && ml_model_->ready()) {
-        const ml::FeatureVector fv = ml::extract_full(ml_game_row, ml_book_row, qf);
-        if (fv.size() == ml_model_->expected_feature_count()) {
-            ml_pred_storage = ml_model_->predict(fv);
-            ml_pred = &ml_pred_storage;
-        }
+    if (ml_model_ != nullptr && ml_model_->ready() &&
+        fv.size() == ml_model_->expected_feature_count()) {
+        ml_pred_storage = ml_model_->predict(fv);
+        ml_pred = &ml_pred_storage;
     }
 
     // ML provenance.

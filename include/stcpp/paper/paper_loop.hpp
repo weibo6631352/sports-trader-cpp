@@ -76,6 +76,7 @@
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
 #include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量)
 #include "stcpp/ml/fair_value_model.hpp"         // ml::FairValueModel/ModelPrediction (步④ 推理接线)
+#include "stcpp/ml/feature_vector_hub.hpp"       // Phase 2 项6: 完整 75 列向量发布 (训练捕获)
 #include "stcpp/ml/model_feature_spec.hpp"       // extract_joined (game_row+book_row → FeatureVector)
 #include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
@@ -334,6 +335,10 @@ public:
     //   只填 QuoteFeatures.ml_advisory_p_yes + provenance, 绝不改 fair_value/决策。owner 是 daemon。
     void SetMlModel(const ml::FairValueModel* m) noexcept { ml_model_ = m; }
 
+    // Phase 2 项6: 注入完整 75 列向量 hub (daemon 持有 + recorder 线程消费)。nullptr = 不捕获。
+    //   PublishQuoteSnapshot 算完 extract_full 后 Publish 进来 (训练 X 含 0-17 原始列)。单 writer loop_thread_。
+    void SetFeatureVectorHub(ml::FeatureVectorHub* h) noexcept { fv_hub_ = h; }
+
     // 统一数据树: 注入 condition → 父级引用 (event_id / neg_risk_market_id)。
     //   单 writer: Start() 前注入一次, 之后 loop_thread_ 只读。盘口决策/模型带父级 (兄弟经 event_id 导航)。
     void SetParentRefs(std::unordered_map<std::string, ParentRef> m) noexcept {
@@ -410,6 +415,8 @@ private:
     }
     // 步④: ML 推理模型 (非自有; daemon 注入 + 持有)。loop_thread_ 只读。nullptr = baseline only。
     const ml::FairValueModel* ml_model_{nullptr};
+    // Phase 2 项6: 完整向量 hub (非自有; daemon 注入)。loop_thread_ 单 writer Publish。nullptr = 不捕获。
+    ml::FeatureVectorHub* fv_hub_{nullptr};
 
     // ---- A1: 真实比分源 + 映射 ----
     // score_store_: 单 writer (Start 前注入), 之后 loop_thread_ 只读 Get(). 可空 → stub 路径.

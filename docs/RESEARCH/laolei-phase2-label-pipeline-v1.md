@@ -52,16 +52,18 @@ y = 该 condition 结算 outcome (YES 赢=1 / NO 赢=0), 来自 `SettlementRecor
 - **已补**: FeatureRecorder.WriteLine 之前只落 33 字段 (缺第一梯队 alpha)。本轮扩到含
   **b_ofi / g_time_x_lead / g_goal_freshness / g_bm_inplay_fair / 全时序微结构(YES+NO) / x_log_odds /
   sports 动态 / 双边持仓 / resolution** —— 即 QuoteFeatures 全信号列 (契约 18-74)。
-- **残余 (0-17)**: 原始 game/book 列 (g_score_diff/g_period/g_elapsed/b_mid/b_spread/b_depth + cross 16-17)
-  **不在 QuoteFeatures**, 故 FeatureRecorder 落不到。注: market_mid≈b_mid 已落; score_diff 缺。
-  完整 75 列 X 需记 `extract_full` 输出 (PublishQuoteSnapshot 已算 fv) —— 但那需 fv-hub + 独立
-  recorder 线程 (避免 loop_thread_ IO)。**列入后续**; 当前 X (18-74 + fair/mid/edge/pos) 已含
-  评审第一梯队全部 alpha, 足够跑 book-only Tier-1 walk-forward (小蒋 P0)。
+- **完整 75 列 ✅ (项6 本轮)**: 原始 game/book 列 (g_score_diff/period/elapsed/b_mid/spread/depth +
+  cross 16-17) 不在 QuoteFeatures, 故新增 **fv-hub + FeatureVectorRecorder 线程** 落 `extract_full`
+  完整 75 列输出 (含 0-17)。链路: PublishQuoteSnapshot 算 fv → `fv_hub_->Publish` (loop_thread_ 短锁
+  POD copy) → 独立 recorder 线程 SnapshotAll 落 `<ml_path>.fv.jsonl` (IO 离决策线程, 同 FeatureRecorder
+  范式)。输出行 `{"condition_id":..,"as_of_ts_ns":..,"spec_version":..,"f0":..,"f74":..}`,
+  label_pipeline 直接 join。代码: `feature_vector_hub.hpp` / `feature_vector_recorder.hpp`。
+  - 两份训练源并存: `quotes.jsonl` (QuoteFeatures 人读字段名) + `*.fv.jsonl` (完整 75 列 f0-f74, 列序=enum)。
+    建模用 fv.jsonl (完整 + 列序锁 + 训练=推理同源 BR-1); quotes.jsonl 留人读/调试。
 
 ## 5. 下一步 (依赖)
 
-1. 标签 join ✅ (本轮)。X 信号列补全 ✅ (本轮)。
-2. 待真数据: paper daemon 跑出 features.jsonl + 结算 → 第一份 (X,y)。
+1. 标签 join ✅ (本轮)。X 信号列补全 ✅。完整 75 列 fv-hub + recorder ✅ (项6)。
+2. 待真数据: paper daemon 跑出 `*.fv.jsonl` + 结算 → JoinFile → 第一份完整 (X,y)。
 3. book-only Tier-1 walk-forward (小蒋 P0): Polymarket 真数据子集验 baseline IC/CLV。
-4. 残差 LightGBM → ONNX → OnnxFairValueModel 实现 (替 stub)。
-5. (可选) 完整 75 列: fv-hub + TrainingSampleRecorder 线程, 补 0-17 原始列。
+4. 残差 LightGBM → ONNX → OnnxFairValueModel 实现 (替 stub, `fair_value_model.hpp:332`)。

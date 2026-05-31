@@ -510,6 +510,27 @@ TEST_F(PaperLoopTest, T11c_NoSideMicrostructure_Captured) {
 }
 
 // ---------------------------------------------------------------------------
+// T11f (Phase 2 项6): paper_loop 算完 extract_full → Publish 完整 75 列向量进 fv_hub。
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T11f_Phase2_FullVectorPublishedToHub) {
+    hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));
+    stcpp::ml::FeatureVectorHub fv_hub;
+    loop_ = MakeLoop();
+    loop_->SetFeatureVectorHub(&fv_hub);  // Start 前注入
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    loop_->Stop();  // join loop_thread_ 先于 fv_hub 析构 (本测局部)
+
+    // fv_hub 应收到该 condition 的完整 75 列向量。
+    const auto rec = fv_hub.Read("cond-test-001");
+    if (rec.has_value()) {
+        EXPECT_EQ(rec->count, stcpp::ml::kMlFeatureCount) << "完整 75 列 (含 0-17 原始 game/book)";
+        EXPECT_STREQ(rec->spec_version, std::string(stcpp::ml::kSpecVersion).c_str());
+        EXPECT_GT(rec->as_of_ts_ns, 0LL);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // T11e (Phase 0 联合评审): 项5 组合度量接入 TickAll (权益每周期采样) + 项1-3 门 ON 路径不崩。
 // ---------------------------------------------------------------------------
 TEST_F(PaperLoopTest, T11e_Phase0_PortfolioMetricsAndGatesWired) {

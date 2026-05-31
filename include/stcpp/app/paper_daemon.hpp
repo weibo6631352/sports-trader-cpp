@@ -67,7 +67,9 @@ class CommentariesPoller;  // commentaries 轮询线程 (forward)
 }  // namespace stcpp::data
 namespace stcpp::ml {
 class FeatureRecorder;
-class FairValueModel;  // 步④ ML 推理模型 (forward; .cpp 实体化 Stub/ONNX)
+class FairValueModel;          // 步④ ML 推理模型 (forward; .cpp 实体化 Stub/ONNX)
+class FeatureVectorHub;        // Phase 2 项6 完整向量 hub (forward)
+class FeatureVectorRecorder;   // Phase 2 项6 完整向量 recorder 线程 (forward)
 }  // namespace stcpp::ml
 
 namespace stcpp::app {
@@ -315,6 +317,10 @@ private:
 
     // ML 采集 (读 quote_hub_)
     std::unique_ptr<ml::FeatureRecorder> ml_recorder_;
+    // Phase 2 项6: 完整 75 列向量 hub + recorder。fv_hub_ 先于 fv_recorder_ 声明 (recorder 持 hub 引用,
+    //   须先析构); paper_loop_ 持 fv_hub_ 裸指针 (Shutdown 已先 Stop, 析构序无访问)。
+    std::unique_ptr<ml::FeatureVectorHub> fv_hub_;
+    std::unique_ptr<ml::FeatureVectorRecorder> fv_recorder_;
 
     // HTTP 观测端 (最后声明, 最先析构; 仅 RunMode::PaperDaemon)
     std::unique_ptr<debug_api::HttpServer> server_;

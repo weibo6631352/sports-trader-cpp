@@ -22,7 +22,8 @@
 #include "stcpp/data/settlement_store.hpp"      // M2 SettlementStore
 #include "stcpp/data/score_snapshot_store.hpp"  // A1b: ScoreSnapshotStore::GetSnapshot
 #include "stcpp/ml/fair_value_model.hpp"        // 步④ make_onnx_fair_value_model / StubFairValueModel
-#include "stcpp/ml/feature_recorder.hpp"        // FeatureRecorder
+#include "stcpp/ml/feature_recorder.hpp"          // FeatureRecorder
+#include "stcpp/ml/feature_vector_recorder.hpp"   // Phase 2 项6 完整向量 recorder (含 hub)
 #include "stcpp/ml/model_feature_spec.hpp"      // kMlFeatureCount (ML 模型维度契约)
 
 #include "src/stcpp/debug_api/live_book_publisher.hpp"  // LiveBookPublisher
@@ -478,6 +479,15 @@ BuildResult PaperDaemon::Build() {
             ml_cond_ids.push_back(cond_id);
         }
         ml_recorder_ = std::make_unique<ml::FeatureRecorder>(*quote_hub_, std::move(ml_cond_ids), rec_cfg);
+
+        // Phase 2 项6: 完整 75 列向量 hub + recorder (训练 X 含 0-17 原始列, FeatureRecorder 落不到的)。
+        //   paper_loop loop_thread_ Publish → 独立 recorder 线程落盘 (IO 离决策线程)。
+        fv_hub_ = std::make_unique<ml::FeatureVectorHub>();
+        paper_loop_->SetFeatureVectorHub(fv_hub_.get());
+        ml::FeatureVectorRecorder::Config fv_cfg;
+        fv_cfg.output_path = cfg_.ml_path + ".fv.jsonl";  // 与 quotes.jsonl 并列
+        fv_cfg.poll_interval_sec = 5;
+        fv_recorder_ = std::make_unique<ml::FeatureVectorRecorder>(*fv_hub_, fv_cfg);
     }
 
     // ---- Step 5: HttpServer (仅 RunMode::PaperDaemon; Headless 无 HTTP) ----
@@ -565,10 +575,15 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
-    // ---- Step 4c start: FeatureRecorder ----
+    // ---- Step 4c start: FeatureRecorder + 完整向量 recorder (项6) ----
     if (ml_recorder_) {
         ml_recorder_->Start();
         std::printf("[paper_daemon] ML 训练数据采集启动 (FeatureRecorder -> %s)\n", cfg_.ml_path.c_str());
+    }
+    if (fv_recorder_) {
+        fv_recorder_->Start();
+        std::printf("[paper_daemon] 完整 75 列向量采集启动 (FeatureVectorRecorder -> %s.fv.jsonl)\n",
+                    cfg_.ml_path.c_str());
     }
 
     // ---- Step 5 start: HttpServer ----
@@ -639,9 +654,12 @@ void PaperDaemon::Shutdown() noexcept {
         server_->stop();
     }
 
-    // 2. FeatureRecorder (先于 quote_hub_ 析构; Stop 内含 join)
+    // 2. FeatureRecorder + 完整向量 recorder (项6) (先于 hub/paper_loop 析构; Stop 内含 join)
     if (ml_recorder_) {
         ml_recorder_->Stop();
+    }
+    if (fv_recorder_) {
+        fv_recorder_->Stop();  // 停读 fv_hub_ (paper_loop 随后 Stop 停写; 二者先于 fv_hub_ 析构)
     }
 
     // 3. PaperLoop (先于 hub/ledger/rm 析构; Stop 内含 jthread join)
