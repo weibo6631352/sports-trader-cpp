@@ -21,8 +21,17 @@ import type {
 
 // ---------- API base ----------
 
-/** 后端默认地址 (Vite 单一路径: dev 3000 / preview 4173 均连此处, 跨域由后端 CORS 处理) */
-const DEFAULT_API = 'http://127.0.0.1:8080';
+/** 后端默认地址: 自动连【访问前端的同一主机】的 8080 (云部署: 浏览器从公网 IP 打开 → 连该 IP:8080)。
+ *  本地 dev (localhost) 仍连 127.0.0.1:8080。可被 localStorage 覆盖。跨域由后端 CORS 处理。 */
+function defaultApiBase(): string {
+  try {
+    const h = window.location.hostname;
+    if (h && h !== 'localhost' && h !== '127.0.0.1') return `http://${h}:8080`;
+  } catch {
+    // SSR / 无 window
+  }
+  return 'http://127.0.0.1:8080';
+}
 
 function loadBaseUrl(): string {
   try {
@@ -31,7 +40,7 @@ function loadBaseUrl(): string {
   } catch {
     // localStorage 不可用 (e.g. 隐私模式限制)
   }
-  return DEFAULT_API;
+  return defaultApiBase();
 }
 
 let _baseUrl = loadBaseUrl();
