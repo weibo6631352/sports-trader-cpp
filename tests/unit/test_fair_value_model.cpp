@@ -94,14 +94,16 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     // append-only: 旧末列恒定, 不因后续 append 移位.
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid), 17u);  // v0.1 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_corner_diff), 23u);           // v0.2 末列
-    // v0.3 新末列 = pos_condition_exposure (53).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_condition_exposure), kMlFeatureCount - 1);
-    EXPECT_EQ(kMlFeatureCount, 54u);
-    // v0.3 双边对称抽查: YES/NO 时序微结构 + 双边持仓列就位.
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_condition_exposure), 53u);  // v0.3 末列
+    // v0.4 新末列 = g_net_momentum_5m (74).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_net_momentum_5m), kMlFeatureCount - 1);
+    EXPECT_EQ(kMlFeatureCount, 75u);
+    // 双边对称 + v0.4 抽查.
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_yes_qty), 48u);
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_no_qty), 49u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::fee_rate_coef), 54u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_clutch), 72u);
 }
 
 TEST(ModelFeatureSpec, V03Columns_FromQuoteFeatures_DoubleSided) {
@@ -136,6 +138,31 @@ TEST(ModelFeatureSpec, V03Columns_FromQuoteFeatures_DoubleSided) {
     EXPECT_FLOAT_EQ(at(MlFeature::pos_condition_exposure), 130.0f);
     // 0-23 仍由 game_row/book_row 填 (extract_full 含原始 game/book 列)。
     EXPECT_FLOAT_EQ(at(MlFeature::g_score_diff), 7.0f);
+}
+
+TEST(ModelFeatureSpec, V04Columns_RemainingSignals) {
+    stcpp::sizing::QuoteFeatures qf{};
+    qf.fee_rate_coef = 0.03;
+    qf.devig_ok = true;
+    qf.time_to_resolution_frac = 0.7;
+    qf.resolution_status = 1;
+    qf.x_log_odds_fair = 0.5;
+    qf.x_pin_risk = 0.4;
+    qf.g_clutch = 1.0;
+    qf.g_goal_freshness = 0.8;
+    qf.g_periods_won_home = 2;
+
+    const FeatureVector fv = stcpp::ml::extract_full(make_game_row(), make_book_row(), qf);
+    auto at = [&](MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
+    EXPECT_FLOAT_EQ(at(MlFeature::fee_rate_coef), 0.03f);
+    EXPECT_FLOAT_EQ(at(MlFeature::devig_ok), 1.0f);  // bool → 1.0
+    EXPECT_FLOAT_EQ(at(MlFeature::time_to_resolution_frac), 0.7f);
+    EXPECT_FLOAT_EQ(at(MlFeature::resolution_status), 1.0f);
+    EXPECT_FLOAT_EQ(at(MlFeature::x_log_odds_fair), 0.5f);
+    EXPECT_FLOAT_EQ(at(MlFeature::x_pin_risk), 0.4f);
+    EXPECT_FLOAT_EQ(at(MlFeature::g_clutch), 1.0f);
+    EXPECT_FLOAT_EQ(at(MlFeature::g_goal_freshness), 0.8f);
+    EXPECT_FLOAT_EQ(at(MlFeature::g_periods_won_home), 2.0f);
 }
 
 TEST(ModelFeatureSpec, V02Columns_InplayOddsAndLiveStats) {

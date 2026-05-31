@@ -50,12 +50,14 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.3";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.4";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
 //     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
 //   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
 //     NO 34-43) + 双边 L1 (44-47) + 双边持仓 (48-53)。源在 QuoteFeatures → extract_from_quote。
-//     老板「双边信息都要有 / 各边买了多少」。列序锁 append-only, 旧列 index 不变。
+//   v0.3 → v0.4 (2026-05-31, 老雷): append 21 列 (54..74) — 剩余捕获信号全进 (老板「都要进」):
+//     fee/数据质量/生命周期/cross-log-odds/sports 动态。排除决策输出/模型自身输出/provenance/
+//     原始 ts/字符串主键/重复列。捕获层信号 = 契约层, 一个不剩。
 
 // ---------------------------------------------------------------------------
 // MlFeature — 抽取出来的 feature 列 (顺序锁死 = 训练 column index).
@@ -136,9 +138,34 @@ enum class MlFeature : std::uint8_t {
     pos_no_avg_entry = 51,       // NO  加权平均入场价
     pos_net_qty = 52,            // 净 YES 方向 = yes − no
     pos_condition_exposure = 53,  // 本 condition 净敞口 (whole pUSD)
+
+    // ---- v0.4 append (剩余捕获信号特征全进; QuoteFeatures 源; 老板「都要进」) ----
+    //   排除: 决策输出(kelly/notional/target/reservation)、模型自身输出(ml_advisory)、provenance、
+    //   原始时间戳、字符串主键、重复列(market_mid/fair_value/edge_bps) — 见 commit 分类。
+    fee_rate_coef = 54,            // per-market 手续费系数 (净 edge 影响, 各市场异)
+    devig_ok = 55,                 // de-vig 成功 (0/1; 数据质量 → 双边 fair 可靠性)
+    ts_window_samples = 56,        // YES 时序样本数 (质量代理)
+    no_ts_window_samples = 57,     // NO 时序样本数
+    time_to_resolution_frac = 58,  // 结算临近度 [0,1] (1=刚开赛 0=已结算)
+    resolution_status = 59,        // 市场结算状态 0Open/1Resolving/2Resolved
+    x_log_odds_fair = 60,          // logit(fair) (基线 fair 变换; 残差/ensemble 框架, 训练侧防泄漏)
+    x_log_odds_edge = 61,          // logit(fair) − logit(mid) (log-odds 空间 edge)
+    x_pin_risk = 62,               // min(fair, 1−fair) (距单边距离)
+    x_pin_x_expiry = 63,           // pin_risk × time_to_resolution (归零陷阱)
+    b_dislocation = 64,            // microprice − mid (买卖压力)
+    g_time_x_lead = 65,            // score_diff × (1−time_frac) (时间感知领先)
+    g_fld_signal = 66,             // devig_mult − devig_power (favorite-longshot 偏差)
+    g_remaining_sec = 67,          // 剩余秒 (时间特征分母)
+    g_periods_won_home = 68,       // 已完成节中主队领先节数
+    g_periods_won_away = 69,
+    g_game_phase = 70,             // 0早/1中/2末段 (非线性分段)
+    g_garbage_time = 71,           // 垃圾时间 flag
+    g_clutch = 72,                 // 关键时段 flag (末段比分接近)
+    g_goal_freshness = 73,         // 进球新鲜度 exp(−Δt/120s)
+    g_net_momentum_5m = 74,        // 最近 5min 净进球 (势头)
 };
 
-inline constexpr std::size_t kMlFeatureCount = 54;
+inline constexpr std::size_t kMlFeatureCount = 75;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -220,6 +247,27 @@ inline constexpr std::size_t kMlFeatureCount = 54;
         case MlFeature::pos_no_avg_entry: return "pos_no_avg_entry";
         case MlFeature::pos_net_qty: return "pos_net_qty";
         case MlFeature::pos_condition_exposure: return "pos_condition_exposure";
+        case MlFeature::fee_rate_coef: return "fee_rate_coef";
+        case MlFeature::devig_ok: return "devig_ok";
+        case MlFeature::ts_window_samples: return "ts_window_samples";
+        case MlFeature::no_ts_window_samples: return "no_ts_window_samples";
+        case MlFeature::time_to_resolution_frac: return "time_to_resolution_frac";
+        case MlFeature::resolution_status: return "resolution_status";
+        case MlFeature::x_log_odds_fair: return "x_log_odds_fair";
+        case MlFeature::x_log_odds_edge: return "x_log_odds_edge";
+        case MlFeature::x_pin_risk: return "x_pin_risk";
+        case MlFeature::x_pin_x_expiry: return "x_pin_x_expiry";
+        case MlFeature::b_dislocation: return "b_dislocation";
+        case MlFeature::g_time_x_lead: return "g_time_x_lead";
+        case MlFeature::g_fld_signal: return "g_fld_signal";
+        case MlFeature::g_remaining_sec: return "g_remaining_sec";
+        case MlFeature::g_periods_won_home: return "g_periods_won_home";
+        case MlFeature::g_periods_won_away: return "g_periods_won_away";
+        case MlFeature::g_game_phase: return "g_game_phase";
+        case MlFeature::g_garbage_time: return "g_garbage_time";
+        case MlFeature::g_clutch: return "g_clutch";
+        case MlFeature::g_goal_freshness: return "g_goal_freshness";
+        case MlFeature::g_net_momentum_5m: return "g_net_momentum_5m";
     }
     return "unknown";
 }
@@ -443,6 +491,28 @@ inline void extract_from_quote(const stcpp::sizing::QuoteFeatures& q, std::vecto
     put(MlFeature::pos_no_avg_entry, q.pos_no_avg_entry);
     put(MlFeature::pos_net_qty, q.pos_net_qty);
     put(MlFeature::pos_condition_exposure, q.pos_condition_exposure_usdc);
+    // v0.4: 剩余捕获信号 (手续费/数据质量/生命周期/cross-log-odds/sports 动态)。
+    put(MlFeature::fee_rate_coef, q.fee_rate_coef);
+    put(MlFeature::devig_ok, q.devig_ok ? 1.0 : 0.0);
+    put(MlFeature::ts_window_samples, static_cast<double>(q.ts_window_samples));
+    put(MlFeature::no_ts_window_samples, static_cast<double>(q.no_ts_window_samples));
+    put(MlFeature::time_to_resolution_frac, q.time_to_resolution_frac);
+    put(MlFeature::resolution_status, static_cast<double>(q.resolution_status));
+    put(MlFeature::x_log_odds_fair, q.x_log_odds_fair);
+    put(MlFeature::x_log_odds_edge, q.x_log_odds_edge);
+    put(MlFeature::x_pin_risk, q.x_pin_risk);
+    put(MlFeature::x_pin_x_expiry, q.x_pin_x_expiry);
+    put(MlFeature::b_dislocation, q.b_dislocation);
+    put(MlFeature::g_time_x_lead, q.g_time_x_lead);
+    put(MlFeature::g_fld_signal, q.g_fld_signal);
+    put(MlFeature::g_remaining_sec, q.g_remaining_sec);
+    put(MlFeature::g_periods_won_home, static_cast<double>(q.g_periods_won_home));
+    put(MlFeature::g_periods_won_away, static_cast<double>(q.g_periods_won_away));
+    put(MlFeature::g_game_phase, q.g_game_phase);
+    put(MlFeature::g_garbage_time, q.g_garbage_time);
+    put(MlFeature::g_clutch, q.g_clutch);
+    put(MlFeature::g_goal_freshness, q.g_goal_freshness);
+    put(MlFeature::g_net_momentum_5m, q.g_net_momentum_5m);
 }
 
 // ---------------------------------------------------------------------------
@@ -465,13 +535,15 @@ inline void extract_from_quote(const stcpp::sizing::QuoteFeatures& q, std::vecto
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 54, "MlFeature count must be 54 (v0.3; append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::pos_condition_exposure) == kMlFeatureCount - 1,
-              "最后一列必须是 pos_condition_exposure (append-only 约束; v0.3 末列)");
+static_assert(kMlFeatureCount == 75, "MlFeature count must be 75 (v0.4; append + bump spec)");
+static_assert(static_cast<std::size_t>(MlFeature::g_net_momentum_5m) == kMlFeatureCount - 1,
+              "最后一列必须是 g_net_momentum_5m (append-only 约束; v0.4 末列)");
 // append-only 不变量: 旧列 index 永不变 (训练 column index 锁死)。
 static_assert(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid) == 17,
               "x_microprice_minus_mid 必须恒为 17 (v0.1 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::g_corner_diff) == 23,
               "g_corner_diff 必须恒为 23 (v0.2 末列, append 后不得移位)");
+static_assert(static_cast<std::size_t>(MlFeature::pos_condition_exposure) == 53,
+              "pos_condition_exposure 必须恒为 53 (v0.3 末列, append 后不得移位)");
 
 }  // namespace stcpp::ml
