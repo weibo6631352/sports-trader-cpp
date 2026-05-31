@@ -101,17 +101,23 @@
 
 **GM 会后拍板(2026-05-31):** A=稳健+并行 / B=executor 注入(MVP 过渡)/ C=接受老韩灰度值。
 
-**安全下单地基已完整:** 下单管道(真网验证)→ RM 强制门(D-A)→ arm/kill/频控/灰度配置。
-下一步是把 gate 接进策略执行路径(自动交易)—— **此步老韩明确未放行**,门禁见下。
+| ✅ **接线 Step A** | PositionLedger 中性 FillEvent 化(老郭 R-4 审计放行;R-11 守卫方向不变;旧 VirtualFill 重载委托,8 调用点+T21 零改 bit-identical) | (Step A) |
+| ✅ **接线 Step B** | IOrderExecutor + VirtualExecutor 注入(G-1;paper_loop matcher→executor 透明转发,同 RNG 流 bit-identical) | (Step B) |
+
+**安全下单地基 + 接线 seam 已完整。** 老郭 R-4 审计把接线分两档:
+- **GM 可直接实施档 → 已全部做完**(Step A 中性化 + Step B executor 注入,1119 ctest 绿)。
+- **必须会签档(本次禁做,GM 单方不可开)** —— 见下表"待办",全部需他人签字:
 
 待办(需 GM 拍板 / 跨域 / 外部依赖,未做):
 
 | 项 | 阻塞原因 | owner |
 |---|---|---|
+| **ExecReport 补 4ts + LiveExecutorAdapter** | R-4+R-20 schema 变更;无 4ts 的 live FillEvent 撞 R-20 红线 | 老周+老韩**会签** |
+| **live fill 进哪个账本** | risk::PositionLedger 是 paper 专用(R-11);live 真账本 owner/是否走 WAL | 老韩**定** |
+| **infra::wal::PositionLedger 同型迁移** | 老郭裁定0:同型待迁,未迁前 live 禁接 WAL 账本 | 老韩+IC |
+| **Arm() 真开闸(自动交易)** | 红线 §8 第一条 + §6 风控红线;灰度配置已备好 | 老韩+小白**会签** |
 | 量化阻塞2 advisory 解除 | 需 Goalserve 数据跑 50 笔(数据源白名单协商中) | GM + 小梁 |
-| LiveRiskConfig 独立灰度值 + OrderRateCap 新红线 | 灰度阈值待小梁/老钱定;OrderRateCap 需老韩 spec | 老韩 |
-| Phase 4 接线(executor 抽象 / FillEvent 中性化 / in-flight 去重 / 独立下单线程) | 需 GM 拍 G-1(executor 注入 vs DecisionCore);G-2 是 R-4 schema 变更走审计 | 老周 + IC |
-| 前端 arm/kill 控制端点 + fill 流水 + 风控余量仪表 | 需老韩+小白定 arm 权限模型;后端需加 POST 写端点 | 小苏 + 老韩 |
-| 可观测 P0(cum_net_pnl 真值 / 下单失败 counter / Goalserve WSS 状态) | 部分依赖 live 接线完成 | 老郑 |
+| 前端 arm/kill 控制端点 + fill 流水 | 需老韩+小白定 arm 权限模型 | 小苏 + 老韩 |
+| 可观测 P0(cum_net_pnl 真值 / 下单失败 counter) | 部分依赖 live 接线 | 老郑 |
 
 > **owner:** 老雷 / **last_review:** 2026-05-31
