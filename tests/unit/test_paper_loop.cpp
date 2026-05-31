@@ -879,6 +879,71 @@ TEST_F(PaperLoopTest, T15_A1_RealGoalserveScore_PredictOk) {
 }
 
 // ---------------------------------------------------------------------------
+// T17: 派生盘口 (totals) 端到端 — totals 市场走专属定价 (非 moneyline)。
+//   平局 60:60 (score_diff=0 → moneyline p_yes≈0.5), 但半场总分 120 → 节奏外推终场 240 > line 211.5
+//   → 派生 Over 概率≈0.96。fair_value > 0.85 证明走了 totals 定价而非 moneyline。
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, T17_TotalsMarket_DerivativePricing) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
+    using stcpp::debug_api::EventScore;
+
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+    EventScore es;
+    es.found = true;
+    es.event_id = "gs-match-1";
+    es.status = "inplay";
+    es.sport = "basket";       // total_game_seconds=2880
+    es.clock_sec = 1440;       // time_frac=0.5
+    es.home = "YesTeam";
+    es.away = "NoTeam";
+    es.home_score = 60;        // 平局 → moneyline p_yes≈0.5; 但 total=120 → 外推终场 240
+    es.away_score = 60;
+    es.kickoff_ts_sec = now_ns / 1'000'000'000LL - 3600;
+    es.ts.event_ts_ns = now_ns - 3'600'000'000'000LL;
+    es.ts.data_source_ts_ns = now_ns - 1'000'000'000LL;
+    es.ts.ingestion_ts_ns = now_ns - 500'000'000LL;
+    es.ts.as_of_ts_ns = now_ns;
+
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-match-1"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-match-1", true};
+
+    const auto feat = MakeSyntheticBook(0.48, 0.52);  // Over token 市场 ≈0.5
+    hub_->Publish("1001", feat);
+
+    loop_ = MakeLoop();
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    // 注入 totals 元数据: market_type=2 (totals), line=211.5, yes_is_over=true。
+    std::unordered_map<std::string, stcpp::paper::MarketCat> cat;
+    stcpp::paper::MarketCat mc;
+    mc.market_type_id = 2;
+    mc.line = 211.5;
+    mc.yes_is_over = true;
+    mc.league_id = 34;
+    mc.sport_family_id = 1;
+    cat["cond-test-001"] = mc;
+    loop_->SetMarketCatByCondition(std::move(cat));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    loop_->Stop();
+
+    EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0))
+        << "totals 市场 in-play 应正常定价发布 (非 fail-closed)";
+    const auto opt = quote_hub_->Read("cond-test-001");
+    ASSERT_TRUE(opt.has_value() && opt->valid);
+    EXPECT_GT(opt->fair_value, 0.85)
+        << "平局但总分高 → 派生 Over 概率≈0.96; >0.85 证明走 totals 定价 (moneyline 平局会给≈0.5)";
+    EXPECT_EQ(opt->cat_market_type_id, 2) << "类别码: totals=2 (经 MarketCat 注入)";
+}
+
+// ---------------------------------------------------------------------------
 // T16: A1 fail-closed — 陈旧比分 (data_source_ts 超 staleness) → 退回 stub
 // ---------------------------------------------------------------------------
 TEST_F(PaperLoopTest, T16_A1_StaleScore_FailClosedToStub) {

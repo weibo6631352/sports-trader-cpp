@@ -148,6 +148,11 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             cat.league_id = (ev.sport_id > 0) ? static_cast<std::int32_t>(ev.sport_id) : -1;
             cat.market_type_id = tax::MarketTypeCode(dm.sports_market_type);
             cat.line = dm.line;  // totals/spreads 线值 → 派生定价
+            // totals 方向: outcomes[0] (=YES/token0) 是否 "Over" (大小写不敏感)。非 Over → YES=Under。
+            std::string o0 = dm.outcome0_name;
+            std::transform(o0.begin(), o0.end(), o0.begin(),
+                           [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+            cat.yes_is_over = (o0 != "under");  // 默认 Over (Polymarket totals outcomes[0] 常为 Over)
             market_cat_map_[dm.condition_id] = cat;
         }
         event_infos_.push_back(std::move(ei));

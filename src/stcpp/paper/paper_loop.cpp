@@ -544,10 +544,16 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const MarketCat mc = MarketCatFor(condition_id);
     const std::int32_t mkt_type = mc.market_type_id;
     std::optional<double> derivative_p_yes;  // totals/spreads 专属定价 (有值 → 覆盖 moneyline p_fair)
-    if (mkt_type == 1 || mkt_type == 2) {  // spread / totals
-        const pricing::DerivativeFairResult dr = pricing::DerivativeFairYes(game_row, mkt_type, mc.line);
+    if (mkt_type == 2) {  // totals (大小分)
+        const pricing::DerivativeFairResult dr = pricing::TotalsFairYes(game_row, mc.line, mc.yes_is_over);
         if (!dr.valid) {
             return;  // 派生定价不可用 (赛前/太早/不支持运动/无 line) → 不交易
+        }
+        derivative_p_yes = dr.p_yes;
+    } else if (mkt_type == 1) {  // spreads (让分)
+        const pricing::DerivativeFairResult dr = pricing::SpreadsFairYes(game_row, mc.line);
+        if (!dr.valid) {
+            return;
         }
         derivative_p_yes = dr.p_yes;
     } else if (mkt_type > 2) {
@@ -642,7 +648,9 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   ① 仅 kind==Onnx (stub 永不驱动决策, 无真模型→纯 baseline) ② ready+维度匹配+predict ok
     //   ③ PaperLoop 天然 paper (VirtualFill 不花真钱; live 路径另接, 绝不复用此 blend 驱动真单)。
     //   特征经 PopulateFeatureColumns 与 PublishQuoteSnapshot 同源 (BR-1: 训练捕获=决策推理一致)。
-    if (cfg_.ml_fair_blend_weight > 0.0 && ml_model_ != nullptr && ml_model_->ready() &&
+    //   ⚠ derivative 盘口 (totals/spreads) 不 blend: 当前 ONNX 是 moneyline 语义, blend 进派生 p_fair 会污染
+    //     (派生解析模型即该盘口的 fair)。未来 market-type-aware ONNX 上线再放开 (cat_market_type 特征已就位)。
+    if (cfg_.ml_fair_blend_weight > 0.0 && !derivative_p_yes && ml_model_ != nullptr && ml_model_->ready() &&
         ml_model_->kind() == ml::ModelKind::Onnx) {
         sizing::QuoteFeatures fqf{};
         const double blend_no_imb =
@@ -808,7 +816,16 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const std::int64_t joint_as_of_ts_ns = std::min(game_row.as_of_ts_ns, feat.as_of_ts_ns);
     // 步④/v0.3: ML 推理移到 PublishQuoteSnapshot 末尾 (qf 全特征就位后, extract_full 含双边时序/持仓
     //   24-53 列)。此处传 game_row + book_row 供 extract_full 填 0-23 原始 game/book 列。
-    PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair,
+    // 派生盘口 (totals/spreads): 用派生 fair 替换 fv_result, 使捕获的 qf.fair_value / fair_ci / baseline_fair
+    //   反映派生模型 (非 moneyline 估值) — 否则训练数据 fair 列对 totals/spreads 是错的 (BR-1 一致性)。
+    pricing::FairValueResult publish_fv = fv_result;
+    if (derivative_p_yes) {
+        const double pd = std::clamp(*derivative_p_yes, 1e-6, 1.0 - 1e-6);
+        publish_fv.probs = {pd, 1.0 - pd};
+        publish_fv.prior_yes = pd;
+        publish_fv.valid = true;
+    }
+    PublishQuoteSnapshot(condition_id, publish_fv, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair,
                          cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns, mkt.event_id,
                          mkt.neg_risk_market_id, target_signed, reservation.buy_px, reservation.sell_px,
                          reservation.required_margin, time_to_resolution_frac, g_time_x_lead, g_fld_signal,
