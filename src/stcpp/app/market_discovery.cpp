@@ -117,6 +117,8 @@ static double ExtractJsonNumIn(const std::string& json, const std::string& key, 
     pos += needle.size();
     while (pos < scan_to && (json[pos] == ' ' || json[pos] == '\t'))
         ++pos;
+    if (pos < scan_to && json[pos] == '"')
+        ++pos;  // 容忍引号包裹数字 (gamma liquidity/volume 为 string decimal; strtod 在尾引号停)
     if (pos >= scan_to)
         return fallback;
     const char* start = json.c_str() + pos;
@@ -490,6 +492,9 @@ std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int 
             dm.sports_market_type = NormalizeSportsMarketType(ExtractJsonStr(mobj, "sportsMarketType"));
             dm.line = ExtractJsonNumIn(mobj, "line", 0, mobj.size(),
                                        std::numeric_limits<double>::quiet_NaN());  // totals/spreads 线值
+            const double knan = std::numeric_limits<double>::quiet_NaN();
+            dm.volume_24h = ExtractJsonNumIn(mobj, "volume24hr", 0, mobj.size(), knan);  // 市场活跃度
+            dm.liquidity = ExtractJsonNumIn(mobj, "liquidity", 0, mobj.size(), knan);    // book 流动性
 
             if (dm.condition_id.empty())
                 continue;
@@ -559,6 +564,9 @@ std::vector<DiscoveredEvent> ParseSportsMarketsFlat(const std::string& json_buf,
         dm.sports_market_type = NormalizeSportsMarketType(ExtractJsonStr(mobj, "sportsMarketType"));
         dm.line = ExtractJsonNumIn(mobj, "line", 0, mobj.size(),
                                    std::numeric_limits<double>::quiet_NaN());  // totals/spreads 线值
+        const double knan2 = std::numeric_limits<double>::quiet_NaN();
+        dm.volume_24h = ExtractJsonNumIn(mobj, "volume24hr", 0, mobj.size(), knan2);
+        dm.liquidity = ExtractJsonNumIn(mobj, "liquidity", 0, mobj.size(), knan2);
 
         if (dm.condition_id.empty())
             continue;

@@ -148,6 +148,8 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             cat.league_id = (ev.sport_id > 0) ? static_cast<std::int32_t>(ev.sport_id) : -1;
             cat.market_type_id = tax::MarketTypeCode(dm.sports_market_type);
             cat.line = dm.line;  // totals/spreads 线值 → 派生定价
+            cat.volume_24h = dm.volume_24h;  // 市场活跃度 (gamma REST)
+            cat.liquidity = dm.liquidity;    // book 流动性 (gamma REST)
             // totals 方向: outcomes[0] (=YES/token0) 是否 "Over" (大小写不敏感)。非 Over → YES=Under。
             std::string o0 = dm.outcome0_name;
             std::transform(o0.begin(), o0.end(), o0.begin(),

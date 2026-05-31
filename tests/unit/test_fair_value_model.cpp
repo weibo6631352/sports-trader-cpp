@@ -103,11 +103,13 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_league), 85u);              // v0.7 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_asset_class), 82u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::cat_sport), 83u);
-    // v0.8 新末列 = no_b_depth_imbalance_5lvl (93; L2-L5 双边深度分布).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_depth_imbalance_5lvl), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_depth_imbalance_5lvl), 93u);  // v0.8 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_bid_depth_5lvl), 86u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_bid_depth_5lvl), 90u);
-    EXPECT_EQ(kMlFeatureCount, 94u);
+    // v0.9 新末列 = mkt_liquidity_usdc (95; 市场活跃度/流动性, gamma REST).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::mkt_liquidity_usdc), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::mkt_volume_24h_usdc), 94u);
+    EXPECT_EQ(kMlFeatureCount, 96u);
     // 双边对称 + v0.5 延迟特征抽查 (双边 book 龄独立).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);

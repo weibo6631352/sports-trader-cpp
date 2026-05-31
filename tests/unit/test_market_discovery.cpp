@@ -390,6 +390,22 @@ TEST(ParseSportsEvents, MD43c_TotalsSpreadsLine) {
     EXPECT_DOUBLE_EQ(result[0].markets[1].line, -3.5) << "spreads 让分线 (负=让分方)";
 }
 
+// MD-43d: gamma volume24hr (无引号) + liquidity (引号包裹 string decimal) 解析 → 市场活跃度特征。
+TEST(ParseSportsEvents, MD43d_VolumeLiquidity) {
+    const std::string m =
+        "{\"conditionId\":\"cond-v\",\"question\":\"NBA winner\",\"sportsMarketType\":\"moneyline\","
+        "\"volume24hr\":702048.7,\"liquidity\":\"641612.98561\","
+        "\"clobTokenIds\":[\"tok-y\",\"tok-n\"]}";
+    const std::string ev =
+        "{\"id\":\"ev-v\",\"slug\":\"nba\",\"title\":\"Lakers vs Celtics\","
+        "\"sport\":{\"id\":34,\"sport\":\"nba\"},\"markets\":[" + m + "]}";
+    auto result = ParseSportsEvents("[" + ev + "]", 30);
+    ASSERT_EQ(result.size(), 1u);
+    ASSERT_EQ(result[0].markets.size(), 1u);
+    EXPECT_NEAR(result[0].markets[0].volume_24h, 702048.7, 0.1) << "volume24hr 无引号数字";
+    EXPECT_NEAR(result[0].markets[0].liquidity, 641612.98561, 0.01) << "liquidity 引号包裹 string decimal";
+}
+
 // MD-43b: 真实 gamma sport 对象 {id, sport} → sport_code/sport_id 解析 (NBA vs CBA 细粒度)。
 TEST(ParseSportsEvents, MD43b_RealSportObject_NbaVsCba) {
     const std::string mnba = MakeMarket("cond-nba", "NBA Winner", "tok-nba-y", "tok-nba-n");

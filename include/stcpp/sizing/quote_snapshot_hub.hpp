@@ -130,6 +130,9 @@ struct QuoteFeatures {
     double no_b_ask_depth_5lvl{std::numeric_limits<double>::quiet_NaN()};
     double no_b_l1_concentration{std::numeric_limits<double>::quiet_NaN()};
     double no_b_depth_imbalance_5lvl{std::numeric_limits<double>::quiet_NaN()};
+    // 市场活跃度/流动性 (v0.9; gamma REST per-condition 注入 → MlFeature 94-95)。
+    double mkt_volume_24h_usdc{std::numeric_limits<double>::quiet_NaN()};
+    double mkt_liquidity_usdc{std::numeric_limits<double>::quiet_NaN()};
 
     // ---- 当前持仓 (老板 2026-05-31: 持仓入模型; 库存感知 — 目标仓位范式控制器需知现仓才能定调整) ----
     //   老板 2026-05-31「各边买了多少, 可能两边都买, 不能只说买哪一边」: per-token 双边量, 不塌单边/净。

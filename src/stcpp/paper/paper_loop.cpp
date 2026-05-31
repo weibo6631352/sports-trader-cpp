@@ -1367,6 +1367,8 @@ void PaperLoop::PopulateFeatureColumns(
     qf.cat_league_id = mc.league_id;
     qf.cat_market_type_id = mc.market_type_id;
     qf.line = mc.line;  // totals/spreads 线值 (元数据旁注; 解释派生盘口 quote 用)
+    qf.mkt_volume_24h_usdc = mc.volume_24h;  // v0.9 市场活跃度 (gamma REST)
+    qf.mkt_liquidity_usdc = mc.liquidity;    // v0.9 book 流动性 (gamma REST)
 
     // A2: 盘口上下文 / 双边微观结构 (模型输入 + 观测, 绝不 gate — 老板 2026-05-31)。
     std::strncpy(qf.condition_id, condition_id.c_str(), sizeof(qf.condition_id) - 1);

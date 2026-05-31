@@ -60,6 +60,10 @@ struct DiscoveredMarket {
     // 派生盘口线值 (gamma market.line): totals 大小分线 (211.5) / spreads 让分线 (−3.5)。
     //   moneyline 无 → NaN。totals/spreads 定价模型 (derivative_fair_value) 的核心输入。
     double line{std::numeric_limits<double>::quiet_NaN()};
+    // 市场活跃度/流动性 (gamma REST, 非 WSS — WSS outcomes 只推 resolution): 越活跃信号越可靠、滑点越小。
+    //   volume_24h = 24h 成交量 (volume24hr); liquidity = book 流动性 (gamma liquidity)。喂 ML + Kelly 定仓。
+    double volume_24h{std::numeric_limits<double>::quiet_NaN()};
+    double liquidity{std::numeric_limits<double>::quiet_NaN()};
 };
 
 // 单个 event (含 markets[])
