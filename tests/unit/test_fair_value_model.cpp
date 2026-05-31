@@ -108,11 +108,13 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_bid_depth_5lvl), 90u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::mkt_liquidity_usdc), 95u);  // v0.9 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::mkt_volume_24h_usdc), 94u);
-    // v0.10 新末列 = no_b_trade_intensity_5m (101; trade-flow 双边).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_trade_intensity_5m), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_trade_intensity_5m), 101u);  // v0.10 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_trade_signed_vol_5m), 96u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_trade_signed_vol_5m), 99u);
-    EXPECT_EQ(kMlFeatureCount, 102u);
+    // v0.11 新末列 = x_inplay_market_absdev (103; 直播源 sharp vs PM 市场 交叉校验).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_inplay_market_absdev), kMlFeatureCount - 1);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_inplay_fair_minus_mid), 102u);
+    EXPECT_EQ(kMlFeatureCount, 104u);
     // 双边对称 + v0.5 延迟特征抽查 (双边 book 龄独立).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);
@@ -200,6 +202,29 @@ TEST(ModelFeatureSpec, V07Columns_CategoricalContext_RealStructure) {
     fv = stcpp::ml::extract_full(g, b, qf2);
     EXPECT_EQ(at(MlFeature::cat_sport), -1.0F) << "未注入 → unknown=-1";
     EXPECT_EQ(at(MlFeature::cat_league), -1.0F) << "未注入 → unknown=-1";
+}
+
+TEST(ModelFeatureSpec, V11Columns_InplayCrossCheck) {
+    // 直播源 sharp inplay fair vs PM 市场价偏离 (交叉校验)。两边须有效 prob∈(0,1) 否则 NaN。
+    auto g = make_game_row();
+    auto b = make_book_row();
+    auto at = [&](const FeatureVector& fv, MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
+    {  // sharp 0.65 vs 市场 0.55 → 市场低估 YES, 偏离 +0.10
+        stcpp::sizing::QuoteFeatures qf{};
+        qf.g_bm_inplay_fair = 0.65;
+        qf.market_mid = 0.55;
+        const FeatureVector fv = stcpp::ml::extract_full(g, b, qf);
+        EXPECT_NEAR(at(fv, MlFeature::x_inplay_fair_minus_mid), 0.10, 1e-6) << "sharp − PM mid";
+        EXPECT_NEAR(at(fv, MlFeature::x_inplay_market_absdev), 0.10, 1e-6);
+    }
+    {  // 无 inplay 数据 (g_bm_inplay_fair=0 默认, 开发无白名单) → NaN, 不当成 −mid 偏离
+        stcpp::sizing::QuoteFeatures qf{};
+        qf.g_bm_inplay_fair = 0.0;
+        qf.market_mid = 0.55;
+        const FeatureVector fv = stcpp::ml::extract_full(g, b, qf);
+        EXPECT_TRUE(std::isnan(at(fv, MlFeature::x_inplay_fair_minus_mid))) << "无 inplay → NaN 非 −0.55";
+        EXPECT_TRUE(std::isnan(at(fv, MlFeature::x_inplay_market_absdev)));
+    }
 }
 
 TEST(DepthMetrics, FiveLevelAggregation) {

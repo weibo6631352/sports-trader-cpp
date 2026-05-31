@@ -50,7 +50,7 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.10";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.11";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
 //     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
 //   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
@@ -214,9 +214,15 @@ enum class MlFeature : std::uint8_t {
     no_b_trade_signed_vol_5m = 99,   // NO 净流 (双边独立)
     no_b_trade_buy_ratio_5m = 100,   // NO 买主动占比
     no_b_trade_intensity_5m = 101,   // NO 成交笔数
+
+    // ---- v0.11 append (交叉校验: 直播源赔率 sharp 锚 vs PM 市场价; 老板 2026-06-01) ----
+    //   g_bm_inplay_fair (Goalserve inplay 直播源 bet365 de-vig sharp fair) vs market_mid (PM 散户市场)。
+    //   sharp 庄家 vs 散户市场定价差: 偏离=市场没跟上 sharp(机会) 或 数据陈旧(质量)。生产白名单有/开发 NaN。
+    x_inplay_fair_minus_mid = 102,   // sharp inplay YES fair − PM mid (带符号; >0=市场低估 YES)
+    x_inplay_market_absdev = 103,    // |偏离| (分歧强度 = 机会/数据质量)
 };
 
-inline constexpr std::size_t kMlFeatureCount = 102;
+inline constexpr std::size_t kMlFeatureCount = 104;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -346,6 +352,8 @@ inline constexpr std::size_t kMlFeatureCount = 102;
         case MlFeature::no_b_trade_signed_vol_5m: return "no_b_trade_signed_vol_5m";
         case MlFeature::no_b_trade_buy_ratio_5m: return "no_b_trade_buy_ratio_5m";
         case MlFeature::no_b_trade_intensity_5m: return "no_b_trade_intensity_5m";
+        case MlFeature::x_inplay_fair_minus_mid: return "x_inplay_fair_minus_mid";
+        case MlFeature::x_inplay_market_absdev: return "x_inplay_market_absdev";
     }
     return "unknown";
 }
@@ -610,6 +618,16 @@ inline void extract_from_quote(const stcpp::sizing::QuoteFeatures& q, std::vecto
     put(MlFeature::no_b_trade_signed_vol_5m, q.no_b_trade_signed_vol_5m);
     put(MlFeature::no_b_trade_buy_ratio_5m, q.no_b_trade_buy_ratio_5m);
     put(MlFeature::no_b_trade_intensity_5m, q.no_b_trade_intensity_5m);
+    // v0.11 交叉校验: 直播源 sharp inplay fair vs PM 市场价偏离 (两边须有效 prob∈(0,1), 否则 NaN)。
+    //   g_bm_inplay_fair 默认 0 (无 inplay 数据/开发无白名单) → 不当成 0 偏离, 用 guard 判 NaN。
+    const double dnan = std::numeric_limits<double>::quiet_NaN();
+    const double ip = q.g_bm_inplay_fair;
+    const double md = q.market_mid;
+    const bool ip_ok = (ip > 0.0 && ip < 1.0);
+    const bool md_ok = (md > 0.0 && md < 1.0);
+    const double ip_dev = (ip_ok && md_ok) ? (ip - md) : dnan;
+    put(MlFeature::x_inplay_fair_minus_mid, ip_dev);
+    put(MlFeature::x_inplay_market_absdev, (ip_dev == ip_dev) ? std::fabs(ip_dev) : dnan);
 }
 
 // ---------------------------------------------------------------------------
@@ -688,9 +706,11 @@ inline void fill_categorical_context(const stcpp::sizing::QuoteFeatures& q,
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 102, "MlFeature count must be 102 (v0.10; append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::no_b_trade_intensity_5m) == kMlFeatureCount - 1,
-              "最后一列必须是 no_b_trade_intensity_5m (append-only 约束; v0.10 末列)");
+static_assert(kMlFeatureCount == 104, "MlFeature count must be 104 (v0.11; append + bump spec)");
+static_assert(static_cast<std::size_t>(MlFeature::x_inplay_market_absdev) == kMlFeatureCount - 1,
+              "最后一列必须是 x_inplay_market_absdev (append-only 约束; v0.11 末列)");
+static_assert(static_cast<std::size_t>(MlFeature::no_b_trade_intensity_5m) == 101,
+              "no_b_trade_intensity_5m 必须恒为 101 (v0.10 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::mkt_liquidity_usdc) == 95,
               "mkt_liquidity_usdc 必须恒为 95 (v0.9 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::no_b_depth_imbalance_5lvl) == 93,
