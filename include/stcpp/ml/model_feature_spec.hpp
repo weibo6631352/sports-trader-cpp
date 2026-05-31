@@ -43,16 +43,19 @@
 
 #include "stcpp/data/feature_store_contract.hpp"
 #include "stcpp/ml/fair_value_model.hpp"
+#include "stcpp/sizing/quote_snapshot_hub.hpp"  // v0.3: QuoteFeatures 源 (双边时序/持仓特征)
 
 namespace stcpp::ml {
 
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.2";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.3";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
-//     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow,
-//     语义与 paper_loop SportsFeatures 捕获列逐位一致 (训练列=捕获列)。列序锁 append-only。
+//     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
+//   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
+//     NO 34-43) + 双边 L1 (44-47) + 双边持仓 (48-53)。源在 QuoteFeatures → extract_from_quote。
+//     老板「双边信息都要有 / 各边买了多少」。列序锁 append-only, 旧列 index 不变。
 
 // ---------------------------------------------------------------------------
 // MlFeature — 抽取出来的 feature 列 (顺序锁死 = 训练 column index).
@@ -90,15 +93,52 @@ enum class MlFeature : std::uint8_t {
     x_microprice_minus_mid = 17,  // b_microprice - b_mid (短期方向压力)
 
     // ---- v0.2 append (game 侧, FeatureStoreGameRow 源; -1→NaN; append-only 列序锁) ----
-    g_bm_inplay_fair = 18,        // inplay bet365 单源 de-vig home/YES 胜率 (sharp live 锚; 待 odds plan)
+    g_bm_inplay_fair = 18,        // inplay bet365 单源 de-vig YES-canonical 胜率 (sharp live 锚)
     g_danger_attack_diff = 19,    // 危险进攻差 home-away (xG 代理; 待 livescore client)
     g_shot_on_target_diff = 20,   // 射正差 home-away
     g_possession_home = 21,       // 主队控球率 0-100
     g_red_card_diff = 22,         // 红牌差 home-away (红牌后胜率剧变)
     g_corner_diff = 23,           // 角球差 home-away
+
+    // ---- v0.3 append (双边时序微结构 + 双边持仓; QuoteFeatures 源 → extract_from_quote) ----
+    //   老板「双边信息都要有 / 各边买了多少」: YES+NO 时序微结构 + 双边持仓全进契约。
+    //   YES 边时序微结构 (24-33; ts_history_ 派生)
+    b_mp_roc_per_sec = 24,    // YES 微价变化率 (prob/sec)
+    b_realized_vol = 25,      // YES realized vol
+    b_bid_absence_frac = 26,  // YES「卖不出」占比
+    b_exit_depth_mean = 27,   // YES 退出流动性 (best_bid_size 均值)
+    b_amihud = 28,            // YES Amihud 流动性冲击
+    b_bid_depth_vol = 29,     // YES bid 深度波动
+    b_ofi = 30,               // YES order flow imbalance
+    b_vol_ratio = 31,         // YES 短/长窗 vol 比 (制度切换)
+    b_mp_roc_30s = 32,        // YES 30s 动量
+    b_mp_roc_5m = 33,         // YES 5min 趋势
+    //   NO 边时序微结构 (34-43; ts_history_no_ 派生; 独立信号非 YES 镜像)
+    no_b_mp_roc_per_sec = 34,
+    no_b_realized_vol = 35,
+    no_b_bid_absence_frac = 36,
+    no_b_exit_depth_mean = 37,
+    no_b_amihud = 38,
+    no_b_bid_depth_vol = 39,
+    no_b_ofi = 40,
+    no_b_vol_ratio = 41,
+    no_b_mp_roc_30s = 42,
+    no_b_mp_roc_5m = 43,
+    //   双边 L1 微结构 (44-47)
+    b_no_microprice = 44,  // NO 边 microprice
+    b_cross_spread = 45,   // YES_ask + NO_ask − 1 (=vig; 双边定价健康度)
+    b_yes_imbalance = 46,  // YES L1 簿口失衡
+    b_no_imbalance = 47,   // NO  L1 簿口失衡
+    //   双边持仓 (48-53; 库存感知; 各边各量, 可能两边都持)
+    pos_yes_qty = 48,            // YES token 持仓量 (whole pUSD, signed)
+    pos_no_qty = 49,             // NO  token 持仓量
+    pos_yes_avg_entry = 50,      // YES 加权平均入场价
+    pos_no_avg_entry = 51,       // NO  加权平均入场价
+    pos_net_qty = 52,            // 净 YES 方向 = yes − no
+    pos_condition_exposure = 53,  // 本 condition 净敞口 (whole pUSD)
 };
 
-inline constexpr std::size_t kMlFeatureCount = 24;
+inline constexpr std::size_t kMlFeatureCount = 54;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -150,6 +190,36 @@ inline constexpr std::size_t kMlFeatureCount = 24;
             return "g_red_card_diff";
         case MlFeature::g_corner_diff:
             return "g_corner_diff";
+        case MlFeature::b_mp_roc_per_sec: return "b_mp_roc_per_sec";
+        case MlFeature::b_realized_vol: return "b_realized_vol";
+        case MlFeature::b_bid_absence_frac: return "b_bid_absence_frac";
+        case MlFeature::b_exit_depth_mean: return "b_exit_depth_mean";
+        case MlFeature::b_amihud: return "b_amihud";
+        case MlFeature::b_bid_depth_vol: return "b_bid_depth_vol";
+        case MlFeature::b_ofi: return "b_ofi";
+        case MlFeature::b_vol_ratio: return "b_vol_ratio";
+        case MlFeature::b_mp_roc_30s: return "b_mp_roc_30s";
+        case MlFeature::b_mp_roc_5m: return "b_mp_roc_5m";
+        case MlFeature::no_b_mp_roc_per_sec: return "no_b_mp_roc_per_sec";
+        case MlFeature::no_b_realized_vol: return "no_b_realized_vol";
+        case MlFeature::no_b_bid_absence_frac: return "no_b_bid_absence_frac";
+        case MlFeature::no_b_exit_depth_mean: return "no_b_exit_depth_mean";
+        case MlFeature::no_b_amihud: return "no_b_amihud";
+        case MlFeature::no_b_bid_depth_vol: return "no_b_bid_depth_vol";
+        case MlFeature::no_b_ofi: return "no_b_ofi";
+        case MlFeature::no_b_vol_ratio: return "no_b_vol_ratio";
+        case MlFeature::no_b_mp_roc_30s: return "no_b_mp_roc_30s";
+        case MlFeature::no_b_mp_roc_5m: return "no_b_mp_roc_5m";
+        case MlFeature::b_no_microprice: return "b_no_microprice";
+        case MlFeature::b_cross_spread: return "b_cross_spread";
+        case MlFeature::b_yes_imbalance: return "b_yes_imbalance";
+        case MlFeature::b_no_imbalance: return "b_no_imbalance";
+        case MlFeature::pos_yes_qty: return "pos_yes_qty";
+        case MlFeature::pos_no_qty: return "pos_no_qty";
+        case MlFeature::pos_yes_avg_entry: return "pos_yes_avg_entry";
+        case MlFeature::pos_no_avg_entry: return "pos_no_avg_entry";
+        case MlFeature::pos_net_qty: return "pos_net_qty";
+        case MlFeature::pos_condition_exposure: return "pos_condition_exposure";
     }
     return "unknown";
 }
@@ -329,12 +399,79 @@ inline void fill_cross_features(std::vector<float>& out) noexcept {
     return fv;
 }
 
+// ---------------------------------------------------------------------------
+// extract_from_quote — 填 v0.3 列 (24..53) 从 QuoteFeatures (双边时序微结构 + 双边持仓)。
+//   源是在线决策快照 QuoteFeatures (FeatureRecorder 落盘同源 → 训练料=推理向量, 零漂移)。
+//   out 须已 resize 到 kMlFeatureCount。NaN 透传。
+// ---------------------------------------------------------------------------
+inline void extract_from_quote(const stcpp::sizing::QuoteFeatures& q, std::vector<float>& out) noexcept {
+    using detail::kNaNf;
+    auto put = [&out](MlFeature f, double v) noexcept {
+        out[static_cast<std::size_t>(f)] = (v == v) ? static_cast<float>(v) : kNaNf;  // NaN 透传
+    };
+    // YES 边时序微结构 (24-33)
+    put(MlFeature::b_mp_roc_per_sec, q.mp_roc_per_sec);
+    put(MlFeature::b_realized_vol, q.realized_vol);
+    put(MlFeature::b_bid_absence_frac, q.bid_absence_frac);
+    put(MlFeature::b_exit_depth_mean, q.exit_depth_mean);
+    put(MlFeature::b_amihud, q.b_amihud);
+    put(MlFeature::b_bid_depth_vol, q.b_bid_depth_vol);
+    put(MlFeature::b_ofi, q.b_ofi);
+    put(MlFeature::b_vol_ratio, q.b_vol_ratio);
+    put(MlFeature::b_mp_roc_30s, q.b_mp_roc_30s);
+    put(MlFeature::b_mp_roc_5m, q.b_mp_roc_5m);
+    // NO 边时序微结构 (34-43)
+    put(MlFeature::no_b_mp_roc_per_sec, q.no_mp_roc_per_sec);
+    put(MlFeature::no_b_realized_vol, q.no_realized_vol);
+    put(MlFeature::no_b_bid_absence_frac, q.no_bid_absence_frac);
+    put(MlFeature::no_b_exit_depth_mean, q.no_exit_depth_mean);
+    put(MlFeature::no_b_amihud, q.no_b_amihud);
+    put(MlFeature::no_b_bid_depth_vol, q.no_b_bid_depth_vol);
+    put(MlFeature::no_b_ofi, q.no_b_ofi);
+    put(MlFeature::no_b_vol_ratio, q.no_b_vol_ratio);
+    put(MlFeature::no_b_mp_roc_30s, q.no_b_mp_roc_30s);
+    put(MlFeature::no_b_mp_roc_5m, q.no_b_mp_roc_5m);
+    // 双边 L1 微结构 (44-47)
+    put(MlFeature::b_no_microprice, q.no_microprice);
+    put(MlFeature::b_cross_spread, q.cross_spread);
+    put(MlFeature::b_yes_imbalance, q.yes_imbalance);
+    put(MlFeature::b_no_imbalance, q.no_imbalance);
+    // 双边持仓 (48-53)
+    put(MlFeature::pos_yes_qty, q.pos_yes_qty);
+    put(MlFeature::pos_no_qty, q.pos_no_qty);
+    put(MlFeature::pos_yes_avg_entry, q.pos_yes_avg_entry);
+    put(MlFeature::pos_no_avg_entry, q.pos_no_avg_entry);
+    put(MlFeature::pos_net_qty, q.pos_net_qty);
+    put(MlFeature::pos_condition_exposure, q.pos_condition_exposure_usdc);
+}
+
+// ---------------------------------------------------------------------------
+// extract_full — game_row + book_row (0..23) + QuoteFeatures (24..53) → 完整 FeatureVector。
+//   在线推理用 (paper_loop): qf 含双边时序/持仓, game_row/book_row 含原始 game/book 列。
+// ---------------------------------------------------------------------------
+[[nodiscard]] inline FeatureVector extract_full(
+    const stcpp::data::feature_store::FeatureStoreGameRow& g,
+    const stcpp::data::feature_store::FeatureStoreBookRow& b,
+    const stcpp::sizing::QuoteFeatures& q) noexcept {
+    FeatureVector fv;
+    fv.spec_version = kSpecVersion;
+    fv.values.assign(kMlFeatureCount, detail::kNaNf);
+    extract_from_game_row(g, fv.values);   // 0-7, 18-23
+    extract_from_book_row(b, fv.values);   // 8-15
+    fill_cross_features(fv.values);        // 16-17
+    extract_from_quote(q, fv.values);      // 24-53 (双边时序/持仓)
+    fv.as_of_ts_ns = (g.as_of_ts_ns > b.as_of_ts_ns) ? g.as_of_ts_ns : b.as_of_ts_ns;
+    return fv;
+}
+
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 24, "MlFeature count must be 24 (列序锁; 新增 append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::g_corner_diff) == kMlFeatureCount - 1,
-              "最后一列必须是 g_corner_diff (append-only 约束; v0.2 末列)");
+static_assert(kMlFeatureCount == 54, "MlFeature count must be 54 (v0.3; append + bump spec)");
+static_assert(static_cast<std::size_t>(MlFeature::pos_condition_exposure) == kMlFeatureCount - 1,
+              "最后一列必须是 pos_condition_exposure (append-only 约束; v0.3 末列)");
 // append-only 不变量: 旧列 index 永不变 (训练 column index 锁死)。
 static_assert(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid) == 17,
               "x_microprice_minus_mid 必须恒为 17 (v0.1 末列, append 后不得移位)");
+static_assert(static_cast<std::size_t>(MlFeature::g_corner_diff) == 23,
+              "g_corner_diff 必须恒为 23 (v0.2 末列, append 后不得移位)");
 
 }  // namespace stcpp::ml

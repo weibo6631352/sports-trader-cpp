@@ -708,24 +708,13 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const double no_imbalance =
         mkt.no.present ? mkt.no.book.imbalance : std::numeric_limits<double>::quiet_NaN();
     const std::int64_t joint_as_of_ts_ns = std::min(game_row.as_of_ts_ns, feat.as_of_ts_ns);
-    // 步④: ML 推理 (advisory, ML-R1/R2 — 旁路, 不驱动决策)。注入模型且维度匹配 → predict, 否则
-    //   nullptr → baseline provenance。extract_joined(game_row, book_row) 产 kMlFeatureCount(24) 列
-    //   FeatureVector (含 v0.2 inplay 赔率 + live_stats)。R-12: paper loop_thread_ 非 WSS event loop;
-    //   Stub 廉价 / ONNX 单线程旁路。维度不符 (spec_version 错配) → 跳过, 宁可空不可假。
-    ml::ModelPrediction ml_pred_storage;
-    const ml::ModelPrediction* ml_pred = nullptr;
-    if (ml_model_ != nullptr && ml_model_->ready()) {
-        const ml::FeatureVector fv = ml::extract_joined(game_row, book_row);
-        if (fv.size() == ml_model_->expected_feature_count()) {
-            ml_pred_storage = ml_model_->predict(fv);
-            ml_pred = &ml_pred_storage;
-        }
-    }
+    // 步④/v0.3: ML 推理移到 PublishQuoteSnapshot 末尾 (qf 全特征就位后, extract_full 含双边时序/持仓
+    //   24-53 列)。此处传 game_row + book_row 供 extract_full 填 0-23 原始 game/book 列。
     PublishQuoteSnapshot(condition_id, fv_result, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair,
                          cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns, mkt.event_id,
                          mkt.neg_risk_market_id, target_signed, reservation.buy_px, reservation.sell_px,
                          reservation.required_margin, time_to_resolution_frac, g_time_x_lead, g_fld_signal,
-                         g_remaining_sec, g_periods_won_home, g_periods_won_away, sports, ml_pred);
+                         g_remaining_sec, g_periods_won_home, g_periods_won_away, sports, game_row, book_row);
     stats_.quote_publishes.fetch_add(1, std::memory_order_relaxed);
 
     // ---- P0-4: advisory gate -----------------------------------------------
@@ -1206,7 +1195,8 @@ void PaperLoop::PublishQuoteSnapshot(
     double reservation_buy_px, double reservation_sell_px, double required_margin,
     double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
     std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports,
-    const ml::ModelPrediction* ml_pred) noexcept {
+    const data::feature_store::FeatureStoreGameRow& ml_game_row,
+    const data::feature_store::FeatureStoreBookRow& ml_book_row) noexcept {
     sizing::QuoteFeatures qf{};
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
@@ -1401,10 +1391,21 @@ void PaperLoop::PublishQuoteSnapshot(
         qf.required_margin = 0.0;
     }
 
+    // ML 推理 (步④/v0.3): qf 全特征就位 → extract_full(game_row, book_row, qf) 产完整
+    //   kMlFeatureCount(54) 列 (含双边时序微结构 + 双边持仓 24-53)。advisory, ML-R1/R2: 旁路,
+    //   绝不改 fair_value/决策。维度不符 → 跳过 (宁可空不可假)。R-12: paper loop_thread_, 非 WSS。
+    ml::ModelPrediction ml_pred_storage;
+    const ml::ModelPrediction* ml_pred = nullptr;
+    if (ml_model_ != nullptr && ml_model_->ready()) {
+        const ml::FeatureVector fv = ml::extract_full(ml_game_row, ml_book_row, qf);
+        if (fv.size() == ml_model_->expected_feature_count()) {
+            ml_pred_storage = ml_model_->predict(fv);
+            ml_pred = &ml_pred_storage;
+        }
+    }
+
     // ML provenance.
-    //   步④: 若注入了 ml::FairValueModel (Stub/ONNX) 且推理成功 → 填 ML 模型 provenance +
-    //     advisory 输出 (ml_advisory_p_yes)。ML-R1/R2 红线: 推理结果旁路, 绝不改 fair_value/决策
-    //     (上方 fair_value/edge/sizing 全来自 baseline fv_result, 此处只写 provenance + advisory 列)。
+    //   若推理成功 → 填 ML 模型 provenance + advisory 输出 (ml_advisory_p_yes)。
     //   否则: 回落 baseline provenance (无 ML 模型时的 M1 行为, 逐位不变)。
     if (ml_pred != nullptr && ml_pred->ok) {
         qf.ml_advisory_p_yes = ml_pred->prob(0);  // ML 模型 YES fair (advisory; 不驱动决策)

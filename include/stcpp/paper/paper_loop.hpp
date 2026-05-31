@@ -526,7 +526,8 @@ private:
                               double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
                               std::int32_t g_periods_won_home, std::int32_t g_periods_won_away,
                               const SportsFeatures& sports,
-                              const ml::ModelPrediction* ml_pred) noexcept;
+                              const data::feature_store::FeatureStoreGameRow& ml_game_row,
+                              const data::feature_store::FeatureStoreBookRow& ml_book_row) noexcept;
 };
 
 }  // namespace stcpp::paper

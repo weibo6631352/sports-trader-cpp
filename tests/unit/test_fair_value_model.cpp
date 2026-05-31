@@ -91,11 +91,51 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     // 列序锁: enum 值 = column index, 末列固定.
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_score_diff), 0u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_mid), 8u);
-    // append-only: 旧末列 x_microprice_minus_mid 恒 17 (v0.1), 不因 v0.2 append 移位.
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid), 17u);
-    // v0.2 新末列 = g_corner_diff (23).
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_corner_diff), kMlFeatureCount - 1);
-    EXPECT_EQ(kMlFeatureCount, 24u);
+    // append-only: 旧末列恒定, 不因后续 append 移位.
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_microprice_minus_mid), 17u);  // v0.1 末列
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_corner_diff), 23u);           // v0.2 末列
+    // v0.3 新末列 = pos_condition_exposure (53).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_condition_exposure), kMlFeatureCount - 1);
+    EXPECT_EQ(kMlFeatureCount, 54u);
+    // v0.3 双边对称抽查: YES/NO 时序微结构 + 双边持仓列就位.
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_yes_qty), 48u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::pos_no_qty), 49u);
+}
+
+TEST(ModelFeatureSpec, V03Columns_FromQuoteFeatures_DoubleSided) {
+    // 双边时序微结构 + 双边持仓 (24-53) 从 QuoteFeatures 抽取 (extract_full)。
+    stcpp::sizing::QuoteFeatures qf{};
+    qf.b_ofi = 1.5;            // YES OFI
+    qf.no_b_ofi = -0.8;        // NO OFI (独立, 非 YES 镜像)
+    qf.realized_vol = 0.02;
+    qf.no_realized_vol = 0.03;
+    qf.cross_spread = 0.04;
+    qf.yes_imbalance = 0.3;
+    qf.no_imbalance = -0.2;
+    qf.pos_yes_qty = 100.0;
+    qf.pos_no_qty = 30.0;
+    qf.pos_net_qty = 70.0;
+    qf.pos_condition_exposure_usdc = 130.0;
+
+    const FeatureVector fv = stcpp::ml::extract_full(make_game_row(), make_book_row(), qf);
+    ASSERT_EQ(fv.size(), kMlFeatureCount);  // 54
+    auto at = [&](MlFeature f) { return fv.values[static_cast<std::size_t>(f)]; };
+    // 双边时序微结构: YES 与 NO 各自独立值都进向量。
+    EXPECT_FLOAT_EQ(at(MlFeature::b_ofi), 1.5f);
+    EXPECT_FLOAT_EQ(at(MlFeature::no_b_ofi), -0.8f) << "NO OFI 独立信号, 非 YES 镜像";
+    EXPECT_FLOAT_EQ(at(MlFeature::b_realized_vol), 0.02f);
+    EXPECT_FLOAT_EQ(at(MlFeature::no_b_realized_vol), 0.03f);
+    EXPECT_FLOAT_EQ(at(MlFeature::b_yes_imbalance), 0.3f);
+    EXPECT_FLOAT_EQ(at(MlFeature::b_no_imbalance), -0.2f);
+    // 双边持仓: 各边各量都进 (不塌单边)。
+    EXPECT_FLOAT_EQ(at(MlFeature::pos_yes_qty), 100.0f);
+    EXPECT_FLOAT_EQ(at(MlFeature::pos_no_qty), 30.0f);
+    EXPECT_FLOAT_EQ(at(MlFeature::pos_net_qty), 70.0f);
+    EXPECT_FLOAT_EQ(at(MlFeature::pos_condition_exposure), 130.0f);
+    // 0-23 仍由 game_row/book_row 填 (extract_full 含原始 game/book 列)。
+    EXPECT_FLOAT_EQ(at(MlFeature::g_score_diff), 7.0f);
 }
 
 TEST(ModelFeatureSpec, V02Columns_InplayOddsAndLiveStats) {
