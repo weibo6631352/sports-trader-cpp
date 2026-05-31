@@ -290,6 +290,9 @@ BuildResult PaperDaemon::Build() {
     //   lib 默认 false (向后兼容契约测试); 生产 daemon 置 true (可经 enable_phase0_gates 关, 供管线测试)。
     cfg_.paper_loop.dynamic_reservation = cfg_.enable_phase0_gates;
     cfg_.paper_loop.net_ev_gate = cfg_.enable_phase0_gates;
+    // ML 驱动决策 (老板放开 paper ML-R2): 有真 ONNX 模型时 ML 全驱动决策 fair (weight=1.0)。
+    //   stub 永不驱动 (blend 内 kind==Onnx 门); 无 onnx_model_path → stub → 纯 baseline, 安全。
+    cfg_.paper_loop.ml_fair_blend_weight = 1.0;
     paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
                                                      token_map_, cfg_.paper_loop);

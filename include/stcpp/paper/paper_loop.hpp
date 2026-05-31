@@ -210,6 +210,11 @@ struct PaperLoopConfig {
     double goal_freshness_force_thr{0.6};
     double ofi_force_thr{0.0};  // |OFI|≥此值 (默认 0 = 进球新鲜即触发; force_cross 仅绕死区, 仍受限价门约束)
 
+    // ML 驱动决策 blend 权重 (老板 2026-05-31 放开 paper 期 ML-R2)。p_fair = (1−w)·baseline + w·ml_p_yes。
+    //   0 = 纯 baseline (默认; 现有契约测试不变)。仅当真 ONNX 模型 (kind==Onnx) 加载才生效, stub 永不驱动。
+    //   PaperLoop 天然 paper (不花真钱); live 路径不复用此 blend。daemon 生产可设 1.0 (有模型时 ML 全驱动)。
+    double ml_fair_blend_weight{0.0};
+
     // strategy_id / signal_id (audit / RM 去重用)
     std::string strategy_id{"paper-demo-v1"};
 
@@ -558,6 +563,19 @@ private:
                               const SportsFeatures& sports,
                               const data::feature_store::FeatureStoreGameRow& ml_game_row,
                               const data::feature_store::FeatureStoreBookRow& ml_book_row) noexcept;
+
+    // 填 QuoteFeatures 的观测特征列 (MlFeature 18-74 + 4ts/ids/fair/fee/micro/pos/resolution)。
+    //   TickOne (决策前 blend predict) 与 PublishQuoteSnapshot (发布) 共用 → 训练=推理同源, 无漂移。
+    //   不填决策输出列 (target/reservation/kelly/suggested/signal) 与 provenance。
+    void PopulateFeatureColumns(sizing::QuoteFeatures& qf, const std::string& condition_id,
+                                const pricing::FairValueResult& fv_result, double mark_price,
+                                const polymarket::clob_wss::OrderBookFeatures& feat, double cross_spread,
+                                double no_microprice, double no_imbalance, bool devig_ok,
+                                std::int64_t joint_as_of_ts_ns, const std::string& event_id,
+                                const std::string& neg_risk_market_id, double time_to_resolution_frac,
+                                double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
+                                std::int32_t g_periods_won_home, std::int32_t g_periods_won_away,
+                                const SportsFeatures& sports) noexcept;
 };
 
 }  // namespace stcpp::paper

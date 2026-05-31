@@ -1,4 +1,5 @@
 // tests/unit/test_paper_loop.cpp — PaperLoop 单测
+#include <filesystem>
 //
 // Owner: 小肖 (numerical-algorithms, A 系统工程部)
 // last_review: 2026-05-30
@@ -529,6 +530,37 @@ TEST_F(PaperLoopTest, T11f_Phase2_FullVectorPublishedToHub) {
         EXPECT_GT(rec->as_of_ts_ns, 0LL);
     }
 }
+
+// ---------------------------------------------------------------------------
+// T11g (老板放开 paper ML-R2): 真 ONNX 模型 + blend weight=1.0 → ML 驱动决策路径跑通不崩。
+//   stub 永不驱动 (kind 门); 仅 ONNX 触发 blend。验证 predict-before-decision 接线 + BR-1 同源特征。
+// ---------------------------------------------------------------------------
+#ifdef STCPP_ONNX_ENABLED
+TEST_F(PaperLoopTest, T11g_MlDrivesDecision_OnnxBlend) {
+    const auto fixture = std::filesystem::path(__FILE__).parent_path().parent_path() / "fixtures" /
+                         "fair_value_selftest.onnx";
+    if (!std::filesystem::exists(fixture)) GTEST_SKIP() << "fixture ONNX 缺失";
+    stcpp::ml::OnnxModelConfig ocfg;
+    ocfg.onnx_path = fixture.string();
+    ocfg.expected_feature_count = stcpp::ml::kMlFeatureCount;
+    ocfg.output_outcome_count = 2;
+    auto onnx = stcpp::ml::make_onnx_fair_value_model(ocfg);
+    ASSERT_NE(onnx, nullptr);
+    ASSERT_EQ(onnx->kind(), stcpp::ml::ModelKind::Onnx) << "真 ONNX (非 stub) 才驱动决策";
+
+    hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));
+    hub_->Publish("1002", MakeSyntheticBook(0.45, 0.47));  // 双边 book: ML 选任一边都有 book
+    cfg_.ml_fair_blend_weight = 1.0;  // ML 全驱动决策 fair
+    loop_ = MakeLoop();
+    loop_->SetMlModel(onnx.get());  // Start 前注入
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    loop_->Stop();  // join loop_thread_ 先于 onnx 析构 (本测局部)
+
+    // ML 驱动决策路径跑通 (extract_full→predict→blend p_fair→SelectSide), 不崩 + 正常发 quote。
+    EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0));
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // T11e (Phase 0 联合评审): 项5 组合度量接入 TickAll (权益每周期采样) + 项1-3 门 ON 路径不崩。

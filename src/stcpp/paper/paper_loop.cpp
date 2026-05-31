@@ -611,6 +611,33 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                     : std::numeric_limits<double>::quiet_NaN();
     }
 
+    // ---- ML 驱动决策 blend (老板 2026-05-31 放开 paper 期 ML-R2) ----
+    //   真 ONNX 模型加载时, blend ML fair 进决策 p_fair (YES-canonical)。安全护栏:
+    //   ① 仅 kind==Onnx (stub 永不驱动决策, 无真模型→纯 baseline) ② ready+维度匹配+predict ok
+    //   ③ PaperLoop 天然 paper (VirtualFill 不花真钱; live 路径另接, 绝不复用此 blend 驱动真单)。
+    //   特征经 PopulateFeatureColumns 与 PublishQuoteSnapshot 同源 (BR-1: 训练捕获=决策推理一致)。
+    if (cfg_.ml_fair_blend_weight > 0.0 && ml_model_ != nullptr && ml_model_->ready() &&
+        ml_model_->kind() == ml::ModelKind::Onnx) {
+        sizing::QuoteFeatures fqf{};
+        const double blend_no_imb =
+            mkt.no.present ? mkt.no.book.imbalance : std::numeric_limits<double>::quiet_NaN();
+        const std::int64_t blend_joint = std::min(game_row.as_of_ts_ns, feat.as_of_ts_ns);
+        PopulateFeatureColumns(fqf, condition_id, fv_result, microprice, feat, cross_spread, no_token_mid,
+                               blend_no_imb, devig_ok, blend_joint, mkt.event_id, mkt.neg_risk_market_id,
+                               time_to_resolution_frac, g_time_x_lead, g_fld_signal, g_remaining_sec,
+                               g_periods_won_home, g_periods_won_away, sports);
+        const ml::FeatureVector fv = ml::extract_full(game_row, book_row, fqf);
+        if (fv.size() == ml_model_->expected_feature_count()) {
+            const auto mp = ml_model_->predict(fv);
+            const double ml_p = mp.prob(0);
+            // fail-safe: ML 输出非有限 (NaN 特征/数值) → 不 blend, 保 baseline (宁可不动不可乱动)。
+            if (mp.ok && std::isfinite(ml_p) && ml_p > 0.0 && ml_p < 1.0) {
+                const double w = std::clamp(cfg_.ml_fair_blend_weight, 0.0, 1.0);
+                p_fair = (1.0 - w) * p_fair + w * ml_p;  // ML 驱动决策 fair
+            }
+        }
+    }
+
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
     const DecisionSide decision = SelectSide(p_fair, p_market_devig);
     const bool is_yes = (decision.outcome == TradedSide::Yes);
@@ -1236,18 +1263,18 @@ void PaperLoop::FeedRiskGateway() noexcept {
 //   宁可空不可假: 消费方 (前端/API) 见 predict_ok=false 应灰显数值, 不渲染 edge/notional.
 // ---------------------------------------------------------------------------
 
-void PaperLoop::PublishQuoteSnapshot(
-    const std::string& condition_id, const pricing::FairValueResult& fv_result,
-    const sizing::SizingOutput& sizing_out, double mark_price, double edge_ci_lower,
-    const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair, double cross_spread,
-    double no_microprice, double no_imbalance, bool devig_ok, std::int64_t joint_as_of_ts_ns,
-    const std::string& event_id, const std::string& neg_risk_market_id, double target_signed_notional,
-    double reservation_buy_px, double reservation_sell_px, double required_margin,
-    double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
-    std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports,
-    const data::feature_store::FeatureStoreGameRow& ml_game_row,
-    const data::feature_store::FeatureStoreBookRow& ml_book_row) noexcept {
-    sizing::QuoteFeatures qf{};
+// ---------------------------------------------------------------------------
+// PopulateFeatureColumns — 填 QuoteFeatures 观测特征列 (TickOne blend predict + PublishQuoteSnapshot
+//   共用; BR-1: 训练捕获=决策 blend 同一份特征, 杜绝 train-serve skew)。不填决策输出/provenance。
+// ---------------------------------------------------------------------------
+void PaperLoop::PopulateFeatureColumns(
+    sizing::QuoteFeatures& qf, const std::string& condition_id,
+    const pricing::FairValueResult& fv_result, double mark_price,
+    const polymarket::clob_wss::OrderBookFeatures& feat, double cross_spread, double no_microprice,
+    double no_imbalance, bool devig_ok, std::int64_t joint_as_of_ts_ns, const std::string& event_id,
+    const std::string& neg_risk_market_id, double time_to_resolution_frac, double g_time_x_lead,
+    double g_fld_signal, double g_remaining_sec, std::int32_t g_periods_won_home,
+    std::int32_t g_periods_won_away, const SportsFeatures& sports) noexcept {
     // R-20: 4 ts 透传 (来自 hub 快照)
     qf.event_ts_ns = feat.event_ts_ns;
     qf.data_source_ts_ns = feat.data_source_ts_ns;
@@ -1256,7 +1283,10 @@ void PaperLoop::PublishQuoteSnapshot(
 
     // fair_value: 始终输出 (fv_result.p_yes()), 但 predict_ok=false 时消费方不可据此决策.
     qf.fair_value = fv_result.p_yes();
-    qf.market_mid = mark_price;
+    // YES-canonical mark (feat=YES book; blend 与 capture 同源, BR-1 — 不用选边后 mark, 否则 NO 边偏)。
+    const double yes_mark = std::isfinite(feat.microprice) ? feat.microprice : feat.mid;
+    qf.market_mid = yes_mark;
+    (void)mark_price;  // 参数保留 (调用方对称); 特征用 yes_mark 保 BR-1 一致
     // R-fee-2: per-market 手续费系数 (始终输出, fee 是 market 元数据非决策派生, 不受 has_real_fair gate)。
     //   进 ML 训练数据 (FeatureRecorder) + 前端 /quote。与 RM/sizing 同源 FeeCoefFor(condition)。
     qf.fee_rate_coef = FeeCoefFor(condition_id);
@@ -1364,7 +1394,7 @@ void PaperLoop::PublishQuoteSnapshot(
         const double fair = fv_result.p_yes();
         qf.x_log_odds_fair = pricing::logit(fair);
         qf.x_log_odds_edge =
-            (mark_price > 0.0 && mark_price < 1.0) ? pricing::logit(fair) - pricing::logit(mark_price) : 0.0;
+            (yes_mark > 0.0 && yes_mark < 1.0) ? pricing::logit(fair) - pricing::logit(yes_mark) : 0.0;
         qf.x_pin_risk = std::min(fair, 1.0 - fair);
         qf.x_pin_x_expiry = std::isfinite(time_to_resolution_frac) ? qf.x_pin_risk * time_to_resolution_frac
                                                                    : std::numeric_limits<double>::quiet_NaN();
@@ -1412,6 +1442,24 @@ void PaperLoop::PublishQuoteSnapshot(
         qf.pos_condition_exposure_usdc =
             (cit != cond_exp.end()) ? static_cast<double>(cit->second) / 1'000'000.0 : 0.0;
     }
+}
+
+void PaperLoop::PublishQuoteSnapshot(
+    const std::string& condition_id, const pricing::FairValueResult& fv_result,
+    const sizing::SizingOutput& sizing_out, double mark_price, double edge_ci_lower,
+    const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair, double cross_spread,
+    double no_microprice, double no_imbalance, bool devig_ok, std::int64_t joint_as_of_ts_ns,
+    const std::string& event_id, const std::string& neg_risk_market_id, double target_signed_notional,
+    double reservation_buy_px, double reservation_sell_px, double required_margin,
+    double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
+    std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports,
+    const data::feature_store::FeatureStoreGameRow& ml_game_row,
+    const data::feature_store::FeatureStoreBookRow& ml_book_row) noexcept {
+    sizing::QuoteFeatures qf{};
+    PopulateFeatureColumns(qf, condition_id, fv_result, mark_price, feat, cross_spread, no_microprice,
+                           no_imbalance, devig_ok, joint_as_of_ts_ns, event_id, neg_risk_market_id,
+                           time_to_resolution_frac, g_time_x_lead, g_fld_signal, g_remaining_sec,
+                           g_periods_won_home, g_periods_won_away, sports);
 
     if (has_real_fair) {
         // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.

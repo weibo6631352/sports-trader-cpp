@@ -118,6 +118,7 @@ set(EXTRA_LIBS_test_quote_snapshot_hub    stcpp_quote_snapshot_hub)
 # 小肖 PaperLoop: 最小 paper 交易循环 (R-11/R-12/R-20; feat/xiaoxiao-paper-loop)
 set(EXTRA_LIBS_test_paper_loop
     stcpp_paper_loop
+    stcpp_ml_inference  # ML 驱动决策 blend 测试: make_onnx_fair_value_model
     stcpp_orderbook_snapshot_hub
     stcpp_risk
     stcpp_ledger_snapshot_hub
