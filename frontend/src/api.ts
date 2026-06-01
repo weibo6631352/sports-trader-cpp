@@ -105,13 +105,62 @@ export function failingEndpointsSummary(threshold = 3): string {
   return lines.length > 0 ? lines.join('\n') : '';
 }
 
+// ---------- 全局并发闸 (跨洋高延迟链路防请求风暴, 2026-06-02 老雷) ----------
+//
+// 问题: 旧设计每轮一次性 Promise.all 发 ~350 请求。浏览器对同一 origin HTTP/1.1
+//       仅开 6 条连接, 跨洋 RTT ~200ms → 吞吐 30 req/s, 350 请求要排 ~11s 才抽干,
+//       而轮询每 5s 又灌一轮 → 队列无界增长 → 后发请求全部撞 12s 超时。
+// 修法: 全局信号量, 同时在途请求封顶 MAX_CONCURRENT (= 浏览器单 origin 连接数),
+//       多出的请求有序排队, 由空出的槽位接力。配合 store 层削减每轮请求量,
+//       链路不再堵 (详见 store.ts refreshMarketGrid 注释)。
+const MAX_CONCURRENT = 6;
+let _inFlight = 0;
+const _waitQueue: Array<() => void> = [];
+
+function acquireSlot(): Promise<void> {
+  if (_inFlight < MAX_CONCURRENT) {
+    _inFlight++;
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => _waitQueue.push(resolve));
+}
+
+function releaseSlot(): void {
+  const next = _waitQueue.shift();
+  if (next) {
+    next();           // 槽位接力给排队者, _inFlight 不变 (仍 ≤ MAX)
+  } else {
+    _inFlight--;
+  }
+}
+
+/** 受并发闸控制的 fetch — 所有出站请求必须走这里 */
+async function limitedFetch(url: string, init?: RequestInit): Promise<Response> {
+  await acquireSlot();
+  try {
+    return await fetch(url, init);
+  } finally {
+    releaseSlot();
+  }
+}
+
+/** 当前在途请求数 (可观测; Ops 页可显) */
+export function inFlightCount(): number {
+  return _inFlight;
+}
+
+/** 当前排队等待的请求数 */
+export function queuedCount(): number {
+  return _waitQueue.length;
+}
+
 // ---------- 通用 fetch wrapper ----------
 
 async function apiFetch<T>(path: string): Promise<T | null> {
   const url = `${_baseUrl}${path}`;
   let resp: Response;
   try {
-    resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
+    resp = await limitedFetch(url, { signal: AbortSignal.timeout(12000) });
   } catch (e) {
     recordError(path, e);
     return null;
@@ -169,7 +218,7 @@ export const fetchQuote = (conditionId: string): Promise<Quote | null> =>
 
 export async function fetchMetrics(): Promise<string | null> {
   try {
-    const resp = await fetch(`${_baseUrl}/metrics`, { signal: AbortSignal.timeout(12000) });
+    const resp = await limitedFetch(`${_baseUrl}/metrics`, { signal: AbortSignal.timeout(12000) });
     return resp.ok ? resp.text() : null;
   } catch {
     return null;

@@ -13,7 +13,7 @@
  *  - sessionStorage 保留展开状态
  */
 
-import { createSignal, For, Show, createMemo } from 'solid-js';
+import { createSignal, For, Show, createMemo, createEffect } from 'solid-js';
 import { createStore } from 'solid-js/store';
 import Chip from '@suid/material/Chip';
 import LinearProgress from '@suid/material/LinearProgress';
@@ -24,7 +24,7 @@ import TextField from '@suid/material/TextField';
 import Box from '@suid/material/Box';
 import Alert from '@suid/material/Alert';
 import Badge from '@suid/material/Badge';
-import { state } from '../store';
+import { state, setDetailInterest, addDetailInterest } from '../store';
 import {
   fmtTs, fmtBps, fmtUsdc, fmtClock, stalenessMs, isEndpointFailing,
 } from '../api';
@@ -67,6 +67,8 @@ function toggleMarket(condId: string): void {
   const next = !isMarketExpanded(condId);
   setExpandedMarkets(condId, next);
   ssSet(`stcpp_mkt_exp_${condId}`, next);
+  // 展开即按需拉一次 detail (不等下一轮 5s 轮询), 折叠不主动拉
+  if (next) addDetailInterest(condId);
 }
 
 function isEventExpanded(eventId: string, isLive: boolean): boolean {
@@ -915,6 +917,13 @@ export function TradingPage() {
   const totalMarkets = () => filteredGroups().reduce((acc, g) => acc + g.conditions.length, 0);
 
   const allCondIds = () => filteredGroups().flatMap((g) => g.conditions.map((c) => c.conditionId));
+
+  // 关注集 = 当前可见且展开的盘口行。展开行变化时同步给 store, 让 5s 轮询只刷新这些盘口。
+  // (读 expandedMarkets store 实现响应式; 切换展开 → 重算 → 轮询只拉展开行的 detail)
+  createEffect(() => {
+    const expanded = allCondIds().filter((cid) => isMarketExpanded(cid));
+    setDetailInterest(expanded);
+  });
 
   return (
     <div>

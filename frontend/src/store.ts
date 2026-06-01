@@ -40,6 +40,41 @@ import type {
 
 export const USE_STUB = new URLSearchParams(location.search).get('stub') === '1';
 
+// ---------- 请求预算 (跨洋高延迟防风暴, 2026-06-02 老雷) ----------
+//
+// 旧设计每 5s 一次性发 ~350 请求 (78 score + 90 盘口×3 detail), 跨洋 200ms RTT
+// 下排队 ~11s 撞超时。现改为:
+//  · score: 只拉 live 赛事 (gamma live=true), 封顶 SCORE_CAP。
+//  · 盘口 detail(market/book/quote): 不再预取全量, 只拉「用户正在看」的盘口
+//    (Trading 页展开行 + 详情页选中行), 由 detailInterest 集合驱动, 封顶 DETAIL_CAP。
+// 稳态每轮请求量从 ~350 降到 ~50, 配合 api.ts 并发闸, 链路不再堵。
+const SCORE_CAP = 50;
+const DETAIL_CAP = 30;
+
+/** score 拉取节流: 比分变化慢, 每 SCORE_EVERY_N 轮 grid (= N×5s) 才真正拉一次, 中间复用上轮缓存。
+ *  把每轮 ~50 个 score 请求的平均负载减半 (跨洋链路削峰)。 */
+const SCORE_EVERY_N = 2;
+let _scoreTick = 0;
+
+/** 当前「用户正在看」需要实时 detail 的盘口集合 (Trading 展开行 / 详情页选中行 注册) */
+const detailInterest = new Set<string>();
+
+/** 最近一次各 event 的 score 缓存 (score 节流时复用; addDetailInterest 即时拉取时回填) */
+const lastEventScore: Record<string, Score | null> = {};
+
+/** 整体替换关注集 (组件 createEffect 调用: 展开集合变化时同步) */
+export function setDetailInterest(condIds: string[]): void {
+  detailInterest.clear();
+  for (const c of condIds) if (c) detailInterest.add(c);
+}
+
+/** 追加单个关注盘口并立即拉一次 detail (展开/选中即见数据, 不等下一轮 5s) */
+export function addDetailInterest(condId: string): void {
+  if (!condId) return;
+  detailInterest.add(condId);
+  void fetchDetailFor([condId]);
+}
+
 // ---------- store shape ----------
 
 interface PerConditionCache {
@@ -211,14 +246,20 @@ export async function refreshMarketGrid(): Promise<void> {
     return;
   }
 
-  // 6. score 按 event_id 拉取 (≤32 个, 便宜; 决定哪些 event live + 排序)
-  const eventScoreCache: Record<string, Score | null> = {};
-  await Promise.all(
-    events.map(async (e) => {
-      eventScoreCache[e.event_id] = await safeGetMapped(
-        () => fetchScore(e.event_id), STUB_SCORE_MAP, e.event_id);
-    }),
-  );
+  // 6. score 只拉 live 赛事 (gamma live=true), 封顶 SCORE_CAP, 且每 SCORE_EVERY_N 轮才拉一次。
+  //    非 live 赛事 score 几乎不变且不显示比分, 不值得拉; live 判定用 events 自带 live 字段。
+  //    复用上轮缓存 (lastEventScore) → 跳过拉取的轮次比分照常显示, 只是慢 5s 更新。
+  const eventScoreCache: Record<string, Score | null> = { ...lastEventScore };
+  const doFetchScores = (_scoreTick++ % SCORE_EVERY_N) === 0;
+  if (doFetchScores) {
+    const liveEvents = events.filter((e) => e.live === true).slice(0, SCORE_CAP);
+    await Promise.all(
+      liveEvents.map(async (e) => {
+        eventScoreCache[e.event_id] = await safeGetMapped(
+          () => fetchScore(e.event_id), STUB_SCORE_MAP, e.event_id);
+      }),
+    );
+  }
 
   // 7. EventGroup 构造器 (读当前 conditionCache; 不等 per-condition 拉取即可建组)
   const buildGroups = (): EventGroup[] => {
@@ -255,26 +296,27 @@ export async function refreshMarketGrid(): Promise<void> {
     return groups;
   };
 
-  // 8. 立即用缓存建组 → UI 立刻显示全部赛事 (不等 per-condition 拉取风暴)
+  // 8. 立即用缓存建组 → UI 立刻显示全部赛事 (不等 per-condition 拉取)
+  //    eventScoreCache 缓存进 store, 供 buildGroups 复用 (避免按需 detail 时丢 score)
+  for (const eid in eventScoreCache) lastEventScore[eid] = eventScoreCache[eid];
   setState({ eventGroups: buildGroups() });
 
-  // 9. per-condition 拉取节流 (修请求风暴 bug): 电竞单场盘口巨多 (LoL 63), 全量
-  //    375 盘口 × 3(market/book/quote) = 1125 请求/5s 把跨洋链路打爆 → eventGroups 永远建不出。
-  //    只拉「有持仓 / live 赛事」的盘口 (优先), 上限 90; 其余盘口展开按需 (CondQuote 占位)。
-  const priorityConds: string[] = [];
-  for (const ev of events) {
-    const sc = eventScoreCache[ev.event_id]?.status;
-    const live = ev.live === true || sc === 'inplay' || sc === 'halftime';
-    for (const cid of ev.condition_ids) {
-      if ((posMap[cid]?.length ?? 0) > 0 || live) priorityConds.push(cid);
-    }
+  // 9. per-condition detail 只拉「用户正在看」的盘口 (展开行 / 选中行), 封顶 DETAIL_CAP。
+  //    旧设计预取 90 盘口×3 = 270 请求/5s 打爆跨洋链路; 现改按需, 折叠的行不拉。
+  const toFetch = Array.from(detailInterest).slice(0, DETAIL_CAP);
+  if (toFetch.length > 0) {
+    await fetchDetailFor(toFetch);
+    // 10. detail 到位后重建组 (含报价/book)
+    setState({ eventGroups: buildGroups() });
   }
-  // 无 live/持仓时, 至少拉前若干盘口让 UI 有报价
-  const fallbackConds = events.flatMap((e) => e.condition_ids);
-  const toFetch = Array.from(new Set(priorityConds.length > 0 ? priorityConds : fallbackConds)).slice(0, 90);
+}
 
+// ---------- fetchDetailFor: 拉指定盘口的 market/book/quote (按需) ----------
+
+/** 拉取指定盘口集合的 market/book/quote 写入 conditionCache (受 api.ts 并发闸控制) */
+export async function fetchDetailFor(condIds: string[]): Promise<void> {
   await Promise.all(
-    toFetch.map(async (condId) => {
+    condIds.map(async (condId) => {
       const cached = state.conditionCache[condId];
       let market: Market | null = cached?.market ?? null;
       if (!market) market = await safeGetMapped(() => fetchMarket(condId), STUB_MARKET_MAP, condId);
@@ -289,14 +331,11 @@ export async function refreshMarketGrid(): Promise<void> {
           s.conditionCache[condId].market = market;
           s.conditionCache[condId].book = book;
           s.conditionCache[condId].quote = quote;
-          if (market?.event_id) s.conditionCache[condId].score = eventScoreCache[market.event_id] ?? null;
+          if (market?.event_id) s.conditionCache[condId].score = lastEventScore[market.event_id] ?? null;
         }),
       );
     }),
   );
-
-  // 10. per-condition 数据到位后重建组 (含报价/book)
-  setState({ eventGroups: buildGroups() });
 }
 
 // ---------- refreshMarketInfoSlow (60s) ----------

@@ -13,7 +13,7 @@
  * SUID 组件: Card/CardHeader/CardContent/Table/Chip/TextField/Autocomplete
  */
 
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, For, Show, createEffect } from 'solid-js';
 import Card from '@suid/material/Card';
 import CardHeader from '@suid/material/CardHeader';
 import CardContent from '@suid/material/CardContent';
@@ -32,7 +32,7 @@ import Paper from '@suid/material/Paper';
 import LinearProgress from '@suid/material/LinearProgress';
 import Box from '@suid/material/Box';
 import Alert from '@suid/material/Alert';
-import { state } from '../store';
+import { state, setDetailInterest, addDetailInterest } from '../store';
 import { fmtTs, fmtBps, fmtUsdc, fmtClock, stalenessMs } from '../api';
 import { REJECT_REASON_ZH, SIDE_ZH, STATUS_ZH, SPORT_ZH } from '../i18n';
 import { StatusDot, wssStateToDot } from './ui/StatusDot';
@@ -543,7 +543,9 @@ export function MarketDetailPage() {
   const [selectedId, setSelectedId] = createSignal<string>('');
   const [searchInput, setSearchInput] = createSignal('');
 
-  const condIds = () => Object.keys(state.conditionCache);
+  // condId 列表来自事件发现 (/api/v1/events), 不再依赖 conditionCache 预取
+  // (detail 已改按需, conditionCache 只含已选中/展开的盘口)
+  const condIds = () => state.eventGroups.flatMap((g) => g.conditions.map((c) => c.conditionId));
   const filteredIds = () => {
     const q = searchInput().toLowerCase();
     return q ? condIds().filter((id) => id.toLowerCase().includes(q)) : condIds();
@@ -551,6 +553,17 @@ export function MarketDetailPage() {
 
   const cache = () => selectedId() ? state.conditionCache[selectedId()] : null;
   const book  = () => cache()?.book;
+
+  // 选中某盘口 → 注册为关注 (立即拉 detail + 后续 5s 轮询持续刷新该盘口)
+  createEffect(() => {
+    const id = selectedId();
+    if (id) {
+      setDetailInterest([id]);
+      addDetailInterest(id);
+    } else {
+      setDetailInterest([]);
+    }
+  });
 
   return (
     <div class="ops-page">
