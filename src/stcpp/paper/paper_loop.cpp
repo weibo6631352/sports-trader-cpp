@@ -60,6 +60,7 @@
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
 #include "stcpp/pricing/derivative_fair_value.hpp"
+#include "stcpp/pricing/fair_resolve.hpp"  // R-2: ResolveFair 纯函数 (fair 优先级集中)
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/rm_debug_snapshot.hpp"
 #include "stcpp/strategy/edge_ci.hpp"  // 单一 ComputeEdgeCiLower (回测-实盘共用)
@@ -576,12 +577,11 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   这根除了"低价 outright 被 stub 强拉 → 假 edge"(Spain 0.169 → fake 1076bps).
     // 有真实 in-play game_row 时: 用 score-prior 置信加权混合到 de-vig 市场锚上,
     //   置信随时钟从 kBasePriorConfidence 升到 kMaxPriorConfidence; 终态 conf=1.0.
-    double p_fair = p_market_devig;
-    // 派生盘口 (totals/spreads): 用专属定价覆盖 p_fair, 跳过 moneyline score-prior blend。
-    //   edge = derivative_p_yes − p_market_devig (我们的终场分布定价 vs 市场对 YES=Over/cover 的去 vig 定价)。
-    if (derivative_p_yes) {
-        p_fair = *derivative_p_yes;
-    }
+    double p_fair = p_market_devig;  // 最终由 ResolveFair 一处解析 (优先级集中在 fair_resolve.hpp; R-2 老周/老郭)
+    // fair-input 标量: has_real_fair 块内填; sharp<0=无效 → ResolveFair 回落 score-prior。derivative 在下面 optional。
+    double fair_sharp_yes = -1.0;
+    double fair_score_prior = 0.5;
+    double fair_prior_conf = 0.0;
     // 3a 时序: 结算临近度 (老板 2026-05-31, feature-first; 体育免新数据源 — 从 Goalserve 时钟派生)。
     //   = clamp(1 − time_frac, 0, 1); terminal → 0 (结算已定); 无真 fair/无时钟 → NaN。喂模型 +
     //   与 bid_absence_frac 组合 = 「临近结算 ∧ 卖不出」归零陷阱信号 (模型学, 不硬门)。
@@ -612,24 +612,12 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             (game_row.elapsed_sec >= 0 && total_sec > 0)
                 ? static_cast<double>(game_row.elapsed_sec) / static_cast<double>(total_sec)
                 : 0.0;
-        const double p_prior = fv_result.prior_yes;
-        const double conf = terminal ? 1.0 : pricing::prior_confidence(time_frac);
-        // 派生盘口已用专属定价覆盖 p_fair, 不走 moneyline score-prior blend (但仍算下列体育/时序特征)。
-        if (!derivative_p_yes) {
-            // ---- 盈利修复 (老雷 2026-06-01): sharp bet365 in-play de-vig fair 优先 ----
-            //   根因: score+clock 弱先验塌回 ~0.5, 无视流入的 sharp 共识 → 假 edge → 同场两队都买 → 亏。
-            //   sharp bet365 de-vig fair = 真实胜率共识 (Goalserve 直供, 比我们的 score 模型准得多)。
-            //   arb 论点: p_fair=sharp 共识, edge = sharp − PM 市场 (PM 偏离 sharp 才是真信号; 趋同则 0)。
-            //   3-way: 平局盘取 draw 概率, 胜负盘取 YES-canonical home_fair (已按 yes_is_home 翻转)。
-            //   sharp 无效 (无 bet365 odds, =-1) → 回落原 score-prior blend (fail-safe, 不造假)。
-            const double sharp_yes =
-                map_is_draw ? game_row.inplay_bet365_draw_fair : game_row.inplay_bet365_home_fair;
-            if (sharp_yes >= 0.0 && sharp_yes <= 1.0) {
-                p_fair = sharp_yes;
-            } else {
-                p_fair = pricing::blend_prob(p_prior, p_market_devig, conf);
-            }
-        }
+        // fair 优先级集中到 ResolveFair (R-2 老周/老郭): 此处仅捕获 fair-input 标量, 不直接定 p_fair。
+        //   sharp = bet365 in-play de-vig 共识 (盈利修复; 3-way 平局盘取 draw 概率, 胜负盘取 YES-canonical
+        //   home_fair 已按 yes_is_home 翻转)。<0/越界 → ResolveFair 回落 score-prior blend (fail-safe)。
+        fair_score_prior = fv_result.prior_yes;
+        fair_prior_conf = terminal ? 1.0 : pricing::prior_confidence(time_frac);
+        fair_sharp_yes = map_is_draw ? game_row.inplay_bet365_draw_fair : game_row.inplay_bet365_home_fair;
         time_to_resolution_frac = terminal ? 0.0 : std::clamp(1.0 - time_frac, 0.0, 1.0);
         // 批1 g_time_x_lead: 领先 × 剩余时间占比 (领先 1 球在 80min vs 20min 价值天差地别)。
         g_time_x_lead = score_diff * std::clamp(1.0 - time_frac, 0.0, 1.0);
@@ -672,6 +660,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   特征经 PopulateFeatureColumns 与 PublishQuoteSnapshot 同源 (BR-1: 训练捕获=决策推理一致)。
     //   ⚠ derivative 盘口 (totals/spreads) 不 blend: 当前 ONNX 是 moneyline 语义, blend 进派生 p_fair 会污染
     //     (派生解析模型即该盘口的 fair)。未来 market-type-aware ONNX 上线再放开 (cat_market_type 特征已就位)。
+    //   R-2: ML 推理 (非纯) 在此算 ml_p_opt, blend 算术交 ResolveFair (一处定优先级)。
+    std::optional<double> ml_p_opt;
     if (cfg_.ml_fair_blend_weight > 0.0 && !derivative_p_yes && ml_model_ != nullptr && ml_model_->ready() &&
         ml_model_->kind() == ml::ModelKind::Onnx) {
         sizing::QuoteFeatures fqf{};
@@ -691,10 +681,24 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             const double ml_p = mp.prob(0);
             // fail-safe: ML 输出非有限 (NaN 特征/数值) → 不 blend, 保 baseline (宁可不动不可乱动)。
             if (mp.ok && std::isfinite(ml_p) && ml_p > 0.0 && ml_p < 1.0) {
-                const double w = std::clamp(cfg_.ml_fair_blend_weight, 0.0, 1.0);
-                p_fair = (1.0 - w) * p_fair + w * ml_p;  // ML 驱动决策 fair
+                ml_p_opt = ml_p;
             }
         }
+    }
+
+    // ---- R-2 (老周/老郭 评审): 一处解析决策 fair (显式优先级 derivative > sharp > score-prior; ----
+    //   ML 仅非 derivative 叠加)。逐位等价原 inline 四层逻辑; 纯函数可单测 (fair_resolve.hpp)。
+    {
+        pricing::FairInputs fin;
+        fin.p_market_devig = p_market_devig;
+        fin.derivative_p_yes = derivative_p_yes;
+        fin.sharp_yes = fair_sharp_yes;
+        fin.score_prior_yes = fair_score_prior;
+        fin.prior_conf = fair_prior_conf;
+        fin.has_real_fair = has_real_fair;
+        fin.ml_p_yes = ml_p_opt;
+        fin.ml_blend_weight = cfg_.ml_fair_blend_weight;
+        p_fair = pricing::ResolveFair(fin).p_fair;
     }
 
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
