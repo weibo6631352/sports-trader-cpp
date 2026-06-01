@@ -543,6 +543,37 @@ BuildResult PaperDaemon::Build() {
         return a;
     });
 
+    // [2026-06-01 凯利评审 Step3] /api/v1/pnl/timeseries 净值曲线回调: paper_loop equity_snapshot (每 tick
+    //   等间隔权益样本) 按 bucket_sec 分桶 (按 ts), 每桶取末尾 equity → cum_net_pnl = equity − bankroll_init。
+    real_provider_->set_pnl_timeseries_fn(
+        [this](std::int64_t window_sec, std::int64_t bucket_sec) -> std::vector<debug_api::PnlBucket> {
+            std::vector<debug_api::PnlBucket> out;
+            if (!paper_loop_ || bucket_sec <= 0) return out;
+            const auto series = paper_loop_->equity_snapshot();  // vector<pair<ts_ns, equity>>
+            if (series.empty()) return out;
+            const double bankroll_init = paper_loop_->published_account_equity().bankroll_init;
+            const std::int64_t bucket_ns = bucket_sec * 1'000'000'000LL;
+            const std::int64_t cutoff =
+                (window_sec > 0) ? series.back().first - window_sec * 1'000'000'000LL : 0;
+            std::int64_t cur_bucket = -1;
+            for (const auto& [ts, eq] : series) {
+                if (ts < cutoff) continue;
+                const std::int64_t b = ts / bucket_ns;
+                if (b != cur_bucket) {
+                    debug_api::PnlBucket pb;
+                    pb.bucket_start_ts_ns = b * bucket_ns;
+                    pb.cum_net_pnl = eq - bankroll_init;
+                    pb.unrealized = eq - bankroll_init;  // 近似: 曲线主用 cum_net_pnl
+                    out.push_back(pb);
+                    cur_bucket = b;
+                } else {
+                    out.back().cum_net_pnl = eq - bankroll_init;  // 同桶更新末尾值
+                    out.back().unrealized = eq - bankroll_init;
+                }
+            }
+            return out;
+        });
+
     // LiveMetricsHooks (P1-2/P1-3): start_tp + fill_counter; wss_transport 在 Step 4 填.
     metrics_hooks_.start_tp = std::chrono::steady_clock::now();
     metrics_hooks_.fill_counter = &paper_loop_->stats().fills_completed;

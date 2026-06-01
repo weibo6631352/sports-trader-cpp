@@ -27,7 +27,7 @@
 |---|---|---|---|
 | D1 | 凯利 bankroll 口径 | **裸 equity 含浮盈** (小梁案, 几何增长最优) | 覆盖老韩「不签裸 equity」立场 → GM 用安全护栏补偿 (见 §4) |
 | D2 | 喂凯利的持仓 MtM 价 | **best_bid 保守价** (老韩/小肖案) | 与 DD 熔断同源; 浮盈虽计入但按保守价估 → 化解「浮盈幻觉超注」 |
-| D3 | λ 系数 (现 0.25) | **升 0.35 单值灰度** + 拆双重保守 (分子 z=1.645→1.0) | ⚠️ 放松 MDD 方向 → **硬门: 老韩 RM 联签 + 回测 maxDD≤15% 实测后才固化** |
+| D3 | λ 系数 (现 0.25) | **直接 0.35 写死** (老板 2026-06-01 复议: 不做可配, paper 直接试不回测) | paper 非真钱直接跑看实测 maxDD; z 门保持 1.645 不动; **真钱开闸前拿 paper 实测 maxDD≤15% 找老韩签** |
 | D4 | cash 精度 + neg_risk | **MVP 近似 cash + neg_risk 屏蔽** | cash=realized-gain 聚合近似 (老李标注「尚可但须标清」); neg_risk 市场暂不参与 paper 交易 |
 
 **D1+D2 自洽性 (GM 注)**: 老板选的「裸 equity 含浮盈」+「best_bid 估值」组合自洽 ——
@@ -52,7 +52,7 @@
 | 2 (P1) | cap 链净值联动 (C1-3 叠 `clamp(bankroll/initial,0.5,1)`) | ⏳ 待做 (C4 已随动态 bankroll 自动收紧) | — |
 | pnl_ts | `pnl_timeseries` 真实落地 (equity_snapshot 已暴露) | ⏳ 待做 (前端先用 account 卡片) | — |
 | staleness | stale book→0 浮盈 gate (改 DD 红线路径) | ⏳ 另案 (需老韩签 + 改 A5 测试) | — |
-| **λ** | **另案**: λ 0.25→0.35 + 分子 z 收缩 | ⏳ **硬门: 回测 maxDD≤15% + 老韩 RM 联签** | — |
+| **λ** | λ 0.25→**0.35** 直接写死 (kLambdaBase) | ✅ 完成 (老板 2026-06-01 拍板 paper 直接试, 不做可配/不回测) | (本批) |
 
 全量 ctest 1352/1352 绿; 前端 tsc+vite build + vitest 14/14 绿。
 

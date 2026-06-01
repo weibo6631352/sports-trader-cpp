@@ -129,8 +129,9 @@ struct SizingOutput {
 // follow-up: W6 校准后随 λ_eff × model_conf 一并评审是否入 RM
 inline constexpr double kMaxBankrollFraction = 0.10;  // 单注 ≤ 10% bankroll
 
-// λ_base (quarter Kelly; 小梁 §1.3 主权拍板; 老韩知会)
-inline constexpr double kLambdaBase = 0.25;
+// λ_base (老板 2026-06-01 直接定 0.35; 原 0.25 quarter Kelly)。paper 灰度: 直接跑看真实 maxDD
+//   (paper 非真钱, 红线只卡真钱开闸)。真钱开闸前需拿 paper 实测 maxDD≤15% 找老韩 RM 联签。
+inline constexpr double kLambdaBase = 0.35;
 
 // fee 率同源常量 (与 RM risk_gateway.cpp kSportsTakerFeeRate 同值; 防自定义漂移)
 // 若此常量与 RM 同 TU 共享则引用同一 header (老周/老沈 跨 TU 提公共 header 时更新)

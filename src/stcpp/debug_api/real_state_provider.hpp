@@ -264,9 +264,14 @@ public:
         return out;
     }
 
-    // pnl_timeseries: 无真实时序数据源 → 空 vector (前端灰显)
-    std::vector<PnlBucket> pnl_timeseries(std::int64_t /*w*/, std::int64_t /*b*/) const override {
-        return {};
+    // 净值时序回调 (2026-06-01 凯利评审 Step3 落地): daemon 注入 lambda (捕获 paper_loop, 调 equity_snapshot
+    //   按 bucket 分桶)。on-demand, 经线程安全拷贝读。本头不 include paper (热路径写端边界, line 49)。
+    void set_pnl_timeseries_fn(std::function<std::vector<PnlBucket>(std::int64_t, std::int64_t)> fn) {
+        pnl_ts_fn_ = std::move(fn);
+    }
+    std::vector<PnlBucket> pnl_timeseries(std::int64_t window_sec, std::int64_t bucket_sec) const override {
+        if (pnl_ts_fn_) return pnl_ts_fn_(window_sec, bucket_sec);
+        return {};  // 未注入 → 空 (前端灰显)
     }
 
     // ---- pnl_attribution — 读 LedgerSnapshotHub; 无数据返回全 0 空结构 ----
@@ -673,6 +678,7 @@ private:
     const sizing::QuoteSnapshotHub* quote_hub_{nullptr};  // nullable; nullptr → found=false
     const ml::FeatureVectorHub* fv_hub_{nullptr};         // nullable; nullptr → feature_health 空
     std::function<AccountSnapshot()> account_fn_{};       // 账户现金/估值回调 (daemon 注入); 空 → has_data=false
+    std::function<std::vector<PnlBucket>(std::int64_t, std::int64_t)> pnl_ts_fn_{};  // 净值时序回调 (daemon 注入)
     mutable std::mutex mapping_mtx_;                       // 保护 mapping_snapshot_ (低频写/读)
     MappingStatusReport mapping_snapshot_;                // daemon push 的映射快照
     // R-4 (老周 D-2): meta_mu_ 守护 token_map_/events_/catalog_ — R-6 周期重发现热刷, HTTP 线程读。

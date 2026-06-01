@@ -863,10 +863,17 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // c3 (P0-2 根治): caps 单一真值源 = cfg_ (whole pUSD), from_pusd 转正确 micro。sizing/RM 同源
     //   同值 (RM 侧 paper_daemon 亦 from_pusd 同源)。sizing 内部 .to_pusd() 回 whole 比 notional。
     //   终结 c2 过渡态的「whole 灌 micro 字段」语义错位 + 双错对消。
+    // [2026-06-01 凯利评审 Step2, 老韩] cap 链净值缩放: 回撤时绝对 cap (C1-3) 按净值比例同步砍, 不让 drawdown
+    //   中单笔绝对暴露相对放大。scale = clamp(bankroll_for_kelly / initial, 0.5, 1.0)。sizing-only 更严 (不松
+    //   RM 口径, 合规 R-1); floor=0.5 (老韩拍, 跌破再深绝对 cap 最多砍半); 盈利时 clamp 1.0 (cap 是绝对上限不放大)。
+    const double cap_scale =
+        cfg_.bankroll_usdc > 0.0
+            ? std::clamp(bankroll_for_kelly / cfg_.bankroll_usdc, 0.5, 1.0)
+            : 1.0;
     risk::RiskConfig sizing_cfg{};
-    sizing_cfg.per_order_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.per_order_cap_usdc);
-    sizing_cfg.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.market_exposure_cap_usdc);
-    sizing_cfg.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.per_outcome_cap_usdc);
+    sizing_cfg.per_order_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.per_order_cap_usdc * cap_scale);
+    sizing_cfg.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.market_exposure_cap_usdc * cap_scale);
+    sizing_cfg.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.per_outcome_cap_usdc * cap_scale);
     const sizing::SizingOutput sizing_out = sizing::SizingCalculator::compute(sizing_cfg, sz_in);
 
     // ---- Step 3 (老雷 controller spec v1, 小梁 Q-梁-1): reservation 限价界 ----
