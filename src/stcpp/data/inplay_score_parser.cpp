@@ -233,6 +233,44 @@ static constexpr int kMaxJsonDepth = 32;
 }
 
 // ============================================================================
+// ParseEsportsSeriesScore — 电竞系列赛比分 (已赢地图数) 在 stats."Res".home/away, 非 info.score。
+//   (2026-06-01 老板: 电竞 info.score 为空 → 之前 0:0; 系列赛状态在 stats 里。)
+//   结构: "stats":{"1":{"name":"Res","home":0,"away":1}, ...} —— 找 name=="Res" 的子对象读 home/away 整数。
+//   home/away 与 info.name "A vs B" 的 home/away 对齐。找不到 → 不改 (保持 0:0)。
+[[nodiscard]] inline bool ParseEsportsSeriesScore(std::string_view event_block, std::int32_t& home,
+                                                  std::int32_t& away) noexcept {
+    const auto sk = event_block.find("\"stats\":");
+    if (sk == std::string_view::npos) return false;
+    // 在 stats 块里找 name=="Res" 的位置 (允许 "name":"Res" 含可选空格)
+    std::size_t rpos = std::string_view::npos;
+    for (const char* pat : {"\"name\":\"Res\"", "\"name\": \"Res\""}) {
+        const auto p = event_block.find(pat, sk);
+        if (p != std::string_view::npos) { rpos = p; break; }
+    }
+    if (rpos == std::string_view::npos) return false;
+    // 从 Res 子对象起点找 "home": / "away": 的整数 (紧随 name, 同一子对象)。
+    auto int_after = [&](std::string_view key, std::int32_t& out) -> bool {
+        const auto k = event_block.find(key, rpos);
+        if (k == std::string_view::npos) return false;
+        std::size_t i = k + key.size();
+        while (i < event_block.size() && (event_block[i] == ':' || event_block[i] == ' ' ||
+                                          event_block[i] == '"'))
+            ++i;
+        std::int32_t v = 0;
+        const auto [p, ec] = std::from_chars(event_block.data() + i, event_block.data() + event_block.size(), v);
+        if (ec != std::errc{}) return false;
+        out = v;
+        return true;
+    };
+    std::int32_t h = 0, a = 0;
+    if (int_after("\"home\":", h) && int_after("\"away\":", a)) {
+        home = h;
+        away = a;
+        return true;
+    }
+    return false;
+}
+
 // §1 解析单个 event 的 info 块
 //
 // 从 event_block (从 event id 起始的 JSON 片段) 提取 info 字段.
@@ -323,6 +361,11 @@ static constexpr int kMaxJsonDepth = 32;
         // 忽略返回值 (parse 失败时保持 0:0 默认值)
         [[maybe_unused]] bool ok =
             InplayScoreParser::ParseScore(score_str, rec.home_score_total, rec.away_score_total);
+    }
+    // 电竞: info.score 为空, 系列赛比分(已赢地图数)在 stats."Res" (老板 2026-06-01)。score_diff = 地图差,
+    //   喂 score-prior fair (BO3/BO5 领先 → 胜率)。模型按地图差学权重 (与足球进球差同维, 量级不同模型自适应)。
+    if (sport == goalserve::GoalserveSport::Esports) {
+        (void)ParseEsportsSeriesScore(event_block, rec.home_score_total, rec.away_score_total);
     }
 
     // --- period ---

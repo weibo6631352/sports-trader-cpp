@@ -394,3 +394,37 @@ TEST(InplayParserHarden_H9, ParseScoreMalformed) {
     EXPECT_FALSE(InplayScoreParser::ParseScore("", h, a));
     EXPECT_FALSE(InplayScoreParser::ParseScore("nocodon", h, a));
 }
+
+// ============================================================================
+// H10: 电竞系列赛比分从 stats."Res" 解析 (老板 2026-06-01: info.score 为空, 比分在 stats)
+// ============================================================================
+TEST(InplayParserHarden_H10, EsportsSeriesScoreFromStatsRes) {
+    // 真实 esports 结构缩样: info.name "A vs B" + 无 info.score; 系列赛比分在 stats."Res".home/away
+    const std::string json = R"({"bm":"bet365","updated_ts":1780000000000,"events":{
+      "134404966":{
+        "info":{"id":"134404966","name":"DONSTU vs GenOne","sport":"Esports","start_ts":"1779999000"},
+        "stats":{
+          "0":{"name":"ITeam","home":"DONSTU","away":"GenOne"},
+          "1":{"name":"Res","home":0,"away":1},
+          "2":{"name":"Ancient","home":15,"away":19}
+        }
+      }
+    }})";
+    const auto r = InplayScoreParser::Parse(json, GoalserveSport::Esports, 1780000001000LL);
+    ASSERT_EQ(r.scores.size(), 1u);
+    EXPECT_EQ(r.scores[0].home_team, "DONSTU");
+    EXPECT_EQ(r.scores[0].away_team, "GenOne");
+    EXPECT_EQ(r.scores[0].home_score_total, 0) << "DONSTU 已赢地图数 = stats.Res.home";
+    EXPECT_EQ(r.scores[0].away_score_total, 1) << "GenOne 已赢地图数 = stats.Res.away (非 0:0)";
+}
+
+// H11: Soccer 不受 esports 分支影响 (info.score 仍正常)
+TEST(InplayParserHarden_H11, SoccerScoreUnaffectedByEsportsBranch) {
+    const std::string json = R"({"bm":"b","updated_ts":1780000000000,"events":{
+      "55":{"info":{"id":"55","name":"Home FC vs Away FC","score":"2:1","start_ts":"1779999000"}}
+    }})";
+    const auto r = InplayScoreParser::Parse(json, GoalserveSport::Soccer, 1780000001000LL);
+    ASSERT_EQ(r.scores.size(), 1u);
+    EXPECT_EQ(r.scores[0].home_score_total, 2);
+    EXPECT_EQ(r.scores[0].away_score_total, 1);
+}
