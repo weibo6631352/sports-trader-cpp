@@ -243,6 +243,8 @@ void PaperLoop::TickAll() {
     tick_event_map_ = LoadEventMap();
     tick_score_snap_ = (score_store_ != nullptr) ? score_store_->GetSnapshot() : nullptr;
     tick_token_map_ = LoadTokenMap();  // RCU 快照: 周期重发现可能中途 swap, 整 tick 持有同版本
+    tick_resolution_ = LoadResolution();   // [R-1] 刷新线程 30s swap, 整 tick 冻结同版本 (消 UB)
+    tick_live_stats_ = LoadLiveStats();    // [R-1] 同上
     if (tick_token_map_ == nullptr) {
         return;  // 未注入 (理论不达; ctor 必置)
     }

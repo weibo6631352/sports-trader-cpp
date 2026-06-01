@@ -354,15 +354,20 @@ public:
     // slice-3c: 注入 per-condition 结算状态 (app 层轮询 gamma `closed` / clob `tokens[].winner` →
     //   此处注入)。单 writer: Start() 前注入 / 周期热刷 (loop_thread_ 只读)。喂 resolution_status 特征
     //   + 给 3b 提供权威 winner (status=Resolved+winner → 按 winner 结算, 优于 Goalserve 比分推断)。
-    void SetResolutionByCondition(std::unordered_map<std::string, ResolutionEntry> m) noexcept {
-        resolution_by_condition_ = std::move(m);
+    // [R-1 并发修复 2026-06-01 老周评审] RCU 热刷: 刷新线程 (RefreshResolution 30s) 运行期写,
+    //   loop_thread_ 读 — 原 plain map move-assign 并发 find = UB。改 mutex+shared_ptr swap (同 event_map)。
+    using ResolutionMap = std::unordered_map<std::string, ResolutionEntry>;
+    void SetResolutionByCondition(ResolutionMap m) noexcept {
+        std::lock_guard<std::mutex> lk(resolution_mu_);
+        resolution_by_condition_ = std::make_shared<const ResolutionMap>(std::move(m));
     }
 
     // live_stats 采集 hop: 注入 join_key(league|home|away) → LiveStatsFields (app 层轮询
-    //   commentaries Feed → 此处注入)。单 writer: Start() 前注入 / 周期热刷 (loop_thread_ 只读)。
+    //   commentaries Feed → 此处注入)。[R-1] 同 resolution: RefreshLiveStats 30s 运行期写, loop 读 → RCU。
     //   game_row 填充时按 es 队名 join → FillLiveStats → g_*_diff 特征。查不到 → soccer_* 保持 -1。
     void SetLiveStatsByTeams(data::livescore::LiveStatsMap m) noexcept {
-        live_stats_by_teams_ = std::move(m);
+        std::lock_guard<std::mutex> lk(live_stats_mu_);
+        live_stats_by_teams_ = std::make_shared<const data::livescore::LiveStatsMap>(std::move(m));
     }
 
     // 步④: 注入 ML 推理模型 (ml::FairValueModel; daemon 装配 Stub/ONNX)。单 writer: Start() 前注入,
@@ -466,18 +471,33 @@ private:
         auto it = market_cat_by_condition_.find(condition_id);
         return (it != market_cat_by_condition_.end()) ? it->second : MarketCat{};
     }
-    // slice-3c: per-condition 结算状态 (REST 注入; 查不到 → nullptr = 未知/默认 Open)。
-    std::unordered_map<std::string, ResolutionEntry> resolution_by_condition_;
-    [[nodiscard]] const ResolutionEntry* ResolutionFor(const std::string& condition_id) const noexcept {
-        auto it = resolution_by_condition_.find(condition_id);
-        return (it != resolution_by_condition_.end()) ? &it->second : nullptr;
+    // slice-3c: per-condition 结算状态 (REST 注入; 查不到 → nullptr)。[R-1] RCU: mutex+shared_ptr,
+    //   loop_thread_ 经 TickAll 入口冻结 tick_resolution_ 快照读 (整 tick 同版本, 不并发刷新线程 swap)。
+    mutable std::mutex resolution_mu_;
+    std::shared_ptr<const ResolutionMap> resolution_by_condition_;
+    std::shared_ptr<const ResolutionMap> tick_resolution_;  // TickAll 入口冻结
+    [[nodiscard]] std::shared_ptr<const ResolutionMap> LoadResolution() const noexcept {
+        std::lock_guard<std::mutex> lk(resolution_mu_);
+        return resolution_by_condition_;
     }
-    // live_stats 采集 hop: join_key → LiveStatsFields (REST 注入; 查不到 → nullptr = 无 live_stats)。
-    data::livescore::LiveStatsMap live_stats_by_teams_;
+    [[nodiscard]] const ResolutionEntry* ResolutionFor(const std::string& condition_id) const noexcept {
+        if (tick_resolution_ == nullptr) return nullptr;
+        auto it = tick_resolution_->find(condition_id);
+        return (it != tick_resolution_->end()) ? &it->second : nullptr;
+    }
+    // live_stats 采集 hop: join_key → LiveStatsFields (REST 注入; 查不到 → nullptr)。[R-1] 同 resolution RCU。
+    mutable std::mutex live_stats_mu_;
+    std::shared_ptr<const data::livescore::LiveStatsMap> live_stats_by_teams_;
+    std::shared_ptr<const data::livescore::LiveStatsMap> tick_live_stats_;  // TickAll 入口冻结
+    [[nodiscard]] std::shared_ptr<const data::livescore::LiveStatsMap> LoadLiveStats() const noexcept {
+        std::lock_guard<std::mutex> lk(live_stats_mu_);
+        return live_stats_by_teams_;
+    }
     [[nodiscard]] const data::livescore::LiveStatsFields* LiveStatsFor(
         const std::string& join_key) const noexcept {
-        auto it = live_stats_by_teams_.find(join_key);
-        return (it != live_stats_by_teams_.end()) ? &it->second : nullptr;
+        if (tick_live_stats_ == nullptr) return nullptr;
+        auto it = tick_live_stats_->find(join_key);
+        return (it != tick_live_stats_->end()) ? &it->second : nullptr;
     }
     // 步④: ML 推理模型 (非自有; daemon 注入 + 持有)。loop_thread_ 只读。nullptr = baseline only。
     const ml::FairValueModel* ml_model_{nullptr};
