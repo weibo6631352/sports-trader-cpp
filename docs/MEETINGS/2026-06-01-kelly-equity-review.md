@@ -43,14 +43,18 @@
 
 ## 5. 落地计划 (GM 亲自写代码, 主干, §10.2)
 
-| Step | 内容 | 验收 | 联签 |
+| Step | 内容 | 状态 | commit |
 |---|---|---|---|
-| 0 | 单一 `AccountEquity()` (抽 `FeedRiskGateway` best_bid 聚合); `RecordEquity@304` 改传完整 equity; 加 `cum_fee_pusd()` getter | ctest 绿; Sharpe/maxDD 不再虚高 | 否 (加性/已讨论) |
-| 1 (P0) | `paper_loop.cpp:806` 改读 `AccountEquity` 的 `bankroll_for_kelly`; fail-closed + 地板 | 亏损后 sizing 缩单测; fail-closed 单测; sizing≤RM | 否 (口径已拍, best_bid 保守) |
-| 2 (P1) | cap 链净值联动 (C1-3 叠 `clamp(bankroll/initial,0.5,1)`); MVP 近似 cash 账 | 回撤 30% 绝对 cap 砍单测 | 否 |
-| 3 (P1) | `GET /api/v1/account` 端点 + `AccountSnapshot` struct + `pnl_timeseries` 落地 | 端点返完整字段; stub 不崩 | 否 (G-FREEZE-W 加性) |
-| 4 (P2) | 前端资金概览面板 (8 StatCard + Kelly bankroll 说明条) | 显示 cash/equity/未实现/已实现/日PnL/maxDD | 否 (前端加性) |
-| **λ** | **另案**: λ 0.25→0.35 + 分子 z 收缩 | **回测 maxDD≤15% 实测 + 老韩 RM 联签** | **是 (硬门)** |
+| 0 | 单一 `account_equity()` (抽 `FeedRiskGateway` best_bid 聚合); `RecordEquity@304` 改传完整 equity; 加 `cum_fee_pusd()` getter | ✅ 完成 | fb70f2b |
+| 1 (P0) | `paper_loop.cpp:806` 改读 tick 冻结 `bankroll_for_kelly`; fail-closed | ✅ 完成 (修「纸面化」) | fb70f2b |
+| 3 (P1) | `GET /api/v1/account` 端点 + `AccountSnapshot` + 线程安全发布 + 回调注入 | ✅ 完成 | e8ec18c |
+| 4 (P2) | 前端资金概览面板 (8 StatCard + Kelly bankroll 说明条, 5s 轮询) | ✅ 完成 (stub 截图核验) | 67cb1a2 |
+| 2 (P1) | cap 链净值联动 (C1-3 叠 `clamp(bankroll/initial,0.5,1)`) | ⏳ 待做 (C4 已随动态 bankroll 自动收紧) | — |
+| pnl_ts | `pnl_timeseries` 真实落地 (equity_snapshot 已暴露) | ⏳ 待做 (前端先用 account 卡片) | — |
+| staleness | stale book→0 浮盈 gate (改 DD 红线路径) | ⏳ 另案 (需老韩签 + 改 A5 测试) | — |
+| **λ** | **另案**: λ 0.25→0.35 + 分子 z 收缩 | ⏳ **硬门: 回测 maxDD≤15% + 老韩 RM 联签** | — |
+
+全量 ctest 1352/1352 绿; 前端 tsc+vite build + vitest 14/14 绿。
 
 ## 6. 未决/follow-up (归口)
 
