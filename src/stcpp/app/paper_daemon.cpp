@@ -849,6 +849,14 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
+    // ---- 采集数据磁盘守护 (老板「超过30g后开始删,一次删5G」) — 默认开 (仅超阈值才动) ----
+    if (cfg_.disk_prune_threshold_gb > 0) {
+        disk_prune_thread_ = std::jthread([this](std::stop_token st) { DiskPrune(st); });
+        std::printf("[paper_daemon] 磁盘守护线程启动 (>%dGB 删 %dGB, 每 %ds 检查)\n",
+                    cfg_.disk_prune_threshold_gb, cfg_.disk_prune_free_gb, cfg_.disk_prune_interval_sec);
+        std::fflush(stdout);
+    }
+
     // ---- Step 4c start: FeatureRecorder + 完整向量 recorder (项6) ----
     if (ml_recorder_) {
         ml_recorder_->Start();
@@ -1301,6 +1309,82 @@ void PaperDaemon::AutoTrain(std::stop_token st) {
             continue;
         }
         std::printf("[auto_train] ✓ 新模型就位 → watcher 将热加载: %s\n", cfg_.onnx_model_path.c_str());
+        std::fflush(stdout);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DiskPrune — 采集数据磁盘守护 (老板「超过30g后开始删,一次删5G」, 2026-06-01)
+//   周期算 ml_capture 目录 *.jsonl 总大小; 超 disk_prune_threshold_gb → 从最大文件头部截 (删最老数据)
+//   释放 disk_prune_free_gb。安全: recorder 每 poll 重开文件 (ofstream app), 故 rename 替换不冲突
+//   (最多丢一个 poll 周期的写入, 训练数据可容忍)。排除 <100MB 小文件 (settlements 标签等不动)。
+// ---------------------------------------------------------------------------
+void PaperDaemon::DiskPrune(std::stop_token st) {
+    using namespace std::chrono;
+    namespace fs = std::filesystem;
+    if (cfg_.disk_prune_threshold_gb <= 0) return;
+    const fs::path dir = fs::path(cfg_.ml_path).parent_path();  // data/ml_capture
+    const std::int64_t threshold = static_cast<std::int64_t>(cfg_.disk_prune_threshold_gb) * (1LL << 30);
+    const std::int64_t free_target = static_cast<std::int64_t>(cfg_.disk_prune_free_gb) * (1LL << 30);
+    constexpr std::int64_t kMinFileSize = 100LL << 20;  // 只动 >100MB 大文件 (排除标签/小文件)
+    // 头部截断: 删 path 头部 ~cut 字节 (对齐行边界), 流式拷尾部 → tmp → 原子 rename。返回实际释放。
+    auto truncate_head = [](const fs::path& p, std::int64_t cut) -> std::int64_t {
+        std::error_code ec;
+        const std::int64_t sz = static_cast<std::int64_t>(fs::file_size(p, ec));
+        if (ec || cut <= 0 || cut >= sz) return 0;
+        std::ifstream in(p, std::ios::binary);
+        if (!in.is_open()) return 0;
+        in.seekg(cut);
+        std::string discard;
+        std::getline(in, discard);  // 跳到下一行边界 (丢被切断的半行)
+        const fs::path tmp = p.string() + ".prune.tmp";
+        {
+            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+            if (!out.is_open()) return 0;
+            out << in.rdbuf();  // 流式拷保留尾部 (不全载入内存)
+        }
+        in.close();
+        fs::rename(tmp, p, ec);
+        if (ec) {
+            fs::remove(tmp, ec);
+            return 0;
+        }
+        return cut;
+    };
+    while (!st.stop_requested()) {
+        const auto deadline = steady_clock::now() + seconds(cfg_.disk_prune_interval_sec);
+        while (steady_clock::now() < deadline) {
+            if (st.stop_requested()) return;
+            std::this_thread::sleep_for(seconds(2));
+        }
+        std::int64_t total = 0;
+        std::vector<std::pair<fs::path, std::int64_t>> files;
+        std::error_code ec;
+        for (const auto& e : fs::directory_iterator(dir, ec)) {
+            if (ec) break;
+            std::error_code fec;
+            if (!e.is_regular_file(fec) || e.path().extension() != ".jsonl") continue;
+            const std::int64_t sz = static_cast<std::int64_t>(fs::file_size(e.path(), fec));
+            if (fec) continue;
+            total += sz;
+            if (sz >= kMinFileSize) files.emplace_back(e.path(), sz);
+        }
+        if (total <= threshold) continue;  // 未超阈值
+        std::sort(files.begin(), files.end(), [](const auto& a, const auto& b) { return a.second > b.second; });
+        std::int64_t freed = 0;
+        for (const auto& [p, sz] : files) {
+            if (freed >= free_target) break;
+            const std::int64_t cut = std::min(free_target - freed, sz / 2);  // 单文件最多砍一半
+            const std::int64_t got = truncate_head(p, cut);
+            if (got > 0) {
+                freed += got;
+                const std::string fn = p.filename().string();
+                std::printf("[disk_prune] 截 %s 头部 %.1fGB\n", fn.c_str(), static_cast<double>(got) / (1LL << 30));
+            }
+        }
+        std::printf("[disk_prune] ml_capture %.1fGB > %dGB → 释放 %.1fGB (留最近数据)\n",
+                    static_cast<double>(total) / (1LL << 30), cfg_.disk_prune_threshold_gb,
+                    static_cast<double>(freed) / (1LL << 30));
         std::fflush(stdout);
     }
 }

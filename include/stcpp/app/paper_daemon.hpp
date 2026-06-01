@@ -137,6 +137,11 @@ struct PaperDaemonConfig {
     std::size_t min_train_samples{500};  // join 标注行 < 此 → 跳过 (冷启动样本不足不产模型)
     std::int32_t train_window_days{5};   // 训练滑动窗口 (老板「就 5 天」): 只 join 最近 N 天数据 →
                                          //   join 量/训练时间有界 + 不被陈旧数据拖累 (0=全量, 默认 5)
+    // [2026-06-01 老板「超过30g后开始删,一次删5G」] 采集数据磁盘守护: ml_capture 目录总大小超阈值 →
+    //   从最大采集文件头部截掉 (删最老数据) 释放一批。默认开 (安全护栏, 仅超阈值才动)。排除小文件 (标签)。
+    std::int32_t disk_prune_threshold_gb{30};  // 总大小超此 GB → 触发删 (0=关)
+    std::int32_t disk_prune_free_gb{5};        // 一次释放 GB
+    std::int32_t disk_prune_interval_sec{600}; // 检查周期 (10 分钟)
     std::string ml_path{"data/ml_capture/quotes.jsonl"};
 
     // 仅观测不交易 (老周: 替代 ObserverOnly 枚举档). true=起 PaperLoop (默认).
@@ -298,6 +303,10 @@ private:
     //   §12.4: 训练栈 Python 离线, daemon 线程只编排 + spawn (跑完即弃), 不在 C++ 进程内跑训练。
     void AutoTrain(std::stop_token st);
 
+    // [2026-06-01 老板「超过30g后开始删,一次删5G」] 采集数据磁盘守护线程: 周期算 ml_capture 总大小,
+    //   超阈值 → 从最大采集文件头部截 (删最老数据, recorder 每 poll 重开文件故安全) 释放 disk_prune_free_gb。
+    void DiskPrune(std::stop_token st);
+
     PaperDaemonConfig cfg_;
 
     // ---- 测试注入的 markets (空 → Build 走真发现) ----
@@ -320,6 +329,7 @@ private:
     std::jthread live_stats_refresh_thread_;  // live_stats 刷新 (LiveStatsStore → SetLiveStatsByTeams)
     std::jthread model_reload_thread_;        // 模型热重载 watcher (onnx mtime 变 → SetMlModelShared 原子换)
     std::jthread auto_train_thread_;          // 进程内自动训练编排 (周期 join + spawn Python 训练 → 产新模型)
+    std::jthread disk_prune_thread_;          // 采集数据磁盘守护 (>阈值 → 截最老数据)
     std::jthread seed_thread_;  // REST 快照打底后台线程 (jthread: 析构自动 request_stop + join)
 
     // =====================================================================
