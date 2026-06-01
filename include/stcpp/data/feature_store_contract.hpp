@@ -91,6 +91,14 @@ struct FeatureStoreGameRow {
     std::int64_t as_of_ts_ns = 0;        // PIT 锚 = ingestion_ts_ns (决策前不可更新)
     goalserve::DataSourceTsOrigin ds_origin = goalserve::DataSourceTsOrigin::PayloadScoresTs;
 
+    // ---- 慢源新鲜度锚 (2026-06-01 老板「每个源标时间, 模型学权重」) ----
+    //   各慢源最后刷新时刻; fill_latency_features 算 age = as_of − 此 → g_*_age_sec 特征。0=未注入→age NaN。
+    //   语义非"比赛"数据, 但 game_row 是决策上下文行 + 已直达 fill_latency_features, 作统一新鲜度载体。
+    std::int64_t resolution_fetched_at_ns = 0;  // resolution(CLOB 60s 轮询)
+    std::int64_t live_stats_as_of_ns = 0;       // live_stats(commentaries 30s 轮询)
+    std::int64_t mapping_as_of_ns = 0;          // condition↔event 匹配(EventMatcher 5s 刷新)
+    std::int64_t catalog_discovered_at_ns = 0;  // catalog 元数据(gamma 发现 300s 重建)
+
     // ---- 分区键 ----
     // sport: GoalserveSport enum 对应的可读名称 (adapter 负责转换, 不硬编码字符串)
     std::string sport;                       // "Soccer" / "Basketball" / "AmFootball" / ...

@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -39,8 +40,24 @@ public:
     SettlementPoller& operator=(const SettlementPoller&) = delete;
     ~SettlementPoller() { Stop(); }
 
+    // SetConditionIds — 动态更新轮询 condition 集 (2026-06-01: 修"启动时设死永不更新"bug)。
+    //   RediscoverOnce 每周期把新市场集注入 → 新出现的比赛得到结算轮询 (否则永不结算 → PnL 链断);
+    //   线程安全: pending 锁保护, poller 线程在 PollAllOnce 起点 swap (照抄 CommentariesPoller 范式)。
+    void SetConditionIds(std::vector<std::string> cids) noexcept {
+        std::lock_guard<std::mutex> lk(cids_mu_);
+        cids_pending_ = std::move(cids);
+        has_pending_cids_.store(true, std::memory_order_release);
+    }
+
     // PollAllOnce — fetch+parse 全部未结算 cid → 合并 acc_ → publish 快照。测试可直接调 (无线程)。
     void PollAllOnce() noexcept {
+        // 起点 swap 待更新的 cid 集 (poller 线程独占 cids_, 无并发读)。
+        if (has_pending_cids_.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> lk(cids_mu_);
+            cids_ = std::move(cids_pending_);
+            cids_pending_.clear();
+            has_pending_cids_.store(false, std::memory_order_release);
+        }
         for (const auto& cid : cids_) {
             auto ait = acc_.find(cid);
             if (ait != acc_.end() && ait->second.closed) continue;  // 已结算不再轮询
@@ -85,6 +102,9 @@ private:
 
     SettlementStore& store_;
     std::vector<std::string> cids_;
+    std::mutex cids_mu_;                       // 保护 cids_pending_ (动态更新)
+    std::vector<std::string> cids_pending_;
+    std::atomic<bool> has_pending_cids_{false};
     FetchFn fetch_;
     std::int64_t poll_interval_ms_;
     std::jthread thread_;

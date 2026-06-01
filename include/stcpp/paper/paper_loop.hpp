@@ -154,6 +154,9 @@ struct PaperMarketEntry {
     double fee_coef{0.03};                        // = kDefaultFeeCoef (gamma feeSchedule.rate)
     MarketCat cat;                                // 类别码 + line + 活跃度
     ParentRef parent;                             // event_id / neg_risk
+    // 数据新鲜度 (2026-06-01 老板「每个源标时间」): gamma 发现/重建此 catalog 条目的时刻
+    //   (300s 重发现 → 此源可达 300s 陈旧)。喂 g_catalog_age_sec, 模型知道 fee/line/类别元数据多老。0=未知。
+    std::int64_t discovered_at_ns{0};
 };
 using PaperCatalog = std::unordered_map<std::string, PaperMarketEntry>;
 
@@ -165,6 +168,9 @@ using PaperCatalog = std::unordered_map<std::string, PaperMarketEntry>;
 struct ResolutionEntry {
     std::uint8_t status{0};
     std::int8_t winner{-1};
+    // 数据新鲜度 (2026-06-01 老板「每个源标时间, 模型学权重」): SettlementPoller 拉到此 resolution 的时刻
+    //   (60s 轮询 → 此源可达 60s 陈旧)。喂 g_resolution_age_sec 特征, 让模型知道结算信息多老。0=未知。
+    std::int64_t fetched_at_ns{0};
 };
 
 // 批1 体育动态特征 (TickOne 算好, 一struct 传 PublishQuoteSnapshot, 避免 param 爆炸)。
@@ -493,6 +499,12 @@ private:
         if (tick_inputs_.catalog == nullptr) return MarketCat{};
         auto it = tick_inputs_.catalog->find(condition_id);
         return (it != tick_inputs_.catalog->end()) ? it->second.cat : MarketCat{};
+    }
+    // catalog 元数据新鲜度 (gamma 发现/重建该条目时刻; 老板「每个源标时间」)。查不到 → 0 (age NaN)。
+    [[nodiscard]] std::int64_t CatalogDiscoveredAtFor(const std::string& condition_id) const noexcept {
+        if (tick_inputs_.catalog == nullptr) return 0;
+        auto it = tick_inputs_.catalog->find(condition_id);
+        return (it != tick_inputs_.catalog->end()) ? it->second.discovered_at_ns : 0;
     }
     // slice-3c: per-condition 结算状态 (REST 注入; 查不到 → nullptr)。[R-1] RCU: mutex+shared_ptr,
     //   loop_thread_ 经 TickAll 入口冻结 tick_resolution_ 快照读 (整 tick 同版本, 不并发刷新线程 swap)。

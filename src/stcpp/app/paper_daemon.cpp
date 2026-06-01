@@ -233,9 +233,14 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
 std::shared_ptr<const paper::PaperCatalog> PaperDaemon::BuildPaperCatalog() const {
     auto pc = std::make_shared<paper::PaperCatalog>();
     pc->reserve(token_map_.size());
+    // 新鲜度锚: 本次 catalog 构建/重发现时刻 (老板「每个源标时间」→ g_catalog_age_sec)。
+    const std::int64_t built_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                      std::chrono::system_clock::now().time_since_epoch())
+                                      .count();
     for (const auto& [cid, toks] : token_map_) {
         paper::PaperMarketEntry e;
         e.tokens = toks;
+        e.discovered_at_ns = built_ns;
         if (const auto mit = market_catalog_.find(cid); mit != market_catalog_.end()) {
             e.fee_coef = mit->second.fee_rate;  // R-fee-2: gamma feeSchedule.rate
             e.parent = paper::ParentRef{mit->second.event_id, mit->second.neg_risk_market_id};
@@ -291,6 +296,13 @@ bool PaperDaemon::RediscoverOnce() {
         real_provider_->set_token_map(token_map_);
         real_provider_->set_events(event_infos_);
         real_provider_->set_market_catalog(market_catalog_);
+    }
+    // 2026-06-01: 把新市场集同步给 SettlementPoller (修启动时设死 bug → 新比赛得到结算轮询)。
+    if (settlement_poller_) {
+        std::vector<std::string> settle_cids;
+        settle_cids.reserve(token_map_.size());
+        for (const auto& [cid, _tok] : token_map_) settle_cids.push_back(cid);
+        settlement_poller_->SetConditionIds(std::move(settle_cids));
     }
     if (live_transport_ && !all_token_ids_.empty()) {
         std::string sub = R"({"type":"Market","assets_ids":[)";
@@ -1031,10 +1043,16 @@ void PaperDaemon::RefreshResolution(std::stop_token st) {
                 std::unordered_map<std::string, paper::ResolutionEntry> res_map;
                 res_map.reserve(snap->size());
                 std::size_t resolved = 0;
+                // 新鲜度锚: 本次 resolution 刷新时刻 (老板「每个源标时间」→ g_resolution_age_sec)。
+                const std::int64_t res_fetch_ns =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                        .count();
                 for (const auto& [cid, rec] : *snap) {
                     paper::ResolutionEntry e;
                     e.status = rec.resolution_status();
                     e.winner = rec.settlement_value;  // -1/0/1 直对齐 ResolutionEntry.winner
+                    e.fetched_at_ns = res_fetch_ns;
                     res_map[cid] = e;
                     if (e.status == 2) ++resolved;
                 }
@@ -1072,9 +1090,15 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
                 }
                 commentaries_poller_->SetLeagues(std::move(leagues));
             }
-            // ② live_stats 快照 → paper_loop join 表
+            // ② live_stats 快照 → paper_loop join 表 (盖新鲜度 as_of: 老板「每个源标时间」→ g_live_stats_age_sec)
             if (const auto ls_snap = live_stats_store_->GetSnapshot()) {
-                paper_loop_->SetLiveStatsByTeams(*ls_snap);
+                data::livescore::LiveStatsMap stamped = *ls_snap;  // 拷贝再盖 ts
+                const std::int64_t ls_as_of_ns =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::system_clock::now().time_since_epoch())
+                        .count();
+                for (auto& [_k, v] : stamped) v.as_of_ts_ns = ls_as_of_ns;
+                paper_loop_->SetLiveStatsByTeams(std::move(stamped));
             }
         }
         const auto deadline = steady_clock::now() + seconds(30);

@@ -50,7 +50,7 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.12";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.13";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
 //     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
 //   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
@@ -229,9 +229,16 @@ enum class MlFeature : std::uint8_t {
     b_ofi_10s = 107,                 // 10s 短窗 OFI (比 5min trade_flow 快)
     b_realized_vol_10s = 108,        // 10s 短窗波动 (短时预测幅度的 σ)
     b_mp_accel = 109,                // 动量加速度 = roc(5s)−roc(15s) (>0=动量加速)
+    // ---- 慢源数据新鲜度 (v0.13, 2026-06-01 老板「每个源标时间, 模型学权重」) ----
+    //   age = as_of(决策锚) − 各源最后刷新时刻。各慢源延迟不同 (轮询周期不同), 显式喂模型让它学
+    //   "这个信号 60s 老了 → 降权"。0/未注入 → NaN (模型不读)。绝不 gate (沿用「相对最近刷新」)。
+    g_resolution_age_sec = 110,      // resolution(CLOB 结算 60s 轮询) 数据龄秒
+    g_live_stats_age_sec = 111,      // live_stats(commentaries 30s 轮询) 数据龄秒
+    g_mapping_age_sec = 112,         // condition↔event 匹配(EventMatcher 5s 刷新) 数据龄秒
+    g_catalog_age_sec = 113,         // catalog 元数据(gamma 发现 300s 重建) 数据龄秒
 };
 
-inline constexpr std::size_t kMlFeatureCount = 110;
+inline constexpr std::size_t kMlFeatureCount = 114;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -369,6 +376,10 @@ inline constexpr std::size_t kMlFeatureCount = 110;
         case MlFeature::b_ofi_10s: return "b_ofi_10s";
         case MlFeature::b_realized_vol_10s: return "b_realized_vol_10s";
         case MlFeature::b_mp_accel: return "b_mp_accel";
+        case MlFeature::g_resolution_age_sec: return "g_resolution_age_sec";
+        case MlFeature::g_live_stats_age_sec: return "g_live_stats_age_sec";
+        case MlFeature::g_mapping_age_sec: return "g_mapping_age_sec";
+        case MlFeature::g_catalog_age_sec: return "g_catalog_age_sec";
     }
     return "unknown";
 }
@@ -685,8 +696,15 @@ inline void fill_latency_features(const stcpp::data::feature_store::FeatureStore
             : dnan);  // 正 = YES book 更旧 / NO 更新 (双边更新不同步)
     put(MlFeature::b_ingestion_lag_ms, lag_ms(b.ingestion_ts_ns, b.data_source_ts_ns));
     put(MlFeature::no_b_ingestion_lag_ms, lag_ms(q.no_book_ingestion_ts_ns, q.no_book_data_source_ts_ns));
-    double joint = -1.0;  // 联合最旧 = max(三者中有限的)
-    for (double a : {yes_age, no_age, score_age}) {
+    double joint = -1.0;  // 联合最旧 = max(交易输入中有限的: book×2 + score + live_stats)
+    // v0.13: 慢源数据龄 (老板「每个源标时间, 模型学权重」)。各源刷新时刻在 game_row, age=as_of−刷新。
+    const double live_stats_age = age_s(g.live_stats_as_of_ns);
+    put(MlFeature::g_resolution_age_sec, age_s(g.resolution_fetched_at_ns));
+    put(MlFeature::g_live_stats_age_sec, live_stats_age);
+    put(MlFeature::g_mapping_age_sec, age_s(g.mapping_as_of_ns));
+    put(MlFeature::g_catalog_age_sec, age_s(g.catalog_discovered_at_ns));
+    // joint 纳入 live_stats (它是交易动量输入); resolution/mapping/catalog 不进 joint (非交易 fair 直接输入)。
+    for (double a : {yes_age, no_age, score_age, live_stats_age}) {
         if (a == a && a > joint) joint = a;
     }
     put(MlFeature::x_joint_staleness_sec, joint >= 0.0 ? joint : dnan);
@@ -728,9 +746,11 @@ inline void fill_categorical_context(const stcpp::sizing::QuoteFeatures& q,
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 110, "MlFeature count must be 110 (v0.12; append + bump spec)");
-static_assert(static_cast<std::size_t>(MlFeature::b_mp_accel) == kMlFeatureCount - 1,
-              "最后一列必须是 b_mp_accel (append-only 约束; v0.12 末列)");
+static_assert(kMlFeatureCount == 114, "MlFeature count must be 114 (v0.13; append 4 新鲜度列)");
+static_assert(static_cast<std::size_t>(MlFeature::g_catalog_age_sec) == kMlFeatureCount - 1,
+              "最后一列必须是 g_catalog_age_sec (append-only 约束; v0.13 末列)");
+static_assert(static_cast<std::size_t>(MlFeature::g_resolution_age_sec) == 110,
+              "v0.13 新鲜度列从 110 起 (append-only)");
 static_assert(static_cast<std::size_t>(MlFeature::x_inplay_market_absdev) == 103,
               "x_inplay_market_absdev 必须恒为 103 (v0.11 末列, append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::no_b_trade_intensity_5m) == 101,

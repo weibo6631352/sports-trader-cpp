@@ -86,6 +86,10 @@ struct LiveStatsFields {
     std::int32_t throw_ins_home         = -1;
     std::int32_t throw_ins_away         = -1;
 
+    // 数据新鲜度 (2026-06-01 老板「每个源标时间」): CommentariesPoller 解析此 live_stats 的时刻
+    //   (30s 轮询 → 此源可达 30s 陈旧)。喂 g_live_stats_age_sec, 模型据此给 g_*_diff 动量特征降权。0=未知。
+    std::int64_t as_of_ts_ns = 0;
+
     // 便利方法: 有任意字段有效则返回 true (白名单开放后的 feed 健康检查)
     [[nodiscard]] bool any_valid() const noexcept {
         return dangerous_attacks_home >= 0 || shots_on_target_home >= 0 ||

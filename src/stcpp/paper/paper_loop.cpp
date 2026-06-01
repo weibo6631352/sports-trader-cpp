@@ -436,6 +436,12 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     game_row.data_source_ts_ns = feat.data_source_ts_ns;
     game_row.ingestion_ts_ns = feat.ingestion_ts_ns;
     game_row.as_of_ts_ns = feat.as_of_ts_ns;
+    // 慢源新鲜度 (老板「每个源标时间, 模型学权重」): resolution(60s) / catalog(300s) 各自最后刷新时刻。
+    //   (mapping/live_stats 在下方比分 join 块填; 查不到→保持 0→age NaN, 模型不读)。
+    if (const ResolutionEntry* res = ResolutionFor(condition_id)) {
+        game_row.resolution_fetched_at_ns = res->fetched_at_ns;
+    }
+    game_row.catalog_discovered_at_ns = CatalogDiscoveredAtFor(condition_id);
 
     // ---- A1: 解析真实 Goalserve 比分 (condition→event 映射 + tick-local 共享快照) ----
     // fail-closed: 无 score_store / 无映射 / 未匹配 / 陈旧 / 非 in-play → 保持 stub.
@@ -448,6 +454,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             const auto it = map.find(condition_id);
             if (it != map.end() && !it->second.inplay_match_id.empty()) {
                 map_is_draw = it->second.is_draw;
+                game_row.mapping_as_of_ns = it->second.match_as_of_ns;  // 映射新鲜度 (老板「每个源标时间」)
                 const auto sit = tick_inputs_.score->find(it->second.inplay_match_id);
                 if (sit != tick_inputs_.score->end() && sit->second.found) {
                     const auto& es = sit->second;
@@ -491,6 +498,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                 es.league_id, es.home, es.away);
                             if (const auto* ls = LiveStatsFor(ls_key)) {
                                 stcpp::data::livescore::FillLiveStats(game_row, *ls);
+                                game_row.live_stats_as_of_ns = ls->as_of_ts_ns;  // live_stats 新鲜度
                             }
                         }
                     }
