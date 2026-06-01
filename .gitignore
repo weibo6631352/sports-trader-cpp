@@ -50,3 +50,4 @@ __pycache__/
 *.pyc
 frontend/dist/
 .browser_test/
+models/bench_fair.onnx

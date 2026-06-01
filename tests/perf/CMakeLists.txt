@@ -123,6 +123,10 @@ target_link_libraries(bench_tick_one         PRIVATE
     stcpp_execution_paper
     stcpp_infra_wal)
 
+# ----- 老姜性能评审 P1: ONNX fair predict 单次延迟 (最后一块天花板数据) -----
+stcpp_add_perf_bench(bench_onnx_predict      bench_onnx_predict.cpp)
+target_link_libraries(bench_onnx_predict     PRIVATE stcpp_ml_inference)
+
 # ----- W6 Wave 28: SPSC queue latency bench (小石 W6 SPSC framework 联调) -----
 # 5 capacity: 64/256/1024/4096/16384; upper guard p99 < 100 ns
 # 注: 小石 W6 SPSC 就位后替换 MockSPSC → stcpp::infra::spsc::SPSCQueue<T,N>
