@@ -76,6 +76,18 @@ int main(int argc, char** argv) {
             cfg.enable_paper_trading = false;  // 仅观测, 不起 PaperLoop
         } else if (a == "--enable-fills") {
             cfg.enable_paper_fills = true;  // P0-3: 默认仅观测, 显式开火
+        } else if (a == "--onnx-model" && i + 1 < argc) {
+            cfg.onnx_model_path = argv[++i];  // 真 ONNX 推理 + 热重载 watcher 激活
+        } else if (a == "--auto-train" && i + 1 < argc) {
+            cfg.auto_train_interval_sec = std::stoi(argv[++i]);  // >0 启进程内自动训练编排
+        } else if (a == "--train-python" && i + 1 < argc) {
+            cfg.train_python_bin = argv[++i];  // 训练子进程解释器 (.venv/bin/python3)
+        } else if (a == "--train-script" && i + 1 < argc) {
+            cfg.train_script_path = argv[++i];
+        } else if (a == "--min-train-samples" && i + 1 < argc) {
+            cfg.min_train_samples = static_cast<std::size_t>(std::stoul(argv[++i]));
+        } else if (a == "--model-reload-interval" && i + 1 < argc) {
+            cfg.model_reload_interval_sec = std::stoi(argv[++i]);
         } else if (a == "--help" || a == "-h") {
             std::printf(
                 "usage: stcpp_paper_server [--port N] [--host ADDR] [--verbose] [--no-record-ml]\n"
@@ -87,6 +99,12 @@ int main(int argc, char** argv) {
                 "  --ml-path PATH   ML capture output (default data/ml_capture/quotes.jsonl)\n"
                 "  --no-paper       observe only, do not run PaperLoop\n"
                 "  --enable-fills   解封 paper 成交 (默认仅观测; 保守默认, 显式才开火)\n"
+                "  --onnx-model P   真 ONNX fair_value 模型路径 (激活推理 + 热重载 watcher)\n"
+                "  --auto-train N   进程内自动训练编排周期秒 (>0 启; 默认 0 关)\n"
+                "  --train-python P 训练子进程解释器 (默认 python3; 服务器用 .venv/bin/python3)\n"
+                "  --train-script P 训练脚本 (默认 scripts/ml/train_fair_value.py)\n"
+                "  --min-train-samples N  join 标注 < N 跳过训练 (默认 500)\n"
+                "  --model-reload-interval N  模型热重载轮询秒 (默认 30)\n"
                 "\n"
                 "RunMode::PaperDaemon — paper trading loop + HTTP observability API.\n"
                 "  live book: gamma /events discovery -> CLOB WSS market channel\n"
