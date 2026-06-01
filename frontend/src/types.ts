@@ -237,6 +237,35 @@ export interface Score {
 
 // ---------- /api/v1/quote/{conditionId} ----------
 
+// 映射状态 (老雷 2026-06-01 可观测): /api/v1/mapping/status
+export interface MappingMarketRow {
+  condition_id: string;
+  team0: string;
+  team1: string;
+  is_draw: boolean;
+  matched: boolean;
+  inplay_match_id: string;
+  match_confidence: number;
+}
+export interface MappingLiveGame {
+  event_id: string;
+  home: string;
+  away: string;
+  sport: string;
+  status: string;
+  home_score: number;
+  away_score: number;
+}
+export interface MappingStatus {
+  mode: string;
+  as_of_ts: number;
+  total_markets: number;
+  matched: number;
+  live_games: number;
+  markets: MappingMarketRow[];
+  games: MappingLiveGame[];
+}
+
 // 特征健康 (老雷 2026-06-01 可观测): /api/v1/features/health
 export interface FeatureHealthRow {
   i: number;

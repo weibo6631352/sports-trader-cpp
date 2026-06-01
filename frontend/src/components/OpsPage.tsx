@@ -1109,6 +1109,84 @@ function MetricsRawSection() {
 }
 
 // ============================================================
+// MappingSection (老雷 2026-06-01 可观测): condition↔Goalserve 映射实况
+//   闭合"映射只能 grep 日志看"的缺口: 匹配上几个 / Goalserve 在追哪些 / 比分。
+// ============================================================
+
+function MappingSection() {
+  const ms = () => state.mappingStatus;
+  return (
+    <Card variant="outlined" sx={{ mt: 2 }}>
+      <CardHeader
+        title={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>盘口 ↔ 直播员 映射</Typography>
+            <Show when={ms()}>
+              <Chip size="small" color={ms()!.matched > 0 ? 'success' : 'default'}
+                label={`映射 ${ms()!.matched}/${ms()!.total_markets}`} />
+              <Chip size="small" color="info" label={`Goalserve live ${ms()!.live_games}`} />
+            </Show>
+          </Box>
+        }
+      />
+      <CardContent sx={{ p: 2 }}>
+        <Show when={ms()} fallback={<Typography variant="caption" sx={{ color: 'text.disabled' }}>加载中…</Typography>}>
+          <Show when={ms()!.matched === 0}>
+            <Typography variant="caption" sx={{ color: 'warning.main', display: 'block', mb: 1 }}>
+              当前 0 映射 — PM 在卖的比赛与 Goalserve 正在追的不重叠 (大赛空档期; 等下一场欧美晚间赛)。
+            </Typography>
+          </Show>
+          <Show when={ms()!.markets.length > 0}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>已映射盘口</Typography>
+            <TableContainer sx={{ maxHeight: 200, mb: 1.5 }}>
+              <Table size="small" stickyHeader>
+                <TableHead><TableRow>
+                  <TableCell>队伍</TableCell><TableCell>类型</TableCell>
+                  <TableCell align="right">置信</TableCell><TableCell>GS match</TableCell>
+                </TableRow></TableHead>
+                <TableBody>
+                  <For each={ms()!.markets}>
+                    {(r) => (
+                      <TableRow>
+                        <TableCell sx={{ fontSize: '11px' }}>{r.team0} vs {r.team1}</TableCell>
+                        <TableCell>{r.is_draw ? '平局' : '胜负'}</TableCell>
+                        <TableCell align="right">{r.match_confidence.toFixed(2)}</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace', fontSize: '10px' }}>{r.inplay_match_id}</TableCell>
+                      </TableRow>
+                    )}
+                  </For>
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Show>
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700 }}>Goalserve 当前 live 比赛</Typography>
+          <TableContainer sx={{ maxHeight: 240 }}>
+            <Table size="small" stickyHeader>
+              <TableHead><TableRow>
+                <TableCell>比赛</TableCell><TableCell>运动</TableCell>
+                <TableCell>状态</TableCell><TableCell align="right">比分</TableCell>
+              </TableRow></TableHead>
+              <TableBody>
+                <For each={ms()!.games}>
+                  {(g) => (
+                    <TableRow>
+                      <TableCell sx={{ fontSize: '11px' }}>{g.home} vs {g.away}</TableCell>
+                      <TableCell>{g.sport}</TableCell>
+                      <TableCell><Chip size="small" label={g.status} /></TableCell>
+                      <TableCell align="right">{g.home_score}-{g.away_score}</TableCell>
+                    </TableRow>
+                  )}
+                </For>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Show>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
 // FeatureHealthSection (老雷 2026-06-01 可观测): 110 ML 特征活死
 //   "特征没问题训练才有意义" — 一眼看哪些特征是死值 (全 0/null)。
 // ============================================================
@@ -1190,6 +1268,7 @@ export function OpsPage() {
       <BusinessThroughputSection />
       <RejectSection />
       <CoverageSection />
+      <MappingSection />
       <FeatureHealthSection />
       <MetricsRawSection />
     </div>

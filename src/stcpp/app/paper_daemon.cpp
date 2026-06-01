@@ -856,15 +856,10 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
             }
             diag_mapping_dumped = true;
         }
+        debug_api::MappingStatusReport map_report;  // 可观测: 本轮映射快照
+        map_report.total_markets = static_cast<int>(market_match_inputs_.size());
         for (const auto& [cond_id, in] : market_match_inputs_) {
             const auto r = event_matcher_.Match(in, candidates);
-            // [DIAG] 足球 live 盘 (Cruzeiro/Remo/Sao/Fluminense) 的匹配尝试详情
-            if (in.team0.find("ruzeir") != std::string::npos || in.team0.find("emo") != std::string::npos ||
-                in.team1.find("lumin") != std::string::npos || in.team0.find("Paulo") != std::string::npos) {
-                std::fprintf(stderr, "[map-diag] try team0='%s' team1='%s' kickoff=%lld -> matched=%d score=%.2f\n",
-                             in.team0.c_str(), in.team1.c_str(), static_cast<long long>(in.kickoff_ts_sec),
-                             r.matched ? 1 : 0, r.team_score);
-            }
             if (r.matched) {
                 paper::EventMapEntry entry;
                 entry.inplay_match_id = r.inplay_match_id;
@@ -874,12 +869,40 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                 entry.match_as_of_ns = refresh_now_ns;
                 (*new_map)[cond_id] = std::move(entry);
                 ++matched;
+                // 可观测: 仅记 matched 行 (诊断面板; 未匹配的 378 行不全记)
+                debug_api::MappingMarketRow row;
+                row.condition_id = cond_id;
+                row.team0 = in.team0;
+                row.team1 = in.team1;
+                row.is_draw = in.is_draw;
+                row.matched = true;
+                row.inplay_match_id = r.inplay_match_id;
+                row.match_confidence = r.team_score;
+                map_report.markets.push_back(std::move(row));
             }
         }
 
         // 3. 推送映射给 PaperLoop (热刷)
         if (paper_loop_) {
             paper_loop_->SetEventMapping(std::shared_ptr<const paper::ConditionEventMap>(std::move(new_map)));
+        }
+
+        // 3b. 可观测: 构建映射状态报告 (matched 行 + Goalserve live 候选) → push debug_api。
+        map_report.matched = static_cast<int>(matched);
+        map_report.live_games = static_cast<int>(candidates.size());
+        for (const auto& c : candidates) {
+            debug_api::MappingLiveGame g;
+            g.event_id = c.event_id;
+            g.home = c.home;
+            g.away = c.away;
+            g.sport = c.sport;
+            g.status = c.status;
+            g.home_score = c.home_score;
+            g.away_score = c.away_score;
+            map_report.games.push_back(std::move(g));
+        }
+        if (real_provider_) {
+            real_provider_->set_mapping_status(std::move(map_report));
         }
         std::fprintf(stderr, "[paper_daemon] 映射刷新: %zu/%zu market 匹配到 Goalserve event\n", matched,
                      market_match_inputs_.size());

@@ -56,6 +56,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <unordered_map>
@@ -161,6 +162,17 @@ public:
 
     // 特征健康可观测 (老雷 2026-06-01): 注入 fv_hub (PaperLoop Publish 全特征向量)。
     void set_feature_vector_hub(const ml::FeatureVectorHub* h) noexcept { fv_hub_ = h; }
+
+    // 映射状态可观测 (老雷 2026-06-01): daemon RefreshEventMapping 线程周期 push 快照。
+    //   互斥保护 (写: 映射刷新线程; 读: HTTP 线程; 频率低, 短锁安全)。
+    void set_mapping_status(MappingStatusReport rep) {
+        std::lock_guard<std::mutex> lk(mapping_mtx_);
+        mapping_snapshot_ = std::move(rep);
+    }
+    [[nodiscard]] MappingStatusReport mapping_status() const override {
+        std::lock_guard<std::mutex> lk(mapping_mtx_);
+        return mapping_snapshot_;
+    }
 
     // feature_health — fv_hub 全市场快照逐列聚合 (填充率/非零/range/方差判活)。
     //   "特征没问题训练才有意义" (老板) 的可观测落地: 一眼看 110 列哪些死了。
@@ -622,6 +634,8 @@ private:
     const risk::LedgerSnapshotHub* ledger_hub_{nullptr};  // nullable; nullptr → 空
     const sizing::QuoteSnapshotHub* quote_hub_{nullptr};  // nullable; nullptr → found=false
     const ml::FeatureVectorHub* fv_hub_{nullptr};         // nullable; nullptr → feature_health 空
+    mutable std::mutex mapping_mtx_;                       // 保护 mapping_snapshot_ (低频写/读)
+    MappingStatusReport mapping_snapshot_;                // daemon push 的映射快照
     // events_: live 模式从 gamma /events 发现的活跃体育 event 列表
     // 由 main set_events() 注入; 之后只读 (R-12 无锁 const 方法读安全)
     std::vector<EventInfo> events_;

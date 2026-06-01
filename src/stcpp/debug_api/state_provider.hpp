@@ -444,12 +444,41 @@ struct FeatureHealthReport {
     std::vector<FeatureHealthRow> rows;
 };
 
+// 映射状态 (老雷 2026-06-01 可观测): condition ↔ Goalserve event 桥接实况。
+struct MappingMarketRow {
+    std::string condition_id;
+    std::string team0;            // YES 队 (或 title 拆出)
+    std::string team1;
+    bool is_draw{false};
+    bool matched{false};
+    std::string inplay_match_id;  // 匹配上的 Goalserve event id
+    double match_confidence{0.0}; // 双队 overlap 和 (越高越确信)
+};
+struct MappingLiveGame {         // Goalserve 当前 live 比赛 (score_store 候选)
+    std::string event_id;
+    std::string home;
+    std::string away;
+    std::string sport;
+    std::string status;          // inplay/halftime/final
+    int home_score{0};
+    int away_score{0};
+};
+struct MappingStatusReport {
+    int total_markets{0};        // 有匹配输入的 market 数
+    int matched{0};              // 成功映射数
+    int live_games{0};           // Goalserve 当前 live 候选数
+    std::vector<MappingMarketRow> markets;   // 仅含 matched 或 近似 (诊断)
+    std::vector<MappingLiveGame> games;      // Goalserve live 候选
+};
+
 class StateProvider {
 public:
     virtual ~StateProvider() = default;
 
     // 特征健康 (老雷 2026-06-01 可观测; 默认空 → stub/未接 fv_hub 返回空报告)。
     virtual FeatureHealthReport feature_health() const { return {}; }
+    // 映射状态 (老雷 2026-06-01 可观测; 默认空 → 未接 daemon push 返回空)。
+    virtual MappingStatusReport mapping_status() const { return {}; }
 
     // R-11: 全局运行模式 (build-time 锁定, 运行时不可切)
     virtual ExecMode mode() const = 0;
