@@ -299,10 +299,12 @@ BuildResult PaperDaemon::Build() {
         std::printf("[paper_daemon] gamma /events 发现活跃体育市场...\n");
         std::fflush(stdout);
         discovered = DiscoverSportsEvents(cfg_.max_events);
+        // 资源优化 (老板 2026-06-01): 不再回退 /markets 平铺 — 那条路带的是赛季夺冠 outright 期货
+        //   (World Cup/NBA 冠军, 几个月后才结算), 订阅它们最浪费 (无 in-play/无比分/book 浅)。
+        //   DiscoverSportsEvents 已只留 [live + 开赛≤1h]; 空 = 此刻无近赛, 正确空闲 (省资源)。
         if (discovered.empty()) {
-            std::printf("[paper_daemon] /events 无体育 event, 回退 /markets 平铺发现...\n");
+            std::printf("[paper_daemon] 当前无 live / 开赛≤1h 的赛事 → 不订阅 (省资源, 空闲等近赛)。\n");
             std::fflush(stdout);
-            discovered = DiscoverSportsMarketsFlat(cfg_.max_markets_flat);
         }
     }
 
