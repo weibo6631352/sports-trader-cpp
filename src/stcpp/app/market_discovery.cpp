@@ -687,13 +687,17 @@ std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
          offset += kPageSize) {
         std::vector<DiscoveredEvent> page = ParseSportsEvents(FetchGammaEvents(offset), kPageSize);
         ++pages;
-        if (page.empty()) break;  // 翻到底
+        if (page.empty()) break;  // gamma 翻到底 (空页)
+        // 注: ParseSportsEvents 返回的是【已过滤 sports event】, 数量可 < 原始页 100 (部分被滤);
+        //   故不能用 page.size()<100 判到底 (会早停)。改为本页新增 0 → 到底/全 dup → break。
+        std::size_t added = 0;
         for (auto& e : page) {
             if (!seen.insert(e.event_id).second) continue;  // 跨页去重
             out.push_back(std::move(e));
+            ++added;
             if (static_cast<int>(out.size()) >= max_events) break;
         }
-        if (static_cast<int>(page.size()) < kPageSize) break;  // 不足一页 → 已到底
+        if (added == 0) break;  // 本页无新 event → gamma 已枯竭
     }
 
     std::size_t live_count = 0;
