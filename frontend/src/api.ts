@@ -111,7 +111,7 @@ async function apiFetch<T>(path: string): Promise<T | null> {
   const url = `${_baseUrl}${path}`;
   let resp: Response;
   try {
-    resp = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    resp = await fetch(url, { signal: AbortSignal.timeout(12000) });
   } catch (e) {
     recordError(path, e);
     return null;
@@ -169,7 +169,7 @@ export const fetchQuote = (conditionId: string): Promise<Quote | null> =>
 
 export async function fetchMetrics(): Promise<string | null> {
   try {
-    const resp = await fetch(`${_baseUrl}/metrics`, { signal: AbortSignal.timeout(5000) });
+    const resp = await fetch(`${_baseUrl}/metrics`, { signal: AbortSignal.timeout(12000) });
     return resp.ok ? resp.text() : null;
   } catch {
     return null;
