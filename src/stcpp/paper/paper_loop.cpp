@@ -253,16 +253,23 @@ void PaperLoop::TickAll() {
     // A4 (老板「他们相对都是最近刷新的就行」): tick 入口冻结一次比分快照 + 映射, 整轮全子盘口共享同版本。
     //   消除 read-skew: 否则同 event 的 moneyline/spread 各自 Get(), 采集线程中途 swap → 看不同比分版本。
     //   GetSnapshot()/LoadEventMap() 都是只读 RCU 单次 load (不碰 R-12); shared_ptr 持有保活整 tick。
-    tick_event_map_ = LoadEventMap();
-    tick_score_snap_ = (score_store_ != nullptr) ? score_store_->GetSnapshot() : nullptr;
-    tick_catalog_ = LoadPaperCatalog();  // RCU 快照: 周期重发现可能中途 swap, 整 tick 持有同版本
-    tick_resolution_ = LoadResolution();   // [R-1] 刷新线程 30s swap, 整 tick 冻结同版本 (消 UB)
-    tick_live_stats_ = LoadLiveStats();    // [R-1] 同上
-    if (tick_catalog_ == nullptr) {
+    // [P1 backtest-equivalence] 6 决策输入里 5 个(非 book)在此聚合冻结成 tick_inputs_; book 第 6 输入
+    //   走 hub_ (已可经 ReplayDriver 注入, 这正是当前唯一可回放的 1/6)。replay_inputs_ 非空 → 用注入历史帧
+    //   替代 store 读 (小蒋 P2 回测 harness 闭合红线#3); live 路径 replay_inputs_ 恒 null → 行为逐位不变。
+    if (replay_inputs_ != nullptr) {
+        tick_inputs_ = *replay_inputs_;
+    } else {
+        tick_inputs_.event_map = LoadEventMap();
+        tick_inputs_.score = (score_store_ != nullptr) ? score_store_->GetSnapshot() : nullptr;
+        tick_inputs_.catalog = LoadPaperCatalog();  // RCU 快照: 周期重发现中途 swap, 整 tick 持有同版本
+        tick_inputs_.resolution = LoadResolution();   // [R-1] 刷新线程 30s swap, 整 tick 冻结同版本 (消 UB)
+        tick_inputs_.live_stats = LoadLiveStats();    // [R-1] 同上
+    }
+    if (tick_inputs_.catalog == nullptr) {
         return;  // 未注入 (理论不达; ctor 必置)
     }
 
-    for (const auto& [cond_id, entry] : *tick_catalog_) {
+    for (const auto& [cond_id, entry] : *tick_inputs_.catalog) {
         const std::string& yes_tok = entry.tokens.first;   // YES token
         const std::string& no_tok = entry.tokens.second;   // NO token
 
@@ -435,14 +442,14 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // A4: 用 TickAll 入口冻结的 tick_score_snap_/tick_event_map_ (整 tick 同版本, 消 read-skew),
     //     不再 per-condition 各自 Get()/LoadEventMap()。
     bool map_is_draw = false;  // 盈利修复: 3-way 平局盘 → 下游 sharp fair 取 draw 概率
-    if (tick_score_snap_ != nullptr && tick_event_map_ != nullptr) {
-        const ConditionEventMap& map = *tick_event_map_;
+    if (tick_inputs_.score != nullptr && tick_inputs_.event_map != nullptr) {
+        const ConditionEventMap& map = *tick_inputs_.event_map;
         {
             const auto it = map.find(condition_id);
             if (it != map.end() && !it->second.inplay_match_id.empty()) {
                 map_is_draw = it->second.is_draw;
-                const auto sit = tick_score_snap_->find(it->second.inplay_match_id);
-                if (sit != tick_score_snap_->end() && sit->second.found) {
+                const auto sit = tick_inputs_.score->find(it->second.inplay_match_id);
+                if (sit != tick_inputs_.score->end() && sit->second.found) {
                     const auto& es = sit->second;
                     const auto ev_ts = MapEventScoreStatus(es.status);
                     // 新鲜度: data_source_ts 不能太旧 (老韩 D4 #8 + 老周 R-20: 冻结比分不当 live fair).
@@ -1566,9 +1573,9 @@ void PaperLoop::PopulateFeatureColumns(
     // 当前持仓 (老板: 持仓入模型; 库存感知)。目标仓位范式: 模型需知现仓 → 控制器算 order=目标−现仓。
     //   老板「各边买了多少, 可能两边都买」: per-token 双边读 (旧码 break 在首个 token = 只取一边,
     //   丢 NO; 现按 token_map_ 的 YES/NO 各读各量)。pos_net_qty = YES − NO (净方向便利量)。
-    if (tick_catalog_ != nullptr) {
-        const auto tmit = tick_catalog_->find(condition_id);
-        if (tmit != tick_catalog_->end()) {
+    if (tick_inputs_.catalog != nullptr) {
+        const auto tmit = tick_inputs_.catalog->find(condition_id);
+        if (tmit != tick_inputs_.catalog->end()) {
             if (const auto yp = position_ledger_.get_position(tmit->second.tokens.first)) {  // YES token
                 qf.pos_yes_qty = static_cast<double>(yp->size_usdc) / 1'000'000.0;
                 qf.pos_yes_avg_entry = yp->avg_entry_price;

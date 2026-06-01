@@ -379,6 +379,22 @@ public:
         live_stats_by_teams_ = std::make_shared<const data::livescore::LiveStatsMap>(std::move(m));
     }
 
+    // [P1 backtest-equivalence 2026-06-01] DecisionInputSnapshot — TickAll 入口冻结的【5 个非 book 决策输入】
+    //   聚合引用 (book 第 6 输入走 hub_, 已可经 ReplayDriver 注入 → 不在此)。live: TickAll 读各 store 填;
+    //   replay: SetReplayInputs() 注入历史帧 → 闭合红线#3 (回测=实盘当前只覆盖 1/6 输入) 的单一注入点。
+    //   各 store 仍各自 RCU 高频 swap; 本 struct 只在 tick 入口聚合一次, 整 tick 持有同版本 (消 read-skew)。
+    //   归口: docs/RESEARCH/laolei-backtest-equivalence-spec-v1.md (小蒋 P2 ReplayImpl 喂帧)。
+    struct DecisionInputSnapshot {
+        std::shared_ptr<const ConditionEventMap> event_map;       // condition→event 映射桥
+        std::shared_ptr<const data::ScoreMap> score;              // #2 比分/时钟 (+#3 inplay sharp 赔率附此)
+        std::shared_ptr<const PaperCatalog> catalog;              // #6 fee/cat/parent/line 静态元
+        std::shared_ptr<const ResolutionMap> resolution;          // #5 REST 结算
+        std::shared_ptr<const data::livescore::LiveStatsMap> live_stats;  // #4 g_*_diff 微观
+    };
+    // 回放注入: 非 nullptr → TickAll 用注入帧替代 store 读 (小蒋 P2 回测 harness 用)。owner = 调用方;
+    //   指针生命周期须覆盖 loop 运行期。live 路径恒 nullptr → 行为逐位不变。
+    void SetReplayInputs(const DecisionInputSnapshot* s) noexcept { replay_inputs_ = s; }
+
     // 步④: 注入 ML 推理模型 (ml::FairValueModel; daemon 装配 Stub/ONNX)。单 writer: Start() 前注入,
     //   loop_thread_ 只读。nullptr = 无模型 → 走 baseline provenance。ML-R1/R2: 推理结果 advisory,
     //   只填 QuoteFeatures.ml_advisory_p_yes + provenance, 绝不改 fair_value/决策。owner 是 daemon。
@@ -455,52 +471,54 @@ private:
     static constexpr double kDefaultFeeCoef = 0.03;  // 体育保守 (= RM kSportsTakerFeeRate); 查不到默认
     mutable std::mutex catalog_mu_;
     std::shared_ptr<const PaperCatalog> catalog_;
-    std::shared_ptr<const PaperCatalog> tick_catalog_;  // TickAll 入口冻结快照 (整 tick 同版本)
     PaperLoopConfig cfg_;
+
+    // [P1] TickAll 入口冻结的 5 输入聚合 (原 tick_catalog_/tick_resolution_/tick_live_stats_/
+    //   tick_event_map_/tick_score_snap_ 五个散成员合一; 见 DecisionInputSnapshot)。
+    DecisionInputSnapshot tick_inputs_;
+    const DecisionInputSnapshot* replay_inputs_{nullptr};  // 非空 → TickAll 用注入帧 (小蒋 P2); live 恒 null
 
     // 三个 accessor 改读 tick_catalog_ (loop_thread_, TickAll 入口已冻结)。查不到 → 默认。
     [[nodiscard]] const ParentRef* ParentRefFor(const std::string& condition_id) const noexcept {
-        if (tick_catalog_ == nullptr) return nullptr;
-        auto it = tick_catalog_->find(condition_id);
-        return (it != tick_catalog_->end()) ? &it->second.parent : nullptr;
+        if (tick_inputs_.catalog == nullptr) return nullptr;
+        auto it = tick_inputs_.catalog->find(condition_id);
+        return (it != tick_inputs_.catalog->end()) ? &it->second.parent : nullptr;
     }
     [[nodiscard]] double FeeCoefFor(const std::string& condition_id) const noexcept {
-        if (tick_catalog_ == nullptr) return kDefaultFeeCoef;
-        auto it = tick_catalog_->find(condition_id);
-        return (it != tick_catalog_->end()) ? it->second.fee_coef : kDefaultFeeCoef;
+        if (tick_inputs_.catalog == nullptr) return kDefaultFeeCoef;
+        auto it = tick_inputs_.catalog->find(condition_id);
+        return (it != tick_inputs_.catalog->end()) ? it->second.fee_coef : kDefaultFeeCoef;
     }
     [[nodiscard]] MarketCat MarketCatFor(const std::string& condition_id) const noexcept {
-        if (tick_catalog_ == nullptr) return MarketCat{};
-        auto it = tick_catalog_->find(condition_id);
-        return (it != tick_catalog_->end()) ? it->second.cat : MarketCat{};
+        if (tick_inputs_.catalog == nullptr) return MarketCat{};
+        auto it = tick_inputs_.catalog->find(condition_id);
+        return (it != tick_inputs_.catalog->end()) ? it->second.cat : MarketCat{};
     }
     // slice-3c: per-condition 结算状态 (REST 注入; 查不到 → nullptr)。[R-1] RCU: mutex+shared_ptr,
     //   loop_thread_ 经 TickAll 入口冻结 tick_resolution_ 快照读 (整 tick 同版本, 不并发刷新线程 swap)。
     mutable std::mutex resolution_mu_;
     std::shared_ptr<const ResolutionMap> resolution_by_condition_;
-    std::shared_ptr<const ResolutionMap> tick_resolution_;  // TickAll 入口冻结
     [[nodiscard]] std::shared_ptr<const ResolutionMap> LoadResolution() const noexcept {
         std::lock_guard<std::mutex> lk(resolution_mu_);
         return resolution_by_condition_;
     }
     [[nodiscard]] const ResolutionEntry* ResolutionFor(const std::string& condition_id) const noexcept {
-        if (tick_resolution_ == nullptr) return nullptr;
-        auto it = tick_resolution_->find(condition_id);
-        return (it != tick_resolution_->end()) ? &it->second : nullptr;
+        if (tick_inputs_.resolution == nullptr) return nullptr;
+        auto it = tick_inputs_.resolution->find(condition_id);
+        return (it != tick_inputs_.resolution->end()) ? &it->second : nullptr;
     }
     // live_stats 采集 hop: join_key → LiveStatsFields (REST 注入; 查不到 → nullptr)。[R-1] 同 resolution RCU。
     mutable std::mutex live_stats_mu_;
     std::shared_ptr<const data::livescore::LiveStatsMap> live_stats_by_teams_;
-    std::shared_ptr<const data::livescore::LiveStatsMap> tick_live_stats_;  // TickAll 入口冻结
     [[nodiscard]] std::shared_ptr<const data::livescore::LiveStatsMap> LoadLiveStats() const noexcept {
         std::lock_guard<std::mutex> lk(live_stats_mu_);
         return live_stats_by_teams_;
     }
     [[nodiscard]] const data::livescore::LiveStatsFields* LiveStatsFor(
         const std::string& join_key) const noexcept {
-        if (tick_live_stats_ == nullptr) return nullptr;
-        auto it = tick_live_stats_->find(join_key);
-        return (it != tick_live_stats_->end()) ? &it->second : nullptr;
+        if (tick_inputs_.live_stats == nullptr) return nullptr;
+        auto it = tick_inputs_.live_stats->find(join_key);
+        return (it != tick_inputs_.live_stats->end()) ? &it->second : nullptr;
     }
     // 步④: ML 推理模型 (非自有; daemon 注入 + 持有)。loop_thread_ 只读。nullptr = baseline only。
     const ml::FairValueModel* ml_model_{nullptr};
@@ -518,8 +536,6 @@ private:
     // A4 (老周/老板「相对最近刷新」): tick-local 冻结快照 — TickAll 入口取一次, 整 tick 全子盘口共享同版本。
     //   根除 read-skew (同 event 的 moneyline/spread 看不同比分版本)。loop_thread_ 单线程, 无需锁;
     //   shared_ptr 持有保证 tick 内不被采集线程 swap 掉 (引用计数)。
-    std::shared_ptr<const ConditionEventMap> tick_event_map_;
-    std::shared_ptr<const data::ScoreMap> tick_score_snap_;
 
     // LoadEventMap — 短锁拷当前映射 ptr (loop_thread_ 用; nullptr 若未注入).
     [[nodiscard]] std::shared_ptr<const ConditionEventMap> LoadEventMap() const noexcept {
