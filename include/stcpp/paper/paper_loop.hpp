@@ -144,6 +144,19 @@ struct MarketCat {
     double liquidity{std::numeric_limits<double>::quiet_NaN()};   // book 流动性 (gamma; 滑点代理)
 };
 
+// R-3 (老周/老郭 评审 2026-06-01): 统一 per-condition 静态元数据为一个 entry, 走单一 RCU 快照。
+//   原 4 张并行 map (token/fee/cat/parent) 各自注入 → 周期重发现要原子换才不会 swap 间隙读到半新半旧
+//   (TickOne 读 token 有新 cond 但 cat 还没 → 定价分派错)。打包成一个 entry 一次 swap, 消同步问题。
+//   边界 (老周铁律): 只装【静态元数据】(发现期定、重发现才换); 动态运行期态 (score/resolution/
+//   live_stats/event_map) 各自 RCU 高频换, 绝不并入 — 否则换 catalog 被迫连带换动态态, 反制造 read-skew。
+struct PaperMarketEntry {
+    std::pair<std::string, std::string> tokens;  // YES, NO token_id
+    double fee_coef{0.03};                        // = kDefaultFeeCoef (gamma feeSchedule.rate)
+    MarketCat cat;                                // 类别码 + line + 活跃度
+    ParentRef parent;                             // event_id / neg_risk
+};
+using PaperCatalog = std::unordered_map<std::string, PaperMarketEntry>;
+
 // slice-3c 结算注入 (老板 2026-05-31 摸底定论: Polymarket resolution **不在 market WSS**,
 //   是 REST 字段 — gamma `closed` + clob `tokens[i].winner`)。app 层轮询 REST → SetResolutionByCondition
 //   注入 (同 fee/event-mapping 注入范式), 非 WSS 解析 (market 频道只推 book/price/trade/tick)。
@@ -338,18 +351,7 @@ public:
     //   单 writer: 仅主线程在 Start() 前调用一次 (score_store_ 之后只读).
     void SetScoreStore(const data::ScoreSnapshotStore* s) noexcept { score_store_ = s; }
 
-    // R-fee-2: 注入 per-market 手续费系数 (condition_id → gamma feeSchedule.rate)。
-    //   单 writer: Start() 前注入一次, 之后 loop_thread_ 只读。空/查不到 → kDefaultFeeCoef (0.03)。
-    //   官方禁硬编码 (docs.polymarket): 体育 0.03 / 加密 0.072 / 老市场 0 各异。
-    void SetFeeByCondition(std::unordered_map<std::string, double> m) noexcept {
-        fee_by_condition_ = std::move(m);
-    }
-
-    // v0.7: 注入 per-condition 类别上下文码 (真实 Polymarket 市场结构 → ML 特征 82-85)。
-    //   单 writer: Start() 前注入 (market discovery 后); loop_thread_ 只读。查不到 → 默认 (sports/-1)。
-    void SetMarketCatByCondition(std::unordered_map<std::string, MarketCat> m) noexcept {
-        market_cat_by_condition_ = std::move(m);
-    }
+    // R-3: fee/cat/parent 三表已并入 PaperCatalog (SetPaperCatalog 统一注入)。原 3 个独立 setter 删除。
 
     // slice-3c: 注入 per-condition 结算状态 (app 层轮询 gamma `closed` / clob `tokens[].winner` →
     //   此处注入)。单 writer: Start() 前注入 / 周期热刷 (loop_thread_ 只读)。喂 resolution_status 特征
@@ -390,11 +392,7 @@ public:
     //   PublishQuoteSnapshot 算完 extract_full 后 Publish 进来 (训练 X 含 0-17 原始列)。单 writer loop_thread_。
     void SetFeatureVectorHub(ml::FeatureVectorHub* h) noexcept { fv_hub_ = h; }
 
-    // 统一数据树: 注入 condition → 父级引用 (event_id / neg_risk_market_id)。
-    //   单 writer: Start() 前注入一次, 之后 loop_thread_ 只读。盘口决策/模型带父级 (兄弟经 event_id 导航)。
-    void SetParentRefs(std::unordered_map<std::string, ParentRef> m) noexcept {
-        parent_by_condition_ = std::move(m);
-    }
+    // R-3: parent_by_condition_ 已并入 PaperCatalog (SetPaperCatalog)。原 SetParentRefs 删除。
 
     // A1: 注入/热刷 condition_id→event 映射 (app 层 EventMatcher 解析后周期推送).
     //   线程安全: shared_ptr + mutex 短锁 swap (同 ScoreSnapshotStore 模式; libc++ 无
@@ -404,16 +402,16 @@ public:
         event_map_ = std::move(m);
     }
 
-    // 周期重发现 (老板 2026-06-01): 动态增订市场. token_map RCU 热刷 (同 event_map 模式).
-    //   loop_thread_ TickAll 入口取快照迭代; daemon 重发现线程 append 新 condition 后 swap ptr.
-    using TokenMap = std::unordered_map<std::string, std::pair<std::string, std::string>>;
-    void SetTokenMap(std::shared_ptr<const TokenMap> m) noexcept {
-        std::lock_guard<std::mutex> lk(token_map_mu_);
-        token_map_ = std::move(m);
+    // 周期重发现 (老板 2026-06-01) + R-3 统一 catalog: per-condition 静态元数据单一 RCU 快照热刷.
+    //   loop_thread_ TickAll 入口取快照迭代; daemon 重发现线程构建新 catalog 一次 swap (原子, 消半新半旧).
+    using TokenMap = std::unordered_map<std::string, std::pair<std::string, std::string>>;  // ctor 兼容
+    void SetPaperCatalog(std::shared_ptr<const PaperCatalog> c) noexcept {
+        std::lock_guard<std::mutex> lk(catalog_mu_);
+        catalog_ = std::move(c);
     }
-    [[nodiscard]] std::shared_ptr<const TokenMap> LoadTokenMap() const noexcept {
-        std::lock_guard<std::mutex> lk(token_map_mu_);
-        return token_map_;
+    [[nodiscard]] std::shared_ptr<const PaperCatalog> LoadPaperCatalog() const noexcept {
+        std::lock_guard<std::mutex> lk(catalog_mu_);
+        return catalog_;
     }
 
 private:
@@ -445,31 +443,29 @@ private:
     //   声明在 matcher_ 之后 → 析构先于 matcher_ (executor_ 持 matcher_ 引用)。
     std::unique_ptr<execution::IOrderExecutor> executor_;
 
-    // ---- 配置与 token map (RCU 热刷: 周期重发现动态增订; loop 读快照, daemon 写 swap) ----
-    mutable std::mutex token_map_mu_;
-    std::shared_ptr<const TokenMap> token_map_;
-    std::shared_ptr<const TokenMap> tick_token_map_;  // TickAll 入口冻结快照 (整 tick 同版本)
+    // ---- R-3: per-condition 静态元数据统一 catalog (RCU 热刷; loop 读 tick 快照, daemon 写 swap) ----
+    //   原 token/fee/cat/parent 4 张并行 map 合并; 周期重发现一次原子 swap (消半新半旧定价分派错)。
+    static constexpr double kDefaultFeeCoef = 0.03;  // 体育保守 (= RM kSportsTakerFeeRate); 查不到默认
+    mutable std::mutex catalog_mu_;
+    std::shared_ptr<const PaperCatalog> catalog_;
+    std::shared_ptr<const PaperCatalog> tick_catalog_;  // TickAll 入口冻结快照 (整 tick 同版本)
     PaperLoopConfig cfg_;
 
-    // ---- R-fee-2: per-market 手续费系数 (condition_id → feeSchedule.rate) ----
-    //   Start 前注入, 之后只读。查不到 → kDefaultFeeCoef。RM/sizing/PnL 同源用此值。
-    static constexpr double kDefaultFeeCoef = 0.03;  // 体育保守 (= RM kSportsTakerFeeRate)
-    std::unordered_map<std::string, double> fee_by_condition_;
-    // 统一数据树: 父级引用 (Start 前注入, 之后只读)。查不到 → 空 ParentRef。
-    std::unordered_map<std::string, ParentRef> parent_by_condition_;
+    // 三个 accessor 改读 tick_catalog_ (loop_thread_, TickAll 入口已冻结)。查不到 → 默认。
     [[nodiscard]] const ParentRef* ParentRefFor(const std::string& condition_id) const noexcept {
-        auto it = parent_by_condition_.find(condition_id);
-        return (it != parent_by_condition_.end()) ? &it->second : nullptr;
+        if (tick_catalog_ == nullptr) return nullptr;
+        auto it = tick_catalog_->find(condition_id);
+        return (it != tick_catalog_->end()) ? &it->second.parent : nullptr;
     }
     [[nodiscard]] double FeeCoefFor(const std::string& condition_id) const noexcept {
-        auto it = fee_by_condition_.find(condition_id);
-        return (it != fee_by_condition_.end()) ? it->second : kDefaultFeeCoef;
+        if (tick_catalog_ == nullptr) return kDefaultFeeCoef;
+        auto it = tick_catalog_->find(condition_id);
+        return (it != tick_catalog_->end()) ? it->second.fee_coef : kDefaultFeeCoef;
     }
-    // v0.7: per-condition 类别上下文 (market discovery 注入; 查不到 → 默认 sports/-1 占位)。
-    std::unordered_map<std::string, MarketCat> market_cat_by_condition_;
     [[nodiscard]] MarketCat MarketCatFor(const std::string& condition_id) const noexcept {
-        auto it = market_cat_by_condition_.find(condition_id);
-        return (it != market_cat_by_condition_.end()) ? it->second : MarketCat{};
+        if (tick_catalog_ == nullptr) return MarketCat{};
+        auto it = tick_catalog_->find(condition_id);
+        return (it != tick_catalog_->end()) ? it->second.cat : MarketCat{};
     }
     // slice-3c: per-condition 结算状态 (REST 注入; 查不到 → nullptr)。[R-1] RCU: mutex+shared_ptr,
     //   loop_thread_ 经 TickAll 入口冻结 tick_resolution_ 快照读 (整 tick 同版本, 不并发刷新线程 swap)。

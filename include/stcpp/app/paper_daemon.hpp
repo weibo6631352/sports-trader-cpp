@@ -240,6 +240,9 @@ public:
 private:
     // 发现 → token_map_/market_catalog_/event_infos_/all_token_ids_ (gamma 或注入).
     void PopulateCatalog(const std::vector<DiscoveredEvent>& discovered);
+    // R-3: 从 token_map_/market_catalog_/market_cat_map_ 构建统一 PaperCatalog (静态元数据)。
+    //   一次原子注入 paper_loop_->SetPaperCatalog; R-6 周期重发现复用 (重建后 swap)。
+    [[nodiscard]] std::shared_ptr<const paper::PaperCatalog> BuildPaperCatalog() const;
 
     // REST 快照打底 (Start 起后台 jthread): POST /books 批量拉初始 book → SeedFromRestBooks。
     //   修"稳定盘/漏接 WSS 初始快照永远空"。后台跑 (不阻塞启动), st 关停时提前退出, 失败优雅降级。

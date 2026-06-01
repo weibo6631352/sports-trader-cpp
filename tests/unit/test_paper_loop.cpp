@@ -921,15 +921,19 @@ TEST_F(PaperLoopTest, T17_TotalsMarket_DerivativePricing) {
     loop_->SetScoreStore(&store);
     loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
     // 注入 totals 元数据: market_type=2 (totals), line=211.5, yes_is_over=true。
-    std::unordered_map<std::string, stcpp::paper::MarketCat> cat;
+    //   R-3: 经统一 PaperCatalog 注入 (tokens + cat 一起; 替代 SetMarketCatByCondition)。
     stcpp::paper::MarketCat mc;
     mc.market_type_id = 2;
     mc.line = 211.5;
     mc.yes_is_over = true;
     mc.league_id = 34;
     mc.sport_family_id = 1;
-    cat["cond-test-001"] = mc;
-    loop_->SetMarketCatByCondition(std::move(cat));
+    auto pc = std::make_shared<stcpp::paper::PaperCatalog>();
+    stcpp::paper::PaperMarketEntry pe;
+    pe.tokens = token_map_["cond-test-001"];
+    pe.cat = mc;
+    (*pc)["cond-test-001"] = pe;
+    loop_->SetPaperCatalog(std::move(pc));
     loop_->Start();
     std::this_thread::sleep_for(std::chrono::milliseconds(250));
     loop_->Stop();

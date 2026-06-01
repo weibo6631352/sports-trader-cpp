@@ -180,14 +180,14 @@ public:
         FeatureHealthReport rep;
         if (fv_hub_ == nullptr) return rep;
         const auto records = fv_hub_->SnapshotAll();
-        const int N = static_cast<int>(ml::kMlFeatureCount);
+        const std::size_t N = static_cast<std::size_t>(ml::kMlFeatureCount);
         std::vector<int> pop(N, 0), nz(N, 0);
         std::vector<double> mn(N, 0), mx(N, 0), sum(N, 0);
         std::vector<bool> seen(N, false);
         for (const auto& r : records) {
             if (!r.valid) continue;
             ++rep.n_records;
-            for (int i = 0; i < N; ++i) {
+            for (std::size_t i = 0; i < N; ++i) {
                 const double v = static_cast<double>(r.values[i]);
                 if (std::isnan(v)) continue;  // NaN = 缺失 (extract_full 产), 不计入填充
                 ++pop[i];
@@ -197,10 +197,10 @@ public:
                 else { mn[i] = std::min(mn[i], v); mx[i] = std::max(mx[i], v); }
             }
         }
-        rep.rows.reserve(static_cast<std::size_t>(N));
-        for (int i = 0; i < N; ++i) {
+        rep.rows.reserve(N);
+        for (std::size_t i = 0; i < N; ++i) {
             FeatureHealthRow row;
-            row.index = i;
+            row.index = static_cast<int>(i);
             row.name = std::string(ml::to_string(static_cast<ml::MlFeature>(i)));
             row.populated = pop[i];
             row.nonzero = nz[i];

@@ -225,6 +225,29 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
 }
 
 // ---------------------------------------------------------------------------
+// BuildPaperCatalog (R-3) — token_map_/market_catalog_/market_cat_map_ → 统一 PaperCatalog。
+//   只装【静态元数据】(老周边界铁律): tokens + fee + cat + parent。动态态 (score/resolution/
+//   live_stats) 不并入。一次原子 swap; R-6 周期重发现重建后复用。
+// ---------------------------------------------------------------------------
+std::shared_ptr<const paper::PaperCatalog> PaperDaemon::BuildPaperCatalog() const {
+    auto pc = std::make_shared<paper::PaperCatalog>();
+    pc->reserve(token_map_.size());
+    for (const auto& [cid, toks] : token_map_) {
+        paper::PaperMarketEntry e;
+        e.tokens = toks;
+        if (const auto mit = market_catalog_.find(cid); mit != market_catalog_.end()) {
+            e.fee_coef = mit->second.fee_rate;  // R-fee-2: gamma feeSchedule.rate
+            e.parent = paper::ParentRef{mit->second.event_id, mit->second.neg_risk_market_id};
+        }
+        if (const auto cit = market_cat_map_.find(cid); cit != market_cat_map_.end()) {
+            e.cat = cit->second;  // v0.7 类别码 (ML 特征 82-85)
+        }
+        (*pc)[cid] = std::move(e);
+    }
+    return pc;
+}
+
+// ---------------------------------------------------------------------------
 // SeedInitialBooksFromRest — 订阅时拉一次初始 book 快照 (REST), seed 进 hub.
 //   修 WSS-only 的缺陷: 稳定盘/漏接初始快照 → hub 永远空。POST /books 批量拉,
 //   交给 live_publisher_->SeedFromRestBooks (与 WSS book 同解析路径)。
@@ -401,29 +424,9 @@ BuildResult PaperDaemon::Build() {
         std::fflush(stdout);
     }
 
-    // R-fee-2: 注入 per-market 手续费系数 (condition_id → gamma feeSchedule.rate)。
-    //   Start 前一次性注入, 之后 loop_thread_ 只读。官方禁硬编码 (docs.polymarket)。
-    {
-        std::unordered_map<std::string, double> fee_map;
-        fee_map.reserve(market_catalog_.size());
-        for (const auto& [cid, mi] : market_catalog_)
-            fee_map[cid] = mi.fee_rate;
-        paper_loop_->SetFeeByCondition(std::move(fee_map));
-    }
-
-    // v0.7: 注入 per-condition 类别上下文码 (真实 Polymarket 市场结构 → ML 特征 82-85)。
-    //   PopulateCatalog 已算好 market_cat_map_ (ev.sport_id/sport_code + dm.sports_market_type)。
-    if (!market_cat_map_.empty())
-        paper_loop_->SetMarketCatByCondition(market_cat_map_);
-
-    // 统一数据树: 注入 condition → 父级引用 (event_id / neg_risk_market_id), 决策/模型带父级。
-    {
-        std::unordered_map<std::string, paper::ParentRef> parent_map;
-        parent_map.reserve(market_catalog_.size());
-        for (const auto& [cid, mi] : market_catalog_)
-            parent_map[cid] = paper::ParentRef{mi.event_id, mi.neg_risk_market_id};
-        paper_loop_->SetParentRefs(std::move(parent_map));
-    }
+    // R-3 (老周/老郭 评审): per-condition 静态元数据 (token/fee/cat/parent) 统一为 PaperCatalog,
+    //   一次原子注入 (替代原 3 个独立 setter)。BuildPaperCatalog 供 R-6 周期重发现复用。
+    paper_loop_->SetPaperCatalog(BuildPaperCatalog());
 
     // ---- Step 2d: RealStateProvider (读模型) ----
     risk::RiskConfig rsp_risk_cfg;
