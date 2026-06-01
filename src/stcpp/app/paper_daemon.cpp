@@ -840,8 +840,27 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                                                 .count();
         auto new_map = std::make_shared<paper::ConditionEventMap>();
         std::size_t matched = 0;
+        // [DIAG] 候选 Goalserve event 数 + 前若干队名 (定位 0 匹配根因: 空候选 / 名不符 / kickoff).
+        static bool diag_mapping_dumped = false;
+        if (!diag_mapping_dumped) {
+            std::fprintf(stderr, "[map-diag] Goalserve 候选 EventScore 数=%zu\n", candidates.size());
+            std::size_t shown = 0;
+            for (const auto& c : candidates) {
+                std::fprintf(stderr, "[map-diag]   cand: home='%s' away='%s' status='%s' id=%s\n",
+                             c.home.c_str(), c.away.c_str(), c.status.c_str(), c.event_id.c_str());
+                if (++shown >= 14) break;
+            }
+            diag_mapping_dumped = true;
+        }
         for (const auto& [cond_id, in] : market_match_inputs_) {
             const auto r = event_matcher_.Match(in, candidates);
+            // [DIAG] 足球 live 盘 (Cruzeiro/Remo/Sao/Fluminense) 的匹配尝试详情
+            if (in.team0.find("ruzeir") != std::string::npos || in.team0.find("emo") != std::string::npos ||
+                in.team1.find("lumin") != std::string::npos || in.team0.find("Paulo") != std::string::npos) {
+                std::fprintf(stderr, "[map-diag] try team0='%s' team1='%s' kickoff=%lld -> matched=%d score=%.2f\n",
+                             in.team0.c_str(), in.team1.c_str(), static_cast<long long>(in.kickoff_ts_sec),
+                             r.matched ? 1 : 0, r.team_score);
+            }
             if (r.matched) {
                 (*new_map)[cond_id] =
                     paper::EventMapEntry{r.inplay_match_id, r.yes_is_home, r.team_score, refresh_now_ns};
