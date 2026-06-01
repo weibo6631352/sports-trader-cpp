@@ -86,6 +86,8 @@ int main(int argc, char** argv) {
             cfg.train_script_path = argv[++i];
         } else if (a == "--min-train-samples" && i + 1 < argc) {
             cfg.min_train_samples = static_cast<std::size_t>(std::stoul(argv[++i]));
+        } else if (a == "--train-window-days" && i + 1 < argc) {
+            cfg.train_window_days = std::stoi(argv[++i]);  // 训练滑动窗口天数 (默认 5; 0=全量)
         } else if (a == "--model-reload-interval" && i + 1 < argc) {
             cfg.model_reload_interval_sec = std::stoi(argv[++i]);
         } else if (a == "--help" || a == "-h") {

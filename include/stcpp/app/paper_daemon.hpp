@@ -135,6 +135,8 @@ struct PaperDaemonConfig {
     std::string train_python_bin{"python3"};  // 训练子进程解释器 (服务器设 .venv/bin/python3)
     std::string train_script_path{"scripts/ml/train_fair_value.py"};
     std::size_t min_train_samples{500};  // join 标注行 < 此 → 跳过 (冷启动样本不足不产模型)
+    std::int32_t train_window_days{5};   // 训练滑动窗口 (老板「就 5 天」): 只 join 最近 N 天数据 →
+                                         //   join 量/训练时间有界 + 不被陈旧数据拖累 (0=全量, 默认 5)
     std::string ml_path{"data/ml_capture/quotes.jsonl"};
 
     // 仅观测不交易 (老周: 替代 ObserverOnly 枚举档). true=起 PaperLoop (默认).

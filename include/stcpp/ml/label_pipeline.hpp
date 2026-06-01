@@ -77,6 +77,24 @@ using LabelStore = std::unordered_map<std::string, OutcomeLabel>;
     return std::string(line.substr(vstart, vend - vstart));
 }
 
+// ExtractAsOfTs — 抽 "as_of_ts_ns":<int64> (训练滑动窗口过滤用; 无则 nullopt)。
+[[nodiscard]] inline std::optional<std::int64_t> ExtractAsOfTs(std::string_view line) noexcept {
+    constexpr std::string_view kKey = "\"as_of_ts_ns\":";
+    const auto k = line.find(kKey);
+    if (k == std::string_view::npos) return std::nullopt;
+    std::size_t pos = k + kKey.size();
+    while (pos < line.size() && line[pos] == ' ') ++pos;
+    bool neg = false;
+    if (pos < line.size() && line[pos] == '-') {
+        neg = true;
+        ++pos;
+    }
+    if (pos >= line.size() || line[pos] < '0' || line[pos] > '9') return std::nullopt;
+    std::int64_t v = 0;
+    while (pos < line.size() && line[pos] >= '0' && line[pos] <= '9') v = v * 10 + (line[pos++] - '0');
+    return neg ? -v : v;
+}
+
 // LoadLabelStoreFromJsonl — 从 settlement.jsonl (SettlementRecorder 落) 离线建 LabelStore。
 //   行: {"condition_id":"..","closed":1,"settlement_value":N,...}。只收 closed + value∈{0,1}。
 //   离线 join 的 y 来源 (内存 SettlementStore 不可用时走此; 缺口E 闭合)。
@@ -149,17 +167,21 @@ using LabelStore = std::unordered_map<std::string, OutcomeLabel>;
 
 // 流式 join 统计 (供文件层报告)。
 struct JoinStats {
-    std::size_t total{0};      // 读入特征行数
-    std::size_t labeled{0};    // 成功 join 到 valid 标签
-    std::size_t unlabeled{0};  // 未结算 (drop 或标 invalid)
-    std::size_t skipped{0};    // 无 condition_id / 非 JSON
+    std::size_t total{0};          // 读入特征行数
+    std::size_t labeled{0};        // 成功 join 到 valid 标签
+    std::size_t unlabeled{0};      // 未结算 (drop 或标 invalid)
+    std::size_t skipped{0};        // 无 condition_id / 非 JSON
+    std::size_t out_of_window{0};  // 滑动窗口外 (as_of_ts < min_as_of_ns; 训练只用最近 N 天)
 };
 
 // JoinFile — 流式: 读 FeatureRecorder JSONL → 按 store join → 写训练 JSONL。
 //   drop_unlabeled=true → 只输出已结算行 (监督集)。返回统计。§12.4 C++ 落盘, 训练侧离线读。
 //   红线: 输出独立训练文件, 不碰 live 路径 / 不回喂决策 (CLV 前视)。
+//   min_as_of_ns: 滑动窗口下界 (>0 时只 join as_of_ts >= 此值的行; 0=不过滤)。训练只用最近 N 天 →
+//     join 量有界 / 训练时间有界 / 不被陈旧数据拖累 (老板「就 5 天」, 2026-06-01)。
 [[nodiscard]] inline JoinStats JoinFile(const std::string& feature_jsonl_path, const LabelStore& store,
-                                        const std::string& out_training_path, bool drop_unlabeled) {
+                                        const std::string& out_training_path, bool drop_unlabeled,
+                                        std::int64_t min_as_of_ns = 0) {
     JoinStats st;
     std::ifstream in(feature_jsonl_path);
     std::ofstream out(out_training_path, std::ios::trunc);
@@ -168,6 +190,13 @@ struct JoinStats {
     while (std::getline(in, line)) {
         if (line.empty()) continue;
         ++st.total;
+        if (min_as_of_ns > 0) {
+            const auto ts = ExtractAsOfTs(line);
+            if (ts && *ts < min_as_of_ns) {  // 窗口外 (老数据) → 跳过, 不进训练
+                ++st.out_of_window;
+                continue;
+            }
+        }
         const auto cid = ExtractConditionId(line);
         if (!cid) {
             ++st.skipped;

@@ -1264,11 +1264,18 @@ void PaperDaemon::AutoTrain(std::stop_token st) {
             if (st.stop_requested()) return;
             std::this_thread::sleep_for(seconds(1));
         }
-        // ① 进程内 join (C++; label_pipeline 纯函数核已单测)
+        // ① 进程内 join (C++; label_pipeline 纯函数核已单测)。滑动窗口: 只 join 最近 train_window_days 天
+        //   (老板「就 5 天」): join 量/训练时间有界 + 模型不被陈旧数据拖累。窗口下界用 now (训练窗口边界,
+        //   非数据源 ts, 不违 R-20)。
+        std::int64_t min_as_of_ns = 0;
+        if (cfg_.train_window_days > 0) {
+            const std::int64_t now_ns = duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+            min_as_of_ns = now_ns - static_cast<std::int64_t>(cfg_.train_window_days) * 86400LL * 1'000'000'000LL;
+        }
         const auto store = ml::LoadLabelStoreFromJsonl(settle);
-        const auto js = ml::JoinFile(fv, store, training, /*drop_unlabeled=*/true);
-        std::printf("[auto_train] join: 标注 %zu / 读 %zu (已结算 condition %zu)\n", js.labeled, js.total,
-                    store.size());
+        const auto js = ml::JoinFile(fv, store, training, /*drop_unlabeled=*/true, min_as_of_ns);
+        std::printf("[auto_train] join(窗口%d天): 标注 %zu / 读 %zu / 窗口外 %zu (已结算 condition %zu)\n",
+                    cfg_.train_window_days, js.labeled, js.total, js.out_of_window, store.size());
         std::fflush(stdout);
         if (js.labeled < cfg_.min_train_samples) {
             std::printf("[auto_train] 标注 %zu < 阈值 %zu → 跳过 (样本不足, 等积累)\n", js.labeled,
