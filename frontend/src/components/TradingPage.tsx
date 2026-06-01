@@ -859,19 +859,21 @@ export function TradingPage() {
   const [filter, setFilter] = createSignal<FilterMode>('live');
   const [search, setSearch] = createSignal('');
 
-  // P1-6: WSS 连接状态 Alert 计算
+  // P1-6: WSS 连接状态 Alert 计算.
+  //   只有 clob 是真用的 WSS (订单簿). sports_api 走 HTTP REST inplay feed (非 WSS),
+  //   user_channel 仅 live 真单订阅 (paper 不用) — 这俩 false 是预期, 不该告警 (老板 2026-06-01)。
   const wssStatus = () => state.status?.wss_connected ?? null;
   const wssAllDown = () => {
     const w = wssStatus();
     if (!w) return false; // 后端未连接时 StatusBar 已有"后端离线"提示，不重复
-    return !w.sports_api && !w.clob && !w.user_channel;
+    return !w.clob; // 仅 clob 断 = 真订单簿断连 (报警有意义)
   };
   const wssPartialDown = () => {
     const w = wssStatus();
     if (!w) return false;
-    const vals = [w.sports_api, w.clob, w.user_channel];
+    const vals = [w.clob]; // 仅 clob 计入 (sports_api/user_channel 未用, 不误报)
     const downCount = vals.filter((v) => !v).length;
-    return downCount > 0 && downCount < 3; // 部分断
+    return downCount > 0 && downCount < 1; // clob 单通道无"部分断"概念 → 恒 false
   };
 
   // P1 空态: 是否有成交 (判断显示 PnL 语境)
