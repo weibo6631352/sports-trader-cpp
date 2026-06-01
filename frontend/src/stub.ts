@@ -10,7 +10,7 @@
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, Market, BinaryMarketBookView, HalfBook,
-  Score, Quote, EventsResponse,
+  Score, Quote, EventsResponse, Account,
 } from './types';
 
 const NOW_NS = Date.now() * 1e6;
@@ -196,6 +196,30 @@ export const STUB_GATE_PAPER: GatePaper = {
   max_drawdown: 0.082,
   prelim_pass: true,
   confirm_pass: false,
+};
+
+// 账户级现金/估值 stub (2026-06-01 凯利评审)
+export const STUB_ACCOUNT: Account = {
+  mode: 'paper',
+  has_data: true,
+  as_of_ts: NOW_NS,
+  account: {
+    bankroll_initial: 100000,
+    cash_available: 96420.5,
+    position_mtm: 4180.3,
+    equity: 100600.8,
+    equity_conservative: 100210.4,
+    cum_realized_pnl: 820.5,
+    cum_unrealized_pnl: 600.8,
+    cum_fee_paid: 219.7,
+    net_pnl: 600.8,
+    return_pct: 0.006008,
+    max_drawdown: 0.034,
+    sharpe: 1.21,
+    kelly_bankroll: 100210.4,
+    kelly_bankroll_basis: 'equity_conservative(best_bid, 动态)',
+    open_positions: 3,
+  },
 };
 
 // ============================================================

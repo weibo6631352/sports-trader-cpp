@@ -22,18 +22,18 @@ import {
   fetchHealthz, fetchStatus, fetchPositions, fetchPnlTimeseries,
   fetchPnlAttribution, fetchRiskRejects, fetchGatePaper,
   fetchMarket, fetchBook, fetchScore, fetchQuote, fetchMetrics, fetchEvents,
-  fetchFeatureHealth, fetchMappingStatus,
+  fetchFeatureHealth, fetchMappingStatus, fetchAccount,
 } from './api';
 import {
   STUB_HEALTHZ, STUB_STATUS, STUB_POSITIONS, STUB_PNL_TIMESERIES,
   STUB_PNL_ATTRIBUTION, STUB_RISK_REJECTS, STUB_GATE_PAPER,
   STUB_MARKET_MAP, STUB_BOOK_MAP, STUB_SCORE_MAP, STUB_QUOTE_MAP,
-  STUB_METRICS_TEXT, STUB_EVENTS,
+  STUB_METRICS_TEXT, STUB_EVENTS, STUB_ACCOUNT,
 } from './stub';
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, BinaryMarketBookView, Market, Score, Quote,
-  EventGroup, ConditionData, Position, RiskReject, FeatureHealth, MappingStatus,
+  EventGroup, ConditionData, Position, RiskReject, FeatureHealth, MappingStatus, Account,
 } from './types';
 
 // ---------- stub 检测 ----------
@@ -60,6 +60,7 @@ interface AppState {
   timeseries: PnlTimeseries | null;
   featureHealth: FeatureHealth | null;
   mappingStatus: MappingStatus | null;
+  account: Account | null;
   conditionCache: Record<string, PerConditionCache>;
   eventGroups: EventGroup[];
   secondaryOpen: boolean;
@@ -76,6 +77,7 @@ export const [state, setState] = createStore<AppState>({
   timeseries: null,
   featureHealth: null,
   mappingStatus: null,
+  account: null,
   conditionCache: {},
   eventGroups: [],
   secondaryOpen: false,
@@ -145,6 +147,13 @@ export async function refreshFeatureHealth(): Promise<void> {
   if (USE_STUB) return;
   const data = await fetchFeatureHealth();
   if (data) setState({ featureHealth: data });
+}
+
+// ---------- refreshAccount (老雷 2026-06-01 凯利评审: 账户现金/估值) ----------
+
+export async function refreshAccount(): Promise<void> {
+  const data = await safeGet(fetchAccount, STUB_ACCOUNT);
+  setState({ account: data });
 }
 
 export async function refreshMappingStatus(): Promise<void> {
@@ -315,6 +324,7 @@ function every(fn: () => void, ms: number): number {
 
 export function initPolling(): void {
   every(() => { void refreshTopBar(); }, 5000);
+  every(() => { void refreshAccount(); }, 5000);  // 凯利评审: 账户现金/估值 5s 轮询
   every(() => { void refreshSparkline(); }, 15000);
   every(() => { void refreshMarketGrid(); }, 5000);
   every(() => { void refreshAttribution(); }, 15000);

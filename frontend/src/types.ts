@@ -107,6 +107,33 @@ export interface PnlAttribution {
   per_market: PerMarketPnl[];
 }
 
+// ---------- /api/v1/account (账户级现金/估值; 2026-06-01 凯利评审) ----------
+
+export interface AccountDetail {
+  bankroll_initial: number;
+  cash_available: number;
+  position_mtm: number;
+  equity: number;                // 展示净值 (microprice 口径)
+  equity_conservative: number;   // best_bid 口径 (= kelly_bankroll)
+  cum_realized_pnl: number;
+  cum_unrealized_pnl: number;
+  cum_fee_paid: number;
+  net_pnl: number;
+  return_pct: number;            // 小数 (fmtPct ×100)
+  max_drawdown: number;          // ∈[0,1]
+  sharpe: number;
+  kelly_bankroll: number;        // 实际喂凯利的 bankroll
+  kelly_bankroll_basis: string;  // 口径说明 (动态 vs 静态)
+  open_positions: number;
+}
+
+export interface Account {
+  mode: string;
+  has_data: boolean;
+  as_of_ts: number;
+  account: AccountDetail;
+}
+
 // ---------- /api/v1/risk/rejects ----------
 
 export interface RiskReject {

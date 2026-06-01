@@ -32,7 +32,7 @@ import Paper from '@suid/material/Paper';
 import Box from '@suid/material/Box';
 import Alert from '@suid/material/Alert';
 import { state, refreshSparkline } from '../store';
-import { fmtTs, fmtUsdc, fetchPnlTimeseries } from '../api';
+import { fmtTs, fmtUsdc, fmtPct, fetchPnlTimeseries } from '../api';
 import { StatCard } from './ui/StatCard';
 import type { PnlTimeseries } from '../types';
 
@@ -394,12 +394,104 @@ function GateSection() {
 }
 
 // ============================================================
+// 资金概览 (账户级现金 + 估值; 2026-06-01 凯利评审, 老板「虚拟盘要有现金估值显示」)
+//   数据源 GET /api/v1/account (store.account, 5s 轮询)。双口径: equity(microprice 展示) +
+//   kelly_bankroll(best_bid 保守, 实际喂凯利)。Kelly bankroll 说明条让操盘员确认「纸面化」已修。
+// ============================================================
+
+function AccountSummarySection() {
+  const a = () => state.account?.account;
+  const hasData = () => state.account?.has_data === true && a() != null;
+
+  // 净值颜色: > 初始 绿; < 初始×0.85 (近 15% MDD 红线) 红; 中间黄。
+  const equityColor = () => {
+    const d = a();
+    if (!d) return 'default' as const;
+    if (d.equity >= d.bankroll_initial) return 'green' as const;
+    if (d.equity < d.bankroll_initial * 0.85) return 'red' as const;
+    return 'yellow' as const;
+  };
+  const pnlColor = (v: number): 'green' | 'red' | 'default' =>
+    v > 0 ? 'green' : v < 0 ? 'red' : 'default';
+  const ddColor = (v: number): 'green' | 'yellow' | 'red' =>
+    v < 0.1 ? 'green' : v < 0.15 ? 'yellow' : 'red';
+
+  return (
+    <Card variant="outlined">
+      <CardHeader
+        title={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              资金概览 (现金 / 估值)
+            </Typography>
+            <span class="poll-hint">5s</span>
+            <Chip label={state.account?.mode ?? 'paper'} size="small" variant="outlined" sx={{ fontWeight: 700 }} />
+          </Box>
+        }
+        sx={{ py: 1, px: 2, borderBottom: '1px solid #373737' }}
+      />
+      <CardContent sx={{ p: 2 }}>
+        <Show when={hasData()} fallback={
+          <Alert severity="info" sx={{ fontSize: '12px' }}>账户数据未就绪 (paper 引擎未启动 / 尚无快照)</Alert>
+        }>
+          {/* 第一行: 现金 / 净值 / 未实现 / 已实现 */}
+          <Grid container spacing={1.5}>
+            <Grid item xs={6} sm={3}>
+              <StatCard label="现金余额" value={fmtUsdc(a()!.cash_available)}
+                sub={<span>可动用估算 (不含锁仓)</span>} />
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <StatCard label="账户净值" value={fmtUsdc(a()!.equity)} color={equityColor()}
+                sub={<span>= 现金 + 持仓市值 {fmtUsdc(a()!.position_mtm)}</span>} />
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <StatCard label="未实现 PnL" value={fmtUsdc(a()!.cum_unrealized_pnl)} color={pnlColor(a()!.cum_unrealized_pnl)}
+                sub={<span>microprice 估值</span>} />
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <StatCard label="已实现 PnL" value={fmtUsdc(a()!.cum_realized_pnl)} color={pnlColor(a()!.cum_realized_pnl)}
+                sub={<span>累计手续费 {fmtUsdc(a()!.cum_fee_paid)}</span>} />
+            </Grid>
+            {/* 第二行: 净PnL / 收益率 / 最大回撤 / 持仓数 */}
+            <Grid item xs={6} sm={3}>
+              <StatCard label="净 PnL" value={fmtUsdc(a()!.net_pnl)} color={pnlColor(a()!.net_pnl)} />
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <StatCard label="收益率" value={fmtPct(a()!.return_pct)} color={pnlColor(a()!.return_pct)} />
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <StatCard label="最大回撤" value={fmtPct(a()!.max_drawdown)} color={ddColor(a()!.max_drawdown)}
+                sub={<span>北极星红线 ≤15%</span>} />
+            </Grid>
+            <Grid item xs={6} sm={3}>
+              <StatCard label="持仓数" value={String(a()!.open_positions)}
+                sub={<span>Sharpe {a()!.sharpe.toFixed(2)}</span>} />
+            </Grid>
+          </Grid>
+          {/* Kelly bankroll 说明条: 让操盘员确认凯利实际喂的是动态净值 (「纸面化」已修) */}
+          <Box sx={{ mt: 1.5, p: 1.2, borderRadius: 1, bgcolor: 'rgba(76,175,80,0.08)', border: '1px solid rgba(76,175,80,0.3)' }}>
+            <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+              凯利 bankroll 基础:&nbsp;
+              <span style={{ color: '#4caf50', 'font-family': 'monospace', 'font-weight': 700 }}>
+                {a()!.kelly_bankroll_basis} = {fmtUsdc(a()!.kelly_bankroll)}
+              </span>
+              &nbsp;→ 单笔上限 (bankroll×10%) ≈ {fmtUsdc(a()!.kelly_bankroll * 0.1)}
+            </Typography>
+          </Box>
+        </Show>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
 // AnalyticsPage (顶层导出)
 // ============================================================
 
 export function AnalyticsPage() {
   return (
     <div class="ops-page">
+      <AccountSummarySection />
       <PnlTimeseriesSection />
       <WaterfallSection />
       <GateSection />
