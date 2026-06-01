@@ -666,30 +666,18 @@ std::string FetchGammaMarketsFlat() {
 // ---------------------------------------------------------------------------
 
 std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
-    // in-play (live=true) 单场优先 — 它们能映射 Goalserve 比分 (in-play 交易 + game 特征的唯一来源),
-    //   放最前保证不被 max_events 截断.
-    std::vector<DiscoveredEvent> out = ParseSportsEvents(FetchGammaLiveEvents(), max_events);
-    for (auto& e : out) e.live = true;  // live=true query 来的全是正在比赛 (前端默认过滤用)
-    const std::size_t live_count = out.size();
-
-    // 资源优化 (老板 2026-06-01): 只订阅「正在比赛」或「开赛前 ≤1h」的赛事。再早订阅价值不大
-    //   (book 浅 / 无 in-play / 无比分锚), 白占 CLOB WSS 订阅 + 每盘 book 拉取。用 market.gameStartTime 判。
-    //   kickoff 未知 (=0) → 保守保留; kickoff 已知且 > now+1h → 太早, 丢弃不订阅。
+    // ⚠ 2026-06-01 修正 (老板「不比官方少就行」+ 对照 polymarket.com/sports/live 审查):
+    //   旧实现依赖 gamma `event.live` 布尔 → **实测该字段恒为 None/缺失**, gamma 不用它标记在打比赛。
+    //   故旧 FetchGammaLiveEvents (`&live=true`) 恒返 0; 且只有那批被 set e.live=true → 从广查询来的
+    //   真·在打比赛被标 e.live=false → 前端 live 过滤把它们藏掉 → 「比官方少」。根因实证。
+    //   正解: live 由 **market.gameStartTime <= now** 判 (单场真实开赛 ts), 对所有 event 统一计算;
+    //   且不再按「开赛>1h 丢弃」截断 (那会让 upcoming 比官方少) — 改为保留全部单场盘, 由 max_events 兜底。
     const std::int64_t now_sec = static_cast<std::int64_t>(std::time(nullptr));
-    constexpr std::int64_t kPreKickoffWindowSec = 3600;  // 开赛前 1h 起订阅
 
-    std::vector<DiscoveredEvent> upcoming = ParseSportsEvents(FetchGammaEvents(), max_events);
-    std::unordered_set<std::string> seen;
-    seen.reserve(out.size() + upcoming.size());
-    for (const auto& e : out) {
-        seen.insert(e.event_id);
-    }
-    std::size_t dropped_far = 0;
-    for (auto& e : upcoming) {
-        if (seen.count(e.event_id)) {
-            continue;
-        }
-        // 该 event 最早的 market kickoff (gameStartTime 真实开赛, 比 listing startDate 准)。
+    std::vector<DiscoveredEvent> out = ParseSportsEvents(FetchGammaEvents(), max_events);
+    std::size_t live_count = 0;
+    for (auto& e : out) {
+        // 该 event 最早的 market kickoff (gameStartTime 真实开赛 ts, 比 listing startDate 准)。
         std::int64_t earliest_kickoff = 0;
         for (const auto& m : e.markets) {
             if (m.game_start_ts_sec > 0 &&
@@ -697,16 +685,15 @@ std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
                 earliest_kickoff = m.game_start_ts_sec;
             }
         }
-        if (earliest_kickoff > 0 && earliest_kickoff > now_sec + kPreKickoffWindowSec) {
-            ++dropped_far;  // 开赛还早 (>1h) → 不订阅, 省资源
-            continue;
-        }
-        seen.insert(e.event_id);
-        out.push_back(std::move(e));
+        // 在打 = 已开赛 (kickoff<=now)。前端默认过滤 + Goalserve 比分映射优先级用。
+        //   kickoff 未知 (=0, 多为 outright) → 非在打 (不 mark live)。
+        e.live = (earliest_kickoff > 0 && earliest_kickoff <= now_sec);
+        if (e.live) ++live_count;
     }
     std::fprintf(stderr,
-                 "[live_discover] 发现 %zu event (live=%zu + 近开赛≤1h=%zu; 丢弃过早 %zu, 省订阅)\n",
-                 out.size(), live_count, out.size() - live_count, dropped_far);
+                 "[live_discover] 发现 %zu event (在打/live=%zu, 其余 upcoming/outright; "
+                 "live 由 gameStartTime<=now 判, 非已废的 event.live 标志)\n",
+                 out.size(), live_count);
     return out;
 }
 
