@@ -667,24 +667,46 @@ std::string FetchGammaMarketsFlat() {
 
 std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
     // in-play (live=true) 单场优先 — 它们能映射 Goalserve 比分 (in-play 交易 + game 特征的唯一来源),
-    //   放最前保证不被 max_events 截断. 再补 future/近期盘 (更广 book 覆盖, 供微观结构特征/arb).
-    //   按 event_id 去重 (live 与 future 集合可能交叠).
+    //   放最前保证不被 max_events 截断.
     std::vector<DiscoveredEvent> out = ParseSportsEvents(FetchGammaLiveEvents(), max_events);
     for (auto& e : out) e.live = true;  // live=true query 来的全是正在比赛 (前端默认过滤用)
     const std::size_t live_count = out.size();
+
+    // 资源优化 (老板 2026-06-01): 只订阅「正在比赛」或「开赛前 ≤1h」的赛事。再早订阅价值不大
+    //   (book 浅 / 无 in-play / 无比分锚), 白占 CLOB WSS 订阅 + 每盘 book 拉取。用 market.gameStartTime 判。
+    //   kickoff 未知 (=0) → 保守保留; kickoff 已知且 > now+1h → 太早, 丢弃不订阅。
+    const std::int64_t now_sec = static_cast<std::int64_t>(std::time(nullptr));
+    constexpr std::int64_t kPreKickoffWindowSec = 3600;  // 开赛前 1h 起订阅
+
     std::vector<DiscoveredEvent> upcoming = ParseSportsEvents(FetchGammaEvents(), max_events);
     std::unordered_set<std::string> seen;
     seen.reserve(out.size() + upcoming.size());
     for (const auto& e : out) {
         seen.insert(e.event_id);
     }
+    std::size_t dropped_far = 0;
     for (auto& e : upcoming) {
-        if (seen.insert(e.event_id).second) {
-            out.push_back(std::move(e));
+        if (seen.count(e.event_id)) {
+            continue;
         }
+        // 该 event 最早的 market kickoff (gameStartTime 真实开赛, 比 listing startDate 准)。
+        std::int64_t earliest_kickoff = 0;
+        for (const auto& m : e.markets) {
+            if (m.game_start_ts_sec > 0 &&
+                (earliest_kickoff == 0 || m.game_start_ts_sec < earliest_kickoff)) {
+                earliest_kickoff = m.game_start_ts_sec;
+            }
+        }
+        if (earliest_kickoff > 0 && earliest_kickoff > now_sec + kPreKickoffWindowSec) {
+            ++dropped_far;  // 开赛还早 (>1h) → 不订阅, 省资源
+            continue;
+        }
+        seen.insert(e.event_id);
+        out.push_back(std::move(e));
     }
-    std::fprintf(stderr, "[live_discover] 发现 %zu event (live in-play=%zu + future=%zu 去重后)\n", out.size(),
-                 live_count, out.size() - live_count);
+    std::fprintf(stderr,
+                 "[live_discover] 发现 %zu event (live=%zu + 近开赛≤1h=%zu; 丢弃过早 %zu, 省订阅)\n",
+                 out.size(), live_count, out.size() - live_count, dropped_far);
     return out;
 }
 
