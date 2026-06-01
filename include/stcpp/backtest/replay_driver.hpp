@@ -3,6 +3,16 @@
 // Owner: 小肖 (numerical-algorithms, A 系统工程部)
 // last_review: 2026-05-29
 //
+// ⚠️ 回测覆盖红线 (老郭架构评审 2026-06-01, 红线#3 配套) — replay_coverage = BOOK_ONLY:
+//   ReplayDriver 只回放 **OrderBookSnapshotHub (book)** 一个输入。而 PaperLoop::TickOne 的决策依赖
+//   6 个输入: book(✅回放) / Goalserve比分(❌) / inplay sharp赔率(❌) / live_stats(❌) / resolution(❌) /
+//   catalog(⚠️默认值)。后果: **回测全程 has_real_fair=false → 走 stub fair → 零成交、持仓永不结算**。
+//   ⇒ 当前任何"回测 PnL/Sharpe"是在测一个【不下单不结算的空系统】, 不代表实盘决策路径。
+//   **红线#3 (回测=实盘同逻辑) 要求: 在补齐比分+resolution 回放管道前, 回测数字不得作为 MVP 上线依据。**
+//   补齐顺序 (按分叉杀伤力): ①比分(解锁in-play分支) + ②resolution(解锁结算/PnL) → ③catalog → ④sharp/live_stats。
+//   正解 (老郭): 抽 DecisionInputSnapshot{book,score,resolution,live_stats,catalog} 作 TickOne 单一入参,
+//   给 replay 单一注入点, 才能结构性闭合红线#3。归口: 小蒋 (回测 owner) 的多输入回测 harness 项目。
+//
 // 架构说明:
 //   ReplayDriver 是 OrderBookSnapshotHub 的合成/历史事件源.
 //   它按可配置的 tick 间隔产生 OrderBookFeatures 并调用 hub_.Publish(),

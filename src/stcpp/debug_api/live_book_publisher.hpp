@@ -9,9 +9,12 @@
 //   填充 OrderBookFeatures 并调用 hub.Publish().
 //
 //   与 OrderBookAdapter v0.1 的区别:
-//     - OrderBookAdapter v0.1 只解析 mid_bps (合成 L1), 真实 L2 array 待 W10 simdjson.
+//     - OrderBookAdapter v0.1 只解析 mid_bps (合成 L1).
 //     - LiveBookPublisher 直接从 CLOB book JSON 中解析 bids/asks array (top-5 档).
 //     - 两者不冲突: LiveBookPublisher 绕过 OrderBookAdapter 直接写 hub.
+//   解析实现: 手写 char-scan (非 simdjson)。性能评审实测 (老姜 2026-06-01): 单 book 帧 ~5-20us,
+//     远 < R-12 的 100us 预算, simdjson 收益落在不痛处 → 不引入 (反过度优化)。原"待 W10 simdjson"
+//     已撤销。唯一待量化: 256KB 上限大帧 / 多 event batch 帧的最坏延迟 (补 worst-case bench, 见性能评审).
 //
 // CLOB book 消息格式 (实测 2026-05-29):
 //   [{"market":"0x..","asset_id":"..","timestamp":"1780064037997","hash":"...",
