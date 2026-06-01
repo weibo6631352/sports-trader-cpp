@@ -352,6 +352,26 @@ public:
 
     // slice-3b: 累计已实现 PnL (whole pUSD; 含结算)。观测/dashboard/测试 (loop_thread_ 写, 读时近似)。
     [[nodiscard]] double cum_realized_pnl_pusd() const noexcept { return cum_realized_pnl_pusd_; }
+    // 累计已付 taker fee (whole pUSD, 绝对值单调)。AccountEquity / 端点 / 测试用 (2026-06-01 凯利评审)。
+    [[nodiscard]] double cum_fee_pusd() const noexcept { return cum_fee_pusd_; }
+
+    // AccountEquity — 单一账户权益口径 (2026-06-01 凯利评审, docs/MEETINGS/2026-06-01-kelly-equity-review.md)。
+    //   收敛原双轨 (RecordEquity@TickAll 与 FeedRiskGateway daily_pnl 各算一套 = 审计噩梦)。
+    //   双口径分离 (六席共识): 风控/DD/凯利分母用 best_bid 保守清算价; 展示用 microprice。
+    //   无效 bid / stale book (data_source_ts 超 score_staleness_limit_ns) 仓位按 0 浮盈 (不臆造正值, 老韩铁律#2)。
+    //   R-11: 只读 paper ledger 实例 (position_ledger_ + hub_), 不碰真账本。loop_thread_ 写账本, 读时近似 (观测/sizing 容忍)。
+    struct AccountEquitySnapshot {
+        double bankroll_init{0.0};   // 起始虚拟本金 (cfg_.bankroll_usdc)
+        double realized_equity{0.0}; // bankroll_init + cum_realized − cum_fee (已落袋净值)
+        double unrealized_bid{0.0};  // Σ(best_bid − avg_entry)×qty (保守, 无效/stale 计 0) — 喂凯利/DD
+        double unrealized_mark{0.0}; // Σ(microprice − avg_entry)×qty (展示用)
+        double equity_bid{0.0};      // realized_equity + unrealized_bid (凯利分母 / DD 基, 保守)
+        double equity_mark{0.0};     // realized_equity + unrealized_mark (展示净值)
+        double cash_available{0.0};  // MVP 近似: bankroll_init − Σ(avg_entry×qty, 多头) + cum_realized − cum_fee
+        int open_positions{0};
+        std::int64_t as_of_ts_ns{0}; // 最新仓位 book data_source_ts (R-20, 禁 now())
+    };
+    [[nodiscard]] AccountEquitySnapshot account_equity() const noexcept;
 
     // M3 成果尺子: CLV 聚合报告 (G1 验收: clv_close_mean>1.5% + positive_rate>55%)。
     [[nodiscard]] eval::CLVTracker::Report clv_report() const noexcept { return clv_tracker_.report(); }
@@ -483,6 +503,9 @@ private:
     //   tick_event_map_/tick_score_snap_ 五个散成员合一; 见 DecisionInputSnapshot)。
     DecisionInputSnapshot tick_inputs_;
     const DecisionInputSnapshot* replay_inputs_{nullptr};  // 非空 → TickAll 用注入帧 (小蒋 P2); live 恒 null
+    // [2026-06-01 凯利评审] tick 入口冻结一次账户权益 → 整轮所有子盘口 sizing 用同版本 bankroll
+    //   (消 read-skew + 防同 tick 内多笔成交驱动 bankroll 抖动; 老韩/小梁「tick 级冻结快照」)。
+    AccountEquitySnapshot tick_equity_{};
 
     // 三个 accessor 改读 tick_catalog_ (loop_thread_, TickAll 入口已冻结)。查不到 → 默认。
     [[nodiscard]] const ParentRef* ParentRefFor(const std::string& condition_id) const noexcept {

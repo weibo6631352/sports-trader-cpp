@@ -269,6 +269,11 @@ void PaperLoop::TickAll() {
         return;  // 未注入 (理论不达; ctor 必置)
     }
 
+    // [2026-06-01 凯利评审] tick 入口冻结账户权益快照 → 本轮所有子盘口 sizing 用同版本 bankroll。
+    //   修「风控纸面化」(bankroll 此前硬用 cfg_ 静态初值, 回撤不缩盈利不涨)。整 tick 冻结 → 同 tick 内
+    //   多笔成交不驱动 bankroll 抖动 (老韩/小梁); 下 tick 自然吸收本 tick 已实现/未实现变化。
+    tick_equity_ = account_equity();
+
     for (const auto& [cond_id, entry] : *tick_inputs_.catalog) {
         const std::string& yes_tok = entry.tokens.first;   // YES token
         const std::string& no_tok = entry.tokens.second;   // NO token
@@ -299,9 +304,11 @@ void PaperLoop::TickAll() {
     }
 
     // Phase 0 项5 (联合评审, 小梁): 每 tick 周期采一次组合权益 → Sharpe/maxDD/VaR。
-    //   equity = bankroll + 累计 realized PnL (未实现 MtM 后续接入)。北极星 KPI 采集, 离线/监控用。
-    //   R-20: ts 用 NowNs (本地决策时刻, 非上游数据 ts; 权益曲线是策略侧时序, 不涉数据源契约)。
-    portfolio_metrics_.RecordEquity(NowNs(), cfg_.bankroll_usdc + cum_realized_pnl_pusd_);
+    //   2026-06-01 凯利评审: equity 改用 account_equity().equity_bid (含未实现 MtM, best_bid 保守口径)。
+    //   原口径 bankroll+realized 不含未实现 → maxDD 严重低估 / Sharpe 虚高 (小肖/老李 R-4)。保守 best_bid
+    //   防低估回撤 (风险指标宜保守, 不用 microprice)。R-20: ts 用 NowNs (权益曲线是策略侧时序, 不涉数据源契约)。
+    //   用 tick 入口冻结快照 (与本轮 sizing bankroll 同源同版本)。
+    portfolio_metrics_.RecordEquity(NowNs(), tick_equity_.equity_bid);
 }
 
 // ---------------------------------------------------------------------------
@@ -803,7 +810,18 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     sz_in.edge_ci_lower = edge_ci_lower;
     // edge_bps: 被选边 fair vs 市场共识幅度 (de-vig 对称 → 两边同幅; nit#3 语义澄清)。
     sz_in.edge_bps = std::abs(p_fair_selected - p_devig_selected) * 10'000.0;
-    sz_in.bankroll_usdc = cfg_.bankroll_usdc;
+    // [2026-06-01 凯利评审 D1/D2, docs/MEETINGS/2026-06-01-kelly-equity-review.md] bankroll 动态化:
+    //   原硬用 cfg_.bankroll_usdc 静态初值 = 老韩裁定「风控纸面化」(回撤不缩盈利不涨, 复利输入断)。
+    //   老板拍板: 凯利分母 = 裸 equity 含浮盈 (几何增长最优), 浮盈用 best_bid 保守价估 (化解浮盈幻觉)。
+    //   → bankroll_for_kelly = tick_equity_.equity_bid (= realized_equity + best_bid 未实现, tick 冻结同版本)。
+    //   fail-closed (老韩硬约束): equity 非有限 → 回落 min(initial, realized), 绝不回落大值偷偷放大;
+    //   ≤0 → 喂 0 → sizing validate_input 走 NO_EDGE 全 0 (停手)。
+    double bankroll_for_kelly = tick_equity_.equity_bid;
+    if (!std::isfinite(bankroll_for_kelly)) {
+        bankroll_for_kelly = std::min(cfg_.bankroll_usdc, tick_equity_.realized_equity);
+    }
+    bankroll_for_kelly = std::max(0.0, bankroll_for_kelly);
+    sz_in.bankroll_usdc = bankroll_for_kelly;
     sz_in.fill_rate = 0.65;    // 保守固定 (M1)
     sz_in.slippage_bps = 8.0;  // 保守固定 (M1)
     sz_in.buy_yes = is_yes;
@@ -1315,6 +1333,41 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
 //   单位根治后, 老郭事前否决前置已清除。
 // consec_loss: 延 M2 (M1 只买不平 → 无平仓 trade = 无连亏源; feed-liveness NEVER FED 为预期正确态)。
 // ---------------------------------------------------------------------------
+// account_equity — 单一账户权益口径 (2026-06-01 凯利评审)。收敛原双轨 (FeedRiskGateway daily_pnl
+//   与 RecordEquity / sizing bankroll 此前各算一套)。双口径: best_bid 保守 (凯利/DD) + microprice 展示。
+//   stale book (data_source_ts 超 score_staleness_limit_ns) / 无效 bid → 该仓位 0 浮盈 (保守)。
+//   R-11: 只读 paper position_ledger_ + hub_ 实例, 不碰真账本。
+PaperLoop::AccountEquitySnapshot PaperLoop::account_equity() const noexcept {
+    AccountEquitySnapshot s;
+    s.bankroll_init = cfg_.bankroll_usdc;
+    s.realized_equity = cfg_.bankroll_usdc + cum_realized_pnl_pusd_ - cum_fee_pusd_;
+    double locked_cost = 0.0;  // MVP 近似 cash: 多头占用资金 = Σ(avg_entry × qty)
+    for (auto const& pv : position_ledger_.get_all_positions()) {
+        // unit-contract-ok: signed micro → whole share (qty)
+        const double qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        if (qty == 0.0) continue;
+        ++s.open_positions;
+        if (qty > 0.0) locked_cost += pv.avg_entry_price * qty;
+        const auto bk = hub_.Read(pv.token_id);
+        if (!bk.has_value()) continue;
+        if (bk->data_source_ts_ns > s.as_of_ts_ns) s.as_of_ts_ns = bk->data_source_ts_ns;
+        // [follow-up 小肖] staleness gate (stale book→0 浮盈) 改 DD 红线路径行为, 需老韩签字+改 A5 测试,
+        //   另案 (本 commit 保留 FeedRiskGateway 原口径: 任何 valid bid 计入, 不按 book 龄过滤)。
+        const double bid = bk->best_bid();
+        if (std::isfinite(bid) && bid > 0.0 && bid < 1.0) {
+            s.unrealized_bid += (bid - pv.avg_entry_price) * qty;  // 保守清算价 (砸 bid)
+        }
+        const double mark = bk->microprice;
+        if (std::isfinite(mark) && mark > 0.0 && mark < 1.0) {
+            s.unrealized_mark += (mark - pv.avg_entry_price) * qty;  // 展示 (中间价)
+        }
+    }
+    s.equity_bid = s.realized_equity + s.unrealized_bid;
+    s.equity_mark = s.realized_equity + s.unrealized_mark;
+    s.cash_available = cfg_.bankroll_usdc - locked_cost + cum_realized_pnl_pusd_ - cum_fee_pusd_;
+    return s;
+}
+
 void PaperLoop::FeedRiskGateway() noexcept {
     // A1 (老郭钳-6): 账本 micro 化后 get_*_exposure 已是 micro, 与 RM exposure 同单位 → 删原 ×1e6
     //   补偿乘 (P0-1 的"whole→micro"对冲乘已无意义)。直喂, 全量覆盖 (PL 真值, 自愈)。
@@ -1325,28 +1378,12 @@ void PaperLoop::FeedRiskGateway() noexcept {
         rm_.set_outcome_exposure(tid, micro);
     }
 
-    // A5 (老韩 spec §1-§5): daily_pnl → DD 熔断。M1 买入阶段语义 = 净未实现 MtM − 累计 fee。
-    //   全量覆盖 (set_daily_pnl 是 atomic store 非累加) → 天然无双计, 与 exposure 喂法同构, 自愈。
-    //   保守 (铁律#2): 多头清算 mark 用 best_bid (砸 bid 侧成交真值); 无效 bid 仓位按 0 浮盈
-    //   (不臆造正盈余掩盖亏损)。亏损时 pnl 为负 → RM `if(pnl<0)` 分支 (符号天然对齐, 无需取反)。
-    //   M2: 接平仓 (realized≠0) 后须改为 realized(日界累加) + unrealized(时点), 见 spec §3。
-    double pnl_pusd = 0.0;
-    for (auto const& pv : position_ledger_.get_all_positions()) {
-        // unit-contract-ok: signed micro → whole share (qty)
-        const double qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
-        const auto bk = hub_.Read(pv.token_id);
-        if (bk.has_value()) {
-            const double bid = bk->best_bid();
-            if (std::isfinite(bid) && bid > 0.0 && bid < 1.0) {
-                pnl_pusd += (bid - pv.avg_entry_price) * qty;  // 时点浮动 MtM (清算价 best_bid)
-            }
-            // 无效 bid: 跳过浮盈贡献 (保守, 不臆造正值; 该仓位仍承担下方 cum_fee)
-        }
-    }
-    // slice-3b: 接平仓后 daily_pnl = 开仓时点 MtM + 已实现 (含结算) − cum_fee (兑现 FeedRiskGateway
-    //   早留的 M2 口子)。realized 在结算/平仓时一次性累加进 cum_realized_pnl_pusd_, 此处并入。
-    pnl_pusd += cum_realized_pnl_pusd_;  // 已实现 PnL (结算 winner→1/loser→0 兑现的盈亏)
-    pnl_pusd -= cum_fee_pusd_;  // 减累计已付 fee (spec §1.3/§4)
+    // A5 (老韩 spec §1-§5): daily_pnl → DD 熔断。语义 = 净未实现 MtM(best_bid 保守) + 已实现 − 累计 fee。
+    //   2026-06-01 凯利评审: 收敛进单一 account_equity() (best_bid 保守口径同源, 含 staleness gate)。
+    //   daily_pnl = equity_bid − bankroll_init (= unrealized_bid + cum_realized − cum_fee)。
+    //   全量覆盖 (set_daily_pnl atomic store 非累加) → 天然无双计。亏损 pnl<0 → RM if(pnl<0) 分支符号天然对齐。
+    const AccountEquitySnapshot eq = account_equity();
+    const double pnl_pusd = eq.equity_bid - eq.bankroll_init;
     // unit-contract-ok: pUSD → micro (×1e6 唯一通道; signed PnL 不走 MicroPUSD 非负 cap helper)。
     //   防 P0-2/P1-9 同型单位 bug: 漏 ×1e6 → 喂入小 1e6 → 阈值不咬 (T-A5-1 单位门守护)。
     rm_.set_daily_pnl(static_cast<std::int64_t>(pnl_pusd * 1'000'000.0));
