@@ -146,6 +146,11 @@ struct PaperDaemonConfig {
     //   (Goalserve event 动态出现, 周期重匹配). 0 → 不起刷新线程 (退回纯 stub).
     int mapping_refresh_sec{5};
 
+    // R-6 (老周/老郭 评审 2026-06-01): 周期重发现间隔 (秒). 0 → 不周期重发现 (退回启动一次性).
+    //   live 比赛滚动 (比完一场/开始一场), 不周期重发现则跑几小时后订阅全是死盘。在映射刷新线程跑
+    //   (与 market_match_inputs_ 同线程, 无竞争); 全量重发现 + WSS 全量重订 (幂等, 老郭反增量 diff)。
+    int rediscover_interval_sec{300};  // 5 分钟
+
     // gamma 发现规模
     int max_events{30};
     int max_markets_flat{10};
@@ -243,6 +248,9 @@ private:
     // R-3: 从 token_map_/market_catalog_/market_cat_map_ 构建统一 PaperCatalog (静态元数据)。
     //   一次原子注入 paper_loop_->SetPaperCatalog; R-6 周期重发现复用 (重建后 swap)。
     [[nodiscard]] std::shared_ptr<const paper::PaperCatalog> BuildPaperCatalog() const;
+    // R-6: 周期重发现一次 — 全量重建 catalog (清+PopulateCatalog) → SetPaperCatalog + RSP 刷新 +
+    //   WSS 全量重订。在映射刷新线程跑 (match_inputs 同线程, 无竞争)。返回 true 若市场集变化。
+    bool RediscoverOnce();
 
     // REST 快照打底 (Start 起后台 jthread): POST /books 批量拉初始 book → SeedFromRestBooks。
     //   修"稳定盘/漏接 WSS 初始快照永远空"。后台跑 (不阻塞启动), st 关停时提前退出, 失败优雅降级。

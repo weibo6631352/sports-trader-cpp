@@ -223,6 +223,7 @@ public:
     // R-12: hub_.Read() 原子 acquire, 无持锁
     // R-20: as_of_ts_ns 来自 LedgerFeatures.as_of_ts_ns (上游链路)
     std::vector<HoldingView> positions() const override {
+        std::lock_guard<std::mutex> lk(meta_mu_);  // R-4: 守护 token_map_ 遍历 (重发现热刷)
         if (ledger_hub_ == nullptr) {
             return {};  // 无数据源 → 空
         }
@@ -309,6 +310,7 @@ public:
     //   无数据源 (指针 nullptr) → 该指标标注 0 (明确无数据, 非虚报)
     //   R-12: 全程原子读/值运算, 无持锁 > 100us
     MetricsSnapshot metrics() const override {
+        std::lock_guard<std::mutex> lk(meta_mu_);  // R-4: 守护 token_map_/catalog_ 遍历 (重发现热刷)
         MetricsSnapshot snap;
 
         // ---- 订阅计数 (已有逻辑) ----
@@ -422,6 +424,7 @@ public:
     //
     //   R-12: catalog_ 注入后只读 (unordered_map::find O(1) 无锁)
     MarketInfo market(const std::string& condition_id) const override {
+        std::lock_guard<std::mutex> lk(meta_mu_);  // R-4: 守护 catalog_ 查询 (重发现热刷)
         const auto it = catalog_.find(condition_id);
         if (it != catalog_.end()) {
             return it->second;  // found=true, 真实 gamma 发现数据
@@ -609,15 +612,29 @@ public:
     // 返回 live 模式从 gamma /events 发现的活跃体育 event 列表。
     // 由 main 在启动时调用 set_events() 注入; 之后只读。
     // R-12: 只读 value copy, 无锁 (events_ 在 set_events 注入后不再写入)。
-    std::vector<EventInfo> events() const override { return events_; }
+    std::vector<EventInfo> events() const override {
+        std::lock_guard<std::mutex> lk(meta_mu_);
+        return events_;
+    }
 
-    // set_events — 由 main --live 路径在启动时注入 (非热路径, 启动时调用一次)
-    void set_events(std::vector<EventInfo> ev) { events_ = std::move(ev); }
+    // set_events — 启动注入 + R-6 周期重发现热刷 (meta_mu_ 守护: HTTP 线程读 / 重发现线程写)。
+    void set_events(std::vector<EventInfo> ev) {
+        std::lock_guard<std::mutex> lk(meta_mu_);
+        events_ = std::move(ev);
+    }
+    // R-6: 周期重发现重订后刷新 token_map (staleness/positions 遍历用; meta_mu_ 守护)。
+    void set_token_map(MarketTokenMap tokens) {
+        std::lock_guard<std::mutex> lk(meta_mu_);
+        token_map_ = std::move(tokens);
+    }
 
     // ---- P1-1: set_market_catalog — gamma 发现结果注入 (非热路径, 启动时调用一次) ----
     // 注入后 market() 返回真实 found=true 数据，不再硬编码 false。
     // R-12: catalog_ 注入后不再写入, market() 只读 (const 方法, 无锁)。
-    void set_market_catalog(MarketInfoMap catalog) { catalog_ = std::move(catalog); }
+    void set_market_catalog(MarketInfoMap catalog) {
+        std::lock_guard<std::mutex> lk(meta_mu_);
+        catalog_ = std::move(catalog);
+    }
 
     // ---- P1-2/P1-3: set_live_metrics_hooks — 真实 metrics 数据源注入 ----
     // 注入后 metrics() 返回真实 uptime/rm_reject/fill/staleness/wss 值。
@@ -636,6 +653,9 @@ private:
     const ml::FeatureVectorHub* fv_hub_{nullptr};         // nullable; nullptr → feature_health 空
     mutable std::mutex mapping_mtx_;                       // 保护 mapping_snapshot_ (低频写/读)
     MappingStatusReport mapping_snapshot_;                // daemon push 的映射快照
+    // R-4 (老周 D-2): meta_mu_ 守护 token_map_/events_/catalog_ — R-6 周期重发现热刷, HTTP 线程读。
+    //   原启动注入后只读, 重发现一上线即运行期写 → 不锁会陈旧/race。低频, 短锁安全。
+    mutable std::mutex meta_mu_;
     // events_: live 模式从 gamma /events 发现的活跃体育 event 列表
     // 由 main set_events() 注入; 之后只读 (R-12 无锁 const 方法读安全)
     std::vector<EventInfo> events_;

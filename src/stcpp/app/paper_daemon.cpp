@@ -248,6 +248,68 @@ std::shared_ptr<const paper::PaperCatalog> PaperDaemon::BuildPaperCatalog() cons
 }
 
 // ---------------------------------------------------------------------------
+// RediscoverOnce (R-6) — 周期重发现: 全量重建 catalog + WSS 全量重订。
+//   在映射刷新线程跑 (market_match_inputs_ 同线程, 无竞争)。live 比赛滚动, 不周期重发现则跑几小时
+//   后订阅全是死盘。老郭: 全量重订别增量 diff (幂等好测)。集合未变则跳过 (省 republish)。
+// ---------------------------------------------------------------------------
+bool PaperDaemon::RediscoverOnce() {
+    auto events = DiscoverSportsEvents(cfg_.max_events);
+    if (events.empty()) {
+        return false;  // 无 live/近赛 → 不动 (保留现集, 让旧盘经 resolution 自然结算; 不抖动到空)
+    }
+    // 新 condition 集 vs 现集: 相同则跳过 (无变化不 republish)。
+    std::unordered_set<std::string> new_conds;
+    for (const auto& ev : events) {
+        for (const auto& dm : ev.markets) new_conds.insert(dm.condition_id);
+    }
+    bool changed = (new_conds.size() != token_map_.size());
+    if (!changed) {
+        for (const auto& [cid, _t] : token_map_) {
+            if (new_conds.find(cid) == new_conds.end()) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (!changed) {
+        return false;  // 市场集未变, 不动
+    }
+    // 全量重建 (老郭): 清 6 表 → PopulateCatalog 重填 (含队名提取/cat/fee/parent/all_token_ids_)。
+    token_map_.clear();
+    market_catalog_.clear();
+    market_cat_map_.clear();
+    market_match_inputs_.clear();
+    event_infos_.clear();
+    all_token_ids_.clear();
+    PopulateCatalog(events);
+    // 发布: PaperLoop catalog (RCU 原子 swap) + RSP (meta_mu_ 守护) + WSS 全量重订。
+    if (paper_loop_) {
+        paper_loop_->SetPaperCatalog(BuildPaperCatalog());
+    }
+    if (real_provider_) {
+        real_provider_->set_token_map(token_map_);
+        real_provider_->set_events(event_infos_);
+        real_provider_->set_market_catalog(market_catalog_);
+    }
+    if (live_transport_ && !all_token_ids_.empty()) {
+        std::string sub = R"({"type":"Market","assets_ids":[)";
+        bool first = true;
+        for (const auto& tid : all_token_ids_) {
+            if (!first) sub.push_back(',');
+            sub.push_back('"');
+            sub.append(tid);
+            sub.push_back('"');
+            first = false;
+        }
+        sub.append("]}");
+        live_transport_->AsyncSendText(sub);  // CLOB 接受追加订阅; hub 无 allowlist, 新 token 帧自动流入
+    }
+    std::fprintf(stderr, "[paper_daemon] 周期重发现: 市场集变化 → %zu market 重订 (WSS 全量重订)\n",
+                 token_map_.size());
+    return true;
+}
+
+// ---------------------------------------------------------------------------
 // SeedInitialBooksFromRest — 订阅时拉一次初始 book 快照 (REST), seed 进 hub.
 //   修 WSS-only 的缺陷: 稳定盘/漏接初始快照 → hub 永远空。POST /books 批量拉,
 //   交给 live_publisher_->SeedFromRestBooks (与 WSS book 同解析路径)。
@@ -829,7 +891,15 @@ int PaperDaemon::Run() {
 // ---------------------------------------------------------------------------
 void PaperDaemon::RefreshEventMapping(std::stop_token st) {
     using namespace std::chrono;
+    // R-6: 周期重发现计时 (本线程跑 → match_inputs 同线程无竞争)。初始化为 now, 首次重发现在一个间隔后。
+    auto last_rediscover = steady_clock::now();
     while (!st.stop_requested()) {
+        // 0. R-6 周期重发现 (间隔到 → 全量重建 catalog + WSS 重订; 在 match 之前, match_inputs 已是新版)。
+        if (cfg_.rediscover_interval_sec > 0 &&
+            steady_clock::now() - last_rediscover >= seconds(cfg_.rediscover_interval_sec)) {
+            RediscoverOnce();
+            last_rediscover = steady_clock::now();
+        }
         // 1. 取 Goalserve 比分快照 → 候选 EventScore 列表
         std::vector<debug_api::EventScore> candidates;
         if (score_store_ != nullptr) {
