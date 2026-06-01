@@ -96,3 +96,20 @@ TEST(SettlementPoller, ST04_EmptyFetchSkip) {
     EXPECT_EQ(store.Size(), 0u) << "空 fetch → 不写记录";
     EXPECT_EQ(poller.poll_count(), 1u);
 }
+
+// ST-05: SetConditionIds 退订盘 → 从 acc_/published map prune (防无界增长, 2026-06-01 老板「越来越多」)
+TEST(SettlementPoller, ST05_PruneOnConditionUpdate) {
+    SettlementStore store;
+    auto fetcher = [](const std::string& cid) -> std::string {
+        return (cid == "0xsettled") ? kSettledJson : kActiveJson;
+    };
+    SettlementPoller poller(store, {"0xactive", "0xsettled"}, fetcher);
+    poller.PollAllOnce();
+    EXPECT_EQ(store.Size(), 2u);  // 两个都在累积/发布
+    // 动态更新 condition 集: 只留 0xactive (0xsettled 退订, 模拟比赛结束掉出 discovery)
+    poller.SetConditionIds({"0xactive"});
+    poller.PollAllOnce();
+    EXPECT_EQ(store.Size(), 1u) << "退订的 0xsettled 应从 acc_/published map prune (防无界增长)";
+    EXPECT_TRUE(store.Get("0xactive").has_value());
+    EXPECT_FALSE(store.Get("0xsettled").has_value()) << "退订盘已 prune, 不再发布";
+}

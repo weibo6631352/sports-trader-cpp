@@ -13,9 +13,11 @@
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <iterator>
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -53,10 +55,19 @@ public:
     void PollAllOnce() noexcept {
         // 起点 swap 待更新的 cid 集 (poller 线程独占 cids_, 无并发读)。
         if (has_pending_cids_.load(std::memory_order_acquire)) {
-            std::lock_guard<std::mutex> lk(cids_mu_);
-            cids_ = std::move(cids_pending_);
-            cids_pending_.clear();
-            has_pending_cids_.store(false, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lk(cids_mu_);
+                cids_ = std::move(cids_pending_);
+                cids_pending_.clear();
+                has_pending_cids_.store(false, std::memory_order_release);
+            }
+            // prune acc_: 退订的盘(不在新 cids_)从累积移除, 防 acc_/published SettlementMap 无界增长
+            //   (2026-06-01 老板: SettlementPoller acc_ 只增不减 → 越来越多)。掉出 cids_ 的盘是 discovery
+            //   剔除的已结束盘(endDate 过 / 开赛>6h), 早 resolved + 持仓已结算; 漏结算有 Goalserve-Ended 兜底。
+            const std::unordered_set<std::string> live(cids_.begin(), cids_.end());
+            for (auto it = acc_.begin(); it != acc_.end();) {
+                it = (live.find(it->first) == live.end()) ? acc_.erase(it) : std::next(it);
+            }
         }
         for (const auto& cid : cids_) {
             auto ait = acc_.find(cid);
