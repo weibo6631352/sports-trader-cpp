@@ -77,6 +77,15 @@ void register_quote(httplib::Server& svr, const HttpServer& hs) {
             body += json::i64(q.model_as_of_ts_ns);
             body += ",\"advisory\":";
             body += json::boolean(q.advisory);
+            // ---- 调试可观测: fair 来源分解 (G-FREEZE-W append-only) ----
+            body += ",\"sharp_fair\":";
+            body += json::num(q.sharp_fair);
+            body += ",\"devig_ok\":";
+            body += json::boolean(q.devig_ok);
+            body += ",\"g_time_x_lead\":";
+            body += json::num(q.g_time_x_lead);
+            body += ",\"joint_as_of_ts\":";
+            body += json::i64(q.joint_as_of_ts_ns);
         }
 
         body += '}';

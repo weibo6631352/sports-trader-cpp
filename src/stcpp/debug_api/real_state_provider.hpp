@@ -703,6 +703,11 @@ private:
         q.predict_ok = qf.predict_ok;
         q.model_as_of_ts_ns = qf.model_as_of_ts_ns;
         q.advisory = qf.advisory;
+        // 调试可观测: fair 来源分解 (sharp 共识 / de-vig / 领先 / 新鲜度)。
+        q.sharp_fair = qf.g_bm_inplay_fair;
+        q.devig_ok = qf.devig_ok;
+        q.g_time_x_lead = qf.g_time_x_lead;
+        q.joint_as_of_ts_ns = qf.joint_as_of_ts_ns;
         return q;
     }
 };

@@ -254,6 +254,16 @@ export interface Quote {
   model_conf: number;
   quote_as_of_ts: number;
 
+  // --- 调试可观测: fair 来源分解 (老雷 2026-06-01) ---
+  /** sharp bet365 in-play de-vig 共识胜率 (盈利修复后 = fair 锚源); -1 = 无 odds/未映射 Goalserve */
+  sharp_fair?: number;
+  /** de-vig 是否成功 (区分 de-vig 失败 vs edge 不足) */
+  devig_ok?: boolean;
+  /** 时间感知领先 = score_diff×(1−time_frac); 映射上+in-play 才非 0 */
+  g_time_x_lead?: number;
+  /** 联合新鲜度 epoch_ns = min(score,book).as_of; 映射连通时 >0 */
+  joint_as_of_ts?: number;
+
   // --- AI provenance 字段 (小邓 XD 红线) ---
   /** 模型 ID, e.g. "demo-fv-v0" */
   model_id: string;

@@ -378,6 +378,13 @@ function ScoreQuoteCard(props: { condId: string }) {
                       <StatCard label="市场中间价" value={qt().market_mid?.toFixed(4) ?? '—'} />
                     </Grid>
                     <Grid item xs={6} sm={4}>
+                      {/* sharp bet365 in-play 共识 (盈利修复后 = fair 锚源); -1 = 无 odds/未映射 */}
+                      <StatCard label="Sharp 共识"
+                        value={Number(qt().sharp_fair) >= 0 ? Number(qt().sharp_fair).toFixed(4) : '— 未映射'}
+                        color={Number(qt().sharp_fair) >= 0 ? 'green' : 'default'}
+                      />
+                    </Grid>
+                    <Grid item xs={6} sm={4}>
                       <StatCard label="Edge"
                         value={fmtBps(qt().edge_bps)}
                         color={Number(qt().edge_bps) > 0 ? 'green' : 'red'}
