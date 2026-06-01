@@ -79,6 +79,8 @@ add_library(stcpp_debug_api STATIC
     endpoint_book_pair.cpp
     # 小冯 schema append: EventInfo 列表 (G-FREEZE-W 只增, 2026-05-29)
     endpoint_events.cpp
+    # 老雷 2026-06-01 可观测: 特征健康
+    endpoint_features.cpp
 )
 
 target_include_directories(stcpp_debug_api

@@ -570,6 +570,8 @@ BuildResult PaperDaemon::Build() {
         //   paper_loop loop_thread_ Publish → 独立 recorder 线程落盘 (IO 离决策线程)。
         fv_hub_ = std::make_unique<ml::FeatureVectorHub>();
         paper_loop_->SetFeatureVectorHub(fv_hub_.get());
+        // 可观测: debug_api /api/v1/features/health 从同一 fv_hub 聚合特征健康 (只读)。
+        if (real_provider_) real_provider_->set_feature_vector_hub(fv_hub_.get());
         ml::FeatureVectorRecorder::Config fv_cfg;
         fv_cfg.output_path = cfg_.ml_path + ".fv.jsonl";  // 与 quotes.jsonl 并列
         fv_cfg.poll_interval_sec = 5;

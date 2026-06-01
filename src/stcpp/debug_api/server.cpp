@@ -38,6 +38,7 @@ void register_quote(httplib::Server& svr, const HttpServer& hs);
 void register_book_pair(httplib::Server& svr, const HttpServer& hs);
 // 小冯 schema append: EventInfo 列表 (G-FREEZE-W 只增, 2026-05-29)
 void register_events(httplib::Server& svr, const HttpServer& hs);
+void register_features(httplib::Server& svr, const HttpServer& hs);
 }  // namespace stcpp::debug_api
 
 namespace stcpp::debug_api {
@@ -145,6 +146,8 @@ void HttpServer::register_handlers() {
     register_book_pair(server_, *this);
     // 小冯 schema append: EventInfo 列表 (G-FREEZE-W 只增, 2026-05-29)
     register_events(server_, *this);
+    // 老雷 2026-06-01 可观测: 110 特征健康 (/api/v1/features/health)
+    register_features(server_, *this);
 }
 
 }  // namespace stcpp::debug_api

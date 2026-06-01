@@ -425,9 +425,31 @@ struct BinaryMarketBookView {
 // ============================================================
 // 实现侧约束 (R-12): 所有方法在 debug_api 线程调用, 只读 atomic / double-buffer
 // front snapshot, 绝不调用 RM::evaluate / signer / emit, 绝不持热路径锁 > 100us。
+// 单特征健康 (老雷 2026-06-01 可观测): 当前 fv_hub 全市场快照逐列聚合。
+struct FeatureHealthRow {
+    int index{0};            // 0..109
+    std::string name;        // MlFeature 名 (g_score_diff / b_mid / ...)
+    int populated{0};        // 非 null 样本数
+    int nonzero{0};          // 非零样本数
+    double min{0.0};
+    double max{0.0};
+    double mean{0.0};
+    std::string status;      // "healthy" / "dead"(全0/null) / "const"(无方差)
+};
+struct FeatureHealthReport {
+    int n_records{0};        // 参与聚合的市场快照数
+    int dead{0};
+    int constant{0};
+    int healthy{0};
+    std::vector<FeatureHealthRow> rows;
+};
+
 class StateProvider {
 public:
     virtual ~StateProvider() = default;
+
+    // 特征健康 (老雷 2026-06-01 可观测; 默认空 → stub/未接 fv_hub 返回空报告)。
+    virtual FeatureHealthReport feature_health() const { return {}; }
 
     // R-11: 全局运行模式 (build-time 锁定, 运行时不可切)
     virtual ExecMode mode() const = 0;

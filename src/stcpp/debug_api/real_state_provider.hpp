@@ -63,6 +63,8 @@
 #include <vector>
 
 #include "stcpp/data/score_snapshot_store.hpp"
+#include "stcpp/ml/feature_vector_hub.hpp"   // FeatureVectorHub (特征健康可观测)
+#include "stcpp/ml/model_feature_spec.hpp"   // MlFeature to_string / kMlFeatureCount
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/polymarket/wss/pm_wss_subscriber.hpp"  // IWssTransport (P1-2/P1-3)
 #include "stcpp/risk/ledger_snapshot_hub.hpp"          // LedgerSnapshotHub
@@ -156,6 +158,50 @@ public:
     RealStateProvider(RealStateProvider&&) = delete;
     RealStateProvider& operator=(RealStateProvider&&) = delete;
     ~RealStateProvider() override = default;
+
+    // 特征健康可观测 (老雷 2026-06-01): 注入 fv_hub (PaperLoop Publish 全特征向量)。
+    void set_feature_vector_hub(const ml::FeatureVectorHub* h) noexcept { fv_hub_ = h; }
+
+    // feature_health — fv_hub 全市场快照逐列聚合 (填充率/非零/range/方差判活)。
+    //   "特征没问题训练才有意义" (老板) 的可观测落地: 一眼看 110 列哪些死了。
+    [[nodiscard]] FeatureHealthReport feature_health() const override {
+        FeatureHealthReport rep;
+        if (fv_hub_ == nullptr) return rep;
+        const auto records = fv_hub_->SnapshotAll();
+        const int N = static_cast<int>(ml::kMlFeatureCount);
+        std::vector<int> pop(N, 0), nz(N, 0);
+        std::vector<double> mn(N, 0), mx(N, 0), sum(N, 0);
+        std::vector<bool> seen(N, false);
+        for (const auto& r : records) {
+            if (!r.valid) continue;
+            ++rep.n_records;
+            for (int i = 0; i < N; ++i) {
+                const double v = static_cast<double>(r.values[i]);
+                if (std::isnan(v)) continue;  // NaN = 缺失 (extract_full 产), 不计入填充
+                ++pop[i];
+                if (v != 0.0) ++nz[i];
+                sum[i] += v;
+                if (!seen[i]) { mn[i] = mx[i] = v; seen[i] = true; }
+                else { mn[i] = std::min(mn[i], v); mx[i] = std::max(mx[i], v); }
+            }
+        }
+        rep.rows.reserve(static_cast<std::size_t>(N));
+        for (int i = 0; i < N; ++i) {
+            FeatureHealthRow row;
+            row.index = i;
+            row.name = std::string(ml::to_string(static_cast<ml::MlFeature>(i)));
+            row.populated = pop[i];
+            row.nonzero = nz[i];
+            row.min = seen[i] ? mn[i] : 0.0;
+            row.max = seen[i] ? mx[i] : 0.0;
+            row.mean = pop[i] > 0 ? sum[i] / pop[i] : 0.0;
+            if (pop[i] == 0 || nz[i] == 0) { row.status = "dead"; ++rep.dead; }
+            else if (mn[i] == mx[i]) { row.status = "const"; ++rep.constant; }
+            else { row.status = "healthy"; ++rep.healthy; }
+            rep.rows.push_back(std::move(row));
+        }
+        return rep;
+    }
 
     // ---- 运行模式 ----
     ExecMode mode() const override { return mode_; }
@@ -575,6 +621,7 @@ private:
     ExecMode mode_;
     const risk::LedgerSnapshotHub* ledger_hub_{nullptr};  // nullable; nullptr → 空
     const sizing::QuoteSnapshotHub* quote_hub_{nullptr};  // nullable; nullptr → found=false
+    const ml::FeatureVectorHub* fv_hub_{nullptr};         // nullable; nullptr → feature_health 空
     // events_: live 模式从 gamma /events 发现的活跃体育 event 列表
     // 由 main set_events() 注入; 之后只读 (R-12 无锁 const 方法读安全)
     std::vector<EventInfo> events_;
@@ -704,7 +751,9 @@ private:
         q.model_as_of_ts_ns = qf.model_as_of_ts_ns;
         q.advisory = qf.advisory;
         // 调试可观测: fair 来源分解 (sharp 共识 / de-vig / 领先 / 新鲜度)。
-        q.sharp_fair = qf.g_bm_inplay_fair;
+        //   语义明确 (探针反馈): sharp ∈ (0,1) = 已映射 Goalserve + 有 bet365 odds;
+        //   -1 = 未映射 / 无 odds (g_bm_inplay_fair 默认 0 不可与真 0 混淆)。
+        q.sharp_fair = (qf.g_bm_inplay_fair > 0.0 && qf.g_bm_inplay_fair < 1.0) ? qf.g_bm_inplay_fair : -1.0;
         q.devig_ok = qf.devig_ok;
         q.g_time_x_lead = qf.g_time_x_lead;
         q.joint_as_of_ts_ns = qf.joint_as_of_ts_ns;
