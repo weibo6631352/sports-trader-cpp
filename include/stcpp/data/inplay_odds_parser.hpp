@@ -163,6 +163,87 @@ namespace inplay_odds_detail {
     return out;
 }
 
+namespace inplay_odds_detail {
+// 大小写不敏感: hay 是否含 needle。
+[[nodiscard]] inline bool IContains(std::string_view hay, std::string_view needle) noexcept {
+    if (needle.empty() || needle.size() > hay.size()) return false;
+    for (std::size_t i = 0; i + needle.size() <= hay.size(); ++i) {
+        bool ok = true;
+        for (std::size_t j = 0; j < needle.size(); ++j) {
+            if (std::tolower(static_cast<unsigned char>(hay[i + j])) !=
+                std::tolower(static_cast<unsigned char>(needle[j]))) {
+                ok = false;
+                break;
+            }
+        }
+        if (ok) return true;
+    }
+    return false;
+}
+// 大小写不敏感全等。
+[[nodiscard]] inline bool IEquals(std::string_view a, std::string_view b) noexcept {
+    if (a.size() != b.size()) return false;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (std::tolower(static_cast<unsigned char>(a[i])) != std::tolower(static_cast<unsigned char>(b[i])))
+            return false;
+    return true;
+}
+}  // namespace inplay_odds_detail
+
+// SelectMatchWinnerMarketId — 在 odds JSON 顶层 markets 里按 name 选"赛果胜负盘"的 market_id。
+//   (小田 体育市场专家 2026-06-01: 各运动赛果盘 market_id 不稳定/跨字典漂移, 按 name 选更鲁棒。)
+//   规则: 遍历每个 market → 取其 market 级 "name" → 先排 forbidden substr (set/game/handicap/half...)
+//   → 再 IEquals 命中 allow_names 即返其 key。fail-closed: 全 miss 返 ""。
+[[nodiscard]] inline std::string SelectMatchWinnerMarketId(
+    std::string_view odds_json, const std::vector<std::string_view>& allow_names,
+    const std::vector<std::string_view>& forbidden_substrs) noexcept {
+    using namespace inplay_odds_detail;
+    const std::size_t root = odds_json.find('{');
+    if (root == std::string_view::npos) return {};
+    std::size_t i = root + 1;
+    while (i < odds_json.size()) {
+        // 跳到下一 market key 的引号 (depth-1); 遇 odds 根 '}' 收尾。
+        while (i < odds_json.size() && odds_json[i] != '"' && odds_json[i] != '}') ++i;
+        if (i >= odds_json.size() || odds_json[i] == '}') break;
+        const std::size_t kstart = i + 1;
+        const std::size_t kend = odds_json.find('"', kstart);
+        if (kend == std::string_view::npos) break;
+        const std::string_view key = odds_json.substr(kstart, kend - kstart);
+        const std::size_t objstart = odds_json.find('{', kend);
+        if (objstart == std::string_view::npos) break;
+        std::size_t j = objstart + 1;
+        int d = 1;
+        while (j < odds_json.size() && d > 0) {
+            if (odds_json[j] == '{') ++d;
+            else if (odds_json[j] == '}') --d;
+            ++j;
+        }
+        const std::string_view market_obj = odds_json.substr(objstart, j - objstart);
+        const std::string_view mname = inplay_odds_detail::ExtractName(market_obj);  // 第一个 name = market 级
+        if (!mname.empty()) {
+            bool forbidden = false;
+            for (const auto& f : forbidden_substrs)
+                if (IContains(mname, f)) { forbidden = true; break; }
+            if (!forbidden) {
+                for (const auto& a : allow_names)
+                    if (IEquals(mname, a)) return std::string(key);
+            }
+        }
+        i = j;  // 下一 market
+    }
+    return {};
+}
+
+// ParseInplayOddsDevigByName — 按 name allowlist 选赛果盘 → 复用 ParseInplayOddsDevig de-vig。
+//   各运动通用 (soccer 3-way / tennis·basket 2-way), 替代硬编码 market_id。fail-closed: 选不到 → invalid。
+[[nodiscard]] inline InplayOddsDevig ParseInplayOddsDevigByName(
+    std::string_view odds_json, const std::vector<std::string_view>& allow_names,
+    const std::vector<std::string_view>& forbidden_substrs) noexcept {
+    const std::string mid = SelectMatchWinnerMarketId(odds_json, allow_names, forbidden_substrs);
+    if (mid.empty()) return {};
+    return ParseInplayOddsDevig(odds_json, mid);
+}
+
 // InplayYesCanonical — Goalserve home/away 视角 → Polymarket YES/对手 视角的翻转结果。
 struct InplayYesCanonical {
     double yes_fair{-1.0};  // YES 边 (被交易盘口的 "YES" 结果) de-vig 胜率

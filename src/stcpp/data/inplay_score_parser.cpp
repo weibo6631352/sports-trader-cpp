@@ -53,6 +53,44 @@ namespace stcpp::data::inplay {
 namespace {
 
 // ============================================================================
+// 各运动赛果盘 (match-winner) name allowlist + forbidden substr — sharp fair 选盘表。
+//   小田 (体育市场专家) 2026-06-01: 各运动 odds market_id 不稳定 (soccer 字典 id=1 实为 "Home Team
+//   Goals" 非赛果, 旧硬编码 "1" 疑似一直错), 改按 market name 选盘 + forbidden 黑名单排非赛果盘。
+//   forbidden 先排 (set/game/map/half/handicap/total...), 再 IEquals 命中 allow → 选中。
+//   esports 暂不支持 (无 odds dict / map-vs-series, 小田 §4); fail-closed: 选不到 → fair=-1 不喂错值。
+// ============================================================================
+struct MatchWinnerSpec {
+    std::vector<std::string_view> allow;
+    std::vector<std::string_view> forbidden;
+    bool supported = false;
+};
+
+[[nodiscard]] inline MatchWinnerSpec MatchWinnerSpecFor(goalserve::GoalserveSport sport) {
+    using S = goalserve::GoalserveSport;
+    // 通用陷阱黑名单 (命中 substr 即非赛果盘)。小田 §3 实拉 tennis 字典逐条挑出。
+    static const std::vector<std::string_view> kForbid = {
+        "Half",  "Quarter", "Period",        "Inning",    "Set ",   "Game",    "Map ",
+        "Handicap", "Asian", "Spread",       "Over",      "Under",  "Total",   "Odd",
+        "Even",  "Corner",  "Card",          "Booking",   "Both Teams", "Race", "Margin",
+        "Tie",   "Break",   "Deuce",         "Ace",       "Fault",  "Point",   "Minute",
+        "How many", "first to", "Will ",     "Next ",     "Correct Score", "Goals", "Serve",
+        "Double", "Highest", "1st ",         "2nd ",      "3rd ",   "Frame",   "Leg",
+    };
+    switch (sport) {
+        case S::Soccer:  // 3-way (Home/Draw/Away)
+            return {{"1x2 (Full Time)", "Fulltime Result", "Full Time Result", "1x2", "Match Result"},
+                    kForbid, true};
+        case S::Tennis:  // 2-way (Home/Away)
+            return {{"To Win", "Match Result", "Money Line", "Moneyline", "Winner"}, kForbid, true};
+        case S::Basketball:  // 2-way (NBA/WNBA 无平局)
+            return {{"Home/Away", "Money Line", "Moneyline", "Match Result", "To Win", "12"}, kForbid,
+                    true};
+        default:  // Esports 等: 暂不支持 (小田 §4)
+            return {{}, {}, false};
+    }
+}
+
+// ============================================================================
 // §-1 安全常量 + 安全工具 (小白审计 §1.3-B/C, 2026-05-30)
 //
 // kMaxJsonDepth: 花括号深度上限 (ExtractEventsBlock / ParseEventInfo / EnumerateEvents)
@@ -575,13 +613,13 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
             // 仍加入 scores, 但调用方应 alert
         }
 
-        // inplay bet365 odds → 单源 de-vig 三边 fair (soccer 1X2 全场 market_id="1")。
-        //   双边/三边完整透传 (home/away/draw), 不丢信息 — orientation 在 paper_loop 按
-        //   yes_is_home 翻成 YES-canonical (Goalserve home 视角 ≠ Polymarket YES 视角, 不可混淆)。
-        //   从同一 event_block 切 odds 节点 (与 info 共享 updated_ts, 不引入新 ts, R-20 守法)。
-        //   无 odds plan / market 缺 → -1.0 (sentinel, 与 game_row 默认对齐)。
+        // inplay bet365 odds → 单源 de-vig 赛果 fair。**按 sport 选赛果盘 (name allowlist)**,
+        //   不再硬编码 soccer market_id="1" (小田: 现网字典 id=1="Home Team Goals" 非赛果, 旧路径
+        //   疑似一直错; 且只 soccer 有 → 网球/篮球 sharp fair 全 dead → 非足球零成交根因 2026-06-01)。
+        //   双边/三边完整透传 (home/away/draw); orientation 在 paper_loop 按 yes_is_home 翻 YES-canonical。
+        //   从同一 event_block 切 odds 节点 (共享 updated_ts, R-20 守法)。无 odds / 选不到盘 → -1.0 sentinel。
         double home_fair = -1.0, away_fair = -1.0, draw_fair = -1.0;
-        if (sport == goalserve::GoalserveSport::Soccer) {
+        if (const MatchWinnerSpec spec = MatchWinnerSpecFor(sport); spec.supported) {
             const auto odds_key = event_block.find("\"odds\":");
             if (odds_key != std::string_view::npos) {
                 const auto ob = event_block.find('{', odds_key);
@@ -602,12 +640,12 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
                         }
                     }
                     if (d == 0) {
-                        const auto devig = ParseInplayOddsDevig(
-                            event_block.substr(ob, oe - ob + 1), kSoccerMarketId1x2Fulltime);
+                        const auto devig = ParseInplayOddsDevigByName(
+                            event_block.substr(ob, oe - ob + 1), spec.allow, spec.forbidden);
                         if (devig.valid) {
                             home_fair = devig.home_fair;
                             away_fair = devig.away_fair;
-                            draw_fair = devig.draw_fair;  // 无平局市场 = 0 (binary)
+                            draw_fair = devig.draw_fair;  // 2-way 无平局 = 0
                         }
                     }
                 }
