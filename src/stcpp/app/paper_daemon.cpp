@@ -512,6 +512,7 @@ BuildResult PaperDaemon::Build() {
         data::goalserve::GoalserveSport::Soccer,
         data::goalserve::GoalserveSport::Basketball,
         data::goalserve::GoalserveSport::Tennis,
+        data::goalserve::GoalserveSport::Esports,  // 2026-06-01: PM dota2/lol/CS 盘对接 (inplay-esports.gz)
     };
     inplay_feed_ = std::make_unique<data::InplayFeedThread>(*score_store_, feed_cfg);
 
@@ -693,7 +694,7 @@ void PaperDaemon::Start() {
     // ---- Step 3 start: InplayFeedThread (Goalserve score feed, 常开) ----
     if (cfg_.start_live_feeds && inplay_feed_) {
         inplay_feed_->Start();
-        std::printf("[paper_daemon] Goalserve InplayFeedThread 启动 (soccer/basketball/tennis, R-12)\n");
+        std::printf("[paper_daemon] Goalserve InplayFeedThread 启动 (soccer/basketball/tennis/esports, R-12)\n");
         std::fflush(stdout);
     }
 
