@@ -340,6 +340,10 @@ public:
 
     [[nodiscard]] const PaperLoopStats& stats() const noexcept { return stats_; }
 
+    // bench/test seam (老姜性能评审): 同步跑一次 TickAll, 精确测单 tick 延迟 (不经 RunLoop 的 sleep)。
+    //   不起 loop_thread_; 调用方负责先注入 catalog + hub book。仅用于 benchmark/单测, 生产走 Start()。
+    void TickAllForBench() { TickAll(); }
+
     // slice-3b: 累计已实现 PnL (whole pUSD; 含结算)。观测/dashboard/测试 (loop_thread_ 写, 读时近似)。
     [[nodiscard]] double cum_realized_pnl_pusd() const noexcept { return cum_realized_pnl_pusd_; }
 

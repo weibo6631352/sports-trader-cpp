@@ -108,6 +108,21 @@ target_link_libraries(bench_e2e_latency      PRIVATE
     stcpp_execution_paper
     stcpp_infra_wal)
 
+# ----- 老姜性能评审 P1: TickAll 决策热路径延迟 vs 市场数曲线 (分片决策前置数据) -----
+stcpp_add_perf_bench(bench_tick_one          bench_tick_one.cpp)
+target_link_libraries(bench_tick_one         PRIVATE
+    stcpp_paper_loop
+    stcpp_ml_inference
+    stcpp_orderbook_snapshot_hub
+    stcpp_risk
+    stcpp_ledger_snapshot_hub
+    stcpp_quote_snapshot_hub
+    stcpp_pricing
+    stcpp_sizing
+    stcpp_signer_paper
+    stcpp_execution_paper
+    stcpp_infra_wal)
+
 # ----- W6 Wave 28: SPSC queue latency bench (小石 W6 SPSC framework 联调) -----
 # 5 capacity: 64/256/1024/4096/16384; upper guard p99 < 100 ns
 # 注: 小石 W6 SPSC 就位后替换 MockSPSC → stcpp::infra::spsc::SPSCQueue<T,N>
