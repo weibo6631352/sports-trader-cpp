@@ -72,7 +72,7 @@ class IDecisionInputProvider {
 
 | 阶段 | 内容 | 归口 | 工作量 |
 |---|---|---|---|
-| **P0 原始帧捕获** | `RawInputRecorder` (复用 FeatureVectorRecorder jthread+jsonl 模式): live 跑时落盘每 tick 的 book(双边4ts) + score(含 inplay odds) + resolution + catalog line, 按 as_of_ts 对齐。**先有可回放数据**(现 quotes.jsonl 是特征非原始帧)。 | GM + 小余(ETL) | 2-3d |
+| 🟡 **P0 原始帧捕获** | **比分帧已落地 (commit b88c63f)**: `ScoreFrameRecorder` 落 `<ml_path>.scores.jsonl` (EventScore 全字段+4ts+inplay sharp), 装配 daemon, 2 单测。**resolution 由现有 `settlement_recorder` 覆盖, book 由 `ReplayDriver`** → 三大动态输入捕获齐。**剩**: ①server 上跑真 live 赛累积帧 ②catalog/live_stats 帧 (P3 再补)。 | GM + 小余(ETL) | 比分✅ / 余下随 P3 |
 | ✅ **P1 DecisionInputSnapshot 边界** | **已落地 (commit bf49ec1, 2026-06-01)**: 5 个非 book 输入合 `DecisionInputSnapshot tick_inputs_` + `SetReplayInputs()` 注入 seam; 1339/1339 ctest 绿, 行为逐位不变。 | GM (主干) | ✅ done |
 | **P2 比分+resolution 回放** | ReplayImpl 喂 #2 比分 + #5 resolution (解锁 in-play 分支 + 结算)。验收 1+2。 | 小蒋 | 2-3d |
 | **P3 catalog + sharp + live_stats 回放** | 喂 #6 catalog(line) + #3 sharp(附#2) + #4 live_stats。验收 3+4。 | 小蒋 | 2-3d |
@@ -99,5 +99,6 @@ class IDecisionInputProvider {
 
 ## 7. 进度
 
-- ✅ **P1 DecisionInputSnapshot 边界** — 已落地 (commit bf49ec1)。注入 seam `SetReplayInputs` 就位, 回测可单点喂帧。
-- ⏭ **下一步**: **P0 RawInputRecorder** (GM+小余, live 比赛时累积原始帧) → **P2 比分+resolution 回放** (小蒋, 喂帧解锁回测"会下单/会结算")。P0 与 P2 谁先取决于是否已有可回放历史帧; 当前 quotes.jsonl 是特征非原始帧, 故 **P0 捕获是 P2 的数据前提**, 应先起。
+- ✅ **P1 DecisionInputSnapshot 边界** (commit bf49ec1) — 注入 seam `SetReplayInputs` 就位。
+- 🟡 **P0 比分帧捕获** (commit b88c63f) — `ScoreFrameRecorder` 落 `scores.jsonl`; resolution(settlement_recorder)+book(ReplayDriver) 本就有 → **三大动态输入捕获齐**。剩 server 上跑真 live 累积帧。
+- ⏭ **下一步 P2** (小蒋): `ReplayDecisionInputProvider` — 读 `scores.jsonl`(→ScoreMap) + `settlements.jsonl`(→ResolutionMap), 按 frame_ts_ns 时间轴推进, 每 tick `SetReplayInputs`; book 经 ReplayDriver 同轴回放。验收: 回测 `fills>0` + `settled>0` + FairSrc 分布≈实盘。**数据契约已就位, P2 可直接起。**
