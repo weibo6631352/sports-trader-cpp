@@ -133,6 +133,25 @@ set(EXTRA_LIBS_test_paper_loop
     stcpp_infra_wal
 )
 
+# 回测多输入回放 P2 (红线#3 闭合): ReplayDecisionInputProvider 注入 PaperLoop (= test_paper_loop 同栈 + 比分 store)
+set(EXTRA_LIBS_test_replay_decision_input_provider
+    stcpp_paper_loop
+    stcpp_ml_inference
+    stcpp_orderbook_snapshot_hub
+    stcpp_risk
+    stcpp_ledger_snapshot_hub
+    stcpp_quote_snapshot_hub
+    stcpp_pricing
+    stcpp_sizing
+    stcpp_signer_paper
+    stcpp_execution_paper
+    stcpp_infra_wal
+    stcpp_data_inplay_parser
+    stcpp_data_score_store
+)
+set(TIMEOUT_test_replay_decision_input_provider 60)
+set(LABELS_test_replay_decision_input_provider "unit;paper;backtest;r-11;r-20;replay-equivalence;xiaojiang")
+
 # --- 追加 compile_definitions 映射 ---
 # (仅列出 STCPP_EXEC_MODE_* 以外的额外 define)
 set(EXTRA_DEFS_test_blake3_audit        BLAKE3_REAL=1)
