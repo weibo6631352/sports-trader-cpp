@@ -678,63 +678,66 @@ std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
     //   且不再按「开赛>1h 丢弃」截断 (那会让 upcoming 比官方少) — 改为保留全部单场盘, 由 max_events 兜底。
     const std::int64_t now_sec = static_cast<std::int64_t>(std::time(nullptr));
 
-    // 分页抓取全量 (老板 2026-06-01「不要限制, 搞大, 验证期不能限制太狠」): 逐页 offset+=100
-    //   扫到空 (或满 max_events / 安全上限) 为止, 不再单页 100 截断。dedup by event_id。
+    // 订阅范围: 只留【已开赛 in-progress】+【即将开赛 ≤1h】; 剔除 远期(>1h)/已结束/outright(无开赛 ts)。
+    constexpr std::int64_t kPreKickoffWindowSec = 3600;  // 开赛前 ≤1h 起订阅 (imminent)
+    constexpr std::int64_t kLiveWindowSec = 6 * 3600;    // 开赛后 ≤6h 推定仍在打 (tennis/cricket/esports 长盘)
+    // 单 event 是否在订阅窗口 (in-progress 或 imminent ≤1h, 未结束)。pagination early-stop + 终筛共用。
+    auto in_window = [now_sec](const DiscoveredEvent& e, std::int64_t& earliest_kickoff_out) -> bool {
+        std::int64_t earliest_kickoff = 0, latest_end = 0;
+        for (const auto& m : e.markets) {
+            if (m.game_start_ts_sec > 0 &&
+                (earliest_kickoff == 0 || m.game_start_ts_sec < earliest_kickoff))
+                earliest_kickoff = m.game_start_ts_sec;
+            if (m.end_ts_sec > latest_end) latest_end = m.end_ts_sec;
+        }
+        earliest_kickoff_out = earliest_kickoff;
+        if (earliest_kickoff == 0) return false;                                  // outright/无开赛 ts
+        if (earliest_kickoff > now_sec + kPreKickoffWindowSec) return false;      // 太早 (>1h)
+        if (latest_end > 0 && latest_end <= now_sec) return false;               // gamma endDate 已过
+        if (now_sec > earliest_kickoff + kLiveWindowSec) return false;           // 开赛超 6h 推定结束
+        return true;
+    };
+
+    // 2026-06-01 (老板「我们有参数限定扫描呀, 在比赛中的」+ 实测 live+imminent 全在前 ~7 页, 深页全 0):
+    //   边扫边筛 + early-stop: 连续 kEmptyPageStop 页无 live/imminent → 停 (深页全远期/已结束, 扫了浪费)。
+    //   把扫描从固定 26 页砍到 ~10 页 (随实时分布自适应), 让 discovery 够轻 → 能高频跑 (rediscover 2s)。
     constexpr int kPageSize = 100;
-    constexpr int kHardScanCap = 5000;  // 安全护栏 (防 gamma 异常无限翻页), 远高于现实体育盘量
-    std::vector<DiscoveredEvent> out;
+    constexpr int kHardScanCap = 5000;   // 安全护栏 (防 gamma 异常无限翻页)
+    constexpr int kEmptyPageStop = 4;    // 连续 4 页无 live/imminent → 停 (容 ≤3 页空档, 实测最大空档 1 页)
+    std::vector<DiscoveredEvent> kept;
     std::unordered_set<std::string> seen;
-    int pages = 0;
-    for (int offset = 0; offset < kHardScanCap && static_cast<int>(out.size()) < max_events;
+    int pages = 0, empty_streak = 0;
+    std::size_t raw_scanned = 0, live_count = 0;
+    for (int offset = 0; offset < kHardScanCap && static_cast<int>(kept.size()) < max_events;
          offset += kPageSize) {
         std::vector<DiscoveredEvent> page = ParseSportsEvents(FetchGammaEvents(offset), kPageSize);
         ++pages;
-        if (page.empty()) break;  // gamma 翻到底 (空页)
-        // 注: ParseSportsEvents 返回的是【已过滤 sports event】, 数量可 < 原始页 100 (部分被滤);
-        //   故不能用 page.size()<100 判到底 (会早停)。改为本页新增 0 → 到底/全 dup → break。
-        std::size_t added = 0;
+        if (page.empty()) break;  // gamma 翻到底
+        std::size_t page_new = 0, page_in_window = 0;
         for (auto& e : page) {
             if (!seen.insert(e.event_id).second) continue;  // 跨页去重
-            out.push_back(std::move(e));
-            ++added;
-            if (static_cast<int>(out.size()) >= max_events) break;
-        }
-        if (added == 0) break;  // 本页无新 event → gamma 已枯竭
-    }
-
-    // 订阅范围 (老板 2026-06-01「主要订阅已开赛的盘口, 比赛结束的不订阅甚至退订」):
-    //   只留【已开赛 in-progress】+【即将开赛 ≤1h】; 剔除 远期(>1h)/已结束/outright(无开赛 ts)。
-    //   已结束判定: gamma endDate 已过, 或 开赛超 kLiveWindowSec (物理结束推定, 覆盖长盘)。
-    //   退订: 周期重发现 (RediscoverOnce 300s) 用本结果全量重订 → 结束的赛事自然落选 = 退订。
-    constexpr std::int64_t kPreKickoffWindowSec = 3600;       // 开赛前 ≤1h 起订阅 (imminent)
-    constexpr std::int64_t kLiveWindowSec = 6 * 3600;         // 开赛后 ≤6h 推定仍在打 (tennis/cricket/esports 长盘)
-    std::vector<DiscoveredEvent> kept;
-    kept.reserve(out.size());
-    std::size_t live_count = 0, drop_outright = 0, drop_early = 0, drop_ended = 0;
-    for (auto& e : out) {
-        std::int64_t earliest_kickoff = 0;  // 最早 market 开赛 (gameStartTime, 比 listing startDate 准)
-        std::int64_t latest_end = 0;        // 最晚 market endDate (结算窗口)
-        for (const auto& m : e.markets) {
-            if (m.game_start_ts_sec > 0 &&
-                (earliest_kickoff == 0 || m.game_start_ts_sec < earliest_kickoff)) {
-                earliest_kickoff = m.game_start_ts_sec;
+            ++page_new;
+            ++raw_scanned;
+            std::int64_t ek = 0;
+            if (in_window(e, ek)) {
+                e.live = (ek <= now_sec);  // 已开赛 = 在打 (前端默认过滤 + Goalserve 映射优先级)
+                if (e.live) ++live_count;
+                ++page_in_window;
+                kept.push_back(std::move(e));
+                if (static_cast<int>(kept.size()) >= max_events) break;
             }
-            if (m.end_ts_sec > latest_end) latest_end = m.end_ts_sec;
         }
-        if (earliest_kickoff == 0) { ++drop_outright; continue; }                       // outright/无开赛 ts
-        if (earliest_kickoff > now_sec + kPreKickoffWindowSec) { ++drop_early; continue; }  // 太早 (>1h)
-        const bool ended_by_enddate = (latest_end > 0 && latest_end <= now_sec);        // gamma endDate 已过
-        const bool ended_by_window = (now_sec > earliest_kickoff + kLiveWindowSec);     // 开赛超 6h 推定结束
-        if (ended_by_enddate || ended_by_window) { ++drop_ended; continue; }            // 已结束 → 不订阅
-        e.live = (earliest_kickoff <= now_sec);  // 已开赛 = 在打 (前端默认过滤 + Goalserve 映射优先级)
-        if (e.live) ++live_count;
-        kept.push_back(std::move(e));
+        if (page_new == 0) break;  // 本页无新 event → gamma 枯竭
+        if (page_in_window == 0) {
+            if (++empty_streak >= kEmptyPageStop) break;  // 连续 N 页无在打/即将 → 深页全远期, 停
+        } else {
+            empty_streak = 0;
+        }
     }
     std::fprintf(stderr,
-                 "[live_discover] 订阅范围 %zu event (扫 %zu raw/%d 页; 在打/live=%zu + imminent≤1h=%zu; "
-                 "剔 outright=%zu 太早=%zu 已结束=%zu)\n",
-                 kept.size(), out.size(), pages, live_count, kept.size() - live_count, drop_outright,
-                 drop_early, drop_ended);
+                 "[live_discover] 订阅范围 %zu event (扫 %d 页/%zu raw, early-stop; "
+                 "在打/live=%zu + imminent≤1h=%zu)\n",
+                 kept.size(), pages, raw_scanned, live_count, kept.size() - live_count);
     return kept;
 }
 
