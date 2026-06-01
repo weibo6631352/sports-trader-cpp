@@ -60,7 +60,7 @@ struct InplayFeedConfig {
     std::uint16_t inplay_port = 80;
 
     // 轮询周期 (ms); Goalserve inplay ~1s 刷新
-    std::uint32_t poll_interval_ms = 1200;
+    std::uint32_t poll_interval_ms = 1000;  // 2026-06-01: 1200→1000 压到 Goalserve per-sport 1 req/s 限
 
     // HTTP 超时 (ms)
     std::uint32_t http_timeout_ms = 8000;

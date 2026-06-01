@@ -147,12 +147,15 @@ struct PaperDaemonConfig {
 
     // A1b: condition↔goalserve event 映射刷新周期 (秒). 刷新线程低频跑 EventMatcher
     //   (Goalserve event 动态出现, 周期重匹配). 0 → 不起刷新线程 (退回纯 stub).
-    int mapping_refresh_sec{5};
+    int mapping_refresh_sec{2};  // 2026-06-01: 5s→2s (本地 EventMatcher, 无 API; 匹配更新更勤)
 
     // R-6 (老周/老郭 评审 2026-06-01): 周期重发现间隔 (秒). 0 → 不周期重发现 (退回启动一次性).
     //   live 比赛滚动 (比完一场/开始一场), 不周期重发现则跑几小时后订阅全是死盘。在映射刷新线程跑
     //   (与 market_match_inputs_ 同线程, 无竞争); 全量重发现 + WSS 全量重订 (幂等, 老郭反增量 diff)。
-    int rediscover_interval_sec{300};  // 5 分钟
+    // 2026-06-01: 300s→30s。注: 不设 2s —— rediscover 是【26 页 gamma 全量市场宇宙重扫】(非数据点
+    //   刷新), 2s 会让 26 页扫描连续跑 → 暴击 gamma 限速 + CPU 浪费(市场宇宙 2s 内几乎不变)。30s 平衡
+    //   新比赛发现时效(≤30s)与 gamma 负载。要更勤需先减 max_events 或改"只扫前几页(按 recency)"。
+    int rediscover_interval_sec{30};
 
     // gamma 发现规模 (老板 2026-06-01「不要限制, 搞大, 验证期不能限制太狠」: 30→2000 全量发现)
     int max_events{2000};

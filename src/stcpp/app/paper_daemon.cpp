@@ -550,7 +550,9 @@ BuildResult PaperDaemon::Build() {
             return out;
         };
         settlement_poller_ = std::make_unique<data::SettlementPoller>(
-            *settlement_store_, std::move(settle_cids), std::move(fetcher), /*poll_interval_ms=*/60'000);
+            // 2026-06-01 老板「长的设 2s 压限速」: 60s→2s。扇出 = 顺序 popen curl 全部未结算 cid,
+            //   fetch 延迟自节流 (~2-5 req/s, 2s floor 多不binding); 撞 CLOB 限速则 fail-closed 跳本轮。
+            *settlement_store_, std::move(settle_cids), std::move(fetcher), /*poll_interval_ms=*/2'000);
     }
 
     // ---- live_stats: LiveStatsStore + CommentariesPoller (commentaries Feed → 5 个 g_*_diff 特征) ----
@@ -591,7 +593,7 @@ BuildResult PaperDaemon::Build() {
         };
         commentaries_poller_ = std::make_unique<data::livescore::CommentariesPoller>(
             *live_stats_store_, std::vector<std::string>{}, std::move(ls_fetcher),
-            /*poll_interval_ms=*/30'000);
+            /*poll_interval_ms=*/2'000);  // 2026-06-01: 30s→2s (顺序 per-league fetch 自节流)
     }
 
     // ---- Step 4: LiveWssTransport + LiveBookPublisher (构造 + 设回调, 不 AsyncConnect) ----
@@ -1061,7 +1063,7 @@ void PaperDaemon::RefreshResolution(std::stop_token st) {
                              resolved);
             }
         }
-        const auto deadline = steady_clock::now() + seconds(30);
+        const auto deadline = steady_clock::now() + seconds(2);  // 2026-06-01: 30s->2s (本地刷新, 无 API)
         while (steady_clock::now() < deadline) {
             if (st.stop_requested()) return;
             std::this_thread::sleep_for(milliseconds(100));
@@ -1101,7 +1103,7 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
                 paper_loop_->SetLiveStatsByTeams(std::move(stamped));
             }
         }
-        const auto deadline = steady_clock::now() + seconds(30);
+        const auto deadline = steady_clock::now() + seconds(2);  // 2026-06-01: 30s->2s (本地刷新, 无 API)
         while (steady_clock::now() < deadline) {
             if (st.stop_requested()) return;
             std::this_thread::sleep_for(milliseconds(100));
