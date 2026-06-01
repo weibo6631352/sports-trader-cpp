@@ -30,6 +30,7 @@
 #include "stcpp/ml/fair_value_model.hpp"        // 步④ make_onnx_fair_value_model / StubFairValueModel
 #include "stcpp/ml/feature_recorder.hpp"          // FeatureRecorder
 #include "stcpp/ml/feature_vector_recorder.hpp"   // Phase 2 项6 完整向量 recorder (含 hub)
+#include "stcpp/ml/label_pipeline.hpp"            // 自动训练 join: LoadLabelStoreFromJsonl + JoinFile
 #include "stcpp/ml/model_feature_spec.hpp"      // kMlFeatureCount (ML 模型维度契约)
 
 #include "src/stcpp/polymarket/clob_wss/live_book_publisher.hpp"  // LiveBookPublisher
@@ -806,6 +807,17 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
+    // ---- Step 4b''' start: 进程内自动训练编排 (老板「A. 周期重训 + 热加载」, 2026-06-01) ----
+    //   起交易 + onnx_model_path 非空 (产模型目标) + interval>0 才启 (默认关; 需 ops 配 venv python)。
+    if (cfg_.enable_paper_trading && paper_loop_ && !cfg_.onnx_model_path.empty() &&
+        cfg_.auto_train_interval_sec > 0) {
+        auto_train_thread_ = std::jthread([this](std::stop_token st) { AutoTrain(st); });
+        std::printf("[paper_daemon] 自动训练编排线程启动 (周期 %ds, python=%s, 脚本=%s, 最小样本 %zu)\n",
+                    cfg_.auto_train_interval_sec, cfg_.train_python_bin.c_str(),
+                    cfg_.train_script_path.c_str(), cfg_.min_train_samples);
+        std::fflush(stdout);
+    }
+
     // ---- Step 4c start: FeatureRecorder + 完整向量 recorder (项6) ----
     if (ml_recorder_) {
         ml_recorder_->Start();
@@ -1194,6 +1206,63 @@ void PaperDaemon::RefreshModel(std::stop_token st) {
         last_mtime = m;
         std::printf("[paper_daemon] ✓ 模型热重载: %s (feat=%zu) → 原子换上不停盘\n", path.c_str(),
                     fresh->expected_feature_count());
+        std::fflush(stdout);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AutoTrain — 进程内自动训练编排 (老板「A. 周期重训 + 热加载」, 2026-06-01)
+//   周期循环 (auto_train_interval_sec):
+//     ① 进程内 C++ join: feature_vectors.jsonl(X) × settlements.jsonl(y) → training.jsonl
+//        (直接调 label_pipeline, 不经外部 CLI; 只收已结算监督集)。
+//     ② 标注样本 ≥ min_train_samples → spawn Python 训练子进程 (train_fair_value.py → candidate.onnx)。
+//        §12.4 红线: 训练栈 LightGBM 只能 Python 离线, daemon 仅编排 + spawn (跑完即弃), 不进 C++ 进程。
+//     ③ 训练成功 → 原子 mv candidate → onnx_model_path → RefreshModel watcher 接力热加载换上 (不停盘)。
+//   失败任一步 → 跳过本轮, 保留旧模型 (fail-safe)。冷启动样本不足 → 等积累 (体育结算稀疏, 按天/周)。
+// ---------------------------------------------------------------------------
+void PaperDaemon::AutoTrain(std::stop_token st) {
+    using namespace std::chrono;
+    namespace fs = std::filesystem;
+    const std::string fv = cfg_.ml_path + ".fv.jsonl";            // FeatureVectorRecorder 落 (X)
+    const std::string settle = cfg_.ml_path + ".settlements.jsonl";  // SettlementRecorder 落 (y)
+    const std::string training = cfg_.ml_path + ".training.jsonl";   // join 产出 (X+label)
+    const std::string candidate = cfg_.onnx_model_path + ".candidate";
+    while (!st.stop_requested()) {
+        const auto deadline = steady_clock::now() + seconds(cfg_.auto_train_interval_sec);
+        while (steady_clock::now() < deadline) {
+            if (st.stop_requested()) return;
+            std::this_thread::sleep_for(seconds(1));
+        }
+        // ① 进程内 join (C++; label_pipeline 纯函数核已单测)
+        const auto store = ml::LoadLabelStoreFromJsonl(settle);
+        const auto js = ml::JoinFile(fv, store, training, /*drop_unlabeled=*/true);
+        std::printf("[auto_train] join: 标注 %zu / 读 %zu (已结算 condition %zu)\n", js.labeled, js.total,
+                    store.size());
+        std::fflush(stdout);
+        if (js.labeled < cfg_.min_train_samples) {
+            std::printf("[auto_train] 标注 %zu < 阈值 %zu → 跳过 (样本不足, 等积累)\n", js.labeled,
+                        cfg_.min_train_samples);
+            std::fflush(stdout);
+            continue;
+        }
+        // ② spawn Python 训练子进程 (§12.4: 训练只能 Python 离线; 跑完即弃, 不进 C++ 进程)
+        const std::string cmd = cfg_.train_python_bin + " " + cfg_.train_script_path + " --features " +
+                                training + " --out " + candidate + " > /tmp/auto_train.log 2>&1";
+        std::printf("[auto_train] spawn 训练: %s\n", cmd.c_str());
+        std::fflush(stdout);
+        const int rc = std::system(cmd.c_str());  // NOLINT: ops 编排 spawn (路径内部 config, 非用户输入)
+        if (rc != 0) {
+            std::fprintf(stderr, "[auto_train] ⚠ 训练子进程 rc=%d → 不换模型 (见 /tmp/auto_train.log)\n", rc);
+            continue;
+        }
+        // ③ 原子换 candidate → onnx_model_path → RefreshModel watcher 接力热加载
+        std::error_code ec;
+        fs::rename(candidate, cfg_.onnx_model_path, ec);
+        if (ec) {
+            std::fprintf(stderr, "[auto_train] ⚠ 原子 mv 失败 (%s) → 不换\n", ec.message().c_str());
+            continue;
+        }
+        std::printf("[auto_train] ✓ 新模型就位 → watcher 将热加载: %s\n", cfg_.onnx_model_path.c_str());
         std::fflush(stdout);
     }
 }

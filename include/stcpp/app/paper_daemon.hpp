@@ -126,6 +126,15 @@ struct PaperDaemonConfig {
     // [2026-06-01 老板「边训边跑边更新模型可重新加载」] 模型热重载轮询周期 (秒)。daemon watcher 周期 stat
     //   onnx_model_path mtime, 变了 → 加载新模型校验后原子换上不停盘 (训练旁路产新 .onnx → 自动生效)。0=关闭。
     std::int32_t model_reload_interval_sec{30};
+    // [2026-06-01 老板「直接在程序里起一个多线程」] 进程内自动训练编排线程:
+    //   周期 (auto_train_interval_sec) → 进程内 C++ join (feature_vectors × settlements → training.jsonl) →
+    //   spawn Python 训练子进程 (§12.4: 训练栈 LightGBM 只能 Python 离线, 禁进 C++ 进程; 跑完即弃) →
+    //   产 candidate.onnx → 原子换 onnx_model_path → 上面 model_reload watcher 自动热加载。
+    //   0=关闭 (默认; 需 ops 设 venv python + 脚本路径 + 间隔 才启)。
+    std::int32_t auto_train_interval_sec{0};
+    std::string train_python_bin{"python3"};  // 训练子进程解释器 (服务器设 .venv/bin/python3)
+    std::string train_script_path{"scripts/ml/train_fair_value.py"};
+    std::size_t min_train_samples{500};  // join 标注行 < 此 → 跳过 (冷启动样本不足不产模型)
     std::string ml_path{"data/ml_capture/quotes.jsonl"};
 
     // 仅观测不交易 (老周: 替代 ObserverOnly 枚举档). true=起 PaperLoop (默认).
@@ -282,6 +291,11 @@ private:
     //   加载/校验失败 → 保留旧模型 (fail-safe)。onnx_model_path 空 / interval=0 → 不启线程。
     void RefreshModel(std::stop_token st);
 
+    // [2026-06-01 老板「直接在程序里起一个多线程」] 进程内自动训练编排: 周期 C++ join → spawn Python
+    //   训练子进程 → 产 candidate.onnx → 原子换 onnx_model_path (RefreshModel watcher 接力热加载)。
+    //   §12.4: 训练栈 Python 离线, daemon 线程只编排 + spawn (跑完即弃), 不在 C++ 进程内跑训练。
+    void AutoTrain(std::stop_token st);
+
     PaperDaemonConfig cfg_;
 
     // ---- 测试注入的 markets (空 → Build 走真发现) ----
@@ -303,6 +317,7 @@ private:
     std::jthread settlement_refresh_thread_;  // M2 结算刷新 (SettlementStore → SetResolutionByCondition)
     std::jthread live_stats_refresh_thread_;  // live_stats 刷新 (LiveStatsStore → SetLiveStatsByTeams)
     std::jthread model_reload_thread_;        // 模型热重载 watcher (onnx mtime 变 → SetMlModelShared 原子换)
+    std::jthread auto_train_thread_;          // 进程内自动训练编排 (周期 join + spawn Python 训练 → 产新模型)
     std::jthread seed_thread_;  // REST 快照打底后台线程 (jthread: 析构自动 request_stop + join)
 
     // =====================================================================
