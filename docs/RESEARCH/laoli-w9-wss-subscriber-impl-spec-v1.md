@@ -226,7 +226,10 @@ market channel 支持单 WebSocket 连接内追加订阅 (无需重连):
 ```
 
 - 追加订阅后立即收到这批新 token 的 `book` snapshot
-- 取消订阅: 无官方 unsubscribe frame — 唯一方法是**关闭并重连**, 重连时只订需要的 token
+- 取消订阅: ~~无官方 unsubscribe frame — 唯一方法是**关闭并重连**~~ **⚠️ 2026-06-01 纠正 (此结论已过时):**
+  Polymarket 后来加了**动态退订** `{"assets_ids":[token],"operation":"unsubscribe"}`(加订 `"operation":"subscribe"`),
+  不用重连。对照官方文档 + real-time-data-client/agent-skills 仓库确认。详见
+  docs/MEETINGS/2026-06-01-subscription-lifecycle-review.md。下方 hot/cold 重连方案可简化为 operation 增删。
 - **实际 hot/cold 迁移**: cold → hot 用 "hot conn 追加订阅新 token + cold conn 断开重连去掉已迁 token" 两步
 
 **token 数上限** (实测推断): 单 conn 无硬限制文档, 实测 500 token 稳态 63 msg/s 正常. 工程约束: hot conn ≤ 500 token, cold conn ≤ 3500 token (老周 §C.3).
