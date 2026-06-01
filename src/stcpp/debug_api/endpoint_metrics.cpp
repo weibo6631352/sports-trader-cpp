@@ -97,6 +97,9 @@ void register_metrics(httplib::Server& svr, const HttpServer& hs) {
         // ---- 数据质量 ----
         metric_line(out, "stcpp_data_staleness_ms_max", "gauge", "Max feed staleness milliseconds",
                     ml + " " + json::num(m.max_staleness_ms));
+        // 韧性 watchdog: loop_thread_ 心跳停摆 (老郭). 正常 ≈ tick 间隔内; 飙升 = loop 卡死. -1 = 未跑过.
+        metric_line(out, "stcpp_loop_tick_staleness_ms", "gauge", "loop_thread tick heartbeat staleness ms",
+                    ml + " " + json::num(m.loop_tick_staleness_ms));
         metric_line(out, "stcpp_feed_gap_total", "counter", "Total detected feed sequence gaps",
                     ml + " " + json::i64(m.feed_gap_total));
         metric_line(out, "stcpp_price_drift_bps", "gauge", "Price drift vs reference basis points",

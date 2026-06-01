@@ -502,6 +502,7 @@ BuildResult PaperDaemon::Build() {
     // LiveMetricsHooks (P1-2/P1-3): start_tp + fill_counter; wss_transport 在 Step 4 填.
     metrics_hooks_.start_tp = std::chrono::steady_clock::now();
     metrics_hooks_.fill_counter = &paper_loop_->stats().fills_completed;
+    metrics_hooks_.last_tick_ts = &paper_loop_->stats().last_tick_ts_ns;  // 韧性 watchdog 心跳
     real_provider_->set_live_metrics_hooks(metrics_hooks_);
 
     // ---- Step 3: InplayFeedThread (构造, 不 Start; Start() 内拉起) ----

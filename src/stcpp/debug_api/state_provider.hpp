@@ -195,6 +195,9 @@ struct MetricsSnapshot {
     double max_staleness_ms{0.0};
     std::int64_t feed_gap_total{0};
     double price_drift_bps{0.0};
+    // 韧性 watchdog (老郭): loop_thread_ 心跳停摆检测。now − last_tick_ts (ms)。
+    //   -1 = loop 未跑过 (无心跳); 持续飙升 = loop 卡死 (正常应 ≈ tick 间隔 500ms 内波动)。
+    double loop_tick_staleness_ms{-1.0};
     // 订阅计数 (GAP-01/02/03/04, 小冯 ADR-038 append; G-FREEZE-W 只增不改名)
     // subscribed_tokens_total   — hub_.token_count() (已注册 per-token slot 数)
     // subscribed_markets_total  — subscribed_tokens_total / 2 (老李 spec §2.1: 双 token 规则)

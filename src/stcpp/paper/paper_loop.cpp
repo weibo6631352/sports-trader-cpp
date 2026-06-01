@@ -210,6 +210,7 @@ void PaperLoop::RunLoop(std::stop_token st) {
     while (!st.stop_requested() && !stop_requested_.load(std::memory_order_acquire)) {
         TickAll();
         stats_.ticks_total.fetch_add(1, std::memory_order_relaxed);
+        stats_.last_tick_ts_ns.store(NowNs(), std::memory_order_relaxed);  // 韧性: tick 心跳 (watchdog 用)
 
         // A4 (老韩 spec §2.6.3): 首个完整 tick 后跑一次 RM feed-liveness 自检。此时 daemon 已喂完
         //   一轮 (bankroll@Start + exposure/freshness@tick); 仍 ever_fed=false 的红线 = paper daemon

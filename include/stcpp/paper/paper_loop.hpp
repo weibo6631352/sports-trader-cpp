@@ -280,6 +280,9 @@ struct PaperLoopConfig {
 // ---------------------------------------------------------------------------
 struct PaperLoopStats {
     std::atomic<std::uint64_t> ticks_total{0};
+    // R-6/老郭 韧性: loop_thread_ 每 tick 末更新心跳 (epoch_ns)。观测端 (healthz/metrics) 比对
+    //   now-last_tick 超阈 → loop 卡死告警 (老郭: loop 单点无存活监控, 卡死=静默停摆无人知)。
+    std::atomic<std::int64_t> last_tick_ts_ns{0};
     std::atomic<std::uint64_t> orders_attempted{0};
     std::atomic<std::uint64_t> orders_approved{0};
     std::atomic<std::uint64_t> orders_rejected{0};

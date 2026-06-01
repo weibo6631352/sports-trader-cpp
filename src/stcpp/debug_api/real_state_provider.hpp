@@ -117,6 +117,10 @@ struct LiveMetricsHooks {
     // PaperLoop fills_completed (原子计数器, 只读)
     // nullptr → fill_total=0 (标注无数据源而非虚报)
     const std::atomic<std::uint64_t>* fill_counter{nullptr};
+
+    // 韧性 watchdog (老郭): PaperLoop last_tick_ts_ns 心跳。观测端比对 now-last_tick 判 loop 存活。
+    //   nullptr → 0 (无数据源)。loop 卡死 → 心跳停 → tick_staleness 飙升 → healthz/metrics 告警。
+    const std::atomic<std::int64_t>* last_tick_ts{nullptr};
 };
 
 // ============================================================================
@@ -335,6 +339,13 @@ public:
         // ---- P1-2: fill_total (PaperLoop fills_completed 原子计数) ----
         if (hooks_.fill_counter != nullptr) {
             snap.fill_total = static_cast<std::int64_t>(hooks_.fill_counter->load(std::memory_order_relaxed));
+        }
+
+        // ---- 韧性 watchdog: loop_thread_ 心跳停摆 (now − last_tick_ts) ----
+        if (hooks_.last_tick_ts != nullptr) {
+            const std::int64_t lt = hooks_.last_tick_ts->load(std::memory_order_relaxed);
+            snap.loop_tick_staleness_ms =
+                (lt > 0) ? static_cast<double>(now_ns() - lt) / 1.0e6 : -1.0;  // -1 = loop 未跑过
         }
 
         // ---- P1-2: max_staleness_ms (遍历 token_map_ 取最大 staleness) ----
