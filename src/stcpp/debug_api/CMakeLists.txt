@@ -82,6 +82,8 @@ add_library(stcpp_debug_api STATIC
     # 老雷 2026-06-01 可观测: 特征健康 + 映射状态
     endpoint_features.cpp
     endpoint_mapping.cpp
+    # 老雷 2026-06-01 凯利评审: 账户级现金/估值
+    endpoint_account.cpp
 )
 
 target_include_directories(stcpp_debug_api

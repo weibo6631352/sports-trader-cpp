@@ -309,6 +309,21 @@ void PaperLoop::TickAll() {
     //   防低估回撤 (风险指标宜保守, 不用 microprice)。R-20: ts 用 NowNs (权益曲线是策略侧时序, 不涉数据源契约)。
     //   用 tick 入口冻结快照 (与本轮 sizing bankroll 同源同版本)。
     portfolio_metrics_.RecordEquity(NowNs(), tick_equity_.equity_bid);
+
+    // [2026-06-01 凯利评审] 发布账户权益副本 (debug_api /api/v1/account 经 daemon 回调读)。
+    //   loop_thread_ 算 sharpe/maxDD (portfolio_metrics_ 单 writer 此处读安全) → mutex 发布给 HTTP 线程。
+    //   tick 末重算一次 equity (含本轮成交后的最新持仓), 比 tick 入口冻结的 tick_equity_ 新。
+    {
+        AccountEquitySnapshot pub = account_equity();
+        const double ppy = cfg_.tick_interval_ms > 0
+                               ? 365.25 * 24.0 * 3600.0 * 1000.0 / static_cast<double>(cfg_.tick_interval_ms)
+                               : 0.0;
+        const auto rep = portfolio_metrics_.report(ppy);
+        pub.sharpe = rep.sharpe;
+        pub.max_drawdown = rep.max_drawdown;
+        std::lock_guard<std::mutex> lk(acct_pub_mu_);
+        published_equity_ = pub;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1340,6 +1355,8 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
 PaperLoop::AccountEquitySnapshot PaperLoop::account_equity() const noexcept {
     AccountEquitySnapshot s;
     s.bankroll_init = cfg_.bankroll_usdc;
+    s.cum_realized = cum_realized_pnl_pusd_;
+    s.cum_fee = cum_fee_pusd_;
     s.realized_equity = cfg_.bankroll_usdc + cum_realized_pnl_pusd_ - cum_fee_pusd_;
     double locked_cost = 0.0;  // MVP 近似 cash: 多头占用资金 = Σ(avg_entry × qty)
     for (auto const& pv : position_ledger_.get_all_positions()) {
@@ -1360,6 +1377,7 @@ PaperLoop::AccountEquitySnapshot PaperLoop::account_equity() const noexcept {
         const double mark = bk->microprice;
         if (std::isfinite(mark) && mark > 0.0 && mark < 1.0) {
             s.unrealized_mark += (mark - pv.avg_entry_price) * qty;  // 展示 (中间价)
+            s.position_mtm += mark * qty;                            // 持仓市值 Σ qty×mark
         }
     }
     s.equity_bid = s.realized_equity + s.unrealized_bid;

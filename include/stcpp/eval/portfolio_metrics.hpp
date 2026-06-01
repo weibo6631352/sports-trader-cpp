@@ -95,6 +95,15 @@ public:
     [[nodiscard]] std::size_t sample_count() const noexcept { return equity_.size(); }
     [[nodiscard]] double max_drawdown() const noexcept { return max_dd_; }
 
+    // equity_snapshot — 暴露 (ts_ns, equity) 时序拷贝 (2026-06-01 凯利评审: pnl_timeseries 落地)。
+    //   单 writer (loop_thread_ RecordEquity) / 读时拷贝 (debug_api HTTP 线程); 等间隔样本, 调用方按 ts 分桶。
+    [[nodiscard]] std::vector<std::pair<std::int64_t, double>> equity_snapshot() const {
+        std::vector<std::pair<std::int64_t, double>> out;
+        out.reserve(equity_.size());
+        for (std::size_t i = 0; i < equity_.size(); ++i) out.emplace_back(ts_[i], equity_[i]);
+        return out;
+    }
+
 private:
     // 低分位插值 (sorted 升序)。q∈(0,1); 返回该分位的收益值 (通常为负=损失)。
     [[nodiscard]] static double PercentileLow(const std::vector<double>& sorted, double q) noexcept {

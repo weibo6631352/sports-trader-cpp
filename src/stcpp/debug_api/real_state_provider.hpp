@@ -55,6 +55,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <mutex>
 #include <optional>
@@ -166,6 +167,15 @@ public:
 
     // 特征健康可观测 (老雷 2026-06-01): 注入 fv_hub (PaperLoop Publish 全特征向量)。
     void set_feature_vector_hub(const ml::FeatureVectorHub* h) noexcept { fv_hub_ = h; }
+
+    // 账户级现金/估值回调 (老雷 2026-06-01 凯利评审): daemon 注入 lambda (捕获 paper_loop_, 经
+    //   published_account_equity() 线程安全拷贝读)。on-demand 求值 → HTTP 线程零陈旧。本头不 include
+    //   paper_loop (热路径写端边界, line 49); 翻译逻辑落 daemon.cpp (该层同时依赖 paper + debug_api)。
+    void set_account_snapshot_fn(std::function<AccountSnapshot()> fn) { account_fn_ = std::move(fn); }
+    [[nodiscard]] AccountSnapshot account_snapshot() const override {
+        if (account_fn_) return account_fn_();
+        return {};  // 未注入 → has_data=false (前端灰显)
+    }
 
     // 映射状态可观测 (老雷 2026-06-01): daemon RefreshEventMapping 线程周期 push 快照。
     //   互斥保护 (写: 映射刷新线程; 读: HTTP 线程; 频率低, 短锁安全)。
@@ -662,6 +672,7 @@ private:
     const risk::LedgerSnapshotHub* ledger_hub_{nullptr};  // nullable; nullptr → 空
     const sizing::QuoteSnapshotHub* quote_hub_{nullptr};  // nullable; nullptr → found=false
     const ml::FeatureVectorHub* fv_hub_{nullptr};         // nullable; nullptr → feature_health 空
+    std::function<AccountSnapshot()> account_fn_{};       // 账户现金/估值回调 (daemon 注入); 空 → has_data=false
     mutable std::mutex mapping_mtx_;                       // 保护 mapping_snapshot_ (低频写/读)
     MappingStatusReport mapping_snapshot_;                // daemon push 的映射快照
     // R-4 (老周 D-2): meta_mu_ 守护 token_map_/events_/catalog_ — R-6 周期重发现热刷, HTTP 线程读。

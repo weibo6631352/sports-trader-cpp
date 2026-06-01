@@ -512,6 +512,34 @@ BuildResult PaperDaemon::Build() {
     real_provider_->set_events(event_infos_);
     real_provider_->set_market_catalog(market_catalog_);
 
+    // [2026-06-01 凯利评审] /api/v1/account 回调: 翻译 paper_loop 发布的权益快照 → debug_api::AccountSnapshot。
+    //   on-demand (HTTP 线程调用) → 经 published_account_equity() 线程安全拷贝, 零陈旧。翻译落此 (本层
+    //   同时依赖 paper + debug_api; provider 头不许 include paper, line 49 边界)。
+    real_provider_->set_account_snapshot_fn([this]() -> debug_api::AccountSnapshot {
+        debug_api::AccountSnapshot a;
+        if (!paper_loop_) return a;  // has_data=false
+        const auto eq = paper_loop_->published_account_equity();
+        a.mode = debug_api::exec_mode_str(cfg_.exec_mode);
+        a.bankroll_initial = eq.bankroll_init;
+        a.cash_available = eq.cash_available;
+        a.position_mtm = eq.position_mtm;
+        a.equity_mark = eq.equity_mark;
+        a.equity_conservative = eq.equity_bid;
+        a.cum_realized_pnl = eq.cum_realized;
+        a.cum_unrealized_pnl = eq.unrealized_mark;
+        a.cum_fee_paid = eq.cum_fee;
+        a.net_pnl = eq.equity_mark - eq.bankroll_init;
+        a.return_pct = eq.bankroll_init > 0.0 ? (eq.equity_mark - eq.bankroll_init) / eq.bankroll_init : 0.0;
+        a.max_drawdown = eq.max_drawdown;
+        a.sharpe = eq.sharpe;
+        a.kelly_bankroll = eq.equity_bid;  // 实际喂 SizingCalculator 的 bankroll (best_bid 保守动态净值)
+        a.kelly_bankroll_basis = "equity_conservative(best_bid, 动态)";
+        a.open_positions = eq.open_positions;
+        a.as_of_ts_ns = eq.as_of_ts_ns;
+        a.has_data = true;
+        return a;
+    });
+
     // LiveMetricsHooks (P1-2/P1-3): start_tp + fill_counter; wss_transport 在 Step 4 填.
     metrics_hooks_.start_tp = std::chrono::steady_clock::now();
     metrics_hooks_.fill_counter = &paper_loop_->stats().fills_completed;

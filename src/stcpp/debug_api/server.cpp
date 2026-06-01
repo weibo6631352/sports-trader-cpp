@@ -40,6 +40,8 @@ void register_book_pair(httplib::Server& svr, const HttpServer& hs);
 void register_events(httplib::Server& svr, const HttpServer& hs);
 void register_features(httplib::Server& svr, const HttpServer& hs);
 void register_mapping(httplib::Server& svr, const HttpServer& hs);
+// 凯利评审 (2026-06-01): 账户级现金/估值
+void register_account(httplib::Server& svr, const HttpServer& hs);
 }  // namespace stcpp::debug_api
 
 namespace stcpp::debug_api {
@@ -151,6 +153,8 @@ void HttpServer::register_handlers() {
     register_features(server_, *this);
     // 老雷 2026-06-01 可观测: condition↔Goalserve 映射状态 (/api/v1/mapping/status)
     register_mapping(server_, *this);
+    // 老雷 2026-06-01 凯利评审: 账户级现金/估值 (/api/v1/account)
+    register_account(server_, *this);
 }
 
 }  // namespace stcpp::debug_api

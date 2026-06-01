@@ -143,6 +143,33 @@ struct PnlAttribution {
 };
 
 // ============================================================
+// /api/v1/account (账户级现金 + 估值; 2026-06-01 凯利评审, 老板「虚拟盘要有现金估值显示」)
+// ============================================================
+// 双口径分离 (六席共识): equity_conservative (best_bid, 喂凯利/DD) + equity_mark (microprice, 展示)。
+// kelly_bankroll = 实际喂 SizingCalculator 的 bankroll (= equity_conservative), kelly_bankroll_basis
+//   是口径说明字符串, 让操盘员一眼确认「风控纸面化」是否已修 (动态 vs 静态)。
+struct AccountSnapshot {
+    std::string mode;               // "paper" / "live" / "backtest"
+    double bankroll_initial{0.0};   // 起始虚拟本金
+    double cash_available{0.0};     // MVP 近似可动用资金 (不含锁定保证金)
+    double position_mtm{0.0};       // 持仓市值 (microprice 展示口径; = Σ qty×mark)
+    double equity_mark{0.0};        // 展示净值 = cash + microprice MtM
+    double equity_conservative{0.0};// 保守净值 = cash + best_bid MtM (= kelly_bankroll)
+    double cum_realized_pnl{0.0};
+    double cum_unrealized_pnl{0.0}; // microprice 口径未实现
+    double cum_fee_paid{0.0};
+    double net_pnl{0.0};            // equity_mark − bankroll_initial
+    double return_pct{0.0};         // net_pnl / bankroll_initial
+    double max_drawdown{0.0};       // ∈ [0,1] (PortfolioMetrics, best_bid equity 曲线)
+    double sharpe{0.0};             // 年化
+    double kelly_bankroll{0.0};     // 实际喂凯利的 bankroll (= equity_conservative)
+    std::string kelly_bankroll_basis;  // 口径说明 (e.g. "equity_conservative(best_bid, 动态)")
+    int open_positions{0};
+    std::int64_t as_of_ts_ns{0};
+    bool has_data{false};           // false = paper_loop 未注入 / 无数据 → 前端降级灰显
+};
+
+// ============================================================
 // /api/v1/risk/rejects (RM 拒单列表 + reason_code)
 // ============================================================
 // side/size/price 为 allowlist 安全字段 (订单意图摘要, 非签名字节/私钥; 小白 §1)。
@@ -483,6 +510,8 @@ public:
     virtual FeatureHealthReport feature_health() const { return {}; }
     // 映射状态 (老雷 2026-06-01 可观测; 默认空 → 未接 daemon push 返回空)。
     virtual MappingStatusReport mapping_status() const { return {}; }
+    // 账户级现金/估值 (老雷 2026-06-01 凯利评审; 默认空 has_data=false → stub/未注入 paper_loop 灰显)。
+    virtual AccountSnapshot account_snapshot() const { return {}; }
 
     // R-11: 全局运行模式 (build-time 锁定, 运行时不可切)
     virtual ExecMode mode() const = 0;
