@@ -74,7 +74,7 @@ class IDecisionInputProvider {
 |---|---|---|---|
 | 🟡 **P0 原始帧捕获** | **比分帧已落地 (commit b88c63f)**: `ScoreFrameRecorder` 落 `<ml_path>.scores.jsonl` (EventScore 全字段+4ts+inplay sharp), 装配 daemon, 2 单测。**resolution 由现有 `settlement_recorder` 覆盖, book 由 `ReplayDriver`** → 三大动态输入捕获齐。**剩**: ①server 上跑真 live 赛累积帧 ②catalog/live_stats 帧 (P3 再补)。 | GM + 小余(ETL) | 比分✅ / 余下随 P3 |
 | ✅ **P1 DecisionInputSnapshot 边界** | **已落地 (commit bf49ec1, 2026-06-01)**: 5 个非 book 输入合 `DecisionInputSnapshot tick_inputs_` + `SetReplayInputs()` 注入 seam; 1339/1339 ctest 绿, 行为逐位不变。 | GM (主干) | ✅ done |
-| **P2 比分+resolution 回放** | ReplayImpl 喂 #2 比分 + #5 resolution (解锁 in-play 分支 + 结算)。验收 1+2。 | 小蒋 | 2-3d |
+| 🟡 **P2 比分+resolution 回放** | **provider+注入已落地 (commit fc112c6)**: `ReplayDecisionInputProvider` 读 scores/settlements.jsonl → BuildAt → SetReplayInputs; 4 测**结构性证明**回放解锁 book-only 做不到的 sharp-anchor fair + 结算。**剩**: 全 backtest runner (ReplayDriver book + provider 同轴跑 N tick → BacktestResult{realized_pnl, fair_src 直方图}) — 待真采集数据就位再装 (synthetic 帧跑 = spec §5 警告的 kSynthetic 反模式)。 | 小蒋 | provider✅ / runner 待数据 |
 | **P3 catalog + sharp + live_stats 回放** | 喂 #6 catalog(line) + #3 sharp(附#2) + #4 live_stats。验收 3+4。 | 小蒋 | 2-3d |
 | **P4 等价性回归门** | 历史段 replay vs 实盘 FairSrc 分布断言 (CI gate); replay_coverage→FULL。 | 小蒋 + 老郭 review | 1d |
 
@@ -101,4 +101,9 @@ class IDecisionInputProvider {
 
 - ✅ **P1 DecisionInputSnapshot 边界** (commit bf49ec1) — 注入 seam `SetReplayInputs` 就位。
 - 🟡 **P0 比分帧捕获** (commit b88c63f) — `ScoreFrameRecorder` 落 `scores.jsonl`; resolution(settlement_recorder)+book(ReplayDriver) 本就有 → **三大动态输入捕获齐**。剩 server 上跑真 live 累积帧。
-- ⏭ **下一步 P2** (小蒋): `ReplayDecisionInputProvider` — 读 `scores.jsonl`(→ScoreMap) + `settlements.jsonl`(→ResolutionMap), 按 frame_ts_ns 时间轴推进, 每 tick `SetReplayInputs`; book 经 ReplayDriver 同轴回放。验收: 回测 `fills>0` + `settled>0` + FairSrc 分布≈实盘。**数据契约已就位, P2 可直接起。**
+- 🟡 **P2 provider+注入** (commit fc112c6) — `ReplayDecisionInputProvider` + 4 测结构性证明回放解锁 sharp-anchor fair (无比分 baseline prior~0.50 → sharp 0.70) + 结算 (book-only 永不结算)。**红线#3 机制已闭合**。
+- ⏭ **剩余路径** (按数据依赖排):
+  1. **server 跑真 live 累积帧** (P0 recorder 已就位, 需重启 server daemon 采集) — 出 scores.jsonl 真数据。
+  2. **P3 catalog/event_map 帧捕获** — 让回放完全数据驱动 (当前 harness 注入)。
+  3. **全 backtest runner** (小蒋): ReplayDriver(book)+provider(score/resolution) 同轴跑 N tick → `BacktestResult{realized_pnl, fills, settled, fair_src 直方图}`。**真数据就位后装** (synthetic 跑无意义)。
+  4. **P4 等价性门**: 历史段 replay vs 实盘 FairSrc 分布断言 (CI gate); replay_coverage→FULL。
