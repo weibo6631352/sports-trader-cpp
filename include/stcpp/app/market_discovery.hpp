@@ -52,6 +52,8 @@ struct DiscoveredMarket {
     std::string outcome0_name;
     std::string outcome1_name;
     std::int64_t game_start_ts_sec{0};
+    // gamma market.endDate → Unix 秒 (比赛结束/结算窗口; 0=缺)。判「已结束→不订阅/退订」用。
+    std::int64_t end_ts_sec{0};
     // 手续费系数 (gamma feeSchedule.rate; fee = shares × rate × p × (1-p))。
     //   feesEnabled=false (老市场免费) → 0.0; 缺字段 → 0.03 默认 (体育保守)。
     //   官方明确: 别硬编码, 从 market 数据 feeSchedule 取 (docs.polymarket 2026-03-31)。R-fee-2 RM/sizing

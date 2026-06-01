@@ -507,6 +507,7 @@ std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int 
             // A0 映射桥锚定字段 (best-effort; 缺失不阻塞发现, 仅降匹配率)
             (void)ExtractOutcomes(mobj, dm.outcome0_name, dm.outcome1_name);
             dm.game_start_ts_sec = ParseGammaTimeToEpochSec(ExtractJsonStr(mobj, "gameStartTime"));
+            dm.end_ts_sec = ParseGammaTimeToEpochSec(ExtractJsonStr(mobj, "endDate"));
             dm.fee_rate_coef = ExtractFeeRateCoef(mobj);  // gamma feeSchedule.rate (R-fee-2 真值)
 
             ev.markets.push_back(std::move(dm));
@@ -579,6 +580,7 @@ std::vector<DiscoveredEvent> ParseSportsMarketsFlat(const std::string& json_buf,
         // A0 映射桥锚定字段 (best-effort)
         (void)ExtractOutcomes(mobj, dm.outcome0_name, dm.outcome1_name);
         dm.game_start_ts_sec = ParseGammaTimeToEpochSec(ExtractJsonStr(mobj, "gameStartTime"));
+        dm.end_ts_sec = ParseGammaTimeToEpochSec(ExtractJsonStr(mobj, "endDate"));
         dm.fee_rate_coef = ExtractFeeRateCoef(mobj);  // gamma feeSchedule.rate (R-fee-2 真值)
 
         // Wrap in synthetic event (event_id = condition_id, slug/title = question)
@@ -700,26 +702,40 @@ std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
         if (added == 0) break;  // 本页无新 event → gamma 已枯竭
     }
 
-    std::size_t live_count = 0;
+    // 订阅范围 (老板 2026-06-01「主要订阅已开赛的盘口, 比赛结束的不订阅甚至退订」):
+    //   只留【已开赛 in-progress】+【即将开赛 ≤1h】; 剔除 远期(>1h)/已结束/outright(无开赛 ts)。
+    //   已结束判定: gamma endDate 已过, 或 开赛超 kLiveWindowSec (物理结束推定, 覆盖长盘)。
+    //   退订: 周期重发现 (RediscoverOnce 300s) 用本结果全量重订 → 结束的赛事自然落选 = 退订。
+    constexpr std::int64_t kPreKickoffWindowSec = 3600;       // 开赛前 ≤1h 起订阅 (imminent)
+    constexpr std::int64_t kLiveWindowSec = 6 * 3600;         // 开赛后 ≤6h 推定仍在打 (tennis/cricket/esports 长盘)
+    std::vector<DiscoveredEvent> kept;
+    kept.reserve(out.size());
+    std::size_t live_count = 0, drop_outright = 0, drop_early = 0, drop_ended = 0;
     for (auto& e : out) {
-        // 该 event 最早的 market kickoff (gameStartTime 真实开赛 ts, 比 listing startDate 准)。
-        std::int64_t earliest_kickoff = 0;
+        std::int64_t earliest_kickoff = 0;  // 最早 market 开赛 (gameStartTime, 比 listing startDate 准)
+        std::int64_t latest_end = 0;        // 最晚 market endDate (结算窗口)
         for (const auto& m : e.markets) {
             if (m.game_start_ts_sec > 0 &&
                 (earliest_kickoff == 0 || m.game_start_ts_sec < earliest_kickoff)) {
                 earliest_kickoff = m.game_start_ts_sec;
             }
+            if (m.end_ts_sec > latest_end) latest_end = m.end_ts_sec;
         }
-        // 在打 = 已开赛 (kickoff<=now)。前端默认过滤 + Goalserve 比分映射优先级用。
-        //   kickoff 未知 (=0, 多为 outright) → 非在打 (不 mark live)。
-        e.live = (earliest_kickoff > 0 && earliest_kickoff <= now_sec);
+        if (earliest_kickoff == 0) { ++drop_outright; continue; }                       // outright/无开赛 ts
+        if (earliest_kickoff > now_sec + kPreKickoffWindowSec) { ++drop_early; continue; }  // 太早 (>1h)
+        const bool ended_by_enddate = (latest_end > 0 && latest_end <= now_sec);        // gamma endDate 已过
+        const bool ended_by_window = (now_sec > earliest_kickoff + kLiveWindowSec);     // 开赛超 6h 推定结束
+        if (ended_by_enddate || ended_by_window) { ++drop_ended; continue; }            // 已结束 → 不订阅
+        e.live = (earliest_kickoff <= now_sec);  // 已开赛 = 在打 (前端默认过滤 + Goalserve 映射优先级)
         if (e.live) ++live_count;
+        kept.push_back(std::move(e));
     }
     std::fprintf(stderr,
-                 "[live_discover] 发现 %zu event (%d 页; 在打/live=%zu, 其余 upcoming/outright; "
-                 "live 由 gameStartTime<=now 判)\n",
-                 out.size(), pages, live_count);
-    return out;
+                 "[live_discover] 订阅范围 %zu event (扫 %zu raw/%d 页; 在打/live=%zu + imminent≤1h=%zu; "
+                 "剔 outright=%zu 太早=%zu 已结束=%zu)\n",
+                 kept.size(), out.size(), pages, live_count, kept.size() - live_count, drop_outright,
+                 drop_early, drop_ended);
+    return kept;
 }
 
 std::vector<DiscoveredEvent> DiscoverSportsMarketsFlat(int max_markets) {
