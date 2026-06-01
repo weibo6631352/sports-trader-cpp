@@ -580,7 +580,8 @@ BuildResult PaperDaemon::Build() {
     }
 
     // ---- Step 4: LiveWssTransport + LiveBookPublisher (构造 + 设回调, 不 AsyncConnect) ----
-    if (!all_token_ids_.empty()) {
+    //   R-6: 周期重发现开启时, 即便 0 起始 token 也构造 WSS (连上等重发现订阅; 否则 live 比赛来了无处订)。
+    if (!all_token_ids_.empty() || cfg_.rediscover_interval_sec > 0) {
         live_publisher_ = std::make_unique<debug_api::LiveBookPublisher>(*hub_, all_token_ids_, cfg_.verbose);
         live_transport_ = std::make_unique<debug_api::LiveWssTransport>(cfg_.verbose);
 
@@ -728,13 +729,14 @@ void PaperDaemon::Start() {
         paper_loop_->Start();
     }
 
-    // ---- Step 4b' start: 映射刷新线程 (A1b; EventMatcher 周期匹配 condition↔goalserve) ----
-    //   仅当: 起交易 + 有 score_store + 有可匹配 market + 刷新周期>0.
+    // ---- Step 4b' start: 映射刷新线程 (A1b; EventMatcher 周期匹配 condition↔goalserve + R-6 周期重发现) ----
+    //   起交易 + 有 score_store + 刷新周期>0 即启动。R-6 修: 不再要求 market_match_inputs_ 非空 ——
+    //   启动时 0 发现 (大赛空档) 也要起线程, 否则周期重发现永不跑, 卡死在 0 (live 比赛来了也捞不到)。
     if (cfg_.enable_paper_trading && cfg_.mapping_refresh_sec > 0 && score_store_ && paper_loop_ &&
-        !market_match_inputs_.empty()) {
+        (!market_match_inputs_.empty() || cfg_.rediscover_interval_sec > 0)) {
         mapping_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshEventMapping(st); });
-        std::printf("[paper_daemon] 映射刷新线程启动 (EventMatcher, %ds 周期, %zu 可匹配 market)\n",
-                    cfg_.mapping_refresh_sec, market_match_inputs_.size());
+        std::printf("[paper_daemon] 映射刷新线程启动 (EventMatcher %ds + 周期重发现 %ds, 起始 %zu market)\n",
+                    cfg_.mapping_refresh_sec, cfg_.rediscover_interval_sec, market_match_inputs_.size());
         std::fflush(stdout);
     }
 
