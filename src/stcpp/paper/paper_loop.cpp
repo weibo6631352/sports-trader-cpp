@@ -107,7 +107,7 @@ PaperLoop::PaperLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk
       confirm_watcher_(0xC0FFEE'D00DULL),
       psigner_(&nonce_provider_, &gas_estimator_, &confirm_watcher_),
       matcher_(0xBEEFCAFEULL),
-      token_map_(std::move(token_map)),
+      token_map_(std::make_shared<const TokenMap>(std::move(token_map))),
       cfg_(std::move(cfg)) {
     (void)rm_snap_;  // 只写不读字段: 抑制 clang -Wunused-private-field (跨 gcc/clang 可移植)
     // G-1: 默认注入 VirtualExecutor (包 matcher_, 行为逐位不变)。live 注入留待开闸后 (老韩签字)。
@@ -163,7 +163,8 @@ void PaperLoop::Start() {
     std::fprintf(stderr,
                  "[paper_loop] 启动 paper 交易循环 (tick=%lldms, tokens=%zu, "
                  "bankroll=%.0f pUSD)\n",
-                 static_cast<long long>(cfg_.tick_interval_ms), token_map_.size(), cfg_.bankroll_usdc);
+                 static_cast<long long>(cfg_.tick_interval_ms),
+                 (LoadTokenMap() ? LoadTokenMap()->size() : 0), cfg_.bankroll_usdc);
 }
 
 void PaperLoop::Stop() noexcept {
@@ -241,8 +242,12 @@ void PaperLoop::TickAll() {
     //   GetSnapshot()/LoadEventMap() 都是只读 RCU 单次 load (不碰 R-12); shared_ptr 持有保活整 tick。
     tick_event_map_ = LoadEventMap();
     tick_score_snap_ = (score_store_ != nullptr) ? score_store_->GetSnapshot() : nullptr;
+    tick_token_map_ = LoadTokenMap();  // RCU 快照: 周期重发现可能中途 swap, 整 tick 持有同版本
+    if (tick_token_map_ == nullptr) {
+        return;  // 未注入 (理论不达; ctor 必置)
+    }
 
-    for (const auto& [cond_id, tok_pair] : token_map_) {
+    for (const auto& [cond_id, tok_pair] : *tick_token_map_) {
         const std::string& yes_tok = tok_pair.first;  // YES token
         const std::string& no_tok = tok_pair.second;  // NO token
 
@@ -1543,9 +1548,9 @@ void PaperLoop::PopulateFeatureColumns(
     // 当前持仓 (老板: 持仓入模型; 库存感知)。目标仓位范式: 模型需知现仓 → 控制器算 order=目标−现仓。
     //   老板「各边买了多少, 可能两边都买」: per-token 双边读 (旧码 break 在首个 token = 只取一边,
     //   丢 NO; 现按 token_map_ 的 YES/NO 各读各量)。pos_net_qty = YES − NO (净方向便利量)。
-    {
-        const auto tmit = token_map_.find(condition_id);
-        if (tmit != token_map_.end()) {
+    if (tick_token_map_ != nullptr) {
+        const auto tmit = tick_token_map_->find(condition_id);
+        if (tmit != tick_token_map_->end()) {
             if (const auto yp = position_ledger_.get_position(tmit->second.first)) {  // YES token
                 qf.pos_yes_qty = static_cast<double>(yp->size_usdc) / 1'000'000.0;
                 qf.pos_yes_avg_entry = yp->avg_entry_price;

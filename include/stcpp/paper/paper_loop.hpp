@@ -399,6 +399,18 @@ public:
         event_map_ = std::move(m);
     }
 
+    // 周期重发现 (老板 2026-06-01): 动态增订市场. token_map RCU 热刷 (同 event_map 模式).
+    //   loop_thread_ TickAll 入口取快照迭代; daemon 重发现线程 append 新 condition 后 swap ptr.
+    using TokenMap = std::unordered_map<std::string, std::pair<std::string, std::string>>;
+    void SetTokenMap(std::shared_ptr<const TokenMap> m) noexcept {
+        std::lock_guard<std::mutex> lk(token_map_mu_);
+        token_map_ = std::move(m);
+    }
+    [[nodiscard]] std::shared_ptr<const TokenMap> LoadTokenMap() const noexcept {
+        std::lock_guard<std::mutex> lk(token_map_mu_);
+        return token_map_;
+    }
+
 private:
     // ---- 依赖引用 ----
     const polymarket::clob_wss::OrderBookSnapshotHub& hub_;
@@ -428,8 +440,10 @@ private:
     //   声明在 matcher_ 之后 → 析构先于 matcher_ (executor_ 持 matcher_ 引用)。
     std::unique_ptr<execution::IOrderExecutor> executor_;
 
-    // ---- 配置与 token map ----
-    std::unordered_map<std::string, std::pair<std::string, std::string>> token_map_;
+    // ---- 配置与 token map (RCU 热刷: 周期重发现动态增订; loop 读快照, daemon 写 swap) ----
+    mutable std::mutex token_map_mu_;
+    std::shared_ptr<const TokenMap> token_map_;
+    std::shared_ptr<const TokenMap> tick_token_map_;  // TickAll 入口冻结快照 (整 tick 同版本)
     PaperLoopConfig cfg_;
 
     // ---- R-fee-2: per-market 手续费系数 (condition_id → feeSchedule.rate) ----
