@@ -55,7 +55,7 @@
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/polymarket/wss/wss_event.hpp"  // FourTs, DataSourceTsOrigin
 
-namespace stcpp::debug_api {
+namespace stcpp::polymarket::clob_wss {
 
 using stcpp::microstructure::kBookDepthLevels;
 using stcpp::microstructure::OrderBookLevel;
@@ -593,4 +593,4 @@ private:
     std::unordered_map<std::string, stcpp::microstructure::TradeFlowWindow> trade_agg_;
 };
 
-}  // namespace stcpp::debug_api
+}  // namespace stcpp::polymarket::clob_wss

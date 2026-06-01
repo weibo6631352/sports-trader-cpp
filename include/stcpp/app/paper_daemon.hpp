@@ -53,9 +53,11 @@
 // 避免把 httplib/openssl 头泄进 app 层公共头.
 namespace stcpp::debug_api {
 class HttpServer;
-class LiveWssTransport;
-class LiveBookPublisher;
 }  // namespace stcpp::debug_api
+namespace stcpp::polymarket::clob_wss {
+class LiveWssTransport;   // R-3 评审 D-1: CLOB WSS 接入归 L1 数据层 (从 debug_api 迁出)
+class LiveBookPublisher;  // 同上
+}  // namespace stcpp::polymarket::clob_wss
 namespace stcpp::data {
 class InplayFeedThread;
 class SettlementStore;     // M2 收盘/结算 store (forward; .cpp 实体化)
@@ -325,8 +327,8 @@ private:
     std::unique_ptr<data::SettlementPoller> settlement_poller_;  // M2 clob /markets 轮询
     std::unique_ptr<data::livescore::LiveStatsStore> live_stats_store_;        // live_stats 快照
     std::unique_ptr<data::livescore::CommentariesPoller> commentaries_poller_;  // commentaries 30s 轮询
-    std::unique_ptr<debug_api::LiveBookPublisher> live_publisher_;
-    std::unique_ptr<debug_api::LiveWssTransport> live_transport_;
+    std::unique_ptr<polymarket::clob_wss::LiveBookPublisher> live_publisher_;
+    std::unique_ptr<polymarket::clob_wss::LiveWssTransport> live_transport_;
 
     // 读模型 (server_ 持其指针 → real_provider_ 在 server_ 之前声明)
     std::unique_ptr<debug_api::RealStateProvider> real_provider_;

@@ -30,8 +30,8 @@
 #include "stcpp/ml/feature_vector_recorder.hpp"   // Phase 2 项6 完整向量 recorder (含 hub)
 #include "stcpp/ml/model_feature_spec.hpp"      // kMlFeatureCount (ML 模型维度契约)
 
-#include "src/stcpp/debug_api/live_book_publisher.hpp"  // LiveBookPublisher
-#include "src/stcpp/debug_api/live_wss_transport.hpp"   // LiveWssTransport
+#include "src/stcpp/polymarket/clob_wss/live_book_publisher.hpp"  // LiveBookPublisher
+#include "src/stcpp/polymarket/clob_wss/live_wss_transport.hpp"   // LiveWssTransport
 #include "src/stcpp/debug_api/server.hpp"               // HttpServer
 
 namespace stcpp::app {
@@ -583,8 +583,8 @@ BuildResult PaperDaemon::Build() {
     // ---- Step 4: LiveWssTransport + LiveBookPublisher (构造 + 设回调, 不 AsyncConnect) ----
     //   R-6: 周期重发现开启时, 即便 0 起始 token 也构造 WSS (连上等重发现订阅; 否则 live 比赛来了无处订)。
     if (!all_token_ids_.empty() || cfg_.rediscover_interval_sec > 0) {
-        live_publisher_ = std::make_unique<debug_api::LiveBookPublisher>(*hub_, all_token_ids_, cfg_.verbose);
-        live_transport_ = std::make_unique<debug_api::LiveWssTransport>(cfg_.verbose);
+        live_publisher_ = std::make_unique<polymarket::clob_wss::LiveBookPublisher>(*hub_, all_token_ids_, cfg_.verbose);
+        live_transport_ = std::make_unique<polymarket::clob_wss::LiveWssTransport>(cfg_.verbose);
 
         // P1-2/P1-3 re-inject: wss_transport 指针就位后更新 hooks.
         metrics_hooks_.wss_transport = live_transport_.get();

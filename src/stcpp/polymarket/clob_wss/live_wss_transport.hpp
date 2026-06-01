@@ -74,7 +74,7 @@
 
 #include "stcpp/polymarket/wss/pm_wss_subscriber.hpp"  // IWssTransport
 
-namespace stcpp::debug_api {
+namespace stcpp::polymarket::clob_wss {
 
 // ---------------------------------------------------------------------------
 // kWssHostWhitelist — 硬编码 host 白名单 (小白 audit §4.1 item 5)
@@ -813,4 +813,4 @@ private:
     OnDisconnected on_disconnected_;
 };
 
-}  // namespace stcpp::debug_api
+}  // namespace stcpp::polymarket::clob_wss
