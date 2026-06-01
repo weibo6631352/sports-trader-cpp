@@ -97,8 +97,8 @@ struct DiscoveredEvent {
 // Fetch 层 — popen curl 拉原始 JSON (IO; 非热路径)
 // ---------------------------------------------------------------------------
 
-// GET gamma /events (tag_id=1 体育, ascending=false 近期优先). 失败返 "".
-[[nodiscard]] std::string FetchGammaEvents();
+// GET gamma /events (tag_id=1 体育, ascending=false 近期优先). offset 分页. 失败返 "".
+[[nodiscard]] std::string FetchGammaEvents(int offset = 0);
 
 // GET gamma /markets (平铺回退). 失败返 "".
 [[nodiscard]] std::string FetchGammaMarketsFlat();

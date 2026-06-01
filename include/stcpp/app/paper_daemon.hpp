@@ -154,8 +154,8 @@ struct PaperDaemonConfig {
     //   (与 market_match_inputs_ 同线程, 无竞争); 全量重发现 + WSS 全量重订 (幂等, 老郭反增量 diff)。
     int rediscover_interval_sec{300};  // 5 分钟
 
-    // gamma 发现规模
-    int max_events{30};
+    // gamma 发现规模 (老板 2026-06-01「不要限制, 搞大, 验证期不能限制太狠」: 30→2000 全量发现)
+    int max_events{2000};
     int max_markets_flat{10};
 
     // PaperLoop 参数 (daemon 默认: 500ms tick, 1K pUSD demo bankroll — 逐字对齐原 main).

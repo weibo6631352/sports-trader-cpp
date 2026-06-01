@@ -623,17 +623,19 @@ std::string CurlGet(const std::string& url) {
 
 }  // namespace
 
-std::string FetchGammaEvents() {
+std::string FetchGammaEvents(int offset) {
     // tag_id=1 = Sports 标签 (纯体育池, laoli SSOT §6); ascending=false 让近期/未来
     // 开赛的单场比赛优先 (含 moneyline/totals/spreads), 而非赛季级 outright 夺冠盘.
     // 实测: ascending=true 首批全是 outright (sportsMarketType 空); ascending=false
     // 首批含 moneyline 71 / totals 111 / spreads 56 → 盘口识别率真实 > 0.
+    // offset 分页 (老板 2026-06-01「不要限制, 搞大, 验证期」): DiscoverSportsEvents 逐页扫到空。
     const std::string url =
         "https://gamma-api.polymarket.com/events"
-        "?tag_id=1&closed=false&active=true&limit=100&order=startDate&ascending=false";
+        "?tag_id=1&closed=false&active=true&limit=100&order=startDate&ascending=false"
+        "&offset=" + std::to_string(offset);
     std::fprintf(stderr, "[live_discover] GET %s\n", url.c_str());
     std::string json_buf = CurlGet(url);
-    if (json_buf.empty()) {
+    if (json_buf.empty() && offset == 0) {
         std::fprintf(stderr, "[live_discover] ERROR: empty response from gamma /events\n");
     }
     return json_buf;
@@ -674,7 +676,26 @@ std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
     //   且不再按「开赛>1h 丢弃」截断 (那会让 upcoming 比官方少) — 改为保留全部单场盘, 由 max_events 兜底。
     const std::int64_t now_sec = static_cast<std::int64_t>(std::time(nullptr));
 
-    std::vector<DiscoveredEvent> out = ParseSportsEvents(FetchGammaEvents(), max_events);
+    // 分页抓取全量 (老板 2026-06-01「不要限制, 搞大, 验证期不能限制太狠」): 逐页 offset+=100
+    //   扫到空 (或满 max_events / 安全上限) 为止, 不再单页 100 截断。dedup by event_id。
+    constexpr int kPageSize = 100;
+    constexpr int kHardScanCap = 5000;  // 安全护栏 (防 gamma 异常无限翻页), 远高于现实体育盘量
+    std::vector<DiscoveredEvent> out;
+    std::unordered_set<std::string> seen;
+    int pages = 0;
+    for (int offset = 0; offset < kHardScanCap && static_cast<int>(out.size()) < max_events;
+         offset += kPageSize) {
+        std::vector<DiscoveredEvent> page = ParseSportsEvents(FetchGammaEvents(offset), kPageSize);
+        ++pages;
+        if (page.empty()) break;  // 翻到底
+        for (auto& e : page) {
+            if (!seen.insert(e.event_id).second) continue;  // 跨页去重
+            out.push_back(std::move(e));
+            if (static_cast<int>(out.size()) >= max_events) break;
+        }
+        if (static_cast<int>(page.size()) < kPageSize) break;  // 不足一页 → 已到底
+    }
+
     std::size_t live_count = 0;
     for (auto& e : out) {
         // 该 event 最早的 market kickoff (gameStartTime 真实开赛 ts, 比 listing startDate 准)。
@@ -691,9 +712,9 @@ std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
         if (e.live) ++live_count;
     }
     std::fprintf(stderr,
-                 "[live_discover] 发现 %zu event (在打/live=%zu, 其余 upcoming/outright; "
-                 "live 由 gameStartTime<=now 判, 非已废的 event.live 标志)\n",
-                 out.size(), live_count);
+                 "[live_discover] 发现 %zu event (%d 页; 在打/live=%zu, 其余 upcoming/outright; "
+                 "live 由 gameStartTime<=now 判)\n",
+                 out.size(), pages, live_count);
     return out;
 }
 
