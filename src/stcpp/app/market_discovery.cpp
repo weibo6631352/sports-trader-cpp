@@ -16,6 +16,7 @@
 #include <limits>
 #include <cstdlib>
 #include <ctime>
+#include <unordered_set>
 
 namespace stcpp::app {
 
@@ -638,6 +639,20 @@ std::string FetchGammaEvents() {
     return json_buf;
 }
 
+// 发现「正在打」的单场 (gamma event.live=true). 这是 in-play 交易的命门:
+//   默认 FetchGammaEvents 按 startDate 倒序, 而 live 单场的 event.startDate = 上架日 (陈旧, 可早一个月),
+//   被排到列表最底永远捞不到 → EventMatcher 0/N 匹配 → game 特征全空 → 不产 fair → 0 成交 (根因实证).
+//   live=true 精确返回 gameStartTime≈now 的在打比赛 (Cruzeiro/Cubs/...), 各盘口齐 (moneyline/spreads/totals),
+//   且正是 Goalserve in-play 比分覆盖的那批 → 队名+kickoff 都对得上, 是「盘口↔直播员对接」的正确数据源.
+//   ToS: 只读公开 gamma REST, 不下单.
+std::string FetchGammaLiveEvents() {
+    const std::string url =
+        "https://gamma-api.polymarket.com/events"
+        "?tag_id=1&closed=false&active=true&live=true&limit=100";
+    std::fprintf(stderr, "[live_discover] GET %s\n", url.c_str());
+    return CurlGet(url);
+}
+
 std::string FetchGammaMarketsFlat() {
     const std::string url =
         "https://gamma-api.polymarket.com/markets"
@@ -651,7 +666,25 @@ std::string FetchGammaMarketsFlat() {
 // ---------------------------------------------------------------------------
 
 std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
-    return ParseSportsEvents(FetchGammaEvents(), max_events);
+    // in-play (live=true) 单场优先 — 它们能映射 Goalserve 比分 (in-play 交易 + game 特征的唯一来源),
+    //   放最前保证不被 max_events 截断. 再补 future/近期盘 (更广 book 覆盖, 供微观结构特征/arb).
+    //   按 event_id 去重 (live 与 future 集合可能交叠).
+    std::vector<DiscoveredEvent> out = ParseSportsEvents(FetchGammaLiveEvents(), max_events);
+    const std::size_t live_count = out.size();
+    std::vector<DiscoveredEvent> upcoming = ParseSportsEvents(FetchGammaEvents(), max_events);
+    std::unordered_set<std::string> seen;
+    seen.reserve(out.size() + upcoming.size());
+    for (const auto& e : out) {
+        seen.insert(e.event_id);
+    }
+    for (auto& e : upcoming) {
+        if (seen.insert(e.event_id).second) {
+            out.push_back(std::move(e));
+        }
+    }
+    std::fprintf(stderr, "[live_discover] 发现 %zu event (live in-play=%zu + future=%zu 去重后)\n", out.size(),
+                 live_count, out.size() - live_count);
+    return out;
 }
 
 std::vector<DiscoveredEvent> DiscoverSportsMarketsFlat(int max_markets) {
