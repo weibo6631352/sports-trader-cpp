@@ -439,10 +439,15 @@ public:
     //   指针生命周期须覆盖 loop 运行期。live 路径恒 nullptr → 行为逐位不变。
     void SetReplayInputs(const DecisionInputSnapshot* s) noexcept { replay_inputs_ = s; }
 
-    // 步④: 注入 ML 推理模型 (ml::FairValueModel; daemon 装配 Stub/ONNX)。单 writer: Start() 前注入,
-    //   loop_thread_ 只读。nullptr = 无模型 → 走 baseline provenance。ML-R1/R2: 推理结果 advisory,
-    //   只填 QuoteFeatures.ml_advisory_p_yes + provenance, 绝不改 fair_value/决策。owner 是 daemon。
-    void SetMlModel(const ml::FairValueModel* m) noexcept { ml_model_ = m; }
+    // 步④: 注入 ML 推理模型 (ml::FairValueModel; daemon 装配 Stub/ONNX)。非占有 (调用方管生命周期, 启动期用)。
+    //   ML-R2 (老板 2026-05-31 放开): 真 ONNX 模型 blend 进决策 p_fair (stub 永不驱动); 无模型 → baseline。
+    void SetMlModel(const ml::FairValueModel* m) noexcept { ml_holder_.StoreNonOwning(m); }
+
+    // 热加载换 fair_value 模型 (老板「边训边跑边更新模型可重新加载」, 2026-06-01)。占有式: 训练产新 ONNX →
+    //   daemon watcher 加载校验后 Store 原子换上, 不停盘; 推理线程 Load 拿 copy 期内旧模型不被删。任意线程可调。
+    void SetMlModelShared(std::shared_ptr<const ml::FairValueModel> m) noexcept {
+        ml_holder_.Store(std::move(m));
+    }
 
     // 注入短时套利序列模型 (ml::SeqArbModel; daemon 装配 Stub/ONNX)。advisory 旁路: 只填 qf.arb_* 观测,
     //   绝不驱动真单 (stub 恒 ok=false 不发; 真模型也止于 advisory 直到 LiveOrderGate 开闸)。
@@ -577,7 +582,7 @@ private:
         return (it != tick_inputs_.live_stats->end()) ? &it->second : nullptr;
     }
     // 步④: ML 推理模型 (非自有; daemon 注入 + 持有)。loop_thread_ 只读。nullptr = baseline only。
-    const ml::FairValueModel* ml_model_{nullptr};
+    ml::HotSwapHolder<ml::FairValueModel> ml_holder_;    // 步④ fair_value 模型 (热加载: daemon watcher 原子换新 ONNX)
     ml::HotSwapHolder<ml::SeqArbModel> seq_arb_holder_;  // 短时套利模型 (advisory 旁路; 支持热加载换模型)
     // Phase 2 项6: 完整向量 hub (非自有; daemon 注入)。loop_thread_ 单 writer Publish。nullptr = 不捕获。
     ml::FeatureVectorHub* fv_hub_{nullptr};

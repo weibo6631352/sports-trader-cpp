@@ -711,8 +711,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //     (派生解析模型即该盘口的 fair)。未来 market-type-aware ONNX 上线再放开 (cat_market_type 特征已就位)。
     //   R-2: ML 推理 (非纯) 在此算 ml_p_opt, blend 算术交 ResolveFair (一处定优先级)。
     std::optional<double> ml_p_opt;
-    if (cfg_.ml_fair_blend_weight > 0.0 && !derivative_p_yes && ml_model_ != nullptr && ml_model_->ready() &&
-        ml_model_->kind() == ml::ModelKind::Onnx) {
+    // 热加载: Load() 拿当前模型 shared_ptr (本次推理引用期内不被 daemon watcher 换走/回收)。
+    const auto ml_model = ml_holder_.Load();
+    if (cfg_.ml_fair_blend_weight > 0.0 && !derivative_p_yes && ml_model != nullptr && ml_model->ready() &&
+        ml_model->kind() == ml::ModelKind::Onnx) {
         sizing::QuoteFeatures fqf{};
         const double blend_no_imb =
             mkt.no.present ? mkt.no.book.imbalance : std::numeric_limits<double>::quiet_NaN();
@@ -725,8 +727,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                g_periods_won_home, g_periods_won_away, sports, blend_no_ds, blend_no_ing,
                                mkt.no.present ? &mkt.no.book : nullptr);
         const ml::FeatureVector fv = ml::extract_full(game_row, book_row, fqf);
-        if (fv.size() == ml_model_->expected_feature_count()) {
-            const auto mp = ml_model_->predict(fv);
+        if (fv.size() == ml_model->expected_feature_count()) {
+            const auto mp = ml_model->predict(fv);
             const double ml_p = mp.prob(0);
             // fail-safe: ML 输出非有限 (NaN 特征/数值) → 不 blend, 保 baseline (宁可不动不可乱动)。
             if (mp.ok && std::isfinite(ml_p) && ml_p > 0.0 && ml_p < 1.0) {
@@ -1723,9 +1725,11 @@ void PaperLoop::PublishQuoteSnapshot(
     }
     ml::ModelPrediction ml_pred_storage;
     const ml::ModelPrediction* ml_pred = nullptr;
-    if (ml_model_ != nullptr && ml_model_->ready() &&
-        fv.size() == ml_model_->expected_feature_count()) {
-        ml_pred_storage = ml_model_->predict(fv);
+    // 热加载: Load() 拿当前模型 (本次引用期内不被换走)。
+    const auto ml_model = ml_holder_.Load();
+    if (ml_model != nullptr && ml_model->ready() &&
+        fv.size() == ml_model->expected_feature_count()) {
+        ml_pred_storage = ml_model->predict(fv);
         ml_pred = &ml_pred_storage;
     }
 
@@ -1768,8 +1772,8 @@ void PaperLoop::PublishQuoteSnapshot(
     if (ml_pred != nullptr && ml_pred->ok) {
         qf.ml_advisory_p_yes = ml_pred->prob(0);  // ML 模型 YES fair (advisory; 不驱动决策)
         // ml::ModelKind → sizing::ModelKindTag (同值 0/1/2: Stub/Onnx/Treelite)。
-        qf.model_kind = (ml_model_ != nullptr)
-                            ? static_cast<sizing::ModelKindTag>(static_cast<std::uint8_t>(ml_model_->kind()))
+        qf.model_kind = (ml_model != nullptr)
+                            ? static_cast<sizing::ModelKindTag>(static_cast<std::uint8_t>(ml_model->kind()))
                             : sizing::ModelKindTag::kStub;
         std::strncpy(qf.model_id, ml_pred->model_id.data(),
                      std::min(ml_pred->model_id.size(), sizeof(qf.model_id) - 1));

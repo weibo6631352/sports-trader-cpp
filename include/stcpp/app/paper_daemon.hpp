@@ -123,6 +123,9 @@ struct PaperDaemonConfig {
     // Phase 2: 训好的 ONNX fair value 模型路径 (空 → make_onnx 返 nullptr → StubFairValueModel)。
     //   放 model.onnx + 设此路径 → OnnxFairValueModel 激活, 推理路径零改码 (advisory, ML-R1/R2)。
     std::string onnx_model_path{};
+    // [2026-06-01 老板「边训边跑边更新模型可重新加载」] 模型热重载轮询周期 (秒)。daemon watcher 周期 stat
+    //   onnx_model_path mtime, 变了 → 加载新模型校验后原子换上不停盘 (训练旁路产新 .onnx → 自动生效)。0=关闭。
+    std::int32_t model_reload_interval_sec{30};
     std::string ml_path{"data/ml_capture/quotes.jsonl"};
 
     // 仅观测不交易 (老周: 替代 ObserverOnly 枚举档). true=起 PaperLoop (默认).
@@ -274,6 +277,11 @@ private:
     //   paper_loop_->SetLiveStatsByTeams() (喂 5 个 g_*_diff 特征)。
     void RefreshLiveStats(std::stop_token st);
 
+    // [2026-06-01 老板「边训边跑边更新模型可重新加载」] 模型热重载线程: 周期 stat onnx_model_path mtime,
+    //   变了 → make_onnx 加载新模型 → 校验 (ready + feat 数) → paper_loop_->SetMlModelShared 原子换上不停盘。
+    //   加载/校验失败 → 保留旧模型 (fail-safe)。onnx_model_path 空 / interval=0 → 不启线程。
+    void RefreshModel(std::stop_token st);
+
     PaperDaemonConfig cfg_;
 
     // ---- 测试注入的 markets (空 → Build 走真发现) ----
@@ -294,6 +302,7 @@ private:
     std::jthread mapping_refresh_thread_;
     std::jthread settlement_refresh_thread_;  // M2 结算刷新 (SettlementStore → SetResolutionByCondition)
     std::jthread live_stats_refresh_thread_;  // live_stats 刷新 (LiveStatsStore → SetLiveStatsByTeams)
+    std::jthread model_reload_thread_;        // 模型热重载 watcher (onnx mtime 变 → SetMlModelShared 原子换)
     std::jthread seed_thread_;  // REST 快照打底后台线程 (jthread: 析构自动 request_stop + join)
 
     // =====================================================================
@@ -318,8 +327,10 @@ private:
     std::shared_ptr<risk::AuditEmitter> paper_audit_emitter_;
     std::unique_ptr<risk::RiskGateway> paper_rm_;
     std::unique_ptr<pricing::BaselineFairValueModel> paper_fv_model_;
-    // 步④ ML 推理模型 (Stub/ONNX; paper_loop_ 持其裸指针 → 必在 paper_loop_ 前声明 = 析构在其后)。
-    std::unique_ptr<ml::FairValueModel> fair_value_model_;
+    // 步④ ML 推理模型 (Stub/ONNX)。2026-06-01 改 shared_ptr: paper_loop_ 经 HotSwapHolder 自持 shared 引用
+    //   → 不再依赖此成员的析构顺序 (旧裸指针需 daemon 成员先声明后析构; shared 后任一持有方释放即可)。
+    //   model_reload_thread_ 热重载时原子换此引用 (单 writer: Build 一次 + watcher 线程后续)。
+    std::shared_ptr<ml::FairValueModel> fair_value_model_;
 
     // PaperLoop (用上述全部; 必在 paper_rm_snap_ 之后声明)
     std::unique_ptr<paper::PaperLoop> paper_loop_;

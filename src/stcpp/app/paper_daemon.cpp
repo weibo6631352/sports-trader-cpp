@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <thread>
 #include <unordered_set>
 #include <utility>
@@ -489,9 +490,10 @@ BuildResult PaperDaemon::Build() {
         fair_value_model_ = ml::make_onnx_fair_value_model(onnx_cfg);  // 空路径/无文件 → nullptr → stub
         if (!fair_value_model_) {
             fair_value_model_ =
-                std::make_unique<ml::StubFairValueModel>(ml::kMlFeatureCount, /*outcome_count=*/2);
+                std::make_shared<ml::StubFairValueModel>(ml::kMlFeatureCount, /*outcome_count=*/2);
         }
-        paper_loop_->SetMlModel(fair_value_model_.get());
+        // 热加载注入 (老板「模型可重新加载」): 经 HotSwapHolder Store shared 引用; watcher 线程后续原子换。
+        paper_loop_->SetMlModelShared(fair_value_model_);
         std::printf("[paper_daemon] 步④ ML 推理模型注入: kind=%s id=%.*s feat=%zu (advisory ML-R2)\n",
                     std::string(ml::to_string(fair_value_model_->kind())).c_str(),
                     static_cast<int>(fair_value_model_->model_id().size()),
@@ -791,6 +793,16 @@ void PaperDaemon::Start() {
         mapping_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshEventMapping(st); });
         std::printf("[paper_daemon] 映射刷新线程启动 (EventMatcher %ds + 周期重发现 %ds, 起始 %zu market)\n",
                     cfg_.mapping_refresh_sec, cfg_.rediscover_interval_sec, market_match_inputs_.size());
+        std::fflush(stdout);
+    }
+
+    // ---- Step 4b'' start: 模型热重载 watcher (老板「边训边跑边更新模型可重新加载」, 2026-06-01) ----
+    //   onnx_model_path 非空 + interval>0 + 起交易 → 启线程周期 stat mtime, 训练旁路产新 .onnx 自动换上。
+    if (cfg_.enable_paper_trading && paper_loop_ && !cfg_.onnx_model_path.empty() &&
+        cfg_.model_reload_interval_sec > 0) {
+        model_reload_thread_ = std::jthread([this](std::stop_token st) { RefreshModel(st); });
+        std::printf("[paper_daemon] 模型热重载 watcher 启动 (监测 %s, 周期 %ds)\n",
+                    cfg_.onnx_model_path.c_str(), cfg_.model_reload_interval_sec);
         std::fflush(stdout);
     }
 
@@ -1136,6 +1148,53 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
             if (st.stop_requested()) return;
             std::this_thread::sleep_for(milliseconds(100));
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RefreshModel — 模型热重载 watcher (老板「边训边跑边更新模型可重新加载」, 2026-06-01)
+//   周期 stat onnx_model_path mtime; 变了 → make_onnx 加载新模型 → 校验 (ready+维度+真 ONNX) →
+//   paper_loop_->SetMlModelShared 原子换上 (推理线程 Load 拿存活引用, 不停盘)。失败 → 保留旧模型 (fail-safe)。
+//   注: 加载在本线程 (非 loop_thread_), 不阻塞决策。onnxruntime 未装时 make_onnx 返 nullptr → 校验不过 →
+//   保留旧 (stub), 机制就位待 runtime 装好 + 真 .onnx 产出即自动生效。
+// ---------------------------------------------------------------------------
+void PaperDaemon::RefreshModel(std::stop_token st) {
+    using namespace std::chrono;
+    namespace fs = std::filesystem;
+    const std::string path = cfg_.onnx_model_path;
+    auto file_mtime = [](const std::string& p) -> std::int64_t {
+        std::error_code ec;
+        const auto t = fs::last_write_time(p, ec);
+        return ec ? 0 : t.time_since_epoch().count();
+    };
+    std::int64_t last_mtime = file_mtime(path);  // Build 已加载一次; 仅文件变化后才重载
+    while (!st.stop_requested()) {
+        const auto deadline = steady_clock::now() + seconds(cfg_.model_reload_interval_sec);
+        while (steady_clock::now() < deadline) {
+            if (st.stop_requested()) return;
+            std::this_thread::sleep_for(milliseconds(200));
+        }
+        const std::int64_t m = file_mtime(path);
+        if (m == 0 || m == last_mtime) continue;  // 无文件 / 未变
+        ml::OnnxModelConfig onnx_cfg;
+        onnx_cfg.onnx_path = path;
+        onnx_cfg.expected_feature_count = ml::kMlFeatureCount;
+        onnx_cfg.output_outcome_count = 2;
+        onnx_cfg.model_id = "paper-onnx-fair";
+        std::shared_ptr<ml::FairValueModel> fresh = ml::make_onnx_fair_value_model(onnx_cfg);
+        if (!fresh || !fresh->ready() || fresh->expected_feature_count() != ml::kMlFeatureCount ||
+            fresh->kind() != ml::ModelKind::Onnx) {
+            std::fprintf(stderr, "[paper_daemon] ⚠ 模型热重载校验失败 (加载/ready/维度/kind), 保留旧模型: %s\n",
+                         path.c_str());
+            last_mtime = m;  // 不反复重试同一坏文件
+            continue;
+        }
+        fair_value_model_ = fresh;             // daemon 持引用 (旧模型最后引用释放回收)
+        paper_loop_->SetMlModelShared(fresh);  // 原子换上, 不停盘
+        last_mtime = m;
+        std::printf("[paper_daemon] ✓ 模型热重载: %s (feat=%zu) → 原子换上不停盘\n", path.c_str(),
+                    fresh->expected_feature_count());
+        std::fflush(stdout);
     }
 }
 
