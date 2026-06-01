@@ -82,10 +82,11 @@ struct InplayFeedConfig {
     // 连续失败后 backoff 最大时长 (ms)
     std::uint32_t max_backoff_ms = 30000;
 
-    // token-bucket: 每次 fetch 之间的最小间隔 (ms)
-    // 防止 backoff=0 时暴击 Goalserve (尊重 ToS rate limit, 小白审计 §2.2)
-    // 建议: 套餐速率 / sport 数 (默认 800ms ≈ 1.25 req/s/sport, 远低于 1-2s 刷新周期)
-    std::uint32_t min_fetch_interval_ms = 800;
+    // 【每 sport 线程】fetch 最小间隔 (ms) — Goalserve 限速是 per-sport (实测 1 req/s/sport,
+    //   laochen-api-rate-latency-ssot §rate), 不是 per-IP 全局, 故 per-sport 限速正确。
+    //   1000ms = 每 sport ≤1 req/s (恰好贴限, 配 poll_interval_ms=1200 实际 0.83/s 留 margin)。
+    //   2026-06-01: 800→1000, 给 1/s 硬上限留余量 (此前 429 实为诊断期手动 curl 叠加, 非 daemon 本身超速)。
+    std::uint32_t min_fetch_interval_ms = 1000;
 };
 
 // ============================================================================

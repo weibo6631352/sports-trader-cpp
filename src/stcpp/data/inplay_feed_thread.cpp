@@ -537,8 +537,9 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
     std::fprintf(stderr, "[inplay_feed] sport=%s thread started, host=%s (path redacted)\n",
                  sport_slug.c_str(), cfg_.inplay_host.c_str());
 
-    // token-bucket: 记录上次 fetch 完成时刻 (单调时钟 ms), 强制 min_fetch_interval_ms 间隔
-    // 防止 backoff=0 时暴击 (小白审计 §2.2 ToS rate limit 保护)
+    // token-bucket: 记录上次 fetch 完成时刻 (单调时钟 ms), 强制 min_fetch_interval_ms 间隔。
+    //   【每 sport 线程独立】—— Goalserve 限速是 per-sport (1 req/s/sport, laochen SSOT §rate),
+    //   不是 per-IP 全局, 故每 sport 各自限速正是对的 (别改全局, 会把 4 sport 挤到共享 1/s 浪费配额)。
     std::uint64_t last_fetch_mono_ms = 0;
 
     // 简单单调 ms 时钟 (采集线程内部用, 不替代 R-20 ts)
@@ -550,7 +551,7 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
     };
 
     while (!stop_.load(std::memory_order_acquire)) {
-        // token-bucket 速率控制: 距上次 fetch 不足 min_fetch_interval_ms 则等待
+        // token-bucket 速率控制 (per-sport): 距上次 fetch 不足 min_fetch_interval_ms 则等待。
         {
             const std::uint64_t now_ms = mono_ms_now();
             if (last_fetch_mono_ms > 0 && now_ms < last_fetch_mono_ms + cfg_.min_fetch_interval_ms) {
