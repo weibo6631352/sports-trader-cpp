@@ -8,6 +8,8 @@
 
 #include "stcpp/app/paper_daemon.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -41,6 +43,35 @@ class NullAuditEmitter final : public risk::AuditEmitter {
 public:
     bool emit(risk::AuditRecord const& /*rec*/) noexcept override { return true; }
 };
+
+// outcome 是 Yes/No 二值 (足球 3-way 子盘) 而非真队名 → 队名得另寻 (event title).
+[[nodiscard]] bool IsYesNoOutcome(const std::string& s) noexcept {
+    auto lower = s;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lower == "yes" || lower == "no";
+}
+
+// 从 event title "Team A vs. Team B" 拆两队名 (分隔符 " vs. " / " vs " / " v. "). 失败返 false.
+[[nodiscard]] bool SplitVsTitle(const std::string& title, std::string& a, std::string& b) {
+    for (const char* sep : {" vs. ", " vs ", " v. ", " VS "}) {
+        const auto pos = title.find(sep);
+        if (pos != std::string::npos) {
+            a = title.substr(0, pos);
+            b = title.substr(pos + std::char_traits<char>::length(sep));
+            // 去首尾空白
+            auto trim = [](std::string& s) {
+                const auto l = s.find_first_not_of(" \t");
+                const auto r = s.find_last_not_of(" \t");
+                s = (l == std::string::npos) ? "" : s.substr(l, r - l + 1);
+            };
+            trim(a);
+            trim(b);
+            return !a.empty() && !b.empty();
+        }
+    }
+    return false;
+}
 
 }  // namespace
 
@@ -92,12 +123,34 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             token_map_[dm.condition_id] = {dm.token0_id, dm.token1_id};
             ei.condition_ids.push_back(dm.condition_id);
 
-            // A1b: 捕获 EventMatcher 锚定输入 (仅 moneyline 且两队名齐 → 可匹配 Goalserve).
-            //   outcome0/1 即两队名; game_start_ts_sec = kickoff; sport 取 event 级.
-            if (!dm.outcome0_name.empty() && !dm.outcome1_name.empty()) {
+            // A1b: 捕获 EventMatcher 锚定输入 (condition ↔ Goalserve event, 取真实比分源).
+            //   队名解析两路 (实证 gamma 结构):
+            //   ① outcomes 是真队名 (如 MLB ["Chicago Cubs","St. Louis Cardinals"]) → 直接用, team0=YES.
+            //   ② outcomes 是 Yes/No (足球 3-way 子盘) → 队名在 event title ("Cruzeiro EC vs. Fluminense FC"),
+            //      拆两队; 再用 group_item_title (gi: "Clube do Remo" 赢盘 / "Draw(...)" 平局) 定向 YES 代表哪队
+            //      (yes_is_home 定价正确性命门; gi 配不上=平局/未知 → 仅锚定取分, orientation 交 matcher margin 兜底).
+            std::string team0 = dm.outcome0_name;  // YES (token0)
+            std::string team1 = dm.outcome1_name;  // NO  (token1)
+            if (team0.empty() || team1.empty() || IsYesNoOutcome(team0) || IsYesNoOutcome(team1)) {
+                std::string ta, tb;
+                if (SplitVsTitle(ev.title, ta, tb)) {
+                    const std::string& gi = dm.group_item_title;
+                    if (!gi.empty() && EventMatcher::TeamSimilarity(gi, ta) >= 0.5) {
+                        team0 = ta;  // YES 代表 ta
+                        team1 = tb;
+                    } else if (!gi.empty() && EventMatcher::TeamSimilarity(gi, tb) >= 0.5) {
+                        team0 = tb;  // YES 代表 tb
+                        team1 = ta;
+                    } else {
+                        team0 = ta;  // 平局/未知 → 仅锚定 (任意序; matcher 取 max(直配,交叉))
+                        team1 = tb;
+                    }
+                }
+            }
+            if (!team0.empty() && !team1.empty() && !IsYesNoOutcome(team0) && !IsYesNoOutcome(team1)) {
                 EventMatchInput mi_in;
-                mi_in.team0 = dm.outcome0_name;  // YES (token0)
-                mi_in.team1 = dm.outcome1_name;  // NO  (token1)
+                mi_in.team0 = team0;
+                mi_in.team1 = team1;
                 mi_in.kickoff_ts_sec = dm.game_start_ts_sec;
                 mi_in.sport = ev.sport;
                 market_match_inputs_[dm.condition_id] = std::move(mi_in);
