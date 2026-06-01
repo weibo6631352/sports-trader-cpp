@@ -22,6 +22,7 @@ import {
   fetchHealthz, fetchStatus, fetchPositions, fetchPnlTimeseries,
   fetchPnlAttribution, fetchRiskRejects, fetchGatePaper,
   fetchMarket, fetchBook, fetchScore, fetchQuote, fetchMetrics, fetchEvents,
+  fetchFeatureHealth,
 } from './api';
 import {
   STUB_HEALTHZ, STUB_STATUS, STUB_POSITIONS, STUB_PNL_TIMESERIES,
@@ -32,7 +33,7 @@ import {
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, BinaryMarketBookView, Market, Score, Quote,
-  EventGroup, ConditionData, Position, RiskReject,
+  EventGroup, ConditionData, Position, RiskReject, FeatureHealth,
 } from './types';
 
 // ---------- stub 检测 ----------
@@ -57,6 +58,7 @@ interface AppState {
   gate: GatePaper | null;
   metrics: string | null;
   timeseries: PnlTimeseries | null;
+  featureHealth: FeatureHealth | null;
   conditionCache: Record<string, PerConditionCache>;
   eventGroups: EventGroup[];
   secondaryOpen: boolean;
@@ -71,6 +73,7 @@ export const [state, setState] = createStore<AppState>({
   gate: null,
   metrics: null,
   timeseries: null,
+  featureHealth: null,
   conditionCache: {},
   eventGroups: [],
   secondaryOpen: false,
@@ -132,6 +135,14 @@ export async function refreshGate(): Promise<void> {
 export async function refreshMetrics(_secondaryOpen?: boolean): Promise<void> {
   const text = USE_STUB ? STUB_METRICS_TEXT : await fetchMetrics();
   setState({ metrics: text ?? null });
+}
+
+// ---------- refreshFeatureHealth (老雷 2026-06-01 可观测) ----------
+
+export async function refreshFeatureHealth(): Promise<void> {
+  if (USE_STUB) return;
+  const data = await fetchFeatureHealth();
+  if (data) setState({ featureHealth: data });
 }
 
 // ---------- refreshMarketGrid (v8: 从 /api/v1/events 发现市场) ----------
@@ -312,4 +323,6 @@ export function initPolling(): void {
   // v6: metrics 无条件 30s 轮询 (Ops 页常驻消费)
   every(() => { void refreshMetrics(); }, 30000);
   every(() => { void refreshMarketInfoSlow(); }, 60000);
+  // 老雷 2026-06-01: 特征健康 20s 轮询 (Ops 页可观测)
+  every(() => { void refreshFeatureHealth(); }, 20000);
 }

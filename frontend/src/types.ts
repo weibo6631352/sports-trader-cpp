@@ -237,6 +237,28 @@ export interface Score {
 
 // ---------- /api/v1/quote/{conditionId} ----------
 
+// 特征健康 (老雷 2026-06-01 可观测): /api/v1/features/health
+export interface FeatureHealthRow {
+  i: number;
+  name: string;
+  populated: number;
+  nonzero: number;
+  min: number;
+  max: number;
+  mean: number;
+  status: 'healthy' | 'dead' | 'const';
+}
+export interface FeatureHealth {
+  mode: string;
+  as_of_ts: number;
+  n_records: number;
+  dead: number;
+  const: number;
+  healthy: number;
+  total: number;
+  rows: FeatureHealthRow[];
+}
+
 export interface Quote {
   mode: string;
   as_of_ts: number;

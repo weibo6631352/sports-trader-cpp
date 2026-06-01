@@ -17,6 +17,7 @@
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, Market, BinaryMarketBookView, Score, Quote, EventsResponse,
+  FeatureHealth,
 } from './types';
 
 // ---------- API base ----------
@@ -149,6 +150,7 @@ export const fetchPnlAttribution = (): Promise<PnlAttribution | null> => apiFetc
 
 export const fetchRiskRejects = (): Promise<RiskRejects | null> => apiFetch('/api/v1/risk/rejects');
 export const fetchGatePaper = (): Promise<GatePaper | null> => apiFetch('/api/v1/gate/paper');
+export const fetchFeatureHealth = (): Promise<FeatureHealth | null> => apiFetch('/api/v1/features/health');
 
 export const fetchMarket = (marketId: string): Promise<Market | null> =>
   apiFetch(`/api/v1/market/${marketId}`);

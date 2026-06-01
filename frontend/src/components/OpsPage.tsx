@@ -1109,6 +1109,75 @@ function MetricsRawSection() {
 }
 
 // ============================================================
+// FeatureHealthSection (老雷 2026-06-01 可观测): 110 ML 特征活死
+//   "特征没问题训练才有意义" — 一眼看哪些特征是死值 (全 0/null)。
+// ============================================================
+
+function FeatureHealthSection() {
+  const fh = () => state.featureHealth;
+  const dead = () => (fh()?.rows ?? []).filter((r) => r.status === 'dead');
+  const constRows = () => (fh()?.rows ?? []).filter((r) => r.status === 'const');
+  return (
+    <Card variant="outlined" sx={{ mt: 2 }}>
+      <CardHeader
+        title={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700 }}>特征健康 (110 列)</Typography>
+            <Show when={fh()}>
+              <Chip size="small" color="success" label={`活 ${fh()!.healthy}`} />
+              <Chip size="small" color="warning" label={`常量 ${fh()!.const}`} />
+              <Chip size="small" color="error" label={`死 ${fh()!.dead}`} />
+              <Typography variant="caption" sx={{ color: 'text.disabled' }}>
+                样本 {fh()!.n_records} 市场
+              </Typography>
+            </Show>
+          </Box>
+        }
+      />
+      <CardContent sx={{ p: 2 }}>
+        <Show when={fh()} fallback={<Typography variant="caption" sx={{ color: 'text.disabled' }}>加载中… (无数据时检查 /api/v1/features/health)</Typography>}>
+          <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1 }}>
+            死特征 = 全 0/null (无信息量)。game 侧 g_* 死 = 当前无 live 比赛映射 Goalserve; pos_* 死 = 无持仓。
+          </Typography>
+          <TableContainer sx={{ maxHeight: 320 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell>#</TableCell>
+                  <TableCell>特征</TableCell>
+                  <TableCell>状态</TableCell>
+                  <TableCell align="right">填充</TableCell>
+                  <TableCell align="right">非零</TableCell>
+                  <TableCell align="right">range</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                <For each={[...dead(), ...constRows()]}>
+                  {(r) => (
+                    <TableRow>
+                      <TableCell>{r.i}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '11px' }}>{r.name}</TableCell>
+                      <TableCell>
+                        <Chip size="small" color={r.status === 'dead' ? 'error' : 'warning'} label={r.status} />
+                      </TableCell>
+                      <TableCell align="right">{r.populated}</TableCell>
+                      <TableCell align="right">{r.nonzero}</TableCell>
+                      <TableCell align="right" sx={{ fontFamily: 'monospace', fontSize: '11px' }}>
+                        [{r.min.toFixed(3)}, {r.max.toFixed(3)}]
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </For>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Show>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
 // OpsPage (顶层导出)
 // ============================================================
 
@@ -1121,6 +1190,7 @@ export function OpsPage() {
       <BusinessThroughputSection />
       <RejectSection />
       <CoverageSection />
+      <FeatureHealthSection />
       <MetricsRawSection />
     </div>
   );
