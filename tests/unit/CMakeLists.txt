@@ -93,6 +93,7 @@ set(EXTRA_LIBS_test_feature_store_contract stcpp_data_contract)
 set(EXTRA_LIBS_test_orderbook_adapter   stcpp_polymarket_clob_wss)
 set(EXTRA_LIBS_test_orderbook_snapshot_hub stcpp_orderbook_snapshot_hub)
 set(EXTRA_LIBS_test_score_snapshot_store  stcpp_data_inplay_parser stcpp_data_score_store)
+set(EXTRA_LIBS_test_score_frame_recorder  stcpp_data_inplay_parser stcpp_data_score_store)  # 回测 P0 比分帧落盘
 # 小卢 2026-05-30: 覆盖率/识别率 metric 单测 (ADR-038 §4.4; market_type/discovered/score_matched)
 set(EXTRA_LIBS_test_coverage_metrics
     stcpp_orderbook_snapshot_hub
