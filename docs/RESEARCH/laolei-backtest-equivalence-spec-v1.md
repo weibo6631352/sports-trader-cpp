@@ -73,7 +73,7 @@ class IDecisionInputProvider {
 | 阶段 | 内容 | 归口 | 工作量 |
 |---|---|---|---|
 | **P0 原始帧捕获** | `RawInputRecorder` (复用 FeatureVectorRecorder jthread+jsonl 模式): live 跑时落盘每 tick 的 book(双边4ts) + score(含 inplay odds) + resolution + catalog line, 按 as_of_ts 对齐。**先有可回放数据**(现 quotes.jsonl 是特征非原始帧)。 | GM + 小余(ETL) | 2-3d |
-| **P1 DecisionInputSnapshot 边界** | 抽 IDecisionInputProvider + LiveImpl (行为不变, ctest 兜底)。**这步独立可回归, 不依赖 P0。** | GM (主干) | 1-2d |
+| ✅ **P1 DecisionInputSnapshot 边界** | **已落地 (commit bf49ec1, 2026-06-01)**: 5 个非 book 输入合 `DecisionInputSnapshot tick_inputs_` + `SetReplayInputs()` 注入 seam; 1339/1339 ctest 绿, 行为逐位不变。 | GM (主干) | ✅ done |
 | **P2 比分+resolution 回放** | ReplayImpl 喂 #2 比分 + #5 resolution (解锁 in-play 分支 + 结算)。验收 1+2。 | 小蒋 | 2-3d |
 | **P3 catalog + sharp + live_stats 回放** | 喂 #6 catalog(line) + #3 sharp(附#2) + #4 live_stats。验收 3+4。 | 小蒋 | 2-3d |
 | **P4 等价性回归门** | 历史段 replay vs 实盘 FairSrc 分布断言 (CI gate); replay_coverage→FULL。 | 小蒋 + 老郭 review | 1d |
@@ -97,6 +97,7 @@ class IDecisionInputProvider {
 
 ---
 
-## 7. 立即可起的第一步
+## 7. 进度
 
-**P1 DecisionInputSnapshot 边界** (GM 主干写, 行为不变, ctest 兜底) + **P0 RawInputRecorder** (并行, live 比赛时累积数据)。两者就绪后 P2 比分回放即可解锁回测"会下单会结算"。
+- ✅ **P1 DecisionInputSnapshot 边界** — 已落地 (commit bf49ec1)。注入 seam `SetReplayInputs` 就位, 回测可单点喂帧。
+- ⏭ **下一步**: **P0 RawInputRecorder** (GM+小余, live 比赛时累积原始帧) → **P2 比分+resolution 回放** (小蒋, 喂帧解锁回测"会下单/会结算")。P0 与 P2 谁先取决于是否已有可回放历史帧; 当前 quotes.jsonl 是特征非原始帧, 故 **P0 捕获是 P2 的数据前提**, 应先起。
