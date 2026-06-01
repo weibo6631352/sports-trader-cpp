@@ -358,6 +358,7 @@ static constexpr int kMaxJsonDepth = 32;
             std::from_chars(start_ts_str.data(), start_ts_str.data() + start_ts_str.size(), start_ts_sec);
         if (ec == std::errc{} && start_ts_sec > 0) {
             event_ts_ns = start_ts_sec * 1'000'000'000LL;
+            rec.scheduled_kickoff_ts_sec = start_ts_sec;  // 真实排定开赛 → 匹配时间窗锚 (空 start_ts 保持 0)
         }
     }
 

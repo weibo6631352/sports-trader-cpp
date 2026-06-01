@@ -723,9 +723,11 @@ debug_api::EventScore InplayFeedThread::ToEventScore(const data::adapter::GameSc
 
     // A0 映射桥: league_id + kickoff_ts_sec (EventMatcher 锚定用)
     es.league_id = rec.match_id.league_id;
-    // kickoff = event_ts_ns/1e9 (inplay feed 只返进行中 event, event_ts_ns 即真 kickoff;
-    // 见 EventScore.kickoff_ts_sec 注释 R-20 clamp 不触发的前提).
-    es.kickoff_ts_sec = rec.ts.event_ts_ns / 1'000'000'000LL;
+    // kickoff = 真实排定开赛 (scheduled_kickoff_ts_sec; 0=未知)。**不再用 event_ts_ns** —— 后者在
+    //   start_ts 空时回落 data_source_ts(now), 会让 esports 等无 start_ts 的源 kickoff=now, 与 PM
+    //   排定 gameStartTime 差 >窗口 → EventMatcher 误拒 (实测电竞 0 匹配根因 2026-06-01)。
+    //   0=未知 → 匹配器跳过时间窗 (只按队名匹配); 有真 start_ts(网球等) → 时间窗正常生效。
+    es.kickoff_ts_sec = rec.scheduled_kickoff_ts_sec;
 
     return es;
 }

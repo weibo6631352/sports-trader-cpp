@@ -133,6 +133,12 @@ struct GameScoreRecord {
     // Goalserve-specific state (内部 5 位状态码), 可选
     std::optional<std::string> gs_state_code;  // e.g. "11007" (从 dictionaries/states 查)
 
+    // 排定开赛 ts (Unix 秒; 仅当 payload start_ts 真实存在才填, 空串=0=未知)。EventMatcher 时间窗锚定专用。
+    //   与 ts.event_ts_ns 刻意区分: event_ts 在 start_ts 空时回落 data_source_ts(now) 以满足 R-20 需有值,
+    //   而本字段保持 0 → 令匹配器在 kickoff 未知时跳过时间窗 (否则 esports 等无 start_ts 的源会被
+    //   "now vs PM 排定时间" 误判超窗拒绝 — 实测电竞 0 匹配根因, 2026-06-01)。
+    std::int64_t scheduled_kickoff_ts_sec = 0;
+
     // R-20 合规检查
     [[nodiscard]] bool RespectsR20() const noexcept {
         return ts.IsMonotonic() && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
