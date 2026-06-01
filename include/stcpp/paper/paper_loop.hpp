@@ -115,6 +115,8 @@ namespace stcpp::paper {
 struct EventMapEntry {
     std::string inplay_match_id;
     bool yes_is_home{true};
+    // 3-way 足球: 此盘 YES=平局 → 定价 sharp fair 取 inplay_bet365_draw_fair (非 home/away)。
+    bool is_draw{false};
     // A5 (小余 round-2): join 边是概率性 fuzzy 匹配, 会断会翻转 → 一等暴露质量 (观测/模型输入, 不 gate)。
     double match_confidence{0.0};    // EventMatcher team_score (双队 overlap 和; 越高越确信)
     std::int64_t match_as_of_ns{0};  // 映射上次刷新时刻 (本地 now; 数据新鲜度观测, 绝不守门)

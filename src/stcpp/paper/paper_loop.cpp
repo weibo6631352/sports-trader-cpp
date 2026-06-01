@@ -414,11 +414,13 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // fail-closed: 无 score_store / 无映射 / 未匹配 / 陈旧 / 非 in-play → 保持 stub.
     // A4: 用 TickAll 入口冻结的 tick_score_snap_/tick_event_map_ (整 tick 同版本, 消 read-skew),
     //     不再 per-condition 各自 Get()/LoadEventMap()。
+    bool map_is_draw = false;  // 盈利修复: 3-way 平局盘 → 下游 sharp fair 取 draw 概率
     if (tick_score_snap_ != nullptr && tick_event_map_ != nullptr) {
         const ConditionEventMap& map = *tick_event_map_;
         {
             const auto it = map.find(condition_id);
             if (it != map.end() && !it->second.inplay_match_id.empty()) {
+                map_is_draw = it->second.is_draw;
                 const auto sit = tick_score_snap_->find(it->second.inplay_match_id);
                 if (sit != tick_score_snap_->end() && sit->second.found) {
                     const auto& es = sit->second;
@@ -607,7 +609,19 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         const double conf = terminal ? 1.0 : pricing::prior_confidence(time_frac);
         // 派生盘口已用专属定价覆盖 p_fair, 不走 moneyline score-prior blend (但仍算下列体育/时序特征)。
         if (!derivative_p_yes) {
-            p_fair = pricing::blend_prob(p_prior, p_market_devig, conf);
+            // ---- 盈利修复 (老雷 2026-06-01): sharp bet365 in-play de-vig fair 优先 ----
+            //   根因: score+clock 弱先验塌回 ~0.5, 无视流入的 sharp 共识 → 假 edge → 同场两队都买 → 亏。
+            //   sharp bet365 de-vig fair = 真实胜率共识 (Goalserve 直供, 比我们的 score 模型准得多)。
+            //   arb 论点: p_fair=sharp 共识, edge = sharp − PM 市场 (PM 偏离 sharp 才是真信号; 趋同则 0)。
+            //   3-way: 平局盘取 draw 概率, 胜负盘取 YES-canonical home_fair (已按 yes_is_home 翻转)。
+            //   sharp 无效 (无 bet365 odds, =-1) → 回落原 score-prior blend (fail-safe, 不造假)。
+            const double sharp_yes =
+                map_is_draw ? game_row.inplay_bet365_draw_fair : game_row.inplay_bet365_home_fair;
+            if (sharp_yes >= 0.0 && sharp_yes <= 1.0) {
+                p_fair = sharp_yes;
+            } else {
+                p_fair = pricing::blend_prob(p_prior, p_market_devig, conf);
+            }
         }
         time_to_resolution_frac = terminal ? 0.0 : std::clamp(1.0 - time_frac, 0.0, 1.0);
         // 批1 g_time_x_lead: 领先 × 剩余时间占比 (领先 1 球在 80min vs 20min 价值天差地别)。

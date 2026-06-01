@@ -153,6 +153,8 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
                 mi_in.team1 = team1;
                 mi_in.kickoff_ts_sec = dm.game_start_ts_sec;
                 mi_in.sport = ev.sport;
+                // 3-way 平局盘 (gi="Draw (...)") → 下游 sharp fair 取 draw 概率 (盈利修复)。
+                mi_in.is_draw = dm.group_item_title.rfind("Draw", 0) == 0;
                 market_match_inputs_[dm.condition_id] = std::move(mi_in);
             }
 
@@ -862,8 +864,13 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                              r.matched ? 1 : 0, r.team_score);
             }
             if (r.matched) {
-                (*new_map)[cond_id] =
-                    paper::EventMapEntry{r.inplay_match_id, r.yes_is_home, r.team_score, refresh_now_ns};
+                paper::EventMapEntry entry;
+                entry.inplay_match_id = r.inplay_match_id;
+                entry.yes_is_home = r.yes_is_home;
+                entry.is_draw = in.is_draw;  // 3-way 平局盘标志透传 → 下游 sharp fair 选 draw
+                entry.match_confidence = r.team_score;
+                entry.match_as_of_ns = refresh_now_ns;
+                (*new_map)[cond_id] = std::move(entry);
                 ++matched;
             }
         }

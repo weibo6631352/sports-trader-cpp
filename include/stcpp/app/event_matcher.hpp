@@ -42,6 +42,9 @@ struct EventMatchInput {
     std::string team1;               // market outcome1
     std::int64_t kickoff_ts_sec{0};  // gameStartTime Unix 秒; 0 = 未知 (跳过时间窗口检查)
     std::string sport;               // 可选提示 (当前未强制用)
+    // 3-way 足球: YES 代表「平局」盘 (gi="Draw(...)") → 定价用 inplay_bet365_draw_fair 而非 home/away。
+    //   仅锚定 (取分源) 不受影响; 影响下游 sharp fair 选哪一边 (老雷 2026-06-01 盈利修复)。
+    bool is_draw{false};
 };
 
 struct EventMatchResult {
