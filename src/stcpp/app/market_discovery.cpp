@@ -703,7 +703,9 @@ std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
     //   把扫描从固定 26 页砍到 ~10 页 (随实时分布自适应), 让 discovery 够轻 → 能高频跑 (rediscover 2s)。
     constexpr int kPageSize = 100;
     constexpr int kHardScanCap = 5000;   // 安全护栏 (防 gamma 异常无限翻页)
-    constexpr int kEmptyPageStop = 4;    // 连续 4 页无 live/imminent → 停 (容 ≤3 页空档, 实测最大空档 1 页)
+    // 连续 N 页无 live/imminent → 停。实测在打/即将全在前 ~7 页 + 最大空档仅 1 页; 设 10 给 10× 余量,
+    //   彻底避免漏掉"深页上架的在打比赛"(老板担心点; 实测完整扫 vs early-stop 0 遗漏, 此为额外保险)。
+    constexpr int kEmptyPageStop = 10;
     std::vector<DiscoveredEvent> kept;
     std::unordered_set<std::string> seen;
     int pages = 0, empty_streak = 0;
