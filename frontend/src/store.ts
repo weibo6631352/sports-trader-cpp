@@ -195,34 +195,82 @@ export async function refreshMarketGrid(): Promise<void> {
     }
   }
 
-  // 5. 从 /api/v1/events 获取 condition_ids (核心改变)
+  // 5. 从 /api/v1/events 获取 condition_ids
   const events = eventsData?.events ?? [];
-
   if (events.length === 0) {
     setState({ eventGroups: [] });
     return;
   }
 
-  // 6. 所有 condition_ids 去重
-  const allConditionIds = new Set<string>();
+  // 6. score 按 event_id 拉取 (≤32 个, 便宜; 决定哪些 event live + 排序)
+  const eventScoreCache: Record<string, Score | null> = {};
+  await Promise.all(
+    events.map(async (e) => {
+      eventScoreCache[e.event_id] = await safeGetMapped(
+        () => fetchScore(e.event_id), STUB_SCORE_MAP, e.event_id);
+    }),
+  );
+
+  // 7. EventGroup 构造器 (读当前 conditionCache; 不等 per-condition 拉取即可建组)
+  const buildGroups = (): EventGroup[] => {
+    const groups: EventGroup[] = events.map((evSummary) => ({
+      eventId: evSummary.event_id,
+      eventSlug: evSummary.slug,
+      eventTitle: evSummary.title,
+      sport: evSummary.sport,
+      score: eventScoreCache[evSummary.event_id] ?? null,
+      conditions: evSummary.condition_ids.map((condId) => {
+        const d = state.conditionCache[condId];
+        return {
+          conditionId: condId,
+          posRows: posMap[condId] ?? [],
+          market: d?.market ?? null,
+          book: d?.book ?? null,
+          quote: d?.quote ?? null,
+          rejectRows: rejectMap[condId] ?? [],
+          perMarketPnl: pmPnlMap[condId] != null ? pmPnlMap[condId] : null,
+        };
+      }),
+    }));
+    // 进行中赛事排前面, 其次有持仓
+    groups.sort((a, b) => {
+      const aLive = a.score?.status === 'inplay' || a.score?.status === 'halftime';
+      const bLive = b.score?.status === 'inplay' || b.score?.status === 'halftime';
+      if (aLive !== bLive) return aLive ? -1 : 1;
+      const aHasPos = a.conditions.some((c) => c.posRows.length > 0);
+      const bHasPos = b.conditions.some((c) => c.posRows.length > 0);
+      if (aHasPos !== bHasPos) return aHasPos ? -1 : 1;
+      return (a.eventId ?? '').localeCompare(b.eventId ?? '');
+    });
+    return groups;
+  };
+
+  // 8. 立即用缓存建组 → UI 立刻显示全部赛事 (不等 per-condition 拉取风暴)
+  setState({ eventGroups: buildGroups() });
+
+  // 9. per-condition 拉取节流 (修请求风暴 bug): 电竞单场盘口巨多 (LoL 63), 全量
+  //    375 盘口 × 3(market/book/quote) = 1125 请求/5s 把跨洋链路打爆 → eventGroups 永远建不出。
+  //    只拉「有持仓 / live 赛事」的盘口 (优先), 上限 90; 其余盘口展开按需 (CondQuote 占位)。
+  const priorityConds: string[] = [];
   for (const ev of events) {
+    const sc = eventScoreCache[ev.event_id]?.status;
+    const live = sc === 'inplay' || sc === 'halftime';
     for (const cid of ev.condition_ids) {
-      allConditionIds.add(cid);
+      if ((posMap[cid]?.length ?? 0) > 0 || live) priorityConds.push(cid);
     }
   }
+  // 无 live/持仓时, 至少拉前若干盘口让 UI 有报价
+  const fallbackConds = events.flatMap((e) => e.condition_ids);
+  const toFetch = Array.from(new Set(priorityConds.length > 0 ? priorityConds : fallbackConds)).slice(0, 90);
 
-  // 7. 并发拉取 market / book / quote
   await Promise.all(
-    [...allConditionIds].map(async (condId) => {
+    toFetch.map(async (condId) => {
       const cached = state.conditionCache[condId];
       let market: Market | null = cached?.market ?? null;
-      if (!market) {
-        market = await safeGetMapped(() => fetchMarket(condId), STUB_MARKET_MAP, condId);
-      }
+      if (!market) market = await safeGetMapped(() => fetchMarket(condId), STUB_MARKET_MAP, condId);
       const bookCondId = market?.condition_id ?? condId;
       const book = await safeGetMapped(() => fetchBook(bookCondId), STUB_BOOK_MAP, bookCondId);
       const quote = await safeGetMapped(() => fetchQuote(bookCondId), STUB_QUOTE_MAP, bookCondId);
-
       setState(
         produce((s) => {
           if (!s.conditionCache[condId]) {
@@ -231,72 +279,14 @@ export async function refreshMarketGrid(): Promise<void> {
           s.conditionCache[condId].market = market;
           s.conditionCache[condId].book = book;
           s.conditionCache[condId].quote = quote;
+          if (market?.event_id) s.conditionCache[condId].score = eventScoreCache[market.event_id] ?? null;
         }),
       );
     }),
   );
 
-  // 8. score 按 event_id 去重拉取
-  const eventScoreCache: Record<string, Score | null> = {};
-  const eventIdsFromApi = new Set(events.map((e) => e.event_id));
-  await Promise.all(
-    [...eventIdsFromApi].map(async (evId) => {
-      const score = await safeGetMapped(() => fetchScore(evId), STUB_SCORE_MAP, evId);
-      eventScoreCache[evId] = score;
-    }),
-  );
-
-  // 9. 写回 score
-  setState(
-    produce((s) => {
-      for (const condId of allConditionIds) {
-        const mkt = s.conditionCache[condId]?.market;
-        if (mkt?.event_id) {
-          s.conditionCache[condId].score = eventScoreCache[mkt.event_id] ?? null;
-        }
-      }
-    }),
-  );
-
-  // 10. 按 /api/v1/events 返回的事件顺序构建 EventGroup
-  const eventGroups: EventGroup[] = events.map((evSummary) => {
-    const score = eventScoreCache[evSummary.event_id] ?? null;
-
-    const conditions: ConditionData[] = evSummary.condition_ids.map((condId) => {
-      const d = state.conditionCache[condId];
-      return {
-        conditionId: condId,
-        posRows: posMap[condId] ?? [],
-        market: d?.market ?? null,
-        book: d?.book ?? null,
-        quote: d?.quote ?? null,
-        rejectRows: rejectMap[condId] ?? [],
-        perMarketPnl: pmPnlMap[condId] != null ? pmPnlMap[condId] : null,
-      };
-    });
-
-    return {
-      eventId: evSummary.event_id,
-      eventSlug: evSummary.slug,
-      eventTitle: evSummary.title,
-      sport: evSummary.sport,
-      score,
-      conditions,
-    };
-  });
-
-  // 进行中赛事排前面
-  eventGroups.sort((a, b) => {
-    const aLive = a.score?.status === 'inplay' || a.score?.status === 'halftime';
-    const bLive = b.score?.status === 'inplay' || b.score?.status === 'halftime';
-    if (aLive !== bLive) return aLive ? -1 : 1;
-    const aHasPos = a.conditions.some((c) => c.posRows.length > 0);
-    const bHasPos = b.conditions.some((c) => c.posRows.length > 0);
-    if (aHasPos !== bHasPos) return aHasPos ? -1 : 1;
-    return (a.eventId ?? '').localeCompare(b.eventId ?? '');
-  });
-
-  setState({ eventGroups });
+  // 10. per-condition 数据到位后重建组 (含报价/book)
+  setState({ eventGroups: buildGroups() });
 }
 
 // ---------- refreshMarketInfoSlow (60s) ----------
