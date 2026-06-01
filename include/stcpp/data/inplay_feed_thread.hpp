@@ -69,11 +69,14 @@ struct InplayFeedConfig {
     // 自动从 http_proxy / HTTP_PROXY 环境变量读取 (若本字段为空)
     std::string http_proxy;
 
-    // sport 列表 (MVP: Soccer, Basketball, Tennis)
+    // sport 列表 (2026-06-01 加 Esports: PM 有 dota2/lol/CS 盘, Goalserve inplay-esports.gz 实测 200,
+    //   解析器 info.name "A vs B" split 适配 → 匹配可用。注: esports 比分在 stats."Res" 非 info.score,
+    //   故 home/away_score 暂 0:0(不影响【匹配】, 影响【定价】— esports 定价模型另立)。cricket inplay 404 暂无。)
     std::vector<goalserve::GoalserveSport> sports = {
         goalserve::GoalserveSport::Soccer,
         goalserve::GoalserveSport::Basketball,
         goalserve::GoalserveSport::Tennis,
+        goalserve::GoalserveSport::Esports,
     };
 
     // 连续失败后 backoff 最大时长 (ms)
