@@ -670,6 +670,7 @@ std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
     //   放最前保证不被 max_events 截断. 再补 future/近期盘 (更广 book 覆盖, 供微观结构特征/arb).
     //   按 event_id 去重 (live 与 future 集合可能交叠).
     std::vector<DiscoveredEvent> out = ParseSportsEvents(FetchGammaLiveEvents(), max_events);
+    for (auto& e : out) e.live = true;  // live=true query 来的全是正在比赛 (前端默认过滤用)
     const std::size_t live_count = out.size();
     std::vector<DiscoveredEvent> upcoming = ParseSportsEvents(FetchGammaEvents(), max_events);
     std::unordered_set<std::string> seen;

@@ -75,6 +75,7 @@ struct DiscoveredEvent {
     std::string sport_code;   // 真实 event.sport.sport 联赛码 ("nba"/"bkcba"=CBA/"atp"/"wta"/"lol"/...)
     std::int64_t sport_id{0};  // 真实 event.sport.id 稳定整数 (nba=34/bkcba=104; 联赛级, NBA≠CBA) → cat_league
     std::string neg_risk_market_id;
+    bool live{false};          // gamma event.live=true (正在比赛); DiscoverSportsEvents 给 live 批标记
     std::vector<DiscoveredMarket> markets;
 };
 

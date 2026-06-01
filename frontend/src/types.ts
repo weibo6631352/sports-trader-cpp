@@ -346,6 +346,7 @@ export interface EventSummary {
   title: string;
   sport: string;
   neg_risk_market_id: string;
+  live?: boolean;  // gamma event.live=true (正在比赛)
   condition_ids: string[];
 }
 
@@ -372,6 +373,7 @@ export interface EventGroup {
   eventSlug: string | null;
   eventTitle: string | null;
   sport: string | null;
+  live: boolean;  // gamma event.live=true (正在比赛; 前端默认过滤用)
   score: Score | null;
   conditions: ConditionData[];
 }

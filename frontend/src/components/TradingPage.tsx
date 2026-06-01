@@ -855,7 +855,8 @@ function TradingToolbar(props: {
 // ============================================================
 
 export function TradingPage() {
-  const [filter, setFilter] = createSignal<FilterMode>('all');
+  // 默认只显示「正在比赛」(gamma live=true); 可切「全部/持仓」(老板 2026-06-01)
+  const [filter, setFilter] = createSignal<FilterMode>('live');
   const [search, setSearch] = createSignal('');
 
   // P1-6: WSS 连接状态 Alert 计算
@@ -885,7 +886,8 @@ export function TradingPage() {
     let groups = allGroups();
     const f = filter();
     if (f === 'live') {
-      groups = groups.filter((g) => g.score?.status === 'inplay' || g.score?.status === 'halftime');
+      // gamma live=true (正在比赛) 优先; 兼容 Goalserve 比分 inplay/halftime
+      groups = groups.filter((g) => g.live || g.score?.status === 'inplay' || g.score?.status === 'halftime');
     } else if (f === 'position') {
       groups = groups.filter((g) => g.conditions.some((c) => c.posRows.length > 0));
     }

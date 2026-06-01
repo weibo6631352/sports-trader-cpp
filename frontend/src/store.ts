@@ -218,6 +218,7 @@ export async function refreshMarketGrid(): Promise<void> {
       eventSlug: evSummary.slug,
       eventTitle: evSummary.title,
       sport: evSummary.sport,
+      live: evSummary.live === true,
       score: eventScoreCache[evSummary.event_id] ?? null,
       conditions: evSummary.condition_ids.map((condId) => {
         const d = state.conditionCache[condId];
@@ -234,8 +235,8 @@ export async function refreshMarketGrid(): Promise<void> {
     }));
     // 进行中赛事排前面, 其次有持仓
     groups.sort((a, b) => {
-      const aLive = a.score?.status === 'inplay' || a.score?.status === 'halftime';
-      const bLive = b.score?.status === 'inplay' || b.score?.status === 'halftime';
+      const aLive = a.live || a.score?.status === 'inplay' || a.score?.status === 'halftime';
+      const bLive = b.live || b.score?.status === 'inplay' || b.score?.status === 'halftime';
       if (aLive !== bLive) return aLive ? -1 : 1;
       const aHasPos = a.conditions.some((c) => c.posRows.length > 0);
       const bHasPos = b.conditions.some((c) => c.posRows.length > 0);
@@ -254,7 +255,7 @@ export async function refreshMarketGrid(): Promise<void> {
   const priorityConds: string[] = [];
   for (const ev of events) {
     const sc = eventScoreCache[ev.event_id]?.status;
-    const live = sc === 'inplay' || sc === 'halftime';
+    const live = ev.live === true || sc === 'inplay' || sc === 'halftime';
     for (const cid of ev.condition_ids) {
       if ((posMap[cid]?.length ?? 0) > 0 || live) priorityConds.push(cid);
     }

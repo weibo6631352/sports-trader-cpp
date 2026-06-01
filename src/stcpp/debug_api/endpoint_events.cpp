@@ -53,6 +53,8 @@ void register_events(httplib::Server& svr, const HttpServer& hs) {
             body += json::str(ev.sport);
             body += ",\"neg_risk_market_id\":";
             body += json::str(ev.neg_risk_market_id);
+            body += ",\"live\":";
+            body += json::boolean(ev.live);
             body += ",\"condition_ids\":[";
             for (std::size_t j = 0; j < ev.condition_ids.size(); ++j) {
                 if (j)

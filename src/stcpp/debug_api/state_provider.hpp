@@ -91,6 +91,7 @@ struct EventInfo {
     std::string title;                       // gamma title / description
     std::string sport;                       // 运动类别 (e.g. "NBA")
     std::string neg_risk_market_id;          // negRiskMarketID (可空)
+    bool live{false};                        // gamma event.live=true (正在比赛; 前端默认过滤用)
     std::vector<std::string> condition_ids;  // 本 event 下所有盘口 condition_id
 };
 
