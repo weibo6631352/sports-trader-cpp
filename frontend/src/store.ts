@@ -374,21 +374,31 @@ export async function refreshGrid(): Promise<void> {
 export async function fetchDetailFor(condIds: string[], priority = false): Promise<void> {
   await Promise.all(
     condIds.map(async (condId) => {
-      const cached = state.conditionCache[condId];
-      let market: Market | null = cached?.market ?? null;
-      if (!market) market = await safeGetMapped(() => fetchMarket(condId, priority), STUB_MARKET_MAP, condId);
-      const bookCondId = market?.condition_id ?? condId;
-      const book = await safeGetMapped(() => fetchBook(bookCondId, priority), STUB_BOOK_MAP, bookCondId);
-      const quote = await safeGetMapped(() => fetchQuote(bookCondId, priority), STUB_QUOTE_MAP, bookCondId);
+      // book/quote 直接用 condId 拉 (book_pair/quote 端点 key = condId)。
+      //   修 bug: 原先先拉 market 再用 market.condition_id 拉 book → market 没缓存住时每轮重拉
+      //   market(58次/6s 风暴)挤满并发闸、把 book 拉取饿死 → 后端有簿前端却"未接入"。
+      const book = await safeGetMapped(() => fetchBook(condId, priority), STUB_BOOK_MAP, condId);
+      const quote = await safeGetMapped(() => fetchQuote(condId, priority), STUB_QUOTE_MAP, condId);
       setState(
         produce((s) => {
           s.conditionCache[condId] ??= { market: null, book: null, quote: null, score: null, summary: null };
-          s.conditionCache[condId].market = market;
           s.conditionCache[condId].book = book;
           s.conditionCache[condId].quote = quote;
-          if (market?.event_id) s.conditionCache[condId].score = lastEventScore[market.event_id] ?? null;
         }),
       );
+      // market 元数据仅在用户交互(priority)且未缓存时拉一次 —— 常驻 refreshExpandedDetail
+      //   (priority=false) 不拉 market, 彻底消除 market 重拉风暴; 元数据由 refreshMarketInfoSlow(60s) 兜。
+      if (priority && !state.conditionCache[condId]?.market) {
+        const market = await safeGetMapped(() => fetchMarket(condId, priority), STUB_MARKET_MAP, condId);
+        if (market) {
+          setState(produce((s) => {
+            if (s.conditionCache[condId]) {
+              s.conditionCache[condId].market = market;
+              if (market.event_id) s.conditionCache[condId].score = lastEventScore[market.event_id] ?? null;
+            }
+          }));
+        }
+      }
     }),
   );
 }
