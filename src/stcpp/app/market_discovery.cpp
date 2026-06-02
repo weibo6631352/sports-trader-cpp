@@ -688,9 +688,12 @@ std::vector<DiscoveredEvent> DiscoverSportsEvents(int max_events) {
 
     // 订阅范围: 只留【已开赛 in-progress】+【即将开赛 ≤1h】; 剔除 远期(>1h)/已结束/outright(无开赛 ts)。
     constexpr std::int64_t kPreKickoffWindowSec = 3600;  // 开赛前 ≤1h 起订阅 (imminent)
-    // 开赛后窗口 (2026-06-02 老板「打完没及时退订, 浪费」): 6h→3.5h。多数赛 (网球/篮球/足球/棒球)
-    //   3.5h 内结束; 已匹配赛事走 Goalserve final 即时拉黑退订, 此窗口仅作未匹配赛事的兜底上限。
-    constexpr std::int64_t kLiveWindowSec = 3 * 3600 + 1800;  // 3.5h
+    // 开赛后窗口 (2026-06-02 老板「有了结束退订机制, 窗口应放长更安全」): 3.5h→8h。
+    //   角色转变: 真正结束的盘由 Goalserve final 检测「及时」退订(不靠窗口); 此窗口仅作"安全上限",
+    //   避免误杀还在打的长盘 —— 5 盘网球/棒球加时 ~4-5h、cricket ODI ~8h、电竞 BO5 ~3-4h, 3.5h 会
+    //   把它们当结束踢掉(发现窗口在匹配前过滤, 匹配上的长盘也误踢)。8h 覆盖最长 ODI。代价: 未匹配
+    //   又打完的盘最长挂 8h(不可交易, hub 已扩 2048 有空间), 可接受。
+    constexpr std::int64_t kLiveWindowSec = 8 * 3600;  // 8h 安全上限
     // 单 event 是否在订阅窗口 (in-progress 或 imminent ≤1h, 未结束)。pagination early-stop + 终筛共用。
     auto in_window = [now_sec](const DiscoveredEvent& e, std::int64_t& earliest_kickoff_out) -> bool {
         std::int64_t earliest_kickoff = 0, latest_end = 0;
