@@ -199,6 +199,17 @@ export const fetchEvents = (): Promise<EventsResponse | null> => apiFetch('/api/
 /** /api/v1/grid — 全市场顶档摘要 (一次请求, 跨洋链路防风暴; 折叠态摘要行填价) */
 export const fetchGrid = (): Promise<GridResponse | null> => apiFetch('/api/v1/grid');
 
+/** SSE focus 订阅: 告知服务端"我在看哪些盘口"(展开盘口走 SSE 推全档 book/quote)。
+ *  query 参数 + 无 body/无自定义头 → simple request, 免 CORS 预检。失败静默 (focus 丢了最多晚一 tick)。 */
+export async function postStreamFocus(streamId: string, seq: number, cids: string[]): Promise<void> {
+  try {
+    const q = `stream_id=${encodeURIComponent(streamId)}&seq=${seq}&cids=${cids.map(encodeURIComponent).join(',')}`;
+    await fetch(`${_baseUrl}/api/v1/stream/focus?${q}`, { method: 'POST', signal: AbortSignal.timeout(8000) });
+  } catch {
+    // 静默: focus POST 丢失最多导致展开盘口晚一 tick 收到推送, 不影响其余
+  }
+}
+
 export const fetchPositions = (): Promise<Positions | null> => apiFetch('/api/v1/positions');
 export const fetchPnlTimeseries = (window = '1h', bucket = '5m'): Promise<PnlTimeseries | null> =>
   apiFetch(`/api/v1/pnl/timeseries?window=${window}&bucket=${bucket}`);

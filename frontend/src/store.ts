@@ -30,7 +30,7 @@ import {
   STUB_MARKET_MAP, STUB_BOOK_MAP, STUB_SCORE_MAP, STUB_QUOTE_MAP,
   STUB_METRICS_TEXT, STUB_EVENTS, STUB_ACCOUNT,
 } from './stub';
-import { getBaseUrl } from './api';
+import { getBaseUrl, postStreamFocus } from './api';
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, BinaryMarketBookView, Market, Score, Quote,
@@ -61,6 +61,17 @@ let _scoreTick = 0;
 /** 当前「用户正在看」需要实时 detail 的盘口集合 (Trading 展开行 / 详情页选中行 注册) */
 const detailInterest = new Set<string>();
 
+// ---- SSE focus 订阅状态 (Phase 2) ----
+let _streamId: string | null = null;   // hello 下发, focus POST 回传
+let _focusSeq = 0;                      // 单调递增, 每次 focus 变化 +1; book/quote 帧据此丢旧版本
+
+/** focus 变化 → 告知服务端 (仅 SSE 连上时; 未连/回退时由 refreshExpandedDetail REST 兜底) */
+function maybePostFocus(): void {
+  if (!_streamId) return;
+  _focusSeq += 1;
+  void postStreamFocus(_streamId, _focusSeq, Array.from(detailInterest).slice(0, 32));
+}
+
 /** 最近一次各 event 的 score 缓存 (score 节流时复用; addDetailInterest 即时拉取时回填) */
 const lastEventScore: Record<string, Score | null> = {};
 
@@ -71,13 +82,16 @@ let lastEvents: EventSummary[] = [];
 export function setDetailInterest(condIds: string[]): void {
   detailInterest.clear();
   for (const c of condIds) if (c) detailInterest.add(c);
+  maybePostFocus();  // SSE: 告知服务端推这些盘口的全档 book/quote
 }
 
 /** 追加单个关注盘口并立即拉一次 detail (展开/选中即见数据, 不等下一轮 5s) */
 export function addDetailInterest(condId: string): void {
   if (!condId) return;
   detailInterest.add(condId);
-  void fetchDetailFor([condId], /*priority=*/true);  // 用户交互: 插队即时拉
+  // 首屏兜底 (评审: 必选): 展开瞬间优先级 REST 即时拉一次, ~200ms 出数据; SSE 随后接管增量。
+  void fetchDetailFor([condId], /*priority=*/true);
+  maybePostFocus();  // SSE: 告知服务端开始推该盘口
 }
 
 // ---------- store shape ----------
@@ -423,6 +437,9 @@ function startFallbackPolling(): void {
   _fallbackTimers.push(every(() => { void refreshAccount(); }, 5000));
   _fallbackTimers.push(every(() => { void refreshAttribution(); }, 15000));
   _fallbackTimers.push(every(() => { void refreshGate(); }, 15000));
+  // 展开行全档 detail: SSE 活时由 book/quote 通道推, 不轮询 (评审: 防双源写 conditionCache);
+  //   仅回退时 2s 轮询 (与 SSE 互斥, 不并存)。
+  _fallbackTimers.push(every(() => { void refreshExpandedDetail(); }, 2000));
 }
 
 function stopFallbackPolling(): void {
@@ -433,10 +450,10 @@ function stopFallbackPolling(): void {
 }
 
 /** 解析一帧信封, 返回内层 data (失败返回 null) */
-function parseEnvelope(raw: string): { mode: string; data: unknown } | null {
+function parseEnvelope(raw: string): { mode: string; data: unknown; focusSeq: number | null } | null {
   try {
-    const env = JSON.parse(raw) as { mode?: string; data?: unknown };
-    return { mode: env.mode ?? 'snapshot', data: env.data ?? null };
+    const env = JSON.parse(raw) as { mode?: string; data?: unknown; focus_seq?: number };
+    return { mode: env.mode ?? 'snapshot', data: env.data ?? null, focusSeq: env.focus_seq ?? null };
   } catch { return null; }
 }
 
@@ -453,17 +470,19 @@ function connectSSE(): void {
     if (!_sseConnected) { try { es.close(); } catch { /* noop */ } startFallbackPolling(); }
   }, 8000);
 
-  const on = (ch: string, fn: (data: unknown, mode: string) => void) => {
+  const on = (ch: string, fn: (data: unknown, mode: string, focusSeq: number | null) => void) => {
     es.addEventListener(ch, (ev: MessageEvent) => {
       const p = parseEnvelope(ev.data);
-      if (p) fn(p.data, p.mode);
+      if (p) fn(p.data, p.mode, p.focusSeq);
     });
   };
 
-  on('hello', () => {
+  on('hello', (d) => {
     _sseConnected = true;
     if (_helloTimer) clearTimeout(_helloTimer);
     stopFallbackPolling();  // SSE 通了 → 停掉回退轮询(若曾启动)
+    _streamId = (d as { stream_id?: string })?.stream_id ?? null;
+    maybePostFocus();  // (重)连后按当前展开集重订 focus (评审: 重连换 id 须重订)
   });
   on('status', (d) => { if (d) setState({ status: d as Status }); });
   on('account', (d) => { setState({ account: (d as Account) ?? null }); });
@@ -496,6 +515,30 @@ function connectSSE(): void {
     }
     rebuildGroups();
   });
+  // focus 订阅: 展开/选中盘口的全档 book/quote (Phase 2)。
+  //   丢弃过期版本帧 (focusSeq < 当前) + 不在 detailInterest 的 (已折叠)。
+  on('book', (d, _mode, focusSeq) => {
+    if (focusSeq != null && focusSeq < _focusSeq) return;  // 过期 focus 版本
+    const bk = d as (BinaryMarketBookView & { condition_id?: string }) | null;
+    const cid = bk?.condition_id;
+    if (!cid || !detailInterest.has(cid)) return;
+    setState(produce((s) => {
+      s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
+      s.conditionCache[cid].book = bk;
+    }));
+    rebuildGroups();
+  });
+  on('quote', (d, _mode, focusSeq) => {
+    if (focusSeq != null && focusSeq < _focusSeq) return;
+    const qt = d as (Quote & { market_id?: string }) | null;
+    const cid = qt?.market_id;
+    if (!cid || !detailInterest.has(cid)) return;
+    setState(produce((s) => {
+      s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
+      s.conditionCache[cid].quote = qt;
+    }));
+    rebuildGroups();
+  });
   // heartbeat: 仅保活, 无需处理 (收到即证明连接活着)
 
   es.onerror = () => {
@@ -515,8 +558,9 @@ export function initPolling(): void {
   //   失败自动回退到 fast 轮询 (startFallbackPolling)。
   connectSSE();
 
-  // 始终走 REST 的常驻轮询 (SSE 不承载这些): 展开行全档 detail + Ops 页 + 净值曲线 + healthz。
-  every(() => { void refreshExpandedDetail(); }, 2000);   // 展开盘口全档 (优先级插队)
+  // 始终走 REST 的常驻轮询 (SSE 不承载这些): Ops 页 + 净值曲线 + healthz。
+  //   展开行全档 detail 已移出: SSE 活时走 book/quote 通道, 回退时由 startFallbackPolling 轮询。
+  //   (展开瞬间的首屏即时拉仍由 addDetailInterest 的优先级 REST 提供。)
   every(() => { void refreshSparkline(); }, 15000);       // 净值曲线 (timeseries)
   every(() => { void refreshMetrics(); }, 30000);         // Ops 页 Prometheus
   every(() => { void refreshMarketInfoSlow(); }, 60000);  // market 元数据

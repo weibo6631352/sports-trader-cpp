@@ -14,7 +14,10 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <string>
+#include <memory>
+#include <mutex>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -35,16 +38,53 @@ constexpr int kMaxSseClients = 8;
 constexpr int kTickMs = 1000;
 constexpr int kHeartbeatTicks = 10;  // 10s
 constexpr int kKeyframeTicks = 30;   // 30s
+constexpr std::size_t kMaxFocus = 32;            // 每连接 focus 盘口上限 (评审: 两侧夹)
+constexpr std::size_t kMaxFrameBytes = 64 * 1024;  // 单帧上限 (评审: 防大帧撞 write_timeout)
 
 std::atomic<int> g_sse_clients{0};
 std::atomic<std::uint64_t> g_seq{0};
 
-// 一帧 SSE 消息: id + event + data(信封)。返回 false = 写失败(客户端断开)。
+// ---- focus 订阅注册表 (评审修订) ----
+// stream_id = boot nonce + 单调计数器 (防同毫秒撞 + 防进程重启计数归零误命中旧 id)。
+// 每连接一个 FocusState; provider 线程 lock-free 读 conditions (atomic COW),
+//   POST /focus 线程持 g_focus_mu 查表取句柄后原子换 conditions。
+const std::string g_boot_nonce = std::to_string(now_epoch_ns());  // 进程启动一次
+std::atomic<std::uint64_t> g_stream_counter{0};
+
+// 每连接独立 mutex 守护 (atomic<shared_ptr> 非全平台可用; per-tick 一次微锁拷贝 shared_ptr,
+//   非热路径, R-12 无碍; 各连接独立 mutex 无跨连接竞争)。
+struct FocusState {
+    std::mutex mu;
+    std::shared_ptr<const std::vector<std::string>> conditions{
+        std::make_shared<const std::vector<std::string>>()};
+    std::int64_t focus_seq{0};
+
+    void load(std::shared_ptr<const std::vector<std::string>>& out_conds, std::int64_t& out_seq) {
+        std::lock_guard<std::mutex> lk(mu);
+        out_conds = conditions;
+        out_seq = focus_seq;
+    }
+    void store(std::shared_ptr<const std::vector<std::string>> c, std::int64_t s) {
+        std::lock_guard<std::mutex> lk(mu);
+        conditions = std::move(c);
+        focus_seq = s;
+    }
+};
+
+std::mutex g_focus_mu;
+std::unordered_map<std::string, std::shared_ptr<FocusState>> g_focus_reg;  // stream_id → state
+
+std::string make_stream_id() {
+    return g_boot_nonce + ":" + std::to_string(g_stream_counter.fetch_add(1) + 1);
+}
+
+// 一帧 SSE 消息: id + event + data(信封)。focus_seq>=0 时信封带 focus_seq (book/quote 版本对账)。
+// 返回 false = 写失败(客户端断开)。frame 超 kMaxFrameBytes 跳过(返 true 继续, 评审防大帧)。
 bool send_frame(httplib::DataSink& sink, const char* channel, const char* mode,
-                const std::string& payload) {
+                const std::string& payload, std::int64_t focus_seq = -1) {
     const std::uint64_t seq = g_seq.fetch_add(1, std::memory_order_relaxed) + 1;
     std::string frame;
-    frame.reserve(payload.size() + 128);
+    frame.reserve(payload.size() + 160);
     frame += "id: ";
     frame += json::i64(static_cast<std::int64_t>(seq));
     frame += "\nevent: ";
@@ -55,9 +95,14 @@ bool send_frame(httplib::DataSink& sink, const char* channel, const char* mode,
     frame += json::i64(now_epoch_ns());  // 仅 transport 时刻 (R-20: 数据新鲜度在 payload 内 event_ts)
     frame += ",\"mode\":\"";
     frame += mode;
-    frame += "\",\"data\":";
+    if (focus_seq >= 0) { frame += "\",\"focus_seq\":"; frame += json::i64(focus_seq); frame += ",\"data\":"; }
+    else { frame += "\",\"data\":"; }
     frame += payload;
     frame += "}\n\n";
+    if (frame.size() > kMaxFrameBytes) {
+        std::fprintf(stderr, "[stream] 跳过超大帧 channel=%s size=%zu\n", channel, frame.size());
+        return true;  // 跳过该帧但不断连
+    }
     return sink.write(frame.data(), frame.size());
 }
 
@@ -100,6 +145,22 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
             [&hs](std::size_t /*offset*/, httplib::DataSink& sink) -> bool {
                 const StateProvider& sp = hs.provider();
 
+                // focus 订阅: 本连接生成唯一 stream_id + 注册 FocusState; RAII 在 provider 退出
+                //   (任意 return 路径) 时从注册表摘除, 防泄漏/悬挂 (评审)。
+                const std::string stream_id = make_stream_id();
+                auto focus_state = std::make_shared<FocusState>();
+                {
+                    std::lock_guard<std::mutex> lk(g_focus_mu);
+                    g_focus_reg[stream_id] = focus_state;
+                }
+                struct Unreg {
+                    std::string id;
+                    ~Unreg() {
+                        std::lock_guard<std::mutex> lk(g_focus_mu);
+                        g_focus_reg.erase(id);
+                    }
+                } unreg{stream_id};
+
                 // 0. padding 注释(256B)触发首次 flush, 击穿中间节点缓冲
                 {
                     std::string pad = ":";
@@ -113,7 +174,7 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                     std::string hello = "{\"v\":1,\"server\":\"";
                     hello += STCPP_GIT_HASH_STR;
                     hello += "\",\"stream_id\":\"";
-                    hello += json::i64(now_epoch_ns());  // 简易唯一 id (v2 focus 副 POST 回传用)
+                    hello += stream_id;  // boot:counter — focus 副 POST 回传用
                     hello += "\",\"tick_ms\":";
                     hello += json::i64(kTickMs);
                     hello += ",\"keyframe_ms\":";
@@ -127,7 +188,9 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                     hello += "{\"name\":\"positions\",\"delta\":\"snapshot\"},";
                     hello += "{\"name\":\"pnl\",\"delta\":\"snapshot\"},";
                     hello += "{\"name\":\"gate\",\"delta\":\"snapshot\"},";
-                    hello += "{\"name\":\"rejects\",\"delta\":\"full\"}]}";
+                    hello += "{\"name\":\"rejects\",\"delta\":\"full\"},";
+                    hello += "{\"name\":\"book\",\"delta\":\"snapshot\"},";   // focus 订阅: 全档深度
+                    hello += "{\"name\":\"quote\",\"delta\":\"snapshot\"}]}";  // focus 订阅: 全 quote
                     if (!send_frame(sink, "hello", "snapshot", hello)) return true;
                 }
 
@@ -162,6 +225,10 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                     if (!send_frame(sink, "gate", "snapshot", last_gate)) return true;
                     if (!send_frame(sink, "rejects", "full", last_rejects)) return true;
                 }
+
+                // focus 订阅的全档 book/quote on-change 基线 (cid → 序列化串)
+                std::unordered_map<std::string, std::string> last_book;
+                std::unordered_map<std::string, std::string> last_quote;
 
                 // 3. tick 循环
                 int tick = 0;
@@ -252,6 +319,39 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                         }
                     }
 
+                    // --- focus 订阅: 用户正在看的盘口推全档 book/quote (on-change, 带 focus_seq 对账) ---
+                    {
+                        std::shared_ptr<const std::vector<std::string>> conds;
+                        std::int64_t fseq = 0;
+                        focus_state->load(conds, fseq);  // 微锁拷贝 (一致快照)
+                        std::unordered_set<std::string> focus_now;
+                        std::size_t n = 0;
+                        for (const auto& cid : *conds) {
+                            if (cid.empty() || n >= kMaxFocus) break;  // provider 侧也夹 cap (评审)
+                            ++n;
+                            focus_now.insert(cid);
+                            std::string bk = payload::book_pair(sp, cid);  // as_of=-1 (省顶层 as_of, on-change 比对生效)
+                            auto bit = last_book.find(cid);
+                            if (keyframe || bit == last_book.end() || bit->second != bk) {
+                                last_book[cid] = bk;
+                                if (!send_frame(sink, "book", "snapshot", bk, fseq)) return true;
+                                sent = true;
+                            }
+                            std::string qt = payload::quote(sp, cid);
+                            auto qit = last_quote.find(cid);
+                            if (keyframe || qit == last_quote.end() || qit->second != qt) {
+                                last_quote[cid] = qt;
+                                if (!send_frame(sink, "quote", "snapshot", qt, fseq)) return true;
+                                sent = true;
+                            }
+                        }
+                        // 已移出 focus 的盘口: 清基线 (下次重新 focus 会重推)
+                        for (auto it = last_book.begin(); it != last_book.end();)
+                            it = (focus_now.count(it->first) ? std::next(it) : last_book.erase(it));
+                        for (auto it = last_quote.begin(); it != last_quote.end();)
+                            it = (focus_now.count(it->first) ? std::next(it) : last_quote.erase(it));
+                    }
+
                     // --- heartbeat: 距上次发帧 ≥ kHeartbeatTicks 则发 ---
                     since_send = sent ? 0 : (since_send + 1);
                     if (since_send >= kHeartbeatTicks) {
@@ -262,6 +362,52 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                 return true;
             },
             [](bool /*success*/) { g_sse_clients.fetch_sub(1); });  // resource releaser: 释放连接计数
+    });
+
+    // POST /api/v1/stream/focus?stream_id=..&seq=..&cids=cid1,cid2 — 告知服务端"我在看哪些盘口"
+    //   (SSE 单向, 订阅意图走副 POST)。用 query 参数 (无 body/无自定义头 → simple request 免 CORS 预检)。
+    //   评审: 校验 boot 前缀防跨重启误命中; find 持 mutex 取句柄后原子换 COW; cap kMaxFocus。
+    svr.Post("/api/v1/stream/focus", [](const httplib::Request& req, httplib::Response& res) {
+        const std::string sid = req.get_param_value("stream_id");
+        if (sid.empty() || sid.rfind(g_boot_nonce + ":", 0) != 0) {
+            res.status = 404;
+            res.set_content(R"({"ok":false,"reason":"stale_or_unknown"})", "application/json; charset=utf-8");
+            return;
+        }
+        std::int64_t fseq = 0;
+        try { fseq = std::stoll(req.get_param_value("seq")); } catch (...) { fseq = 0; }
+
+        std::vector<std::string> cids;
+        const std::string raw = req.get_param_value("cids");
+        std::size_t start = 0;
+        while (start <= raw.size() && cids.size() < kMaxFocus) {
+            const std::size_t comma = raw.find(',', start);
+            const std::string c = raw.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            if (!c.empty()) cids.push_back(c);
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+
+        std::shared_ptr<FocusState> st;
+        {
+            std::lock_guard<std::mutex> lk(g_focus_mu);
+            const auto it = g_focus_reg.find(sid);
+            if (it != g_focus_reg.end()) st = it->second;
+        }
+        if (!st) {
+            res.status = 404;
+            res.set_content(R"({"ok":false,"reason":"no_stream"})", "application/json; charset=utf-8");
+            return;
+        }
+        const std::size_t n = cids.size();
+        // provider 下一 tick 读 → 推 focused book/quote (带此 fseq)
+        st->store(std::make_shared<const std::vector<std::string>>(std::move(cids)), fseq);
+        std::string body = "{\"ok\":true,\"n\":";
+        body += std::to_string(n);
+        body += ",\"focus_seq\":";
+        body += std::to_string(fseq);
+        body += '}';
+        res.set_content(body, "application/json; charset=utf-8");
     });
 }
 

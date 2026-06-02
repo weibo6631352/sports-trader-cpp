@@ -385,4 +385,165 @@ inline std::string scores(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     return b;
 }
 
+// ---- 单边 BookSnapshot 序列化 (book_pair / book-by-token / SSE book 通道 单一数据源) ----
+inline std::string book_snapshot(const BookSnapshot& b) {
+    std::string s;
+    s.reserve(512);
+    s += "{\"found\":";
+    s += json::boolean(b.found);
+    s += ",\"token_id\":";
+    s += json::str(b.token_id);
+    s += ",\"condition_id\":";
+    s += json::str(b.condition_id);
+    s += ",\"outcome\":";
+    s += json::str(b.outcome);
+    s += ",\"market_id\":";
+    s += json::str(b.market_id);
+    s += ",\"wss_state\":";
+    s += json::str(b.wss_state);
+    s += ",\"source\":";
+    s += json::str(b.source);
+    if (b.found) {
+        s += ",\"best_bid\":";
+        s += json::num(b.best_bid);
+        s += ",\"best_ask\":";
+        s += json::num(b.best_ask);
+        s += ",\"microprice\":";
+        s += json::num(b.microprice);
+        s += ",\"spread\":";
+        s += json::num(b.spread);
+        s += ",\"imbalance\":";
+        s += json::num(b.imbalance);
+        s += ",\"sequence_no\":";
+        s += json::i64(b.sequence_no);
+        s += ",\"gap_count\":";
+        s += json::i64(b.gap_count);
+        s += ",\"event_ts\":";
+        s += json::i64(b.ts.event_ts_ns);
+        s += ",\"data_source_ts\":";
+        s += json::i64(b.ts.data_source_ts_ns);
+        s += ",\"ingestion_ts\":";
+        s += json::i64(b.ts.ingestion_ts_ns);
+        s += ",\"book_as_of_ts\":";
+        s += json::i64(b.ts.as_of_ts_ns);
+        s += ",\"bids\":[";
+        for (std::size_t i = 0; i < b.bids.size(); ++i) {
+            if (i) s += ',';
+            s += "{\"price\":";
+            s += json::num(b.bids[i].price);
+            s += ",\"size\":";
+            s += json::num(b.bids[i].size);
+            s += '}';
+        }
+        s += "],\"asks\":[";
+        for (std::size_t i = 0; i < b.asks.size(); ++i) {
+            if (i) s += ',';
+            s += "{\"price\":";
+            s += json::num(b.asks[i].price);
+            s += ",\"size\":";
+            s += json::num(b.asks[i].size);
+            s += '}';
+        }
+        s += "]";
+    }
+    s += '}';
+    return s;
+}
+
+// ---- book_pair (= GET /api/v1/book_pair/{cid}) — 全档 BinaryMarketBookView ----
+inline std::string book_pair(const StateProvider& sp, const std::string& condition_id,
+                             std::int64_t as_of_ns = -1) {
+    const BinaryMarketBookView bv = sp.book_pair(condition_id);
+    std::string b;
+    b.reserve(1536);
+    b += "{\"mode\":";
+    b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
+    b += ",\"found\":";
+    b += json::boolean(bv.found);
+    b += ",\"condition_id\":";
+    b += json::str(bv.condition_id);
+    if (bv.found) {
+        b += ",\"cross_spread\":";
+        b += json::num(bv.cross_spread);
+        b += ",\"event_ts\":";
+        b += json::i64(bv.ts.event_ts_ns);
+        b += ",\"data_source_ts\":";
+        b += json::i64(bv.ts.data_source_ts_ns);
+        b += ",\"ingestion_ts\":";
+        b += json::i64(bv.ts.ingestion_ts_ns);
+        b += ",\"as_of_ts_ns\":";
+        b += json::i64(bv.ts.as_of_ts_ns);
+        b += ",\"token0\":";
+        b += book_snapshot(bv.token0);
+        b += ",\"token1\":";
+        b += book_snapshot(bv.token1);
+    }
+    b += '}';
+    return b;
+}
+
+// ---- quote (= GET /api/v1/quote/{cid}) — 全 QuoteParams ----
+inline std::string quote(const StateProvider& sp, const std::string& condition_id,
+                         std::int64_t as_of_ns = -1) {
+    const QuoteParams q = sp.quote_params(condition_id);
+    std::string b;
+    b.reserve(512);
+    b += "{\"mode\":";
+    b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
+    b += ",\"found\":";
+    b += json::boolean(q.found);
+    b += ",\"market_id\":";
+    b += json::str(q.market_id);
+    if (q.found) {
+        b += ",\"fair_value\":";
+        b += json::num(q.fair_value);
+        b += ",\"market_mid\":";
+        b += json::num(q.market_mid);
+        b += ",\"edge_bps\":";
+        b += json::num(q.edge_bps);
+        b += ",\"kelly_fraction\":";
+        b += json::num(q.kelly_fraction);
+        b += ",\"suggested_notional\":";
+        b += json::num(q.suggested_notional);
+        b += ",\"signal_strength\":";
+        b += json::num(q.signal_strength);
+        b += ",\"model_conf\":";
+        b += json::num(q.model_conf);
+        b += ",\"quote_as_of_ts\":";
+        b += json::i64(q.as_of_ts_ns);
+        b += ",\"model_id\":";
+        b += json::str(q.model_id);
+        b += ",\"model_kind\":";
+        b += json::str(q.model_kind);
+        b += ",\"spec_version\":";
+        b += json::str(q.spec_version);
+        b += ",\"model_confidence\":";
+        b += json::num(q.model_confidence);
+        b += ",\"model_calibrated\":";
+        b += json::boolean(q.model_calibrated);
+        b += ",\"fair_ci_lower\":";
+        b += json::num(q.fair_ci_lower);
+        b += ",\"fair_ci_upper\":";
+        b += json::num(q.fair_ci_upper);
+        b += ",\"predict_ok\":";
+        b += json::boolean(q.predict_ok);
+        b += ",\"model_as_of_ts\":";
+        b += json::i64(q.model_as_of_ts_ns);
+        b += ",\"advisory\":";
+        b += json::boolean(q.advisory);
+        b += ",\"sharp_fair\":";
+        b += json::num(q.sharp_fair);
+        b += ",\"devig_ok\":";
+        b += json::boolean(q.devig_ok);
+        b += ",\"g_time_x_lead\":";
+        b += json::num(q.g_time_x_lead);
+        b += ",\"joint_as_of_ts\":";
+        b += json::i64(q.joint_as_of_ts_ns);
+    }
+    b += '}';
+    return b;
+}
+
 }  // namespace stcpp::debug_api::payload
