@@ -30,11 +30,12 @@ import {
   STUB_MARKET_MAP, STUB_BOOK_MAP, STUB_SCORE_MAP, STUB_QUOTE_MAP,
   STUB_METRICS_TEXT, STUB_EVENTS, STUB_ACCOUNT,
 } from './stub';
+import { getBaseUrl } from './api';
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, BinaryMarketBookView, Market, Score, Quote,
   EventGroup, ConditionData, Position, RiskReject, FeatureHealth, MappingStatus, Account,
-  EventSummary, ConditionSummary,
+  EventSummary, ConditionSummary, GridMarket,
 } from './types';
 
 // ---------- stub 检测 ----------
@@ -147,6 +148,12 @@ export async function refreshTopBar(): Promise<void> {
     safeGet(fetchStatus, STUB_STATUS),
   ]);
   setState({ healthz, status });
+}
+
+/** 仅拉 healthz (SSE status 通道不含 healthz; SSE 模式下用它单独慢刷) */
+export async function refreshHealthz(): Promise<void> {
+  const healthz = await safeGet(fetchHealthz, STUB_HEALTHZ);
+  if (healthz) setState({ healthz });
 }
 
 // ---------- refreshSparkline ----------
@@ -315,13 +322,11 @@ function buildEventGroups(): EventGroup[] {
 
 // ---------- refreshGrid (2s 快刷: 全市场顶档摘要批量, 跨洋一次拉齐) ----------
 
-export async function refreshGrid(): Promise<void> {
-  if (USE_STUB) return;  // stub 模式无 grid 端点, 由 refreshMarketGrid 的 stub 供数
-  const grid = await fetchGrid();
-  if (!grid?.markets) return;
+/** 把一批 GridMarket 写入 conditionCache[*].summary (REST /grid 与 SSE grid 通道共用) */
+function applyGridMarkets(markets: GridMarket[]): void {
   setState(
     produce((s) => {
-      for (const m of grid.markets) {
+      for (const m of markets) {
         const cid = m.condition_id;
         if (!cid) continue;
         s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
@@ -335,6 +340,13 @@ export async function refreshGrid(): Promise<void> {
       }
     }),
   );
+}
+
+export async function refreshGrid(): Promise<void> {
+  if (USE_STUB) return;  // stub 模式无 grid 端点, 由 refreshMarketGrid 的 stub 供数
+  const grid = await fetchGrid();
+  if (!grid?.markets) return;
+  applyGridMarkets(grid.markets);
   setState({ eventGroups: buildEventGroups() });
 }
 
@@ -387,22 +399,128 @@ function every(fn: () => void, ms: number): number {
   return window.setInterval(fn, ms);
 }
 
+// ---------- SSE 推增量 (主通路; 失败回退轮询) ----------
+//
+// 设计: docs/RESEARCH/laolei-sse-push-design-v1.md。一条 EventSource 长连接接 9 通道,
+//   服务端 1s 推增量, 看板秒级跳动、前端→服务端主动请求≈0。
+//   失败(代理掐 SSE / 连不上)→ 自动回退到 fast 轮询, 永不比纯轮询差。
+//   回退轮询与 SSE 读同一后端快照、写同一 store, 不分叉 (老郭评审)。
+
+let _es: EventSource | null = null;
+let _sseConnected = false;
+let _helloTimer: number | undefined;
+let _fallbackTimers: number[] = [];
+let _fallbackActive = false;
+
+/** SSE 死 → 启动 fast 轮询回退 (幂等) */
+function startFallbackPolling(): void {
+  if (_fallbackActive) return;
+  _fallbackActive = true;
+  console.warn('[stcpp] SSE 不可用, 回退轮询模式');
+  _fallbackTimers.push(every(() => { void refreshTopBar(); }, 2000));
+  _fallbackTimers.push(every(() => { void refreshGrid(); }, 2000));
+  _fallbackTimers.push(every(() => { void refreshMarketGrid(); }, 5000));
+  _fallbackTimers.push(every(() => { void refreshAccount(); }, 5000));
+  _fallbackTimers.push(every(() => { void refreshAttribution(); }, 15000));
+  _fallbackTimers.push(every(() => { void refreshGate(); }, 15000));
+}
+
+function stopFallbackPolling(): void {
+  if (!_fallbackActive) return;
+  _fallbackActive = false;
+  for (const t of _fallbackTimers) clearInterval(t);
+  _fallbackTimers = [];
+}
+
+/** 解析一帧信封, 返回内层 data (失败返回 null) */
+function parseEnvelope(raw: string): { mode: string; data: unknown } | null {
+  try {
+    const env = JSON.parse(raw) as { mode?: string; data?: unknown };
+    return { mode: env.mode ?? 'snapshot', data: env.data ?? null };
+  } catch { return null; }
+}
+
+function connectSSE(): void {
+  if (USE_STUB) { startFallbackPolling(); return; }  // stub 模式直接轮询(stub 供数)
+  let url: string;
+  try { url = `${getBaseUrl()}/api/v1/stream`; } catch { startFallbackPolling(); return; }
+
+  const es = new EventSource(url);
+  _es = es;
+
+  // hello 8s 内没来 → 判定 SSE 不通, 回退轮询
+  _helloTimer = window.setTimeout(() => {
+    if (!_sseConnected) { try { es.close(); } catch { /* noop */ } startFallbackPolling(); }
+  }, 8000);
+
+  const on = (ch: string, fn: (data: unknown, mode: string) => void) => {
+    es.addEventListener(ch, (ev: MessageEvent) => {
+      const p = parseEnvelope(ev.data);
+      if (p) fn(p.data, p.mode);
+    });
+  };
+
+  on('hello', () => {
+    _sseConnected = true;
+    if (_helloTimer) clearTimeout(_helloTimer);
+    stopFallbackPolling();  // SSE 通了 → 停掉回退轮询(若曾启动)
+  });
+  on('status', (d) => { if (d) setState({ status: d as Status }); });
+  on('account', (d) => { setState({ account: (d as Account) ?? null }); });
+  on('positions', (d) => { if (d) setState({ positions: d as Positions }); rebuildGroups(); });
+  on('pnl', (d) => { if (d) setState({ attribution: d as PnlAttribution }); rebuildGroups(); });
+  on('gate', (d) => { if (d) setState({ gate: d as GatePaper }); });
+  on('rejects', (d) => { if (d) setState({ rejects: d as RiskRejects }); rebuildGroups(); });
+  on('events', (d) => {
+    const evs = (d as { events?: EventSummary[] })?.events;
+    if (evs) { lastEvents = evs; rebuildGroups(); }
+  });
+  on('scores', (d) => {
+    const arr = (d as { scores?: Score[] })?.scores;
+    if (!arr) return;
+    for (const s of arr) if (s.event_id) lastEventScore[s.event_id] = s;
+    rebuildGroups();
+  });
+  on('grid', (d, mode) => {
+    if (mode === 'delta') {
+      const dd = d as { changed?: GridMarket[]; removed?: string[] };
+      if (dd.changed?.length) applyGridMarkets(dd.changed);
+      if (dd.removed?.length) {
+        setState(produce((s) => {
+          for (const cid of dd.removed!) if (s.conditionCache[cid]) s.conditionCache[cid].summary = null;
+        }));
+      }
+    } else {
+      const dd = d as { markets?: GridMarket[] };
+      if (dd.markets) applyGridMarkets(dd.markets);
+    }
+    rebuildGroups();
+  });
+  // heartbeat: 仅保活, 无需处理 (收到即证明连接活着)
+
+  es.onerror = () => {
+    // EventSource 会自动重连; 仅当彻底关闭(CLOSED)才回退轮询
+    if (es.readyState === EventSource.CLOSED) startFallbackPolling();
+  };
+}
+
+function rebuildGroups(): void {
+  setState({ eventGroups: buildEventGroups() });
+}
+
+// ---------- 定时轮询初始化 (入口) ----------
+
 export function initPolling(): void {
-  // 快刷 (2s): 顶栏状态 + 全市场顶档摘要批量 (/grid) + 已展开盘口全档 detail。
-  //   看板"活"起来 (价/edge/状态 2s 更新); 展开的深度/报价与顶档同步刷新, 不再 5s 滞后。
-  every(() => { void refreshTopBar(); }, 2000);
-  every(() => { void refreshGrid(); }, 2000);
-  every(() => { void refreshExpandedDetail(); }, 2000);
-  // 中速 (5s): 市场发现(events) + 持仓/归因/拒单 + score(节流) + 展开行全档 detail。
-  every(() => { void refreshMarketGrid(); }, 5000);
-  every(() => { void refreshAccount(); }, 5000);  // 凯利评审: 账户现金/估值
-  // 慢刷
-  every(() => { void refreshSparkline(); }, 15000);
-  every(() => { void refreshAttribution(); }, 15000);
-  every(() => { void refreshGate(); }, 15000);
-  every(() => { void refreshMetrics(); }, 30000);  // Ops 页常驻消费
-  every(() => { void refreshMarketInfoSlow(); }, 60000);
-  // 老雷 2026-06-01: 特征健康 + 映射状态 轮询 (Ops 页可观测)
-  every(() => { void refreshFeatureHealth(); }, 20000);
-  every(() => { void refreshMappingStatus(); }, 10000);
+  // 主通路: SSE 推 9 通道 (status/account/grid/scores/events/positions/pnl/gate/rejects)。
+  //   失败自动回退到 fast 轮询 (startFallbackPolling)。
+  connectSSE();
+
+  // 始终走 REST 的常驻轮询 (SSE 不承载这些): 展开行全档 detail + Ops 页 + 净值曲线 + healthz。
+  every(() => { void refreshExpandedDetail(); }, 2000);   // 展开盘口全档 (优先级插队)
+  every(() => { void refreshSparkline(); }, 15000);       // 净值曲线 (timeseries)
+  every(() => { void refreshMetrics(); }, 30000);         // Ops 页 Prometheus
+  every(() => { void refreshMarketInfoSlow(); }, 60000);  // market 元数据
+  every(() => { void refreshFeatureHealth(); }, 20000);   // Ops: 特征健康
+  every(() => { void refreshMappingStatus(); }, 10000);   // Ops: 映射状态
+  every(() => { void refreshHealthz(); }, 10000);         // healthz (SSE status 通道不含)
 }

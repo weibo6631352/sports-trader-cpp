@@ -86,6 +86,8 @@ add_library(stcpp_debug_api STATIC
     endpoint_account.cpp
     # 老雷 2026-06-02: 全市场轻量摘要批量端点 (/api/v1/grid)
     endpoint_grid.cpp
+    # 老雷 2026-06-02: SSE 推增量 (/api/v1/stream)
+    endpoint_stream.cpp
 )
 
 target_include_directories(stcpp_debug_api
