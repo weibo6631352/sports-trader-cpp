@@ -43,8 +43,6 @@ inline std::string status(const HttpServer& hs) {
     b += json::boolean(m.wss_user_channel_connected);
     b += R"(},"signals_active_count":0,"positions_count":0,"rm_rejects_last_60s":0,"uptime_sec":)";
     b += json::i64(uptime);
-    b += R"(,"as_of_ts":)";
-    b += json::i64(now_epoch_ns());
     b += R"(,"data_source":")";
     b += sp.data_source();
     b += "\"}";
@@ -103,8 +101,6 @@ inline std::string events(const StateProvider& sp) {
     b.reserve(512 + evs.size() * 256);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
-    b += ",\"as_of_ts\":";
-    b += json::i64(now_epoch_ns());
     b += ",\"data_source\":";
     b += json::str(sp.data_source());
     b += ",\"events\":[";
@@ -141,8 +137,6 @@ inline std::string positions(const StateProvider& sp) {
     b.reserve(256 + rows.size() * 256);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
-    b += ",\"as_of_ts\":";
-    b += json::i64(now_epoch_ns());
     b += ",\"positions\":[";
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const HoldingView& r = rows[i];
@@ -176,8 +170,6 @@ inline std::string pnl_attribution(const StateProvider& sp) {
     b.reserve(256);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
-    b += ",\"as_of_ts\":";
-    b += json::i64(now_epoch_ns());
     b += ",\"waterfall\":{\"gross\":";
     b += json::num(a.gross);
     b += ",\"fee\":";
@@ -210,8 +202,6 @@ inline std::string gate(const StateProvider& sp) {
     b.reserve(384);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
-    b += ",\"as_of_ts\":";
-    b += json::i64(now_epoch_ns());
     b += ",\"window_days\":";
     b += json::i64(g.window_days);
     b += ",\"has_data\":";
@@ -245,8 +235,6 @@ inline std::string rejects(const StateProvider& sp) {
     b.reserve(256 + rows.size() * 192);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
-    b += ",\"as_of_ts\":";
-    b += json::i64(now_epoch_ns());
     b += ",\"rejects\":[";
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const RiskRejectRow& r = rows[i];
@@ -278,8 +266,6 @@ inline std::string grid(const StateProvider& sp) {
     b.reserve(64 * 1024);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
-    b += ",\"as_of_ts\":";
-    b += json::i64(now_epoch_ns());
     b += ",\"markets\":[";
     std::size_t count = 0;
     bool first = true;
@@ -341,8 +327,6 @@ inline std::string scores(const StateProvider& sp) {
     b.reserve(2048);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
-    b += ",\"as_of_ts\":";
-    b += json::i64(now_epoch_ns());
     b += ",\"scores\":[";
     bool first = true;
     for (const auto& ev : evs) {
