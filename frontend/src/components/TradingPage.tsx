@@ -807,6 +807,8 @@ function TradingToolbar(props: {
   visibleCount: number;
   totalCount: number;
   totalMarkets: number;
+  hideNoBook: boolean;
+  onToggleNoBook: () => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
 }) {
@@ -841,6 +843,17 @@ function TradingToolbar(props: {
         {props.visibleCount} 赛事 / {props.totalMarkets} 盘口
       </Typography>
 
+      {/* 隐藏无簿盘 (默认开): 纯显示过滤 — 后端仍订阅+45s 重打底全部盘, 一旦挂上单 book_found
+          翻 true 经 SSE grid 通道推达, 该行自动重新出现, 不漏跟踪。有持仓的盘永不隐藏。 */}
+      <button
+        class="v8-quickbtn"
+        onClick={props.onToggleNoBook}
+        title={props.hideNoBook ? '当前隐藏无订单簿的盘口 (点击显示全部; 后端仍在跟踪, 有簿自动现身)' : '当前显示全部盘口 (点击隐藏无订单簿的)'}
+        style={{ opacity: props.hideNoBook ? '1' : '0.55' }}
+      >
+        {props.hideNoBook ? '隐藏无簿 ✓' : '隐藏无簿'}
+      </button>
+
       {/* 全展开/全折叠快捷按钮 */}
       <div class="v8-toolbar-btns">
         <button class="v8-quickbtn" onClick={props.onExpandAll} title="全部展开">全展</button>
@@ -858,6 +871,10 @@ export function TradingPage() {
   // 默认只显示「正在比赛」(gamma live=true); 可切「全部/持仓」(老板 2026-06-01)
   const [filter, setFilter] = createSignal<FilterMode>('live');
   const [search, setSearch] = createSignal('');
+  // 隐藏无订单簿的盘 (默认开): 纯显示过滤。后端始终订阅 + 每 45s REST 重打底全部已发现盘,
+  //   某盘一旦挂上单 → book_found 翻 true → SSE grid 通道推达 → summary.bid/ask 非空 → 该行
+  //   自动重新出现 (≤1s)。所以"隐藏" ≠ "停止跟踪", 不会漏掉后来才有簿的盘。有持仓盘永不隐藏。
+  const [hideNoBook, setHideNoBook] = createSignal(true);
 
   // P1-6: WSS 连接状态 Alert 计算.
   //   只有 clob 是真用的 WSS (订单簿). sports_api 走 HTTP REST inplay feed (非 WSS),
@@ -892,6 +909,18 @@ export function TradingPage() {
       groups = groups.filter((g) => g.live || g.score?.status === 'inplay' || g.score?.status === 'halftime');
     } else if (f === 'position') {
       groups = groups.filter((g) => g.conditions.some((c) => c.posRows.length > 0));
+    }
+    // 隐藏无簿盘 (condition 级, 纯显示): 保留「有 bid 或 ask (含单边簿)」或「有持仓」的盘;
+    //   两者皆无 = 当前无订单簿 → 隐藏。后端仍跟踪, 有簿经 SSE 自动现身 (见 hideNoBook 注释)。
+    if (hideNoBook()) {
+      groups = groups
+        .map((g) => ({
+          ...g,
+          conditions: g.conditions.filter(
+            (c) => c.summary?.bid != null || c.summary?.ask != null || c.posRows.length > 0,
+          ),
+        }))
+        .filter((g) => g.conditions.length > 0);
     }
     const q = search().trim().toLowerCase();
     if (q) {
@@ -951,6 +980,8 @@ export function TradingPage() {
         visibleCount={filteredGroups().length}
         totalCount={allGroups().length}
         totalMarkets={totalMarkets()}
+        hideNoBook={hideNoBook()}
+        onToggleNoBook={() => setHideNoBook((v) => !v)}
         onExpandAll={() => expandAllMarkets(allCondIds())}
         onCollapseAll={() => collapseAllMarkets(allCondIds())}
       />
