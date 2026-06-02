@@ -954,9 +954,17 @@ void PaperDaemon::Start() {
     }
 
     // ---- bm_slots start: 跨庄家赔率刷新线程 (getodds + inplay-mapping → g_bm_* 特征 #5/6/7/16) ----
-    if (cfg_.start_live_feeds && cfg_.enable_paper_trading && paper_loop_) {
+    //   默认【关】(2026-06-02 事故: getodds 单 sport 达 45MB, 跨洋抓取吃光带宽 → WSS idle 断 + 前端卡。
+    //   WSS 是交易命脉, 优先级 >> advisory 的 bm_slots)。需显式 STCPP_ENABLE_BM_SLOTS=1 才起。
+    //   重开前提: getodds 45MB 跨洋不可行, 待改按场抓 (getodds/match?id=) 或代理侧过滤。
+    const char* bm_en = std::getenv("STCPP_ENABLE_BM_SLOTS");
+    if (bm_en != nullptr && std::string(bm_en) == "1" && cfg_.start_live_feeds &&
+        cfg_.enable_paper_trading && paper_loop_) {
         odds_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshOdds(st); });
-        std::printf("[paper_daemon] bm_slots 赔率刷新线程启动 (getodds + inplay-mapping 90s 轮询)\n");
+        std::printf("[paper_daemon] bm_slots 赔率刷新线程启动 (STCPP_ENABLE_BM_SLOTS=1; getodds 限速+300s)\n");
+        std::fflush(stdout);
+    } else {
+        std::printf("[paper_daemon] bm_slots 赔率刷新线程【关】(getodds 45MB 吃带宽; 设 STCPP_ENABLE_BM_SLOTS=1 重开)\n");
         std::fflush(stdout);
     }
 
@@ -1510,7 +1518,8 @@ void PaperDaemon::RefreshOdds(std::stop_token st) {
         gs::GoalserveSport::Baseball, gs::GoalserveSport::AmericanFootball, gs::GoalserveSport::Hockey,
     };
     auto fetch = [&gs_proxy](const std::string& url) -> std::string {
-        std::string cmd = "curl -s --max-time 20 ";
+        // --limit-rate: 跨洋带宽紧, getodds 大 (45MB), 限速防吃光带宽挤垮 WSS (2026-06-02 事故)。
+        std::string cmd = "curl -s --max-time 40 --limit-rate 250k ";
         if (!gs_proxy.empty()) {
             cmd += "-x '";
             cmd += gs_proxy;
@@ -1586,7 +1595,7 @@ void PaperDaemon::RefreshOdds(std::stop_token st) {
             std::fprintf(stderr, "[odds] bm_slots 刷新: %zu 场跨庄家赔率注入 (%zu/6 sport 有 getodds)\n", n,
                          sports_with_odds);
         }
-        if (!interruptible_sleep(seconds(90)))  // 赔率变化慢 + getodds 较重 → 90s 周期
+        if (!interruptible_sleep(seconds(300)))  // 赔率变化慢 + getodds 大 → 300s 周期 (省带宽)
             return;
     }
 }
