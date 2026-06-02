@@ -1459,7 +1459,9 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
                     v.as_of_ts_ns = as_of_ns;  // 新鲜度 → g_live_stats_age_sec
                 const std::size_t n = m.size();
                 paper_loop_->SetLiveStatsByTeams(std::move(m));
-                if (cfg_.verbose)
+                // 常开 (12s 一行, 低噪声): live_stats 可观测性 — soccernew/live 解析出几场 + 样本 join_key。
+                static int ls_log_throttle = 0;
+                if ((ls_log_throttle++ % 5) == 0)  // 每 60s 一行
                     std::fprintf(stderr, "[live_stats] soccernew/live: %zu 场 live_stats 注入\n", n);
             }
         }
