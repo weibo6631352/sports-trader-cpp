@@ -11,6 +11,15 @@ export const STATUS_ZH: Record<string, string> = {
   pregame:  '赛前',
 };
 
+// 后端 grid game_state 派生状态 (盘口生命周期 + 比赛时间; 见 endpoint_payloads grid_market_obj)
+export const GAMESTATE_ZH: Record<string, string> = {
+  pregame:  '赛前',
+  inplay:   '进行中',
+  ended:    '已结束',
+  resolved: '已结算',
+  unknown:  '—',
+};
+
 export const SPORT_ZH: Record<string, string> = {
   basketball:  '篮球',
   soccer:      '足球',

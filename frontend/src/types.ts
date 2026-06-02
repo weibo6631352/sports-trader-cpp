@@ -400,6 +400,9 @@ export interface GridMarket {
   sharp_fair?: number;
   model_confidence?: number;
   advisory?: boolean;
+  kickoff_ts?: number;   // 开赛时刻 (epoch ns; 0/缺=未知)
+  end_ts?: number;       // 结束/结算窗口 (epoch ns)
+  game_state?: string;   // 后端派生: pregame/inplay/ended/resolved/unknown
 }
 
 export interface GridResponse {
@@ -418,6 +421,8 @@ export interface ConditionSummary {
   edgeBps: number | null;
   fair: number | null;
   eventTs: number | null;
+  kickoffTs: number | null;   // 开赛时刻 (epoch ns)
+  gameState: string | null;   // pregame/inplay/ended/resolved/unknown
 }
 
 export interface ConditionData {

@@ -267,6 +267,7 @@ html, body {
 .evt-dash   { color: var(--md-text-dim); font-size: 14px; }
 .evt-period { font-size: 11px; color: var(--md-text-dim); }
 .evt-clock  { font-family: var(--font-mono); font-size: 11px; color: var(--md-text-dim); }
+.evt-kickoff { font-family: var(--font-mono); font-size: 11px; color: var(--md-text-sub); margin-left: 6px; }
 .evt-teams-placeholder { color: var(--md-text-sub); font-style: italic; }
 
 /* score status */

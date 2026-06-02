@@ -304,6 +304,10 @@ struct MarketInfo {
     //     供前端 outcomes 列表标注 (比 outcome 更可读)
     std::string sports_market_type;  // moneyline/spread/totals/outright/prop/series/unknown
     std::string group_item_title;    // gamma groupItemTitle (可空)
+    // 比赛时间 (2026-06-02 老板「前端要看几点开赛/是否进行中」, G-FREEZE-W 只增):
+    //   gamma market.gameStartTime / endDate → Unix 秒 (0=缺)。供 grid 派生 game_state + 前端徽章。
+    std::int64_t game_start_ts_sec{0};  // 真实开赛时刻
+    std::int64_t end_ts_sec{0};         // 结束/结算窗口
 };
 
 // ============================================================

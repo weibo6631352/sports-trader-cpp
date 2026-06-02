@@ -201,6 +201,8 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             mi.polymarket_url = ev.slug.empty() ? "" : ("https://polymarket.com/event/" + ev.slug);
             mi.sports_market_type = dm.sports_market_type;
             mi.group_item_title = dm.group_item_title;
+            mi.game_start_ts_sec = dm.game_start_ts_sec;  // 开赛/结束时间 → grid game_state + 前端徽章
+            mi.end_ts_sec = dm.end_ts_sec;
             // tokens[]: YES (tok0) + NO (tok1)
             TokenInfo tk0;
             tk0.token_id = dm.token0_id;

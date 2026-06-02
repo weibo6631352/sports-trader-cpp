@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <unordered_set>
@@ -303,6 +304,34 @@ inline std::string grid_market_obj(const StateProvider& sp, const std::string& c
         o += ",\"advisory\":";
         o += json::boolean(q.advisory);
     }
+    // 比赛时间 + 状态 (2026-06-02 老板「前端要看几点开赛 / 是否进行中」):
+    //   kickoff_ts/end_ts 用 ns (与 event_ts 同口径, 前端 fmtTs 直接用); game_state 后端派生单一口径。
+    //   派生: resolved/closed (Polymarket 生命周期) 优先, 否则按 now vs 开赛/结束时间。
+    //   注: 时间型 inplay 是估计 (kickoff<now<end); 已匹配盘前端会用 Goalserve 比分 status 精化为权威。
+    const MarketInfo mi = sp.market(cid);
+    const std::int64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+                                     std::chrono::system_clock::now().time_since_epoch())
+                                     .count();
+    const char* game_state = "unknown";
+    if (mi.resolved) {
+        game_state = "resolved";
+    } else if (mi.closed) {
+        game_state = "ended";
+    } else if (mi.game_start_ts_sec <= 0) {
+        game_state = "unknown";
+    } else if (now_sec < mi.game_start_ts_sec) {
+        game_state = "pregame";
+    } else if (mi.end_ts_sec <= 0 || now_sec < mi.end_ts_sec) {
+        game_state = "inplay";
+    } else {
+        game_state = "ended";
+    }
+    o += ",\"kickoff_ts\":";
+    o += json::i64(mi.game_start_ts_sec > 0 ? mi.game_start_ts_sec * 1'000'000'000LL : 0);
+    o += ",\"end_ts\":";
+    o += json::i64(mi.end_ts_sec > 0 ? mi.end_ts_sec * 1'000'000'000LL : 0);
+    o += ",\"game_state\":";
+    o += json::str(game_state);
     o += '}';
     return o;
 }

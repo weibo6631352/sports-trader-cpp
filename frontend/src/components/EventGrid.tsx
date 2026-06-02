@@ -20,7 +20,7 @@ import {
   fmtTs, fmtBps, fmtUsdc, fmtClock, stalenessMs, isEndpointFailing,
 } from '../api';
 import {
-  STATUS_ZH, SPORT_ZH, REJECT_REASON_ZH, SIDE_ZH,
+  STATUS_ZH, GAMESTATE_ZH, SPORT_ZH, REJECT_REASON_ZH, SIDE_ZH,
   inferMarketLabel,
 } from '../i18n';
 import type {
@@ -123,6 +123,33 @@ function EventHeader(props: { group: EventGroup }) {
   const scoreStalems = () =>
     score() ? stalenessMs(score()!.score_as_of_ts) : null;
 
+  // 比赛时间/状态 (老板 2026-06-02: 前端要看几点开赛 + 是否进行中)。
+  //   同 event 各 condition 共享开赛时间/state, 取首个有值的 summary。
+  const gameSummary = () => {
+    for (const c of conditions()) {
+      const s = c.summary;
+      if (s && (s.kickoffTs != null || s.gameState != null)) return s;
+    }
+    return null;
+  };
+  const kickoffLabel = () => {
+    const ts = gameSummary()?.kickoffTs;
+    return ts ? fmtTs(ts) : null;
+  };
+  // 状态: 已匹配(有 Goalserve 比分)用比分 status (权威, 已在上方 score 块显示);
+  //   未匹配用后端派生 game_state 兜底 (赛前/进行中/已结束/已结算)。
+  const fallbackStateZh = () => {
+    const gs = gameSummary()?.gameState;
+    return gs ? (GAMESTATE_ZH[gs] ?? gs) : null;
+  };
+  const gameStateCls = () => {
+    const gs = score()?.status ?? gameSummary()?.gameState ?? '';
+    if (gs === 'inplay' || gs === 'halftime') return 'score-live';
+    if (gs === 'pregame') return 'score-pre';
+    if (gs === 'ended' || gs === 'final') return 'score-ft';
+    return 'score-pre';
+  };
+
   return (
     <div class="event-header">
       <div class="event-header-main">
@@ -149,6 +176,15 @@ function EventHeader(props: { group: EventGroup }) {
               <span class={`evt-status ${statusCls()}`}>{statusZh()}</span>
             </>
           )}
+        </Show>
+
+        {/* 比赛状态 + 开赛时间 (老板: 看几点开赛 + 是否进行中)。
+            未匹配(无比分)用后端 game_state 兜底徽章; 开赛时间始终显示。 */}
+        <Show when={!score() && fallbackStateZh()}>
+          <span class={`evt-status ${gameStateCls()}`}>{fallbackStateZh()}</span>
+        </Show>
+        <Show when={kickoffLabel()}>
+          <span class="evt-kickoff" title="开赛时间">🕒 {kickoffLabel()}</span>
         </Show>
 
         <Show when={eventUrl()}>

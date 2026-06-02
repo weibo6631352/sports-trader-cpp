@@ -353,6 +353,8 @@ function applyGridMarkets(markets: GridMarket[]): void {
           edgeBps: m.quote_found && m.edge_bps != null ? m.edge_bps : null,
           fair: m.quote_found && m.fair != null ? m.fair : null,
           eventTs: m.event_ts ?? null,
+          kickoffTs: m.kickoff_ts && m.kickoff_ts > 0 ? m.kickoff_ts : null,
+          gameState: m.game_state ?? null,
         };
       }
     }),
