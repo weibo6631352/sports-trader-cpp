@@ -168,6 +168,25 @@ const std::vector<TeamEntry>& SoccerTeams() {
     return t;
 }
 
+// 板球表: 主要国际队 + IPL 全队 (缩写 RCB/CSK/MI 极常见, 别名表价值高)。
+const std::vector<TeamEntry>& CricketTeams() {
+    static const std::vector<TeamEntry> t = {
+        // ---- 国际队 ----
+        {"india", {"india"}}, {"australia", {"australia"}}, {"england", {"england"}},
+        {"pakistan", {"pakistan"}}, {"southafrica", {"south africa"}}, {"newzealand", {"new zealand"}},
+        {"srilanka", {"sri lanka"}}, {"bangladesh", {"bangladesh"}}, {"westindies", {"west indies"}},
+        {"afghanistan", {"afghanistan"}}, {"ireland", {"ireland"}}, {"zimbabwe", {"zimbabwe"}},
+        // ---- IPL ----
+        {"mumbaiindians", {"mumbai indians", "mi"}}, {"chennai", {"chennai super kings", "csk"}},
+        {"rcb", {"royal challengers bengaluru", "royal challengers bangalore", "rcb"}},
+        {"kkr", {"kolkata knight riders", "kkr"}}, {"delhicapitals", {"delhi capitals", "dc"}},
+        {"punjabkings", {"punjab kings", "pbks"}}, {"rajasthan", {"rajasthan royals", "rr"}},
+        {"srh", {"sunrisers hyderabad", "srh"}}, {"gujarattitans", {"gujarat titans", "gt"}},
+        {"lucknow", {"lucknow super giants", "lsg"}},
+    };
+    return t;
+}
+
 // 足球类 sport 码 (一张全球俱乐部表跨赛事共用)。
 bool IsSoccerCode(std::string_view sl) {
     return Contains(sl, "soccer") || Contains(sl, "epl") || Contains(sl, "premier") ||
@@ -185,7 +204,9 @@ const std::vector<TeamEntry>* LeagueFor(std::string_view sl) {
     if (Contains(sl, "nfl")) return &NflTeams();
     if (Contains(sl, "nhl")) return &NhlTeams();
     if (IsSoccerCode(sl)) return &SoccerTeams();
-    return nullptr;  // 板球/大学等: 待真实样本建表, 暂回退通用
+    if (Contains(sl, "cricket") || Contains(sl, "ipl") || Contains(sl, "t20") || Contains(sl, "odi"))
+        return &CricketTeams();
+    return nullptr;  // 大学(队数过多)等: 待真实样本建表, 暂回退通用
 }
 
 // group ("red sox") 的所有 token 是否都在 sorted+deduped 的 name_tokens 里。
@@ -213,7 +234,8 @@ SportMatchCategory ClassifySportMatch(std::string_view sport_code) {
     // 团队项目: 四大联盟 + 足球 (各联赛码, IsSoccerCode 统一口径) + 板球 + 大学。
     if (Contains(sl, "nba") || Contains(sl, "wnba") || Contains(sl, "mlb") || Contains(sl, "nfl") ||
         Contains(sl, "nhl") || Contains(sl, "football") || IsSoccerCode(sl) || Contains(sl, "cricket") ||
-        Contains(sl, "ncaa") || Contains(sl, "cfb") || Contains(sl, "cbb")) {
+        Contains(sl, "ipl") || Contains(sl, "t20") || Contains(sl, "odi") || Contains(sl, "ncaa") ||
+        Contains(sl, "cfb") || Contains(sl, "cbb")) {
         return SportMatchCategory::kTeam;
     }
     return SportMatchCategory::kUnknown;

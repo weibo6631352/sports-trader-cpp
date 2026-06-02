@@ -113,8 +113,8 @@ TEST(SportAware, CanonicalTeam_CityVsNickname) {
     // NFL 数字昵称 + 别名
     EXPECT_EQ(CanonicalTeam("nfl", "San Francisco 49ers"), "49ers");
     EXPECT_EQ(CanonicalTeam("nfl", "Niners"), "49ers");
-    // 未建表运动 (板球/橄榄球) → "" (回退通用); 已建表运动里未知队 → "" (回退通用)
-    EXPECT_EQ(CanonicalTeam("cricket", "Mumbai Indians"), "");
+    // 未建表运动 (橄榄球) → "" (回退通用); 已建表运动里未知队 → "" (回退通用)
+    EXPECT_EQ(CanonicalTeam("rugby", "Leinster"), "");
     EXPECT_EQ(CanonicalTeam("nba", "Unknown Team XYZ"), "");
 }
 
@@ -144,6 +144,16 @@ TEST(SportAware, SoccerCanonical) {
     // Inter Milan vs Inter Miami 不串 (裸 "inter" 不解析)
     EXPECT_EQ(CanonicalTeam("seriea", "Inter Milan"), "inter");
     EXPECT_EQ(CanonicalTeam("mls", "Inter Miami"), "intermiami");
+}
+
+// 板球: 国际队 + IPL 缩写。
+TEST(SportAware, CricketCanonical) {
+    EXPECT_EQ(CanonicalTeam("cricket", "India"), "india");
+    EXPECT_EQ(CanonicalTeam("cricket", "West Indies"), "westindies");
+    EXPECT_EQ(CanonicalTeam("ipl", "Royal Challengers Bengaluru"), "rcb");
+    EXPECT_EQ(CanonicalTeam("ipl", "RCB"), "rcb");
+    EXPECT_EQ(CanonicalTeam("t20", "Chennai Super Kings"), "chennai");
+    EXPECT_EQ(CanonicalTeam("ipl", "CSK"), "chennai");
 }
 
 // 足球同城 derby 经规范 ID 正确定向 (通用 overlap 会因共享城市名 0.5 误配)。
