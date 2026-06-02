@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <limits>
@@ -410,6 +411,20 @@ std::string ExtractMarketsArray(const std::string& event_obj) {
     return event_obj.substr(start, end - start + 1);
 }
 
+// 聚焦流动性盘 (2026-06-02 老板「聚焦流动性盘 + 提匹配率」): 发现阶段剔除不可交易盘 —
+//   ① 已完赛盘 (sportsMarketType 含 "completed": 比赛已结束等结算, 无 edge、永不匹配 inplay);
+//   ② 极低流动性死盘 (liquidity 有值且 < kMinDiscoverLiquidity, 如冷门 cricket prop liq<30, 无书无量)。
+//   liquidity 缺失 (NaN) 不剔 (fail-open: 不拿缺数据当死盘, 刚开赛盘可能尚无 liq 值)。
+//   效果: 缩小匹配分母 + 网格只留真·可交易盘 → 匹配率与信噪比双升。实测当前冷门完赛/prop 占发现盘约半。
+constexpr double kMinDiscoverLiquidity = 200.0;
+inline bool IsUntradeableMarket(const DiscoveredMarket& dm) {
+    if (dm.sports_market_type.find("completed") != std::string::npos)
+        return true;
+    if (std::isfinite(dm.liquidity) && dm.liquidity < kMinDiscoverLiquidity)
+        return true;
+    return false;
+}
+
 }  // namespace discovery_detail
 
 // ---------------------------------------------------------------------------
@@ -503,6 +518,8 @@ std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int 
                 continue;
             if (dm.token0_id.empty() || dm.token1_id.empty())
                 continue;
+            if (IsUntradeableMarket(dm))  // 聚焦流动性: 剔除已完赛/死盘
+                continue;
 
             // A0 映射桥锚定字段 (best-effort; 缺失不阻塞发现, 仅降匹配率)
             (void)ExtractOutcomes(mobj, dm.outcome0_name, dm.outcome1_name);
@@ -575,6 +592,8 @@ std::vector<DiscoveredEvent> ParseSportsMarketsFlat(const std::string& json_buf,
         if (!ExtractClobTokenIds(mobj, dm.token0_id, dm.token1_id))
             continue;
         if (dm.token0_id.empty() || dm.token1_id.empty())
+            continue;
+        if (IsUntradeableMarket(dm))  // 聚焦流动性: 剔除已完赛/死盘
             continue;
 
         // A0 映射桥锚定字段 (best-effort)
