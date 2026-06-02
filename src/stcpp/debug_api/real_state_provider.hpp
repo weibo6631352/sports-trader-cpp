@@ -428,25 +428,14 @@ public:
         //    tokens_subscribed_total   已被 hub.token_count() 覆盖
         snap.markets_discovered_total = static_cast<std::int64_t>(catalog_.size());
 
-        // 3. 直播员/比分匹配率: 每个 catalog_ 条目取其 event_id,
-        //    在 score_store_ 中查找 → 有结果即计入 score_matched_total
-        //    条件: score_store_ 非 nullptr (否则无数据源, 0 = 诚实暴露)
+        // 3. 直播员/比分匹配率: 取 EventMatcher 实际映射结果 (daemon push 的 mapping_snapshot_.matched),
+        //    与 /api/v1/mapping/status 同源。
+        //    2026-06-02 修真 bug: 原用 score_store_->Get(mi.event_id) —— 但 mi.event_id 是 Polymarket
+        //    event_id, 而 score_store 按 Goalserve inplay_match_id 做 key → 用错 key 永远查不到 →
+        //    score_matched 恒 0 (OPS 匹配率恒 0%), 即便 EventMatcher 实际匹配了 N 个。改读真映射数。
         {
-            std::int64_t matched = 0;
-            if (score_store_ != nullptr) {
-                // 收集 catalog_ 中唯一 event_id 集合 (同一 event 可有多个 condition_id)
-                // 按 condition 算匹配: 每个 condition 的 event_id 若有比分则计1
-                for (const auto& [cid, mi] : catalog_) {
-                    if (mi.event_id.empty()) {
-                        continue;
-                    }
-                    const auto opt = score_store_->Get(mi.event_id);
-                    if (opt.has_value() && opt->found) {
-                        ++matched;
-                    }
-                }
-            }
-            snap.score_matched_total = matched;
+            std::lock_guard<std::mutex> lk_map(mapping_mtx_);
+            snap.score_matched_total = static_cast<std::int64_t>(mapping_snapshot_.matched);
         }
 
         return snap;

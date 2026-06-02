@@ -64,26 +64,6 @@ MarketInfo make_mi(const std::string& condition_id, const std::string& smt,
     return mi;
 }
 
-// 构造 ScoreSnapshotStore 并 Publish 一批 event_id
-std::unique_ptr<data::ScoreSnapshotStore> make_score_store(const std::vector<std::string>& event_ids) {
-    auto store = std::make_unique<data::ScoreSnapshotStore>();
-    auto map = std::make_shared<data::ScoreMap>();
-    for (const auto& eid : event_ids) {
-        EventScore es;
-        es.found = true;
-        es.event_id = eid;
-        es.sport = "basketball";
-        es.status = "inplay";
-        // 4ts: 非零合法值 (R-20: event_ts <= data_source_ts <= ingestion_ts)
-        es.ts.event_ts_ns = 1'000'000'000LL;
-        es.ts.data_source_ts_ns = 1'100'000'000LL;
-        es.ts.ingestion_ts_ns = 1'200'000'000LL;
-        es.ts.as_of_ts_ns = 1'300'000'000LL;
-        (*map)[eid] = es;
-    }
-    store->Publish(std::move(map));
-    return store;
-}
 
 // 构造 RealStateProvider (最小构造; 不接 WSS/paper/ledger)
 // catalog 和 score_store 通过 set_* 注入
@@ -204,38 +184,44 @@ TEST_F(CoverageMetricsFixture, TC06_DiscoveredEmpty) {
 }
 
 // ---------------------------------------------------------------------------
-// TC-07: 直播员/比分匹配率 — score_store 全匹配 → matched=N
+// TC-07: 直播员/比分匹配率 — 取 EventMatcher 实际映射数 (daemon push 的 mapping_status.matched)。
+//   2026-06-02 改: 原口径 score_store_->Get(event_id) 用错 key (PM event_id vs Goalserve
+//   match_id) 恒 0, 已修为读真映射。本测试随之改为设 mapping_status 验证。
 // ---------------------------------------------------------------------------
 TEST_F(CoverageMetricsFixture, TC07_ScoreAllMatched) {
     MarketInfoMap catalog;
     catalog["cid-1"] = make_mi("cid-1", "moneyline", "event-A");
     catalog["cid-2"] = make_mi("cid-2", "spread", "event-B");
-    catalog["cid-3"] = make_mi("cid-3", "totals", "event-A");  // 同一 event, 两个盘口
+    catalog["cid-3"] = make_mi("cid-3", "totals", "event-A");
 
-    auto store = make_score_store({"event-A", "event-B"});
-    auto p = make_provider(catalog, store.get());
+    auto p = make_provider(catalog);
+    MappingStatusReport rep;
+    rep.total_markets = 3;
+    rep.matched = 3;  // EventMatcher 实际匹配 3 个
+    p->set_mapping_status(rep);
     const MetricsSnapshot m = p->metrics();
 
-    // cid-1 → event-A (found), cid-2 → event-B (found), cid-3 → event-A (found)
-    EXPECT_EQ(m.score_matched_total, 3);
+    EXPECT_EQ(m.score_matched_total, 3);  // 反映真映射数
     EXPECT_EQ(m.markets_discovered_total, 3);
 }
 
 // ---------------------------------------------------------------------------
-// TC-08: 直播员/比分匹配率 — 部分匹配 → matched=k < N
+// TC-08: 直播员/比分匹配率 — 部分匹配 → matched=k < N (真映射数)
 // ---------------------------------------------------------------------------
 TEST_F(CoverageMetricsFixture, TC08_ScorePartialMatch) {
     MarketInfoMap catalog;
     catalog["cid-1"] = make_mi("cid-1", "moneyline", "event-X");
-    catalog["cid-2"] = make_mi("cid-2", "outright", "event-Y");  // outright → 无 inplay
+    catalog["cid-2"] = make_mi("cid-2", "outright", "event-Y");
     catalog["cid-3"] = make_mi("cid-3", "totals", "event-X");
-    catalog["cid-4"] = make_mi("cid-4", "spread", "event-Z");  // event-Z 无比分
+    catalog["cid-4"] = make_mi("cid-4", "spread", "event-Z");
 
-    auto store = make_score_store({"event-X"});  // 只有 event-X 有比分
-    auto p = make_provider(catalog, store.get());
+    auto p = make_provider(catalog);
+    MappingStatusReport rep;
+    rep.total_markets = 4;
+    rep.matched = 2;  // 仅 2 个匹配上 (outright/无比分的没匹配)
+    p->set_mapping_status(rep);
     const MetricsSnapshot m = p->metrics();
 
-    // cid-1 → event-X (found), cid-2 → event-Y (miss), cid-3 → event-X (found), cid-4 → event-Z (miss)
     EXPECT_EQ(m.score_matched_total, 2);
     EXPECT_EQ(m.markets_discovered_total, 4);
 }
