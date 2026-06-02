@@ -455,6 +455,8 @@ function startFallbackPolling(): void {
   _fallbackTimers.push(every(() => { void refreshFeatureHealth(); }, 20000));
   _fallbackTimers.push(every(() => { void refreshMappingStatus(); }, 10000));
   _fallbackTimers.push(every(() => { void refreshHealthz(); }, 10000));
+  // SSE 断 → focus 推送也死, 展开盘的全档 book/quote 改由 REST 兜 (2s)。SSE 活时不跑 (服务端推)。
+  _fallbackTimers.push(every(() => { void refreshExpandedDetail(); }, 2000));
 }
 
 function stopFallbackPolling(): void {
@@ -581,10 +583,11 @@ export function initPolling(): void {
   //   失败自动回退到 fast 轮询 (startFallbackPolling)。
   connectSSE();
 
-  // 展开行全档 detail (book/quote/market): 常驻 2s REST 拉取 detailInterest (经实证可靠的兜底)。
-  //   SSE book/quote 通道是"更快的加成"(1s on-change), 但 focus 链路曾误丢帧致"未接入" →
-  //   故 REST 常驻作为可靠源 (两者都写 conditionCache.book/quote, 同后端数据、同归一, 不冲突)。
-  every(() => { void refreshExpandedDetail(); }, 2000);
+  // 展开行全档 book/quote: 不再常驻 REST 轮询 (2026-06-02 老板「接口都做成推送了为什么还要拉」)。
+  //   服务端 endpoint_stream.cpp:351 — 新进 focus 的盘口下一 tick(≤1s) 立即推一次 book 快照,
+  //   之后 on-change 推。展开即由 SSE focus 推全档; 单个展开另有 addDetailInterest 的 priority REST
+  //   兜首屏即时 (~200ms)。常驻 2s 轮询 (全展 38 盘 → 76 请求/2s 灌 cap-6 跨洋闸) 是纯冗余风暴,
+  //   导致"拉取失败"闪烁 → 删除。REST 仅在 SSE 断时回退 (startFallbackPolling 内挂 refreshExpandedDetail)。
   // 其余常驻 REST: metrics (Prometheus 抓取需) + marketInfoSlow (market 元数据慢刷)。
   every(() => { void refreshMetrics(); }, 30000);
   every(() => { void refreshMarketInfoSlow(); }, 60000);
