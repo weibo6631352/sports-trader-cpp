@@ -377,6 +377,49 @@ void PaperDaemon::SeedInitialBooksFromRest(std::stop_token st) {
 }
 
 // ---------------------------------------------------------------------------
+// WssWatchdogLoop — CLOB WSS 心跳保活 + 断线重连 (2026-06-02 会议 d8d4bd6).
+//   真因: Polymarket CLOB 服务端不主动发 ping, 客户端 ~10-15s 不发 "PING" → 30s idle 被踢
+//         (recv_loop_ended); 且原 OnDisconnected 回调只打印不重连 → clob 永久 false。
+//   修: 连着每 10s 发 "PING" (服务端回 "PONG", OnFrame 对非 [/{ 开头帧直接忽略, 不崩);
+//       断开则指数退避后 AsyncConnect 重连 (本函数在独立 jthread, 非 io_thread → AsyncConnect
+//       内 join 已死的旧 io_thread 不自 join 死锁), 重连后台重 seed。重订由 OnConnected 回调负责。
+//   R-12: 只读 IsConnected() atomic + AsyncSendText(入队) + AsyncConnect, 不碰 on_text_frame 热路径。
+// ---------------------------------------------------------------------------
+void PaperDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
+    using namespace std::chrono;
+    if (!live_transport_)
+        return;
+    auto sleep_steps = [&st](int steps) {  // 小步 sleep 以及时响应 stop (steps×100ms)
+        for (int i = 0; i < steps && !st.stop_requested(); ++i)
+            std::this_thread::sleep_for(milliseconds(100));
+    };
+    sleep_steps(30);  // 给初次连接 ~3s 建立再监测
+    auto last_ping = steady_clock::now();
+    int backoff_sec = 1;
+    while (!st.stop_requested()) {
+        if (live_transport_->IsConnected()) {
+            backoff_sec = 1;
+            if (steady_clock::now() - last_ping >= seconds(10)) {
+                live_transport_->AsyncSendText("PING");  // 心跳: 防 idle 超时被踢 (真因)
+                last_ping = steady_clock::now();
+            }
+            sleep_steps(10);  // 1s 检查间隔
+        } else {
+            std::fprintf(stderr, "[paper_daemon] WSS 断开, %ds 后重连 (idle/网络)...\n", backoff_sec);
+            std::fflush(stderr);
+            sleep_steps(backoff_sec * 10);
+            if (st.stop_requested())
+                break;
+            live_transport_->AsyncConnect(url);  // OnConnected 回调用 all_token_ids_ 重发 subscribe
+            // 重连后台重 seed (books 重新打底; 复用初次 seed 逻辑, 不阻塞看门狗)
+            seed_thread_ = std::jthread([this](std::stop_token s) { SeedInitialBooksFromRest(s); });
+            last_ping = steady_clock::now();
+            backoff_sec = std::min(backoff_sec * 2, 30);  // 指数退避封顶 30s
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Build — 发现 + 装配 (不起线程). 幂等.
 // ---------------------------------------------------------------------------
 
@@ -805,6 +848,9 @@ void PaperDaemon::Start() {
         // REST 快照打底: 订阅时先拉一次初始 book, 不靠 WSS 推 (修"稳定盘/漏接初始快照永远空")。
         //   后台 jthread (不阻塞 HTTP/loop 启动, ~20s 完成; hub.Publish 线程安全)。WSS delta 随后更新。
         seed_thread_ = std::jthread([this](std::stop_token st) { SeedInitialBooksFromRest(st); });
+        // WSS 看门狗 (2026-06-02 会议): 心跳保活 (治 idle 超时真因) + 断线重连 (治不重连症状)。
+        wss_watchdog_thread_ =
+            std::jthread([this, wss_url](std::stop_token st) { WssWatchdogLoop(st, wss_url); });
     }
 
     // ---- Step 4b start: PaperLoop (enable_paper_trading; "仅观测" flag=false 时不起) ----
@@ -934,6 +980,12 @@ void PaperDaemon::Shutdown() noexcept {
     }
     if (commentaries_poller_) {
         commentaries_poller_->Stop();  // poller jthread join (先于 live_stats_store_ 析构)
+    }
+    // 0a''. WSS 看门狗先停 (它 touch live_transport_ + 会重赋 seed_thread_; 必在 seed_thread_ join
+    //       与 live_transport_->Close() 之前 join, 否则重连/重赋有 race).
+    if (wss_watchdog_thread_.joinable()) {
+        wss_watchdog_thread_.request_stop();
+        wss_watchdog_thread_.join();
     }
     // 0b. REST 快照打底线程先停 (它 touch live_publisher_/hub_, 必在二者析构前 join; st 令其提前退出).
     if (seed_thread_.joinable()) {

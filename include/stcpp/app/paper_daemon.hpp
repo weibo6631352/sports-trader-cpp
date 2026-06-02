@@ -280,6 +280,12 @@ private:
     //   修"稳定盘/漏接 WSS 初始快照永远空"。后台跑 (不阻塞启动), st 关停时提前退出, 失败优雅降级。
     void SeedInitialBooksFromRest(std::stop_token st);
 
+    // CLOB WSS 看门狗 (2026-06-02 会议: 修 clob 断开不重连 + 缺心跳 idle 超时):
+    //   连着 → 每 10s 发 "PING" 心跳 (Polymarket 服务端不主动 ping, 不发会被 idle 踢, 真因);
+    //   断开 → 指数退避后 AsyncConnect 重连 (独立线程, 非 io_thread, 无自 join) + 后台重 seed。
+    //   重连重订由 live_transport_ 的 OnConnected 回调 (读 all_token_ids_) 负责。
+    void WssWatchdogLoop(std::stop_token st, std::string url);
+
     // A1b: 映射刷新线程主体 — 周期跑 EventMatcher (score_store 快照 × market 元数据)
     //   → 构建 condition→event 映射 → paper_loop_->SetEventMapping(). Goalserve event
     //   动态出现, 故周期重匹配 (非 boot 一次性)。
@@ -331,6 +337,7 @@ private:
     std::jthread auto_train_thread_;          // 进程内自动训练编排 (周期 join + spawn Python 训练 → 产新模型)
     std::jthread disk_prune_thread_;          // 采集数据磁盘守护 (>阈值 → 截最老数据)
     std::jthread seed_thread_;  // REST 快照打底后台线程 (jthread: 析构自动 request_stop + join)
+    std::jthread wss_watchdog_thread_;  // CLOB WSS 心跳(10s PING)+ 断线重连看门狗 (2026-06-02)
 
     // =====================================================================
     // 装配组件 —— 声明顺序即析构逆序的逆 (老韩 R-11 INV-1 + 老周钉死1):
