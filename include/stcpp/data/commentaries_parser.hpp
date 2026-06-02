@@ -140,15 +140,24 @@ private:
         const std::size_t gt = span.find('>', t);
         const std::size_t tag_end = (gt == std::string_view::npos) ? span.size() : gt;
         const std::string_view tag_span = span.substr(t, tag_end - t);
-        // 查 attr=" (允许 attr 前有空白边界, 简化为子串匹配 attr 后紧跟 =")
+        // 查 attr=" — 必须单词边界 (attr 前是空白/'<', 防 "id" 误匹配 "gid"/"static_id" 的子串)。
+        //   (2026-06-02 bug: <category gid="" id="X"> 中 find("id=\"") 命中 gid 的 id → 返回空 league。)
         std::string needle = std::string(attr);
         needle += "=\"";
-        const std::size_t a = tag_span.find(needle);
-        if (a == std::string_view::npos) return {};
-        const std::size_t vstart = a + needle.size();
-        const std::size_t vend = tag_span.find('"', vstart);
-        if (vend == std::string_view::npos) return {};
-        return tag_span.substr(vstart, vend - vstart);
+        std::size_t search_from = 0;
+        while (true) {
+            const std::size_t a = tag_span.find(needle, search_from);
+            if (a == std::string_view::npos) return {};
+            const bool boundary =
+                (a == 0) || tag_span[a - 1] == ' ' || tag_span[a - 1] == '\t' || tag_span[a - 1] == '<';
+            if (boundary) {
+                const std::size_t vstart = a + needle.size();
+                const std::size_t vend = tag_span.find('"', vstart);
+                if (vend == std::string_view::npos) return {};
+                return tag_span.substr(vstart, vend - vstart);
+            }
+            search_from = a + 1;  // 跳过非边界匹配 (如 gid 的 id), 找下一个
+        }
     }
 };
 
