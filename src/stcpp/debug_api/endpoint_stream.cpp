@@ -42,7 +42,10 @@ constexpr int kSlowTicks = 5;        // Ops/慢通道(healthz/features/mapping/t
 constexpr std::int64_t kTsWindowSec = 3600;  // timeseries 默认窗口 (= 前端 sparkline '1h')
 constexpr std::int64_t kTsBucketSec = 60;    // timeseries 默认桶 (= '1m')
 constexpr std::size_t kMaxFocus = 32;            // 每连接 focus 盘口上限 (评审: 两侧夹)
-constexpr std::size_t kMaxFrameBytes = 64 * 1024;  // 单帧上限 (评审: 防大帧撞 write_timeout)
+// 单帧上限 (评审: 防大帧撞 write_timeout)。2026-06-02 提到 256KB: 全盘口期 events/grid 帧随
+//   盘口数(600+)涨, 旧 64KB 把 events 帧(67KB)整帧丢 → 前端 0 赛事。256KB 给 ~2000+ 盘口余量,
+//   跨洋 256KB ≈0.25s 远低于 write_timeout(3s)。on-change 推送, 大帧不频繁。
+constexpr std::size_t kMaxFrameBytes = 256 * 1024;
 
 std::atomic<int> g_sse_clients{0};
 std::atomic<std::uint64_t> g_seq{0};
