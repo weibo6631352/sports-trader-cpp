@@ -918,7 +918,20 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
         // REST 快照打底: 订阅时先拉一次初始 book, 不靠 WSS 推 (修"稳定盘/漏接初始快照永远空")。
         //   后台 jthread (不阻塞 HTTP/loop 启动, ~20s 完成; hub.Publish 线程安全)。WSS delta 随后更新。
-        seed_thread_ = std::jthread([this](std::stop_token st) { SeedInitialBooksFromRest(st); });
+        //   周期重打底 (2026-06-02 老板「订单为什么还是有空的订单簿」): 首次打底后每
+        //   kReseedSec 重打底一次全部订阅 token —— 捞回 seed 之后才挂上单、但 WSS 未把后续簿
+        //   推达的低活跃盘 (实证: Polymarket 有 13 档买盘, 我方 hub 却空)。读 TokenSnapshot 取
+        //   当前集 (含 rediscover 后的变化), 成本低 (~80 token / 2 个 POST /books)。
+        seed_thread_ = std::jthread([this](std::stop_token st) {
+            SeedInitialBooksFromRest(st);  // 首次立即打底
+            constexpr int kReseedSec = 45;
+            while (!st.stop_requested()) {
+                for (int i = 0; i < kReseedSec && !st.stop_requested(); ++i)
+                    std::this_thread::sleep_for(std::chrono::seconds(1));
+                if (st.stop_requested()) break;
+                SeedInitialBooksFromRest(st);  // 周期重打底: 捞回 WSS 漏推的后发簿
+            }
+        });
         // WSS 看门狗 (2026-06-02 会议): 心跳保活 (治 idle 超时真因) + 断线重连 (治不重连症状)。
         wss_watchdog_thread_ =
             std::jthread([this, wss_url](std::stop_token st) { WssWatchdogLoop(st, wss_url); });
