@@ -527,23 +527,27 @@ function connectSSE(): void {
   //   丢弃过期版本帧 (focusSeq < 当前) + 不在 detailInterest 的 (已折叠)。
   on('book', (d, _mode, focusSeq) => {
     if (focusSeq != null && focusSeq < _focusSeq) return;  // 过期 focus 版本
-    const bk = d as (BinaryMarketBookView & { condition_id?: string }) | null;
+    const bk = d as (BinaryMarketBookView & { found?: boolean; condition_id?: string }) | null;
     const cid = bk?.condition_id;
     if (!cid || !detailInterest.has(cid)) return;
+    // ★ found:false 的 book 没有 token0/token1 → 存 null (镜像 REST apiFetch 的 found:false→null;
+    //   否则渲染层把 found:false 对象当有簿, 读 token0.outcome 崩溃 → 整页 Solid 响应树断、点击失灵)
+    const usable = bk && bk.found === true ? bk : null;
     setState(produce((s) => {
       s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
-      s.conditionCache[cid].book = bk;
+      s.conditionCache[cid].book = usable;
     }));
     rebuildGroups();
   });
   on('quote', (d, _mode, focusSeq) => {
     if (focusSeq != null && focusSeq < _focusSeq) return;
-    const qt = d as (Quote & { market_id?: string }) | null;
+    const qt = d as (Quote & { found?: boolean; market_id?: string }) | null;
     const cid = qt?.market_id;
     if (!cid || !detailInterest.has(cid)) return;
+    const usable = qt && qt.found === true ? qt : null;  // 同理 found:false→null
     setState(produce((s) => {
       s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
-      s.conditionCache[cid].quote = qt;
+      s.conditionCache[cid].quote = usable;
     }));
     rebuildGroups();
   });

@@ -297,6 +297,7 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
   };
 
   function HalfPane(p: { half: HalfBook; label: string }) {
+    if (!p.half) return null;  // 防御: half 缺失(found:false/畸形 book)不渲染, 不读 .outcome 崩页
     const h = () => p.half;
     const bids = () => (h().bids ?? []).slice(0, 5);
     const asks = () => (h().asks ?? []).slice(0, 5);
