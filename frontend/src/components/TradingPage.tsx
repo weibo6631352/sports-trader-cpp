@@ -152,23 +152,18 @@ function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onCli
   const condId = () => c().conditionId;
   const book = () => c().book;
   const quote = () => c().quote;
+  const summary = () => c().summary;  // /grid 顶档摘要 (折叠态全市场 2s 批量供)
   const posRows = () => c().posRows;
 
-  // 最优买卖 (取 token0 的 best_bid / best_ask 作为代表)
-  const bestBid = () => {
-    const b = book()?.token0?.best_bid;
-    return (b != null && Number.isFinite(Number(b))) ? Number(b) : null;
-  };
-  const bestAsk = () => {
-    const a = book()?.token0?.best_ask;
-    return (a != null && Number.isFinite(Number(a))) ? Number(a) : null;
-  };
+  const fin = (v: number | null | undefined): number | null =>
+    (v != null && Number.isFinite(Number(v))) ? Number(v) : null;
 
-  // edge
-  const edgeBps = () => {
-    const e = quote()?.edge_bps;
-    return (e != null && Number.isFinite(Number(e))) ? Number(e) : null;
-  };
+  // 最优买卖: 优先 /grid 摘要 (全市场都有), 降级展开拉来的全档 book.token0
+  const bestBid = () => fin(summary()?.bid ?? book()?.token0?.best_bid);
+  const bestAsk = () => fin(summary()?.ask ?? book()?.token0?.best_ask);
+
+  // edge: 优先 /grid 摘要, 降级全档 quote
+  const edgeBps = () => fin(summary()?.edgeBps ?? quote()?.edge_bps);
 
   // 持仓摘要
   const posText = () => {
@@ -197,9 +192,8 @@ function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onCli
   // 延迟 — 使用真实数据时刻 event_ts / ingestion_ts (P1-7: 避免 book_as_of_ts 恒新假阳性)
   const staleMs = () => {
     const b = book();
-    if (!b) return null;
     // 优先取 event_ts (最接近数据源时刻); 降级 ingestion_ts; 最后才 book_as_of_ts
-    const ts = b.event_ts ?? b.token0?.event_ts ?? b.ingestion_ts ?? b.token0?.ingestion_ts;
+    const ts = b ? (b.event_ts ?? b.token0?.event_ts ?? b.ingestion_ts ?? b.token0?.ingestion_ts) : summary()?.eventTs;
     return stalenessMs(ts);
   };
 

@@ -383,7 +383,43 @@ export interface EventsResponse {
   data_source?: string;  // 2026-05-31 接口核查: 后端 endpoint_events.cpp:38 输出, 前端原未声明。
 }
 
+// ---------- /api/v1/grid (全市场轻量摘要批量端点, 老雷 2026-06-02) ----------
+
+/** 单 condition 顶档摘要 (折叠态摘要行用; 全档深度仍走 /book_pair 按需) */
+export interface GridMarket {
+  condition_id: string;
+  book_found: boolean;
+  best_bid?: number;
+  best_ask?: number;
+  cross_spread?: number;
+  event_ts?: number;
+  ingestion_ts?: number;
+  quote_found: boolean;
+  fair?: number;
+  market_mid?: number;
+  edge_bps?: number;
+  sharp_fair?: number;
+  model_confidence?: number;
+  advisory?: boolean;
+}
+
+export interface GridResponse {
+  mode: string;
+  as_of_ts: number;
+  count: number;
+  markets: GridMarket[];
+}
+
 // ---------- 渲染用聚合类型 ----------
+
+/** condition 顶档摘要 (来自 /grid; 与 book/quote 全档分离, 避免 2s 刷新覆盖展开的全档) */
+export interface ConditionSummary {
+  bid: number | null;
+  ask: number | null;
+  edgeBps: number | null;
+  fair: number | null;
+  eventTs: number | null;
+}
 
 export interface ConditionData {
   conditionId: string;
@@ -391,6 +427,7 @@ export interface ConditionData {
   market: Market | null;
   book: BinaryMarketBookView | null;
   quote: Quote | null;
+  summary: ConditionSummary | null;  // /grid 顶档摘要 (折叠态摘要行)
   rejectRows: RiskReject[];
   perMarketPnl: number | null;
 }

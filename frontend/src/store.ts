@@ -22,7 +22,7 @@ import {
   fetchHealthz, fetchStatus, fetchPositions, fetchPnlTimeseries,
   fetchPnlAttribution, fetchRiskRejects, fetchGatePaper,
   fetchMarket, fetchBook, fetchScore, fetchQuote, fetchMetrics, fetchEvents,
-  fetchFeatureHealth, fetchMappingStatus, fetchAccount,
+  fetchFeatureHealth, fetchMappingStatus, fetchAccount, fetchGrid,
 } from './api';
 import {
   STUB_HEALTHZ, STUB_STATUS, STUB_POSITIONS, STUB_PNL_TIMESERIES,
@@ -34,6 +34,7 @@ import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, BinaryMarketBookView, Market, Score, Quote,
   EventGroup, ConditionData, Position, RiskReject, FeatureHealth, MappingStatus, Account,
+  EventSummary, ConditionSummary,
 } from './types';
 
 // ---------- stub 检测 ----------
@@ -62,6 +63,9 @@ const detailInterest = new Set<string>();
 /** 最近一次各 event 的 score 缓存 (score 节流时复用; addDetailInterest 即时拉取时回填) */
 const lastEventScore: Record<string, Score | null> = {};
 
+/** 最近一次 /events 发现的赛事列表 (供 refreshGrid 快刷时复用建组, 无需重拉 events) */
+let lastEvents: EventSummary[] = [];
+
 /** 整体替换关注集 (组件 createEffect 调用: 展开集合变化时同步) */
 export function setDetailInterest(condIds: string[]): void {
   detailInterest.clear();
@@ -82,6 +86,7 @@ interface PerConditionCache {
   book: BinaryMarketBookView | null;
   quote: Quote | null;
   score: Score | null;
+  summary: ConditionSummary | null;  // /grid 顶档摘要 (全市场 2s 批量刷新; 与 book/quote 全档分离)
 }
 
 interface AppState {
@@ -211,104 +216,121 @@ export async function refreshMarketGrid(): Promise<void> {
   if (posData) setState({ positions: posData });
   if (attrData) setState({ attribution: attrData });
   if (rejectsData) setState({ rejects: rejectsData });
+  // posMap/pmPnlMap/rejectMap 现由 buildEventGroups 从 state 统一计算 (refreshGrid 也复用)。
 
-  // 2. positions 按 market_id 分组 (可能为空, live 模式 paper 未跑)
-  const positions: Position[] = posData?.positions ?? [];
-  const posMap: Record<string, Position[]> = {};
-  for (const p of positions) {
-    if (!posMap[p.market_id]) posMap[p.market_id] = [];
-    posMap[p.market_id].push(p);
-  }
-
-  // 3. attribution per_market PnL map
-  const pmPnlMap: Record<string, number> = {};
-  const localAttr = attrData ?? state.attribution;
-  if (localAttr?.per_market) {
-    for (const pm of localAttr.per_market) {
-      pmPnlMap[pm.market_id] = Number(pm.net_pnl);
-    }
-  }
-
-  // 4. rejects 按 market_id 分组
-  const rejectMap: Record<string, RiskReject[]> = {};
-  const localRejects = rejectsData ?? state.rejects;
-  if (localRejects?.rejects) {
-    for (const r of localRejects.rejects) {
-      if (!rejectMap[r.market_id]) rejectMap[r.market_id] = [];
-      rejectMap[r.market_id].push(r);
-    }
-  }
-
-  // 5. 从 /api/v1/events 获取 condition_ids
+  // 2. 从 /api/v1/events 获取 condition_ids
   const events = eventsData?.events ?? [];
   if (events.length === 0) {
     setState({ eventGroups: [] });
     return;
   }
+  lastEvents = events;  // 供 refreshGrid 快刷复用
 
   // 6. score 只拉 live 赛事 (gamma live=true), 封顶 SCORE_CAP, 且每 SCORE_EVERY_N 轮才拉一次。
   //    非 live 赛事 score 几乎不变且不显示比分, 不值得拉; live 判定用 events 自带 live 字段。
   //    复用上轮缓存 (lastEventScore) → 跳过拉取的轮次比分照常显示, 只是慢 5s 更新。
-  const eventScoreCache: Record<string, Score | null> = { ...lastEventScore };
   const doFetchScores = (_scoreTick++ % SCORE_EVERY_N) === 0;
   if (doFetchScores) {
     const liveEvents = events.filter((e) => e.live === true).slice(0, SCORE_CAP);
     await Promise.all(
       liveEvents.map(async (e) => {
-        eventScoreCache[e.event_id] = await safeGetMapped(
+        lastEventScore[e.event_id] = await safeGetMapped(
           () => fetchScore(e.event_id), STUB_SCORE_MAP, e.event_id);
       }),
     );
   }
 
-  // 7. EventGroup 构造器 (读当前 conditionCache; 不等 per-condition 拉取即可建组)
-  const buildGroups = (): EventGroup[] => {
-    const groups: EventGroup[] = events.map((evSummary) => ({
-      eventId: evSummary.event_id,
-      eventSlug: evSummary.slug,
-      eventTitle: evSummary.title,
-      sport: evSummary.sport,
-      live: evSummary.live === true,
-      score: eventScoreCache[evSummary.event_id] ?? null,
-      conditions: evSummary.condition_ids.map((condId) => {
-        const d = state.conditionCache[condId];
-        return {
-          conditionId: condId,
-          posRows: posMap[condId] ?? [],
-          market: d?.market ?? null,
-          book: d?.book ?? null,
-          quote: d?.quote ?? null,
-          rejectRows: rejectMap[condId] ?? [],
-          perMarketPnl: pmPnlMap[condId] != null ? pmPnlMap[condId] : null,
-        };
-      }),
-    }));
-    // 进行中赛事排前面, 其次有持仓
-    groups.sort((a, b) => {
-      const aLive = a.live || a.score?.status === 'inplay' || a.score?.status === 'halftime';
-      const bLive = b.live || b.score?.status === 'inplay' || b.score?.status === 'halftime';
-      if (aLive !== bLive) return aLive ? -1 : 1;
-      const aHasPos = a.conditions.some((c) => c.posRows.length > 0);
-      const bHasPos = b.conditions.some((c) => c.posRows.length > 0);
-      if (aHasPos !== bHasPos) return aHasPos ? -1 : 1;
-      return (a.eventId ?? '').localeCompare(b.eventId ?? '');
-    });
-    return groups;
-  };
+  // 7. 建组 (buildEventGroups 读 lastEvents + state + 各 module 缓存)
+  setState({ eventGroups: buildEventGroups() });
 
-  // 8. 立即用缓存建组 → UI 立刻显示全部赛事 (不等 per-condition 拉取)
-  //    eventScoreCache 缓存进 store, 供 buildGroups 复用 (避免按需 detail 时丢 score)
-  for (const eid in eventScoreCache) lastEventScore[eid] = eventScoreCache[eid];
-  setState({ eventGroups: buildGroups() });
-
-  // 9. per-condition detail 只拉「用户正在看」的盘口 (展开行 / 选中行), 封顶 DETAIL_CAP。
-  //    旧设计预取 90 盘口×3 = 270 请求/5s 打爆跨洋链路; 现改按需, 折叠的行不拉。
+  // 8. per-condition 全档 detail 只拉「用户正在看」的盘口 (展开行 / 选中行), 封顶 DETAIL_CAP。
+  //    折叠态摘要价由 /grid 批量供 (refreshGrid); 这里只补展开行的全档 book/quote/market。
   const toFetch = Array.from(detailInterest).slice(0, DETAIL_CAP);
   if (toFetch.length > 0) {
     await fetchDetailFor(toFetch);
-    // 10. detail 到位后重建组 (含报价/book)
-    setState({ eventGroups: buildGroups() });
+    setState({ eventGroups: buildEventGroups() });
   }
+}
+
+// ---------- buildEventGroups (模块级; refreshMarketGrid + refreshGrid 共用) ----------
+
+/** 从 lastEvents + state(positions/attribution/rejects/conditionCache) + lastEventScore 建 EventGroup[]。
+ *  conditions 的折叠态摘要(bid/ask/edge)取 conditionCache[*].summary (/grid 供);
+ *  全档 book/quote 取 conditionCache[*].book/.quote (展开按需供)。 */
+function buildEventGroups(): EventGroup[] {
+  // positions 按 market_id 分组
+  const posMap: Record<string, Position[]> = {};
+  for (const p of state.positions?.positions ?? []) {
+    (posMap[p.market_id] ??= []).push(p);
+  }
+  // attribution per_market PnL
+  const pmPnlMap: Record<string, number> = {};
+  for (const pm of state.attribution?.per_market ?? []) {
+    pmPnlMap[pm.market_id] = Number(pm.net_pnl);
+  }
+  // rejects 按 market_id 分组
+  const rejectMap: Record<string, RiskReject[]> = {};
+  for (const r of state.rejects?.rejects ?? []) {
+    (rejectMap[r.market_id] ??= []).push(r);
+  }
+
+  const groups: EventGroup[] = lastEvents.map((evSummary) => ({
+    eventId: evSummary.event_id,
+    eventSlug: evSummary.slug,
+    eventTitle: evSummary.title,
+    sport: evSummary.sport,
+    live: evSummary.live === true,
+    score: lastEventScore[evSummary.event_id] ?? null,
+    conditions: evSummary.condition_ids.map((condId): ConditionData => {
+      const d = state.conditionCache[condId];
+      return {
+        conditionId: condId,
+        posRows: posMap[condId] ?? [],
+        market: d?.market ?? null,
+        book: d?.book ?? null,
+        quote: d?.quote ?? null,
+        summary: d?.summary ?? null,
+        rejectRows: rejectMap[condId] ?? [],
+        perMarketPnl: pmPnlMap[condId] != null ? pmPnlMap[condId] : null,
+      };
+    }),
+  }));
+  // 进行中赛事排前面, 其次有持仓
+  groups.sort((a, b) => {
+    const aLive = a.live || a.score?.status === 'inplay' || a.score?.status === 'halftime';
+    const bLive = b.live || b.score?.status === 'inplay' || b.score?.status === 'halftime';
+    if (aLive !== bLive) return aLive ? -1 : 1;
+    const aHasPos = a.conditions.some((c) => c.posRows.length > 0);
+    const bHasPos = b.conditions.some((c) => c.posRows.length > 0);
+    if (aHasPos !== bHasPos) return aHasPos ? -1 : 1;
+    return (a.eventId ?? '').localeCompare(b.eventId ?? '');
+  });
+  return groups;
+}
+
+// ---------- refreshGrid (2s 快刷: 全市场顶档摘要批量, 跨洋一次拉齐) ----------
+
+export async function refreshGrid(): Promise<void> {
+  if (USE_STUB) return;  // stub 模式无 grid 端点, 由 refreshMarketGrid 的 stub 供数
+  const grid = await fetchGrid();
+  if (!grid?.markets) return;
+  setState(
+    produce((s) => {
+      for (const m of grid.markets) {
+        const cid = m.condition_id;
+        if (!cid) continue;
+        s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
+        s.conditionCache[cid].summary = {
+          bid: m.book_found && m.best_bid != null ? m.best_bid : null,
+          ask: m.book_found && m.best_ask != null ? m.best_ask : null,
+          edgeBps: m.quote_found && m.edge_bps != null ? m.edge_bps : null,
+          fair: m.quote_found && m.fair != null ? m.fair : null,
+          eventTs: m.event_ts ?? null,
+        };
+      }
+    }),
+  );
+  setState({ eventGroups: buildEventGroups() });
 }
 
 // ---------- fetchDetailFor: 拉指定盘口的 market/book/quote (按需) ----------
@@ -325,9 +347,7 @@ export async function fetchDetailFor(condIds: string[]): Promise<void> {
       const quote = await safeGetMapped(() => fetchQuote(bookCondId), STUB_QUOTE_MAP, bookCondId);
       setState(
         produce((s) => {
-          if (!s.conditionCache[condId]) {
-            s.conditionCache[condId] = { market: null, book: null, quote: null, score: null };
-          }
+          s.conditionCache[condId] ??= { market: null, book: null, quote: null, score: null, summary: null };
           s.conditionCache[condId].market = market;
           s.conditionCache[condId].book = book;
           s.conditionCache[condId].quote = quote;
@@ -362,14 +382,18 @@ function every(fn: () => void, ms: number): number {
 }
 
 export function initPolling(): void {
-  every(() => { void refreshTopBar(); }, 5000);
-  every(() => { void refreshAccount(); }, 5000);  // 凯利评审: 账户现金/估值 5s 轮询
-  every(() => { void refreshSparkline(); }, 15000);
+  // 快刷 (2s): 顶栏状态 + 全市场顶档摘要批量 (/grid 一次请求, 跨洋链路扛得住)。
+  //   看板"活"起来 (价/edge/状态 2s 更新), 不再像卡住。
+  every(() => { void refreshTopBar(); }, 2000);
+  every(() => { void refreshGrid(); }, 2000);
+  // 中速 (5s): 市场发现(events) + 持仓/归因/拒单 + score(节流) + 展开行全档 detail。
   every(() => { void refreshMarketGrid(); }, 5000);
+  every(() => { void refreshAccount(); }, 5000);  // 凯利评审: 账户现金/估值
+  // 慢刷
+  every(() => { void refreshSparkline(); }, 15000);
   every(() => { void refreshAttribution(); }, 15000);
   every(() => { void refreshGate(); }, 15000);
-  // v6: metrics 无条件 30s 轮询 (Ops 页常驻消费)
-  every(() => { void refreshMetrics(); }, 30000);
+  every(() => { void refreshMetrics(); }, 30000);  // Ops 页常驻消费
   every(() => { void refreshMarketInfoSlow(); }, 60000);
   // 老雷 2026-06-01: 特征健康 + 映射状态 轮询 (Ops 页可观测)
   every(() => { void refreshFeatureHealth(); }, 20000);

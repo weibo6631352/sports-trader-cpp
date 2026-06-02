@@ -42,6 +42,8 @@ void register_features(httplib::Server& svr, const HttpServer& hs);
 void register_mapping(httplib::Server& svr, const HttpServer& hs);
 // 凯利评审 (2026-06-01): 账户级现金/估值
 void register_account(httplib::Server& svr, const HttpServer& hs);
+// 老雷 2026-06-02: 全市场轻量摘要批量端点 (跨洋链路一次拉齐摘要价/edge)
+void register_grid(httplib::Server& svr, const HttpServer& hs);
 }  // namespace stcpp::debug_api
 
 namespace stcpp::debug_api {
@@ -155,6 +157,8 @@ void HttpServer::register_handlers() {
     register_mapping(server_, *this);
     // 老雷 2026-06-01 凯利评审: 账户级现金/估值 (/api/v1/account)
     register_account(server_, *this);
+    // 老雷 2026-06-02: 全市场轻量摘要批量端点 (/api/v1/grid)
+    register_grid(server_, *this);
 }
 
 }  // namespace stcpp::debug_api

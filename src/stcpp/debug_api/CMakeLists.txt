@@ -84,6 +84,8 @@ add_library(stcpp_debug_api STATIC
     endpoint_mapping.cpp
     # 老雷 2026-06-01 凯利评审: 账户级现金/估值
     endpoint_account.cpp
+    # 老雷 2026-06-02: 全市场轻量摘要批量端点 (/api/v1/grid)
+    endpoint_grid.cpp
 )
 
 target_include_directories(stcpp_debug_api

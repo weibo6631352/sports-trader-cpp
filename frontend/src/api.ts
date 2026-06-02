@@ -17,7 +17,7 @@
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, Market, BinaryMarketBookView, Score, Quote, EventsResponse,
-  FeatureHealth, MappingStatus, Account,
+  FeatureHealth, MappingStatus, Account, GridResponse,
 } from './types';
 
 // ---------- API base ----------
@@ -191,6 +191,8 @@ async function apiFetch<T>(path: string): Promise<T | null> {
 export const fetchHealthz = (): Promise<Healthz | null> => apiFetch('/healthz');
 export const fetchStatus = (): Promise<Status | null> => apiFetch('/status');
 export const fetchEvents = (): Promise<EventsResponse | null> => apiFetch('/api/v1/events');
+/** /api/v1/grid — 全市场顶档摘要 (一次请求, 跨洋链路防风暴; 折叠态摘要行填价) */
+export const fetchGrid = (): Promise<GridResponse | null> => apiFetch('/api/v1/grid');
 
 export const fetchPositions = (): Promise<Positions | null> => apiFetch('/api/v1/positions');
 export const fetchPnlTimeseries = (window = '1h', bucket = '5m'): Promise<PnlTimeseries | null> =>
