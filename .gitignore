@@ -51,3 +51,4 @@ __pycache__/
 frontend/dist/
 .browser_test/
 models/bench_fair.onnx
+experiments/laolei-bm-slots/smoke

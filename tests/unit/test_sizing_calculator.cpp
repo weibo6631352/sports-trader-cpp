@@ -12,7 +12,7 @@
 //   C6  net_ci_edge <= floor (fee 门 B) → capped_by=NO_EDGE, valid=false
 //   C7  edge_ci_lower_bps < slippage_bps (slippage 门 A) → capped_by=NO_EDGE, valid=false
 //   + capped_by 命中正确性
-//   + λ 折扣: kelly_fractional = 0.25 × kelly_full (±1e-12)
+//   + λ 折扣: kelly_fractional = λ(0.35) × kelly_full (±1e-12)
 //   + fill_rate 折扣: effective_notional = suggested × fill_rate
 //   + fill_rate < FILL_RATE_FLOOR (0.50) → FILL_RATE_FLOOR, valid=false
 //   + NaN/Inf / p∈{0,1} / c∈{0,1} → valid=false, 全 0
@@ -83,7 +83,7 @@ TEST(SizingCalculatorTest, HappyPath_BasicOutput) {
 }
 
 // ---------------------------------------------------------------------------
-// λ 折扣验证 (kelly_fractional = 0.25 × kelly_full, ±1e-12)
+// λ 折扣验证 (kelly_fractional = λ(0.35) × kelly_full, ±1e-12)
 // ---------------------------------------------------------------------------
 
 TEST(SizingCalculatorTest, LambdaDiscount_Quarter_Kelly) {
