@@ -140,3 +140,28 @@
 **suspect-healthy (看似健康待人复核):** #1 g_score_total (max=41 篮球混足球, 无运动感知) · #3 g_elapsed_sec (42 条仅 1 非零, clock_sec 语义存疑/按节重置?) · #10 b_imbalance (缺失 fallback 0.0 非 NaN) · #21 g_possession_home (0-100 非 0-1, 开通后需归一) · #30 b_ofi (净卖压均值 −4183 但 mp_roc 为正, 方向需小梁验) · #44 b_no_microprice (实为 no_token_mid, thin book 静默降级) · #94 mkt_volume_24h (24% NaN, 而同端点 #95 liquidity 全有值, 提取逻辑存疑)。
 
 **结论:** fan-out 找出 #66 (噪声列) 和 #71/72 (默认值不一致) 是原单遍漏掉的真问题; 其余多为 CTF 架构共线 (信息论冗余, 非 bug) + 待人复核的语义疑点。#66 与共线列在下次 retrain 前由量化决定删/换。
+
+---
+
+## 9. 后台验证智能对真实 API 核验结论 (2026-06-02, 服务器停采集腾额度)
+
+> 老板原则: **模型不准, 不能用模型反推特征有效性; 验证 = 对真实数据/源核验。** 3 个后台智能各打真实 Goalserve/Polymarket/getodds API 核验。
+
+**🔴 确认真 bug (数据正确性, 与真实 feed 核验):**
+
+1. **#3 篮球 clock_sec 算反 (HIGH, 影响定价) — 待老板定 quarter 长度后修。**
+   - 真相 (实测 inplay feed): 篮球 `minute` 是**节内倒计时剩余**(第3节 minute=8 = 还剩8分), 代码 (inplay_feed_thread.cpp:707-713) 当**已用**算。
+   - 后果: 第3节真实 elapsed=1644s, 代码算 516s → time_frac=0.179 vs 真实 0.571, **差 0.39 方向反**。time_frac 喂 `prior_confidence`→fair blend → **所有篮球直播盘错误定价**。
+   - 足球对照: `minute` 是全场累计 (81' in 2nd half), 正确, 无 bug。
+   - 修法: 篮球按 `elapsed=(period-1)×quarter_len + (quarter_len − 节内剩余)`; quarter_len NBA/CBA=12min, FIBA=10min (歧义, 且 total_game_seconds("basket")=2880 对 FIBA 40min 也错)。**pricing-sensitive + 建模歧义 → 待老板/小梁定 quarter 长度方案。**
+
+2. **#19-23/#111 soccer live_stats 解析器找错标签 (HIGH, 那组特征全死).**
+   - 真相 (实测 commentaries XML): CommentariesParser (commentaries_parser.hpp:70) 找 `<live_stats value="IPosession=...">`, 但真实 XML 是 `<possestiontime total="75%">`/`<shots ongoal="4">`/`<corners total="11">` → 永远解析空。
+   - 叠加 Bug B: commentaries endpoint 对直播小联赛返空 (plan 覆盖)。
+   - 修法 (二选一): A 改 parser 读真实 XML 元素; B 换 `livescore.../soccernew/` endpoint (其格式才是 LiveStatsParser 期望的 `<live_stats>`, 阻力最小)。
+
+3. **#21 g_possession_home 单位 (latent, 通道死期间无影响).** 真实值 0-100 整数 (XML "75%")。通道修通后训练侧需 /100 归一, 否则量级差 100x。
+
+**✅ 非 bug (实测确认):** #94 mkt_volume 24%NaN = gamma events 嵌套路径省略该键 (API 设计); #1 g_score_total 混运动 = by-design (cat_sport/league 条件化)。
+
+**bm_slots join 确认 (Agent C 实测三处 id 对照):** getodds `<match id>` = pregame 空间 → 经 **inplay-mapping 表** (`pregame_match_id` ↔ `inplay_match_id`) → 系统 join key `inplay_match_id`。getodds **覆盖 in-play** (篮球"Half Time"/网球"Set 2" 有 8-10 家活跃; bet365 直播常 stop=True 须按 stop=False 过滤 — 解析器已做)。篮球 mapping URL 用 `bsktbl/` 非 `basketball/`。系统当前靠 EventMatcher 队名匹配 (不 fetch inplay-mapping), bm_slots 集成需新增 inplay-mapping fetch 或复用队名匹配。
