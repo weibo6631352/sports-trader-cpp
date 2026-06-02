@@ -20,6 +20,23 @@ export const GAMESTATE_ZH: Record<string, string> = {
   unknown:  '—',
 };
 
+// 运动图标 (sport 码子串匹配; 老板 2026-06-02 要比赛图标)。
+export function sportIcon(sport: string | null | undefined): string {
+  const s = (sport ?? '').toLowerCase();
+  if (!s) return '🏅';
+  if (/(tennis|atp|wta|itf)/.test(s)) return '🎾';
+  if (/(basket|nba|wnba|cbb)/.test(s)) return '🏀';
+  if (/(soccer|epl|laliga|seriea|serie|bundesliga|ligue|ucl|uefa|mls|football)/.test(s) && !/(nfl|amfootball|cfb)/.test(s)) return '⚽';
+  if (/(nfl|amfootball|cfb)/.test(s)) return '🏈';
+  if (/(baseball|mlb|nrfi)/.test(s)) return '⚾';
+  if (/(hockey|nhl)/.test(s)) return '🏒';
+  if (/(cricket|crint|ipl|t20|odi)/.test(s)) return '🏏';
+  if (/(esport|dota|lol|cs2|csgo|valorant|gaming)/.test(s)) return '🎮';
+  if (/(mma|ufc|box)/.test(s)) return '🥊';
+  if (/golf/.test(s)) return '⛳';
+  return '🏅';
+}
+
 export const SPORT_ZH: Record<string, string> = {
   basketball:  '篮球',
   soccer:      '足球',

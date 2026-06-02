@@ -403,6 +403,9 @@ export interface GridMarket {
   kickoff_ts?: number;   // 开赛时刻 (epoch ns; 0/缺=未知)
   end_ts?: number;       // 结束/结算窗口 (epoch ns)
   game_state?: string;   // 后端派生: pregame/inplay/ended/resolved/unknown
+  title?: string;        // 可读盘口名 (gamma groupItemTitle, 如 "Game 1 Winner")
+  outcome0?: string;     // token0(YES) 边名 (球员/队/Over/Yes)
+  outcome1?: string;     // token1(NO) 边名
 }
 
 export interface GridResponse {
@@ -423,6 +426,9 @@ export interface ConditionSummary {
   eventTs: number | null;
   kickoffTs: number | null;   // 开赛时刻 (epoch ns)
   gameState: string | null;   // pregame/inplay/ended/resolved/unknown
+  title: string | null;       // 可读盘口名 (groupItemTitle)
+  outcome0: string | null;    // token0 边名
+  outcome1: string | null;    // token1 边名
 }
 
 export interface ConditionData {

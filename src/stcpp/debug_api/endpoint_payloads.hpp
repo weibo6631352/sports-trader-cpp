@@ -332,6 +332,17 @@ inline std::string grid_market_obj(const StateProvider& sp, const std::string& c
     o += json::i64(mi.end_ts_sec > 0 ? mi.end_ts_sec * 1'000'000'000LL : 0);
     o += ",\"game_state\":";
     o += json::str(game_state);
+    // 可读盘口名 + 两边 outcome (2026-06-02 老板「别显示 hash; 订单簿标清哪边」):
+    //   title = gamma groupItemTitle (如 "Game 1 Winner"/"O/U 2.5 Games"); 缺则用盘口类型。
+    //   outcome0/1 = 两 token 的 outcome 名 (球员/队名 或 Over/Under 或 Yes/No), 供订单簿两边标注。
+    o += ",\"title\":";
+    o += json::str(!mi.group_item_title.empty() ? mi.group_item_title : mi.sports_market_type);
+    if (mi.tokens.size() >= 2) {
+        o += ",\"outcome0\":";
+        o += json::str(mi.tokens[0].outcome);
+        o += ",\"outcome1\":";
+        o += json::str(mi.tokens[1].outcome);
+    }
     o += '}';
     return o;
 }

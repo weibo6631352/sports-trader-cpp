@@ -355,6 +355,9 @@ function applyGridMarkets(markets: GridMarket[]): void {
           eventTs: m.event_ts ?? null,
           kickoffTs: m.kickoff_ts && m.kickoff_ts > 0 ? m.kickoff_ts : null,
           gameState: m.game_state ?? null,
+          title: m.title ?? null,
+          outcome0: m.outcome0 ?? null,
+          outcome1: m.outcome1 ?? null,
         };
       }
     }),

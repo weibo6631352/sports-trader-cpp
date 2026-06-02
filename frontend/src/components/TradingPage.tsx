@@ -30,7 +30,7 @@ import {
 } from '../api';
 import {
   STATUS_ZH, GAMESTATE_ZH, SPORT_ZH, REJECT_REASON_ZH, SIDE_ZH, MARKET_TYPE_ZH, inferMarketLabel,
-  inferMarketTypeZh, inferSportFromSlug,
+  inferMarketTypeZh, inferSportFromSlug, sportIcon,
 } from '../i18n';
 import type {
   EventGroup, ConditionData, BinaryMarketBookView, HalfBook,
@@ -197,8 +197,9 @@ function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onCli
     return stalenessMs(ts);
   };
 
-  // 市场名称 (含线值)
-  const mktLabel = () => inferMarketLabel(condId(), c().market);
+  // 市场名称: 优先 grid 的真实 title (gamma groupItemTitle, 如 "Game 1 Winner"); 缺则回退推断。
+  //   (2026-06-02 老板「别显示 hash」: 折叠行也有真实名, 不再露 condition_id)
+  const mktLabel = () => c().summary?.title || inferMarketLabel(condId(), c().market);
 
   // 展开图标
   const arrow = () => props.expanded ? '▼' : '▶';
@@ -280,6 +281,8 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
   // ★ 响应式判定 (非 early-return): book 在展开后才异步到达, early-return 会卡在"未接入"不更新。
   const hasBook = () => { const b = book(); return !!b && (b as { found?: boolean }).found !== false && !!b.token0; };
   const bk = () => book()!;
+  // grid 顶档摘要 (含两边 outcome 名); book 未带 outcome 时用它标注哪边是哪队/选手。
+  const summ = () => state.conditionCache[props.conditionId]?.summary ?? null;
   const vigInfo = () => {
     const cs = Number(bk().cross_spread);
     if (!Number.isFinite(cs)) return null;
@@ -389,8 +392,8 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
           </Show>
         </div>
         <div class="v8-dual-pane">
-          <HalfPane half={bk().token0} label="YES" />
-          <HalfPane half={bk().token1} label="NO" />
+          <HalfPane half={bk().token0} label={summ()?.outcome0 || 'YES'} />
+          <HalfPane half={bk().token1} label={summ()?.outcome1 || 'NO'} />
         </div>
       </div>
     </Show>
@@ -685,6 +688,11 @@ function EventAccordion(props: { group: EventGroup }) {
     const gs = gameSummary()?.gameState;
     return gs && gs !== 'unknown' ? (GAMESTATE_ZH[gs] ?? gs) : null;
   };
+  // 官方 Polymarket 跳转 (老板 2026-06-02: 想直接对比官方盘口)。用 event slug 拼官方 event 页。
+  const polymarketUrl = () => {
+    const slug = grp().eventSlug;
+    return slug ? `https://polymarket.com/event/${slug}` : null;
+  };
 
   // 当前 event 下的最大延迟 — 使用真实数据时刻 event_ts / ingestion_ts (P1-7)
   const maxStaleMs = () => {
@@ -712,9 +720,9 @@ function EventAccordion(props: { group: EventGroup }) {
       >
         <span class="v8-evt-arrow">{expanded() ? '▼' : '▶'}</span>
 
-        {/* 运动图标/标签 */}
+        {/* 运动图标 + 标签 (老板 2026-06-02 要比赛图标) */}
         <Show when={sportZh()}>
-          <Chip label={sportZh()} size="small" variant="outlined"
+          <Chip label={`${sportIcon(grp().sport ?? score()?.sport)} ${sportZh()}`} size="small" variant="outlined"
             sx={{ fontSize: '9px', height: '18px', color: 'text.secondary', mr: 0.5 }} />
         </Show>
 
@@ -766,6 +774,12 @@ function EventAccordion(props: { group: EventGroup }) {
         {/* 开赛时间 (始终显示; 老板「看几点开赛」) */}
         <Show when={kickoffLabel()}>
           <span class="v8-evt-kickoff" title="开赛时间">🕒 {kickoffLabel()}</span>
+        </Show>
+
+        {/* 官方 Polymarket 跳转 (老板: 对比官方盘口; stopPropagation 防触发折叠) */}
+        <Show when={polymarketUrl()}>
+          <a class="v8-evt-link" href={polymarketUrl()!} target="_blank" rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()} title="在 Polymarket 官方查看 (对比盘口)">官方 ↗</a>
         </Show>
 
         {/* 子标题: 节次/时钟 */}

@@ -939,6 +939,18 @@ html, body {
   margin-left: 4px;
 }
 
+.v8-evt-link {
+  font-size: 10px;
+  color: var(--q-blue, #4a9eff);
+  text-decoration: none;
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid var(--md-border, #333);
+  border-radius: 3px;
+}
+.v8-evt-link:hover { background: var(--md-surface-2, #1a1a1a); text-decoration: underline; }
+
 /* 赛事分组内容 (折叠/展开) */
 .v8-event-body {
   max-height: 0;
