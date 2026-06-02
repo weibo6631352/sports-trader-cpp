@@ -91,3 +91,30 @@
 
 1. **这些是"喂模型的输入质量"。** 即便全修活, 当前 fair_value 模型本身若退化, 也用不上。**修特征源 vs 训练真模型** 是两件事 — 建议 P2.1 (赔率链) 优先, 因为 sharp 赔率既是特征也能直接当 fair 锚, 双重收益。
 2. **不要为修而修。** 条件性 0 (clutch/pos_*) 和 const (fee/devig_ok) 不该当 bug。真正该修的是第 1 节 6 组真断。
+
+---
+
+## 7. 执行结果 (2026-06-02 部署验证, commit ef1dc67e)
+
+**已修 (代码缺口快赢):**
+- **P1.1 g_period** — `pricing::parse_period_ordinal` 运动感知字符串→节序数, inplay→game_row 桥接通。
+- **P3.1 book 派生** — 喂 ML 的 book_row 改透传 feat 全 5 档 + 算 spread_bps_f + top3_depth_usdc。
+- **P3.2 无时钟 phase** — `regulation_periods` + period 进度算 phase_frac (不动 time_frac/定价)。
+
+**验证 (重启后 features/health, n=127):**
+
+| 指标 | 修前 | 修后 |
+|---|---|---|
+| healthy | 76 | **86** (+10) |
+| dead | 31 | **26** |
+| const | 7 | **2** |
+
+翻转特征: #2 g_period (dead→healthy, [0,8]) · #11 b_spread_bps (→[50,19600]) · #12 b_top3_depth (→[10,1.46M]) · #15 b_book_levels_valid (const2→[2,10]) · #67 g_remaining_sec · #70 g_game_phase ([0,2])。
+未翻转但属预期: #71 garbage / #72 clutch (条件未触发, 需末段+比分差; 会在末段比赛点亮)。
+
+**剩余 26 dead 全为非代码快赢类 (已分类, 不当 bug):**
+- 大管线 (genuine, 待建 odds feed): bm_slots 跨庄家 #5/6/7/16。
+- 覆盖依赖 (需数据流): soccer stats #19-23/#111 (无足球直播或 commentaries 未 join) · NO book #78/#105 · 多节比分 #68/69。
+- 假阳性 (正确的 0/常量): #26 bid_absence (bid 在场=健康) · #48-53 pos (空仓) · #59 resolution (市场开放) · #82/84 cat (体育 moneyline 恒值) · #71/72 (条件未触发)。
+
+**下一步 (老板决策):** 唯一剩的真代码缺口是 bm_slots 跨庄家赔率, 需新建 Goalserve odds feed 采集管线 (中大工程, 双重价值: 既是特征也是 sharp fair 锚)。其余非代码, 靠数据覆盖 (足球直播 + commentaries + NO book 双边订阅) 自然填充。
