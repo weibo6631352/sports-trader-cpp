@@ -1,11 +1,13 @@
-// 烟雾验证: getodds XML 解析器对真实 body 工作正常。跑完即弃, 不进 ctest。
+// 烟雾验证: getodds 解析 → bm_slots 定向 → 跨庄家 de-vig fair 全链。跑完即弃, 不进 ctest。
 // 编译: g++ -std=c++20 -I../../include smoke_parse.cpp -o smoke && ./smoke /tmp/getodds_basket.xml
 #include <cstdio>
 #include <fstream>
 #include <sstream>
 #include <string>
 
+#include "stcpp/data/bm_slots_fill.hpp"
 #include "stcpp/data/odds_feed_parser.hpp"
+#include "stcpp/ml/model_feature_spec.hpp"  // detail::devig_one
 
 int main(int argc, char** argv) {
     if (argc < 2) {
@@ -19,19 +21,32 @@ int main(int argc, char** argv) {
     std::printf("xml bytes=%zu\n", xml.size());
 
     using namespace stcpp::data::goalserve;
+    namespace fs = stcpp::data::feature_store;
     const auto recs = ParseGetOddsXml(xml, GoalserveSport::Basketball, 1780400000000000000LL);
     std::printf("parsed matches=%zu\n", recs.size());
 
     for (const auto& r : recs) {
-        std::printf("--- match_id=%s %s vs %s  valid_books=%d  odds_ts_ns=%lld\n",
-                    r.match_id.c_str(), r.home_team.c_str(), r.away_team.c_str(),
-                    r.valid_book_count(), static_cast<long long>(r.odds_ts_ns));
-        for (std::size_t i = 0; i < kNumBookmakers; ++i) {
-            const auto& b = r.books[i];
-            if (b.present)
-                std::printf("      [%zu] %-12s home=%.3f draw=%.3f away=%.3f\n",
-                            i, std::string(kBookmakerNames[i]).c_str(), b.home, b.draw, b.away);
+        std::printf("--- match_id=%s %s vs %s  valid_books=%d\n", r.match_id.c_str(),
+                    r.home_team.c_str(), r.away_team.c_str(), r.valid_book_count());
+        // 定向: YES=home (yes_is_home=true), 非平局盘
+        fs::FeatureStoreGameRow g;
+        FillBmSlotsYesCanonical(r, /*yes_is_home=*/true, /*map_is_draw=*/false, g);
+        // 复现特征侧跨庄家 de-vig 共识 (model_feature_spec extract_from_game_row 逻辑)
+        double fair_sum = 0.0, over_sum = 0.0;
+        int n = 0;
+        for (const auto& sl : g.bm_slots) {
+            if (!sl.is_present()) continue;
+            const auto d = stcpp::ml::detail::devig_one(sl.odds_yes, sl.odds_no);
+            if (!d.ok) continue;
+            std::printf("      bm: yes_odds=%.3f no_odds=%.3f -> fair_yes=%.4f overround=%.4f\n",
+                        sl.odds_yes, sl.odds_no, d.fair_yes, d.overround);
+            fair_sum += d.fair_yes;
+            over_sum += d.overround;
+            ++n;
         }
+        if (n > 0)
+            std::printf("   >>> 跨庄家共识 fair_yes=%.4f  overround_avg=%.4f  valid_bm_count=%d\n",
+                        fair_sum / n, over_sum / n, n);
     }
     return 0;
 }

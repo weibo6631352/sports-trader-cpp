@@ -693,7 +693,9 @@ inline void fill_latency_features(const stcpp::data::feature_store::FeatureStore
     put(MlFeature::x_yes_no_book_skew_sec,
         (b.data_source_ts_ns > 0 && q.no_book_data_source_ts_ns > 0)
             ? static_cast<double>(b.data_source_ts_ns - q.no_book_data_source_ts_ns) / 1e9
-            : dnan);  // 正 = YES book 更旧 / NO 更新 (双边更新不同步)
+            : dnan);  // 正 = YES book 更新 (b.ds > no.ds, ts 更大=更近); 负 = NO 更新。
+                      // (2026-06-02 审计 #78: 原注释符号写反; 另: 当前 WSS YES/NO 共享 @ts 时此值恒 0,
+                      //  待验 NO book ds 能否独立 — 后台验证智能核验中。)
     put(MlFeature::b_ingestion_lag_ms, lag_ms(b.ingestion_ts_ns, b.data_source_ts_ns));
     put(MlFeature::no_b_ingestion_lag_ms, lag_ms(q.no_book_ingestion_ts_ns, q.no_book_data_source_ts_ns));
     double joint = -1.0;  // 联合最旧 = max(交易输入中有限的: book×2 + score + live_stats)

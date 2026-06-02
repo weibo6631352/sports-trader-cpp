@@ -589,7 +589,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     }
     // 微观结构
     book_row.microprice = microprice;
-    book_row.imbalance = std::isfinite(feat.imbalance) ? feat.imbalance : 0.0;
+    // #10 审计: 缺失 imbalance 填 NaN 而非 0.0 (0.0 会被读成"双边均衡"假值; NaN=诚实缺失)。
+    //   仅喂特征 b_imbalance, FairValueEstimator 只读 microprice 不读 imbalance, 不影响定价。
+    book_row.imbalance =
+        std::isfinite(feat.imbalance) ? feat.imbalance : std::numeric_limits<double>::quiet_NaN();
     book_row.mid = std::isfinite(feat.mid) ? feat.mid : (best_bid + best_ask) * 0.5;
     book_row.tick_size = 0.01;
     // P3.1: spread_bps_f + top3_depth_usdc (此前漏算)。spread 用已验 L1 价 + mid;
