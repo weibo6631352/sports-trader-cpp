@@ -81,3 +81,38 @@ esports(maps 0-3 有界)/tennis(既有行为)不动。纯 paper,不涉真钱。
 - **问题二**:没赔率系统照转(比分先验顶上),但 edge 薄,真钱主要在事件延迟套利;回测待数据。
 - 顺带:cricket 垃圾 fair 护栏 + 数据重采闭环跑通。
 - 全程 1380 测试全绿,5 次提交已推送部署,WSS 0 断连。
+
+---
+
+## §6 全盘口量化接入 (老板「除了 Moneyline 别的量化未接入」→「全都加,缺的都加」, 2026-06-03)
+
+### 现状诊断 (接入前)
+| 盘口类型 | 码 | 模型 | 状态 |
+|---|---|---|---|
+| moneyline | 0 | FairValueEstimator(通用 sigmoid 跨运动) | ✅ |
+| spread/totals | 1/2 | derivative(Poisson/Normal)**仅连续时钟运动** | ⚠️ 模型在但 PM live 大头(tennis/esports)不支持 |
+| outright/prop/series | 3/4/5 | 无模型 `return` | ❌ 永远「未接入」 |
+
+错位: derivative 只支持 basket/soccer/hockey/amfb/baseball(连续时钟); PM live 大头是
+tennis(84)/esports(15)/cricket(12)(盘/maps/innings 制) → 全不支持。只有 moneyline 跨运动。
+
+### 已接入 (本轮, 全测试 + 部署)
+1. **网球 totals/spreads** (commit 0ea8039): `tennis_fair_value.hpp` games/sets 制。
+   EventScore+game_row += games_home/away (s1..s5 求和)。TOTALS=E[终场总局](当前+剩余整盘×μ9.7);
+   SPREADS=当前局差+对称剩余方差。fail-closed 终态/太早。**v1 覆盖 tennis_scores 源(itf/challenger)**。
+2. **电竞 totals/spreads** (commit ef6281d): `esports_fair_value.hpp` best-of-N **精确枚举**系列结局
+   分布。per-map p=Laplace clamp[0.35,0.65]。BO3 默认。覆盖 esports/home 源。
+3. **outright/prop/series 市场兜底** (commit 36dcbaa): mkt_type>2 不再 return「未接入」, 改发
+   quote fair=市场 de-vig(诚实标 market_devig, edge≈0 不交易)。强制挡 score-prior/sharp/ML
+   (否则匹配单场比分当冠军概率=垃圾)。
+
+### 剩余缺口 (阻塞/难)
+- **atp/wta 网球 games**: 大头(57场)走 inplay-tennis(JSON, 被去重), inplay 解析器只读
+  `info.score`(盘数)不读逐盘局数 → atp/wta totals 仍 fail-closed。需确认 inplay JSON 的逐盘
+  字段名(`state`/`ss`?)再加解析。**阻塞: feed 被 daemon 占住难抓样本**。
+- **series 真模型**: 需系列赛状态(系列已赢场数, 非单场比分), Goalserve 未 plumb → 暂市场兜底。
+- **cricket totals**: innings 制总分(runs)模型, 需 overs/wickets 上下文 → 难, 暂无。
+
+### 结论
+moneyline + tennis(itf/ch) + esports + (outright/prop/series 市场兜底) 已接入。**结构性「未接入」
+(无模型的市场类型)已消除**; 剩 totals/spreads 的温度性「未接入」(赛前/终态/atp-wta-无games)。
