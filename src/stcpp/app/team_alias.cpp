@@ -99,13 +99,93 @@ const std::vector<TeamEntry>& NhlTeams() {
     return t;
 }
 
-// sport_code → 联盟表 (nullptr = 该团队运动暂无表, 回退通用)。
+// 全球足球俱乐部表 (一张表跨赛事共用: 同一俱乐部在 EPL/UCL/MLS... 名字相同)。
+//   覆盖五大联赛(英超/西甲/意甲/德甲/法甲)+ 荷甲/葡超/苏超/土超 + 南美/中东/MLS 豪门。
+//   同城多队靠多词消歧 (manchester city / manchester united; real madrid / atletico madrid;
+//   ac milan / inter milan); 已审 bare-token 无跨队碰撞 (如 Inter Milan 用 "inter milan" 非裸
+//   "inter" → 不撞 Inter Miami)。缩写/绰号尽量收全 (Spurs/Wolves/Barca/Juve/BVB/PSG...)。
+const std::vector<TeamEntry>& SoccerTeams() {
+    static const std::vector<TeamEntry> t = {
+        // ---- 英超 EPL ----
+        {"arsenal", {"arsenal", "gunners"}}, {"astonvilla", {"aston villa"}},
+        {"bournemouth", {"bournemouth"}}, {"brentford", {"brentford"}}, {"brighton", {"brighton"}},
+        {"chelsea", {"chelsea"}}, {"crystalpalace", {"crystal palace"}}, {"everton", {"everton"}},
+        {"fulham", {"fulham"}}, {"ipswich", {"ipswich"}}, {"leicester", {"leicester"}},
+        {"liverpool", {"liverpool"}}, {"mancity", {"manchester city", "man city"}},
+        {"manutd", {"manchester united", "man united", "man utd", "manchester utd"}},
+        {"newcastle", {"newcastle"}}, {"nottingham", {"nottingham forest", "forest"}},
+        {"southampton", {"southampton"}}, {"tottenham", {"tottenham", "spurs"}},
+        {"westham", {"west ham"}}, {"wolves", {"wolves", "wolverhampton"}},
+        // ---- 西甲 La Liga ----
+        {"realmadrid", {"real madrid"}}, {"barcelona", {"barcelona", "barca"}},
+        {"atletico", {"atletico madrid", "atletico", "atleti"}},
+        {"athleticbilbao", {"athletic bilbao", "athletic club", "ath bilbao"}},
+        {"realsociedad", {"real sociedad"}}, {"betis", {"real betis", "betis"}},
+        {"villarreal", {"villarreal"}}, {"valencia", {"valencia"}}, {"sevilla", {"sevilla"}},
+        {"girona", {"girona"}}, {"osasuna", {"osasuna"}}, {"getafe", {"getafe"}},
+        {"celta", {"celta vigo", "celta"}}, {"mallorca", {"mallorca"}}, {"laspalmas", {"las palmas"}},
+        {"rayo", {"rayo vallecano", "rayo"}}, {"espanyol", {"espanyol"}}, {"leganes", {"leganes"}},
+        {"valladolid", {"valladolid"}}, {"alaves", {"alaves"}},
+        // ---- 意甲 Serie A ----
+        {"inter", {"inter milan", "internazionale"}}, {"acmilan", {"ac milan"}},
+        {"juventus", {"juventus", "juve"}}, {"napoli", {"napoli"}}, {"roma", {"as roma", "roma"}},
+        {"lazio", {"lazio"}}, {"atalanta", {"atalanta"}}, {"fiorentina", {"fiorentina"}},
+        {"bologna", {"bologna"}}, {"torino", {"torino"}}, {"udinese", {"udinese"}},
+        {"genoa", {"genoa"}}, {"como", {"como"}}, {"cagliari", {"cagliari"}}, {"parma", {"parma"}},
+        {"lecce", {"lecce"}}, {"verona", {"hellas verona", "verona"}}, {"empoli", {"empoli"}},
+        {"venezia", {"venezia"}}, {"monza", {"monza"}},
+        // ---- 德甲 Bundesliga ----
+        {"bayern", {"bayern munich", "bayern", "bayern munchen"}},
+        {"leverkusen", {"bayer leverkusen", "leverkusen"}},
+        {"dortmund", {"borussia dortmund", "dortmund", "bvb"}}, {"leipzig", {"rb leipzig", "leipzig"}},
+        {"stuttgart", {"stuttgart"}}, {"frankfurt", {"eintracht frankfurt", "frankfurt"}},
+        {"hoffenheim", {"hoffenheim"}}, {"freiburg", {"freiburg"}}, {"wolfsburg", {"wolfsburg"}},
+        {"mainz", {"mainz"}}, {"augsburg", {"augsburg"}},
+        {"gladbach", {"borussia monchengladbach", "monchengladbach", "gladbach"}},
+        {"werder", {"werder bremen", "werder"}}, {"unionberlin", {"union berlin"}},
+        {"bochum", {"bochum"}}, {"heidenheim", {"heidenheim"}}, {"stpauli", {"st pauli"}},
+        {"holsteinkiel", {"holstein kiel"}},
+        // ---- 法甲 Ligue 1 ----
+        {"psg", {"psg", "paris saint germain", "paris sg", "paris"}},
+        {"marseille", {"marseille", "olympique marseille"}}, {"monaco", {"monaco"}},
+        {"lille", {"lille"}}, {"lyon", {"lyon", "olympique lyonnais"}}, {"nice", {"nice"}},
+        {"lens", {"lens"}}, {"rennes", {"rennes"}}, {"strasbourg", {"strasbourg"}},
+        {"brest", {"brest"}}, {"toulouse", {"toulouse"}}, {"reims", {"reims"}}, {"nantes", {"nantes"}},
+        {"montpellier", {"montpellier"}}, {"lehavre", {"le havre"}}, {"auxerre", {"auxerre"}},
+        {"angers", {"angers"}}, {"saintetienne", {"saint etienne", "st etienne"}},
+        // ---- 荷甲 / 葡超 / 苏超 / 土超 ----
+        {"ajax", {"ajax"}}, {"psv", {"psv", "psv eindhoven"}}, {"feyenoord", {"feyenoord"}},
+        {"porto", {"fc porto", "porto"}}, {"benfica", {"benfica"}},
+        {"sporting", {"sporting cp", "sporting lisbon"}}, {"celtic", {"celtic"}},
+        {"rangers", {"rangers"}}, {"galatasaray", {"galatasaray"}}, {"fenerbahce", {"fenerbahce"}},
+        {"besiktas", {"besiktas"}},
+        // ---- 南美 / 中东 / MLS 豪门 ----
+        {"bocajuniors", {"boca juniors", "boca"}}, {"riverplate", {"river plate"}},
+        {"flamengo", {"flamengo"}}, {"palmeiras", {"palmeiras"}},
+        {"alnassr", {"al nassr"}}, {"alhilal", {"al hilal"}}, {"intermiami", {"inter miami"}},
+        {"lagalaxy", {"la galaxy", "los angeles galaxy"}},
+    };
+    return t;
+}
+
+// 足球类 sport 码 (一张全球俱乐部表跨赛事共用)。
+bool IsSoccerCode(std::string_view sl) {
+    return Contains(sl, "soccer") || Contains(sl, "epl") || Contains(sl, "premier") ||
+           Contains(sl, "laliga") || Contains(sl, "liga") || Contains(sl, "serie") ||
+           Contains(sl, "bundesliga") || Contains(sl, "ligue") || Contains(sl, "ucl") ||
+           Contains(sl, "uefa") || Contains(sl, "champions") || Contains(sl, "europa") ||
+           Contains(sl, "mls") || Contains(sl, "eredivisie") || Contains(sl, "primeira") ||
+           Contains(sl, "fifa") || Contains(sl, "worldcup");
+}
+
+// sport_code → 联盟表 (nullptr = 该团队运动暂无表, 回退通用)。NFL 先于足球判 (避免 "football" 误路由)。
 const std::vector<TeamEntry>* LeagueFor(std::string_view sl) {
     if (Contains(sl, "nba") || Contains(sl, "wnba")) return &NbaTeams();
     if (Contains(sl, "mlb")) return &MlbTeams();
     if (Contains(sl, "nfl")) return &NflTeams();
     if (Contains(sl, "nhl")) return &NhlTeams();
-    return nullptr;  // 足球/板球/大学等: 待真实样本建表, 暂回退通用
+    if (IsSoccerCode(sl)) return &SoccerTeams();
+    return nullptr;  // 板球/大学等: 待真实样本建表, 暂回退通用
 }
 
 // group ("red sox") 的所有 token 是否都在 sorted+deduped 的 name_tokens 里。
@@ -130,12 +210,10 @@ SportMatchCategory ClassifySportMatch(std::string_view sport_code) {
         Contains(sl, "dart") || Contains(sl, "snooker")) {
         return SportMatchCategory::kIndividual;
     }
-    // 团队项目: 四大联盟 + 足球 (含各联赛码) + 板球 + 大学。
+    // 团队项目: 四大联盟 + 足球 (各联赛码, IsSoccerCode 统一口径) + 板球 + 大学。
     if (Contains(sl, "nba") || Contains(sl, "wnba") || Contains(sl, "mlb") || Contains(sl, "nfl") ||
-        Contains(sl, "nhl") || Contains(sl, "soccer") || Contains(sl, "football") || Contains(sl, "epl") ||
-        Contains(sl, "laliga") || Contains(sl, "seriea") || Contains(sl, "bundesliga") ||
-        Contains(sl, "ligue") || Contains(sl, "cricket") || Contains(sl, "ncaa") || Contains(sl, "cfb") ||
-        Contains(sl, "cbb")) {
+        Contains(sl, "nhl") || Contains(sl, "football") || IsSoccerCode(sl) || Contains(sl, "cricket") ||
+        Contains(sl, "ncaa") || Contains(sl, "cfb") || Contains(sl, "cbb")) {
         return SportMatchCategory::kTeam;
     }
     return SportMatchCategory::kUnknown;

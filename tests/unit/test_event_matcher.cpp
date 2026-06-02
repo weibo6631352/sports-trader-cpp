@@ -113,8 +113,8 @@ TEST(SportAware, CanonicalTeam_CityVsNickname) {
     // NFL 数字昵称 + 别名
     EXPECT_EQ(CanonicalTeam("nfl", "San Francisco 49ers"), "49ers");
     EXPECT_EQ(CanonicalTeam("nfl", "Niners"), "49ers");
-    // 未建表运动 → "" (回退通用)
-    EXPECT_EQ(CanonicalTeam("soccer", "Manchester United"), "");
+    // 未建表运动 (板球/橄榄球) → "" (回退通用); 已建表运动里未知队 → "" (回退通用)
+    EXPECT_EQ(CanonicalTeam("cricket", "Mumbai Indians"), "");
     EXPECT_EQ(CanonicalTeam("nba", "Unknown Team XYZ"), "");
 }
 
@@ -122,6 +122,43 @@ TEST(SportAware, CanonicalTeam_CityVsNickname) {
 TEST(SportAware, CrossSportNoCollision) {
     EXPECT_EQ(CanonicalTeam("nfl", "Carolina Panthers"), "panthers");
     EXPECT_EQ(CanonicalTeam("nhl", "Florida Panthers"), "panthers");  // 各自表内 panthers 唯一
+}
+
+// 足球: 同城多队消歧 + 缩写/绰号 + 跨联赛同表。
+TEST(SportAware, SoccerCanonical) {
+    // 曼联 缩写全收
+    EXPECT_EQ(CanonicalTeam("soccer", "Manchester United"), "manutd");
+    EXPECT_EQ(CanonicalTeam("epl", "Man Utd"), "manutd");
+    EXPECT_EQ(CanonicalTeam("soccer", "Manchester Utd"), "manutd");
+    // 同城不串: 曼城 ≠ 曼联
+    EXPECT_EQ(CanonicalTeam("soccer", "Manchester City"), "mancity");
+    EXPECT_NE(CanonicalTeam("soccer", "Manchester City"), CanonicalTeam("soccer", "Manchester United"));
+    // 马德里双雄消歧
+    EXPECT_EQ(CanonicalTeam("laliga", "Real Madrid"), "realmadrid");
+    EXPECT_EQ(CanonicalTeam("laliga", "Atletico Madrid"), "atletico");
+    // 绰号 / 缩写
+    EXPECT_EQ(CanonicalTeam("soccer", "Spurs"), "tottenham");
+    EXPECT_EQ(CanonicalTeam("soccer", "Barca"), "barcelona");
+    EXPECT_EQ(CanonicalTeam("soccer", "Juve"), "juventus");
+    EXPECT_EQ(CanonicalTeam("ucl", "PSG"), "psg");
+    // Inter Milan vs Inter Miami 不串 (裸 "inter" 不解析)
+    EXPECT_EQ(CanonicalTeam("seriea", "Inter Milan"), "inter");
+    EXPECT_EQ(CanonicalTeam("mls", "Inter Miami"), "intermiami");
+}
+
+// 足球同城 derby 经规范 ID 正确定向 (通用 overlap 会因共享城市名 0.5 误配)。
+TEST(EventMatcherSim, SoccerDerbyOrientation) {
+    EventMatcher m;
+    EventScore ev;
+    ev.home = "Manchester City";
+    ev.away = "Manchester United";
+    EventMatchInput in;
+    in.sport = "epl";
+    in.team0 = "Man Utd";       // Polymarket 缩写
+    in.team1 = "Man City";
+    const auto r = m.Match(in, {ev});
+    EXPECT_TRUE(r.matched);
+    EXPECT_FALSE(r.yes_is_home);  // team0(Man Utd)→away → 交叉配
 }
 
 // 团队精确匹配: Polymarket 缩写 vs Goalserve 全名 → 经规范 ID 命中 (通用 overlap 会漏)。
