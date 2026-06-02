@@ -29,8 +29,8 @@ import {
   fmtTs, fmtBps, fmtUsdc, fmtClock, stalenessMs, isEndpointFailing,
 } from '../api';
 import {
-  STATUS_ZH, SPORT_ZH, REJECT_REASON_ZH, SIDE_ZH, MARKET_TYPE_ZH, inferMarketLabel, inferMarketTypeZh,
-  inferSportFromSlug,
+  STATUS_ZH, GAMESTATE_ZH, SPORT_ZH, REJECT_REASON_ZH, SIDE_ZH, MARKET_TYPE_ZH, inferMarketLabel,
+  inferMarketTypeZh, inferSportFromSlug,
 } from '../i18n';
 import type {
   EventGroup, ConditionData, BinaryMarketBookView, HalfBook,
@@ -667,6 +667,25 @@ function EventAccordion(props: { group: EventGroup }) {
     return parts.join(' · ');
   };
 
+  // 比赛状态/开赛时间 (老板 2026-06-02: 盯盘要看几点开赛 + 是否进行中)。
+  //   同 event 各盘共享开赛时间/state, 取首个有值的 summary (来自 grid game_state/kickoff_ts)。
+  const gameSummary = () => {
+    for (const c of grp().conditions) {
+      const s = c.summary;
+      if (s && (s.kickoffTs != null || s.gameState != null)) return s;
+    }
+    return null;
+  };
+  const kickoffLabel = () => {
+    const ts = gameSummary()?.kickoffTs;
+    return ts ? fmtTs(ts) : null;
+  };
+  // 未匹配(无 Goalserve 比分)时用后端 game_state 兜底显示状态; 已匹配的上方 score chip 已显示。
+  const fallbackStateZh = () => {
+    const gs = gameSummary()?.gameState;
+    return gs && gs !== 'unknown' ? (GAMESTATE_ZH[gs] ?? gs) : null;
+  };
+
   // 当前 event 下的最大延迟 — 使用真实数据时刻 event_ts / ingestion_ts (P1-7)
   const maxStaleMs = () => {
     const vals = grp().conditions
@@ -722,7 +741,7 @@ function EventAccordion(props: { group: EventGroup }) {
           <span class="v8-evt-team">{awayTeam() ?? '—'}</span>
         </Show>
 
-        {/* 状态 Chip */}
+        {/* 状态 Chip (已匹配: Goalserve 比分 status 权威) */}
         <Show when={score()}>
           <Chip
             label={statusZh()}
@@ -731,6 +750,22 @@ function EventAccordion(props: { group: EventGroup }) {
             variant="outlined"
             sx={{ fontSize: '9px', height: '18px' }}
           />
+        </Show>
+
+        {/* 未匹配: 后端 game_state 兜底状态 (赛前/进行中/已结束/已结算) */}
+        <Show when={!score() && fallbackStateZh()}>
+          <Chip
+            label={fallbackStateZh()!}
+            color={gameSummary()?.gameState === 'inplay' ? 'success' : 'default'}
+            size="small"
+            variant="outlined"
+            sx={{ fontSize: '9px', height: '18px' }}
+          />
+        </Show>
+
+        {/* 开赛时间 (始终显示; 老板「看几点开赛」) */}
+        <Show when={kickoffLabel()}>
+          <span class="v8-evt-kickoff" title="开赛时间">🕒 {kickoffLabel()}</span>
         </Show>
 
         {/* 子标题: 节次/时钟 */}

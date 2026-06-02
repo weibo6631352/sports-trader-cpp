@@ -931,6 +931,14 @@ html, body {
   flex-shrink: 0;
 }
 
+.v8-evt-kickoff {
+  font-size: 10px;
+  color: var(--md-text-sub);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  margin-left: 4px;
+}
+
 /* 赛事分组内容 (折叠/展开) */
 .v8-event-body {
   max-height: 0;
