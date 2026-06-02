@@ -877,8 +877,8 @@ export function TradingPage() {
   const [hideNoBook, setHideNoBook] = createSignal(true);
 
   // P1-6: WSS 连接状态 Alert 计算.
-  //   只有 clob 是真用的 WSS (订单簿). sports_api 走 HTTP REST inplay feed (非 WSS),
-  //   user_channel 仅 live 真单订阅 (paper 不用) — 这俩 false 是预期, 不该告警 (老板 2026-06-01)。
+  //   只有 clob 是真用的 WSS (订单簿). user_channel 仅 live 真单订阅 (paper 不用) — false 预期, 不告警。
+  //   (sports_api 通道已删 2026-06-02 — Goalserve 走 HTTP REST inplay feed, 非 WSS)
   const wssStatus = () => state.status?.wss_connected ?? null;
   const wssAllDown = () => {
     const w = wssStatus();
@@ -888,7 +888,7 @@ export function TradingPage() {
   const wssPartialDown = () => {
     const w = wssStatus();
     if (!w) return false;
-    const vals = [w.clob]; // 仅 clob 计入 (sports_api/user_channel 未用, 不误报)
+    const vals = [w.clob]; // 仅 clob 计入 (user_channel 未用, 不误报)
     const downCount = vals.filter((v) => !v).length;
     return downCount > 0 && downCount < 1; // clob 单通道无"部分断"概念 → 恒 false
   };

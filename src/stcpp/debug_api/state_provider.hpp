@@ -207,7 +207,6 @@ struct PaperGate {
 struct MetricsSnapshot {
     // 健康
     std::int64_t uptime_sec{0};
-    bool wss_sports_api_connected{false};
     bool wss_clob_connected{false};
     bool wss_user_channel_connected{false};
     std::int64_t wss_reconnect_total{0};

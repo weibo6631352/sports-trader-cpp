@@ -33,7 +33,6 @@ export const STUB_STATUS: Status = {
   mode: 'paper',
   data_source: 'demo',
   wss_connected: {
-    sports_api: true,
     clob: true,
     user_channel: false,
   },
@@ -616,12 +615,10 @@ export const STUB_METRICS_TEXT = `
 stcpp_uptime_seconds{mode="paper"} 3721
 # HELP stcpp_wss_connected WSS channel connected (1=up 0=down)
 # TYPE stcpp_wss_connected gauge
-stcpp_wss_connected{mode="paper",channel="sports_api"} 1
 stcpp_wss_connected{mode="paper",channel="clob"} 1
 stcpp_wss_connected{mode="paper",channel="user"} 0
 # HELP stcpp_wss_reconnect_total WSS reconnect count
 # TYPE stcpp_wss_reconnect_total counter
-stcpp_wss_reconnect_total{mode="paper",channel="sports_api"} 0
 stcpp_wss_reconnect_total{mode="paper",channel="clob"} 2
 stcpp_wss_reconnect_total{mode="paper",channel="user"} 1
 # HELP stcpp_loop_latency_p99_us Hot loop p99 latency microseconds

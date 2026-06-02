@@ -28,9 +28,8 @@ export interface Healthz {
 // ---------- /status ----------
 
 export interface WssConnected {
-  sports_api: boolean;
   clob: boolean;
-  user_channel: boolean;
+  user_channel: boolean;  // 预留: 真钱下单用户通道 (paper 不用)
 }
 
 export interface Status {

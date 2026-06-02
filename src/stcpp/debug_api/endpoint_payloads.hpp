@@ -37,9 +37,7 @@ inline std::string status(const HttpServer& hs, std::int64_t as_of_ns = -1) {
     b.reserve(512);
     b += R"({"state":"RUNNING","mode":")";
     b += STCPP_EXEC_MODE_STR;
-    b += R"(","wss_connected":{"sports_api":)";
-    b += json::boolean(m.wss_sports_api_connected);
-    b += R"(,"clob":)";
+    b += R"(","wss_connected":{"clob":)";
     b += json::boolean(m.wss_clob_connected);
     b += R"(,"user_channel":)";
     b += json::boolean(m.wss_user_channel_connected);

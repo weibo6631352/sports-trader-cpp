@@ -135,7 +135,7 @@ public:
     stcpp::debug_api::MetricsSnapshot metrics() const override {
         stcpp::debug_api::MetricsSnapshot m;
         m.uptime_sec = 3600;
-        m.wss_sports_api_connected = true;
+        m.wss_clob_connected = true;
         m.rm_decision_total = 500;
         m.cum_net_pnl = 93.5;
         return m;
@@ -357,8 +357,8 @@ TEST(ObservabilityEndpoints, AllEndpoints_FakeProvider) {
         EXPECT_TRUE(contains(r->body, "stcpp_rm_decision_total")) << r->body;
         // mode 作为低基数 label
         EXPECT_TRUE(contains(r->body, "mode=\"paper\"")) << r->body;
-        // wss channel 枚举 label
-        EXPECT_TRUE(contains(r->body, "channel=\"sports_api\"")) << r->body;
+        // wss channel 枚举 label (sports_api 已删 2026-06-02; clob 实用)
+        EXPECT_TRUE(contains(r->body, "channel=\"clob\"")) << r->body;
         // 低基数: 不得出现 per-market label
         EXPECT_EQ(r->body.find("market_id="), std::string::npos) << r->body;
         EXPECT_EQ(r->body.find("intent_id="), std::string::npos) << r->body;

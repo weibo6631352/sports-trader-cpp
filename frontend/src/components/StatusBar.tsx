@@ -176,18 +176,17 @@ export function StatusBar() {
 
           <span class="appbar-sep">|</span>
 
-          {/* WSS 状态. 仅 clob 是真用的 WSS (订单簿); sports_api 走 HTTP REST inplay feed (非 WSS),
-              user_channel 仅 live 真单订阅 (paper 不订). 后两者 false 是预期, 灰显而非红色告警. */}
+          {/* WSS 状态. 仅 clob 是真用的 WSS (订单簿); user_channel 仅 live 真单订阅 (paper 不订),
+              false 是预期, 灰显而非红色告警. (sports_api 通道已删 2026-06-02 — Goalserve 走 HTTP REST 非 WSS) */}
           <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '11px' }}>WSS</Typography>
           <For each={wssEntries()}>
             {([k, v]) => {
               // 未使用的通道 (paper 模式预期 false) → 灰显 + 解释 tooltip, 不红色误报。
-              const unusedChannel = k === 'sports_api' || k === 'user_channel';
+              const unusedChannel = k === 'user_channel';
               const dotState = (): 'green' | 'red' | 'gray' =>
                 v ? 'green' : unusedChannel ? 'gray' : 'red';
               const tip =
                 k === 'clob' ? 'CLOB 订单簿 WSS (真实使用)'
-                : k === 'sports_api' ? 'Goalserve 比分走 HTTP REST inplay feed (非 WSS; 此通道未用, 灰=正常)'
                 : k === 'user_channel' ? 'Polymarket user channel (仅 live 真单订阅; paper 模式不用, 灰=正常)'
                 : k;
               return <StatusDot state={dotState()} size="sm" title={`${k}: ${tip}`} />;

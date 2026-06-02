@@ -399,7 +399,8 @@ public:
         if (hooks_.wss_transport != nullptr) {
             snap.wss_clob_connected = hooks_.wss_transport->IsConnected();
         }
-        // wss_sports_api / wss_user_channel: 当前无接入 → false (标注而非虚报)
+        // wss_user_channel: 当前无接入 → false (标注而非虚报)。
+        //   注: sports_api 通道已删 (2026-06-02) —— Goalserve 比分走 HTTP REST inplay feed, 非 WSS。
 
         // ---- 覆盖率/识别率 metric (ADR-038 小卢 2026-05-30) ----
         // 全部从 catalog_ / token_map_ / score_store_ 只读算, 无新外部调用 (R-12)

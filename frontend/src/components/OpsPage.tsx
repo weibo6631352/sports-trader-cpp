@@ -243,7 +243,6 @@ function SubscriptionSection() {
   const reconnectAll = () => parseMetricAll(m(), 'stcpp_wss_reconnect_total');
 
   const wssChannels = [
-    { key: 'sports_api',   label: 'sports_api' },
     { key: 'clob',         label: 'clob' },
     { key: 'user_channel', label: 'user_channel' },
   ];

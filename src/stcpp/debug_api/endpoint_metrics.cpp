@@ -10,7 +10,7 @@
 // 只读: provider.metrics()。MVP stub 返回 0/false (结构合法可被 Prometheus pull)。
 //
 // 低基数原则: 全部 metric 无 per-market/per-order label; wss 连接用枚举 label
-//   channel="sports_api|clob|user" (固定 3 值, 低基数)。mode 作为低基数 label 附在每条。
+//   channel="clob|user" (低基数; sports_api 通道已删 2026-06-02 — Goalserve 走 HTTP REST 非 WSS)。mode 附每条。
 
 #include <string>
 
@@ -59,14 +59,9 @@ void register_metrics(httplib::Server& svr, const HttpServer& hs) {
         metric_line(out, "stcpp_uptime_seconds", "gauge", "Process uptime in seconds",
                     ml + " " + json::i64(m.uptime_sec));
 
-        // wss 连接: channel 枚举 label (低基数, 固定 3 值)
+        // wss 连接: channel 枚举 label (低基数; clob 实用 / user 预留)
         out += "# HELP stcpp_wss_connected WSS channel connected (1=up 0=down)\n";
         out += "# TYPE stcpp_wss_connected gauge\n";
-        out += "stcpp_wss_connected{mode=\"";
-        out += mode;
-        out += "\",channel=\"sports_api\"} ";
-        out += (m.wss_sports_api_connected ? "1" : "0");
-        out += '\n';
         out += "stcpp_wss_connected{mode=\"";
         out += mode;
         out += "\",channel=\"clob\"} ";
