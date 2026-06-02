@@ -1542,9 +1542,9 @@ void PaperDaemon::RefreshOdds(std::stop_token st) {
             }
             const std::size_t n = merged.size();
             paper_loop_->SetOddsByMatchId(std::move(merged));
-            if (cfg_.verbose)
-                std::fprintf(stderr, "[odds] bm_slots 刷新: %zu 场跨庄家赔率 (%zu sport 有数据)\n", n,
-                             sports_with_odds);
+            // 常开 (每 90s 一行, 低噪声): bm_slots 可观测性 — join 到几场跨庄家赔率。
+            std::fprintf(stderr, "[odds] bm_slots 刷新: %zu 场跨庄家赔率注入 (%zu/6 sport 有 getodds)\n", n,
+                         sports_with_odds);
         }
         if (!interruptible_sleep(seconds(90)))  // 赔率变化慢 + getodds 较重 → 90s 周期
             return;
