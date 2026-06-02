@@ -76,7 +76,7 @@ export function setDetailInterest(condIds: string[]): void {
 export function addDetailInterest(condId: string): void {
   if (!condId) return;
   detailInterest.add(condId);
-  void fetchDetailFor([condId]);
+  void fetchDetailFor([condId], /*priority=*/true);  // 用户交互: 插队即时拉
 }
 
 // ---------- store shape ----------
@@ -340,16 +340,17 @@ export async function refreshGrid(): Promise<void> {
 
 // ---------- fetchDetailFor: 拉指定盘口的 market/book/quote (按需) ----------
 
-/** 拉取指定盘口集合的 market/book/quote 写入 conditionCache (受 api.ts 并发闸控制) */
-export async function fetchDetailFor(condIds: string[]): Promise<void> {
+/** 拉取指定盘口集合的 market/book/quote 写入 conditionCache (受 api.ts 并发闸控制)。
+ *  priority=true (用户展开/选中触发): 请求插队到并发闸队首, 不在后台轮询后面排队 → 即时出数据。 */
+export async function fetchDetailFor(condIds: string[], priority = false): Promise<void> {
   await Promise.all(
     condIds.map(async (condId) => {
       const cached = state.conditionCache[condId];
       let market: Market | null = cached?.market ?? null;
-      if (!market) market = await safeGetMapped(() => fetchMarket(condId), STUB_MARKET_MAP, condId);
+      if (!market) market = await safeGetMapped(() => fetchMarket(condId, priority), STUB_MARKET_MAP, condId);
       const bookCondId = market?.condition_id ?? condId;
-      const book = await safeGetMapped(() => fetchBook(bookCondId), STUB_BOOK_MAP, bookCondId);
-      const quote = await safeGetMapped(() => fetchQuote(bookCondId), STUB_QUOTE_MAP, bookCondId);
+      const book = await safeGetMapped(() => fetchBook(bookCondId, priority), STUB_BOOK_MAP, bookCondId);
+      const quote = await safeGetMapped(() => fetchQuote(bookCondId, priority), STUB_QUOTE_MAP, bookCondId);
       setState(
         produce((s) => {
           s.conditionCache[condId] ??= { market: null, book: null, quote: null, score: null, summary: null };

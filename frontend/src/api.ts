@@ -117,12 +117,17 @@ const MAX_CONCURRENT = 6;
 let _inFlight = 0;
 const _waitQueue: Array<() => void> = [];
 
-function acquireSlot(): Promise<void> {
+function acquireSlot(priority = false): Promise<void> {
   if (_inFlight < MAX_CONCURRENT) {
     _inFlight++;
     return Promise.resolve();
   }
-  return new Promise<void>((resolve) => _waitQueue.push(resolve));
+  // priority=true (用户交互触发, 如展开盘口): 插队到队首, 抢下一个空出的槽位,
+  //   不在后台轮询(grid/score 批量)后面排队 → 展开即时出数据。
+  return new Promise<void>((resolve) => {
+    if (priority) _waitQueue.unshift(resolve);
+    else _waitQueue.push(resolve);
+  });
 }
 
 function releaseSlot(): void {
@@ -134,9 +139,9 @@ function releaseSlot(): void {
   }
 }
 
-/** 受并发闸控制的 fetch — 所有出站请求必须走这里 */
-async function limitedFetch(url: string, init?: RequestInit): Promise<Response> {
-  await acquireSlot();
+/** 受并发闸控制的 fetch — 所有出站请求必须走这里。priority=true 插队 (用户交互) */
+async function limitedFetch(url: string, init?: RequestInit, priority = false): Promise<Response> {
+  await acquireSlot(priority);
   try {
     return await fetch(url, init);
   } finally {
@@ -156,11 +161,11 @@ export function queuedCount(): number {
 
 // ---------- 通用 fetch wrapper ----------
 
-async function apiFetch<T>(path: string): Promise<T | null> {
+async function apiFetch<T>(path: string, priority = false): Promise<T | null> {
   const url = `${_baseUrl}${path}`;
   let resp: Response;
   try {
-    resp = await limitedFetch(url, { signal: AbortSignal.timeout(12000) });
+    resp = await limitedFetch(url, { signal: AbortSignal.timeout(12000) }, priority);
   } catch (e) {
     recordError(path, e);
     return null;
@@ -205,18 +210,18 @@ export const fetchFeatureHealth = (): Promise<FeatureHealth | null> => apiFetch(
 export const fetchMappingStatus = (): Promise<MappingStatus | null> => apiFetch('/api/v1/mapping/status');
 export const fetchAccount = (): Promise<Account | null> => apiFetch('/api/v1/account');
 
-export const fetchMarket = (marketId: string): Promise<Market | null> =>
-  apiFetch(`/api/v1/market/${marketId}`);
+export const fetchMarket = (marketId: string, priority = false): Promise<Market | null> =>
+  apiFetch(`/api/v1/market/${marketId}`, priority);
 
 /** fetchBook — 返回 BinaryMarketBookView (ADR-040: /api/v1/book_pair/{conditionId}) */
-export const fetchBook = (conditionId: string): Promise<BinaryMarketBookView | null> =>
-  apiFetch(`/api/v1/book_pair/${conditionId}`);
+export const fetchBook = (conditionId: string, priority = false): Promise<BinaryMarketBookView | null> =>
+  apiFetch(`/api/v1/book_pair/${conditionId}`, priority);
 
 export const fetchScore = (eventId: string): Promise<Score | null> =>
   apiFetch(`/api/v1/score/${eventId}`);
 
-export const fetchQuote = (conditionId: string): Promise<Quote | null> =>
-  apiFetch(`/api/v1/quote/${conditionId}`);
+export const fetchQuote = (conditionId: string, priority = false): Promise<Quote | null> =>
+  apiFetch(`/api/v1/quote/${conditionId}`, priority);
 
 export async function fetchMetrics(): Promise<string | null> {
   try {
