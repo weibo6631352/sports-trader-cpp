@@ -824,10 +824,14 @@ function CoverageSection() {
     return 'default';
   };
 
-  // ---- 比分匹配率 ----
+  // ---- 比分匹配率 (老板 2026-06-02: 分母 = 在打市场, 非全市场) ----
   const scoreMatched  = () => parseMetricVal(m(), 'stcpp_score_matched_total');
-  // 2026-05-31 修: 后端无 stcpp_markets_total; 比分匹配率分母用 discovered (endpoint_metrics.cpp:138)。
-  const marketsTotal  = () => parseMetricVal(m(), 'stcpp_markets_discovered_total');
+  // 分母 = stcpp_markets_live_total (在打市场); 旧后端无此指标时回退 discovered (兼容)。
+  const marketsLive   = () => parseMetricVal(m(), 'stcpp_markets_live_total');
+  const marketsTotal  = () => {
+    const lv = marketsLive();
+    return lv != null ? lv : parseMetricVal(m(), 'stcpp_markets_discovered_total');
+  };
   const scorePct = () => {
     const t = marketsTotal(); const r = scoreMatched();
     if (t == null || r == null || t === 0) return 0;
@@ -1014,7 +1018,7 @@ function CoverageSection() {
           color: 'text.secondary', mb: 0.75, display: 'block',
           textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600,
         }}>
-          比分匹配率 (Goalserve live score)
+          比分匹配率 (Goalserve live score · 分母=在打市场)
         </Typography>
         <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
           <Grid item xs={6} sm={4}>
@@ -1028,19 +1032,20 @@ function CoverageSection() {
           </Grid>
           <Grid item xs={6} sm={4}>
             <StatCard
-              label="市场总数"
+              label="在打市场"
               value={marketsTotal() != null ? String(marketsTotal()!) : '—'}
               pollHint="30s"
-              title="stcpp_markets_total"
+              title="stcpp_markets_live_total (gamma live=true; 直播比分该覆盖的市场)"
             />
           </Grid>
           <Grid item xs={12} sm={4}>
             <StatCard
-              label="匹配率"
-              value={marketsTotal() != null ? `${scorePct().toFixed(1)}%` : '—'}
+              label="覆盖率"
+              value={marketsTotal() != null && marketsTotal()! > 0 ? `${scorePct().toFixed(1)}%`
+                     : (marketsLive() === 0 ? '无在打' : '—')}
               color={scoreStatColor()}
               pollHint="30s"
-              title="score_matched / markets_total"
+              title="score_matched / markets_live (在打市场被直播比分覆盖的比例)"
             />
           </Grid>
         </Grid>

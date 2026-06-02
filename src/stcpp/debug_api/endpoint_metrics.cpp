@@ -144,6 +144,11 @@ void register_metrics(httplib::Server& svr, const HttpServer& hs) {
         metric_line(out, "stcpp_score_matched_total", "gauge",
                     "Conditions in catalog whose event_id has a live Goalserve score snapshot",
                     ml + " " + json::i64(m.score_matched_total));
+        // markets_live: gamma live=true 的市场数 = 比分匹配率真分母 (老板 2026-06-02: 直播比分只覆盖
+        //   in-play, 匹配率 = score_matched / markets_live, 不是 / markets_discovered 全市场)
+        metric_line(out, "stcpp_markets_live_total", "gauge",
+                    "Markets in catalog flagged live=true (game in-play) — denominator for score match rate",
+                    ml + " " + json::i64(m.markets_live_total));
 
         res.set_content(out, "text/plain; version=0.0.4; charset=utf-8");
         res.status = 200;

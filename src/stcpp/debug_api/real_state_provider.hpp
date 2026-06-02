@@ -411,6 +411,7 @@ public:
         {
             std::int64_t recognized = 0;
             std::int64_t unknown = 0;
+            std::int64_t live = 0;  // gamma live=true (正在比赛) → 比分匹配率真分母 (老板 2026-06-02)
             for (const auto& [cid, mi] : catalog_) {
                 const bool is_unknown = mi.sports_market_type.empty() || mi.sports_market_type == "unknown";
                 if (is_unknown) {
@@ -418,9 +419,12 @@ public:
                 } else {
                     ++recognized;
                 }
+                if (mi.live)
+                    ++live;
             }
             snap.market_type_recognized_total = recognized;
             snap.market_type_unknown_total = unknown;
+            snap.markets_live_total = live;
         }
 
         // 2. 市场覆盖

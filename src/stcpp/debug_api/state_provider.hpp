@@ -256,9 +256,12 @@ struct MetricsSnapshot {
 
     // 直播员/比分匹配率 (从 ScoreSnapshotStore + market catalog 算):
     //   score_matched_total — catalog 中能在 score_store 找到对应 event_id 比分的 condition 数
-    //   匹配率 = score_matched / markets_discovered
-    //   当前 outright 无 inplay 数据 → 0% (诚实暴露)
+    //   匹配率 = score_matched / markets_live  (2026-06-02 老板修: 分母应为【在打市场】非全市场。
+    //     直播比分只覆盖 in-play 比赛, 拿它比赛前/期货等全市场无意义且偏低误导)
     std::int64_t score_matched_total{0};
+    //   markets_live_total — catalog 中 gamma live=true (正在比赛) 的市场数 = 比分匹配率真分母
+    //     (= 直播员该覆盖的市场; 0 = 当前无在打市场)
+    std::int64_t markets_live_total{0};
 };
 
 // ============================================================
@@ -309,6 +312,7 @@ struct MarketInfo {
     //   gamma market.gameStartTime / endDate → Unix 秒 (0=缺)。供 grid 派生 game_state + 前端徽章。
     std::int64_t game_start_ts_sec{0};  // 真实开赛时刻
     std::int64_t end_ts_sec{0};         // 结束/结算窗口
+    bool live{false};  // 在打 (= kickoff<=now; gamma 原生 live 不可靠故 discovery 算) → 比分匹配率真分母
 };
 
 // ============================================================

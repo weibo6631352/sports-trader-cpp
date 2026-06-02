@@ -214,6 +214,8 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             mi.group_item_title = dm.group_item_title;
             mi.game_start_ts_sec = dm.game_start_ts_sec;  // 开赛/结束时间 → grid game_state + 前端徽章
             mi.end_ts_sec = dm.end_ts_sec;
+            mi.live = ev.live;  // 在打标志 (= kickoff<=now, gamma 原生 live 不可靠故 discovery 这么算)
+                                //   → 比分匹配率真分母 markets_live_total (老板 2026-06-02)
             // tokens[]: YES (tok0) + NO (tok1)
             TokenInfo tk0;
             tk0.token_id = dm.token0_id;
