@@ -411,7 +411,13 @@ public:
         {
             std::int64_t recognized = 0;
             std::int64_t unknown = 0;
-            std::int64_t live = 0;  // gamma live=true (正在比赛) → 比分匹配率真分母 (老板 2026-06-02)
+            std::int64_t live = 0;  // 真·在打 → 比分匹配率真分母 (老板 2026-06-02)
+            // 真·在打 = 有真实开赛时间(排 outright/期货 kickoff=0) ∧ 已开赛 ∧ 未到结算窗口(排已结束)。
+            //   注: mi.live (=kickoff<=now) 太松 (含 kickoff=0 缺失 + 已结束 8h 窗口内) → 不用。
+            //   这是 UI 指标 (非热路径/非数据), 用本地 now 算无 R-20 顾虑。
+            const std::int64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count();
             for (const auto& [cid, mi] : catalog_) {
                 const bool is_unknown = mi.sports_market_type.empty() || mi.sports_market_type == "unknown";
                 if (is_unknown) {
@@ -419,8 +425,10 @@ public:
                 } else {
                     ++recognized;
                 }
-                if (mi.live)
+                if (mi.game_start_ts_sec > 0 && mi.game_start_ts_sec <= now_sec &&
+                    (mi.end_ts_sec <= 0 || now_sec <= mi.end_ts_sec)) {
                     ++live;
+                }
             }
             snap.market_type_recognized_total = recognized;
             snap.market_type_unknown_total = unknown;
