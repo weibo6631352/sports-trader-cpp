@@ -1190,15 +1190,25 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                                                 .count();
         auto new_map = std::make_shared<paper::ConditionEventMap>();
         std::size_t matched = 0;
-        // [DIAG] 候选 Goalserve event 数 + 前若干队名 (定位 0 匹配根因: 空候选 / 名不符 / kickoff).
+        // [DIAG] 候选 Goalserve event + PM 待匹配 market 并排 (定位 0 匹配根因: 空候选/名不符/sport/kickoff).
+        //   改: 候选非空时才 dump (避开启动 feed 未拉到的首轮空窗), 候选名 + 市场名并排各 16 条。
         static bool diag_mapping_dumped = false;
-        if (!diag_mapping_dumped) {
-            std::fprintf(stderr, "[map-diag] Goalserve 候选 EventScore 数=%zu\n", candidates.size());
+        if (!diag_mapping_dumped && !candidates.empty()) {
+            std::fprintf(stderr, "[map-diag] 候选 EventScore=%zu, 待匹配 market=%zu\n", candidates.size(),
+                         market_match_inputs_.size());
             std::size_t shown = 0;
             for (const auto& c : candidates) {
-                std::fprintf(stderr, "[map-diag]   cand: home='%s' away='%s' status='%s' id=%s\n",
-                             c.home.c_str(), c.away.c_str(), c.status.c_str(), c.event_id.c_str());
-                if (++shown >= 14) break;
+                std::fprintf(stderr, "[map-diag]   cand: home='%s' away='%s' sport='%s' kickoff=%lld\n",
+                             c.home.c_str(), c.away.c_str(), c.sport.c_str(),
+                             static_cast<long long>(c.kickoff_ts_sec));
+                if (++shown >= 16) break;
+            }
+            shown = 0;
+            for (const auto& [cid, in] : market_match_inputs_) {
+                std::fprintf(stderr, "[map-diag]   market: t0='%s' t1='%s' sport='%s' kickoff=%lld\n",
+                             in.team0.c_str(), in.team1.c_str(), in.sport.c_str(),
+                             static_cast<long long>(in.kickoff_ts_sec));
+                if (++shown >= 16) break;
             }
             diag_mapping_dumped = true;
         }
