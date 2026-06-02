@@ -1241,7 +1241,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         const bool do_unmatched_diag = (!diag_unmatched_dumped && !candidates.empty());
         for (const auto& [cond_id, in] : market_match_inputs_) {
             const auto r = event_matcher_.Match(in, candidates);
-            if (!r.matched && do_unmatched_diag && unmatched_shown < 12) {
+            if (!r.matched && do_unmatched_diag && unmatched_shown < 40) {
                 double best = -1.0;
                 std::string bh, ba;
                 for (const auto& c : candidates) {
@@ -1253,10 +1253,17 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                     const double s = std::max(d, x);
                     if (s > best) { best = s; bh = c.home; ba = c.away; }
                 }
+                // 标注 kickoff 状态: 在打(kickoff<now) vs 赛前(future) —— 区分真 bug vs 物理必然。
+                const std::int64_t now_s = std::chrono::duration_cast<std::chrono::seconds>(
+                                               std::chrono::system_clock::now().time_since_epoch())
+                                               .count();
+                const char* ks = (in.kickoff_ts_sec <= 0)          ? "无ts"
+                                 : (in.kickoff_ts_sec <= now_s)    ? "在打"
+                                                                   : "赛前";
                 std::fprintf(stderr,
-                             "[map-unmatched] '%s' vs '%s' (%s) → 最佳候选 '%s' vs '%s' score=%.2f\n",
-                             in.team0.c_str(), in.team1.c_str(), in.sport.c_str(), bh.c_str(), ba.c_str(),
-                             best);
+                             "[map-unmatched][%s] '%s' vs '%s' (%s) → 最佳候选 '%s' vs '%s' score=%.2f\n",
+                             ks, in.team0.c_str(), in.team1.c_str(), in.sport.c_str(), bh.c_str(),
+                             ba.c_str(), best);
                 ++unmatched_shown;
             }
             if (r.matched) {
