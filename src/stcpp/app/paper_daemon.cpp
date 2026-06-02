@@ -1377,6 +1377,22 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         std::fprintf(stderr, "[paper_daemon] 映射刷新: %zu/%zu market 匹配到 Goalserve event\n", matched,
                      market_match_inputs_.size());
 
+        // [COVERAGE-DIAG] 覆盖率门诊断 (2026-06-03, 老板「是不是名字不匹配」):
+        //   隔离「名字配上 threshold 却被后续门拒」的 market = 可恢复缺口 + 凶手门。
+        //   threshold 拒绝(错选手)不计入 — 那是正常的会淹没信号。
+        {
+            const auto d = event_matcher_.DiagSnapshot();
+            std::fprintf(stderr,
+                         "[cov-diag] calls=%lld matched=%lld | 名字配上=%lld 其中没匹配=%lld "
+                         "(orientation门拒=%lld kickoff门拒=%lld)\n",
+                         static_cast<long long>(d.calls), static_cast<long long>(d.matched),
+                         static_cast<long long>(d.namematch_found),
+                         static_cast<long long>(d.namematch_but_unmatched),
+                         static_cast<long long>(d.rej_orientation),
+                         static_cast<long long>(d.rej_kickoff));
+            event_matcher_.DiagReset();  // 每周期清零, 看 per-cycle
+        }
+
         // 4. 间隔 sleep (响应 stop_token; 不 spinlock)
         const auto deadline = steady_clock::now() + seconds(cfg_.mapping_refresh_sec);
         while (steady_clock::now() < deadline) {

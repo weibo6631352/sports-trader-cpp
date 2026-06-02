@@ -28,6 +28,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -82,8 +83,44 @@ public:
     // overlap 系数: |A∩B| / min(|A|,|B|). 任一空 → 0.
     [[nodiscard]] static double TeamSimilarity(const std::string& a, const std::string& b);
 
+    // ---- 覆盖率诊断 (2026-06-03, 老板「覆盖率低是不是名字不匹配」) ----
+    // 只统计【名字过了 threshold 却被后续门拒掉】的 market = 可恢复缺口 + 凶手门。
+    //   threshold 拒绝(错选手)不计 — 那是正常的, 会淹没信号。
+    struct Diag {
+        std::int64_t calls{0};                   // Match 调用总数 (= 跑匹配的 market 数)
+        std::int64_t matched{0};                 // 成功匹配
+        std::int64_t namematch_found{0};          // ≥1 候选过了 threshold (名字配上了)
+        std::int64_t namematch_but_unmatched{0};  // 名字配上却最终没匹配 (被门拒) ← 核心
+        std::int64_t rej_orientation{0};          // (仅未匹配 market) 名字候选被 orientation 门拒次数
+        std::int64_t rej_kickoff{0};              // (仅未匹配 market) 名字候选被 kickoff 门拒次数
+    };
+    [[nodiscard]] Diag DiagSnapshot() const noexcept {
+        return {diag_calls_.load(std::memory_order_relaxed),
+                diag_matched_.load(std::memory_order_relaxed),
+                diag_namematch_found_.load(std::memory_order_relaxed),
+                diag_namematch_but_unmatched_.load(std::memory_order_relaxed),
+                diag_rej_orientation_.load(std::memory_order_relaxed),
+                diag_rej_kickoff_.load(std::memory_order_relaxed)};
+    }
+    void DiagReset() const noexcept {
+        diag_calls_.store(0, std::memory_order_relaxed);
+        diag_matched_.store(0, std::memory_order_relaxed);
+        diag_namematch_found_.store(0, std::memory_order_relaxed);
+        diag_namematch_but_unmatched_.store(0, std::memory_order_relaxed);
+        diag_rej_orientation_.store(0, std::memory_order_relaxed);
+        diag_rej_kickoff_.store(0, std::memory_order_relaxed);
+    }
+
 private:
     Config cfg_{};
+
+    // 诊断计数器 (mutable: Match 是 const; relaxed atomic, 非热路径精度无碍)
+    mutable std::atomic<std::int64_t> diag_calls_{0};
+    mutable std::atomic<std::int64_t> diag_matched_{0};
+    mutable std::atomic<std::int64_t> diag_namematch_found_{0};
+    mutable std::atomic<std::int64_t> diag_namematch_but_unmatched_{0};
+    mutable std::atomic<std::int64_t> diag_rej_orientation_{0};
+    mutable std::atomic<std::int64_t> diag_rej_kickoff_{0};
 };
 
 }  // namespace stcpp::app

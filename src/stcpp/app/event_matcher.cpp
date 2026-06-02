@@ -161,6 +161,11 @@ EventMatchResult EventMatcher::Match(const EventMatchInput& in,
         return best;  // market 队名缺失 → 无法锚定
     }
 
+    // 覆盖率诊断 (本次 Match 局部): 名字是否配上 + 名字候选被哪道门拒。
+    bool any_namematch = false;
+    int rej_orient_here = 0;
+    int rej_kick_here = 0;
+
     for (const auto& ev : candidates) {
         if (ev.home.empty() || ev.away.empty()) {
             continue;
@@ -183,12 +188,14 @@ EventMatchResult EventMatcher::Match(const EventMatchInput& in,
         if (team_min < cfg_.team_sim_threshold) {
             continue;
         }
+        any_namematch = true;  // 名字配上了 (过 threshold); 下面若被拒 = 可恢复缺口
 
         // 合格门 1.5 (P2-1, 老郭审查): orientation fail-closed —— 直配/交叉两种分配都过门
         //   且分数接近时, yes_is_home 靠 >= 任意拍一边 = 比分方向可能接反 = 镜像 fair =
         //   系统性反向下单。此时 orientation 模糊, 宁可不匹配 (fail-closed), 不交易该盘。
         if (direct_min >= cfg_.team_sim_threshold && cross_min >= cfg_.team_sim_threshold &&
             std::abs(direct_min - cross_min) < cfg_.orientation_margin) {
+            ++rej_orient_here;
             continue;  // orientation 模糊 → fail-closed (防反向下单)
         }
 
@@ -196,6 +203,7 @@ EventMatchResult EventMatcher::Match(const EventMatchInput& in,
         if (in.kickoff_ts_sec > 0 && ev.kickoff_ts_sec > 0) {
             const std::int64_t diff = std::llabs(in.kickoff_ts_sec - ev.kickoff_ts_sec);
             if (diff > cfg_.kickoff_window_sec) {
+                ++rej_kick_here;
                 continue;
             }
         }
@@ -207,6 +215,20 @@ EventMatchResult EventMatcher::Match(const EventMatchInput& in,
             best.team_score = team_sum;
             // orientation: 直配胜出 → YES(team0)=home; 交叉胜出 → YES=away.
             best.yes_is_home = (direct_min >= cross_min);
+        }
+    }
+
+    // 诊断累计 (relaxed; 只在「名字配上却没匹配」时记凶手门, 隔离可恢复缺口)。
+    diag_calls_.fetch_add(1, std::memory_order_relaxed);
+    if (best.matched) {
+        diag_matched_.fetch_add(1, std::memory_order_relaxed);
+    }
+    if (any_namematch) {
+        diag_namematch_found_.fetch_add(1, std::memory_order_relaxed);
+        if (!best.matched) {
+            diag_namematch_but_unmatched_.fetch_add(1, std::memory_order_relaxed);
+            diag_rej_orientation_.fetch_add(rej_orient_here, std::memory_order_relaxed);
+            diag_rej_kickoff_.fetch_add(rej_kick_here, std::memory_order_relaxed);
         }
     }
 
