@@ -125,6 +125,11 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
     using debug_api::TokenInfo;
 
     for (const auto& ev : discovered) {
+        // 结束赛事黑名单: 直播 final 后拉黑, 即便 gamma 仍列(等结算)也不再订阅 (老板「拉黑不再重订」)。
+        {
+            std::lock_guard<std::mutex> lk(ended_blacklist_mu_);
+            if (!ev.event_id.empty() && ended_event_blacklist_.count(ev.event_id)) continue;
+        }
         std::printf("[paper_daemon]  event: %.40s | slug=%.30s | sport=%s\n", ev.title.c_str(),
                     ev.slug.c_str(), ev.sport.c_str());
 
@@ -351,7 +356,7 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
             ++n_add;
             added_tokens.push_back(t);
         }
-        // 移除 token (比赛结束/下架) → operation:unsubscribe (单盘停推, 不动其他盘, 无重连)
+        // 移除 token (比赛结束/下架/拉黑) → operation:unsubscribe (单盘停推) + 释放 hub 书槽 (老板「释放资源」)。
         std::string del_body;
         std::size_t n_del = 0;
         for (const auto& t : old_tokens) {
@@ -361,6 +366,7 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
             del_body.append(t);
             del_body.push_back('"');
             ++n_del;
+            if (hub_) hub_->ResetToken(t);  // 释放该 token 的 book 槽 (退订赛事不再占 hub 资源)
         }
         if (n_add) {
             live_transport_->AsyncSendText(R"({"assets_ids":[)" + add_body + R"(],"operation":"subscribe"})");
@@ -1213,6 +1219,9 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                                                 .count();
         auto new_map = std::make_shared<paper::ConditionEventMap>();
         std::size_t matched = 0;
+        // 结束检测: Goalserve 比分 status=final 的候选 (match_id → final) → 该赛事直播结束。
+        std::unordered_map<std::string, bool> final_by_match_id;
+        for (const auto& c : candidates) final_by_match_id[c.event_id] = (c.status == "final");
         // [DIAG] 候选 Goalserve event + PM 待匹配 market 并排 (定位 0 匹配根因: 空候选/名不符/sport/kickoff).
         //   改: 候选非空时才 dump (避开启动 feed 未拉到的首轮空窗), 候选名 + 市场名并排各 16 条。
         static bool diag_mapping_dumped = false;
@@ -1274,6 +1283,17 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                 ++unmatched_shown;
             }
             if (r.matched) {
+                // 结束→拉黑 (老板): 匹配的 Goalserve 赛事 status=final → 直播结束, 把该盘的 PM event_id
+                //   入黑名单, 下轮 RediscoverOnce 退订其 token + 释放 hub, 且不再重订 (即便 gamma 仍列)。
+                auto fit = final_by_match_id.find(r.inplay_match_id);
+                if (fit != final_by_match_id.end() && fit->second) {
+                    const auto cit = market_catalog_.find(cond_id);
+                    if (cit != market_catalog_.end() && !cit->second.event_id.empty()) {
+                        std::lock_guard<std::mutex> lk(ended_blacklist_mu_);
+                        if (ended_event_blacklist_.size() > kBlacklistCap) ended_event_blacklist_.clear();
+                        ended_event_blacklist_.insert(cit->second.event_id);
+                    }
+                }
                 paper::EventMapEntry entry;
                 entry.inplay_match_id = r.inplay_match_id;
                 entry.yes_is_home = r.yes_is_home;

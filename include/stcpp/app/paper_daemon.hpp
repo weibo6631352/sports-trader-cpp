@@ -330,6 +330,14 @@ private:
     std::vector<debug_api::EventInfo> event_infos_;
     std::vector<std::string> all_token_ids_;
 
+    // 结束赛事黑名单 (2026-06-02 老板「直播结束应及时退订+拉黑不再订阅」):
+    //   赛事 Goalserve 比分=final → 加 event_id 黑名单; PopulateCatalog 跳过 → 下轮 RediscoverOnce
+    //   退订其 token + 释放 hub 书槽, 且 gamma 仍列(等结算)也不再重订。映射线程写, PopulateCatalog
+    //   (同线程)读; 加锁防 settlement 线程并发。超 kBlacklistCap 清空(防无界; 已结算盘 gamma 终会下架)。
+    mutable std::mutex ended_blacklist_mu_;
+    std::unordered_set<std::string> ended_event_blacklist_;
+    static constexpr std::size_t kBlacklistCap = 20000;
+
     // A1 (2026-06-02): token 集快照 — 消 all_token_ids_ 的 data race (OnConnected io_thread 读 /
     //   RediscoverOnce 映射线程写)。mutex 守护的 shared_ptr<const vector> COW (atomic<shared_ptr>
     //   非全平台可用)。写方 PopulateCatalog 后 PublishTokenSnapshot(); 读方 (OnConnected/seed)
