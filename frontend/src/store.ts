@@ -443,6 +443,11 @@ function startFallbackPolling(): void {
   // 展开行全档 detail: SSE 活时由 book/quote 通道推, 不轮询 (评审: 防双源写 conditionCache);
   //   仅回退时 2s 轮询 (与 SSE 互斥, 不并存)。
   _fallbackTimers.push(every(() => { void refreshExpandedDetail(); }, 2000));
+  // Ops/慢通道: SSE 活时由 healthz/features/mapping/timeseries 通道推; 仅回退时轮询。
+  _fallbackTimers.push(every(() => { void refreshSparkline(); }, 15000));
+  _fallbackTimers.push(every(() => { void refreshFeatureHealth(); }, 20000));
+  _fallbackTimers.push(every(() => { void refreshMappingStatus(); }, 10000));
+  _fallbackTimers.push(every(() => { void refreshHealthz(); }, 10000));
 }
 
 function stopFallbackPolling(): void {
@@ -542,6 +547,11 @@ function connectSSE(): void {
     }));
     rebuildGroups();
   });
+  // Ops/慢通道 (healthz/features/mapping/timeseries) — SSE 推, 取代常驻轮询
+  on('healthz', (d) => { if (d) setState({ healthz: d as Healthz }); });
+  on('features', (d) => { if (d) setState({ featureHealth: d as FeatureHealth }); });
+  on('mapping', (d) => { if (d) setState({ mappingStatus: d as MappingStatus }); });
+  on('timeseries', (d) => { setState({ timeseries: (d as PnlTimeseries) ?? null }); });
   // heartbeat: 仅保活, 无需处理 (收到即证明连接活着)
 
   es.onerror = () => {
@@ -561,13 +571,11 @@ export function initPolling(): void {
   //   失败自动回退到 fast 轮询 (startFallbackPolling)。
   connectSSE();
 
-  // 始终走 REST 的常驻轮询 (SSE 不承载这些): Ops 页 + 净值曲线 + healthz。
-  //   展开行全档 detail 已移出: SSE 活时走 book/quote 通道, 回退时由 startFallbackPolling 轮询。
-  //   (展开瞬间的首屏即时拉仍由 addDetailInterest 的优先级 REST 提供。)
-  every(() => { void refreshSparkline(); }, 15000);       // 净值曲线 (timeseries)
-  every(() => { void refreshMetrics(); }, 30000);         // Ops 页 Prometheus
-  every(() => { void refreshMarketInfoSlow(); }, 60000);  // market 元数据
-  every(() => { void refreshFeatureHealth(); }, 20000);   // Ops: 特征健康
-  every(() => { void refreshMappingStatus(); }, 10000);   // Ops: 映射状态
-  every(() => { void refreshHealthz(); }, 10000);         // healthz (SSE status 通道不含)
+  // 仅剩 2 个常驻 REST (SSE 不承载):
+  //   - metrics: Prometheus 文本, 本就要被 Prometheus 抓取, 留 REST (移 SSE 反要双份);
+  //   - marketInfoSlow: 已缓存盘口的 market 元数据慢刷 (非通道数据)。
+  // 其余全走 SSE (status/account/grid/scores/events/positions/pnl/gate/rejects/book/quote/
+  //   healthz/features/mapping/timeseries); SSE 死时由 startFallbackPolling 兜底。
+  every(() => { void refreshMetrics(); }, 30000);
+  every(() => { void refreshMarketInfoSlow(); }, 60000);
 }

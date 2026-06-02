@@ -68,48 +68,12 @@ static std::int64_t query_i64(const httplib::Request& req, const char* key, std:
 }
 
 static void register_timeseries(httplib::Server& svr, const HttpServer& hs) {
+    // body 由 payload::pnl_timeseries 构建 (与 SSE /stream timeseries 通道单一数据源)
     svr.Get("/api/v1/pnl/timeseries", [&hs](const httplib::Request& req, httplib::Response& res) {
-        const StateProvider& sp = hs.provider();
         const std::int64_t window = query_i64(req, "window", 3600);
         const std::int64_t bucket = query_i64(req, "bucket", 60);
-        const std::vector<PnlBucket> buckets = sp.pnl_timeseries(window, bucket);
-        const std::int64_t as_of = now_epoch_ns();
-
-        std::string body;
-        body.reserve(256 + buckets.size() * 192);
-        body += "{\"mode\":";
-        body += json::str(exec_mode_str(sp.mode()));
-        body += ",\"window_sec\":";
-        body += json::i64(window);
-        body += ",\"bucket_sec\":";
-        body += json::i64(bucket);
-        body += ",\"as_of_ts\":";
-        body += json::i64(as_of);
-        body += ",\"buckets\":[";
-        for (std::size_t i = 0; i < buckets.size(); ++i) {
-            const PnlBucket& b = buckets[i];
-            if (i) {
-                body += ',';
-            }
-            body += "{\"bucket_start_ts\":";
-            body += json::i64(b.bucket_start_ts_ns);
-            body += ",\"cum_net_pnl\":";
-            body += json::num(b.cum_net_pnl);
-            body += ",\"realized\":";
-            body += json::num(b.realized);
-            body += ",\"unrealized\":";
-            body += json::num(b.unrealized);
-            body += ",\"fee\":";
-            body += json::num(b.fee);
-            body += ",\"gas\":";
-            body += json::num(b.gas);
-            body += ",\"n_trades\":";
-            body += json::i64(b.n_trades);
-            body += '}';
-        }
-        body += "]}";
-
-        res.set_content(body, "application/json; charset=utf-8");
+        res.set_content(payload::pnl_timeseries(hs.provider(), window, bucket, now_epoch_ns()),
+                        "application/json; charset=utf-8");
         res.status = 200;
     });
 }

@@ -38,6 +38,9 @@ constexpr int kMaxSseClients = 8;
 constexpr int kTickMs = 1000;
 constexpr int kHeartbeatTicks = 10;  // 10s
 constexpr int kKeyframeTicks = 30;   // 30s
+constexpr int kSlowTicks = 5;        // Ops/慢通道(healthz/features/mapping/timeseries)每 5s 才比对一次
+constexpr std::int64_t kTsWindowSec = 3600;  // timeseries 默认窗口 (= 前端 sparkline '1h')
+constexpr std::int64_t kTsBucketSec = 60;    // timeseries 默认桶 (= '1m')
 constexpr std::size_t kMaxFocus = 32;            // 每连接 focus 盘口上限 (评审: 两侧夹)
 constexpr std::size_t kMaxFrameBytes = 64 * 1024;  // 单帧上限 (评审: 防大帧撞 write_timeout)
 
@@ -189,8 +192,12 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                     hello += "{\"name\":\"pnl\",\"delta\":\"snapshot\"},";
                     hello += "{\"name\":\"gate\",\"delta\":\"snapshot\"},";
                     hello += "{\"name\":\"rejects\",\"delta\":\"full\"},";
-                    hello += "{\"name\":\"book\",\"delta\":\"snapshot\"},";   // focus 订阅: 全档深度
-                    hello += "{\"name\":\"quote\",\"delta\":\"snapshot\"}]}";  // focus 订阅: 全 quote
+                    hello += "{\"name\":\"book\",\"delta\":\"snapshot\"},";    // focus 订阅: 全档深度
+                    hello += "{\"name\":\"quote\",\"delta\":\"snapshot\"},";   // focus 订阅: 全 quote
+                    hello += "{\"name\":\"healthz\",\"delta\":\"snapshot\"},";
+                    hello += "{\"name\":\"features\",\"delta\":\"snapshot\"},";
+                    hello += "{\"name\":\"mapping\",\"delta\":\"snapshot\"},";
+                    hello += "{\"name\":\"timeseries\",\"delta\":\"snapshot\"}]}";
                     if (!send_frame(sink, "hello", "snapshot", hello)) return true;
                 }
 
@@ -229,6 +236,16 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                 // focus 订阅的全档 book/quote on-change 基线 (cid → 序列化串)
                 std::unordered_map<std::string, std::string> last_book;
                 std::unordered_map<std::string, std::string> last_quote;
+
+                // Ops/慢通道初始 snapshot + 基线 (healthz/features/mapping/timeseries; 每 kSlowTicks 比对)
+                std::string last_healthz = payload::healthz(hs);
+                std::string last_features = payload::features_health(sp);
+                std::string last_mapping = payload::mapping_status(sp);
+                std::string last_ts = payload::pnl_timeseries(sp, kTsWindowSec, kTsBucketSec);
+                if (!send_frame(sink, "healthz", "snapshot", last_healthz)) return true;
+                if (!send_frame(sink, "features", "snapshot", last_features)) return true;
+                if (!send_frame(sink, "mapping", "snapshot", last_mapping)) return true;
+                if (!send_frame(sink, "timeseries", "snapshot", last_ts)) return true;
 
                 // 3. tick 循环
                 int tick = 0;
@@ -350,6 +367,15 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                             it = (focus_now.count(it->first) ? std::next(it) : last_book.erase(it));
                         for (auto it = last_quote.begin(); it != last_quote.end();)
                             it = (focus_now.count(it->first) ? std::next(it) : last_quote.erase(it));
+                    }
+
+                    // --- Ops/慢通道: 每 kSlowTicks 比对一次 (大 payload, 变化慢; 节流控 CPU) ---
+                    if (keyframe || (tick % kSlowTicks == 0)) {
+                        if (!push_if_changed("healthz", "snapshot", last_healthz, payload::healthz(hs))) return true;
+                        if (!push_if_changed("features", "snapshot", last_features, payload::features_health(sp))) return true;
+                        if (!push_if_changed("mapping", "snapshot", last_mapping, payload::mapping_status(sp))) return true;
+                        if (!push_if_changed("timeseries", "snapshot", last_ts,
+                                             payload::pnl_timeseries(sp, kTsWindowSec, kTsBucketSec))) return true;
                     }
 
                     // --- heartbeat: 距上次发帧 ≥ kHeartbeatTicks 则发 ---

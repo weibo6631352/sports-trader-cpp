@@ -546,4 +546,159 @@ inline std::string quote(const StateProvider& sp, const std::string& condition_i
     return b;
 }
 
+// ---- healthz (= GET /healthz) ----
+inline std::string healthz(const HttpServer& hs, std::int64_t as_of_ns = -1) {
+    const std::int64_t uptime = static_cast<std::int64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - hs.start_time()).count());
+    std::string b = R"({"ok":true,"threads":{"ingest_reactor":"alive","signal_engine":"alive",)"
+                    R"("risk_manager":"alive","paper_signer":"alive","api_server":"alive"},"uptime_sec":)";
+    b += json::i64(uptime);
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
+    b += '}';
+    return b;
+}
+
+// ---- features/health (= GET /api/v1/features/health) ----
+inline std::string features_health(const StateProvider& sp, std::int64_t as_of_ns = -1) {
+    const FeatureHealthReport rep = sp.feature_health();
+    std::string b;
+    b.reserve(8192);
+    b += "{\"mode\":";
+    b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
+    b += ",\"n_records\":";
+    b += json::i64(rep.n_records);
+    b += ",\"dead\":";
+    b += json::i64(rep.dead);
+    b += ",\"const\":";
+    b += json::i64(rep.constant);
+    b += ",\"healthy\":";
+    b += json::i64(rep.healthy);
+    b += ",\"total\":";
+    b += json::i64(static_cast<std::int64_t>(rep.rows.size()));
+    b += ",\"rows\":[";
+    bool first = true;
+    for (const auto& r : rep.rows) {
+        if (!first) b += ',';
+        first = false;
+        b += "{\"i\":";
+        b += json::i64(r.index);
+        b += ",\"name\":";
+        b += json::str(r.name);
+        b += ",\"populated\":";
+        b += json::i64(r.populated);
+        b += ",\"nonzero\":";
+        b += json::i64(r.nonzero);
+        b += ",\"min\":";
+        b += json::num(r.min);
+        b += ",\"max\":";
+        b += json::num(r.max);
+        b += ",\"mean\":";
+        b += json::num(r.mean);
+        b += ",\"status\":";
+        b += json::str(r.status);
+        b += '}';
+    }
+    b += "]}";
+    return b;
+}
+
+// ---- mapping/status (= GET /api/v1/mapping/status) ----
+inline std::string mapping_status(const StateProvider& sp, std::int64_t as_of_ns = -1) {
+    const MappingStatusReport rep = sp.mapping_status();
+    std::string b;
+    b.reserve(4096);
+    b += "{\"mode\":";
+    b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
+    b += ",\"total_markets\":";
+    b += json::i64(rep.total_markets);
+    b += ",\"matched\":";
+    b += json::i64(rep.matched);
+    b += ",\"live_games\":";
+    b += json::i64(rep.live_games);
+    b += ",\"markets\":[";
+    bool first = true;
+    for (const auto& r : rep.markets) {
+        if (!first) b += ',';
+        first = false;
+        b += "{\"condition_id\":";
+        b += json::str(r.condition_id);
+        b += ",\"team0\":";
+        b += json::str(r.team0);
+        b += ",\"team1\":";
+        b += json::str(r.team1);
+        b += ",\"is_draw\":";
+        b += json::boolean(r.is_draw);
+        b += ",\"matched\":";
+        b += json::boolean(r.matched);
+        b += ",\"inplay_match_id\":";
+        b += json::str(r.inplay_match_id);
+        b += ",\"match_confidence\":";
+        b += json::num(r.match_confidence);
+        b += '}';
+    }
+    b += "],\"games\":[";
+    first = true;
+    for (const auto& g : rep.games) {
+        if (!first) b += ',';
+        first = false;
+        b += "{\"event_id\":";
+        b += json::str(g.event_id);
+        b += ",\"home\":";
+        b += json::str(g.home);
+        b += ",\"away\":";
+        b += json::str(g.away);
+        b += ",\"sport\":";
+        b += json::str(g.sport);
+        b += ",\"status\":";
+        b += json::str(g.status);
+        b += ",\"home_score\":";
+        b += json::i64(g.home_score);
+        b += ",\"away_score\":";
+        b += json::i64(g.away_score);
+        b += '}';
+    }
+    b += "]}";
+    return b;
+}
+
+// ---- pnl/timeseries (= GET /api/v1/pnl/timeseries) ----
+inline std::string pnl_timeseries(const StateProvider& sp, std::int64_t window_sec,
+                                  std::int64_t bucket_sec, std::int64_t as_of_ns = -1) {
+    const std::vector<PnlBucket> buckets = sp.pnl_timeseries(window_sec, bucket_sec);
+    std::string b;
+    b.reserve(256 + buckets.size() * 192);
+    b += "{\"mode\":";
+    b += json::str(exec_mode_str(sp.mode()));
+    b += ",\"window_sec\":";
+    b += json::i64(window_sec);
+    b += ",\"bucket_sec\":";
+    b += json::i64(bucket_sec);
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
+    b += ",\"buckets\":[";
+    for (std::size_t i = 0; i < buckets.size(); ++i) {
+        const PnlBucket& bk = buckets[i];
+        if (i) b += ',';
+        b += "{\"bucket_start_ts\":";
+        b += json::i64(bk.bucket_start_ts_ns);
+        b += ",\"cum_net_pnl\":";
+        b += json::num(bk.cum_net_pnl);
+        b += ",\"realized\":";
+        b += json::num(bk.realized);
+        b += ",\"unrealized\":";
+        b += json::num(bk.unrealized);
+        b += ",\"fee\":";
+        b += json::num(bk.fee);
+        b += ",\"gas\":";
+        b += json::num(bk.gas);
+        b += ",\"n_trades\":";
+        b += json::i64(bk.n_trades);
+        b += '}';
+    }
+    b += "]}";
+    return b;
+}
+
 }  // namespace stcpp::debug_api::payload

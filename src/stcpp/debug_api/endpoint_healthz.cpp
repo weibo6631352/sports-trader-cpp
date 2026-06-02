@@ -23,56 +23,17 @@
 // Content-Type: application/json; charset=utf-8
 // HTTP status: 200 OK
 
+#include "src/stcpp/debug_api/endpoint_common.hpp"
+#include "src/stcpp/debug_api/endpoint_payloads.hpp"
 #include "src/stcpp/debug_api/server.hpp"
-
-#include <chrono>
-#include <cstdint>
-#include <string>
 
 namespace stcpp::debug_api {
 
-// as_of_ts: system_clock epoch nanoseconds (R-20 语义: debug endpoint 读取快照的本地时刻)
-static int64_t now_epoch_ns() noexcept
-{
-    using namespace std::chrono;
-    return static_cast<int64_t>(
-        duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count()
-    );
-}
-
-// uptime_sec: 从 start_time (steady_clock) 到 now
-static int64_t uptime_sec(std::chrono::steady_clock::time_point start) noexcept
-{
-    using namespace std::chrono;
-    return static_cast<int64_t>(
-        duration_cast<seconds>(steady_clock::now() - start).count()
-    );
-}
-
 void register_healthz(httplib::Server& svr, const HttpServer& hs)
 {
+    // body 由 payload::healthz 构建 (与 SSE /stream healthz 通道单一数据源)
     svr.Get("/healthz", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
-        // W9 W2 stub: 所有 thread heartbeat = "alive"
-        // W10+ 接 watchdog atomic bool per-thread
-        const int64_t ts     = now_epoch_ns();
-        const int64_t uptime = uptime_sec(hs.start_time());
-
-        // 手拼 JSON (MVP; non-hot-path, 性能不敏感)
-        std::string body;
-        body.reserve(256);
-        body += R"({"ok":true,"threads":{)";
-        body += R"("ingest_reactor":"alive",)";
-        body += R"("signal_engine":"alive",)";
-        body += R"("risk_manager":"alive",)";
-        body += R"("paper_signer":"alive",)";
-        body += R"("api_server":"alive")";
-        body += R"(},"uptime_sec":)";
-        body += std::to_string(uptime);
-        body += R"(,"as_of_ts":)";
-        body += std::to_string(ts);
-        body += '}';
-
-        res.set_content(body, "application/json; charset=utf-8");
+        res.set_content(payload::healthz(hs, now_epoch_ns()), "application/json; charset=utf-8");
         res.status = 200;
     });
 }
