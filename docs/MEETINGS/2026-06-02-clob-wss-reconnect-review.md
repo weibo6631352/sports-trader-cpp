@@ -4,7 +4,14 @@
 **last_review:** 2026-06-02
 **召集:** 老板(发现 clob WSS 断了)→ 指示"开会讨论, 不要直接做"
 **参与:** 老王(网络/WSS)/ 老郭(架构)/ 老李(Polymarket 协议)。**风控不参与**([[no-risk-review-for-frontend]])。
-**结论:** 真因极可能是**缺客户端心跳 → 服务端 idle 超时踢连**;且**断开后无重连**(回调只打印)。修法三方共识: **复用 PolymarketCLOBSubscriber 的心跳+重连编排**(已实现), transport 仍用 LiveWssTransport, 配套堵 4 个 P0 缺口。**待老板拍板后再实施。**
+**结论:** 真因极可能是**缺客户端心跳 → 服务端 idle 超时踢连**;且**断开后无重连**(回调只打印)。
+
+**✅ 已实施上线(2026-06-02, 老板拍板"按计划做"):** 采"最小止血 + 健壮性补强"路径(非 A3 大迁移):
+- 心跳+重连看门狗(`WssWatchdogLoop`, ef6a886)— 实测 clob 扛过 16+ 分钟一次没掉(原 ~10min 必死), 心跳治真因确认有效。
+- 增量订阅 operation:subscribe/unsubscribe(c277c8e)— 取代"全量重订"; operation 帧需市场变化时观察日志确认生效。
+- A1 token RCU 消 race + A2 半死连接检测(frames_received 停滞→Close) + A4 重连 metric(519d4a2)。
+- A3(迁移 PolymarketCLOBSubscriber)**取代不做**: 上述补强后简单 transport 已健壮。
+详见 [[clob-wss-heartbeat-reconnect]] memory + 各 commit。
 
 ---
 
