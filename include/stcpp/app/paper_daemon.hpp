@@ -303,6 +303,10 @@ private:
     //   paper_loop_->SetLiveStatsByTeams() (喂 5 个 g_*_diff 特征)。
     void RefreshLiveStats(std::stop_token st);
 
+    // bm_slots 刷新线程: 周期 popen curl getodds (跨庄家赔率) + inplay-mapping (pregame↔inplay id),
+    //   join → OddsMap[inplay_match_id] → paper_loop_->SetOddsByMatchId() (喂 g_bm_* 特征 #5/6/7/16)。
+    void RefreshOdds(std::stop_token st);
+
     // [2026-06-01 老板「边训边跑边更新模型可重新加载」] 模型热重载线程: 周期 stat onnx_model_path mtime,
     //   变了 → make_onnx 加载新模型 → 校验 (ready + feat 数) → paper_loop_->SetMlModelShared 原子换上不停盘。
     //   加载/校验失败 → 保留旧模型 (fail-safe)。onnx_model_path 空 / interval=0 → 不启线程。
@@ -367,6 +371,7 @@ private:
     std::jthread mapping_refresh_thread_;
     std::jthread settlement_refresh_thread_;  // M2 结算刷新 (SettlementStore → SetResolutionByCondition)
     std::jthread live_stats_refresh_thread_;  // live_stats 刷新 (LiveStatsStore → SetLiveStatsByTeams)
+    std::jthread odds_refresh_thread_;        // bm_slots 刷新 (getodds + inplay-mapping → SetOddsByMatchId)
     std::jthread model_reload_thread_;        // 模型热重载 watcher (onnx mtime 变 → SetMlModelShared 原子换)
     std::jthread auto_train_thread_;          // 进程内自动训练编排 (周期 join + spawn Python 训练 → 产新模型)
     std::jthread disk_prune_thread_;          // 采集数据磁盘守护 (>阈值 → 截最老数据)

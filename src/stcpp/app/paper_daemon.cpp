@@ -954,6 +954,13 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
+    // ---- bm_slots start: 跨庄家赔率刷新线程 (getodds + inplay-mapping → g_bm_* 特征 #5/6/7/16) ----
+    if (cfg_.start_live_feeds && cfg_.enable_paper_trading && paper_loop_) {
+        odds_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshOdds(st); });
+        std::printf("[paper_daemon] bm_slots 赔率刷新线程启动 (getodds + inplay-mapping 90s 轮询)\n");
+        std::fflush(stdout);
+    }
+
     // ---- Step 4 start: WSS AsyncConnect ----
     if (cfg_.start_live_feeds && live_transport_) {
         const std::string wss_url = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
@@ -1440,6 +1447,107 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
             if (st.stop_requested()) return;
             std::this_thread::sleep_for(milliseconds(100));
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RefreshOdds — bm_slots 跨庄家赔率刷新 (特征审计 #5/6/7/16; 2026-06-02)。
+//   周期 popen curl getodds (HTTPS, HTTP 500 但 body 有效) + inplay-mapping (pregame↔inplay id),
+//   join → OddsMap[inplay_match_id] → paper_loop_->SetOddsByMatchId()。
+//   R-12: 独立 jthread, popen 阻塞 IO 在本线程, 不进 WSS event loop。key 在 URL → https+proxy 保护。
+//   cat/slug 来自 enum (无注入)。getodds 覆盖 in-play (Agent C 实测); 无 mapping 的盘 (非直播) 跳过。
+// ---------------------------------------------------------------------------
+void PaperDaemon::RefreshOdds(std::stop_token st) {
+    using namespace std::chrono;
+    namespace gs = data::goalserve;
+    const char* gs_key_env = std::getenv("GOALSERVE_API_KEY");
+    const std::string gs_key = gs_key_env ? gs_key_env : "";
+    const char* gs_proxy_env = std::getenv("GOALSERVE_PROXY");
+    const std::string gs_proxy = gs_proxy_env ? gs_proxy_env : "";
+    // bm_slots 覆盖运动 (有 getodds cat + inplay-mapping slug; esports 无 odds dict → 跳过)
+    static constexpr gs::GoalserveSport kOddsSports[] = {
+        gs::GoalserveSport::Soccer,   gs::GoalserveSport::Basketball,       gs::GoalserveSport::Tennis,
+        gs::GoalserveSport::Baseball, gs::GoalserveSport::AmericanFootball, gs::GoalserveSport::Hockey,
+    };
+    auto fetch = [&gs_proxy](const std::string& url) -> std::string {
+        std::string cmd = "curl -s --max-time 20 ";
+        if (!gs_proxy.empty()) {
+            cmd += "-x '";
+            cmd += gs_proxy;
+            cmd += "' ";
+        }
+        cmd += "'";
+        cmd += url;
+        cmd += "'";
+        std::string out;
+        if (FILE* p = ::popen(cmd.c_str(), "r")) {
+            char buf[8192];
+            std::size_t n;
+            while ((n = std::fread(buf, 1, sizeof(buf), p)) > 0)
+                out.append(buf, n);
+            ::pclose(p);
+        }
+        return out;
+    };
+    auto interruptible_sleep = [&st](milliseconds dur) -> bool {
+        const auto deadline = steady_clock::now() + dur;
+        while (steady_clock::now() < deadline) {
+            if (st.stop_requested())
+                return false;
+            std::this_thread::sleep_for(milliseconds(100));
+        }
+        return true;
+    };
+
+    while (!st.stop_requested()) {
+        if (!gs_key.empty() && paper_loop_ != nullptr) {
+            data::OddsMap merged;
+            std::size_t sports_with_odds = 0;
+            for (const gs::GoalserveSport sp : kOddsSports) {
+                if (st.stop_requested())
+                    return;
+                const std::string cat(gs::SportOddsCat(sp));
+                const std::string slug(gs::SportPregameSlug(sp));
+                if (cat.empty() || slug.empty())
+                    continue;
+                // getodds 路径恒 /getodds/soccer, cat 参数区分运动
+                const std::string odds_xml =
+                    fetch("https://www.goalserve.com/getfeed/" + gs_key + "/getodds/soccer?cat=" + cat +
+                          "_10");
+                const std::int64_t ing_ns = duration_cast<nanoseconds>(
+                                                system_clock::now().time_since_epoch())
+                                                .count();
+                auto matches = gs::ParseGetOddsXml(odds_xml, sp, ing_ns);
+                if (matches.empty()) {
+                    if (!interruptible_sleep(milliseconds(800)))
+                        return;
+                    continue;
+                }
+                // inplay-mapping: pregame_match_id ↔ inplay_match_id
+                const std::string map_xml =
+                    fetch("https://www.goalserve.com/getfeed/" + gs_key + "/" + slug + "/inplay-mapping");
+                std::unordered_map<std::string, std::string> pre2inp;
+                for (auto& [pre, inp] : gs::ParseInplayMappingXml(map_xml))
+                    pre2inp.emplace(std::move(pre), std::move(inp));
+                // join: getodds (pregame match_id) → inplay_match_id (系统 join key)
+                for (auto& mo : matches) {
+                    const auto mit = pre2inp.find(mo.match_id);
+                    if (mit == pre2inp.end())
+                        continue;  // 无 mapping (非直播/未上架) → 跳过 (fail-soft)
+                    merged[mit->second] = std::move(mo);
+                }
+                ++sports_with_odds;
+                if (!interruptible_sleep(milliseconds(800)))  // per-sport 间隔, 压 www 限速
+                    return;
+            }
+            const std::size_t n = merged.size();
+            paper_loop_->SetOddsByMatchId(std::move(merged));
+            if (cfg_.verbose)
+                std::fprintf(stderr, "[odds] bm_slots 刷新: %zu 场跨庄家赔率 (%zu sport 有数据)\n", n,
+                             sports_with_odds);
+        }
+        if (!interruptible_sleep(seconds(90)))  // 赔率变化慢 + getodds 较重 → 90s 周期
+            return;
     }
 }
 

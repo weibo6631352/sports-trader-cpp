@@ -312,4 +312,32 @@ namespace odds_feed_detail {
     return out;
 }
 
+// ---------------------------------------------------------------------------
+// ParseInplayMappingXml — inplay-mapping XML → (pregame_match_id → inplay_match_id)。
+//   桥接 getodds (pregame 空间) ↔ 系统 join key (inplay_match_id)。Agent C 实测格式:
+//   <mappings sport=".."><match pregame_match_id="1030519" inplay_match_id="195604499" .../>
+//   纯函数, fail-soft。
+// ---------------------------------------------------------------------------
+[[nodiscard]] inline std::vector<std::pair<std::string, std::string>> ParseInplayMappingXml(
+    std::string_view xml) {
+    using namespace odds_feed_detail;
+    std::vector<std::pair<std::string, std::string>> out;
+    std::size_t pos = 0;
+    while (true) {
+        const auto ms = xml.find("<match", pos);
+        if (ms == std::string_view::npos)
+            break;
+        const auto me = xml.find('>', ms);
+        if (me == std::string_view::npos)
+            break;
+        const std::string_view hdr = xml.substr(ms, me - ms);
+        pos = me + 1;
+        const std::string_view pre = AttrValue(hdr, "pregame_match_id");
+        const std::string_view inp = AttrValue(hdr, "inplay_match_id");
+        if (!pre.empty() && !inp.empty())
+            out.emplace_back(std::string(pre), std::string(inp));
+    }
+    return out;
+}
+
 }  // namespace stcpp::data::goalserve

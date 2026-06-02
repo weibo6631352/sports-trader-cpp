@@ -71,6 +71,8 @@
 
 #include "stcpp/data/score_snapshot_store.hpp"  // A4: ScoreMap (tick-local 共享比分快照, 消 read-skew)
 #include "stcpp/data/live_stats_store.hpp"      // live_stats 采集 hop: LiveStatsMap/LiveStatsFields join
+#include "stcpp/data/odds_snapshot_store.hpp"   // bm_slots: OddsMap (inplay_match_id→跨庄家赔率)
+#include "stcpp/data/bm_slots_fill.hpp"         // bm_slots: FillBmSlotsYesCanonical (定向 de-vig 填充)
 #include "stcpp/eval/clv_tracker.hpp"            // CLV 测量 harness (成果尺子, 离线评估)
 #include "stcpp/eval/portfolio_metrics.hpp"      // Phase 0 项5: Sharpe/maxDD/VaR (北极星 KPI)
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
@@ -426,6 +428,14 @@ public:
         live_stats_by_teams_ = std::make_shared<const data::livescore::LiveStatsMap>(std::move(m));
     }
 
+    // bm_slots: 注入 inplay_match_id → 跨庄家赔率 (app 层 RefreshOdds 拉 getodds + inplay-mapping
+    //   join → 此处注入)。[R-1] 同 live_stats RCU: 刷新线程运行期写, loop 读。game_row 填充时按
+    //   matched inplay_match_id 查 → FillBmSlotsYesCanonical 定向填 bm_slots → g_bm_* 特征。
+    void SetOddsByMatchId(data::OddsMap m) noexcept {
+        std::lock_guard<std::mutex> lk(odds_mu_);
+        odds_by_match_ = std::make_shared<const data::OddsMap>(std::move(m));
+    }
+
     // [P1 backtest-equivalence 2026-06-01] DecisionInputSnapshot — TickAll 入口冻结的【5 个非 book 决策输入】
     //   聚合引用 (book 第 6 输入走 hub_, 已可经 ReplayDriver 注入 → 不在此)。live: TickAll 读各 store 填;
     //   replay: SetReplayInputs() 注入历史帧 → 闭合红线#3 (回测=实盘当前只覆盖 1/6 输入) 的单一注入点。
@@ -437,6 +447,7 @@ public:
         std::shared_ptr<const PaperCatalog> catalog;              // #6 fee/cat/parent/line 静态元
         std::shared_ptr<const ResolutionMap> resolution;          // #5 REST 结算
         std::shared_ptr<const data::livescore::LiveStatsMap> live_stats;  // #4 g_*_diff 微观
+        std::shared_ptr<const data::OddsMap> odds;  // bm_slots: inplay_match_id→跨庄家赔率 (g_bm_*)
     };
     // 回放注入: 非 nullptr → TickAll 用注入帧替代 store 读 (小蒋 P2 回测 harness 用)。owner = 调用方;
     //   指针生命周期须覆盖 loop 运行期。live 路径恒 nullptr → 行为逐位不变。
@@ -583,6 +594,19 @@ private:
         if (tick_inputs_.live_stats == nullptr) return nullptr;
         auto it = tick_inputs_.live_stats->find(join_key);
         return (it != tick_inputs_.live_stats->end()) ? &it->second : nullptr;
+    }
+    // bm_slots: inplay_match_id → 跨庄家赔率 (RefreshOdds 注入; 查不到 → nullptr)。[R-1] 同 live_stats RCU。
+    mutable std::mutex odds_mu_;
+    std::shared_ptr<const data::OddsMap> odds_by_match_;
+    [[nodiscard]] std::shared_ptr<const data::OddsMap> LoadOdds() const noexcept {
+        std::lock_guard<std::mutex> lk(odds_mu_);
+        return odds_by_match_;
+    }
+    [[nodiscard]] const data::goalserve::MatchResultOdds* OddsFor(
+        const std::string& inplay_match_id) const noexcept {
+        if (tick_inputs_.odds == nullptr) return nullptr;
+        auto it = tick_inputs_.odds->find(inplay_match_id);
+        return (it != tick_inputs_.odds->end()) ? &it->second : nullptr;
     }
     // 步④: ML 推理模型 (非自有; daemon 注入 + 持有)。loop_thread_ 只读。nullptr = baseline only。
     ml::HotSwapHolder<ml::FairValueModel> ml_holder_;    // 步④ fair_value 模型 (热加载: daemon watcher 原子换新 ONNX)

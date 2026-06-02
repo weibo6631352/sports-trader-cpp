@@ -264,6 +264,7 @@ void PaperLoop::TickAll() {
         tick_inputs_.catalog = LoadPaperCatalog();  // RCU 快照: 周期重发现中途 swap, 整 tick 持有同版本
         tick_inputs_.resolution = LoadResolution();   // [R-1] 刷新线程 30s swap, 整 tick 冻结同版本 (消 UB)
         tick_inputs_.live_stats = LoadLiveStats();    // [R-1] 同上
+        tick_inputs_.odds = LoadOdds();               // bm_slots: 跨庄家赔率 (inplay_match_id 键), [R-1] 同上
     }
     if (tick_inputs_.catalog == nullptr) {
         return;  // 未注入 (理论不达; ctor 必置)
@@ -515,6 +516,14 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                         game_row.inplay_bet365_home_fair = inplay_yc.yes_fair;  // YES 边胜率
                         game_row.inplay_bet365_away_fair = inplay_yc.opp_fair;  // 对手边胜率
                         game_row.inplay_bet365_draw_fair = es.inplay_bet365_draw_fair;  // 平局 (与边无关)
+                        // bm_slots: 跨庄家赔率注入 (getodds 经 inplay-mapping join 到 inplay_match_id,
+                        //   RefreshOdds 注入)。按 yes_is_home + map_is_draw 定向 de-vig 折二元 →
+                        //   g_bm_devig_p_yes(#5)/overround(#6)/valid_bm_count(#7)/x_devig_minus_mid(#16)。
+                        //   查不到 → bm_slots 保持默认 (NaN/valid=false), 特征 NaN, 不造假。
+                        if (const auto* mo = OddsFor(it->second.inplay_match_id)) {
+                            stcpp::data::goalserve::FillBmSlotsYesCanonical(
+                                *mo, it->second.yes_is_home, map_is_draw, game_row);
+                        }
                         // live_stats 采集 hop: 按 (league|home|away) exact join commentaries live_stats
                         //   → game_row.soccer_* (→ g_danger_attack_diff/g_shot_on_target_diff/
                         //   g_possession_home/g_red_card_diff/g_corner_diff 特征)。同源 Goalserve 队名一致;
