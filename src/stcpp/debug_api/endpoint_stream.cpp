@@ -62,7 +62,7 @@ bool send_frame(httplib::DataSink& sink, const char* channel, const char* mode,
 }
 
 // 当前 grid 各盘口序列化为 cid → 单盘 JSON 对象串 (供 delta diff)。
-// 与 payload::grid 同字段 (顶档摘要); 这里按 cid 拆开以算增量。
+// 单盘序列化复用 payload::grid_market_obj (与 REST /grid 单一数据源, 不重复)。
 std::vector<std::pair<std::string, std::string>> grid_markets(const StateProvider& sp) {
     std::vector<std::pair<std::string, std::string>> out;
     const std::vector<EventInfo> evs = sp.events();
@@ -70,44 +70,7 @@ std::vector<std::pair<std::string, std::string>> grid_markets(const StateProvide
     for (const auto& ev : evs) {
         for (const auto& cid : ev.condition_ids) {
             if (cid.empty() || !seen.insert(cid).second) continue;
-            const BinaryMarketBookView bv = sp.book_pair(cid);
-            const QuoteParams q = sp.quote_params(cid);
-            std::string o;
-            o.reserve(256);
-            o += "{\"condition_id\":";
-            o += json::str(cid);
-            o += ",\"book_found\":";
-            o += json::boolean(bv.token0.found);
-            if (bv.token0.found) {
-                o += ",\"best_bid\":";
-                o += json::num(bv.token0.best_bid);
-                o += ",\"best_ask\":";
-                o += json::num(bv.token0.best_ask);
-                o += ",\"cross_spread\":";
-                o += json::num(bv.cross_spread);
-                o += ",\"event_ts\":";
-                o += json::i64(bv.token0.ts.event_ts_ns);
-                o += ",\"ingestion_ts\":";
-                o += json::i64(bv.token0.ts.ingestion_ts_ns);
-            }
-            o += ",\"quote_found\":";
-            o += json::boolean(q.found);
-            if (q.found) {
-                o += ",\"fair\":";
-                o += json::num(q.fair_value);
-                o += ",\"market_mid\":";
-                o += json::num(q.market_mid);
-                o += ",\"edge_bps\":";
-                o += json::num(q.edge_bps);
-                o += ",\"sharp_fair\":";
-                o += json::num(q.sharp_fair);
-                o += ",\"model_confidence\":";
-                o += json::num(q.model_confidence);
-                o += ",\"advisory\":";
-                o += json::boolean(q.advisory);
-            }
-            o += '}';
-            out.emplace_back(cid, std::move(o));
+            out.emplace_back(cid, payload::grid_market_obj(sp, cid));
         }
     }
     return out;

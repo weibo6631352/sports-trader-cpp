@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "src/stcpp/debug_api/endpoint_common.hpp"
+#include "src/stcpp/debug_api/endpoint_payloads.hpp"
 #include "src/stcpp/debug_api/json_writer.hpp"
 #include "src/stcpp/debug_api/server.hpp"
 
@@ -114,47 +115,9 @@ static void register_timeseries(httplib::Server& svr, const HttpServer& hs) {
 }
 
 static void register_attribution(httplib::Server& svr, const HttpServer& hs) {
+    // body 由 payload::pnl_attribution 构建 (与 SSE /stream pnl 通道单一数据源)
     svr.Get("/api/v1/pnl/attribution", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
-        const StateProvider& sp = hs.provider();
-        const PnlAttribution a = sp.pnl_attribution();
-        const std::int64_t as_of = now_epoch_ns();
-
-        std::string body;
-        body.reserve(256);
-        body += "{\"mode\":";
-        body += json::str(exec_mode_str(sp.mode()));
-        body += ",\"as_of_ts\":";
-        body += json::i64(as_of);
-        // 瀑布顺序固定: gross → fee → gas → slippage → spread → net
-        body += ",\"waterfall\":{";
-        body += "\"gross\":";
-        body += json::num(a.gross);
-        body += ",\"fee\":";
-        body += json::num(a.fee);
-        body += ",\"gas\":";
-        body += json::num(a.gas);
-        body += ",\"slippage\":";
-        body += json::num(a.slippage);
-        body += ",\"spread\":";
-        body += json::num(a.spread);
-        body += ",\"net\":";
-        body += json::num(a.net);
-        body += "}";
-        // 分市场净 PnL (可空; attribution 面板右侧"分市场"列表)
-        body += ",\"per_market\":[";
-        for (std::size_t i = 0; i < a.per_market.size(); ++i) {
-            if (i) {
-                body += ',';
-            }
-            body += "{\"market_id\":";
-            body += json::str(a.per_market[i].market_id);
-            body += ",\"net_pnl\":";
-            body += json::num(a.per_market[i].net_pnl);
-            body += '}';
-        }
-        body += "]}";
-
-        res.set_content(body, "application/json; charset=utf-8");
+        res.set_content(payload::pnl_attribution(hs.provider(), now_epoch_ns()), "application/json; charset=utf-8");
         res.status = 200;
     });
 }

@@ -11,59 +11,15 @@
 #include <cstdint>
 #include <string>
 
-#include "src/stcpp/debug_api/endpoint_common.hpp"
-#include "src/stcpp/debug_api/json_writer.hpp"
+#include "src/stcpp/debug_api/endpoint_payloads.hpp"
 #include "src/stcpp/debug_api/server.hpp"
 
 namespace stcpp::debug_api {
 
 void register_account(httplib::Server& svr, const HttpServer& hs) {
+    // body 由 payload::account 构建 (与 SSE /stream account 通道单一数据源)
     svr.Get("/api/v1/account", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
-        const StateProvider& sp = hs.provider();
-        const AccountSnapshot a = sp.account_snapshot();
-
-        std::string body;
-        body.reserve(640);
-        body += "{\"mode\":";
-        body += json::str(a.mode.empty() ? exec_mode_str(sp.mode()) : a.mode);
-        body += ",\"has_data\":";
-        body += json::boolean(a.has_data);
-        body += ",\"as_of_ts\":";
-        body += json::i64(a.as_of_ts_ns);
-        body += ",\"account\":{";
-        body += "\"bankroll_initial\":";
-        body += json::num(a.bankroll_initial);
-        body += ",\"cash_available\":";
-        body += json::num(a.cash_available);
-        body += ",\"position_mtm\":";
-        body += json::num(a.position_mtm);
-        body += ",\"equity\":";  // 展示净值 (microprice 口径)
-        body += json::num(a.equity_mark);
-        body += ",\"equity_conservative\":";  // best_bid 口径 (= kelly_bankroll)
-        body += json::num(a.equity_conservative);
-        body += ",\"cum_realized_pnl\":";
-        body += json::num(a.cum_realized_pnl);
-        body += ",\"cum_unrealized_pnl\":";
-        body += json::num(a.cum_unrealized_pnl);
-        body += ",\"cum_fee_paid\":";
-        body += json::num(a.cum_fee_paid);
-        body += ",\"net_pnl\":";
-        body += json::num(a.net_pnl);
-        body += ",\"return_pct\":";
-        body += json::num(a.return_pct);
-        body += ",\"max_drawdown\":";
-        body += json::num(a.max_drawdown);
-        body += ",\"sharpe\":";
-        body += json::num(a.sharpe);
-        body += ",\"kelly_bankroll\":";
-        body += json::num(a.kelly_bankroll);
-        body += ",\"kelly_bankroll_basis\":";
-        body += json::str(a.kelly_bankroll_basis);
-        body += ",\"open_positions\":";
-        body += json::i64(a.open_positions);
-        body += "}}";
-
-        res.set_content(body, "application/json; charset=utf-8");
+        res.set_content(payload::account(hs.provider()), "application/json; charset=utf-8");
         res.status = 200;
     });
 }

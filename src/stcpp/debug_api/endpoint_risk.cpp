@@ -8,52 +8,16 @@
 //
 // 只读: provider.risk_rejects()。MVP stub 返回空列表。真实接入 = 老韩 RmDebugSnapshot。
 
-#include <string>
-#include <vector>
-
 #include "src/stcpp/debug_api/endpoint_common.hpp"
-#include "src/stcpp/debug_api/json_writer.hpp"
+#include "src/stcpp/debug_api/endpoint_payloads.hpp"
 #include "src/stcpp/debug_api/server.hpp"
 
 namespace stcpp::debug_api {
 
 void register_risk(httplib::Server& svr, const HttpServer& hs) {
+    // body 由 payload::rejects 构建 (与 SSE /stream rejects 通道单一数据源)
     svr.Get("/api/v1/risk/rejects", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
-        const StateProvider& sp = hs.provider();
-        const std::vector<RiskRejectRow> rows = sp.risk_rejects();
-        const std::int64_t as_of = now_epoch_ns();
-
-        std::string body;
-        body.reserve(256 + rows.size() * 192);
-        body += "{\"mode\":";
-        body += json::str(exec_mode_str(sp.mode()));
-        body += ",\"as_of_ts\":";
-        body += json::i64(as_of);
-        body += ",\"rejects\":[";
-        for (std::size_t i = 0; i < rows.size(); ++i) {
-            const RiskRejectRow& r = rows[i];
-            if (i) {
-                body += ',';
-            }
-            body += "{\"reason_code\":";
-            body += json::str(r.reason_code);
-            body += ",\"market_id\":";
-            body += json::str(r.market_id);
-            body += ",\"intent_ref\":";
-            body += json::str(r.intent_ref);
-            body += ",\"side\":";
-            body += json::str(r.side);
-            body += ",\"size\":";
-            body += json::num(r.size);
-            body += ",\"price\":";
-            body += json::num(r.price);
-            body += ",\"rejected_ts\":";
-            body += json::i64(r.rejected_ts_ns);
-            body += '}';
-        }
-        body += "]}";
-
-        res.set_content(body, "application/json; charset=utf-8");
+        res.set_content(payload::rejects(hs.provider(), now_epoch_ns()), "application/json; charset=utf-8");
         res.status = 200;
     });
 }

@@ -8,54 +8,16 @@
 // 只读: 从 provider.positions() 读 double-buffer front snapshot, 不碰交易/控制面。
 // MVP 默认 StubStateProvider 返回空数组 (结构合法)。真实接入 = 小石 持仓账本 (position ledger) snapshot。
 
-#include <string>
-#include <vector>
-
 #include "src/stcpp/debug_api/endpoint_common.hpp"
-#include "src/stcpp/debug_api/json_writer.hpp"
+#include "src/stcpp/debug_api/endpoint_payloads.hpp"
 #include "src/stcpp/debug_api/server.hpp"
 
 namespace stcpp::debug_api {
 
 void register_positions(httplib::Server& svr, const HttpServer& hs) {
+    // body 由 payload::positions 构建 (与 SSE /stream positions 通道单一数据源)
     svr.Get("/api/v1/positions", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
-        const StateProvider& sp = hs.provider();
-        const std::vector<HoldingView> rows = sp.positions();
-        const std::int64_t as_of = now_epoch_ns();
-
-        std::string body;
-        body.reserve(256 + rows.size() * 256);
-        body += "{\"mode\":";
-        body += json::str(exec_mode_str(sp.mode()));
-        body += ",\"as_of_ts\":";
-        body += json::i64(as_of);
-        body += ",\"positions\":[";
-        for (std::size_t i = 0; i < rows.size(); ++i) {
-            const HoldingView& r = rows[i];
-            if (i) {
-                body += ',';
-            }
-            body += "{\"market_id\":";
-            body += json::str(r.market_id);
-            body += ",\"outcome\":";
-            body += json::str(r.outcome);
-            body += ",\"net_qty\":";
-            body += json::num(r.net_qty);
-            body += ",\"avg_entry_price\":";
-            body += json::num(r.avg_entry_price);
-            body += ",\"mark_price\":";
-            body += json::num(r.mark_price);
-            body += ",\"pnl_realized\":";
-            body += json::num(r.pnl_realized);
-            body += ",\"pnl_unrealized\":";
-            body += json::num(r.pnl_unrealized);
-            body += ",\"as_of_ts\":";
-            body += json::i64(r.as_of_ts_ns);
-            body += '}';
-        }
-        body += "]}";
-
-        res.set_content(body, "application/json; charset=utf-8");
+        res.set_content(payload::positions(hs.provider(), now_epoch_ns()), "application/json; charset=utf-8");
         res.status = 200;
     });
 }

@@ -1,12 +1,12 @@
 // src/stcpp/debug_api/endpoint_payloads.hpp — 通道 JSON payload 共享 builder
 // Owner: 老雷 (GM)  2026-06-02 (SSE 推送 v1 配套)
 //
-// 目的: SSE /stream 各通道的 data 序列化, 字段与对应 REST 端点【严格对齐】(前端同一套 type 解析)。
-//
-// ⚠ 技术债: 现阶段这些 builder 的字段是从各 endpoint_*.cpp 的内联序列化【复制对齐】而来
-//   (REST 端点暂未改造为调用本 builder, 避免一次性改 8 个在跑的端点)。
-//   → 改某端点字段时, 必须同步改这里对应 builder (否则 SSE 与 REST 漂移)。
-//   后续可把各 endpoint 改为调用本 builder 以彻底去重 (低风险机械重构, 留待 SSE 稳定后)。
+// 目的: 各观测数据的【唯一序列化数据源】。REST 端点 (endpoint_status/account/events/
+//   positions/pnl/gate/risk/grid.cpp) 与 SSE /stream 各通道【都调用本 builder】, 无重复、不漂移。
+//   - REST 调用传 as_of_ns = now_epoch_ns() → 输出顶层 as_of_ts (保持 REST 契约)。
+//   - SSE 调用用默认 as_of_ns = -1 → 省略顶层 as_of_ts (信封已带 transport ts;
+//     且让 on-change 字符串比对生效, 不因 as_of 每次变而误判"变化")。
+//   - 改任何字段只改这里一处, REST 与 SSE 自动一致。
 //
 // 约束: 纯只读 (R-12) — 仅读 const StateProvider 快照 + json_writer 拼装, 不碰热路径。
 //       返回的 JSON 顶层含 mode (R-11) + as_of_ts epoch_ns (R-20, 仅快照读取时刻)。
@@ -16,6 +16,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "src/stcpp/debug_api/endpoint_common.hpp"
@@ -25,7 +26,8 @@
 namespace stcpp::debug_api::payload {
 
 // ---- status (= GET /status) ----
-inline std::string status(const HttpServer& hs) {
+// as_of_ns: >=0 → 输出顶层 as_of_ts (REST 传 now); <0 → 省略 (SSE: 信封已带 transport ts)
+inline std::string status(const HttpServer& hs, std::int64_t as_of_ns = -1) {
     const StateProvider& sp = hs.provider();
     const MetricsSnapshot m = sp.metrics();
     const std::int64_t uptime = static_cast<std::int64_t>(
@@ -43,6 +45,7 @@ inline std::string status(const HttpServer& hs) {
     b += json::boolean(m.wss_user_channel_connected);
     b += R"(},"signals_active_count":0,"positions_count":0,"rm_rejects_last_60s":0,"uptime_sec":)";
     b += json::i64(uptime);
+    if (as_of_ns >= 0) { b += R"(,"as_of_ts":)"; b += json::i64(as_of_ns); }
     b += R"(,"data_source":")";
     b += sp.data_source();
     b += "\"}";
@@ -95,12 +98,13 @@ inline std::string account(const StateProvider& sp) {
 }
 
 // ---- events (= GET /api/v1/events) ----
-inline std::string events(const StateProvider& sp) {
+inline std::string events(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     const std::vector<EventInfo> evs = sp.events();
     std::string b;
     b.reserve(512 + evs.size() * 256);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
     b += ",\"data_source\":";
     b += json::str(sp.data_source());
     b += ",\"events\":[";
@@ -131,12 +135,13 @@ inline std::string events(const StateProvider& sp) {
 }
 
 // ---- positions (= GET /api/v1/positions) ----
-inline std::string positions(const StateProvider& sp) {
+inline std::string positions(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     const std::vector<HoldingView> rows = sp.positions();
     std::string b;
     b.reserve(256 + rows.size() * 256);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
     b += ",\"positions\":[";
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const HoldingView& r = rows[i];
@@ -164,12 +169,13 @@ inline std::string positions(const StateProvider& sp) {
 }
 
 // ---- pnl attribution (= GET /api/v1/pnl/attribution) ----
-inline std::string pnl_attribution(const StateProvider& sp) {
+inline std::string pnl_attribution(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     const PnlAttribution a = sp.pnl_attribution();
     std::string b;
     b.reserve(256);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
     b += ",\"waterfall\":{\"gross\":";
     b += json::num(a.gross);
     b += ",\"fee\":";
@@ -196,12 +202,13 @@ inline std::string pnl_attribution(const StateProvider& sp) {
 }
 
 // ---- gate (= GET /api/v1/gate/paper) ----
-inline std::string gate(const StateProvider& sp) {
+inline std::string gate(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     const PaperGate g = sp.paper_gate();
     std::string b;
     b.reserve(384);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
     b += ",\"window_days\":";
     b += json::i64(g.window_days);
     b += ",\"has_data\":";
@@ -229,12 +236,13 @@ inline std::string gate(const StateProvider& sp) {
 }
 
 // ---- rejects (= GET /api/v1/risk/rejects) ----
-inline std::string rejects(const StateProvider& sp) {
+inline std::string rejects(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     const std::vector<RiskRejectRow> rows = sp.risk_rejects();
     std::string b;
     b.reserve(256 + rows.size() * 192);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
     b += ",\"rejects\":[";
     for (std::size_t i = 0; i < rows.size(); ++i) {
         const RiskRejectRow& r = rows[i];
@@ -259,58 +267,67 @@ inline std::string rejects(const StateProvider& sp) {
     return b;
 }
 
+// ---- grid 单盘顶档对象 (唯一数据源: payload::grid 全量 / endpoint_grid / SSE grid delta 共用) ----
+inline std::string grid_market_obj(const StateProvider& sp, const std::string& cid) {
+    const BinaryMarketBookView bv = sp.book_pair(cid);
+    const QuoteParams q = sp.quote_params(cid);
+    std::string o;
+    o.reserve(256);
+    o += "{\"condition_id\":";
+    o += json::str(cid);
+    o += ",\"book_found\":";
+    o += json::boolean(bv.token0.found);
+    if (bv.token0.found) {
+        o += ",\"best_bid\":";
+        o += json::num(bv.token0.best_bid);
+        o += ",\"best_ask\":";
+        o += json::num(bv.token0.best_ask);
+        o += ",\"cross_spread\":";
+        o += json::num(bv.cross_spread);
+        o += ",\"event_ts\":";
+        o += json::i64(bv.token0.ts.event_ts_ns);
+        o += ",\"ingestion_ts\":";
+        o += json::i64(bv.token0.ts.ingestion_ts_ns);
+    }
+    o += ",\"quote_found\":";
+    o += json::boolean(q.found);
+    if (q.found) {
+        o += ",\"fair\":";
+        o += json::num(q.fair_value);
+        o += ",\"market_mid\":";
+        o += json::num(q.market_mid);
+        o += ",\"edge_bps\":";
+        o += json::num(q.edge_bps);
+        o += ",\"sharp_fair\":";
+        o += json::num(q.sharp_fair);
+        o += ",\"model_confidence\":";
+        o += json::num(q.model_confidence);
+        o += ",\"advisory\":";
+        o += json::boolean(q.advisory);
+    }
+    o += '}';
+    return o;
+}
+
 // ---- grid (= GET /api/v1/grid) — 全市场顶档摘要 ----
-inline std::string grid(const StateProvider& sp) {
+inline std::string grid(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     const std::vector<EventInfo> evs = sp.events();
     std::string b;
     b.reserve(64 * 1024);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
     b += ",\"markets\":[";
     std::size_t count = 0;
     bool first = true;
-    // 注: 与 endpoint_grid 共享同一逻辑; 去重交由 condition 天然单一归属 (防御性此处不再 set)
+    std::unordered_set<std::string> seen;
     for (const auto& ev : evs) {
         for (const auto& cid : ev.condition_ids) {
-            if (cid.empty()) continue;
-            const BinaryMarketBookView bv = sp.book_pair(cid);
-            const QuoteParams q = sp.quote_params(cid);
+            if (cid.empty() || !seen.insert(cid).second) continue;
             if (!first) b += ',';
             first = false;
             ++count;
-            b += "{\"condition_id\":";
-            b += json::str(cid);
-            b += ",\"book_found\":";
-            b += json::boolean(bv.token0.found);
-            if (bv.token0.found) {
-                b += ",\"best_bid\":";
-                b += json::num(bv.token0.best_bid);
-                b += ",\"best_ask\":";
-                b += json::num(bv.token0.best_ask);
-                b += ",\"cross_spread\":";
-                b += json::num(bv.cross_spread);
-                b += ",\"event_ts\":";
-                b += json::i64(bv.token0.ts.event_ts_ns);
-                b += ",\"ingestion_ts\":";
-                b += json::i64(bv.token0.ts.ingestion_ts_ns);
-            }
-            b += ",\"quote_found\":";
-            b += json::boolean(q.found);
-            if (q.found) {
-                b += ",\"fair\":";
-                b += json::num(q.fair_value);
-                b += ",\"market_mid\":";
-                b += json::num(q.market_mid);
-                b += ",\"edge_bps\":";
-                b += json::num(q.edge_bps);
-                b += ",\"sharp_fair\":";
-                b += json::num(q.sharp_fair);
-                b += ",\"model_confidence\":";
-                b += json::num(q.model_confidence);
-                b += ",\"advisory\":";
-                b += json::boolean(q.advisory);
-            }
-            b += '}';
+            b += grid_market_obj(sp, cid);
         }
     }
     b += "],\"count\":";
@@ -321,12 +338,13 @@ inline std::string grid(const StateProvider& sp) {
 
 // ---- scores (SSE 专用: live 赛事比分数组; REST 是 per-event /api/v1/score/{id}) ----
 //   字段与 endpoint_score 单条一致, 包成数组供 SSE scores 通道。
-inline std::string scores(const StateProvider& sp) {
+inline std::string scores(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     const std::vector<EventInfo> evs = sp.events();
     std::string b;
     b.reserve(2048);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
+    if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
     b += ",\"scores\":[";
     bool first = true;
     for (const auto& ev : evs) {
