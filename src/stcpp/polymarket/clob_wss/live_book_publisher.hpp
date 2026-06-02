@@ -270,12 +270,19 @@ private:
         // Best ask = lowest price = first element
         ParseLevels(obj, "asks", feat.asks, /*sort_desc=*/false);
 
-        // Validate: need at least 1 valid bid AND 1 valid ask
+        // Validate: 任一边有量即 valid (单边簿是真实流动性, 不丢)。
+        //   修 (2026-06-02): 原 `have_bid && have_ask` 把单边簿 (临近结算/极端价常见: 只有
+        //   25 个买单 @0.999、无卖单) 整本判 invalid 丢弃 → hub 空 → 前端"订单簿未接入"。
+        //   下游 TickOne 有自己的 L1 双边价格门 (缺 best_ask/best_bid 直接 fail-closed return,
+        //   不会拿单边乱定价), 且 TickOne 显式要观测「卖不出」单边事件 (paper_loop.cpp:372) ——
+        //   上游一刀切丢弃与该意图矛盾。派生量 (spread/mid/microprice/imbalance) 无双边无意义, 仍只双边算。
         const bool have_bid = std::isfinite(feat.bids[0].price) && feat.bids[0].price > 0.0;
         const bool have_ask = std::isfinite(feat.asks[0].price) && feat.asks[0].price > 0.0;
 
-        if (have_bid && have_ask) {
+        if (have_bid || have_ask) {
             feat.valid = true;
+        }
+        if (have_bid && have_ask) {
             // Derived: spread, mid (no microprice — sizes are present in real data)
             double b0 = feat.bids[0].price;
             double a0 = feat.asks[0].price;
