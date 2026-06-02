@@ -427,7 +427,8 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
   const advisory   = () => q().advisory === true;
   const ciLower    = () => q().fair_ci_lower;
   const ciUpper    = () => q().fair_ci_upper;
-  const hasCi      = () => Number.isFinite(ciLower()) && Number.isFinite(ciUpper());
+  const hasCi      = () => Number.isFinite(ciLower()) && Number.isFinite(ciUpper()) && ciUpper() > ciLower();
+  const modelReady = () => calibrated() && Number.isFinite(modelConf()) && modelConf() > 0;  // 模型真出活
   const confPct    = () => Number.isFinite(modelConf()) ? modelConf() * 100 : 0;
   const confColor  = (): 'success' | 'warning' | 'error' | 'inherit' =>
     modelConf() >= 0.7 ? 'success' : modelConf() >= 0.4 ? 'warning' : 'error';
@@ -446,24 +447,25 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
   return (
     <div class="v8-expand-panel">
       <div class="v8-panel-title">
-        量化 / AI
+        量化 / AI <span class="mono-sub" style={{ 'font-weight': '400' }}>· 均为 YES 边胜率</span>
         {/* XD-3: ADVISORY 角标强制显示 (paper 期) */}
         <Show when={advisory()}>
           <span class="v8-advisory-badge">ADVISORY</span>
         </Show>
       </div>
 
-      {/* Fair / 市场中间价 */}
+      {/* sharp 锚 (inplay de-vig) — 模型未训练时这才是【可用 fair】, 摆最前高亮 */}
       <div class="v8-q-row">
-        <span class="q-lbl">公允</span>
-        <span class={`mono-strong${!calibrated() ? ' v8-dim' : ''}`} style={{ 'font-size': '15px' }}>
-          {Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}
-        </span>
-        <Show when={!calibrated()}>
-          <span class="uncalib-chip">未校准</span>
-        </Show>
-        <Show when={hasCi()}>
-          <span class="mono-sub">[{ciLower()!.toFixed(3)}–{ciUpper()!.toFixed(3)}]</span>
+        <span class="q-lbl" title="inplay bet365 'To Win' de-vig 的 YES 胜率 — 模型未训练时用它当 fair">sharp</span>
+        <Show when={hasSharp()} fallback={<span class="mono-sub v8-dim">{mapped() ? '无赔率' : '未映射'}</span>}>
+          <span class="mono-strong" style={{ 'font-size': '15px', 'color': !modelReady() ? '#4caf50' : undefined }}>
+            {sharpFair().toFixed(4)}
+          </span>
+          <span class="q-lbl">vs市场</span>
+          <span class={`mono-sub${sharpDev() >= 0 ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
+            {fmtBps(sharpDev() * 10000)}
+          </span>
+          <Show when={!modelReady()}><span class="mono-sub" style={{ 'color': '#4caf50' }}>← 当前 fair</span></Show>
         </Show>
       </div>
 
@@ -472,30 +474,37 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
         <span class="mono-sub">{Number.isFinite(marketMid()) ? marketMid().toFixed(4) : '—'}</span>
       </div>
 
-      {/* 置信度 */}
+      {/* 模型公允 — 未训练时 dim + 明确标注, 不当真值 */}
       <div class="v8-q-row">
-        <span class="q-lbl">置信</span>
-        <Box sx={{ flex: 1, minWidth: '40px' }}>
-          <LinearProgress variant="determinate" value={confPct()} color={confColor()} sx={{ height: 5, borderRadius: 2 }} />
-        </Box>
-        <Typography sx={{ fontFamily: 'monospace', fontSize: '10px', ml: 0.5,
-          color: confColor() === 'success' ? '#4caf50' : confColor() === 'warning' ? '#ff9800' : '#f44336' }}>
-          {Number.isFinite(modelConf()) ? `${(modelConf() * 100).toFixed(0)}%` : '—'}
-        </Typography>
-        <Show when={calibrated()}>
-          <span class="mono-sub" style={{ 'color': '#4caf50' }}>已校准</span>
+        <span class="q-lbl">模型</span>
+        <span class={`mono-strong${!modelReady() ? ' v8-dim' : ''}`}>
+          {Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}
+        </span>
+        <Show when={!modelReady()} fallback={hasCi() ? <span class="mono-sub">[{ciLower()!.toFixed(3)}–{ciUpper()!.toFixed(3)}]</span> : null}>
+          <span class="uncalib-chip">未训练·占位</span>
         </Show>
       </div>
 
-      {/* XD-5: predict_ok=false */}
+      {/* 置信 / edge / kelly — 仅当模型真出活 (calibrated + conf>0) 才显; 未训练折叠成一句, 不堆 0 */}
       <Show
-        when={predictOk()}
+        when={modelReady() && predictOk()}
         fallback={
-          <Alert severity="error" sx={{ py: 0.25, px: 1, fontSize: '10px', mt: 0.5 }}>
-            预测异常 · edge/kelly/额度暂不可用
-          </Alert>
+          <div class="v8-q-row v8-dim" style={{ 'margin-top': '3px', 'font-size': '11px' }}>
+            {!predictOk() ? '⚠ 预测异常 · 无信号' : '模型未训练 · paper 期不产生 edge/Kelly 信号 (看上方 sharp 价差)'}
+          </div>
         }
       >
+        <div class="v8-q-row">
+          <span class="q-lbl">置信</span>
+          <Box sx={{ flex: 1, minWidth: '40px' }}>
+            <LinearProgress variant="determinate" value={confPct()} color={confColor()} sx={{ height: 5, borderRadius: 2 }} />
+          </Box>
+          <Typography sx={{ fontFamily: 'monospace', fontSize: '10px', ml: 0.5,
+            color: confColor() === 'success' ? '#4caf50' : confColor() === 'warning' ? '#ff9800' : '#f44336' }}>
+            {`${(modelConf() * 100).toFixed(0)}%`}
+          </Typography>
+        </div>
+
         <div class="v8-q-row">
           <span class="q-lbl">优势</span>
           <Box sx={{ flex: 1, minWidth: '24px' }}>
@@ -532,21 +541,8 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
         </span>
       </div>
 
-      {/* 可观测 / 数据源 (老板 2026-06-02: 把后台可观测搬到大模型下面) —— fair 从哪来 + 管道是否连通 */}
+      {/* 数据管道状态 (sharp 锚已挪到面板最上方) */}
       <div class="v8-obs-block">
-        <div class="v8-q-row">
-          <span class="q-lbl" title="inplay bet365 'To Win' de-vig 出的 sharp 胜率 = fair 锚源">sharp锚</span>
-          <Show
-            when={hasSharp()}
-            fallback={<span class="mono-sub v8-dim">{mapped() ? '无赔率' : '未映射'}</span>}
-          >
-            <span class="mono-strong">{sharpFair().toFixed(4)}</span>
-            <span class="q-lbl">偏离</span>
-            <span class={`mono-sub${sharpDev() >= 0 ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
-              {fmtBps(sharpDev() * 10000)}
-            </span>
-          </Show>
-        </div>
         <div class="v8-q-row">
           <span class="q-lbl" title="比分/订单簿映射连通 (匹配到 Goalserve) + de-vig 状态 + 联合新鲜度">管道</span>
           <span class={`mono-sub ${mapped() ? 'edge-pos' : 'edge-neg'}`}>{mapped() ? '✓映射' : '✗未映射'}</span>
