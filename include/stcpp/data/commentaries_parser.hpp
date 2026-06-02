@@ -89,6 +89,46 @@ public:
         }
     }
 
+    // ParseSoccernewLiveInto — soccernew/live body (一次含所有直播联赛) → acc。
+    //   结构: <category id="X"> 包裹多个 <match><live_stats value="KV"/></match>。一个 doc 多联赛 →
+    //   league_id 须逐 match 从最近的 <category id> 取 (非单一参数)。league_id 空间 = Goalserve
+    //   联赛 id (与 inplay es.league_id 同源, join_key 两端一致)。线性扫描跟踪当前 category。
+    //   (2026-06-02 特征审计 #19-23: 替换失效的 per-league commentaries — 真实 live_stats 在 soccernew/live。)
+    static void ParseSoccernewLiveInto(LiveStatsMap& acc, std::string_view xml) noexcept {
+        std::string current_league;
+        std::size_t pos = 0;
+        while (pos < xml.size()) {
+            const std::size_t cat = xml.find("<category", pos);
+            const std::size_t mat = xml.find("<match", pos);
+            if (mat == std::string_view::npos)
+                break;  // 无更多 match
+            if (cat != std::string_view::npos && cat < mat) {
+                // 下一个 match 前先遇到 category → 更新当前 league
+                const std::size_t gt = xml.find('>', cat);
+                if (gt == std::string_view::npos)
+                    break;
+                current_league = std::string(TagAttr(xml.substr(cat, gt - cat + 1), "<category", "id"));
+                pos = gt + 1;
+                continue;
+            }
+            // 处理 match: span = [mat, 下一个 <match 或 EOF)
+            const std::size_t next = xml.find("<match", mat + 6);
+            const std::size_t span_end = (next == std::string_view::npos) ? xml.size() : next;
+            const std::string_view span = xml.substr(mat, span_end - mat);
+            pos = span_end;
+
+            const std::string_view home = TagAttr(span, "<localteam", "name");
+            const std::string_view away = TagAttr(span, "<visitorteam", "name");
+            const std::string_view ls_value = TagAttr(span, "<live_stats", "value");
+            if (home.empty() || away.empty() || ls_value.empty() || current_league.empty())
+                continue;  // 缺 join 料 → 跳过 (fail-safe, 绝不造假)
+            LiveStatsFields stats = LiveStatsParser::Parse(ls_value);
+            if (!stats.any_valid())
+                continue;
+            acc[MakeLiveStatsJoinKey(current_league, home, away)] = stats;
+        }
+    }
+
 private:
     // TagAttr — span 内首个 `tag` 起始标签里的 `attr="..."` 值 (无引号 KV, value 内无 '"'/' >')。
     //   tag 形如 "<localteam"; attr 形如 "name"。找不到返回空 view。

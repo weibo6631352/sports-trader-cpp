@@ -944,13 +944,12 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
-    // ---- live_stats start: CommentariesPoller + 刷新线程 (喂 5 个 g_*_diff 特征) ----
-    if (cfg_.start_live_feeds && commentaries_poller_) {
-        commentaries_poller_->Start();
-        if (cfg_.enable_paper_trading && paper_loop_) {
-            live_stats_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshLiveStats(st); });
-        }
-        std::printf("[paper_daemon] live_stats CommentariesPoller + 刷新线程启动 (commentaries 30s 轮询)\n");
+    // ---- live_stats start: soccernew/live 刷新线程 (喂 #19-23 g_*_diff 特征) ----
+    //   2026-06-02 特征审计: 改用 soccernew/live (覆盖全部直播盘 + 内联 live_stats, 文档 soccer-data-feed.md
+    //   §实时统计)。per-league CommentariesPoller (仅顶级联赛 + 标签找错) 已弃用, 不再启动。
+    if (cfg_.start_live_feeds && cfg_.enable_paper_trading && paper_loop_) {
+        live_stats_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshLiveStats(st); });
+        std::printf("[paper_daemon] live_stats 刷新线程启动 (soccernew/live 12s 轮询)\n");
         std::fflush(stdout);
     }
 
@@ -1418,34 +1417,57 @@ void PaperDaemon::RefreshResolution(std::stop_token st) {
 // ---------------------------------------------------------------------------
 void PaperDaemon::RefreshLiveStats(std::stop_token st) {
     using namespace std::chrono;
+    // 2026-06-02 特征审计 #19-23: 改用 soccernew/live (后台验证: 真实 live_stats 在此, 含
+    //   ICorner/IDangerousAttacks/IOnTarget/IPosession/IRedCard KV)。替换失效的 per-league
+    //   commentaries (找错标签 + live 小联赛返空)。一次拉全部直播联赛, 逐 match 取 <category id> 作 league。
+    const char* gs_key_env = std::getenv("GOALSERVE_API_KEY");
+    const std::string gs_key = gs_key_env ? gs_key_env : "";
+    const char* gs_proxy_env = std::getenv("GOALSERVE_PROXY");
+    const std::string gs_proxy = gs_proxy_env ? gs_proxy_env : "";
+    auto fetch_live = [&gs_key, &gs_proxy]() -> std::string {
+        if (gs_key.empty())
+            return {};
+        std::string cmd = "curl -s --max-time 15 ";
+        if (!gs_proxy.empty()) {
+            cmd += "-x '";
+            cmd += gs_proxy;
+            cmd += "' ";
+        }
+        cmd += "'https://www.goalserve.com/getfeed/";
+        cmd += gs_key;
+        cmd += "/soccernew/live'";
+        std::string out;
+        if (FILE* p = ::popen(cmd.c_str(), "r")) {
+            char buf[8192];
+            std::size_t n;
+            while ((n = std::fread(buf, 1, sizeof(buf), p)) > 0)
+                out.append(buf, n);
+            ::pclose(p);
+        }
+        return out;
+    };
     while (!st.stop_requested()) {
-        if (live_stats_store_ && commentaries_poller_ && paper_loop_ && score_store_) {
-            // ① 活跃 league_id (去重) → poller
-            if (const auto score_snap = score_store_->GetSnapshot()) {
-                std::vector<std::string> leagues;
-                std::unordered_set<std::string> seen;
-                for (const auto& [mid, es] : *score_snap) {
-                    if (!es.league_id.empty() && seen.insert(es.league_id).second) {
-                        leagues.push_back(es.league_id);
-                    }
-                }
-                commentaries_poller_->SetLeagues(std::move(leagues));
-            }
-            // ② live_stats 快照 → paper_loop join 表 (盖新鲜度 as_of: 老板「每个源标时间」→ g_live_stats_age_sec)
-            if (const auto ls_snap = live_stats_store_->GetSnapshot()) {
-                data::livescore::LiveStatsMap stamped = *ls_snap;  // 拷贝再盖 ts
-                const std::int64_t ls_as_of_ns =
-                    std::chrono::duration_cast<std::chrono::nanoseconds>(
-                        std::chrono::system_clock::now().time_since_epoch())
-                        .count();
-                for (auto& [_k, v] : stamped) v.as_of_ts_ns = ls_as_of_ns;
-                paper_loop_->SetLiveStatsByTeams(std::move(stamped));
+        if (!gs_key.empty() && paper_loop_ != nullptr) {
+            const std::string xml = fetch_live();
+            if (!xml.empty()) {
+                data::livescore::LiveStatsMap m;
+                data::livescore::CommentariesParser::ParseSoccernewLiveInto(m, xml);
+                const std::int64_t as_of_ns = duration_cast<nanoseconds>(
+                                                  system_clock::now().time_since_epoch())
+                                                  .count();
+                for (auto& [_k, v] : m)
+                    v.as_of_ts_ns = as_of_ns;  // 新鲜度 → g_live_stats_age_sec
+                const std::size_t n = m.size();
+                paper_loop_->SetLiveStatsByTeams(std::move(m));
+                if (cfg_.verbose)
+                    std::fprintf(stderr, "[live_stats] soccernew/live: %zu 场 live_stats 注入\n", n);
             }
         }
-        const auto deadline = steady_clock::now() + seconds(2);  // 2026-06-01: 30s->2s (本地刷新, 无 API)
+        const auto deadline = steady_clock::now() + seconds(12);  // soccernew/live 单拉 (有 API), 12s 周期
         while (steady_clock::now() < deadline) {
-            if (st.stop_requested()) return;
-            std::this_thread::sleep_for(milliseconds(100));
+            if (st.stop_requested())
+                return;
+            std::this_thread::sleep_for(milliseconds(150));
         }
     }
 }
