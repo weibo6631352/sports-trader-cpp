@@ -124,11 +124,16 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
     using debug_api::MarketInfo;
     using debug_api::TokenInfo;
 
+    const std::int64_t pop_now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                        std::chrono::system_clock::now().time_since_epoch())
+                                        .count();
     for (const auto& ev : discovered) {
-        // 结束赛事黑名单: 直播 final 后拉黑, 即便 gamma 仍列(等结算)也不再订阅 (老板「拉黑不再重订」)。
-        {
+        // 结束赛事黑名单: 直播 final 后拉黑(带 TTL), 即便 gamma 仍列(等结算)也不再订阅。未过期才挡 —
+        //   第二场是不同 event_id 不在黑名单, 不受影响; 过期项自动放行(自愈)。
+        if (!ev.event_id.empty()) {
             std::lock_guard<std::mutex> lk(ended_blacklist_mu_);
-            if (!ev.event_id.empty() && ended_event_blacklist_.count(ev.event_id)) continue;
+            const auto bit = ended_event_blacklist_.find(ev.event_id);
+            if (bit != ended_event_blacklist_.end() && pop_now_ns < bit->second) continue;
         }
         std::printf("[paper_daemon]  event: %.40s | slug=%.30s | sport=%s\n", ev.title.c_str(),
                     ev.slug.c_str(), ev.sport.c_str());
@@ -1291,7 +1296,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                     if (cit != market_catalog_.end() && !cit->second.event_id.empty()) {
                         std::lock_guard<std::mutex> lk(ended_blacklist_mu_);
                         if (ended_event_blacklist_.size() > kBlacklistCap) ended_event_blacklist_.clear();
-                        ended_event_blacklist_.insert(cit->second.event_id);
+                        ended_event_blacklist_[cit->second.event_id] = refresh_now_ns + kBlacklistTtlNs;
                     }
                 }
                 paper::EventMapEntry entry;

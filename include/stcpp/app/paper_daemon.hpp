@@ -331,12 +331,15 @@ private:
     std::vector<std::string> all_token_ids_;
 
     // 结束赛事黑名单 (2026-06-02 老板「直播结束应及时退订+拉黑不再订阅」):
-    //   赛事 Goalserve 比分=final → 加 event_id 黑名单; PopulateCatalog 跳过 → 下轮 RediscoverOnce
-    //   退订其 token + 释放 hub 书槽, 且 gamma 仍列(等结算)也不再重订。映射线程写, PopulateCatalog
-    //   (同线程)读; 加锁防 settlement 线程并发。超 kBlacklistCap 清空(防无界; 已结算盘 gamma 终会下架)。
+    //   赛事 Goalserve 比分=final → 加 event_id 黑名单(带过期 ts); PopulateCatalog 跳过未过期项 →
+    //   下轮 RediscoverOnce 退订其 token + 释放 hub 书槽, 且 gamma 仍列(等结算)也不再重订。
+    //   **按 event_id 拉黑 (每场比赛唯一; 第二场是不同 event_id 不受影响, 老板「第二场会不会进不来」)**。
+    //   **带 TTL 自愈 (老板保险): 超 kBlacklistTtlNs 自动失效, 防 id 异常复用/误判永久挡。** 映射线程写,
+    //   PopulateCatalog(同线程)读; 加锁防 settlement 线程并发。超 kBlacklistCap 清空防无界。
     mutable std::mutex ended_blacklist_mu_;
-    std::unordered_set<std::string> ended_event_blacklist_;
+    std::unordered_map<std::string, std::int64_t> ended_event_blacklist_;  // event_id → 过期 epoch ns
     static constexpr std::size_t kBlacklistCap = 20000;
+    static constexpr std::int64_t kBlacklistTtlNs = 6LL * 3600 * 1'000'000'000;  // 6h 自动失效
 
     // A1 (2026-06-02): token 集快照 — 消 all_token_ids_ 的 data race (OnConnected io_thread 读 /
     //   RediscoverOnce 映射线程写)。mutex 守护的 shared_ptr<const vector> COW (atomic<shared_ptr>
