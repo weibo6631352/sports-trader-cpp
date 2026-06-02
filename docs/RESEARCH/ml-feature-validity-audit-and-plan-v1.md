@@ -184,3 +184,35 @@
 **核心结论 (修正后):** ① **教训: 不同 Goalserve feed (inplay vs soccernew/getodds) 的 league_id 与队名是不同空间, 跨 feed join 必须用 match_id 经 inplay-mapping 桥, 不能用 (league,队名)。** 先前「同 Goalserve 空间=覆盖非 bug」是未验证的错判 (老板纠正)。② 修好后 bm_slots + soccer-stats 都用一致的 inplay_match_id 桥 (验证桥通), 运行时 0 注入是**真覆盖**: 富数据 feed (getodds 跨庄家 / soccernew live_stats) 当前覆盖的多是小联赛 (Polymarket 无盘), 与 PM 匹配的 live 盘不重叠。大联赛 live + PM 匹配 + 在 feed 三者重叠时点亮 (同 [[why-no-trades-alpha-coverage]] 甜区=大联赛)。③ 时钟修复无此依赖, 已 LIVE 生效。
 
 **可观测性:** `[odds]` (90s) + `[live_stats]` (60s 节流) 常开日志, 随时见 join 到几场。features/health healthy 76→87。
+
+---
+
+## §11 覆盖率门诊断 + cricket/esports 补充源 (2026-06-03, 老板「是不是名字不匹配」)
+
+**问题:** 比分匹配率 ~22.8% (159/696)。老板问: 是不是 EventMatcher 名字没配上 (而非 GS 真没这比赛)?
+
+**方法 (不臆断, 加运行时计数器定论):** EventMatcher 加 `Diag` 计数器, **只统计「名字过了 threshold 却被后续门 (orientation/kickoff) 拒掉」的 market** = 可恢复缺口 + 凶手门。threshold 拒绝 (错选手) 不计 (正常, 会淹没信号)。RefreshEventMapping 每周期 `[cov-diag]` 日志。
+
+**决定性结论 (实测):**
+```
+calls=1127 matched=159 | 名字配上=159 其中没匹配=0 (orientation门拒=0 kickoff门拒=0)
+```
+- **名字配上 (过 threshold) = matched, 完全相等。orientation 门拒 0, kickoff 门拒 0。**
+- → **不是名字问题, 不是 kickoff 窗 (±15min 曾疑太窄 — 实测拒 0), 不是 orientation 门。** 匹配器完美: 名字配上即匹配。
+- **真因 = 候选池覆盖**: 候选池 (score store) 只有 ~90 场 live, PM 有 696 live market。
+
+**候选池 vs PM live 库存严重错位 (实测 sport 分布):**
+
+| 运动 | PM live 事件 | GS 候选 | 诊断 |
+|---|---|---|---|
+| tennis | 84 (atp34/wta23/itf27) | ~29 | 大头; 缺口主要是**分母虚高** (网球 1.5-3h, PM 按 kickoff+5h 算 live, 已打完仍算) |
+| cricket | 12 (crint8/blast4) | **0** | inplay-cricket.gz **404**, 完全没有 → 结构缺口 |
+| esports | 15 (dota5/lol3/mlbb3/CS4) | ~4 | inplay-esports 窄; mlbb GS 无源 |
+| basket | 4 | ~11 | GS 反多 (PM 没的联赛, 浪费) |
+| soccer | **0** | ~15-23 | GS 候选全浪费 (PM 无 live soccer) |
+
+**修复 (老板「加吧加吧」):** 通用 `team_livescore_parser` (cricket/livescore + esports/home, 参数化 live 状态/队标签/比分属性) + `InjectSupplementalScores` 泛化为多源 + sport-aware 去重 + `RefreshTeamLivescores` 30s 线程 (www 端点不限速, feed 365KB 远小于 getodds 45MB, 无 WSS 带宽风险)。
+
+**验证 (实测):** matched **159 → 215 (+56)**, 覆盖率 **22.8% → 31.8% (+9pp)**。`[cricket]` 净注入 3-4 (inplay-cricket 0 → 全进), `[esports]` 净注入 1-2 (去重正确)。cov-diag 仍门拒全 0 → +56 纯来自加候选, **坐实候选池绑定**。WSS 0 断连。
+
+**核心结论:** ① **覆盖率低主因不是名字/匹配 (匹配器完美), 是候选池覆盖 + 分母虚高。** ② cricket/livescore 是 inplay-cricket 404 的正确替代 (315KB 真数据)。③ 剩余缺口: (a) **分母虚高** — markets_live 用 kickoff+5h, 把已打完/没开打的算 live → 31.8% 低估真实覆盖 (可按运动收窄时间窗修, 待老板定); (b) GS 真覆盖上限 (mlbb 无源, 低级别巡回不全)。④ soccer/baseball 候选浪费 (PM 无对应 live, 无害但未利用)。
