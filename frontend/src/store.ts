@@ -572,8 +572,18 @@ function connectSSE(): void {
   };
 }
 
+// rebuildGroups — 重建 eventGroups 树并写回 store (触发网格重渲染)。
+//   合并节流 (2026-06-02 老板「操作有时很卡, 点着不动」): 8 个 SSE 通道都调它, 其中 book/quote
+//   通道每帧都来 (全展 38 盘 → 38 book + 38 quote on-change/s) → 原来每帧重建整树 + 重渲染全网格
+//   (含 38 个展开订单簿阶梯) → 每秒几十次 → 主线程占满 → 点击事件排不上 = 卡死。
+//   修: 120ms 窗口内的所有调用合并成 1 次重建 (≤~8 次/s), 主线程腾出给交互。视觉延迟 ≤120ms 无感。
+let _rebuildTimer: number | undefined;
 function rebuildGroups(): void {
-  setState({ eventGroups: buildEventGroups() });
+  if (_rebuildTimer != null) return;  // 窗口内已排程 → 吸收本次调用
+  _rebuildTimer = window.setTimeout(() => {
+    _rebuildTimer = undefined;
+    setState({ eventGroups: buildEventGroups() });
+  }, 200);
 }
 
 // ---------- 定时轮询初始化 (入口) ----------
