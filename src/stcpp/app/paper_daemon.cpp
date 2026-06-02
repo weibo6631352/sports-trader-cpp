@@ -1234,8 +1234,31 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         }
         debug_api::MappingStatusReport map_report;  // 可观测: 本轮映射快照
         map_report.total_markets = static_cast<int>(market_match_inputs_.size());
+        // [DIAG] 未匹配诊断 (一次): 对未匹配 market 扫全候选找最佳, 暴露"最接近候选+分数" →
+        //   板上钉钉区分 覆盖没重叠(best 低) vs 匹配 bug(best 高却没匹配)。用进程内候选池, 不直连。
+        static bool diag_unmatched_dumped = false;
+        std::size_t unmatched_shown = 0;
+        const bool do_unmatched_diag = (!diag_unmatched_dumped && !candidates.empty());
         for (const auto& [cond_id, in] : market_match_inputs_) {
             const auto r = event_matcher_.Match(in, candidates);
+            if (!r.matched && do_unmatched_diag && unmatched_shown < 12) {
+                double best = -1.0;
+                std::string bh, ba;
+                for (const auto& c : candidates) {
+                    if (c.home.empty() || c.away.empty()) continue;
+                    const double d = std::min(EventMatcher::TeamSimilarity(in.team0, c.home),
+                                              EventMatcher::TeamSimilarity(in.team1, c.away));
+                    const double x = std::min(EventMatcher::TeamSimilarity(in.team0, c.away),
+                                              EventMatcher::TeamSimilarity(in.team1, c.home));
+                    const double s = std::max(d, x);
+                    if (s > best) { best = s; bh = c.home; ba = c.away; }
+                }
+                std::fprintf(stderr,
+                             "[map-unmatched] '%s' vs '%s' (%s) → 最佳候选 '%s' vs '%s' score=%.2f\n",
+                             in.team0.c_str(), in.team1.c_str(), in.sport.c_str(), bh.c_str(), ba.c_str(),
+                             best);
+                ++unmatched_shown;
+            }
             if (r.matched) {
                 paper::EventMapEntry entry;
                 entry.inplay_match_id = r.inplay_match_id;
@@ -1257,6 +1280,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                 map_report.markets.push_back(std::move(row));
             }
         }
+        if (do_unmatched_diag) diag_unmatched_dumped = true;  // 未匹配诊断一次即停
 
         // 3. 推送映射给 PaperLoop (热刷)
         if (paper_loop_) {
