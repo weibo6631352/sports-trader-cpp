@@ -791,7 +791,7 @@ std::string InplayFeedThread::ReadProxyFromEnv() noexcept {
 //   覆盖率杠杆 (2026-06-03): inplay (bet365 联动) 缺 ITF/Challenger, tennis_scores 全巡回有。
 //   merge 进 merged_map_ 并 republish, 与 RunSportLoop 共用 merged_mu_ (单一发布者口径)。
 //   去重: 同双姓氏已被 inplay 占 (带 bet365 odds) → 跳过, 保住 atp/wta 的 sharp fair。
-void InplayFeedThread::InjectSupplementalScores(std::vector<debug_api::EventScore> recs) noexcept {
+std::size_t InplayFeedThread::InjectSupplementalScores(std::vector<debug_api::EventScore> recs) noexcept {
     // 末段姓氏 (小写; '/' 防双打名混入): "M. Malige"→"malige", "Krawczyk/ Skupski"→"skupski"
     auto surname = [](const std::string& name) -> std::string {
         std::size_t e = name.size();
@@ -838,7 +838,7 @@ void InplayFeedThread::InjectSupplementalScores(std::vector<debug_api::EventScor
         ++injected;
     }
     store_.Publish(std::make_shared<ScoreMap>(merged_map_));
-    (void)injected;  // 计数 (调用方日志); 此处仅 publish
+    return injected;  // post-dedup 净注入数 (调用方日志诊断)
 }
 
 }  // namespace stcpp::data

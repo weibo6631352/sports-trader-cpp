@@ -1559,10 +1559,12 @@ void PaperDaemon::RefreshTennisScores(std::stop_token st) {
                                              .count();
                 auto recs = data::tennis_scores::ParseTennisScoresLive(xml, ing);
                 const std::size_t n = recs.size();
-                inplay_feed_->InjectSupplementalScores(std::move(recs));
+                const std::size_t injected = inplay_feed_->InjectSupplementalScores(std::move(recs));
                 static int ts_throttle = 0;
                 if ((ts_throttle++ % 4) == 0)  // 每 60s 一行
-                    std::fprintf(stderr, "[tennis_scores] %zu 场 live (ITF/Challenger) 注入 score store\n", n);
+                    std::fprintf(stderr,
+                                 "[tennis_scores] live=%zu 场, 净注入=%zu (去重后 inplay 没有的; 增益来源)\n",
+                                 n, injected);
             }
         }
         const auto deadline = steady_clock::now() + seconds(15);

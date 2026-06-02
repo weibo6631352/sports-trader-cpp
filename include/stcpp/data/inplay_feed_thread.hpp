@@ -136,7 +136,8 @@ public:
     //   livescore: 覆盖 inplay 缺的 ITF/Challenger)。merge 进同一 merged_map_ 并 republish (单一发布者
     //   口径, 不与 RunSportLoop 的 Publish 互踩 — 同 merged_mu_)。去重: 同 sport 同双姓氏已有 (inplay
     //   带 bet365 odds) → 跳过, 不让无 odds 的补充源盖掉 sharp fair。键空间独立 (tennis_scores 自有 id)。
-    void InjectSupplementalScores(std::vector<debug_api::EventScore> recs) noexcept;
+    //   返回净注入数 (post-dedup, 实际进 store 的场数; 调用方日志诊断覆盖增益)。
+    std::size_t InjectSupplementalScores(std::vector<debug_api::EventScore> recs) noexcept;
 
 private:
     // 单 sport 的采集循环 (在独立线程中运行)
