@@ -61,6 +61,7 @@
 #include "stcpp/microstructure/orderbook.hpp"
 #include "stcpp/pricing/derivative_fair_value.hpp"
 #include "stcpp/pricing/tennis_fair_value.hpp"  // 网球 totals/spreads (games/sets 制; 老板「全盘口接入」)
+#include "stcpp/pricing/esports_fair_value.hpp"  // 电竞 maps totals/spreads (best-of-N 枚举)
 #include "stcpp/pricing/fair_resolve.hpp"  // R-2: ResolveFair 纯函数 (fair 优先级集中)
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/rm_debug_snapshot.hpp"
@@ -644,19 +645,23 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const MarketCat mc = MarketCatFor(condition_id);
     const std::int32_t mkt_type = mc.market_type_id;
     std::optional<double> derivative_p_yes;  // totals/spreads 专属定价 (有值 → 覆盖 moneyline p_fair)
-    // sport-aware 分派: 网球 (set/game 制) 走专属 games 模型; 连续时钟运动走 derivative (Poisson/Normal)。
+    // sport-aware 分派: 网球(set/game)/电竞(maps) 走专属离散模型; 连续时钟运动走 derivative(Poisson/Normal)。
     const bool is_tennis = (game_row.sport == "tennis");
-    if (mkt_type == 2) {  // totals (大小分 / 网球总局)
+    const bool is_esports = (game_row.sport == "esports");
+    if (mkt_type == 2) {  // totals (大小分 / 网球总局 / 电竞总图)
         const pricing::DerivativeFairResult dr =
-            is_tennis ? pricing::TennisTotalsFairYes(game_row, mc.line, mc.yes_is_over)
-                      : pricing::TotalsFairYes(game_row, mc.line, mc.yes_is_over);
+            is_tennis    ? pricing::TennisTotalsFairYes(game_row, mc.line, mc.yes_is_over)
+            : is_esports ? pricing::EsportsTotalsFairYes(game_row, mc.line, mc.yes_is_over)
+                         : pricing::TotalsFairYes(game_row, mc.line, mc.yes_is_over);
         if (!dr.valid) {
             return;  // 派生定价不可用 (赛前/太早/不支持运动/无 line/终态) → 不交易
         }
         derivative_p_yes = dr.p_yes;
-    } else if (mkt_type == 1) {  // spreads (让分 / 网球让局)
-        const pricing::DerivativeFairResult dr = is_tennis ? pricing::TennisSpreadsFairYes(game_row, mc.line)
-                                                           : pricing::SpreadsFairYes(game_row, mc.line);
+    } else if (mkt_type == 1) {  // spreads (让分 / 网球让局 / 电竞图让分)
+        const pricing::DerivativeFairResult dr =
+            is_tennis    ? pricing::TennisSpreadsFairYes(game_row, mc.line)
+            : is_esports ? pricing::EsportsSpreadsFairYes(game_row, mc.line)
+                         : pricing::SpreadsFairYes(game_row, mc.line);
         if (!dr.valid) {
             return;
         }
