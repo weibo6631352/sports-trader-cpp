@@ -78,10 +78,13 @@ const lastEventScore: Record<string, Score | null> = {};
 /** 最近一次 /events 发现的赛事列表 (供 refreshGrid 快刷时复用建组, 无需重拉 events) */
 let lastEvents: EventSummary[] = [];
 
-/** 整体替换关注集 (组件 createEffect 调用: 展开集合变化时同步) */
+/** 整体替换关注集 (组件 createEffect 调用: 展开集合变化时同步)。
+ *  幂等: 集合未变则跳过 —— 防 SSE 每帧 rebuildGroups → effect 重跑 → 反复 postFocus 风暴。 */
 export function setDetailInterest(condIds: string[]): void {
+  const next = condIds.filter(Boolean);
+  if (next.length === detailInterest.size && next.every((c) => detailInterest.has(c))) return;
   detailInterest.clear();
-  for (const c of condIds) if (c) detailInterest.add(c);
+  for (const c of next) detailInterest.add(c);
   maybePostFocus();  // SSE: 告知服务端推这些盘口的全档 book/quote
 }
 
