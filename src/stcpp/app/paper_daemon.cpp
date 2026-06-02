@@ -225,6 +225,8 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
         all_token_ids_.push_back(tok_pair.first);
         all_token_ids_.push_back(tok_pair.second);
     }
+    // A1: 发布不可变 token 快照 (OnConnected/seed 等并发读方读它, 不碰裸 all_token_ids_ → 消 race)
+    PublishTokenSnapshot();
 }
 
 // ---------------------------------------------------------------------------
@@ -357,23 +359,26 @@ bool PaperDaemon::RediscoverOnce() {
 //   recv_ts = 本地 now (= ingestion ts, 合法; data_source_ts 取自 REST 响应的 timestamp, 非 now)。
 // ---------------------------------------------------------------------------
 void PaperDaemon::SeedInitialBooksFromRest(std::stop_token st) {
-    if (!live_publisher_ || all_token_ids_.empty())
+    // A1: 读不可变 token 快照 (非裸 all_token_ids_ — 该线程与 RediscoverOnce 写并发, 消 race)
+    const auto tokens_sp = TokenSnapshot();
+    const std::vector<std::string>& tokens = *tokens_sp;
+    if (!live_publisher_ || tokens.empty())
         return;
     const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                     std::chrono::system_clock::now().time_since_epoch())
                                     .count();
     constexpr std::size_t kChunk = 50;  // POST /books 分批 (避免单请求过大)
     std::size_t chunks_ok = 0;
-    for (std::size_t i = 0; i < all_token_ids_.size(); i += kChunk) {
+    for (std::size_t i = 0; i < tokens.size(); i += kChunk) {
         if (st.stop_requested())  // 关停时提前退出 (不卡 shutdown)
             return;
-        const std::size_t end = (i + kChunk < all_token_ids_.size()) ? i + kChunk : all_token_ids_.size();
+        const std::size_t end = (i + kChunk < tokens.size()) ? i + kChunk : tokens.size();
         std::string body = "[";
         for (std::size_t j = i; j < end; ++j) {
             if (j > i)
                 body += ',';
             body += "{\"token_id\":\"";
-            body += all_token_ids_[j];  // uint256 十进制, 无 shell 特殊字符
+            body += tokens[j];  // uint256 十进制, 无 shell 特殊字符
             body += "\"}";
         }
         body += "]";
@@ -396,7 +401,7 @@ void PaperDaemon::SeedInitialBooksFromRest(std::stop_token st) {
         }
     }
     std::printf("[paper_daemon] REST 快照打底: %zu tokens (%zu 批 OK), 累计 books_published=%llu\n",
-                all_token_ids_.size(), chunks_ok,
+                tokens.size(), chunks_ok,
                 static_cast<unsigned long long>(live_publisher_->books_published()));
     std::fflush(stdout);
 }
@@ -421,6 +426,11 @@ void PaperDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
     sleep_steps(30);  // 给初次连接 ~3s 建立再监测
     auto last_ping = steady_clock::now();
     int backoff_sec = 1;
+    // A2 半死检测: 跟踪收帧进度。连着且发了 PING 却长时间无任何帧(含 PONG/book)→ 连接半死
+    //   (TCP 没断但服务端静默, IsConnected() 仍 true) → 主动 Close 触发重连。
+    std::uint64_t last_frames = (live_publisher_ ? live_publisher_->frames_received() : 0);
+    auto last_progress = steady_clock::now();
+    constexpr auto kSilentTimeout = seconds(35);  // > 心跳 10s × 3, 留足 PONG 往返
     while (!st.stop_requested()) {
         if (live_transport_->IsConnected()) {
             backoff_sec = 1;
@@ -428,17 +438,33 @@ void PaperDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
                 live_transport_->AsyncSendText("PING");  // 心跳: 防 idle 超时被踢 (真因)
                 last_ping = steady_clock::now();
             }
+            // A2: 收帧进度检测
+            const std::uint64_t frames_now = (live_publisher_ ? live_publisher_->frames_received() : last_frames);
+            if (frames_now != last_frames) {
+                last_frames = frames_now;
+                last_progress = steady_clock::now();
+            } else if (steady_clock::now() - last_progress >= kSilentTimeout) {
+                std::fprintf(stderr,
+                             "[paper_daemon] WSS 半死 (≥%llds 无帧响应, 服务端静默), 主动 Close 触发重连\n",
+                             static_cast<long long>(duration_cast<seconds>(kSilentTimeout).count()));
+                std::fflush(stderr);
+                live_transport_->Close();  // → 下一轮 IsConnected()==false → 走重连
+                last_progress = steady_clock::now();  // 防连环 Close
+            }
             sleep_steps(10);  // 1s 检查间隔
         } else {
-            std::fprintf(stderr, "[paper_daemon] WSS 断开, %ds 后重连 (idle/网络)...\n", backoff_sec);
+            std::fprintf(stderr, "[paper_daemon] WSS 断开, %ds 后重连 (idle/网络/半死)...\n", backoff_sec);
             std::fflush(stderr);
             sleep_steps(backoff_sec * 10);
             if (st.stop_requested())
                 break;
-            live_transport_->AsyncConnect(url);  // OnConnected 回调用 all_token_ids_ 重发 subscribe
+            live_transport_->AsyncConnect(url);  // OnConnected 回调用 token 快照重发 subscribe
+            wss_reconnect_total_.fetch_add(1, std::memory_order_relaxed);  // A4: 重连计数 → /metrics
             // 重连后台重 seed (books 重新打底; 复用初次 seed 逻辑, 不阻塞看门狗)
             seed_thread_ = std::jthread([this](std::stop_token s) { SeedInitialBooksFromRest(s); });
             last_ping = steady_clock::now();
+            last_progress = steady_clock::now();  // 重连后重置进度基线
+            last_frames = (live_publisher_ ? live_publisher_->frames_received() : 0);
             backoff_sec = std::min(backoff_sec * 2, 30);  // 指数退避封顶 30s
         }
     }
@@ -646,6 +672,7 @@ BuildResult PaperDaemon::Build() {
     metrics_hooks_.start_tp = std::chrono::steady_clock::now();
     metrics_hooks_.fill_counter = &paper_loop_->stats().fills_completed;
     metrics_hooks_.last_tick_ts = &paper_loop_->stats().last_tick_ts_ns;  // 韧性 watchdog 心跳
+    metrics_hooks_.wss_reconnect_counter = &wss_reconnect_total_;  // A4: WSS 看门狗重连计数
     real_provider_->set_live_metrics_hooks(metrics_hooks_);
 
     // ---- Step 3: InplayFeedThread (构造, 不 Start; Start() 内拉起) ----
@@ -743,12 +770,16 @@ BuildResult PaperDaemon::Build() {
             });
 
         live_transport_->SetOnConnected([this]() {
-            std::printf("[paper_daemon] WSS CONNECTED, 订阅 %zu tokens...\n", all_token_ids_.size());
+            // A1: 读不可变 token 快照 (此回调在 io_thread; 与 RediscoverOnce 写并发, 消 race)。
+            //     初次订阅 known-good 老格式全量 (重连后亦同; 比赛增删走 RediscoverOnce 增量)。
+            const auto tokens_sp = TokenSnapshot();
+            const std::vector<std::string>& tokens = *tokens_sp;
+            std::printf("[paper_daemon] WSS CONNECTED, 订阅 %zu tokens...\n", tokens.size());
             std::fflush(stdout);
             // CLOB market channel subscribe: {"type":"Market","assets_ids":[...]}
             std::string sub = R"({"type":"Market","assets_ids":[)";
             bool first = true;
-            for (const auto& tid : all_token_ids_) {
+            for (const auto& tid : tokens) {
                 if (!first)
                     sub.push_back(',');
                 sub.push_back('"');

@@ -40,6 +40,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -325,6 +326,25 @@ private:
     std::unordered_map<std::string, paper::MarketCat> market_cat_map_;  // v0.7 类别上下文 (ML 特征 82-85)
     std::vector<debug_api::EventInfo> event_infos_;
     std::vector<std::string> all_token_ids_;
+
+    // A1 (2026-06-02): token 集快照 — 消 all_token_ids_ 的 data race (OnConnected io_thread 读 /
+    //   RediscoverOnce 映射线程写)。mutex 守护的 shared_ptr<const vector> COW (atomic<shared_ptr>
+    //   非全平台可用)。写方 PopulateCatalog 后 PublishTokenSnapshot(); 读方 (OnConnected/seed)
+    //   读 TokenSnapshot() 不可变快照, 不碰裸 all_token_ids_。
+    mutable std::mutex token_ids_mu_;
+    std::shared_ptr<const std::vector<std::string>> token_ids_snapshot_{
+        std::make_shared<const std::vector<std::string>>()};
+    // A4: WSS 重连计数 (看门狗每次重连 +1; 经 LiveMetricsHooks 暴露给 /metrics)
+    std::atomic<std::uint64_t> wss_reconnect_total_{0};
+
+    void PublishTokenSnapshot() {
+        std::lock_guard<std::mutex> lk(token_ids_mu_);
+        token_ids_snapshot_ = std::make_shared<const std::vector<std::string>>(all_token_ids_);
+    }
+    std::shared_ptr<const std::vector<std::string>> TokenSnapshot() const {
+        std::lock_guard<std::mutex> lk(token_ids_mu_);
+        return token_ids_snapshot_;
+    }
 
     // ---- A1b: 映射桥 (EventMatcher + 元数据 + 刷新线程) ----
     EventMatcher event_matcher_;

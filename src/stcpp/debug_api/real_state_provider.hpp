@@ -122,6 +122,10 @@ struct LiveMetricsHooks {
     // 韧性 watchdog (老郭): PaperLoop last_tick_ts_ns 心跳。观测端比对 now-last_tick 判 loop 存活。
     //   nullptr → 0 (无数据源)。loop 卡死 → 心跳停 → tick_staleness 飙升 → healthz/metrics 告警。
     const std::atomic<std::int64_t>* last_tick_ts{nullptr};
+
+    // A4 (2026-06-02): CLOB WSS 看门狗重连计数。nullptr → 0。/metrics stcpp_wss_reconnect_total。
+    //   (G-FREEZE-W 末尾加性字段, 纯加不改名)
+    const std::atomic<std::uint64_t>* wss_reconnect_counter{nullptr};
 };
 
 // ============================================================================
@@ -354,6 +358,12 @@ public:
         // ---- P1-2: fill_total (PaperLoop fills_completed 原子计数) ----
         if (hooks_.fill_counter != nullptr) {
             snap.fill_total = static_cast<std::int64_t>(hooks_.fill_counter->load(std::memory_order_relaxed));
+        }
+
+        // ---- A4 (2026-06-02): wss_reconnect_total (CLOB WSS 看门狗重连计数) ----
+        if (hooks_.wss_reconnect_counter != nullptr) {
+            snap.wss_reconnect_total =
+                static_cast<std::int64_t>(hooks_.wss_reconnect_counter->load(std::memory_order_relaxed));
         }
 
         // ---- 韧性 watchdog: loop_thread_ 心跳停摆 (now − last_tick_ts) ----
