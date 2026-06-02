@@ -2,7 +2,7 @@
 
 **owner:** 老雷 (GM)
 **last_review:** 2026-06-02
-**状态:** 设计待评审/拍板(未实施)
+**状态:** ✅ Phase 1 已实施并上线验证(2026-06-02)。后端 `/api/v1/stream`(`endpoint_stream.cpp`)+ 前端 `connectSSE`(`store.ts`)+ 轮询回退。实测:9 通道经一条 SSE 长连推送,稳态每秒仅 status + grid-delta,稳定通道发一次即静默;前端 9 通道轮询归零(仅剩展开行/Ops/healthz REST);UI 秒级跳动(uptime/价/edge 实时);无回退触发。Phase 2(focus 订阅展开盘口推送 / Ops 上 SSE)未做,协议已预留。
 **目标:** 把看板从"前端 N 个轮询 + 跨洋逐请求 RTT"改成"一条长连接,服务端推增量",往返次数→0,看板真正实时。**一次设计到位,留足扩展,避免"数据不够再重设计"。**
 
 ---
