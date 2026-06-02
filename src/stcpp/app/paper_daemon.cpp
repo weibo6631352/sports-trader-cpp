@@ -697,6 +697,13 @@ BuildResult PaperDaemon::Build() {
         data::goalserve::GoalserveSport::Basketball,
         data::goalserve::GoalserveSport::Tennis,
         data::goalserve::GoalserveSport::Esports,  // 2026-06-01: PM dota2/lol/CS 盘对接 (inplay-esports.gz)
+        // 2026-06-02 (老板「都不能交易」): 加主流联赛 inplay —— 原来只拉 soccer/basket/tennis/esports,
+        //   Polymarket 发现的流动性盘多是 MLB(baseball)/NFL(amfootball)/NHL(hockey), 没对应比分源 →
+        //   EventMatcher 匹配不上(实测 2/28)→ has_real_fair=false → 无 fair → 0 edge → 不交易。
+        //   实测 inplay-baseball.gz 返真实时赛 (含 bet365id)。空档无赛 = 空 feed 轮询 (成本低)。
+        data::goalserve::GoalserveSport::Baseball,
+        data::goalserve::GoalserveSport::AmericanFootball,
+        data::goalserve::GoalserveSport::Hockey,
     };
     inplay_feed_ = std::make_unique<data::InplayFeedThread>(*score_store_, feed_cfg);
 
@@ -884,7 +891,7 @@ void PaperDaemon::Start() {
     // ---- Step 3 start: InplayFeedThread (Goalserve score feed, 常开) ----
     if (cfg_.start_live_feeds && inplay_feed_) {
         inplay_feed_->Start();
-        std::printf("[paper_daemon] Goalserve InplayFeedThread 启动 (soccer/basketball/tennis/esports, R-12)\n");
+        std::printf("[paper_daemon] Goalserve InplayFeedThread 启动 (soccer/basketball/tennis/esports/baseball/amfootball/hockey, R-12)\n");
         std::fflush(stdout);
     }
 
