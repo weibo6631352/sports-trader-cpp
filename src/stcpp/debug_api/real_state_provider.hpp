@@ -78,6 +78,44 @@
 
 namespace stcpp::debug_api {
 
+// ----------------------------------------------------------------------------
+// InPlayCapSecForSport — 按运动的「真·在打」时间窗上界 (覆盖率分母, 2026-06-03 老板「更真实」)
+//   背景: 旧版统一 5h 窗对网球/篮球/足球太松 (这些 1.5-3h 就打完, 5h 内已结束的盘仍算 live →
+//     分母虚高 → 覆盖率被低估); 对 cricket ODI (~8h) 又太紧 (live 的 ODI 被 5h 切掉)。
+//   故按运动给典型最长时长: 短局制收窄 (踢出已打完), 长局制放宽 (cricket)。
+//   sport 入参 = PM 联赛码 (小写, e.g. atp/wta/itf/bkbsl/crint/dota2/...); 前缀/子串归类。
+[[nodiscard]] inline std::int64_t InPlayCapSecForSport(const std::string& sport) noexcept {
+    auto has = [&](const char* sub) { return sport.find(sub) != std::string::npos; };
+    auto pre = [&](const char* p) { return sport.rfind(p, 0) == 0; };  // 以 p 开头
+    // tennis (atp/wta/itf/chal/tennis): 5 盘可达 ~3.5h
+    if (pre("atp") || pre("wta") || pre("itf") || has("tennis") || has("chal"))
+        return 3 * 3600 + 1800;  // 3.5h
+    // cricket (crint/crict20blast/crict.../cricket): ODI ~8h (放宽, 防 live 长局被切)
+    if (pre("cr") || has("cricket"))
+        return 8 * 3600;
+    // basketball (bk*/nba/...): ~2.5h + OT
+    if (pre("bk") || has("nba") || has("basket"))
+        return 3 * 3600;
+    // esports (dota/lol/mlbb/cs/valorant/空串): BO3/BO5 可达 ~4h
+    if (sport.empty() || has("dota") || has("lol") || has("mlbb") || has("cs") || has("valor") ||
+        has("esport") || has("rl") || has("ow"))
+        return 4 * 3600;
+    // baseball: 加时局可达 ~4h
+    if (has("mlb") || has("baseball") || has("kbo") || has("npb"))
+        return 4 * 3600;
+    // hockey: OT/点球 ~3.5h
+    if (has("nhl") || has("hockey") || has("khl"))
+        return 3 * 3600 + 1800;
+    // amfootball: ~3.5h
+    if (has("nfl") || has("ncaaf") || has("football"))
+        return 3 * 3600 + 1800;
+    // soccer (epl/liga/serie/bundes/soccer/...): 90min + 加时 + 伤停 ~3h
+    if (has("soccer") || has("epl") || has("liga") || has("serie") || has("bundes") ||
+        has("ligue") || has("ucl") || has("mls"))
+        return 3 * 3600;
+    return 4 * 3600;  // 默认 4h (未知运动, 中庸)
+}
+
 // ============================================================================
 // MarketTokenMap — condition_id → (token0_id, token1_id) 映射
 //
@@ -418,6 +456,12 @@ public:
             const std::int64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
                                              std::chrono::system_clock::now().time_since_epoch())
                                              .count();
+            // event_id → sport (PM 联赛码) 映射 — 供 markets_live 按运动收窄时间窗 (更真实, 2026-06-03)。
+            //   events_ 同在 meta_mu_ 下 (本快照已持锁读 catalog_), 同锁读安全 (R-12 只读)。
+            std::unordered_map<std::string, std::string> sport_by_event;
+            sport_by_event.reserve(events_.size());
+            for (const auto& ev : events_)
+                sport_by_event[ev.event_id] = ev.sport;
             for (const auto& [cid, mi] : catalog_) {
                 const bool is_unknown = mi.sports_market_type.empty() || mi.sports_market_type == "unknown";
                 if (is_unknown) {
@@ -425,11 +469,18 @@ public:
                 } else {
                     ++recognized;
                 }
-                // 真·在打窗口: 已开赛 + 距开赛 ≤ 5h。不用 gamma endDate (实测=结算日, 往往比赛后数天 →
-                //   排不掉已结束的盘, markets_live 虚高 83%)。5h 封顶覆盖 5盘网球/棒球加时, 超则多半已结束。
-                constexpr std::int64_t kInPlayCapSec = 5 * 3600;
+                // 真·在打窗口: 已开赛 + 距开赛 ≤ 该运动典型最长时长 (InPlayCapSecForSport)。
+                //   旧版统一 5h 对网球/篮球/足球太松 (已打完仍算 live → 分母虚高 → 覆盖率低估);
+                //   对 cricket ODI 又太紧。按运动收窄/放宽 → 分母更贴真实在打 (老板「更真实一点」)。
+                //   不用 gamma endDate (实测=结算日, 比赛后数天, 排不掉已结束)。
+                std::string sp;
+                if (!mi.event_id.empty()) {
+                    if (auto it = sport_by_event.find(mi.event_id); it != sport_by_event.end())
+                        sp = it->second;
+                }
+                const std::int64_t cap = InPlayCapSecForSport(sp);
                 if (mi.game_start_ts_sec > 0 && mi.game_start_ts_sec <= now_sec &&
-                    now_sec <= mi.game_start_ts_sec + kInPlayCapSec) {
+                    now_sec <= mi.game_start_ts_sec + cap) {
                     ++live;
                 }
             }

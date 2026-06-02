@@ -288,5 +288,57 @@ TEST_F(CoverageMetricsFixture, TC12_Invariant_RecognizedPlusUnknownEqualsDiscove
     EXPECT_EQ(m.market_type_recognized_total + m.market_type_unknown_total, m.markets_discovered_total);
 }
 
+// ---------------------------------------------------------------------------
+// TC-13: InPlayCapSecForSport — 按运动时间窗分类 (2026-06-03 老板「更真实」)
+// ---------------------------------------------------------------------------
+TEST(InPlayCapForSport, PerSportWindows) {
+    EXPECT_EQ(InPlayCapSecForSport("atp"), 3 * 3600 + 1800);   // tennis 3.5h
+    EXPECT_EQ(InPlayCapSecForSport("wta"), 3 * 3600 + 1800);
+    EXPECT_EQ(InPlayCapSecForSport("itf"), 3 * 3600 + 1800);
+    EXPECT_EQ(InPlayCapSecForSport("crint"), 8 * 3600);        // cricket ODI 放宽 8h
+    EXPECT_EQ(InPlayCapSecForSport("crict20blast"), 8 * 3600);
+    EXPECT_EQ(InPlayCapSecForSport("bkbsl"), 3 * 3600);        // basketball 3h
+    EXPECT_EQ(InPlayCapSecForSport("dota2"), 4 * 3600);        // esports 4h
+    EXPECT_EQ(InPlayCapSecForSport(""), 4 * 3600);             // 空(CS) → esports 档
+    EXPECT_EQ(InPlayCapSecForSport("zzz_unknown"), 4 * 3600);  // 未知 → 默认 4h
+}
+
+// ---------------------------------------------------------------------------
+// TC-14: markets_live 按运动收窄 — 同样开赛 4h, tennis(>3.5h)排除 / cricket(<8h)保留
+// ---------------------------------------------------------------------------
+TEST_F(CoverageMetricsFixture, TC14_PerSportLiveWindow) {
+    const std::int64_t now_sec = std::chrono::duration_cast<std::chrono::seconds>(
+                                     std::chrono::system_clock::now().time_since_epoch())
+                                     .count();
+    const std::int64_t four_h_ago = now_sec - 4 * 3600;  // 开赛 4h 前
+
+    MarketInfoMap catalog;
+    auto mk = [&](const std::string& cid, const std::string& ev, std::int64_t gs) {
+        MarketInfo mi = make_mi(cid, "moneyline", ev);
+        mi.game_start_ts_sec = gs;
+        catalog[cid] = mi;
+    };
+    mk("c-tennis", "ev-tennis", four_h_ago);    // tennis: 4h > 3.5h → 已结束, 不算 live
+    mk("c-cricket", "ev-cricket", four_h_ago);  // cricket: 4h < 8h → 仍在打 (ODI), 算 live
+    mk("c-basket", "ev-basket", four_h_ago);    // basket: 4h > 3h → 不算 live
+
+    std::vector<EventInfo> events;
+    auto ev = [&](const std::string& id, const std::string& sport) {
+        EventInfo e;
+        e.event_id = id;
+        e.sport = sport;
+        events.push_back(e);
+    };
+    ev("ev-tennis", "atp");
+    ev("ev-cricket", "crint");
+    ev("ev-basket", "bkbsl");
+
+    auto p = make_provider(catalog);
+    p->set_events(std::move(events));
+    const MetricsSnapshot m = p->metrics();
+
+    EXPECT_EQ(m.markets_live_total, 1);  // 仅 cricket (8h 窗) 仍算 live; tennis/basket 已超窗
+}
+
 }  // namespace
 }  // namespace stcpp::debug_api
