@@ -14,7 +14,7 @@
  */
 
 import { createSignal, For, Show, createMemo, createEffect } from 'solid-js';
-import { createStore } from 'solid-js/store';
+import { createStore, produce } from 'solid-js/store';
 import Chip from '@suid/material/Chip';
 import LinearProgress from '@suid/material/LinearProgress';
 import Typography from '@suid/material/Typography';
@@ -85,17 +85,16 @@ function toggleEvent(eventId: string, isLive: boolean): void {
 }
 
 function expandAllMarkets(condIds: string[]): void {
-  for (const c of condIds) {
-    setExpandedMarkets(c, true);
-    ssSet(`stcpp_mkt_exp_${c}`, true);
-  }
+  // 批量: 一次 produce 更新 store (替代逐个 setExpandedMarkets, 防 N 次更新/重渲染)。
+  setExpandedMarkets(produce((m) => { for (const c of condIds) m[c] = true; }));
+  for (const c of condIds) ssSet(`stcpp_mkt_exp_${c}`, true);
 }
 
 function collapseAllMarkets(condIds: string[]): void {
-  for (const c of condIds) {
-    setExpandedMarkets(c, false);
-    ssSet(`stcpp_mkt_exp_${c}`, false);
-  }
+  // 批量折叠: 一次 produce 把传入盘全置 false (store 优先于 ss, 确保折干净);
+  //   ss 持久键也同步清 (防 reload 后 ss 残留 true 又自动展开)。
+  setExpandedMarkets(produce((m) => { for (const c of condIds) m[c] = false; }));
+  for (const c of condIds) ssSet(`stcpp_mkt_exp_${c}`, false);
 }
 
 // ============================================================
