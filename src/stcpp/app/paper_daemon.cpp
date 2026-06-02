@@ -282,6 +282,11 @@ bool PaperDaemon::RediscoverOnce() {
     if (!changed) {
         return false;  // 市场集未变, 不动
     }
+    // 增量订阅落地 (2026-06-01 设计, 2026-06-02 落地): 重建前快照旧 token 集, 重建后只对差异发
+    //   operation:subscribe(新增)/unsubscribe(移除)。取代"全量重订"老格式帧 —— 后者在已订阅连接上
+    //   语义不明(追加 vs 替换), 老李评审疑其催掉连接(recv_loop_ended 次因)。初次订阅(OnConnected)
+    //   不变(known-good 老格式)。
+    std::unordered_set<std::string> old_tokens(all_token_ids_.begin(), all_token_ids_.end());
     // 全量重建 (老郭): 清 6 表 → PopulateCatalog 重填 (含队名提取/cat/fee/parent/all_token_ids_)。
     token_map_.clear();
     market_catalog_.clear();
@@ -306,21 +311,41 @@ bool PaperDaemon::RediscoverOnce() {
         for (const auto& [cid, _tok] : token_map_) settle_cids.push_back(cid);
         settlement_poller_->SetConditionIds(std::move(settle_cids));
     }
-    if (live_transport_ && !all_token_ids_.empty()) {
-        std::string sub = R"({"type":"Market","assets_ids":[)";
-        bool first = true;
-        for (const auto& tid : all_token_ids_) {
-            if (!first) sub.push_back(',');
-            sub.push_back('"');
-            sub.append(tid);
-            sub.push_back('"');
-            first = false;
+    if (live_transport_) {
+        const std::unordered_set<std::string> new_tokens(all_token_ids_.begin(), all_token_ids_.end());
+        // 新增 token → operation:subscribe
+        std::string add_body;
+        std::size_t n_add = 0;
+        for (const auto& t : all_token_ids_) {
+            if (old_tokens.count(t)) continue;
+            if (n_add) add_body.push_back(',');
+            add_body.push_back('"');
+            add_body.append(t);
+            add_body.push_back('"');
+            ++n_add;
         }
-        sub.append("]}");
-        live_transport_->AsyncSendText(sub);  // CLOB 接受追加订阅; hub 无 allowlist, 新 token 帧自动流入
+        // 移除 token (比赛结束/下架) → operation:unsubscribe (单盘停推, 不动其他盘, 无重连)
+        std::string del_body;
+        std::size_t n_del = 0;
+        for (const auto& t : old_tokens) {
+            if (new_tokens.count(t)) continue;
+            if (n_del) del_body.push_back(',');
+            del_body.push_back('"');
+            del_body.append(t);
+            del_body.push_back('"');
+            ++n_del;
+        }
+        if (n_add) {
+            live_transport_->AsyncSendText(R"({"assets_ids":[)" + add_body + R"(],"operation":"subscribe"})");
+        }
+        if (n_del) {
+            live_transport_->AsyncSendText(R"({"assets_ids":[)" + del_body + R"(],"operation":"unsubscribe"})");
+        }
+        std::fprintf(stderr,
+                     "[paper_daemon] 周期重发现: 市场集变化 → +%zu 订阅 / -%zu 退订 (增量, 共 %zu market)\n",
+                     n_add, n_del, token_map_.size());
+        std::fflush(stderr);
     }
-    std::fprintf(stderr, "[paper_daemon] 周期重发现: 市场集变化 → %zu market 重订 (WSS 全量重订)\n",
-                 token_map_.size());
     return true;
 }
 
