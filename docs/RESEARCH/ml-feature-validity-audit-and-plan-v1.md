@@ -178,8 +178,9 @@
 - 修 1: endpoint commentaries/{id}.xml (仅顶级联赛 + 标签找错) → **soccernew/live** (覆盖全部直播盘 + 内联 `<live_stats value=KV>`, 文档 soccer-data-feed.md §实时统计证实)。
 - 修 2: 新增 `ParseSoccernewLiveInto` (一 doc 多联赛, 逐 match 取 `<category id>` 作 league)。
 - 修 3 (实测 bug): `TagAttr` 子串匹配 `id="` 误命中 `<category gid="" id="X">` 的 gid → 返回空 league → 全跳过。加单词边界修复。
-- 验证: [live_stats] 日志 `8 场 live_stats 注入` (解析器对了)。运行时 #19-23 仍 dead: **这 8 场全小联赛 (Asean/Iran), Polymarket 无盘 → 不被 PM 匹配 → 无 join** (覆盖, 非 bug; join key 两端同 MakeLiveStatsJoinKey + 同 Goalserve league 空间)。
+- 修 4 (老板「自己验证, 不是我说的就对」催出 — **我先前误判为覆盖的实为真 join bug**): 停 daemon 抓两 feed 实测发现 soccernew/live 与 inplay feed 的 **league_id (Asean U19: 2417 vs 1362; Maurice Revello: 1790 vs 27190) 和队名 ("China U20" vs "China PR Youth") 两者都不同空间** → `MakeLiveStatsJoinKey(league,home,away)` 两端**永不匹配** (真 bug)。改用 **match_id 桥** (同 bm_slots): soccernew `<match id>`(pregame) → inplay-mapping → inplay_match_id, paper_loop 改按 `it->second.inplay_match_id` join。
+- 验证: [live_stats] `7 场解析 → 7 场桥到 inplay_match_id` (桥通)。运行时 #19-23 仍 dead **现在才是真覆盖**: 这 7 场全小联赛 (Brunei/Iran/Asean U19), Polymarket 无盘 → 不被 PM 匹配 → 无重叠。
 
-**核心结论 (覆盖现实, 同 [[why-no-trades-alpha-coverage]]):** bm_slots + soccer-stats 代码全对, 运行时数据被「富数据 feed (赔率/stats) 覆盖的比赛 ≠ PM 匹配的 live 盘」卡住。富数据 feed 偏大联赛/有庄家关注的盘; PM 匹配的 live 盘当前多小联赛或大联赛非此刻直播。大联赛 live + PM 匹配 + 在 feed 三者重叠时自动点亮。时钟修复无此依赖, 已 LIVE 生效。
+**核心结论 (修正后):** ① **教训: 不同 Goalserve feed (inplay vs soccernew/getodds) 的 league_id 与队名是不同空间, 跨 feed join 必须用 match_id 经 inplay-mapping 桥, 不能用 (league,队名)。** 先前「同 Goalserve 空间=覆盖非 bug」是未验证的错判 (老板纠正)。② 修好后 bm_slots + soccer-stats 都用一致的 inplay_match_id 桥 (验证桥通), 运行时 0 注入是**真覆盖**: 富数据 feed (getodds 跨庄家 / soccernew live_stats) 当前覆盖的多是小联赛 (Polymarket 无盘), 与 PM 匹配的 live 盘不重叠。大联赛 live + PM 匹配 + 在 feed 三者重叠时点亮 (同 [[why-no-trades-alpha-coverage]] 甜区=大联赛)。③ 时钟修复无此依赖, 已 LIVE 生效。
 
 **可观测性:** `[odds]` (90s) + `[live_stats]` (60s 节流) 常开日志, 随时见 join 到几场。features/health healthy 76→87。
