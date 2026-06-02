@@ -512,6 +512,18 @@ private:
     return 0;  // 未知运动 → 纯比分先验
 }
 
+// score_prior_applicable — 该运动比分是否适配 goals-like 先验 sigmoid(α·score_diff+β·time)。
+//   (2026-06-03, 老板覆盖率攻坚加 cricket/esports 补充源后的护栏。)
+//   true (适配): 比分是累计点数/进球, score_diff 单调"领先=占优" 且量级有界 —
+//     soccer/basket/hockey/amfootball (进球/点) + tennis/volleyball (盘/局) + esports (maps 0-3)
+//     + baseball (两队逐局交替计分, runs 可比, 5-3 即领先 2)。
+//   false (不适配): cricket — innings 制, 一队先打满 (如 300/5) 另一队还没打 (0) → score_diff=runs 差
+//     (可达数百) 喂 sigmoid 饱和成"必胜", 但对方尚未追分 = 垃圾信号。无 cricket 定价模型 →
+//     调用方应令 prior_conf=0 (score-prior 零拉力 → 回落市场 de-vig → 覆盖但不在垃圾 fair 上交易)。
+[[nodiscard]] inline bool score_prior_applicable(std::string_view sport) noexcept {
+    return sport != "cricket";
+}
+
 // 无时钟运动的常规节/局数 (P3.2: 给 game_phase 提供 period 进度锚)。
 //   有时钟运动 (soccer/basket/...) 返回 0 → 调用方用时钟 time_frac, 不走此 proxy。
 //   近似值 (格式有歧义, 如网球 best-of-3 vs 5); 仅供 phase 粗分桶 (早/中/末), 非定价输入。

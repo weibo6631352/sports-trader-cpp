@@ -502,6 +502,25 @@ TEST(FairValueEstimator, T15_TotalGameSeconds) {
     EXPECT_NEAR(r.prior_yes, expected, 1e-12);
 }
 
+// ---------------------------------------------------------------------------
+// T16: score_prior_applicable — cricket 比分不适配 goals-like 先验 (innings/runs 饱和), 其余适配
+//   (2026-06-03 覆盖率护栏: cricket 补充源加入后防垃圾 score-prior fair → 垃圾 paper 单)
+// ---------------------------------------------------------------------------
+TEST(FairValueEstimator, T16_ScorePriorApplicable) {
+    using stcpp::pricing::score_prior_applicable;
+    EXPECT_FALSE(score_prior_applicable("cricket")) << "cricket innings/runs → 不适配 → prior_conf=0";
+    // 适配的运动 (累计点/进球/盘/maps, score_diff 有界单调)
+    EXPECT_TRUE(score_prior_applicable("soccer"));
+    EXPECT_TRUE(score_prior_applicable("basket"));
+    EXPECT_TRUE(score_prior_applicable("hockey"));
+    EXPECT_TRUE(score_prior_applicable("amfootball"));
+    EXPECT_TRUE(score_prior_applicable("tennis"));    // 盘差有界
+    EXPECT_TRUE(score_prior_applicable("esports"));    // maps 0-3 有界
+    EXPECT_TRUE(score_prior_applicable("baseball"));   // 两队逐局交替, runs 可比
+    EXPECT_TRUE(score_prior_applicable("volleyball"));
+    EXPECT_TRUE(score_prior_applicable("unknown"));    // 未知默认适配 (保守不挡)
+}
+
 // ---- P1.1 (特征审计): parse_period_ordinal — Goalserve period 字符串 → 节序数 ----
 TEST(ParsePeriodOrdinal, NumericExtraction) {
     using stcpp::pricing::parse_period_ordinal;

@@ -700,6 +700,11 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         //   home_fair 已按 yes_is_home 翻转)。<0/越界 → ResolveFair 回落 score-prior blend (fail-safe)。
         fair_score_prior = fv_result.prior_yes;
         fair_prior_conf = terminal ? 1.0 : pricing::prior_confidence(time_frac);
+        // 护栏 (2026-06-03): cricket 等比分不适配 goals-like 先验的运动 → prior_conf=0
+        //   (score-prior 零拉力 → ResolveFair 回落市场 de-vig → 覆盖但不在垃圾 fair 上交易)。
+        //   cricket innings 制 runs 差饱和 sigmoid 详见 pricing::score_prior_applicable。
+        if (!pricing::score_prior_applicable(game_row.sport))
+            fair_prior_conf = 0.0;
         fair_sharp_yes = map_is_draw ? game_row.inplay_bet365_draw_fair : game_row.inplay_bet365_home_fair;
         time_to_resolution_frac = terminal ? 0.0 : std::clamp(1.0 - time_frac, 0.0, 1.0);
         // 批1 g_time_x_lead: 领先 × 剩余时间占比 (领先 1 球在 80min vs 20min 价值天差地别)。
