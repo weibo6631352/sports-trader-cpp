@@ -10,6 +10,8 @@
 #include <cmath>
 #include <cstdlib>
 
+#include "stcpp/app/team_alias.hpp"  // sport-aware: ClassifySportMatch / CanonicalTeam
+
 namespace stcpp::app {
 
 namespace {
@@ -109,6 +111,46 @@ double EventMatcher::TeamSimilarity(const std::string& a, const std::string& b) 
     return static_cast<double>(inter) / static_cast<double>(denom);
 }
 
+namespace {
+// 个人项目 (网球/MMA) 相似度: 共享一个 ≥3 字符 token (= 姓) → 1.0 (语序无关:
+//   "Daria Khomutsianskaya" vs "Khomutsianskaya D." 共享 khomutsianskaya)。无共享姓 → 回退通用。
+double IndividualSim(const std::string& a, const std::string& b) {
+    const auto ta = EventMatcher::NormalizeTeamTokens(a);
+    const auto tb = EventMatcher::NormalizeTeamTokens(b);
+    std::size_t i = 0, j = 0;
+    while (i < ta.size() && j < tb.size()) {
+        if (ta[i] == tb[j]) {
+            if (ta[i].size() >= 3) return 1.0;  // 共享真姓 (非首字母) → 强匹配
+            ++i;
+            ++j;
+        } else if (ta[i] < tb[j]) {
+            ++i;
+        } else {
+            ++j;
+        }
+    }
+    return EventMatcher::TeamSimilarity(a, b);  // 无共享姓 → 通用回退
+}
+
+// sport-aware 相似度: 团队→规范队 ID 精确比 (解析不出回退通用); 个人→姓锚; 未知→通用。
+//   加法语义: 精确解析失败一律回退通用, 故只增不减 (绝不退化)。
+double PairSim(const std::string& sport, const std::string& a, const std::string& b) {
+    switch (ClassifySportMatch(sport)) {
+        case SportMatchCategory::kTeam: {
+            const std::string ca = CanonicalTeam(sport, a);
+            const std::string cb = CanonicalTeam(sport, b);
+            if (!ca.empty() && !cb.empty())
+                return (ca == cb) ? 1.0 : 0.0;       // 两边都解析到规范队 → 精确判定
+            return EventMatcher::TeamSimilarity(a, b);  // 任一未解析 → 通用回退
+        }
+        case SportMatchCategory::kIndividual:
+            return IndividualSim(a, b);
+        default:
+            return EventMatcher::TeamSimilarity(a, b);
+    }
+}
+}  // namespace
+
 // ---------------------------------------------------------------------------
 // Match — 从候选 EventScore 找最佳匹配 (fail-closed)
 // ---------------------------------------------------------------------------
@@ -125,10 +167,11 @@ EventMatchResult EventMatcher::Match(const EventMatchInput& in,
         }
 
         // 双向分配: 直配 (t0→home, t1→away) vs 交叉配 (t0→away, t1→home), 取每队更优.
-        const double direct0 = TeamSimilarity(in.team0, ev.home);
-        const double direct1 = TeamSimilarity(in.team1, ev.away);
-        const double cross0 = TeamSimilarity(in.team0, ev.away);
-        const double cross1 = TeamSimilarity(in.team1, ev.home);
+        //   PairSim 按运动分派 (团队→规范队 ID / 个人→姓锚 / 其余→通用)。
+        const double direct0 = PairSim(in.sport, in.team0, ev.home);
+        const double direct1 = PairSim(in.sport, in.team1, ev.away);
+        const double cross0 = PairSim(in.sport, in.team0, ev.away);
+        const double cross1 = PairSim(in.sport, in.team1, ev.home);
 
         const double direct_min = std::min(direct0, direct1);
         const double cross_min = std::min(cross0, cross1);

@@ -35,6 +35,7 @@ endif()
 add_library(stcpp_paper_app STATIC
     market_discovery.cpp
     event_matcher.cpp
+    team_alias.cpp
     paper_daemon.cpp
 )
 target_include_directories(stcpp_paper_app PUBLIC

@@ -11,9 +11,13 @@
 #include <gtest/gtest.h>
 
 #include "stcpp/app/event_matcher.hpp"
+#include "stcpp/app/team_alias.hpp"
 
+using stcpp::app::CanonicalTeam;
+using stcpp::app::ClassifySportMatch;
 using stcpp::app::EventMatcher;
 using stcpp::app::EventMatchInput;
+using stcpp::app::SportMatchCategory;
 using stcpp::debug_api::EventScore;
 
 namespace {
@@ -81,6 +85,72 @@ TEST(EventMatcherSim, DiacriticCrossSourceMatch) {
     EXPECT_DOUBLE_EQ(EventMatcher::TeamSimilarity("Coric", "\xC4\x86ori\xC4\x87"), 1.0);
     // "Muller" vs "Müller" (ü → u) → 折叠后 1.0
     EXPECT_DOUBLE_EQ(EventMatcher::TeamSimilarity("Muller", "M\xC3\xBCller"), 1.0);
+}
+
+// ============================================================================
+// sport-aware: 运动分类 + 团队规范化 (team_alias)
+// ============================================================================
+TEST(SportAware, ClassifySport) {
+    EXPECT_EQ(ClassifySportMatch("nba"), SportMatchCategory::kTeam);
+    EXPECT_EQ(ClassifySportMatch("mlb"), SportMatchCategory::kTeam);
+    EXPECT_EQ(ClassifySportMatch("nfl"), SportMatchCategory::kTeam);
+    EXPECT_EQ(ClassifySportMatch("nhl"), SportMatchCategory::kTeam);
+    EXPECT_EQ(ClassifySportMatch("soccer"), SportMatchCategory::kTeam);
+    EXPECT_EQ(ClassifySportMatch("atp"), SportMatchCategory::kIndividual);
+    EXPECT_EQ(ClassifySportMatch("itf"), SportMatchCategory::kIndividual);
+    EXPECT_EQ(ClassifySportMatch("ufc"), SportMatchCategory::kIndividual);
+    EXPECT_EQ(ClassifySportMatch(""), SportMatchCategory::kUnknown);
+}
+
+TEST(SportAware, CanonicalTeam_CityVsNickname) {
+    // "Los Angeles Lakers" / "LA Lakers" / "Lakers" → 同规范 ID
+    EXPECT_EQ(CanonicalTeam("nba", "Los Angeles Lakers"), "lakers");
+    EXPECT_EQ(CanonicalTeam("nba", "LA Lakers"), "lakers");
+    EXPECT_EQ(CanonicalTeam("nba", "Lakers"), "lakers");
+    // MLB 多词昵称消歧: Red Sox ≠ White Sox
+    EXPECT_EQ(CanonicalTeam("mlb", "Boston Red Sox"), "redsox");
+    EXPECT_EQ(CanonicalTeam("mlb", "Chicago White Sox"), "whitesox");
+    // NFL 数字昵称 + 别名
+    EXPECT_EQ(CanonicalTeam("nfl", "San Francisco 49ers"), "49ers");
+    EXPECT_EQ(CanonicalTeam("nfl", "Niners"), "49ers");
+    // 未建表运动 → "" (回退通用)
+    EXPECT_EQ(CanonicalTeam("soccer", "Manchester United"), "");
+    EXPECT_EQ(CanonicalTeam("nba", "Unknown Team XYZ"), "");
+}
+
+// 跨运动同昵称不串台 (panthers: NFL+NHL; 按 sport_code 分派各自表)。
+TEST(SportAware, CrossSportNoCollision) {
+    EXPECT_EQ(CanonicalTeam("nfl", "Carolina Panthers"), "panthers");
+    EXPECT_EQ(CanonicalTeam("nhl", "Florida Panthers"), "panthers");  // 各自表内 panthers 唯一
+}
+
+// 团队精确匹配: Polymarket 缩写 vs Goalserve 全名 → 经规范 ID 命中 (通用 overlap 会漏)。
+TEST(EventMatcherSim, TeamCanonicalMatch) {
+    EventMatcher m;
+    EventScore ev;
+    ev.home = "Los Angeles Lakers";
+    ev.away = "Boston Celtics";
+    EventMatchInput in;
+    in.sport = "nba";
+    in.team0 = "LA Lakers";    // Polymarket 缩写
+    in.team1 = "Celtics";
+    const auto r = m.Match(in, {ev});
+    EXPECT_TRUE(r.matched);
+    EXPECT_TRUE(r.yes_is_home);  // team0(Lakers)→home
+}
+
+// 个人项目: 语序不同 (名 姓 vs 姓 名首字母) 经姓锚匹配。
+TEST(EventMatcherSim, IndividualSurnameMatch) {
+    EventMatcher m;
+    EventScore ev;
+    ev.home = "Khomutsianskaya D.";  // Goalserve: 姓 名首字母
+    ev.away = "Yang Y.";
+    EventMatchInput in;
+    in.sport = "itf";
+    in.team0 = "Daria Khomutsianskaya";  // Polymarket: 名 姓
+    in.team1 = "Yidi Yang";
+    const auto r = m.Match(in, {ev});
+    EXPECT_TRUE(r.matched);
 }
 
 // ============================================================================
@@ -236,8 +306,11 @@ TEST(EventMatcher, EmptyCandidates_FailClosed) {
 // Match — 多候选择优 + 同队多场 (时间窗口区分)
 // ============================================================================
 TEST(EventMatcher, MultipleCandidates_PicksBestTeamScore) {
+    // 注: 用未建别名表的运动 (cs2 → 通用 overlap) 测「按 score 排序选最佳」。
+    //   NBA 等已建表运动下 "LA Lakers"==​"Los Angeles Lakers" (规范同队, 都 1.0) → 打平,
+    //   分辨力按设计消失 (缩写=全名正是改进目的), 故此处用通用路径验证 score 排序。
     EventMatcher m;
-    EventMatchInput in{"Los Angeles Lakers", "Boston Celtics", 1000000, "nba"};
+    EventMatchInput in{"Los Angeles Lakers", "Boston Celtics", 1000000, "cs2"};
     std::vector<EventScore> cands{
         MakeEv("weak", "LA Lakers", "Celtics", 1000000),                   // 部分缩写, score 较低
         MakeEv("strong", "Los Angeles Lakers", "Boston Celtics", 1000000)  // 全配, score 满
