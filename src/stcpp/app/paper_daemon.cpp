@@ -262,7 +262,7 @@ std::shared_ptr<const paper::PaperCatalog> PaperDaemon::BuildPaperCatalog() cons
 //   在映射刷新线程跑 (market_match_inputs_ 同线程, 无竞争)。live 比赛滚动, 不周期重发现则跑几小时
 //   后订阅全是死盘。老郭: 全量重订别增量 diff (幂等好测)。集合未变则跳过 (省 republish)。
 // ---------------------------------------------------------------------------
-bool PaperDaemon::RediscoverOnce() {
+bool PaperDaemon::RediscoverOnce(std::stop_token st) {
     auto events = DiscoverSportsEvents(cfg_.max_events);
     if (events.empty()) {
         return false;  // 无 live/近赛 → 不动 (保留现集, 让旧盘经 resolution 自然结算; 不抖动到空)
@@ -315,9 +315,10 @@ bool PaperDaemon::RediscoverOnce() {
     }
     if (live_transport_) {
         const std::unordered_set<std::string> new_tokens(all_token_ids_.begin(), all_token_ids_.end());
-        // 新增 token → operation:subscribe
+        // 新增 token → operation:subscribe (并收集到 added_tokens 供 REST 补 seed)
         std::string add_body;
         std::size_t n_add = 0;
+        std::vector<std::string> added_tokens;
         for (const auto& t : all_token_ids_) {
             if (old_tokens.count(t)) continue;
             if (n_add) add_body.push_back(',');
@@ -325,6 +326,7 @@ bool PaperDaemon::RediscoverOnce() {
             add_body.append(t);
             add_body.push_back('"');
             ++n_add;
+            added_tokens.push_back(t);
         }
         // 移除 token (比赛结束/下架) → operation:unsubscribe (单盘停推, 不动其他盘, 无重连)
         std::string del_body;
@@ -347,6 +349,11 @@ bool PaperDaemon::RediscoverOnce() {
                      "[paper_daemon] 周期重发现: 市场集变化 → +%zu 订阅 / -%zu 退订 (增量, 共 %zu market)\n",
                      n_add, n_del, token_map_.size());
         std::fflush(stderr);
+        // 新增盘补 REST seed (修: 仅 operation:subscribe 不够 — 稀疏体育盘短期无 WSS diff 帧 →
+        //   hub book 永远 found:false → 前端"订单簿未接入"。和启动 SeedInitialBooksFromRest 同路, 只打底新增子集)。
+        if (!added_tokens.empty()) {
+            SeedTokensFromRest(added_tokens, st);
+        }
     }
     return true;
 }
@@ -361,7 +368,15 @@ bool PaperDaemon::RediscoverOnce() {
 void PaperDaemon::SeedInitialBooksFromRest(std::stop_token st) {
     // A1: 读不可变 token 快照 (非裸 all_token_ids_ — 该线程与 RediscoverOnce 写并发, 消 race)
     const auto tokens_sp = TokenSnapshot();
-    const std::vector<std::string>& tokens = *tokens_sp;
+    SeedTokensFromRest(*tokens_sp, st);
+}
+
+// ---------------------------------------------------------------------------
+// SeedTokensFromRest — 按指定 token 集 POST /books 批量 REST seed (核心实现)。
+//   SeedInitialBooksFromRest 用全量快照调它; RediscoverOnce 用"新增 token 子集"调它
+//   (修 rediscovery 新增盘漏补 seed → Polymarket 有簿前端却显示未接入)。
+// ---------------------------------------------------------------------------
+void PaperDaemon::SeedTokensFromRest(const std::vector<std::string>& tokens, std::stop_token st) {
     if (!live_publisher_ || tokens.empty())
         return;
     const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1132,7 +1147,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         // 0. R-6 周期重发现 (间隔到 → 全量重建 catalog + WSS 重订; 在 match 之前, match_inputs 已是新版)。
         if (cfg_.rediscover_interval_sec > 0 &&
             steady_clock::now() - last_rediscover >= seconds(cfg_.rediscover_interval_sec)) {
-            RediscoverOnce();
+            RediscoverOnce(st);
             last_rediscover = steady_clock::now();
         }
         // 1. 取 Goalserve 比分快照 → 候选 EventScore 列表

@@ -275,11 +275,14 @@ private:
     [[nodiscard]] std::shared_ptr<const paper::PaperCatalog> BuildPaperCatalog() const;
     // R-6: 周期重发现一次 — 全量重建 catalog (清+PopulateCatalog) → SetPaperCatalog + RSP 刷新 +
     //   WSS 全量重订。在映射刷新线程跑 (match_inputs 同线程, 无竞争)。返回 true 若市场集变化。
-    bool RediscoverOnce();
+    bool RediscoverOnce(std::stop_token st);
 
     // REST 快照打底 (Start 起后台 jthread): POST /books 批量拉初始 book → SeedFromRestBooks。
     //   修"稳定盘/漏接 WSS 初始快照永远空"。后台跑 (不阻塞启动), st 关停时提前退出, 失败优雅降级。
     void SeedInitialBooksFromRest(std::stop_token st);
+    // 按指定 token 集 REST seed (SeedInitialBooksFromRest 的核心; RediscoverOnce 增量新增盘也复用):
+    //   修"rediscovery 新增盘没补 seed → Polymarket 有簿前端却未接入"。
+    void SeedTokensFromRest(const std::vector<std::string>& tokens, std::stop_token st);
 
     // CLOB WSS 看门狗 (2026-06-02 会议: 修 clob 断开不重连 + 缺心跳 idle 超时):
     //   连着 → 每 10s 发 "PING" 心跳 (Polymarket 服务端不主动 ping, 不发会被 idle 踢, 真因);
