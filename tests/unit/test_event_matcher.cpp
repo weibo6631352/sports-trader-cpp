@@ -57,6 +57,32 @@ TEST(EventMatcherNorm, EmptyAndSymbolsOnly) {
     EXPECT_TRUE(EventMatcher::NormalizeTeamTokens("--- !!!").empty());
 }
 
+// 变音符折叠 (2026-06-02 老板「名字可能不一样」): UTF-8 重音 → ASCII, 否则按字节切碎裂不匹配。
+TEST(EventMatcherNorm, FoldsDiacriticsToAscii) {
+    // Latin-1: ú → u (原 bug: ú=0xC3 0xBA 当分隔符 → "cer"+"ndolo" 碎裂)
+    const auto t1 = EventMatcher::NormalizeTeamTokens("Cer\xC3\xBAndolo");  // "Cerúndolo"
+    ASSERT_EQ(t1.size(), 1u);
+    EXPECT_EQ(t1[0], "cerundolo");
+    // Slavic: ć → c, đ → d
+    const auto t2 = EventMatcher::NormalizeTeamTokens("\xC4\x90okovi\xC4\x87");  // "Đoković"
+    ASSERT_EQ(t2.size(), 1u);
+    EXPECT_EQ(t2[0], "dokovic");
+    // ñ → n, á → a
+    const auto t3 = EventMatcher::NormalizeTeamTokens("Nadal Espa\xC3\xB1");  // "Nadal Españ"
+    EXPECT_EQ(t3[0], "espan");
+    EXPECT_EQ(t3[1], "nadal");
+}
+
+// 重音折叠后跨源匹配: Polymarket 去重音名 vs Goalserve 带重音名 → 应匹配 (原碎裂 → 0)。
+TEST(EventMatcherSim, DiacriticCrossSourceMatch) {
+    // Polymarket "Cerundolo" (ASCII) vs Goalserve "Cerúndolo" (重音) → 折叠后 1.0
+    EXPECT_DOUBLE_EQ(EventMatcher::TeamSimilarity("Cerundolo", "Cer\xC3\xBAndolo"), 1.0);
+    // "Coric" vs "Ćorić" (Ć/ć → c) → 折叠后 1.0
+    EXPECT_DOUBLE_EQ(EventMatcher::TeamSimilarity("Coric", "\xC4\x86ori\xC4\x87"), 1.0);
+    // "Muller" vs "Müller" (ü → u) → 折叠后 1.0
+    EXPECT_DOUBLE_EQ(EventMatcher::TeamSimilarity("Muller", "M\xC3\xBCller"), 1.0);
+}
+
 // ============================================================================
 // TeamSimilarity (overlap coefficient)
 // ============================================================================

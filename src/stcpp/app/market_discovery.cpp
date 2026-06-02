@@ -411,18 +411,13 @@ std::string ExtractMarketsArray(const std::string& event_obj) {
     return event_obj.substr(start, end - start + 1);
 }
 
-// 聚焦流动性盘 (2026-06-02 老板「聚焦流动性盘 + 提匹配率」): 发现阶段剔除不可交易盘 —
-//   ① 已完赛盘 (sportsMarketType 含 "completed": 比赛已结束等结算, 无 edge、永不匹配 inplay);
-//   ② 极低流动性死盘 (liquidity 有值且 < kMinDiscoverLiquidity, 如冷门 cricket prop liq<30, 无书无量)。
-//   liquidity 缺失 (NaN) 不剔 (fail-open: 不拿缺数据当死盘, 刚开赛盘可能尚无 liq 值)。
-//   效果: 缩小匹配分母 + 网格只留真·可交易盘 → 匹配率与信噪比双升。实测当前冷门完赛/prop 占发现盘约半。
-constexpr double kMinDiscoverLiquidity = 200.0;
+// 发现阶段剔除不可交易盘 (2026-06-02 老板「全盘口」修正):
+//   只剔除【已完赛盘】(sportsMarketType 含 "completed": 比赛已结束等结算, 非 in-play,
+//   不属于任何 live 比赛的盘口板, 永不匹配 live 比分源)。
+//   **不再按 liquidity 剔** —— 老板「我们要做的是全盘口」: in-play 比赛的 moneyline/totals/
+//   spreads/分节/分盘/props 全要, 哪怕某单类子盘瞬时流动性低 (前端「隐藏无簿」开关管显示, 后端全留)。
 inline bool IsUntradeableMarket(const DiscoveredMarket& dm) {
-    if (dm.sports_market_type.find("completed") != std::string::npos)
-        return true;
-    if (std::isfinite(dm.liquidity) && dm.liquidity < kMinDiscoverLiquidity)
-        return true;
-    return false;
+    return dm.sports_market_type.find("completed") != std::string::npos;
 }
 
 }  // namespace discovery_detail

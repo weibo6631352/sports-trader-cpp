@@ -12,14 +12,59 @@
 
 namespace stcpp::app {
 
+namespace {
+// FoldDiacritics — UTF-8 变音符 → ASCII base (名字映射, 2026-06-02 老板「名字可能不一样」)。
+//   修真 bug: NormalizeTeamTokens 按字节切, UTF-8 重音字符 (如 "Cerúndolo" 的 ú=0xC3 0xBA)
+//   每字节 >127 → 被当分隔符 → token 碎裂 ("cer"+"ndolo") → 与 Goalserve "Cerundolo" 交集 0 不匹配。
+//   折叠后两边归一到 ASCII (Cerúndolo→cerundolo, Ðoković→dokovic) → 国际选手/球队名可匹配。
+//   覆盖 Latin-1 Supplement (0xC3 前缀: à-ÿ 西欧重音) + 常见 Slavic Latin Extended-A (网球高频)。
+std::string FoldDiacritics(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (std::size_t i = 0; i < s.size(); ++i) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        char base = 0;
+        if (c == 0xC3 && i + 1 < s.size()) {  // U+00C0..U+00FF (À-ÿ)
+            const unsigned char d = static_cast<unsigned char>(s[i + 1]);
+            if ((d >= 0x80 && d <= 0x85) || (d >= 0xA0 && d <= 0xA5)) base = 'a';       // À-Å à-å
+            else if (d == 0x87 || d == 0xA7) base = 'c';                                 // Ç ç
+            else if ((d >= 0x88 && d <= 0x8B) || (d >= 0xA8 && d <= 0xAB)) base = 'e';   // È-Ë è-ë
+            else if ((d >= 0x8C && d <= 0x8F) || (d >= 0xAC && d <= 0xAF)) base = 'i';   // Ì-Ï ì-ï
+            else if (d == 0x91 || d == 0xB1) base = 'n';                                 // Ñ ñ
+            else if ((d >= 0x92 && d <= 0x96) || (d >= 0xB2 && d <= 0xB6)) base = 'o';   // Ò-Ö ò-ö
+            else if ((d >= 0x99 && d <= 0x9C) || (d >= 0xB9 && d <= 0xBC)) base = 'u';   // Ù-Ü ù-ü
+            else if (d == 0x9D || d == 0xBD || d == 0xBF) base = 'y';                    // Ý ý ÿ
+            if (base) { out.push_back(base); ++i; continue; }
+        } else if (c == 0xC4 && i + 1 < s.size()) {  // Latin Extended-A 子集 (Slavic)
+            const unsigned char d = static_cast<unsigned char>(s[i + 1]);
+            if (d == 0x86 || d == 0x87 || d == 0x8C || d == 0x8D) base = 'c';            // Ć ć Č č
+            else if (d == 0x90 || d == 0x91) base = 'd';                                 // Đ đ
+            else if (d >= 0x80 && d <= 0x85) base = 'a';                                 // Ā ā Ă ă Ą ą
+            else if (d >= 0x92 && d <= 0x9B) base = 'e';                                 // Ē-ě 区
+            if (base) { out.push_back(base); ++i; continue; }
+        } else if (c == 0xC5 && i + 1 < s.size()) {  // Latin Extended-A 子集 (Slavic)
+            const unsigned char d = static_cast<unsigned char>(s[i + 1]);
+            if (d == 0xA0 || d == 0xA1) base = 's';                                      // Š š
+            else if (d == 0xBD || d == 0xBE) base = 'z';                                 // Ž ž
+            else if (d >= 0x84 && d <= 0x88) base = 'n';                                 // Ń-ň 区
+            else if (d >= 0x98 && d <= 0x9B) base = 'r';                                 // Ř ř 区
+            if (base) { out.push_back(base); ++i; continue; }
+        }
+        out.push_back(s[i]);
+    }
+    return out;
+}
+}  // namespace
+
 // ---------------------------------------------------------------------------
-// NormalizeTeamTokens — lowercase + alnum token 集合 (去重排序)
+// NormalizeTeamTokens — fold 变音符 → lowercase + alnum token 集合 (去重排序)
 // ---------------------------------------------------------------------------
 std::vector<std::string> EventMatcher::NormalizeTeamTokens(const std::string& name) {
+    const std::string folded = FoldDiacritics(name);  // 先折重音 → ASCII (国际选手名映射)
     std::vector<std::string> tokens;
     std::string cur;
-    cur.reserve(name.size());
-    for (char c : name) {
+    cur.reserve(folded.size());
+    for (char c : folded) {
         const unsigned char uc = static_cast<unsigned char>(c);
         if (std::isalnum(uc)) {
             cur.push_back(static_cast<char>(std::tolower(uc)));
