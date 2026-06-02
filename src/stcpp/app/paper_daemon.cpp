@@ -55,6 +55,21 @@ public:
     return lower == "yes" || lower == "no";
 }
 
+// Over/Under (大小盘 outcome): 非对手名 → 该盘匹配须退回 event title 取两选手 (赛事级锚定)。
+//   覆盖 "Over"/"Under" 精确 + "Over 21.5"/"Under 2.5" 带线值前缀。
+[[nodiscard]] bool IsOverUnder(const std::string& s) noexcept {
+    auto lower = s;
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return lower == "over" || lower == "under" || lower.rfind("over ", 0) == 0 ||
+           lower.rfind("under ", 0) == 0;
+}
+
+// 非对手名 outcome (Yes/No 或 Over/Under): 匹配锚须退回 event title 两参与者。
+[[nodiscard]] bool IsNonOpponentOutcome(const std::string& s) noexcept {
+    return IsYesNoOutcome(s) || IsOverUnder(s);
+}
+
 // 从 event title "Team A vs. Team B" 拆两队名 (分隔符 " vs. " / " vs " / " v. "). 失败返 false.
 [[nodiscard]] bool SplitVsTitle(const std::string& title, std::string& a, std::string& b) {
     for (const char* sep : {" vs. ", " vs ", " v. ", " VS "}) {
@@ -135,7 +150,11 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             //      (yes_is_home 定价正确性命门; gi 配不上=平局/未知 → 仅锚定取分, orientation 交 matcher margin 兜底).
             std::string team0 = dm.outcome0_name;  // YES (token0)
             std::string team1 = dm.outcome1_name;  // NO  (token1)
-            if (team0.empty() || team1.empty() || IsYesNoOutcome(team0) || IsYesNoOutcome(team1)) {
+            // 赛事级锚定 (2026-06-02 老板「全盘口都该匹配上」): moneyline 的 outcome 是球员/队名 → 直接用;
+            //   但同一 event 的大小盘 outcome 是 Over/Under、3-way 子盘是 Yes/No —— 非对手名 → 退回 event
+            //   title 拆两参与者, 让全盘口(含大小盘)都锚到同一 Goalserve event。orientation 交 matcher
+            //   max(直配,交叉) 兜底 (大小盘 yes_is_home 不参与定价方向)。
+            if (team0.empty() || team1.empty() || IsNonOpponentOutcome(team0) || IsNonOpponentOutcome(team1)) {
                 std::string ta, tb;
                 if (SplitVsTitle(ev.title, ta, tb)) {
                     const std::string& gi = dm.group_item_title;
@@ -151,7 +170,8 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
                     }
                 }
             }
-            if (!team0.empty() && !team1.empty() && !IsYesNoOutcome(team0) && !IsYesNoOutcome(team1)) {
+            if (!team0.empty() && !team1.empty() && !IsNonOpponentOutcome(team0) &&
+                !IsNonOpponentOutcome(team1)) {
                 EventMatchInput mi_in;
                 mi_in.team0 = team0;
                 mi_in.team1 = team1;
