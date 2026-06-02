@@ -2,7 +2,7 @@
 
 **owner:** 老雷 (GM)
 **last_review:** 2026-06-02
-**状态:** ✅ 已实施并上线验证(2026-06-02)。M1(book_pair/quote builder 去冗余)+ M2(FocusRegistry + POST /stream/focus + book/quote 通道 + stream_id boot-nonce)+ M3(前端 focus POST + 通道入 store + refreshExpandedDetail 收编回退)+ 幂等修复全部完成。实测:展开盘口 → 1 次 focus POST + 1 次首屏兜底 REST → 服务端经 SSE 推 book/quote;无周期 book_pair/quote 轮询(双源已消);9 必改评审项全落地。2c(timeseries)未做(REST 15s 够)。
+**状态:** ✅ 已实施并上线验证(2026-06-02)。M1(book_pair/quote builder 去冗余)+ M2(FocusRegistry + POST /stream/focus + book/quote 通道 + stream_id boot-nonce)+ M3(前端 focus POST + 通道入 store + refreshExpandedDetail 收编回退)+ 幂等修复全部完成。实测:展开盘口 → 1 次 focus POST + 1 次首屏兜底 REST → 服务端经 SSE 推 book/quote;无周期 book_pair/quote 轮询(双源已消);9 必改评审项全落地。2b(Ops 通道: healthz/features/mapping)+ 2c(timeseries)也已上 SSE(2026-06-02「继续」收尾,慢通道每 5 tick 节流)。**北极星达成: 稳态 14s 窗口内对 :8080 的 REST 轮询 = 0**(仅 metrics 30s[Prometheus 需] + marketInfoSlow 60s 常驻; 其余全 SSE)。
 **前置:** Phase 1 已上线([laolei-sse-push-design-v1](laolei-sse-push-design-v1.md))—— 9 always-on 通道走 SSE,REST/SSE 序列化已单一数据源(`endpoint_payloads.hpp`)。
 **评审:** 网络(老王)+ 架构(老郭)轻评审一轮;**风控不参与**(只读观测,[[no-risk-review-for-frontend]])。
 
