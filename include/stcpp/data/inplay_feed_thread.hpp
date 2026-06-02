@@ -37,6 +37,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <set>
@@ -132,12 +133,17 @@ public:
     // 各 sport 最后一次拉取的 event count
     [[nodiscard]] std::int64_t last_event_count(goalserve::GoalserveSport sport) const noexcept;
 
-    // InjectSupplementalScores — 外部 (daemon RefreshTennisScores) 注入补充比分源 (tennis_scores
-    //   livescore: 覆盖 inplay 缺的 ITF/Challenger)。merge 进同一 merged_map_ 并 republish (单一发布者
-    //   口径, 不与 RunSportLoop 的 Publish 互踩 — 同 merged_mu_)。去重: 同 sport 同双姓氏已有 (inplay
-    //   带 bet365 odds) → 跳过, 不让无 odds 的补充源盖掉 sharp fair。键空间独立 (tennis_scores 自有 id)。
+    // InjectSupplementalScores — 外部 (daemon RefreshTennisScores/RefreshTeamLivescores) 注入补充
+    //   比分源 (tennis_scores / cricket / esports livescore: 覆盖 inplay-*.gz bet365 联动缺的场)。
+    //   merge 进同一 merged_map_ 并 republish (单一发布者口径, 不与 RunSportLoop 的 Publish 互踩 —
+    //   同 merged_mu_)。
+    //   source_id: 多源隔离键 ("tennis_scores"/"cricket"/"esports") — 每源独立 key 集, 刷新时只删
+    //     【本源】上轮 key (不互相清掉; 旧实现单一 supplemental_keys_ 调多次会互踩, 已修)。
+    //   去重 (sport-aware): 同 sport 同对阵已被现有条目 (inplay 带 odds 或其他源) 占 → 跳过, 不盖。
+    //     tennis 用末段姓 (格式差异容忍); 队制 (cricket/esports) 用归一化全名 token 集。
     //   返回净注入数 (post-dedup, 实际进 store 的场数; 调用方日志诊断覆盖增益)。
-    std::size_t InjectSupplementalScores(std::vector<debug_api::EventScore> recs) noexcept;
+    std::size_t InjectSupplementalScores(const std::string& source_id,
+                                         std::vector<debug_api::EventScore> recs) noexcept;
 
 private:
     // 单 sport 的采集循环 (在独立线程中运行)
@@ -178,7 +184,8 @@ private:
     mutable std::mutex merged_mu_;
     ScoreMap merged_map_;
     std::set<std::string> sport_keys_[kNumSports];  // per-sport key set (删旧用)
-    std::set<std::string> supplemental_keys_;       // 补充源 (tennis_scores) key set (删旧用)
+    // 补充源 key 集: 按 source_id 隔离 (tennis_scores/cricket/esports), 刷新只删本源旧 key。
+    std::map<std::string, std::set<std::string>> supplemental_keys_by_source_;
 };
 
 }  // namespace stcpp::data

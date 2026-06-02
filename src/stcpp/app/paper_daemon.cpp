@@ -20,6 +20,7 @@
 
 #include "stcpp/data/commentaries_poller.hpp"   // live_stats CommentariesPoller (commentaries 轮询)
 #include "stcpp/data/tennis_scores_parser.hpp"  // 覆盖率: tennis_scores livescore → InjectSupplementalScores
+#include "stcpp/data/team_livescore_parser.hpp"  // 覆盖率: cricket/esports livescore → InjectSupplementalScores
 #include "stcpp/data/market_taxonomy.hpp"        // v0.7 类别码映射 (真实 Polymarket 结构 → categorical)
 #include "stcpp/data/inplay_feed_thread.hpp"    // InplayFeedThread / InplayFeedConfig
 #include "stcpp/data/live_stats_store.hpp"      // live_stats LiveStatsStore
@@ -963,6 +964,11 @@ void PaperDaemon::Start() {
             std::jthread([this](std::stop_token st) { RefreshTennisScores(st); });
         std::printf("[paper_daemon] tennis_scores 补充比分线程启动 (拉高 ITF/Challenger 覆盖, 15s 轮询)\n");
         std::fflush(stdout);
+        // 队制 livescore 补充源 (cricket/livescore + esports/home) — 填 inplay-cricket 404 的 0 缺口。
+        team_livescore_refresh_thread_ =
+            std::jthread([this](std::stop_token st) { RefreshTeamLivescores(st); });
+        std::printf("[paper_daemon] 队制 livescore 补充线程启动 (cricket/esports, 30s 轮询)\n");
+        std::fflush(stdout);
     }
 
     // ---- bm_slots start: 跨庄家赔率刷新线程 (getodds + inplay-mapping → g_bm_* 特征 #5/6/7/16) ----
@@ -1575,7 +1581,8 @@ void PaperDaemon::RefreshTennisScores(std::stop_token st) {
                                              .count();
                 auto recs = data::tennis_scores::ParseTennisScoresLive(xml, ing);
                 const std::size_t n = recs.size();
-                const std::size_t injected = inplay_feed_->InjectSupplementalScores(std::move(recs));
+                const std::size_t injected =
+                    inplay_feed_->InjectSupplementalScores("tennis_scores", std::move(recs));
                 static int ts_throttle = 0;
                 if ((ts_throttle++ % 4) == 0)  // 每 60s 一行
                     std::fprintf(stderr,
@@ -1584,6 +1591,81 @@ void PaperDaemon::RefreshTennisScores(std::stop_token st) {
             }
         }
         const auto deadline = steady_clock::now() + seconds(15);
+        while (steady_clock::now() < deadline) {
+            if (st.stop_requested())
+                return;
+            std::this_thread::sleep_for(milliseconds(150));
+        }
+    }
+}
+
+// RefreshTeamLivescores — 覆盖率杠杆 (2026-06-03, 老板「GS 其他接口有没有」+「加吧加吧」):
+//   队制 livescore 补充源 — cricket/livescore (inplay-cricket 404 → 候选 0, PM 有 crint/blast)
+//   + esports/home (比 inplay-esports ~4 更宽)。覆盖率诊断证: 匹配器无问题, 瓶颈是候选池覆盖。
+//   feed 小 (cricket ~320KB / esports ~45KB, www 端点不限速) → 30s 轮询, 无 WSS 带宽风险。
+//   无 bet365 赔率 → 走 score-prior fair; cricket 定价模型另立 (本期只为覆盖 + 比分特征)。
+// ---------------------------------------------------------------------------
+void PaperDaemon::RefreshTeamLivescores(std::stop_token st) {
+    using namespace std::chrono;
+    const char* gs_key_env = std::getenv("GOALSERVE_API_KEY");
+    const std::string gs_key = gs_key_env ? gs_key_env : "";
+    const char* gs_proxy_env = std::getenv("GOALSERVE_PROXY");
+    const std::string gs_proxy = gs_proxy_env ? gs_proxy_env : "";
+    auto fetch = [&gs_proxy](const std::string& url) -> std::string {
+        std::string cmd = "curl -s --max-time 20 ";
+        if (!gs_proxy.empty()) {
+            cmd += "-x '";
+            cmd += gs_proxy;
+            cmd += "' ";
+        }
+        cmd += "'";
+        cmd += url;
+        cmd += "'";
+        std::string out;
+        if (FILE* p = ::popen(cmd.c_str(), "r")) {
+            char buf[8192];
+            std::size_t n;
+            while ((n = std::fread(buf, 1, sizeof(buf), p)) > 0)
+                out.append(buf, n);
+            ::pclose(p);
+        }
+        return out;
+    };
+    // (source_id, feed 路径, 解析 spec)
+    struct Src {
+        const char* source_id;
+        const char* path;
+        data::team_livescore::TeamLivescoreSpec spec;
+    };
+    const Src srcs[] = {
+        {"cricket", "cricket/livescore",
+         {"cricket", "In Progress", "totalscore", "visitorteam"}},
+        {"esports", "esports/home", {"esports", "Started", "score", "awayteam"}},
+    };
+    int throttle = 0;
+    while (!st.stop_requested()) {
+        if (!gs_key.empty() && inplay_feed_) {
+            for (const auto& s : srcs) {
+                if (st.stop_requested())
+                    return;
+                const std::string xml =
+                    fetch("https://www.goalserve.com/getfeed/" + gs_key + "/" + s.path);
+                if (xml.empty())
+                    continue;
+                const std::int64_t ing =
+                    duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+                auto recs = data::team_livescore::ParseTeamLivescoreLive(xml, ing, s.spec);
+                const std::size_t n = recs.size();
+                const std::size_t injected =
+                    inplay_feed_->InjectSupplementalScores(s.source_id, std::move(recs));
+                if ((throttle % 2) == 0)  // 每 60s 一轮 (2 源 × 30s)
+                    std::fprintf(stderr,
+                                 "[%s] live=%zu 场, 净注入=%zu (候选池补充; inplay 缺的)\n",
+                                 s.source_id, n, injected);
+            }
+            ++throttle;
+        }
+        const auto deadline = steady_clock::now() + seconds(30);
         while (steady_clock::now() < deadline) {
             if (st.stop_requested())
                 return;

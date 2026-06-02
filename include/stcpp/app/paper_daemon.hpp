@@ -312,6 +312,11 @@ private:
     //   并入 score store → EventMatcher 配上 PM 的 ITF 盘 → 拉高 tennis 覆盖率。
     void RefreshTennisScores(std::stop_token st);
 
+    // 队制 livescore 补充源线程 (覆盖率杠杆 2026-06-03): popen curl cricket/livescore (inplay-cricket
+    //   404 → 候选 0) + esports/home (比 inplay-esports 宽) → ParseTeamLivescoreLive → 仅 live →
+    //   inplay_feed_->InjectSupplementalScores 并入 score store → EventMatcher 配上 PM 的 crint/esports 盘。
+    void RefreshTeamLivescores(std::stop_token st);
+
     // [2026-06-01 老板「边训边跑边更新模型可重新加载」] 模型热重载线程: 周期 stat onnx_model_path mtime,
     //   变了 → make_onnx 加载新模型 → 校验 (ready + feat 数) → paper_loop_->SetMlModelShared 原子换上不停盘。
     //   加载/校验失败 → 保留旧模型 (fail-safe)。onnx_model_path 空 / interval=0 → 不启线程。
@@ -378,6 +383,7 @@ private:
     std::jthread live_stats_refresh_thread_;  // live_stats 刷新 (LiveStatsStore → SetLiveStatsByTeams)
     std::jthread odds_refresh_thread_;        // bm_slots 刷新 (getodds + inplay-mapping → SetOddsByMatchId)
     std::jthread tennis_scores_refresh_thread_;  // 覆盖率: tennis_scores livescore → InjectSupplementalScores
+    std::jthread team_livescore_refresh_thread_;  // 覆盖率: cricket/esports livescore → InjectSupplementalScores
     std::jthread model_reload_thread_;        // 模型热重载 watcher (onnx mtime 变 → SetMlModelShared 原子换)
     std::jthread auto_train_thread_;          // 进程内自动训练编排 (周期 join + spawn Python 训练 → 产新模型)
     std::jthread disk_prune_thread_;          // 采集数据磁盘守护 (>阈值 → 截最老数据)

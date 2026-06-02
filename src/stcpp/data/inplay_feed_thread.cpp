@@ -787,12 +787,16 @@ std::string InplayFeedThread::ReadProxyFromEnv() noexcept {
     return {};
 }
 
-// ---- InjectSupplementalScores: 并入补充比分源 (tennis_scores livescore) ----
-//   覆盖率杠杆 (2026-06-03): inplay (bet365 联动) 缺 ITF/Challenger, tennis_scores 全巡回有。
-//   merge 进 merged_map_ 并 republish, 与 RunSportLoop 共用 merged_mu_ (单一发布者口径)。
-//   去重: 同双姓氏已被 inplay 占 (带 bet365 odds) → 跳过, 保住 atp/wta 的 sharp fair。
-std::size_t InplayFeedThread::InjectSupplementalScores(std::vector<debug_api::EventScore> recs) noexcept {
-    // 末段姓氏 (小写; '/' 防双打名混入): "M. Malige"→"malige", "Krawczyk/ Skupski"→"skupski"
+// ---- InjectSupplementalScores: 并入补充比分源 (tennis_scores / cricket / esports livescore) ----
+//   覆盖率杠杆 (2026-06-03): inplay-*.gz (bet365 联动) 缺这些 (tennis ITF/Challenger, cricket 全部
+//   [inplay-cricket 404], esports 大半) → 补充源补候选池。merge 进 merged_map_ 并 republish, 与
+//   RunSportLoop 共用 merged_mu_ (单一发布者口径)。
+//   多源隔离: source_id ("tennis_scores"/"cricket"/"esports") 各自 key 集, 刷新只删本源旧 key。
+//   sport-aware 去重: 同 sport 同对阵已被现有条目占 (inplay 带 odds 或其他源) → 跳过, 不盖 sharp fair。
+std::size_t InplayFeedThread::InjectSupplementalScores(const std::string& source_id,
+                                                       std::vector<debug_api::EventScore> recs) noexcept {
+    // sport-aware 对阵键: tennis 用末段姓 (容忍 "M. Malige"/"Mae Malige" 格式差异);
+    //   队制 (cricket/esports) 用归一化全名 (lowercase alnum token 排序 join, 容忍大小写/空白)。
     auto surname = [](const std::string& name) -> std::string {
         std::size_t e = name.size();
         while (e > 0 && (name[e - 1] == ' ' || name[e - 1] == '\t'))
@@ -806,35 +810,51 @@ std::size_t InplayFeedThread::InjectSupplementalScores(std::vector<debug_api::Ev
                 c = static_cast<char>(c + 32);
         return s;
     };
-    auto pair_key = [&surname](const std::string& h, const std::string& a) -> std::string {
-        std::string sh = surname(h), sa = surname(a);
-        if (sh > sa)
-            std::swap(sh, sa);
-        return sh + "|" + sa;
+    auto team_norm = [](const std::string& name) -> std::string {
+        std::string out;
+        out.reserve(name.size());
+        for (char c : name) {
+            const unsigned char uc = static_cast<unsigned char>(c);
+            if ((uc >= '0' && uc <= '9') || (uc >= 'a' && uc <= 'z'))
+                out.push_back(static_cast<char>(uc));
+            else if (uc >= 'A' && uc <= 'Z')
+                out.push_back(static_cast<char>(uc + 32));
+            // 其余 (空白/标点) 丢弃 → "Natus Vincere"→"natusvincere", "G2 Esports"→"g2esports"
+        }
+        return out;
+    };
+    auto entity_key = [&surname, &team_norm](const std::string& sport, const std::string& name) -> std::string {
+        return (sport == "tennis") ? surname(name) : team_norm(name);
+    };
+    auto pair_key = [&entity_key](const std::string& sport, const std::string& h,
+                                  const std::string& a) -> std::string {
+        std::string kh = entity_key(sport, h), ka = entity_key(sport, a);
+        if (kh > ka)
+            std::swap(kh, ka);
+        return sport + ":" + kh + "|" + ka;  // sport 前缀 → 跨 sport 绝不误去重
     };
 
     std::lock_guard<std::mutex> lk(merged_mu_);
-    // 删上轮补充源 key (避免已结束/已切换残留)
-    for (const auto& k : supplemental_keys_)
+    // 删【本源】上轮 key (避免已结束/已切换残留); 不动其他源/inplay。
+    auto& my_keys = supplemental_keys_by_source_[source_id];
+    for (const auto& k : my_keys)
         merged_map_.erase(k);
-    supplemental_keys_.clear();
-    // 现有 (inplay) tennis 双姓氏集合 → 去重锚 (inplay 带 odds, 优先)
-    std::set<std::string> seen_pairs;
-    for (const auto& [k, es] : merged_map_) {
-        if (es.sport == "tennis")
-            seen_pairs.insert(pair_key(es.home, es.away));
-    }
+    my_keys.clear();
+    // 去重锚: 现有 merged_map_ (inplay + 其他补充源) 全部对阵键 (sport-aware)。
+    std::set<std::string> seen;
+    for (const auto& [k, es] : merged_map_)
+        seen.insert(pair_key(es.sport, es.home, es.away));
     std::size_t injected = 0;
     for (auto& es : recs) {
         if (es.event_id.empty() || es.home.empty() || es.away.empty())
             continue;
-        const std::string pk = pair_key(es.home, es.away);
-        if (seen_pairs.count(pk))
-            continue;  // inplay 已有此场 (带 bet365 fair) → 跳过, 不盖
-        seen_pairs.insert(pk);
+        const std::string pk = pair_key(es.sport, es.home, es.away);
+        if (seen.count(pk))
+            continue;  // 已有此场 (inplay 带 odds, 或其他源) → 跳过, 不盖
+        seen.insert(pk);
         const std::string key = es.event_id;
         merged_map_[key] = std::move(es);
-        supplemental_keys_.insert(key);
+        my_keys.insert(key);
         ++injected;
     }
     store_.Publish(std::make_shared<ScoreMap>(merged_map_));
