@@ -411,15 +411,6 @@ std::string ExtractMarketsArray(const std::string& event_obj) {
     return event_obj.substr(start, end - start + 1);
 }
 
-// 发现阶段剔除不可交易盘 (2026-06-02 老板「全盘口」修正):
-//   只剔除【已完赛盘】(sportsMarketType 含 "completed": 比赛已结束等结算, 非 in-play,
-//   不属于任何 live 比赛的盘口板, 永不匹配 live 比分源)。
-//   **不再按 liquidity 剔** —— 老板「我们要做的是全盘口」: in-play 比赛的 moneyline/totals/
-//   spreads/分节/分盘/props 全要, 哪怕某单类子盘瞬时流动性低 (前端「隐藏无簿」开关管显示, 后端全留)。
-inline bool IsUntradeableMarket(const DiscoveredMarket& dm) {
-    return dm.sports_market_type.find("completed") != std::string::npos;
-}
-
 }  // namespace discovery_detail
 
 // ---------------------------------------------------------------------------
@@ -515,8 +506,8 @@ std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int 
                 continue;
             if (dm.token0_id.empty() || dm.token1_id.empty())
                 continue;
-            if (IsUntradeableMarket(dm))  // 聚焦流动性: 剔除已完赛/死盘
-                continue;
+            // 2026-06-02 老板「和官方对齐」: 不再发现层剔除 completed/死盘 —— 全部 active 盘都发现,
+            //   与 Polymarket 一致。已完赛盘由前端 game_state 徽章(已结束/已结算)标清 + 「隐藏无簿」管显示。
 
             // A0 映射桥锚定字段 (best-effort; 缺失不阻塞发现, 仅降匹配率)
             (void)ExtractOutcomes(mobj, dm.outcome0_name, dm.outcome1_name);
@@ -590,8 +581,7 @@ std::vector<DiscoveredEvent> ParseSportsMarketsFlat(const std::string& json_buf,
             continue;
         if (dm.token0_id.empty() || dm.token1_id.empty())
             continue;
-        if (IsUntradeableMarket(dm))  // 聚焦流动性: 剔除已完赛/死盘
-            continue;
+        // 2026-06-02 老板「和官方对齐」: 不再剔除 completed/死盘, 全 active 盘发现 (同 Polymarket)。
 
         // A0 映射桥锚定字段 (best-effort)
         (void)ExtractOutcomes(mobj, dm.outcome0_name, dm.outcome1_name);

@@ -319,6 +319,8 @@ inline std::string grid_market_obj(const StateProvider& sp, const std::string& c
         game_state = "resolved";
     } else if (mi.closed) {
         game_state = "ended";
+    } else if (mi.sports_market_type.find("completed") != std::string::npos) {
+        game_state = "ended";  // 已完赛盘 (tennis_completed_match 等): 比赛结束等结算, 时间估可能误标 inplay
     } else if (mi.game_start_ts_sec <= 0) {
         game_state = "unknown";
     } else if (now_sec < mi.game_start_ts_sec) {
