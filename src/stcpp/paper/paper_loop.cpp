@@ -524,17 +524,14 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                             stcpp::data::goalserve::FillBmSlotsYesCanonical(
                                 *mo, it->second.yes_is_home, map_is_draw, game_row);
                         }
-                        // live_stats 采集 hop: 按 (league|home|away) exact join commentaries live_stats
-                        //   → game_row.soccer_* (→ g_danger_attack_diff/g_shot_on_target_diff/
-                        //   g_possession_home/g_red_card_diff/g_corner_diff 特征)。同源 Goalserve 队名一致;
+                        // live_stats hop: 按 inplay_match_id join (2026-06-02 实测教训: soccernew/live 与
+                        //   inplay 的 league_id 与队名两者都不同空间 → 原 (league|home|away) join 永不匹配;
+                        //   改 inplay_match_id, RefreshLiveStats 经 inplay-mapping 桥 soccernew→inplay 键)。
+                        //   → game_row.soccer_* (g_danger_attack/shot_on_target/possession/red_card/corner_diff)。
                         //   查不到 → soccer_* 保持 -1 (fail-safe, 特征 NaN, 绝不造假)。
-                        if (!es.home.empty() && !es.away.empty()) {
-                            const std::string ls_key = stcpp::data::livescore::MakeLiveStatsJoinKey(
-                                es.league_id, es.home, es.away);
-                            if (const auto* ls = LiveStatsFor(ls_key)) {
-                                stcpp::data::livescore::FillLiveStats(game_row, *ls);
-                                game_row.live_stats_as_of_ns = ls->as_of_ts_ns;  // live_stats 新鲜度
-                            }
+                        if (const auto* ls = LiveStatsFor(it->second.inplay_match_id)) {
+                            stcpp::data::livescore::FillLiveStats(game_row, *ls);
+                            game_row.live_stats_as_of_ns = ls->as_of_ts_ns;  // live_stats 新鲜度
                         }
                     }
                 }

@@ -1424,18 +1424,20 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
     const std::string gs_key = gs_key_env ? gs_key_env : "";
     const char* gs_proxy_env = std::getenv("GOALSERVE_PROXY");
     const std::string gs_proxy = gs_proxy_env ? gs_proxy_env : "";
-    auto fetch_live = [&gs_key, &gs_proxy]() -> std::string {
-        if (gs_key.empty())
-            return {};
+    // 2026-06-02 实测教训 (老板「自己验证」): soccernew/live 与 inplay feed 的 league_id 与队名
+    //   **两者都不同空间** ("China U20" vs "China PR Youth"; Asean U19 2417 vs 1362) → 原 (league,队名)
+    //   join 两端永不匹配 (真 bug 非覆盖)。改用 inplay-mapping 桥 (与 bm_slots 同): soccernew match id
+    //   (pregame) → inplay_match_id → paper_loop 按 inplay_match_id join。
+    auto fetch = [&gs_proxy](const std::string& url) -> std::string {
         std::string cmd = "curl -s --max-time 15 ";
         if (!gs_proxy.empty()) {
             cmd += "-x '";
             cmd += gs_proxy;
             cmd += "' ";
         }
-        cmd += "'https://www.goalserve.com/getfeed/";
-        cmd += gs_key;
-        cmd += "/soccernew/live'";
+        cmd += "'";
+        cmd += url;
+        cmd += "'";
         std::string out;
         if (FILE* p = ::popen(cmd.c_str(), "r")) {
             char buf[8192];
@@ -1448,21 +1450,35 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
     };
     while (!st.stop_requested()) {
         if (!gs_key.empty() && paper_loop_ != nullptr) {
-            const std::string xml = fetch_live();
-            if (!xml.empty()) {
-                data::livescore::LiveStatsMap m;
-                data::livescore::CommentariesParser::ParseSoccernewLiveInto(m, xml);
+            const std::string live_xml = fetch("https://www.goalserve.com/getfeed/" + gs_key + "/soccernew/live");
+            data::livescore::LiveStatsMap by_pregame;  // 键 = soccernew match id (pregame)
+            if (!live_xml.empty())
+                data::livescore::CommentariesParser::ParseSoccernewLiveInto(by_pregame, live_xml);
+            if (!by_pregame.empty()) {
+                // inplay-mapping: pregame_match_id → inplay_match_id (桥到 paper_loop join key)
+                const std::string map_xml =
+                    fetch("https://www.goalserve.com/getfeed/" + gs_key + "/soccernew/inplay-mapping");
+                std::unordered_map<std::string, std::string> pre2inp;
+                for (auto& [pre, inp] : data::goalserve::ParseInplayMappingXml(map_xml))
+                    pre2inp.emplace(std::move(pre), std::move(inp));
+                data::livescore::LiveStatsMap by_inplay;  // 键 = inplay_match_id (= paper_loop es.event_id)
                 const std::int64_t as_of_ns = duration_cast<nanoseconds>(
                                                   system_clock::now().time_since_epoch())
                                                   .count();
-                for (auto& [_k, v] : m)
-                    v.as_of_ts_ns = as_of_ns;  // 新鲜度 → g_live_stats_age_sec
-                const std::size_t n = m.size();
-                paper_loop_->SetLiveStatsByTeams(std::move(m));
-                // 常开 (12s 一行, 低噪声): live_stats 可观测性 — soccernew/live 解析出几场 + 样本 join_key。
+                for (auto& [pre, stats] : by_pregame) {
+                    const auto it = pre2inp.find(pre);
+                    if (it == pre2inp.end())
+                        continue;  // 无 inplay 映射 (非直播) → 跳过
+                    stats.as_of_ts_ns = as_of_ns;  // 新鲜度 → g_live_stats_age_sec
+                    by_inplay[it->second] = stats;
+                }
+                const std::size_t n = by_inplay.size();
+                paper_loop_->SetLiveStatsByTeams(std::move(by_inplay));
                 static int ls_log_throttle = 0;
                 if ((ls_log_throttle++ % 5) == 0)  // 每 60s 一行
-                    std::fprintf(stderr, "[live_stats] soccernew/live: %zu 场 live_stats 注入\n", n);
+                    std::fprintf(stderr,
+                                 "[live_stats] soccernew/live %zu 场解析 → %zu 场桥到 inplay_match_id\n",
+                                 by_pregame.size(), n);
             }
         }
         const auto deadline = steady_clock::now() + seconds(12);  // soccernew/live 单拉 (有 API), 12s 周期
