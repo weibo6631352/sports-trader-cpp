@@ -563,10 +563,15 @@ BuildResult PaperDaemon::Build() {
     }
 
     // ---- Step 2: hub + ScoreSnapshotStore + LedgerSnapshotHub + QuoteSnapshotHub ----
-    hub_ = std::make_unique<polymarket::clob_wss::OrderBookSnapshotHub>();
+    // 容量 (2026-06-02 老板「有报价恒 512, 是不是写死上限」): 全盘口期发现 900+ 市场, 原 hub 默认
+    //   1024 token(=512 市场)/ quote 512 key 满了静默丢 → 超出的盘没书没报价(覆盖率卡 55%)。
+    //   提到 book 4096 token(2048 市场)/ quote 2048 市场, 容纳全盘口。预分配 ~几 MB, 可接受。
+    constexpr std::size_t kHubMaxTokens = 4096;  // 2048 市场 × 2 token
+    constexpr std::size_t kQuoteMaxKeys = 2048;  // 2048 市场
+    hub_ = std::make_unique<polymarket::clob_wss::OrderBookSnapshotHub>(kHubMaxTokens);
     score_store_ = std::make_unique<data::ScoreSnapshotStore>();
     ledger_hub_ = std::make_unique<risk::LedgerSnapshotHub>();
-    quote_hub_ = std::make_unique<sizing::QuoteSnapshotHub>();
+    quote_hub_ = std::make_unique<sizing::QuoteSnapshotHub>(kQuoteMaxKeys);
 
     // ---- Step 2b: paper 隔离栈 (R-11) ----
     // [R-11] paper PositionLedger 独立实例, 与 live 路径物理隔离.
