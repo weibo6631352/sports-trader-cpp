@@ -241,15 +241,20 @@ export async function refreshMarketGrid(): Promise<void> {
   }
 
   // 7. 建组 (buildEventGroups 读 lastEvents + state + 各 module 缓存)
+  //    展开行全档 detail 不在此拉 — 已独立到 refreshExpandedDetail (2s 快刷, 与顶档同步)。
   setState({ eventGroups: buildEventGroups() });
+}
 
-  // 8. per-condition 全档 detail 只拉「用户正在看」的盘口 (展开行 / 选中行), 封顶 DETAIL_CAP。
-  //    折叠态摘要价由 /grid 批量供 (refreshGrid); 这里只补展开行的全档 book/quote/market。
+// ---------- refreshExpandedDetail (2s 快刷: 已展开/选中盘口的全档 book/quote) ----------
+
+/** 拉「用户正在看」的盘口全档 detail (展开行 / 详情页选中行), 封顶 DETAIL_CAP。
+ *  2s 轮询 → 展开的深度阶梯 + Quote 详情与顶档摘要价同步刷新 (不再 5s 滞后)。
+ *  detailInterest 为空(无展开)时立即返回, 零请求开销。 */
+export async function refreshExpandedDetail(): Promise<void> {
   const toFetch = Array.from(detailInterest).slice(0, DETAIL_CAP);
-  if (toFetch.length > 0) {
-    await fetchDetailFor(toFetch);
-    setState({ eventGroups: buildEventGroups() });
-  }
+  if (toFetch.length === 0) return;
+  await fetchDetailFor(toFetch);
+  setState({ eventGroups: buildEventGroups() });
 }
 
 // ---------- buildEventGroups (模块级; refreshMarketGrid + refreshGrid 共用) ----------
@@ -382,10 +387,11 @@ function every(fn: () => void, ms: number): number {
 }
 
 export function initPolling(): void {
-  // 快刷 (2s): 顶栏状态 + 全市场顶档摘要批量 (/grid 一次请求, 跨洋链路扛得住)。
-  //   看板"活"起来 (价/edge/状态 2s 更新), 不再像卡住。
+  // 快刷 (2s): 顶栏状态 + 全市场顶档摘要批量 (/grid) + 已展开盘口全档 detail。
+  //   看板"活"起来 (价/edge/状态 2s 更新); 展开的深度/报价与顶档同步刷新, 不再 5s 滞后。
   every(() => { void refreshTopBar(); }, 2000);
   every(() => { void refreshGrid(); }, 2000);
+  every(() => { void refreshExpandedDetail(); }, 2000);
   // 中速 (5s): 市场发现(events) + 持仓/归因/拒单 + score(节流) + 展开行全档 detail。
   every(() => { void refreshMarketGrid(); }, 5000);
   every(() => { void refreshAccount(); }, 5000);  // 凯利评审: 账户现金/估值
