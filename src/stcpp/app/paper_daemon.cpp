@@ -1868,9 +1868,24 @@ void PaperDaemon::AutoTrain(std::stop_token st) {
             std::fprintf(stderr, "[auto_train] ⚠ 训练子进程 rc=%d → 不换模型 (见 /tmp/auto_train.log)\n", rc);
             continue;
         }
-        // ③ 原子换 candidate → onnx_model_path → RefreshModel watcher 接力热加载
+        // ③ 原子换 candidate → onnx_model_path → RefreshModel watcher 接力热加载。
+        //   ⚠ 顺序: 先搬校准 sidecar, 再搬 .onnx。watcher 按 .onnx mtime 触发热加载, 加载侧构造
+        //   OnnxFairValueModel 时 LoadMeta 读 <onnx>.meta.json。若先搬 .onnx, watcher 可能在 meta
+        //   就位前触发 → 新模型套旧/缺 meta (race)。故 meta 先到位, .onnx 作"提交点"最后搬。
+        const std::string cand_meta = candidate + ".meta.json";
+        const std::string model_meta = cfg_.onnx_model_path + ".meta.json";
+        std::error_code mec;
+        if (fs::exists(cand_meta, mec)) {
+            fs::rename(cand_meta, model_meta, mec);  // sidecar 先到位
+            if (mec)
+                std::fprintf(stderr, "[auto_train] ⚠ sidecar mv 失败 (%s) → 模型将降级占位\n",
+                             mec.message().c_str());
+        } else {
+            // 训练没产 meta (旧脚本/holdout 太小) → 删旧 meta, 避免新模型套旧校准 (误标已校准)。
+            fs::remove(model_meta, mec);
+        }
         std::error_code ec;
-        fs::rename(candidate, cfg_.onnx_model_path, ec);
+        fs::rename(candidate, cfg_.onnx_model_path, ec);  // .onnx = 提交点 (触发 watcher)
         if (ec) {
             std::fprintf(stderr, "[auto_train] ⚠ 原子 mv 失败 (%s) → 不换\n", ec.message().c_str());
             continue;

@@ -1,0 +1,1 @@
+{"calibrated": true, "confidence": 0.9632, "ci_halfwidth": 0.284, "calib_method": "conformal", "auc": 0.9816, "brier": 0.1454, "n_holdout": 100}

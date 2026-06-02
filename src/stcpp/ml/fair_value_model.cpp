@@ -26,11 +26,60 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdlib>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
 namespace stcpp::ml {
+
+namespace {
+// ---- 极简 sidecar JSON 标量解析 (我们自己训练侧产的受控格式 <onnx>.meta.json; 无三方依赖) ----
+//   只取顶层标量 key (confidence/ci_halfwidth/calibrated/calib_method); 容错: 缺/坏 → 返 false。
+[[nodiscard]] bool JsonNum(const std::string& s, const char* key, double& out) noexcept {
+    const std::string k = std::string("\"") + key + "\"";
+    auto p = s.find(k);
+    if (p == std::string::npos) return false;
+    p = s.find(':', p + k.size());
+    if (p == std::string::npos) return false;
+    ++p;
+    while (p < s.size() && (s[p] == ' ' || s[p] == '\t')) ++p;
+    if (s.compare(p, 4, "null") == 0) return false;  // JSON null (如 auc 缺)
+    const char* start = s.c_str() + p;
+    char* end = nullptr;
+    const double v = std::strtod(start, &end);
+    if (end == start) return false;
+    out = v;
+    return true;
+}
+[[nodiscard]] bool JsonBool(const std::string& s, const char* key, bool& out) noexcept {
+    const std::string k = std::string("\"") + key + "\"";
+    auto p = s.find(k);
+    if (p == std::string::npos) return false;
+    p = s.find(':', p + k.size());
+    if (p == std::string::npos) return false;
+    ++p;
+    while (p < s.size() && (s[p] == ' ' || s[p] == '\t')) ++p;
+    if (s.compare(p, 4, "true") == 0) { out = true; return true; }
+    if (s.compare(p, 5, "false") == 0) { out = false; return true; }
+    return false;
+}
+[[nodiscard]] bool JsonStr(const std::string& s, const char* key, std::string& out) noexcept {
+    const std::string k = std::string("\"") + key + "\"";
+    auto p = s.find(k);
+    if (p == std::string::npos) return false;
+    p = s.find(':', p + k.size());
+    if (p == std::string::npos) return false;
+    const auto q = s.find('"', p + 1);
+    if (q == std::string::npos) return false;
+    const auto e = s.find('"', q + 1);
+    if (e == std::string::npos) return false;
+    out = s.substr(q + 1, e - q - 1);
+    return true;
+}
+}  // namespace
 
 // ---------------------------------------------------------------------------
 // OnnxFairValueModel — ONNXRuntime C++ session 推理 (Phase 2 残差/分类模型)。
@@ -57,6 +106,38 @@ public:
             out_names_.push_back(session_->GetOutputNameAllocated(i, alloc).get());
         }
         ready_ = (session_ != nullptr) && !in_name_.empty() && !out_names_.empty();
+        LoadMeta(cfg.onnx_path);  // 校准 sidecar <onnx>.meta.json (训练侧产) → confidence/calibrated/CI
+    }
+
+    // LoadMeta — 读 <onnx>.meta.json (训练侧 holdout 评估产), 填校准元数据。
+    //   fail-safe: 无文件/解析失败/无 confidence 字段 → meta_loaded_=false → 推理报 conf=0/未校准
+    //   (降级语义同 stub, 前端保持"占位"; 模型纯 advisory, 不影响 prob 输出 / 不 gate 交易)。
+    void LoadMeta(const std::string& onnx_path) noexcept {
+        try {
+            const std::string meta_path = onnx_path + ".meta.json";
+            std::ifstream f(meta_path);
+            if (!f) return;
+            const std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+            if (s.empty()) return;
+            double conf = 0.0;
+            if (!JsonNum(s, "confidence", conf)) return;  // 无 confidence → 视为无效 meta, 降级
+            double ci = 0.0;
+            (void)JsonNum(s, "ci_halfwidth", ci);  // 可选: 缺 → 0 (零宽区间)
+            bool cal = false;
+            (void)JsonBool(s, "calibrated", cal);  // 可选: 缺 → false
+            std::string method;
+            (void)JsonStr(s, "calib_method", method);  // 可选: 缺 → None
+            meta_confidence_ = std::clamp(conf, 0.0, 1.0);
+            meta_ci_hw_ = std::clamp(ci, 0.0, 1.0);
+            meta_calibrated_ = cal;
+            meta_calib_ = (method == "conformal") ? CalibMethod::Conformal
+                          : (method == "isotonic") ? CalibMethod::Isotonic
+                          : (method == "ensemble") ? CalibMethod::Ensemble
+                                                   : CalibMethod::None;
+            meta_loaded_ = true;
+        } catch (...) {
+            meta_loaded_ = false;  // 任何异常 → fail-safe 降级
+        }
     }
 
     [[nodiscard]] ModelPrediction predict(const FeatureVector& fv) const noexcept override {
@@ -66,7 +147,10 @@ public:
         p.input_feature_count = fv.size();
         p.spec_version = fv.spec_version;
         p.num_outcomes = outcome_count_;
-        p.calib_method = CalibMethod::None;  // 校准在训练侧; runtime 不改
+        // 校准元数据 (sidecar): 有则填真值, 无则降级 (conf=0/未校准, 同 stub; 前端据此"占位")。
+        p.confidence = meta_loaded_ ? meta_confidence_ : 0.0;
+        p.calibrated = meta_loaded_ ? meta_calibrated_ : false;
+        p.calib_method = meta_loaded_ ? meta_calib_ : CalibMethod::None;
         if (!ready_ || fv.size() != feature_count_) {
             p.ok = false;
             return p;
@@ -107,8 +191,10 @@ public:
                     p.normalized = true;
                 }
             }
-            p.ci_low = p.probs[0];
-            p.ci_high = p.probs[0];
+            // 预测区间 (conformal 半宽来自 sidecar; 无 meta → 零宽, 同旧行为)。
+            const double hw = meta_loaded_ ? meta_ci_hw_ : 0.0;
+            p.ci_low = std::clamp(p.probs[0] - hw, 0.0, 1.0);
+            p.ci_high = std::clamp(p.probs[0] + hw, 0.0, 1.0);
             p.ok = true;
         } catch (...) {
             p.ok = false;  // Run 异常 → fail-closed
@@ -132,6 +218,12 @@ private:
     std::size_t outcome_count_;
     std::string model_id_;
     bool ready_{false};
+    // 校准 sidecar (<onnx>.meta.json) 加载状态 — fail-safe: 未加载 → conf=0/未校准。
+    bool meta_loaded_{false};
+    bool meta_calibrated_{false};
+    double meta_confidence_{0.0};
+    double meta_ci_hw_{0.0};
+    CalibMethod meta_calib_{CalibMethod::None};
 };
 
 std::unique_ptr<FairValueModel> make_onnx_fair_value_model(const OnnxModelConfig& cfg) noexcept {

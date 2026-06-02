@@ -3,11 +3,13 @@
 #include <gtest/gtest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 #include "stcpp/ml/fair_value_model.hpp"
 #include "stcpp/ml/model_feature_spec.hpp"
 
+using stcpp::ml::CalibMethod;
 using stcpp::ml::FeatureVector;
 using stcpp::ml::kMlFeatureCount;
 using stcpp::ml::make_onnx_fair_value_model;
@@ -76,6 +78,61 @@ TEST(OnnxFairValue, ON03_GracefulFallback) {
     OnnxModelConfig missing;
     missing.onnx_path = "/tmp/does_not_exist_xyz.onnx";
     EXPECT_EQ(make_onnx_fair_value_model(missing), nullptr) << "无文件 → nullptr";
+}
+
+// ON04: 有校准 sidecar (<onnx>.meta.json) → predict 填 confidence/calibrated/CI (前端 modelReady 点亮)。
+//   fixture 自带 .meta.json (selftest 产: calibrated=true, confidence>0, ci_halfwidth>0)。
+TEST(OnnxFairValue, ON04_SidecarCalibration) {
+    if (!std::filesystem::exists(FixturePath())) GTEST_SKIP();
+    ASSERT_TRUE(std::filesystem::exists(FixturePath() + ".meta.json")) << "fixture 应带 sidecar";
+    OnnxModelConfig cfg;
+    cfg.onnx_path = FixturePath();
+    cfg.expected_feature_count = kMlFeatureCount;
+    auto m = make_onnx_fair_value_model(cfg);
+    ASSERT_NE(m, nullptr);
+    FeatureVector fv;
+    fv.values.assign(kMlFeatureCount, 0.5f);
+    fv.spec_version = stcpp::ml::kSpecVersion;
+    const auto p = m->predict(fv);
+    ASSERT_TRUE(p.ok);
+    EXPECT_TRUE(p.calibrated) << "sidecar calibrated=true → 报告已校准";
+    EXPECT_GT(p.confidence, 0.0) << "sidecar confidence>0 → modelReady 条件满足";
+    EXPECT_LE(p.confidence, 1.0);
+    EXPECT_EQ(p.calib_method, CalibMethod::Conformal) << "calib_method=conformal";
+    // CI: ci_low <= probs[0] <= ci_high, 且非零宽 (sidecar ci_halfwidth>0)
+    EXPECT_LE(p.ci_low, p.probs[0]);
+    EXPECT_GE(p.ci_high, p.probs[0]);
+    EXPECT_GT(p.ci_high - p.ci_low, 0.0) << "有 sidecar → 非零宽预测区间";
+    EXPECT_GE(p.ci_low, 0.0);
+    EXPECT_LE(p.ci_high, 1.0) << "CI clamp 到 [0,1]";
+}
+
+// ON05: 无 sidecar (临时复制 onnx 到无 meta 的路径) → 降级 (calibrated=false, conf=0, 零宽 CI)。
+//   fail-safe: 模型能推理但不自称校准 → 前端保持"占位" (无校准证据不点亮)。
+TEST(OnnxFairValue, ON05_NoSidecarDegraded) {
+    if (!std::filesystem::exists(FixturePath())) GTEST_SKIP();
+    namespace fs = std::filesystem;
+    const auto tmp = fs::temp_directory_path() / "stcpp_onnx_nosidecar_test.onnx";
+    std::error_code ec;
+    fs::remove(tmp, ec);
+    fs::remove(fs::path(tmp.string() + ".meta.json"), ec);  // 确保无 meta
+    fs::copy_file(FixturePath(), tmp, fs::copy_options::overwrite_existing, ec);
+    ASSERT_FALSE(ec) << "复制 fixture 到 temp 失败";
+    OnnxModelConfig cfg;
+    cfg.onnx_path = tmp.string();
+    cfg.expected_feature_count = kMlFeatureCount;
+    auto m = make_onnx_fair_value_model(cfg);
+    ASSERT_NE(m, nullptr);
+    FeatureVector fv;
+    fv.values.assign(kMlFeatureCount, 0.5f);
+    const auto p = m->predict(fv);
+    ASSERT_TRUE(p.ok) << "无 sidecar 仍能推理 (prob 不受影响)";
+    EXPECT_FALSE(p.calibrated) << "无 sidecar → 未校准";
+    EXPECT_DOUBLE_EQ(p.confidence, 0.0) << "无 sidecar → conf=0 (降级占位)";
+    EXPECT_EQ(p.calib_method, CalibMethod::None);
+    EXPECT_DOUBLE_EQ(p.ci_low, p.probs[0]) << "无 sidecar → 零宽 CI (同旧行为)";
+    EXPECT_DOUBLE_EQ(p.ci_high, p.probs[0]);
+    fs::remove(tmp, ec);
 }
 
 #else  // onnxruntime 未链
