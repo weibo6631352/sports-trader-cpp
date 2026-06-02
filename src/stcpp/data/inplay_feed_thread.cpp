@@ -704,12 +704,35 @@ debug_api::EventScore InplayFeedThread::ToEventScore(const data::adapter::GameSc
     // period
     es.period = rec.period.value_or("");
 
-    // clock_sec: elapsed_min × 60 + elapsed_sec (soccer/basketball 场内时钟)
+    // clock_sec: 归一为【全场累计已用秒】(喂 time_frac = elapsed / total_game_seconds)。
+    //   足球: minute 本就是全场累计 (81' in 2nd half), 直接用 — 正确, 不动。
+    //   篮球: minute 是【节内倒计时剩余】(实测 2026-06-02 真实 feed: 第3节 minute=8 = 还剩8分),
+    //     此前当已用算 → time_frac 方向反 (差 ~0.39) → 篮球直播盘错误定价。修: 转全场累计
+    //     elapsed = (节号-1)×节长 + (节长 - 节内剩余)。节长 NBA/CBA=12min (FIBA 10min 暂用 12min
+    //     近似, 待 league 感知; GM 2026-06-02 特征审计)。hockey/amfootball 时钟方向待后台验证, 暂按累计不动。
     es.clock_sec = 0;
     if (rec.elapsed_min.has_value()) {
-        es.clock_sec = static_cast<std::int64_t>(*rec.elapsed_min) * 60;
-        if (rec.elapsed_sec.has_value()) {
-            es.clock_sec += static_cast<std::int64_t>(*rec.elapsed_sec);
+        const std::int64_t raw = static_cast<std::int64_t>(*rec.elapsed_min) * 60 +
+                                 static_cast<std::int64_t>(rec.elapsed_sec.value_or(0));
+        if (sport == goalserve::GoalserveSport::Basketball) {
+            int quarter = 0;  // es.period 首个数字: "3rd Quarter"→3; 无数字 (OT) → 0
+            for (char c : es.period) {
+                if (c >= '1' && c <= '9') {
+                    quarter = c - '0';
+                    break;
+                }
+            }
+            constexpr std::int64_t kQuarterSec = 12 * 60;  // NBA/CBA 12min (FIBA 10min 近似)
+            if (quarter >= 1) {
+                std::int64_t within = kQuarterSec - raw;  // raw=节内剩余 → 节内已用
+                if (within < 0)
+                    within = 0;
+                es.clock_sec = static_cast<std::int64_t>(quarter - 1) * kQuarterSec + within;
+            } else {
+                es.clock_sec = 4 * kQuarterSec;  // OT/无节号 → 按 regulation 末 (time_frac≈1)
+            }
+        } else {
+            es.clock_sec = raw;  // soccer 累计 (正确) + 其他暂不动 (时钟方向待验证)
         }
     }
 
