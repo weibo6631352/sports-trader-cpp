@@ -571,10 +571,11 @@ private:
             }
 
             // Payload — frame size guard (小白 audit §1.3-B).
-            // Market channel: ≤ 256KB per frame. Larger frames are dropped (not connection-killed)
-            // so transient oversized frames from upstream don't break the entire session.
-            // oversized_frames_dropped_ is exposed via metric for alerting.
-            static constexpr std::size_t kMaxPayload = 256 * 1024;  // 256 KB
+            // Market channel: CLOB 把多 token 的初始 book 快照打包成一帧。2026-06-02 提到 2MB:
+            //   全盘口期订阅 1400+ token, CLOB 快照帧达 268KB > 旧 256KB 上限 → 帧被丢 →
+            //   recv_loop_ended 断连死循环 (前端「WSS 全部断连」)。2MB 容纳 ~10k token 批量快照
+            //   (一次性, 跨洋 ~2s 可接受)。仍保留上限防 OOM/恶意帧 (drain+skip)。
+            static constexpr std::size_t kMaxPayload = 2 * 1024 * 1024;  // 2 MB
             if (payload_len > kMaxPayload) {
                 std::fprintf(stderr, "[live_wss] oversized frame: %llu bytes > %zu limit — dropped\n",
                              static_cast<unsigned long long>(payload_len), kMaxPayload);
