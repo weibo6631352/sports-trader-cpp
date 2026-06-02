@@ -90,6 +90,22 @@ Phase 1 后,看板唯一还在轮询的是:**展开盘口的全档 book/quote**(
 
 ---
 
+## 5.5 评审修订(老王 网络 + 老郭 架构,2026-06-02)— 实施按此,已锁
+
+两位均"改了再批",方向(SSE+副POST 不上 WS / 单一数据源延续)获批。**必改(实施前钉死):**
+
+1. **stream_id 防撞+防重启**(双方):从 `now_epoch_ns()` 改 **boot nonce 前缀 + per-server atomic 计数器**(`{boot}:{n}`);POST 校验前缀。消同毫秒撞号 + 进程重启计数归零误命中旧 id。
+2. **回退双源互斥(真 bug,必改)**(老郭):`refreshExpandedDetail` 现在 `initPolling` 里**无条件 2s 常驻轮询**;一旦 book/quote 走 SSE,它与 SSE 通道会**同时写 `conditionCache[cid].book/quote` = 双源分叉**。→ 把 `refreshExpandedDetail` 纳入 `startFallbackPolling/stopFallbackPolling`(SSE 活时停),仅保留"展开瞬间一次兜底 REST"。
+3. **首屏兜底 REST 必选(非可选)**(老王):展开瞬间 POST focus 后,下一帧最快 1s,体验差且竞态。→ 展开即**强制**发一次优先级 REST `/book_pair` + `/quote`(即时首屏,~200ms),SSE 随后接管增量。
+4. **focus_seq 版本对账**(老郭):POST body 带单调 `focus_seq`;book/quote 帧 data 内回 `focus_seq`;前端丢弃过期版本帧。防快速切盘时短暂推错盘 + 连发两次 focus 的竞态。resync 不单独做(keyframe 自愈)。
+5. **POST 临界区写清**(老王):POST 对 registry `find` + 取 FocusState 句柄**全程持 registry mutex**,拿到句柄后再 `atomic-store` 新 vector(provider 侧才 lock-free 读)。代码注释明确边界,别被误解成 POST 侧也 lock-free。
+6. **帧大小/总字节上限 + write_timeout 失败 log**(老王):全档帧比顶档大;focused≤32 每 tick 全发可能超 3s write_timeout 被强杀且静默。→ 单帧上限(~64KB)+ 每 tick 总上限(~256KB),超限跳过/降推顶档;write_timeout 失败显式 log 不静默。
+7. **focus cap≤32 两侧都夹**(老郭):POST 侧 + provider 侧都限,防 POST 绕过。(SSE 连接数 cap=8 Phase 1 已有。)
+8. **新 builder 带 `as_of_ns=-1` 分支**(老郭):`payload::book_pair/quote` 必须有 as_of 参数(同现有 8 builder),否则 SSE on-change 因 as_of 每帧变而永远判变狂推。
+9. **provider 闭包绑 stream_id**(老郭):在 lambda 内生成 stream_id + 注册,resource_releaser 内注销;不用线程局部全局表。
+
+> 老郭/老王均明示:改完即批,**无须再开会**,R-12(全程只读 const 快照)GM 自检即可。
+
 ## 6. 风险 / 注意
 
 - **focus 跨线程**:atomic shared_ptr COW,读 lock-free;务必在 provider 退出时从注册表摘除(防 stream_id 泄漏 / 悬挂)。
