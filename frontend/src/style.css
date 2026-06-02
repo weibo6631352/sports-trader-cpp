@@ -1173,6 +1173,9 @@ html, body {
   font-size: 11px;
 }
 .v8-model-row { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--md-surface2); }
+/* 可观测/数据源块: 大模型下方, 显 sharp 锚来源 + 管道连通状态 (老板 2026-06-02) */
+.v8-obs-block { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--md-surface2); }
+.v8-obs-block .v8-q-row { gap: 6px; }
 
 .v8-advisory-badge {
   font-size: 9px;

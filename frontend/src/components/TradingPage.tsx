@@ -434,6 +434,14 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
   const edgePos    = () => fairValue() >= marketMid();
   const edgePct    = () => Math.min(Math.abs(edgeBps()) / 100, 1) * 100;
   const kellyPos   = () => Number.isFinite(kelly()) && kelly() > 0;
+  // 可观测: fair 来源 / 数据管道 (老板 2026-06-02: 把后台可观测搬到前端大模型下面)
+  const sharpFair  = () => Number(q().sharp_fair ?? -1);
+  const hasSharp   = () => sharpFair() > 0 && sharpFair() < 1;          // inplay To Win de-vig sharp 锚
+  const sharpDev   = () => hasSharp() ? (sharpFair() - marketMid()) : NaN;  // sharp vs 市场 = 价差信号
+  const jointTs    = () => Number(q().joint_as_of_ts ?? 0);
+  const mapped     = () => jointTs() > 0;                                // 比分/订单簿映射已连通 (匹配上)
+  const devigOk    = () => q().devig_ok === true;
+  const jointAgeS  = () => mapped() ? Math.max(0, (Date.now() * 1e6 - jointTs()) / 1e9) : NaN;
 
   return (
     <div class="v8-expand-panel">
@@ -522,6 +530,31 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
         <span class="mono-sub" title={`${q().model_id} · ${q().model_kind} · ${q().spec_version}`}>
           {modelId()}
         </span>
+      </div>
+
+      {/* 可观测 / 数据源 (老板 2026-06-02: 把后台可观测搬到大模型下面) —— fair 从哪来 + 管道是否连通 */}
+      <div class="v8-obs-block">
+        <div class="v8-q-row">
+          <span class="q-lbl" title="inplay bet365 'To Win' de-vig 出的 sharp 胜率 = fair 锚源">sharp锚</span>
+          <Show
+            when={hasSharp()}
+            fallback={<span class="mono-sub v8-dim">{mapped() ? '无赔率' : '未映射'}</span>}
+          >
+            <span class="mono-strong">{sharpFair().toFixed(4)}</span>
+            <span class="q-lbl">偏离</span>
+            <span class={`mono-sub${sharpDev() >= 0 ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
+              {fmtBps(sharpDev() * 10000)}
+            </span>
+          </Show>
+        </div>
+        <div class="v8-q-row">
+          <span class="q-lbl" title="比分/订单簿映射连通 (匹配到 Goalserve) + de-vig 状态 + 联合新鲜度">管道</span>
+          <span class={`mono-sub ${mapped() ? 'edge-pos' : 'edge-neg'}`}>{mapped() ? '✓映射' : '✗未映射'}</span>
+          <span class="mono-sub">{devigOk() ? 'de-vig✓' : 'de-vig✗'}</span>
+          <Show when={mapped() && Number.isFinite(jointAgeS())}>
+            <span class="mono-sub v8-dim">{jointAgeS().toFixed(0)}s</span>
+          </Show>
+        </div>
       </div>
     </div>
   );
