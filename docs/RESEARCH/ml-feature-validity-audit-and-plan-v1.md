@@ -165,3 +165,21 @@
 **✅ 非 bug (实测确认):** #94 mkt_volume 24%NaN = gamma events 嵌套路径省略该键 (API 设计); #1 g_score_total 混运动 = by-design (cat_sport/league 条件化)。
 
 **bm_slots join 确认 (Agent C 实测三处 id 对照):** getodds `<match id>` = pregame 空间 → 经 **inplay-mapping 表** (`pregame_match_id` ↔ `inplay_match_id`) → 系统 join key `inplay_match_id`。getodds **覆盖 in-play** (篮球"Half Time"/网球"Set 2" 有 8-10 家活跃; bet365 直播常 stop=True 须按 stop=False 过滤 — 解析器已做)。篮球 mapping URL 用 `bsktbl/` 非 `basketball/`。系统当前靠 EventMatcher 队名匹配 (不 fetch inplay-mapping), bm_slots 集成需新增 inplay-mapping fetch 或复用队名匹配。
+
+---
+
+## 10. 三件真 bug 修复执行完成 (2026-06-02, 按老板顺序: 时钟 → bm_slots → soccer stats)
+
+**① 时钟归一 (篮球/冰球/橄榄球) — ✅ 完成且 LIVE 生效。** 倒计时制 minute 当已用 → time_frac 方向反 → 错误定价。修为全场累计 (篮球12min×4/冰球20min×3/橄榄球15min×4)。篮球实测, 冰球/橄榄球后台验证强推断 (休赛待开赛 live 复核)。**这条立即修正了篮球直播盘的 fair value。**
+
+**② bm_slots 跨庄家赔率 — ✅ 代码完成 + smoke 验证, 运行时覆盖卡。** 全链 (getodds 解析 + inplay-mapping 桥 + de-vig 定向 + RefreshOdds 90s 线程) 建好。smoke 验证正确 (Lynx fair=0.43)。运行时 `[odds] 0 场注入`: **getodds 覆盖的比赛 ≠ PM 匹配的 live 盘** (PM 匹配多小联赛 / getodds 跨庄家赔率主要大联赛, 当前不重叠)。大联赛 live + 匹配时自动点亮。
+
+**③ soccer live_stats (#19-23/#111) — ✅ 代码完成 (修 3 处), 运行时覆盖卡。**
+- 修 1: endpoint commentaries/{id}.xml (仅顶级联赛 + 标签找错) → **soccernew/live** (覆盖全部直播盘 + 内联 `<live_stats value=KV>`, 文档 soccer-data-feed.md §实时统计证实)。
+- 修 2: 新增 `ParseSoccernewLiveInto` (一 doc 多联赛, 逐 match 取 `<category id>` 作 league)。
+- 修 3 (实测 bug): `TagAttr` 子串匹配 `id="` 误命中 `<category gid="" id="X">` 的 gid → 返回空 league → 全跳过。加单词边界修复。
+- 验证: [live_stats] 日志 `8 场 live_stats 注入` (解析器对了)。运行时 #19-23 仍 dead: **这 8 场全小联赛 (Asean/Iran), Polymarket 无盘 → 不被 PM 匹配 → 无 join** (覆盖, 非 bug; join key 两端同 MakeLiveStatsJoinKey + 同 Goalserve league 空间)。
+
+**核心结论 (覆盖现实, 同 [[why-no-trades-alpha-coverage]]):** bm_slots + soccer-stats 代码全对, 运行时数据被「富数据 feed (赔率/stats) 覆盖的比赛 ≠ PM 匹配的 live 盘」卡住。富数据 feed 偏大联赛/有庄家关注的盘; PM 匹配的 live 盘当前多小联赛或大联赛非此刻直播。大联赛 live + PM 匹配 + 在 feed 三者重叠时自动点亮。时钟修复无此依赖, 已 LIVE 生效。
+
+**可观测性:** `[odds]` (90s) + `[live_stats]` (60s 节流) 常开日志, 随时见 join 到几场。features/health healthy 76→87。
