@@ -277,17 +277,8 @@ function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onCli
 
 function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId: string }) {
   const book = () => props.book;
-  if (!book()) {
-    return (
-      <div class="v8-expand-panel">
-        <div class="v8-panel-title">双边订单簿</div>
-        <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>
-          {isEndpointFailing(`/api/v1/book_pair/${props.conditionId}`) ? '订单簿拉取失败' : '订单簿未接入'}
-        </Typography>
-      </div>
-    );
-  }
-
+  // ★ 响应式判定 (非 early-return): book 在展开后才异步到达, early-return 会卡在"未接入"不更新。
+  const hasBook = () => { const b = book(); return !!b && (b as { found?: boolean }).found !== false && !!b.token0; };
   const bk = () => book()!;
   const vigInfo = () => {
     const cs = Number(bk().cross_spread);
@@ -371,26 +362,38 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
   }
 
   return (
-    <div class="v8-expand-panel">
-      <div class="v8-panel-title">
-        双边订单簿
-        <Show when={vigInfo()}>
-          {(vi) => (
-            <Chip
-              label={`vig ${vi().text}`}
-              color={vi().color}
-              size="small"
-              variant="outlined"
-              sx={{ fontSize: '9px', height: '16px', ml: 0.5 }}
-            />
-          )}
-        </Show>
+    <Show
+      when={hasBook()}
+      fallback={
+        <div class="v8-expand-panel">
+          <div class="v8-panel-title">双边订单簿</div>
+          <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>
+            {isEndpointFailing(`/api/v1/book_pair/${props.conditionId}`) ? '订单簿拉取失败' : '订单簿未接入'}
+          </Typography>
+        </div>
+      }
+    >
+      <div class="v8-expand-panel">
+        <div class="v8-panel-title">
+          双边订单簿
+          <Show when={vigInfo()}>
+            {(vi) => (
+              <Chip
+                label={`vig ${vi().text}`}
+                color={vi().color}
+                size="small"
+                variant="outlined"
+                sx={{ fontSize: '9px', height: '16px', ml: 0.5 }}
+              />
+            )}
+          </Show>
+        </div>
+        <div class="v8-dual-pane">
+          <HalfPane half={bk().token0} label="YES" />
+          <HalfPane half={bk().token1} label="NO" />
+        </div>
       </div>
-      <div class="v8-dual-pane">
-        <HalfPane half={bk().token0} label="YES" />
-        <HalfPane half={bk().token1} label="NO" />
-      </div>
-    </div>
+    </Show>
   );
 }
 
