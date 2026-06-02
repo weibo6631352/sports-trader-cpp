@@ -144,6 +144,17 @@ TEST(SportAware, SoccerCanonical) {
     // Inter Milan vs Inter Miami 不串 (裸 "inter" 不解析)
     EXPECT_EQ(CanonicalTeam("seriea", "Inter Milan"), "inter");
     EXPECT_EQ(CanonicalTeam("mls", "Inter Miami"), "intermiami");
+    // 扩充联赛: MLS / 巴甲 / 沙特 / 墨超 / 荷甲 / 英冠
+    EXPECT_EQ(CanonicalTeam("mls", "Seattle Sounders"), "seattlesounders");
+    EXPECT_EQ(CanonicalTeam("mls", "LAFC"), "lafc");
+    EXPECT_EQ(CanonicalTeam("soccer", "Flamengo"), "flamengo");
+    EXPECT_EQ(CanonicalTeam("soccer", "Al Hilal"), "alhilal");
+    EXPECT_EQ(CanonicalTeam("soccer", "Chivas"), "chivas");
+    EXPECT_EQ(CanonicalTeam("soccer", "Ajax"), "ajax");
+    EXPECT_EQ(CanonicalTeam("soccer", "Leeds United"), "leeds");
+    // Internacional(巴甲) vs Inter Milan 不串 (拼写不同 internacional≠internazionale)
+    EXPECT_EQ(CanonicalTeam("soccer", "Internacional"), "internacional");
+    EXPECT_NE(CanonicalTeam("soccer", "Internacional"), "inter");
 }
 
 // 板球: 国际队 + IPL 缩写。
@@ -154,6 +165,10 @@ TEST(SportAware, CricketCanonical) {
     EXPECT_EQ(CanonicalTeam("ipl", "RCB"), "rcb");
     EXPECT_EQ(CanonicalTeam("t20", "Chennai Super Kings"), "chennai");
     EXPECT_EQ(CanonicalTeam("ipl", "CSK"), "chennai");
+    // Big Bash 同城消歧 (Sydney Sixers ≠ Thunder)
+    EXPECT_EQ(CanonicalTeam("t20", "Sydney Sixers"), "sydneysixers");
+    EXPECT_EQ(CanonicalTeam("t20", "Sydney Thunder"), "sydneythunder");
+    EXPECT_NE(CanonicalTeam("t20", "Sydney Sixers"), CanonicalTeam("t20", "Sydney Thunder"));
 }
 
 // 足球同城 derby 经规范 ID 正确定向 (通用 overlap 会因共享城市名 0.5 误配)。

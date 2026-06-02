@@ -153,17 +153,59 @@ const std::vector<TeamEntry>& SoccerTeams() {
         {"brest", {"brest"}}, {"toulouse", {"toulouse"}}, {"reims", {"reims"}}, {"nantes", {"nantes"}},
         {"montpellier", {"montpellier"}}, {"lehavre", {"le havre"}}, {"auxerre", {"auxerre"}},
         {"angers", {"angers"}}, {"saintetienne", {"saint etienne", "st etienne"}},
-        // ---- 荷甲 / 葡超 / 苏超 / 土超 ----
+        // ---- 荷甲 Eredivisie ----
         {"ajax", {"ajax"}}, {"psv", {"psv", "psv eindhoven"}}, {"feyenoord", {"feyenoord"}},
+        {"azalkmaar", {"az alkmaar", "alkmaar"}}, {"twente", {"twente"}}, {"utrecht", {"utrecht"}},
+        {"heerenveen", {"heerenveen"}}, {"nec", {"nec nijmegen"}},
+        // ---- 葡超 Primeira ----
         {"porto", {"fc porto", "porto"}}, {"benfica", {"benfica"}},
-        {"sporting", {"sporting cp", "sporting lisbon"}}, {"celtic", {"celtic"}},
-        {"rangers", {"rangers"}}, {"galatasaray", {"galatasaray"}}, {"fenerbahce", {"fenerbahce"}},
-        {"besiktas", {"besiktas"}},
-        // ---- 南美 / 中东 / MLS 豪门 ----
+        {"sporting", {"sporting cp", "sporting lisbon"}}, {"braga", {"sporting braga", "braga"}},
+        {"vitoriasc", {"vitoria sc", "vitoria guimaraes"}},
+        // ---- 苏超 Scottish ----
+        {"celtic", {"celtic"}}, {"rangers", {"rangers"}}, {"aberdeen", {"aberdeen"}},
+        {"hearts", {"hearts", "heart of midlothian"}}, {"hibernian", {"hibernian", "hibs"}},
+        // ---- 土超 Turkish ----
+        {"galatasaray", {"galatasaray"}}, {"fenerbahce", {"fenerbahce"}}, {"besiktas", {"besiktas"}},
+        {"trabzonspor", {"trabzonspor"}},
+        // ---- 英冠 Championship (主流) ----
+        {"leeds", {"leeds united", "leeds"}}, {"burnley", {"burnley"}},
+        {"sheffieldutd", {"sheffield united", "sheffield utd"}},
+        {"sheffieldwed", {"sheffield wednesday"}}, {"sunderland", {"sunderland"}},
+        {"westbrom", {"west bromwich", "west brom"}}, {"norwich", {"norwich"}},
+        {"watford", {"watford"}}, {"middlesbrough", {"middlesbrough"}}, {"coventry", {"coventry"}},
+        // ---- 沙特 Saudi Pro League ----
+        {"alnassr", {"al nassr"}}, {"alhilal", {"al hilal"}}, {"alittihad", {"al ittihad"}},
+        {"alahli", {"al ahli"}}, {"alettifaq", {"al ettifaq"}},
+        // ---- MLS ----
+        {"intermiami", {"inter miami"}}, {"lagalaxy", {"la galaxy", "los angeles galaxy"}},
+        {"lafc", {"lafc", "los angeles fc"}}, {"atlantautd", {"atlanta united", "atlanta utd"}},
+        {"austinfc", {"austin fc"}}, {"charlottefc", {"charlotte fc"}},
+        {"chicagofire", {"chicago fire"}}, {"fccincinnati", {"fc cincinnati"}},
+        {"coloradorapids", {"colorado rapids", "rapids"}}, {"columbuscrew", {"columbus crew", "crew"}},
+        {"dcunited", {"dc united"}}, {"fcdallas", {"fc dallas"}},
+        {"houstondynamo", {"houston dynamo", "dynamo"}}, {"sportingkc", {"sporting kansas city", "sporting kc"}},
+        {"minnesotautd", {"minnesota united", "minnesota utd"}}, {"cfmontreal", {"cf montreal"}},
+        {"nashvillesc", {"nashville sc"}}, {"newengland", {"new england revolution", "revolution"}},
+        {"nycfc", {"new york city fc", "nycfc"}}, {"nyrb", {"new york red bulls", "red bulls"}},
+        {"orlandocity", {"orlando city"}}, {"philadelphiaunion", {"philadelphia union"}},
+        {"portlandtimbers", {"portland timbers", "timbers"}}, {"realsaltlake", {"real salt lake"}},
+        {"sandiegofc", {"san diego fc"}}, {"sanjose", {"san jose earthquakes", "earthquakes"}},
+        {"seattlesounders", {"seattle sounders", "sounders"}}, {"stlouiscity", {"st louis city"}},
+        {"torontofc", {"toronto fc"}}, {"vancouver", {"vancouver whitecaps", "whitecaps"}},
+        // ---- 墨超 Liga MX (主流) ----
+        {"clubamerica", {"club america"}}, {"chivas", {"guadalajara", "chivas"}},
+        {"cruzazul", {"cruz azul"}}, {"pumas", {"pumas unam", "pumas"}},
+        {"tigres", {"tigres uanl", "tigres"}}, {"monterrey", {"monterrey", "rayados"}},
+        {"toluca", {"toluca"}}, {"leon", {"club leon"}}, {"pachuca", {"pachuca"}},
+        {"atlas", {"atlas"}}, {"tijuana", {"tijuana", "xolos"}},
+        // ---- 巴甲 Brasileirão (主流; 多词避撞 Santos Laguna 等) ----
+        {"flamengo", {"flamengo"}}, {"palmeiras", {"palmeiras"}}, {"corinthians", {"corinthians"}},
+        {"saopaulo", {"sao paulo"}}, {"fluminense", {"fluminense"}}, {"botafogo", {"botafogo"}},
+        {"gremio", {"gremio"}}, {"internacional", {"internacional"}},
+        {"atleticomineiro", {"atletico mineiro"}}, {"cruzeiro", {"cruzeiro"}},
+        {"fortaleza", {"fortaleza"}}, {"vascodagama", {"vasco da gama"}},
+        // ---- 阿甲 / 其它南美豪门 ----
         {"bocajuniors", {"boca juniors", "boca"}}, {"riverplate", {"river plate"}},
-        {"flamengo", {"flamengo"}}, {"palmeiras", {"palmeiras"}},
-        {"alnassr", {"al nassr"}}, {"alhilal", {"al hilal"}}, {"intermiami", {"inter miami"}},
-        {"lagalaxy", {"la galaxy", "los angeles galaxy"}},
     };
     return t;
 }
@@ -176,6 +218,14 @@ const std::vector<TeamEntry>& CricketTeams() {
         {"pakistan", {"pakistan"}}, {"southafrica", {"south africa"}}, {"newzealand", {"new zealand"}},
         {"srilanka", {"sri lanka"}}, {"bangladesh", {"bangladesh"}}, {"westindies", {"west indies"}},
         {"afghanistan", {"afghanistan"}}, {"ireland", {"ireland"}}, {"zimbabwe", {"zimbabwe"}},
+        {"netherlands", {"netherlands"}}, {"scotland", {"scotland"}}, {"nepal", {"nepal"}},
+        {"usacricket", {"united states", "usa"}}, {"uae", {"uae", "united arab emirates"}},
+        // ---- Big Bash (澳, 同城多词消歧) ----
+        {"sydneysixers", {"sydney sixers"}}, {"sydneythunder", {"sydney thunder"}},
+        {"melbournestars", {"melbourne stars"}}, {"melbournerenegades", {"melbourne renegades"}},
+        {"perthscorchers", {"perth scorchers", "scorchers"}},
+        {"adelaidestrikers", {"adelaide strikers", "strikers"}},
+        {"brisbaneheat", {"brisbane heat"}}, {"hobarthurricanes", {"hobart hurricanes"}},
         // ---- IPL ----
         {"mumbaiindians", {"mumbai indians", "mi"}}, {"chennai", {"chennai super kings", "csk"}},
         {"rcb", {"royal challengers bengaluru", "royal challengers bangalore", "rcb"}},
