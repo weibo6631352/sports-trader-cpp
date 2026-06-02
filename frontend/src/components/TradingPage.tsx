@@ -720,6 +720,12 @@ function EventAccordion(props: { group: EventGroup }) {
       >
         <span class="v8-evt-arrow">{expanded() ? '▼' : '▶'}</span>
 
+        {/* 赛事图 (老板 2026-06-02: 图片有 URL; gamma icon/image)。加载失败自动隐藏。 */}
+        <Show when={grp().iconUrl}>
+          <img class="v8-evt-icon" src={grp().iconUrl!} alt="" loading="lazy"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+        </Show>
+
         {/* 运动图标 + 标签 (老板 2026-06-02 要比赛图标) */}
         <Show when={sportZh()}>
           <Chip label={`${sportIcon(grp().sport ?? score()?.sport)} ${sportZh()}`} size="small" variant="outlined"
@@ -994,6 +1000,17 @@ export function TradingPage() {
 
   const allCondIds = () => filteredGroups().flatMap((g) => g.conditions.map((c) => c.conditionId));
 
+  // 全展可展开集 (2026-06-02 老板「全展没反应」修): 只展「有订单簿」的盘 + 封顶 32。
+  //   原因: 全展 282 盘 → 157 订单簿 + 89 无簿占位 撑爆 DOM 卡死; 且 SSE 全档 focus 上限 32,
+  //   超出的盘推不到实时全档。无簿盘没书可展(展了也"未接入")。故只展有簿的前 32 个。
+  const EXPAND_CAP = 32;
+  const expandableCondIds = () =>
+    filteredGroups()
+      .flatMap((g) => g.conditions)
+      .filter((c) => c.summary && (c.summary.bid != null || c.summary.ask != null))
+      .map((c) => c.conditionId)
+      .slice(0, EXPAND_CAP);
+
   // 关注集 = 当前可见且展开的盘口行。展开行变化时同步给 store, 让 5s 轮询只刷新这些盘口。
   // (读 expandedMarkets store 实现响应式; 切换展开 → 重算 → 轮询只拉展开行的 detail)
   createEffect(() => {
@@ -1031,7 +1048,7 @@ export function TradingPage() {
         totalMarkets={totalMarkets()}
         hideNoBook={hideNoBook()}
         onToggleNoBook={() => setHideNoBook((v) => !v)}
-        onExpandAll={() => expandAllMarkets(allCondIds())}
+        onExpandAll={() => expandAllMarkets(expandableCondIds())}
         onCollapseAll={() => collapseAllMarkets(allCondIds())}
       />
 

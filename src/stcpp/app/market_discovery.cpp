@@ -445,6 +445,8 @@ std::vector<DiscoveredEvent> ParseSportsEvents(const std::string& json_buf, int 
         ev.event_id = ExtractJsonStr(event_obj, "id");
         ev.slug = ExtractJsonStr(event_obj, "slug");
         ev.title = ExtractJsonStr(event_obj, "title");
+        ev.icon_url = ExtractJsonStr(event_obj, "icon");  // 赛事图 (前端事件头)
+        if (ev.icon_url.empty()) ev.icon_url = ExtractJsonStr(event_obj, "image");
         // 真实 sport 是对象 {id, sport, ...}: 取联赛码 (sport.sport) + 稳定 id (sport.id)。
         const SportObj so = ExtractSportObject(event_obj);
         ev.sport_code = so.code;  // "nba"/"bkcba"/"atp"/...
@@ -602,6 +604,8 @@ std::vector<DiscoveredEvent> ParseSportsMarketsFlat(const std::string& json_buf,
         ev.event_id = dm.condition_id;
         ev.slug = ExtractJsonStr(mobj, "slug");
         ev.title = question;
+        ev.icon_url = ExtractJsonStr(mobj, "icon");  // 赛事图 (前端事件头)
+        if (ev.icon_url.empty()) ev.icon_url = ExtractJsonStr(mobj, "image");
         const SportObj so2 = ExtractSportObject(mobj);
         ev.sport_code = so2.code;
         ev.sport_id = so2.id;

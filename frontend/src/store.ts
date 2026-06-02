@@ -307,6 +307,7 @@ function buildEventGroups(): EventGroup[] {
     eventId: evSummary.event_id,
     eventSlug: evSummary.slug,
     eventTitle: evSummary.title,
+    iconUrl: evSummary.icon_url ?? null,
     sport: evSummary.sport,
     live: evSummary.live === true,
     score: lastEventScore[evSummary.event_id] ?? null,

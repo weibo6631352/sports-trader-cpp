@@ -135,6 +135,7 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
         ei.sport = ev.sport;
         ei.neg_risk_market_id = ev.neg_risk_market_id;
         ei.live = ev.live;  // gamma live=true 透传 → 前端默认只显示正在比赛
+        ei.icon_url = ev.icon_url;  // 赛事图 → 前端事件头
 
         for (const auto& dm : ev.markets) {
             std::printf("[paper_daemon]    market %.28s... | type=%s | gi=%s\n", dm.condition_id.c_str(),
