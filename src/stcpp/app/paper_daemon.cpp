@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "stcpp/data/commentaries_poller.hpp"   // live_stats CommentariesPoller (commentaries 轮询)
+#include "stcpp/data/tennis_scores_parser.hpp"  // 覆盖率: tennis_scores livescore → InjectSupplementalScores
 #include "stcpp/data/market_taxonomy.hpp"        // v0.7 类别码映射 (真实 Polymarket 结构 → categorical)
 #include "stcpp/data/inplay_feed_thread.hpp"    // InplayFeedThread / InplayFeedConfig
 #include "stcpp/data/live_stats_store.hpp"      // live_stats LiveStatsStore
@@ -955,6 +956,15 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
+    // ---- 覆盖率: tennis_scores livescore 补充源 (并入 inplay_feed_ 的 score store) ----
+    //   2026-06-03: 拉高 tennis (PM 大头) 覆盖率 — 接 inplay 缺的 ITF/Challenger live 比分。
+    if (cfg_.start_live_feeds && inplay_feed_) {
+        tennis_scores_refresh_thread_ =
+            std::jthread([this](std::stop_token st) { RefreshTennisScores(st); });
+        std::printf("[paper_daemon] tennis_scores 补充比分线程启动 (拉高 ITF/Challenger 覆盖, 15s 轮询)\n");
+        std::fflush(stdout);
+    }
+
     // ---- bm_slots start: 跨庄家赔率刷新线程 (getodds + inplay-mapping → g_bm_* 特征 #5/6/7/16) ----
     //   默认【关】(2026-06-02 事故: getodds 单 sport 达 45MB, 跨洋抓取吃光带宽 → WSS idle 断 + 前端卡。
     //   WSS 是交易命脉, 优先级 >> advisory 的 bm_slots)。需显式 STCPP_ENABLE_BM_SLOTS=1 才起。
@@ -1507,6 +1517,63 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
 //   R-12: 独立 jthread, popen 阻塞 IO 在本线程, 不进 WSS event loop。key 在 URL → https+proxy 保护。
 //   cat/slug 来自 enum (无注入)。getodds 覆盖 in-play (Agent C 实测); 无 mapping 的盘 (非直播) 跳过。
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// RefreshTennisScores — 覆盖率杠杆 (2026-06-03): tennis_scores/home 全巡回 livescore (含 inplay 缺的
+//   ITF/Challenger) → ParseTennisScoresLive (仅 live Set N) → InjectSupplementalScores 并入 score store
+//   → EventMatcher 配 PM ITF 盘。tennis_scores ~194KB (远小于 getodds 45MB, 无 WSS 带宽风险)。
+//   无 bet365 赔率 → 这些场走 score-prior fair (无 sharp 锚), 但覆盖率↑+比分特征。
+// ---------------------------------------------------------------------------
+void PaperDaemon::RefreshTennisScores(std::stop_token st) {
+    using namespace std::chrono;
+    const char* gs_key_env = std::getenv("GOALSERVE_API_KEY");
+    const std::string gs_key = gs_key_env ? gs_key_env : "";
+    const char* gs_proxy_env = std::getenv("GOALSERVE_PROXY");
+    const std::string gs_proxy = gs_proxy_env ? gs_proxy_env : "";
+    auto fetch = [&gs_proxy](const std::string& url) -> std::string {
+        std::string cmd = "curl -s --max-time 15 ";
+        if (!gs_proxy.empty()) {
+            cmd += "-x '";
+            cmd += gs_proxy;
+            cmd += "' ";
+        }
+        cmd += "'";
+        cmd += url;
+        cmd += "'";
+        std::string out;
+        if (FILE* p = ::popen(cmd.c_str(), "r")) {
+            char buf[8192];
+            std::size_t n;
+            while ((n = std::fread(buf, 1, sizeof(buf), p)) > 0)
+                out.append(buf, n);
+            ::pclose(p);
+        }
+        return out;
+    };
+    while (!st.stop_requested()) {
+        if (!gs_key.empty() && inplay_feed_) {
+            const std::string xml =
+                fetch("https://www.goalserve.com/getfeed/" + gs_key + "/tennis_scores/home");
+            if (!xml.empty()) {
+                const std::int64_t ing = duration_cast<nanoseconds>(
+                                             system_clock::now().time_since_epoch())
+                                             .count();
+                auto recs = data::tennis_scores::ParseTennisScoresLive(xml, ing);
+                const std::size_t n = recs.size();
+                inplay_feed_->InjectSupplementalScores(std::move(recs));
+                static int ts_throttle = 0;
+                if ((ts_throttle++ % 4) == 0)  // 每 60s 一行
+                    std::fprintf(stderr, "[tennis_scores] %zu 场 live (ITF/Challenger) 注入 score store\n", n);
+            }
+        }
+        const auto deadline = steady_clock::now() + seconds(15);
+        while (steady_clock::now() < deadline) {
+            if (st.stop_requested())
+                return;
+            std::this_thread::sleep_for(milliseconds(150));
+        }
+    }
+}
+
 void PaperDaemon::RefreshOdds(std::stop_token st) {
     using namespace std::chrono;
     namespace gs = data::goalserve;

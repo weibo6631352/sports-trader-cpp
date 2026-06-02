@@ -787,4 +787,58 @@ std::string InplayFeedThread::ReadProxyFromEnv() noexcept {
     return {};
 }
 
+// ---- InjectSupplementalScores: 并入补充比分源 (tennis_scores livescore) ----
+//   覆盖率杠杆 (2026-06-03): inplay (bet365 联动) 缺 ITF/Challenger, tennis_scores 全巡回有。
+//   merge 进 merged_map_ 并 republish, 与 RunSportLoop 共用 merged_mu_ (单一发布者口径)。
+//   去重: 同双姓氏已被 inplay 占 (带 bet365 odds) → 跳过, 保住 atp/wta 的 sharp fair。
+void InplayFeedThread::InjectSupplementalScores(std::vector<debug_api::EventScore> recs) noexcept {
+    // 末段姓氏 (小写; '/' 防双打名混入): "M. Malige"→"malige", "Krawczyk/ Skupski"→"skupski"
+    auto surname = [](const std::string& name) -> std::string {
+        std::size_t e = name.size();
+        while (e > 0 && (name[e - 1] == ' ' || name[e - 1] == '\t'))
+            --e;
+        std::size_t b = e;
+        while (b > 0 && name[b - 1] != ' ' && name[b - 1] != '/')
+            --b;
+        std::string s = name.substr(b, e - b);
+        for (auto& c : s)
+            if (c >= 'A' && c <= 'Z')
+                c = static_cast<char>(c + 32);
+        return s;
+    };
+    auto pair_key = [&surname](const std::string& h, const std::string& a) -> std::string {
+        std::string sh = surname(h), sa = surname(a);
+        if (sh > sa)
+            std::swap(sh, sa);
+        return sh + "|" + sa;
+    };
+
+    std::lock_guard<std::mutex> lk(merged_mu_);
+    // 删上轮补充源 key (避免已结束/已切换残留)
+    for (const auto& k : supplemental_keys_)
+        merged_map_.erase(k);
+    supplemental_keys_.clear();
+    // 现有 (inplay) tennis 双姓氏集合 → 去重锚 (inplay 带 odds, 优先)
+    std::set<std::string> seen_pairs;
+    for (const auto& [k, es] : merged_map_) {
+        if (es.sport == "tennis")
+            seen_pairs.insert(pair_key(es.home, es.away));
+    }
+    std::size_t injected = 0;
+    for (auto& es : recs) {
+        if (es.event_id.empty() || es.home.empty() || es.away.empty())
+            continue;
+        const std::string pk = pair_key(es.home, es.away);
+        if (seen_pairs.count(pk))
+            continue;  // inplay 已有此场 (带 bet365 fair) → 跳过, 不盖
+        seen_pairs.insert(pk);
+        const std::string key = es.event_id;
+        merged_map_[key] = std::move(es);
+        supplemental_keys_.insert(key);
+        ++injected;
+    }
+    store_.Publish(std::make_shared<ScoreMap>(merged_map_));
+    (void)injected;  // 计数 (调用方日志); 此处仅 publish
+}
+
 }  // namespace stcpp::data
