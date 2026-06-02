@@ -60,6 +60,7 @@
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
 #include "stcpp/pricing/derivative_fair_value.hpp"
+#include "stcpp/pricing/tennis_fair_value.hpp"  // 网球 totals/spreads (games/sets 制; 老板「全盘口接入」)
 #include "stcpp/pricing/fair_resolve.hpp"  // R-2: ResolveFair 纯函数 (fair 优先级集中)
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/rm_debug_snapshot.hpp"
@@ -494,6 +495,11 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                         const int opp_score = it->second.yes_is_home ? es.away_score : es.home_score;
                         game_row.score_home_total = static_cast<std::int32_t>(yes_score);
                         game_row.score_away_total = static_cast<std::int32_t>(opp_score);
+                        // 网球已打局数 (totals/spreads 用); 同 orientation 翻成 YES-canonical。非网球=0。
+                        const int yes_games = it->second.yes_is_home ? es.games_home : es.games_away;
+                        const int opp_games = it->second.yes_is_home ? es.games_away : es.games_home;
+                        game_row.score_home_games = static_cast<std::int32_t>(yes_games);
+                        game_row.score_away_games = static_cast<std::int32_t>(opp_games);
                         // A1.5 (小梁): 接真时钟 → time_frac. FairValue::time_fraction_ 用
                         //   game_row.elapsed_sec / total_game_seconds(sport). 不填则 time_frac=0,
                         //   先验置信永远压在 base 0.15, 真实领先 edge 被 CI 吃掉 → 几乎不成交.
@@ -638,20 +644,25 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const MarketCat mc = MarketCatFor(condition_id);
     const std::int32_t mkt_type = mc.market_type_id;
     std::optional<double> derivative_p_yes;  // totals/spreads 专属定价 (有值 → 覆盖 moneyline p_fair)
-    if (mkt_type == 2) {  // totals (大小分)
-        const pricing::DerivativeFairResult dr = pricing::TotalsFairYes(game_row, mc.line, mc.yes_is_over);
+    // sport-aware 分派: 网球 (set/game 制) 走专属 games 模型; 连续时钟运动走 derivative (Poisson/Normal)。
+    const bool is_tennis = (game_row.sport == "tennis");
+    if (mkt_type == 2) {  // totals (大小分 / 网球总局)
+        const pricing::DerivativeFairResult dr =
+            is_tennis ? pricing::TennisTotalsFairYes(game_row, mc.line, mc.yes_is_over)
+                      : pricing::TotalsFairYes(game_row, mc.line, mc.yes_is_over);
         if (!dr.valid) {
-            return;  // 派生定价不可用 (赛前/太早/不支持运动/无 line) → 不交易
+            return;  // 派生定价不可用 (赛前/太早/不支持运动/无 line/终态) → 不交易
         }
         derivative_p_yes = dr.p_yes;
-    } else if (mkt_type == 1) {  // spreads (让分)
-        const pricing::DerivativeFairResult dr = pricing::SpreadsFairYes(game_row, mc.line);
+    } else if (mkt_type == 1) {  // spreads (让分 / 网球让局)
+        const pricing::DerivativeFairResult dr = is_tennis ? pricing::TennisSpreadsFairYes(game_row, mc.line)
+                                                           : pricing::SpreadsFairYes(game_row, mc.line);
         if (!dr.valid) {
             return;
         }
         derivative_p_yes = dr.p_yes;
     } else if (mkt_type > 2) {
-        return;  // outright/prop/series 暂无专属定价 → 不交易
+        return;  // outright/prop/series 暂无专属定价 → 不交易 (后续单独接入)
     }
 
     // ---- P0-3 / P1-8 fair 锚定 --------------------------------------------

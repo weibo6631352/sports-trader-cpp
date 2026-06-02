@@ -331,6 +331,10 @@ struct EventScore {
     std::string away;
     int home_score{0};
     int away_score{0};
+    // 网球: home_score/away_score = 已赢【盘】数 (totalscore); 下面是全场已打【局】数 (s1+..+s5)。
+    //   totals(总局 O/U)用和, spreads(让局)用差。非网球 = 0 (不适用)。G-FREEZE-W 只增。
+    int games_home{0};
+    int games_away{0};
     FourTs ts{};
     std::string source{"goalserve"};
     // A0 映射桥 (condition_id↔goalserve event): EventMatcher 锚定字段.

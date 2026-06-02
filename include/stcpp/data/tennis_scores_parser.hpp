@@ -108,9 +108,10 @@ namespace detail {
         if (mid.empty())
             continue;
 
-        // 两 player: name + totalscore (已赢盘数)
+        // 两 player: name + totalscore (已赢盘数) + s1..s5 (各盘已打局数 → 全场总局, totals/spreads 用)
         std::string p0, p1;
         int ts0 = 0, ts1 = 0;
+        int gm0 = 0, gm1 = 0;  // 全场总局数 = s1+..+s5
         std::size_t pp = match_hdr_end;
         int pidx = 0;
         while (pidx < 2) {
@@ -124,12 +125,18 @@ namespace detail {
             const std::string_view phdr = span.substr(pk, phe - pk);
             const std::string_view nm = AttrIn(phdr, "name");
             const int tsv = ParseIntSafe(AttrIn(phdr, "totalscore"));
+            // s1..s5 各盘局数求和 (空属性 ParseIntSafe→0; tiebreak 盘记 7)
+            int gsum = 0;
+            for (const char* sk : {"s1", "s2", "s3", "s4", "s5"})
+                gsum += ParseIntSafe(AttrIn(phdr, sk));
             if (pidx == 0) {
                 p0 = std::string(nm);
                 ts0 = tsv;
+                gm0 = gsum;
             } else {
                 p1 = std::string(nm);
                 ts1 = tsv;
+                gm1 = gsum;
             }
             ++pidx;
             pp = phe + 1;
@@ -147,6 +154,8 @@ namespace detail {
         es.away = std::move(p1);
         es.home_score = ts0;  // 已赢盘数
         es.away_score = ts1;
+        es.games_home = gm0;  // 全场已打局数 (totals/spreads 用)
+        es.games_away = gm1;
         es.league_id = current_league;
         es.source = "goalserve";
         // 比分源无 bet365 赔率 → inplay fair 留 -1 (默认); 这些场走 score-prior fair。

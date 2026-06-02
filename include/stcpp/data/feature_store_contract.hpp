@@ -116,6 +116,10 @@ struct FeatureStoreGameRow {
     // ---- 比分 ----
     std::int32_t score_home_total = 0;
     std::int32_t score_away_total = 0;
+    // 网球: score_home_total/away_total = 已赢【盘】数; 下面是全场已打【局】数 (totals/spreads 用)。
+    //   YES-canonical (同 score_home_total: home=YES 边)。非网球 = 0。G-FREEZE-W 只增。
+    std::int32_t score_home_games = 0;
+    std::int32_t score_away_games = 0;
     // 分节得分: 12 槽 (篮球4节+OT3, 棒球9局+加局, 网球5盘, 排球5盘)
     // -1 = 未开始/无效
     std::array<std::int32_t, 12> score_home_periods{{}};
