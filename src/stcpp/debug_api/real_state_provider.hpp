@@ -425,8 +425,11 @@ public:
                 } else {
                     ++recognized;
                 }
+                // 真·在打窗口: 已开赛 + 距开赛 ≤ 5h。不用 gamma endDate (实测=结算日, 往往比赛后数天 →
+                //   排不掉已结束的盘, markets_live 虚高 83%)。5h 封顶覆盖 5盘网球/棒球加时, 超则多半已结束。
+                constexpr std::int64_t kInPlayCapSec = 5 * 3600;
                 if (mi.game_start_ts_sec > 0 && mi.game_start_ts_sec <= now_sec &&
-                    (mi.end_ts_sec <= 0 || now_sec <= mi.end_ts_sec)) {
+                    now_sec <= mi.game_start_ts_sec + kInPlayCapSec) {
                     ++live;
                 }
             }
