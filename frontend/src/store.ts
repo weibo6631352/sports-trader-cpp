@@ -440,9 +440,6 @@ function startFallbackPolling(): void {
   _fallbackTimers.push(every(() => { void refreshAccount(); }, 5000));
   _fallbackTimers.push(every(() => { void refreshAttribution(); }, 15000));
   _fallbackTimers.push(every(() => { void refreshGate(); }, 15000));
-  // 展开行全档 detail: SSE 活时由 book/quote 通道推, 不轮询 (评审: 防双源写 conditionCache);
-  //   仅回退时 2s 轮询 (与 SSE 互斥, 不并存)。
-  _fallbackTimers.push(every(() => { void refreshExpandedDetail(); }, 2000));
   // Ops/慢通道: SSE 活时由 healthz/features/mapping/timeseries 通道推; 仅回退时轮询。
   _fallbackTimers.push(every(() => { void refreshSparkline(); }, 15000));
   _fallbackTimers.push(every(() => { void refreshFeatureHealth(); }, 20000));
@@ -525,29 +522,28 @@ function connectSSE(): void {
   });
   // focus 订阅: 展开/选中盘口的全档 book/quote (Phase 2)。
   //   丢弃过期版本帧 (focusSeq < 当前) + 不在 detailInterest 的 (已折叠)。
-  on('book', (d, _mode, focusSeq) => {
-    if (focusSeq != null && focusSeq < _focusSeq) return;  // 过期 focus 版本
+  // 注: 不再按 focus_seq 丢帧 (展开一次会 postFocus 两次, _focusSeq 跑在服务端回传前面 →
+  //   book 帧被全部误丢 → "未接入"。改: 只按 detailInterest.has(cid) 门控, 谁在看就收谁的)。
+  //   可靠性兜底由常驻 refreshExpandedDetail (REST) 提供; SSE book/quote 是加成。
+  on('book', (d) => {
     const bk = d as (BinaryMarketBookView & { found?: boolean; condition_id?: string }) | null;
     const cid = bk?.condition_id;
     if (!cid || !detailInterest.has(cid)) return;
-    // ★ found:false 的 book 没有 token0/token1 → 存 null (镜像 REST apiFetch 的 found:false→null;
-    //   否则渲染层把 found:false 对象当有簿, 读 token0.outcome 崩溃 → 整页 Solid 响应树断、点击失灵)
-    const usable = bk && bk.found === true ? bk : null;
+    if (!bk || bk.found !== true) return;  // found:false 不覆盖 (无 token0; 也别把已有簿冲成 null)
     setState(produce((s) => {
       s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
-      s.conditionCache[cid].book = usable;
+      s.conditionCache[cid].book = bk;
     }));
     rebuildGroups();
   });
-  on('quote', (d, _mode, focusSeq) => {
-    if (focusSeq != null && focusSeq < _focusSeq) return;
+  on('quote', (d) => {
     const qt = d as (Quote & { found?: boolean; market_id?: string }) | null;
     const cid = qt?.market_id;
     if (!cid || !detailInterest.has(cid)) return;
-    const usable = qt && qt.found === true ? qt : null;  // 同理 found:false→null
+    if (!qt || qt.found !== true) return;
     setState(produce((s) => {
       s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
-      s.conditionCache[cid].quote = usable;
+      s.conditionCache[cid].quote = qt;
     }));
     rebuildGroups();
   });
@@ -575,11 +571,11 @@ export function initPolling(): void {
   //   失败自动回退到 fast 轮询 (startFallbackPolling)。
   connectSSE();
 
-  // 仅剩 2 个常驻 REST (SSE 不承载):
-  //   - metrics: Prometheus 文本, 本就要被 Prometheus 抓取, 留 REST (移 SSE 反要双份);
-  //   - marketInfoSlow: 已缓存盘口的 market 元数据慢刷 (非通道数据)。
-  // 其余全走 SSE (status/account/grid/scores/events/positions/pnl/gate/rejects/book/quote/
-  //   healthz/features/mapping/timeseries); SSE 死时由 startFallbackPolling 兜底。
+  // 展开行全档 detail (book/quote/market): 常驻 2s REST 拉取 detailInterest (经实证可靠的兜底)。
+  //   SSE book/quote 通道是"更快的加成"(1s on-change), 但 focus 链路曾误丢帧致"未接入" →
+  //   故 REST 常驻作为可靠源 (两者都写 conditionCache.book/quote, 同后端数据、同归一, 不冲突)。
+  every(() => { void refreshExpandedDetail(); }, 2000);
+  // 其余常驻 REST: metrics (Prometheus 抓取需) + marketInfoSlow (market 元数据慢刷)。
   every(() => { void refreshMetrics(); }, 30000);
   every(() => { void refreshMarketInfoSlow(); }, 60000);
 }
