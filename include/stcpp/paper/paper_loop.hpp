@@ -177,8 +177,11 @@ struct ResolutionEntry {
 //   全部 game_row.score / live_stats 派生; 无真比分 → NaN。
 struct SportsFeatures {
     double game_phase{std::numeric_limits<double>::quiet_NaN()};
-    double garbage_time{0.0};
-    double clutch{0.0};
+    // 默认 NaN (与 game_phase/goal_freshness 一致, 2026-06-02 10-代理审计发现): 非赛中记录
+    //   应输出 NaN("无比赛数据")而非 0.0(会被模型误读为"赛中但非垃圾/关键时刻")。
+    //   赛中匹配记录在 has_real_fair 块内总会显式赋 0.0/1.0, 不受此默认影响。
+    double garbage_time{std::numeric_limits<double>::quiet_NaN()};
+    double clutch{std::numeric_limits<double>::quiet_NaN()};
     double goal_freshness{std::numeric_limits<double>::quiet_NaN()};
     double net_momentum_5m{std::numeric_limits<double>::quiet_NaN()};
     double danger_attack_diff{std::numeric_limits<double>::quiet_NaN()};

@@ -118,3 +118,25 @@
 - 假阳性 (正确的 0/常量): #26 bid_absence (bid 在场=健康) · #48-53 pos (空仓) · #59 resolution (市场开放) · #82/84 cat (体育 moneyline 恒值) · #71/72 (条件未触发)。
 
 **下一步 (老板决策):** 唯一剩的真代码缺口是 bm_slots 跨庄家赔率, 需新建 Goalserve odds feed 采集管线 (中大工程, 双重价值: 既是特征也是 sharp fair 锚)。其余非代码, 靠数据覆盖 (足球直播 + commentaries + NO book 双边订阅) 自然填充。
+
+---
+
+## 8. 10-代理 fan-out 审计新发现 (2026-06-02, workflow ml-feature-validity-sweep)
+
+> 10 代理分片 (每片 ~12 特征) + 1 综合, 对抗式核验值语义。**在原单遍审计三类 (假阳性/覆盖/大管线) 之外, 找出 5 类原审计漏掉的真问题** — 印证 fan-out 价值。
+
+**真 bug (genuine, 按严重度):**
+1. **#66 g_fld_signal (HIGH) — 设计失效, 非数据缺口。** 二元市场 multiplicative de-vig 与 power de-vig 数学收敛, 差值退化为浮点噪声 (~1e-16; 实测 min=-1.6e-16/max=1.1e-16)。populated=127 假装健康, 实为机器精度垃圾, 模型会对噪声维度过拟合。**修: 换真有区分力的 FLS 代理 (sharp 偏离比) 或删列。属量化 (小梁/小程) 决策。**
+2. **#71 g_garbage_time / #72 g_clutch (MEDIUM) — 默认值 bug。已修 (commit 见下)。** 默认 0.0 而非 NaN (paper_loop.hpp:180-181), 非赛中 85 记录静默输出 0.0, 模型无法区分"无比赛数据"vs"赛中非关键时刻"。与同结构 game_phase/goal_freshness (默认 NaN) 不一致。**已改默认为 NaN。**
+3. **#78 x_yes_no_book_skew_sec (MEDIUM) — 双 bug。** ① 注释符号反 (model_feature_spec.hpp:696 "正=YES更旧" 与公式 b.ds−no.ds 语义相反); ② 当前 WSS YES/NO 共享 @ts → 差值恒 0。**修: 正注释 + 评估 YES/NO book ts 能否独立 (否则改用 ingestion_ts)。**
+4. **#77 g_score_age_sec (LOW) — 语义污染。** paper_loop:458 对所有记录写 game_row.data_source_ts=YES book WSS ts; 非匹配 85 记录测的是 book 龄非比分龄。**修: 仅匹配成功才写, 否则留 0 → age_s(0)=NaN。**
+5. **#24/#32 b_mp_roc_per_sec vs b_mp_roc_30s (LOW) — 重复列。** cfg_.ts_feature_window_ns 默认 30s == b_mp_roc_30s 硬编码窗口 → 两列逐位相同 (完美共线)。NO 侧同。**修: cfg 默认改 60s/120s 或删一列填空白窗口。**
+
+**共线/零增量列 (浪费模型容量, CTF 架构必然):**
+- #75 b_book_age_sec == #76 no_b_book_age_sec (YES/NO 共享 WSS @ts → 完美副本)。
+- #86 b_bid_depth_5lvl == #91 no_b_ask_depth_5lvl; #87 b_ask_depth_5lvl == #90 no_b_bid_depth_5lvl (CTF: YES bid=NO ask 同底层池 → 2 对完美共线)。
+- #79/#80 ingestion_lag 同源近重复。
+
+**suspect-healthy (看似健康待人复核):** #1 g_score_total (max=41 篮球混足球, 无运动感知) · #3 g_elapsed_sec (42 条仅 1 非零, clock_sec 语义存疑/按节重置?) · #10 b_imbalance (缺失 fallback 0.0 非 NaN) · #21 g_possession_home (0-100 非 0-1, 开通后需归一) · #30 b_ofi (净卖压均值 −4183 但 mp_roc 为正, 方向需小梁验) · #44 b_no_microprice (实为 no_token_mid, thin book 静默降级) · #94 mkt_volume_24h (24% NaN, 而同端点 #95 liquidity 全有值, 提取逻辑存疑)。
+
+**结论:** fan-out 找出 #66 (噪声列) 和 #71/72 (默认值不一致) 是原单遍漏掉的真问题; 其余多为 CTF 架构共线 (信息论冗余, 非 bug) + 待人复核的语义疑点。#66 与共线列在下次 retrain 前由量化决定删/换。
