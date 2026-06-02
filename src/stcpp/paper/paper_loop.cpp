@@ -645,6 +645,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const MarketCat mc = MarketCatFor(condition_id);
     const std::int32_t mkt_type = mc.market_type_id;
     std::optional<double> derivative_p_yes;  // totals/spreads 专属定价 (有值 → 覆盖 moneyline p_fair)
+    // 市场兜底标志: outright/prop/series 无专属 score 模型 → 不"未接入", 改发市场 de-vig 公允
+    //   (edge≈0, 诚实标 market_devig, 不交易)。关键: 强制挡 score-prior/sharp/ML (否则匹配到某场
+    //   比赛会用单场比分当冠军/系列概率 = 垃圾, 同 cricket 教训)。
+    bool market_implied = false;
     // sport-aware 分派: 网球(set/game)/电竞(maps) 走专属离散模型; 连续时钟运动走 derivative(Poisson/Normal)。
     const bool is_tennis = (game_row.sport == "tennis");
     const bool is_esports = (game_row.sport == "esports");
@@ -667,7 +671,9 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
         derivative_p_yes = dr.p_yes;
     } else if (mkt_type > 2) {
-        return;  // outright/prop/series 暂无专属定价 → 不交易 (后续单独接入)
+        // outright/prop/series: 无专属 score 模型 → 市场兜底 (发 quote, fair=市场 de-vig, 不交易)。
+        //   替代旧 `return` (永远"未接入")。下方 ResolveFair 强制走市场 (挡 score-prior/sharp/ML)。
+        market_implied = true;
     }
 
     // ---- P0-3 / P1-8 fair 锚定 --------------------------------------------
@@ -815,6 +821,15 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         fin.has_real_fair = has_real_fair;
         fin.ml_p_yes = ml_p_opt;
         fin.ml_blend_weight = cfg_.ml_fair_blend_weight;
+        if (market_implied) {
+            // outright/prop/series 市场兜底: 挡 score-prior/sharp/derivative/ML → fair = 纯市场 de-vig。
+            //   单场比分/匹配的 sharp 对"冠军/系列"语义错误, 必须挡 (防垃圾 fair); edge≈0 不交易。
+            fin.derivative_p_yes = std::nullopt;
+            fin.sharp_yes = -1.0;
+            fin.prior_conf = 0.0;
+            fin.has_real_fair = false;
+            fin.ml_p_yes = std::nullopt;
+        }
         p_fair = pricing::ResolveFair(fin).p_fair;
     }
 
