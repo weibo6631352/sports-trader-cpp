@@ -17,7 +17,7 @@
  *   market info:              60s
  */
 
-import { createStore, produce } from 'solid-js/store';
+import { createStore, produce, reconcile } from 'solid-js/store';
 import {
   fetchHealthz, fetchStatus, fetchPositions, fetchPnlTimeseries,
   fetchPnlAttribution, fetchRiskRejects, fetchGatePaper,
@@ -583,13 +583,19 @@ function connectSSE(): void {
 //   通道每帧都来 (全展 38 盘 → 38 book + 38 quote on-change/s) → 原来每帧重建整树 + 重渲染全网格
 //   (含 38 个展开订单簿阶梯) → 每秒几十次 → 主线程占满 → 点击事件排不上 = 卡死。
 //   修: 120ms 窗口内的所有调用合并成 1 次重建 (≤~8 次/s), 主线程腾出给交互。视觉延迟 ≤120ms 无感。
+//   2026-06-02 加重节流 200→450ms: 全盘口期盘口数涨到 600+, 每次 buildEventGroups 重建整树 +
+//   <For> 按引用重渲染所有事件头(含图片)≈ 126ms/次; 200ms 节流 → 稳态 ~3 卡顿/秒。450ms → ~2/秒,
+//   价格 2 次/秒更新视觉无感, 卡顿明显缓解。(根治需行级细粒度读 store, 列为后续。)
 let _rebuildTimer: number | undefined;
 function rebuildGroups(): void {
   if (_rebuildTimer != null) return;  // 窗口内已排程 → 吸收本次调用
   _rebuildTimer = window.setTimeout(() => {
     _rebuildTimer = undefined;
-    setState({ eventGroups: buildEventGroups() });
-  }, 200);
+    // reconcile 按 eventId diff: 只更新内容变化的事件组 → <For> 只重渲染变化的事件头 (不再
+    //   按引用全量重建 22 个事件头+图片)。根治"全盘口期重建慢"的核心。eventId 唯一 (真 event id /
+    //   合成盘=condition_id)。
+    setState('eventGroups', reconcile(buildEventGroups(), { key: 'eventId', merge: false }));
+  }, 450);
 }
 
 // ---------- 定时轮询初始化 (入口) ----------
