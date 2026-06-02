@@ -45,9 +45,11 @@
 #pragma once
 
 #include <array>
+#include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 #include "stcpp/data/feature_store_contract.hpp"
 #include "stcpp/strategy/signal_iface.hpp"  // Outcome enum
@@ -425,6 +427,68 @@ private:
 // vendor-agnostic: 基于 stcpp::data::goalserve::GoalserveSport 枚举.
 // 默认 90 * 60 (足球); 未知运动退化 = 0 (time_frac = 0, 纯比分先验).
 // ---------------------------------------------------------------------------
+// 解析 Goalserve period 字符串 → 1-based 节序数 (喂 g_period 特征 #2)。
+//   Goalserve "period" 字段编码杂乱: "1st Half"/"2nd Quarter"/"Set 3"/"Q3"/"2H"/
+//   "P1"/"inning 12"。策略: 取首段连续数字 = 节序 (覆盖绝大多数); 无数字时
+//   加时/超时 (OT/ET/Extra/Overtime) → regulation 节数+1; 其余 (Half Time/未知/空) → 0。
+//   纯函数, 无副作用; 0 = 未知节 (与 FeatureStoreGameRow.period 默认一致)。
+[[nodiscard]] inline std::uint8_t parse_period_ordinal(std::string_view period,
+                                                       std::string_view sport) noexcept {
+    // 1) 首个连续数字 → 节序 ("1st Half"→1, "Set 3"→3, "Q3"→3, "inning 12"→12)
+    for (std::size_t i = 0; i < period.size(); ++i) {
+        if (period[i] >= '0' && period[i] <= '9') {
+            unsigned v = 0;
+            std::from_chars(period.data() + i, period.data() + period.size(), v);
+            return static_cast<std::uint8_t>(v > 255u ? 255u : v);
+        }
+    }
+    // 2) 无数字: 加时/超时关键词 (大小写不敏感) → regulation 节数 + 1
+    auto contains_ci = [](std::string_view hay, std::string_view needle) noexcept {
+        if (needle.empty() || needle.size() > hay.size())
+            return false;
+        for (std::size_t i = 0; i + needle.size() <= hay.size(); ++i) {
+            bool match = true;
+            for (std::size_t j = 0; j < needle.size(); ++j) {
+                char a = hay[i + j];
+                if (a >= 'A' && a <= 'Z')
+                    a = static_cast<char>(a + 32);
+                if (a != needle[j]) {
+                    match = false;
+                    break;
+                }
+            }
+            if (match)
+                return true;
+        }
+        return false;
+    };
+    // "ot" 只在整串等于 "OT"/"ot" 时算 (子串匹配会误判 "Not Started" 含 "ot")。
+    auto equals_ci = [](std::string_view s, std::string_view lit) noexcept {
+        if (s.size() != lit.size())
+            return false;
+        for (std::size_t i = 0; i < s.size(); ++i) {
+            char a = s[i];
+            if (a >= 'A' && a <= 'Z')
+                a = static_cast<char>(a + 32);
+            if (a != lit[i])
+                return false;
+        }
+        return true;
+    };
+    const bool is_ot = equals_ci(period, "ot") || contains_ci(period, "extra") ||
+                       contains_ci(period, "overtime");
+    if (is_ot) {
+        if (sport == "soccer")
+            return 3;  // 上/下半场后 ET = 第 3 阶段
+        if (sport == "basket" || sport == "amfootball")
+            return 5;  // 4 节后 OT
+        if (sport == "hockey")
+            return 4;  // 3 节后 OT
+        return 0;
+    }
+    return 0;  // "Half Time" / 未知 / 空 → 未知节
+}
+
 [[nodiscard]] inline int total_game_seconds(std::string_view sport) noexcept {
     // 主流运动近似全场秒数 (不含加时)
     // sport 字段来自 feature_store_contract.hpp → SportInplaySlug() (小写 slug)
@@ -446,6 +510,19 @@ private:
     if (sport == "rugby")
         return 80 * 60;
     return 0;  // 未知运动 → 纯比分先验
+}
+
+// 无时钟运动的常规节/局数 (P3.2: 给 game_phase 提供 period 进度锚)。
+//   有时钟运动 (soccer/basket/...) 返回 0 → 调用方用时钟 time_frac, 不走此 proxy。
+//   近似值 (格式有歧义, 如网球 best-of-3 vs 5); 仅供 phase 粗分桶 (早/中/末), 非定价输入。
+[[nodiscard]] inline int regulation_periods(std::string_view sport) noexcept {
+    if (sport == "baseball")
+        return 9;  // 9 局
+    if (sport == "tennis")
+        return 3;  // best-of-3 常态 (大满贯男单 5, 取下界避免过早判末段)
+    if (sport == "volleyball")
+        return 5;  // best-of-5
+    return 0;  // 有时钟运动 / 未知 → 不用 period proxy
 }
 
 }  // namespace stcpp::pricing

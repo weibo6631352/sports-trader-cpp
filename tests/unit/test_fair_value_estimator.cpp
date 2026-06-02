@@ -502,4 +502,36 @@ TEST(FairValueEstimator, T15_TotalGameSeconds) {
     EXPECT_NEAR(r.prior_yes, expected, 1e-12);
 }
 
+// ---- P1.1 (特征审计): parse_period_ordinal — Goalserve period 字符串 → 节序数 ----
+TEST(ParsePeriodOrdinal, NumericExtraction) {
+    using stcpp::pricing::parse_period_ordinal;
+    EXPECT_EQ(parse_period_ordinal("1st Half", "soccer"), 1);
+    EXPECT_EQ(parse_period_ordinal("2nd Half", "soccer"), 2);
+    EXPECT_EQ(parse_period_ordinal("1st Quarter", "basket"), 1);
+    EXPECT_EQ(parse_period_ordinal("4th Quarter", "basket"), 4);
+    EXPECT_EQ(parse_period_ordinal("Q3", "basket"), 3);
+    EXPECT_EQ(parse_period_ordinal("2H", "soccer"), 2);
+    EXPECT_EQ(parse_period_ordinal("P1", "hockey"), 1);
+    EXPECT_EQ(parse_period_ordinal("Set 3", "tennis"), 3);
+    EXPECT_EQ(parse_period_ordinal("Set 5", "tennis"), 5);
+    // 多位数 inning 必须整段解析 (非取首位 '1')
+    EXPECT_EQ(parse_period_ordinal("inning 12", "baseball"), 12);
+}
+
+TEST(ParsePeriodOrdinal, OvertimeKeywords) {
+    using stcpp::pricing::parse_period_ordinal;
+    EXPECT_EQ(parse_period_ordinal("OT", "basket"), 5);
+    EXPECT_EQ(parse_period_ordinal("ot", "amfootball"), 5);
+    EXPECT_EQ(parse_period_ordinal("Overtime", "hockey"), 4);
+    EXPECT_EQ(parse_period_ordinal("Extra Time", "soccer"), 3);
+}
+
+TEST(ParsePeriodOrdinal, UnknownAndEmpty) {
+    using stcpp::pricing::parse_period_ordinal;
+    EXPECT_EQ(parse_period_ordinal("Half Time", "soccer"), 0);
+    EXPECT_EQ(parse_period_ordinal("", "soccer"), 0);
+    EXPECT_EQ(parse_period_ordinal("Not Started", "soccer"), 0);
+    EXPECT_EQ(parse_period_ordinal("OT", "tennis"), 0);  // 网球无 regulation 节 → 0
+}
+
 }  // anonymous namespace

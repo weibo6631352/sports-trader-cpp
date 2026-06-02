@@ -498,6 +498,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                         //   先验置信永远压在 base 0.15, 真实领先 edge 被 CI 吃掉 → 几乎不成交.
                         game_row.elapsed_sec = static_cast<std::int32_t>(es.clock_sec);
                         game_row.sport = es.sport;  // SportInplaySlug (total_game_seconds 匹配)
+                        // P1.1 (特征审计): Goalserve period 字符串 → 1-based 节序数, 喂 g_period (#2)。
+                        //   此前 game_row.period 从不赋值 → 恒 0 → g_period 死。无时钟运动 (网球/棒球)
+                        //   也由此拿到 set/inning 进度 (P3.2 phase 锚基础)。
+                        game_row.period = stcpp::pricing::parse_period_ordinal(es.period, es.sport);
                         // R-20: 4ts 切真 Goalserve ts (禁 book ts / 本地 now() 替代上游).
                         game_row.event_ts_ns = es.ts.event_ts_ns;
                         game_row.data_source_ts_ns = es.ts.data_source_ts_ns;
@@ -574,16 +578,37 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // token_side 始终 YES-canonical (小梁 §3 Step C: FairValueEstimator 只支持 YES 输入;
     // fair_NO=1-fair_YES)。
     book_row.token_side = "YES";
-    // L1 bid/ask
-    book_row.bid_price[0] = best_bid;
-    book_row.bid_size_usdc[0] = feat.best_bid_size();
-    book_row.ask_price[0] = best_ask;
-    book_row.ask_size_usdc[0] = feat.best_ask_size();
+    // L1..L5 bid/ask (P3.1 特征审计: 此前只拷 L1 → b_book_levels_valid 恒 2,
+    //   且 spread_bps_f/top3_depth_usdc 从不计算 → b_spread_bps/b_top3_depth 死。
+    //   feat.bids/asks 已是 LiveBookPublisher 解析的 5 档真值, 直接透传)。
+    for (std::size_t lv = 0; lv < stcpp::data::feature_store::kOrderBookLevels; ++lv) {
+        book_row.bid_price[lv] = feat.bids[lv].price;
+        book_row.bid_size_usdc[lv] = feat.bids[lv].size_usdc;
+        book_row.ask_price[lv] = feat.asks[lv].price;
+        book_row.ask_size_usdc[lv] = feat.asks[lv].size_usdc;
+    }
     // 微观结构
     book_row.microprice = microprice;
     book_row.imbalance = std::isfinite(feat.imbalance) ? feat.imbalance : 0.0;
     book_row.mid = std::isfinite(feat.mid) ? feat.mid : (best_bid + best_ask) * 0.5;
     book_row.tick_size = 0.01;
+    // P3.1: spread_bps_f + top3_depth_usdc (此前漏算)。spread 用已验 L1 价 + mid;
+    //   top3 = 前 3 档双边有效 size 之和 (无效/缺档 size 非有限 → 跳过)。
+    if (std::isfinite(book_row.mid) && book_row.mid > 0.0) {
+        book_row.spread_bps_f = (best_ask - best_bid) / book_row.mid * 10000.0;
+    }
+    {
+        double depth = 0.0;
+        for (std::size_t lv = 0; lv < 3 && lv < stcpp::data::feature_store::kOrderBookLevels; ++lv) {
+            const double bs = book_row.bid_size_usdc[lv];
+            const double as_ = book_row.ask_size_usdc[lv];
+            if (std::isfinite(bs) && bs > 0.0)
+                depth += bs;
+            if (std::isfinite(as_) && as_ > 0.0)
+                depth += as_;
+        }
+        book_row.top3_depth_usdc = depth;
+    }
     // 4 ts 从 hub 快照透传 (R-20)
     book_row.event_ts_ns = feat.event_ts_ns;
     book_row.data_source_ts_ns = feat.data_source_ts_ns;
@@ -674,10 +699,21 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         g_remaining_sec = (total_sec > 0) ? static_cast<double>(total_sec) * time_to_resolution_frac : 0.0;
 
         // 批1 体育动态: 比赛阶段/垃圾时间/关键时段 (点) + 进球新鲜度/动量 (game ring) + live_stats 差。
-        sports.game_phase = std::floor(std::clamp(time_frac, 0.0, 0.999) * 3.0);  // 0早/1中/2末
+        // P3.2 (特征审计): 无时钟运动 (网球/棒球/排球 total_sec=0) 用 period 进度当 phase 锚,
+        //   否则 phase/garbage/clutch 恒 0。phase_frac 仅供 phase 类特征, 不动 time_frac (后者喂定价
+        //   prior_confidence, 改它=改无时钟运动定价, 属量化 owner 范围, 此处不越界)。
+        double phase_frac = time_frac;  // 有时钟运动: 直接用时钟占比 (行为不变)
+        if (total_sec == 0) {
+            const int reg = pricing::regulation_periods(game_row.sport);
+            if (reg > 0 && game_row.period > 0) {
+                phase_frac = std::clamp(
+                    (static_cast<double>(game_row.period) - 0.5) / static_cast<double>(reg), 0.0, 0.999);
+            }
+        }
+        sports.game_phase = std::floor(std::clamp(phase_frac, 0.0, 0.999) * 3.0);  // 0早/1中/2末
         const double abs_diff = std::abs(score_diff);
-        sports.garbage_time = (time_frac > 0.85 && abs_diff >= 3.0) ? 1.0 : 0.0;
-        sports.clutch = (time_frac > 0.85 && abs_diff <= 1.0) ? 1.0 : 0.0;
+        sports.garbage_time = (phase_frac > 0.85 && abs_diff >= 3.0) ? 1.0 : 0.0;
+        sports.clutch = (phase_frac > 0.85 && abs_diff <= 1.0) ? 1.0 : 0.0;
         // 比分时序 ring: Observe (as_of 上游观测刻, 禁 now()) → 进球新鲜度 + 5min 动量。
         auto& gh = game_history_[condition_id];
         gh.Observe(feat.as_of_ts_ns, game_row.score_home_total, game_row.score_away_total);
