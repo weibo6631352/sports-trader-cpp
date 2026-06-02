@@ -1217,12 +1217,16 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
             std::fprintf(stderr, "[map-diag] 候选 EventScore=%zu, 待匹配 market=%zu\n", candidates.size(),
                          market_match_inputs_.size());
             std::size_t shown = 0;
+            std::map<std::string, int> sport_cnt;  // 候选按 sport 计数
             for (const auto& c : candidates) {
+                ++sport_cnt[c.sport];
                 std::fprintf(stderr, "[map-diag]   cand: home='%s' away='%s' sport='%s' kickoff=%lld\n",
                              c.home.c_str(), c.away.c_str(), c.sport.c_str(),
                              static_cast<long long>(c.kickoff_ts_sec));
-                if (++shown >= 16) break;
+                if (++shown >= 60) break;
             }
+            for (const auto& [sp, n] : sport_cnt)
+                std::fprintf(stderr, "[map-diag] 候选 sport 计数: %s=%d\n", sp.c_str(), n);
             shown = 0;
             for (const auto& [cid, in] : market_match_inputs_) {
                 std::fprintf(stderr, "[map-diag]   market: t0='%s' t1='%s' sport='%s' kickoff=%lld\n",
