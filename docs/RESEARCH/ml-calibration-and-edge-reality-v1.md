@@ -149,3 +149,37 @@ moneyline + tennis(itf/ch) + esports + (outright/prop/series 市场兜底) 已�
 - **类别失衡 + settlement 质量**: 查 SettlementRecorder 是否对 end_date 未来/未真结算的市场误录
   value=0 (假 NO 标签); 训练应滤 moneyline (平衡) 或按类别加权。
 - 在此之前: 模型 calibrated=false 不驱动 (前端"未训练·占位"), 系统靠 sharp/score-prior/市场 baseline。
+
+---
+
+## §8 训练数据治本 + 置信度守卫加固 (2026-06-03, 老板「自己拍板, 没做完不停」)
+
+承接 §7 事故, 治退化/泄漏两根 (在 gate 之外再从训练侧根治):
+
+### 训练数据筛选 (build_xy, commit 2a5c0d9)
+- **moneyline_only**: 只留 cat_market_type(f84)==0 → 平衡类别 (outright/prop 多 NO 失衡且无单场
+  score 模型, 混入即拉偏)。
+- **drop_decided**: 滤市场价 b_mid(f8) 已极端 <0.03/>0.97 的行 = 市场已决出 (AUC=1.0 泄漏源)。
+- fallback: 筛后 <200 放 moneyline, <50 放全部 (靠下游守卫兜底)。
+- 实测: 真实 data 标注 10401 → 留 8765 moneyline。
+
+### 置信度守卫加固 (compute_meta, commit 9042d24)
+真实 data 时序末 20% holdout 单类 → AUC=None → 旧版走 brier 兜底=1.0 (错把退化当完美)。加固后
+**conf>0 仅当: AUC 有效(两类) 且 0.5<AUC<0.9 且 brier>0.05**。任一不满足 → leak_suspect → conf=0:
+- AUC=None (单类 holdout, 判别力不可评估)
+- AUC≥0.9 (泄漏/平凡态)
+- brier<0.05 (近完美 = 泄漏/退化红旗; 真实体育 brier 0.15-0.25)
+实测: 真实退化模型现在 calibrated=False/conf=0 → C++ 校准门挡驱动。
+
+### 四层防御 (现状)
+1. 训练数据筛选 (减泄漏+平衡)  2. 置信度守卫 (退化/泄漏→conf=0)
+3. C++ 校准门 (conf>0 才驱动)   4. fair-sanity 门 (|fair−市场|>0.45 不交易)
+→ **退化/泄漏 auto-train 模型绝不驱动交易, 系统靠 sharp/score-prior/市场 baseline 安全运行。**
+
+### 真·alpha 的剩余路 (需 C++ 配合 + 验证, 非盲改)
+现模型 regress 含 mid 特征 → 学"价≈果" → 即便非退化也 fair≈市场 → edge 小 (但安全)。真 alpha 需:
+- **residual 模式**: 模型预测 (结果 − 市场价) = 市场残差; fair = 市场 + 残差。无残差信号→edge=0(安全)。
+  需 C++ 按 mode 解释输出 (output=delta 而非 p_yes) + 验证残差是否真有信号。
+- 或 **全排市场价特征** (b_mid/microprice/dislocation 等) → 模型纯从 game-state 预测 → fair vs 市场 = edge。
+  需 train+inference 一致排列 (feature-set 改动)。
+这两项是建模决策 + 需验证, 留量化定方向; 在此之前模型安全 gated, 不影响 baseline 运行。
