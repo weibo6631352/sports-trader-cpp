@@ -623,6 +623,10 @@ BuildResult PaperDaemon::Build() {
     // ML 驱动决策 (老板放开 paper ML-R2): 有真 ONNX 模型时 ML 全驱动决策 fair (weight=1.0)。
     //   stub 永不驱动 (blend 内 kind==Onnx 门); 无 onnx_model_path → stub → 纯 baseline, 安全。
     cfg_.paper_loop.ml_fair_blend_weight = 1.0;
+    // ML 驱动总闸 (2026-06-03 老板「别那么谨慎, 虚拟盘要看模型真跑」): paper 放开 ML 驱动。
+    //   仍受【校准门】保护 (仅 calibrated && conf>0 的模型驱动; 退化/泄漏模型 conf=0 不驱动)。
+    //   真钱 live 路径不复用此 (PaperLoop 天然 paper)。生产可经此闸+校准联合控制。
+    cfg_.paper_loop.ml_drive_enabled = true;
     paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
                                                      token_map_, cfg_.paper_loop);

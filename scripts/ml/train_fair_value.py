@@ -51,7 +51,7 @@ def build_xy(rows, mode, moneyline_only=True, drop_decided=True):
     def num(v, d=0.0):
         return d if v is None else float(v)
 
-    X, y = [], []
+    X, y, groups = [], [], []
     n_label, n_drop_type, n_drop_decided = 0, 0, 0
     for r in rows:
         if not r.get("label_valid", 0):
@@ -61,6 +61,7 @@ def build_xy(rows, mode, moneyline_only=True, drop_decided=True):
         feats = [num(r.get(f"f{i}")) for i in range(N_TOTAL)]
         feats = [0.0 if (x != x) else x for x in feats]
         n_label += 1
+        cid = r.get("condition_id", "")  # 按场 CV 分组锚 (防同场行跨 train/test 记忆泄漏)
         # 治本①: 只留 moneyline (平衡 + 可建模; outright/prop 多 NO 失衡且无单场 score 模型)。
         if moneyline_only and abs(feats[F_CAT_MARKET_TYPE]) > 1e-6:
             n_drop_type += 1
@@ -76,8 +77,10 @@ def build_xy(rows, mode, moneyline_only=True, drop_decided=True):
         else:
             y.append(label)
         X.append(feats)
+        groups.append(cid)
     stats = {"labeled": n_label, "drop_type": n_drop_type, "drop_decided": n_drop_decided, "kept": len(X)}
-    return np.asarray(X, dtype="float32"), np.asarray(y, dtype="float32"), stats
+    return (np.asarray(X, dtype="float32"), np.asarray(y, dtype="float32"),
+            np.asarray(groups, dtype=object), stats)
 
 
 def export_onnx(model, n_features, out_path):
@@ -109,6 +112,54 @@ def _ece(p, y, bins=10, floor=0.02):
     if not errs:
         return 0.1
     return max(floor, float(np.average(errs, weights=wts)))
+
+
+def group_cv_meta(X, y, groups, mode, params):
+    """按场次 (condition_id) GroupKFold CV 评估 → sidecar meta (诚实 AUC, 防同场行记忆泄漏)。
+    比时序末 20% holdout 稳健 (避免单类 holdout → AUC=None; 避免按行 split 记忆场次 → 假 AUC≈1)。"""
+    import numpy as np
+    n_groups = len(set(groups.tolist()))
+    if mode != "regress" or n_groups < 6 or len(np.unique(y)) < 2:
+        # 场数太少/单类/residual → 退回简单 holdout compute_meta (末 20%)。
+        nh = max(20, int(len(X) * 0.2))
+        if len(X) - nh < 20:
+            return None
+        import lightgbm as lgb
+        em = lgb.LGBMRegressor(**params)
+        em.fit(X[:-nh], y[:-nh])
+        return compute_meta(em, X[-nh:], y[-nh:], mode)
+    import lightgbm as lgb
+    from sklearn.model_selection import GroupKFold
+    from sklearn.metrics import roc_auc_score
+    n_splits = min(5, n_groups)
+    preds = np.full(len(y), np.nan)
+    for tr, te in GroupKFold(n_splits).split(X, y, groups):
+        if len(np.unique(y[tr])) < 2:
+            continue
+        m = lgb.LGBMRegressor(**params)
+        m.fit(X[tr], y[tr])
+        preds[te] = np.clip(m.predict(X[te]), 0.0, 1.0)
+    ok = ~np.isnan(preds)
+    if ok.sum() < 20 or len(np.unique(y[ok])) < 2:
+        return None
+    p = preds[ok]
+    yt = y[ok].astype("float64")
+    brier = float(np.mean((p - yt) ** 2))
+    try:
+        auc = float(roc_auc_score(yt, p))
+    except Exception:
+        auc = None
+    ci_hw = _ece(p, yt)
+    conf = (2.0 * (auc - 0.5)) if auc is not None else (1.0 - 2.0 * brier)
+    conf = max(0.0, min(1.0, conf))
+    leak_suspect = (auc is None) or (auc >= 0.9) or (brier < 0.05)
+    if leak_suspect:
+        conf = 0.0
+    return {"calibrated": bool(conf > 0.0), "confidence": round(conf, 4),
+            "ci_halfwidth": round(ci_hw, 4), "calib_method": "groupcv_conformal",
+            "auc": (round(auc, 4) if auc is not None else None),
+            "brier": round(brier, 4), "n_holdout": int(ok.sum()), "n_groups": int(n_groups),
+            "leak_suspect": bool(leak_suspect)}
 
 
 def compute_meta(model_eval, Xh, yh, mode):
@@ -172,29 +223,22 @@ def write_sidecar(out_path, meta):
     print(f"[train] 校准 sidecar -> {meta_path}: {meta}")
 
 
-def train(X, y, out_path, mode="regress"):
+def train(X, y, groups, out_path, mode="regress"):
     import lightgbm as lgb
     cat = [c for c in CAT_FEATURES if c < X.shape[1]]
     params = dict(n_estimators=50, num_leaves=15, learning_rate=0.1,
                   min_child_samples=5, verbose=-1)
-    # holdout 评估 (时序末 20% = 最新, 防泄漏) → 校准 meta; 最终模型用全量训练 (部署)。
-    n = len(X)
-    n_hold = max(1, int(n * 0.2))
-    meta = None
-    if n_hold >= 20 and (n - n_hold) >= 20:
-        Xt, yt, Xh, yh = X[:-n_hold], y[:-n_hold], X[-n_hold:], y[-n_hold:]
-        eval_model = lgb.LGBMRegressor(**params)
-        eval_model.fit(Xt, yt, categorical_feature=[c for c in cat if c < Xt.shape[1]])
-        meta = compute_meta(eval_model, Xh, yh, mode)
+    # 评估: 按场次 (condition_id) GroupKFold CV → 诚实 AUC (防同场行记忆泄漏 → 假 AUC≈1; 防单类 holdout)。
+    meta = group_cv_meta(X, y, groups, mode, params)
     # categorical_feature: 类别列声明为 categorical, 树学 == 分裂而非有序阈值 (v0.6)。
     # ⚠ 已知风险: onnxmltools 对 LightGBM categorical split 的 ONNX 导出支持度需验证;
     #    若导出失败/不一致, fallback = 去掉 categorical_feature 当数值 (低基数下树仍可隔离)。
     model = lgb.LGBMRegressor(**params)
     model.fit(X, y, categorical_feature=cat)
     export_onnx(model, X.shape[1], out_path)
-    if meta is None:  # holdout 太小 → 保守 (未校准, 前端保持占位)
+    if meta is None:  # 数据太少 → 保守 (未校准, 前端保持占位)
         meta = {"calibrated": False, "confidence": 0.0, "ci_halfwidth": 0.5,
-                "calib_method": "none", "n_holdout": int(n_hold)}
+                "calib_method": "none", "n_holdout": int(len(X))}
     write_sidecar(out_path, meta)
 
 
@@ -244,20 +288,20 @@ def main():
         sys.exit(2)
     rows = load_jsonl(a.features)
     # 治本筛选 (moneyline + 滤已决出泄漏行); fallback: 筛后样本不足 → 逐步放松 (先放 moneyline 再放 decided)。
-    X, y, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=True)
+    X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=True)
     print(f"[train] 筛选: 标注{st['labeled']} 滤类型{st['drop_type']} 滤已决{st['drop_decided']} → 留{st['kept']}",
           file=sys.stderr)
     if len(X) < 200:  # moneyline+滤已决 太少 → 放 moneyline 限制 (保滤已决, 防泄漏)
-        X, y, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=True)
+        X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=True)
         print(f"[train] fallback 放 moneyline 限制 → 留{st['kept']}", file=sys.stderr)
     if len(X) < 50:  # 仍不足 → 放滤已决 (最低保障能训, 靠泄漏守卫 + sanity 门兜底)
-        X, y, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=False)
+        X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=False)
         print(f"[train] fallback 放全部筛选 → 留{st['kept']}", file=sys.stderr)
     if len(X) < 50:
         print(f"样本不足 ({len(X)}<50), 训练跳过 — 等真数据攒够", file=sys.stderr)
         sys.exit(1)
-    print(f"[train] {len(X)} 样本 × {X.shape[1]} 列, mode={a.mode}")
-    train(X, y, a.out, a.mode)
+    print(f"[train] {len(X)} 样本 × {X.shape[1]} 列, {len(set(g.tolist()))} 场, mode={a.mode}")
+    train(X, y, g, a.out, a.mode)
 
 
 if __name__ == "__main__":
