@@ -40,6 +40,7 @@
 #include <mutex>
 #include <set>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 
 // POSIX
@@ -607,6 +608,14 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
             // 用 sport_slug 前缀作为简单标记? 不行 (key 是 inplay_match_id, 无 sport 前缀)
             // 正确: 维护 per-sport key set, 先删旧, 再写新
             auto& old_keys = sport_keys_[sport_idx];
+            // E2 事件检测: 删旧 key【前】快照上一帧 (score+state), 供下面帧间 diff。
+            //   (本 sport 的旧 key 会被先 erase 再重写, erase 后 merged_map_ 没了上一帧 → 必须先快照。)
+            std::unordered_map<std::string, std::tuple<int, int, std::string>> prev_snap;
+            for (const auto& k : old_keys) {
+                if (auto it = merged_map_.find(k); it != merged_map_.end())
+                    prev_snap.emplace(k, std::make_tuple(it->second.home_score, it->second.away_score,
+                                                         it->second.gs_state_code));
+            }
             for (const auto& old_key : old_keys) {
                 merged_map_.erase(old_key);
             }
@@ -627,12 +636,10 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                     // E2 事件检测器 (v3 事件套利; 只计数+log, 不交易; 双架构评审: 检测内联采集线程,
                     //   帧间纯内存 diff <<R-12 100μs, 不碰 WSS loop)。diff 新 es vs 上一帧 merged_map_[key]:
                     //   比分变化(进球/得分/跑垒) + state 码跳变(事件转移)。单 writer 线程, plain static 计数。
-                    if (auto pit = merged_map_.find(key); pit != merged_map_.end()) {
-                        const auto& prev = pit->second;
-                        const bool score_chg =
-                            (es.home_score != prev.home_score) || (es.away_score != prev.away_score);
-                        const bool state_chg =
-                            !es.gs_state_code.empty() && es.gs_state_code != prev.gs_state_code;
+                    if (auto pit = prev_snap.find(key); pit != prev_snap.end()) {
+                        const auto& [ph, pa, pstate] = pit->second;
+                        const bool score_chg = (es.home_score != ph) || (es.away_score != pa);
+                        const bool state_chg = !es.gs_state_code.empty() && es.gs_state_code != pstate;
                         if (score_chg || state_chg) {
                             static long long ev_n = 0, ev_score = 0, ev_state = 0;
                             ++ev_n;
@@ -644,9 +651,8 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                                              "[event-detect] %s %.16s %s sc=%d:%d->%d:%d state=%s->%s "
                                              "(n=%lld score=%lld state=%lld)\n",
                                              es.sport.c_str(), key.c_str(), score_chg ? "SCORE" : "state",
-                                             prev.home_score, prev.away_score, es.home_score, es.away_score,
-                                             prev.gs_state_code.c_str(), es.gs_state_code.c_str(), ev_n,
-                                             ev_score, ev_state);
+                                             ph, pa, es.home_score, es.away_score, pstate.c_str(),
+                                             es.gs_state_code.c_str(), ev_n, ev_score, ev_state);
                         }
                     }
                     merged_map_[key] = std::move(es);
