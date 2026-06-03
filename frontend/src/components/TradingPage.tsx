@@ -910,7 +910,7 @@ function EventAccordion(props: { group: EventGroup }) {
 // TradingToolbar
 // ============================================================
 
-type FilterMode = 'all' | 'live' | 'position';
+type FilterMode = 'all' | 'live' | 'sourced' | 'position';
 
 function TradingToolbar(props: {
   filter: FilterMode;
@@ -936,6 +936,7 @@ function TradingToolbar(props: {
       >
         <ToggleButton value="all" sx={{ fontSize: '12px', px: 1.5 }}>全部</ToggleButton>
         <ToggleButton value="live" sx={{ fontSize: '12px', px: 1.5 }}>进行中</ToggleButton>
+        <ToggleButton value="sourced" sx={{ fontSize: '12px', px: 1.5 }}>有直播源</ToggleButton>
         <ToggleButton value="position" sx={{ fontSize: '12px', px: 1.5 }}>有持仓</ToggleButton>
       </ToggleButtonGroup>
 
@@ -1027,6 +1028,10 @@ export function TradingPage() {
         // 兜底: 后端 game_state 明确 inplay (有比分链路但 score chip 未及刷新)
         return g.conditions.some((c) => c.summary?.gameState === 'inplay');
       });
+    } else if (f === 'sourced') {
+      // 有直播源: 只看 Goalserve 提供实时比分的盘 (g.score 在打) — 真有比分可观测/可做 in-play (老板 2026-06-03)。
+      //   与「进行中」区别: 进行中含 game_state=inplay 但无 Goalserve 比分的 (显"未覆盖"); 有直播源排除那些。
+      groups = groups.filter((g) => g.score?.status === 'inplay' || g.score?.status === 'halftime');
     } else if (f === 'position') {
       // 只看持仓: 过滤到【有持仓的盘口】本身 (不只是有持仓的 event); 组内无持仓的盘也隐藏 (老板 2026-06-03)。
       groups = groups
