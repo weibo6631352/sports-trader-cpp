@@ -422,10 +422,18 @@ inline std::string scores(const StateProvider& sp, std::int64_t as_of_ns = -1) {
         b += json::i64(s.home_score);
         b += ",\"away_score\":";
         b += json::i64(s.away_score);
-        b += ",\"games_home\":";       // 网球: 当前盘已打局数 (赛点/进度); 非网球=0
+        b += ",\"games_home\":";       // 网球: 全场已打局数 (totals 用); 非网球=0
         b += json::i64(s.games_home);
         b += ",\"games_away\":";
         b += json::i64(s.games_away);
+        b += ",\"set_summary\":";      // 网球逐盘比分 "6-4 3-2" (实时比分; 非网球空)
+        b += json::str(s.set_summary);
+        b += ",\"pts_home\":";         // 当前局分 0/15/30/40/AD
+        b += json::str(s.pts_home);
+        b += ",\"pts_away\":";
+        b += json::str(s.pts_away);
+        b += ",\"serving\":";          // 发球方 0=home/1=away/-1
+        b += json::i64(s.serving);
         b += ",\"sharp_home_fair\":";  // in-play bet365 de-vig home 胜率 (-1=无 odds); 看板套利信号锚
         b += json::num(s.inplay_bet365_home_fair);
         b += ",\"sharp_away_fair\":";

@@ -112,6 +112,9 @@ namespace detail {
         std::string p0, p1;
         int ts0 = 0, ts1 = 0;
         int gm0 = 0, gm1 = 0;  // 全场总局数 = s1+..+s5
+        int sset0[5] = {0, 0, 0, 0, 0}, sset1[5] = {0, 0, 0, 0, 0};  // 逐盘局数 (实时比分用)
+        std::string pts0, pts1;  // 当前局得分 (game_score)
+        int serve0 = 0, serve1 = 0;
         std::size_t pp = match_hdr_end;
         int pidx = 0;
         while (pidx < 2) {
@@ -125,21 +128,36 @@ namespace detail {
             const std::string_view phdr = span.substr(pk, phe - pk);
             const std::string_view nm = AttrIn(phdr, "name");
             const int tsv = ParseIntSafe(AttrIn(phdr, "totalscore"));
-            // s1..s5 各盘局数求和 (空属性 ParseIntSafe→0; tiebreak 盘记 7)
+            // s1..s5 各盘局数: 求和 (totals/spreads 用) + 逐盘留存 (实时比分显示用; 空属性→0; tiebreak 记 7)
             int gsum = 0;
-            for (const char* sk : {"s1", "s2", "s3", "s4", "s5"})
-                gsum += ParseIntSafe(AttrIn(phdr, sk));
+            int sarr[5] = {0, 0, 0, 0, 0};
+            const char* sk[5] = {"s1", "s2", "s3", "s4", "s5"};
+            for (int i = 0; i < 5; ++i) {
+                sarr[i] = ParseIntSafe(AttrIn(phdr, sk[i]));
+                gsum += sarr[i];
+            }
+            const std::string_view pts = AttrIn(phdr, "game_score");  // 当前局分 0/15/30/40/AD
+            const bool srv = (AttrIn(phdr, "serve") == "True");
             if (pidx == 0) {
-                p0 = std::string(nm);
-                ts0 = tsv;
-                gm0 = gsum;
+                p0 = std::string(nm); ts0 = tsv; gm0 = gsum;
+                for (int i = 0; i < 5; ++i) sset0[i] = sarr[i];
+                pts0 = std::string(pts); serve0 = srv ? 1 : 0;
             } else {
-                p1 = std::string(nm);
-                ts1 = tsv;
-                gm1 = gsum;
+                p1 = std::string(nm); ts1 = tsv; gm1 = gsum;
+                for (int i = 0; i < 5; ++i) sset1[i] = sarr[i];
+                pts1 = std::string(pts); serve1 = srv ? 1 : 0;
             }
             ++pidx;
             pp = phe + 1;
+        }
+        // 逐盘比分串 "6-4 3-2" (只列已开打的盘: 两边任一 >0)。
+        std::string set_summary;
+        for (int i = 0; i < 5; ++i) {
+            if (sset0[i] == 0 && sset1[i] == 0) continue;
+            if (!set_summary.empty()) set_summary += ' ';
+            set_summary += std::to_string(sset0[i]);
+            set_summary += '-';
+            set_summary += std::to_string(sset1[i]);
         }
         if (p0.empty() || p1.empty())
             continue;
@@ -156,6 +174,10 @@ namespace detail {
         es.away_score = ts1;
         es.games_home = gm0;  // 全场已打局数 (totals/spreads 用)
         es.games_away = gm1;
+        es.set_summary = std::move(set_summary);  // 逐盘比分 "6-4 3-2" (实时比分显示)
+        es.pts_home = std::move(pts0);            // 当前局分
+        es.pts_away = std::move(pts1);
+        es.serving = (serve0 && !serve1) ? 0 : (serve1 && !serve0) ? 1 : -1;  // 发球方
         es.league_id = current_league;
         es.source = "goalserve";
         // 比分源无 bet365 赔率 → inplay fair 留 -1 (默认); 这些场走 score-prior fair。

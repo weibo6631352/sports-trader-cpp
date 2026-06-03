@@ -350,6 +350,12 @@ struct EventScore {
     double inplay_bet365_home_fair{-1.0};
     double inplay_bet365_away_fair{-1.0};
     double inplay_bet365_draw_fair{-1.0};
+    // 实时比分细节 (老板 2026-06-03「显示实时比分而非只赛点」): 网球逐盘比分 + 当前局分 + 发球方。
+    //   set_summary: 各盘已打局数 "6-4 3-2"(home-away/盘, 空格分隔); 非网球留空。G-FREEZE-W 只增。
+    std::string set_summary;
+    std::string pts_home;   // 当前局得分 "0"/"15"/"30"/"40"/"AD" (网球; 非网球留空)
+    std::string pts_away;
+    int serving{-1};        // 发球方 0=home / 1=away / -1=未知 (网球)
 };
 
 // ============================================================

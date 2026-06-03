@@ -792,11 +792,16 @@ function EventAccordion(props: { group: EventGroup }) {
             <span class="v8-evt-dash">—</span>
             <span class="v8-evt-score">{awayScore()}</span>
           </Show>
-          {/* 网球当前盘已打局数 (赛点/进度); 非网球=0 不显示 (老板 2026-06-03 盯盘) */}
-          <Show when={(score()?.games_home ?? 0) > 0 || (score()?.games_away ?? 0) > 0}>
-            <span class="v8-evt-games" title="当前盘已打局数 (网球赛点/进度)"
-              style={{ color: '#fbbf24', 'font-size': '11px', 'margin-left': '4px' }}>
-              局 {score()!.games_home}–{score()!.games_away}
+          {/* 网球实时比分 (老板 2026-06-03「显示实时比分而非只赛点」): 逐盘比分 + 当前局分 + 发球方 */}
+          <Show when={score()?.set_summary}>
+            <span title="逐盘比分 (各盘已打局数 home-away)"
+              style={{ color: '#fbbf24', 'font-size': '11px', 'margin-left': '4px', 'font-weight': 600 }}>
+              {score()!.set_summary}
+            </span>
+          </Show>
+          <Show when={score()?.pts_home || score()?.pts_away}>
+            <span title="当前局得分 (🎾=发球方)" style={{ color: '#4ade80', 'font-size': '11px' }}>
+              {score()?.serving === 0 ? '🎾' : ''}{score()!.pts_home || '0'}–{score()!.pts_away || '0'}{score()?.serving === 1 ? '🎾' : ''}
             </span>
           </Show>
           <span class="v8-evt-team">{awayTeam() ?? '—'}</span>

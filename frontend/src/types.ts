@@ -254,8 +254,12 @@ export interface Score {
   away: string;
   home_score: number | null;
   away_score: number | null;
-  games_home?: number | null;       // 网球: 当前盘已打局数 (赛点/进度); 非网球=0
+  games_home?: number | null;       // 网球: 全场已打局数 (totals 用); 非网球=0
   games_away?: number | null;
+  set_summary?: string;             // 网球逐盘比分 "6-4 3-2" (实时比分; 非网球空)
+  pts_home?: string;                // 当前局分 "0"/"15"/"30"/"40"/"AD"
+  pts_away?: string;
+  serving?: number;                 // 发球方 0=home/1=away/-1
   sharp_home_fair?: number | null;  // in-play bet365 de-vig home 胜率 (-1=无 odds); 套利信号锚
   sharp_away_fair?: number | null;
   source: string;
