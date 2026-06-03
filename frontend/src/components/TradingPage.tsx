@@ -422,6 +422,8 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
   const signalStr  = () => Number(q().signal_strength);
   const modelConf  = () => Number(q().model_confidence ?? q().model_conf);
   const modelId    = () => q().model_id ?? '—';
+  const modelKind  = () => String(q().model_kind ?? '').toLowerCase();  // onnx=真实模型 / stub=退化占位
+  const isOnnx     = () => modelKind() === 'onnx';
   const calibrated = () => q().model_calibrated !== false;
   const predictOk  = () => q().predict_ok !== false;
   const advisory   = () => q().advisory === true;
@@ -533,11 +535,21 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
         </div>
       </Show>
 
-      {/* model provenance */}
+      {/* model provenance — 清晰标出【真实大模型 vs 退化 stub】(老板 2026-06-03: 前端要看得出用哪个) */}
       <div class="v8-q-row v8-model-row">
         <span class="q-lbl">model</span>
         <span class="mono-sub" title={`${q().model_id} · ${q().model_kind} · ${q().spec_version}`}>
           {modelId()}
+        </span>
+        <span class="mono-sub" style={{
+          'font-weight': '700',
+          'color': (isOnnx() && modelReady()) ? '#4caf50' : isOnnx() ? '#ff9800' : '#888',
+        }}>
+          {isOnnx() && modelReady()
+            ? `🟢真实模型·已校准·置信${confPct().toFixed(0)}%`
+            : isOnnx()
+            ? '🟡ONNX·未校准(不驱动)'
+            : '⚪退化stub(不驱动)'}
         </span>
       </div>
 
@@ -991,7 +1003,10 @@ export function TradingPage() {
       // gamma live=true (正在比赛) 优先; 兼容 Goalserve 比分 inplay/halftime
       groups = groups.filter((g) => g.live || g.score?.status === 'inplay' || g.score?.status === 'halftime');
     } else if (f === 'position') {
-      groups = groups.filter((g) => g.conditions.some((c) => c.posRows.length > 0));
+      // 只看持仓: 过滤到【有持仓的盘口】本身 (不只是有持仓的 event); 组内无持仓的盘也隐藏 (老板 2026-06-03)。
+      groups = groups
+        .map((g) => ({ ...g, conditions: g.conditions.filter((c) => c.posRows.length > 0) }))
+        .filter((g) => g.conditions.length > 0);
     }
     // 隐藏无簿盘 (condition 级, 纯显示): 保留「有 bid 或 ask (含单边簿)」或「有持仓」的盘;
     //   两者皆无 = 当前无订单簿 → 隐藏。后端仍跟踪, 有簿经 SSE 自动现身 (见 hideNoBook 注释)。
