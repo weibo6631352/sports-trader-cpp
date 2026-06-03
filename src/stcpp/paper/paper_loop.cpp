@@ -834,7 +834,24 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             fin.has_real_fair = false;
             fin.ml_p_yes = std::nullopt;
         }
-        p_fair = pricing::ResolveFair(fin).p_fair;
+        const auto fr = pricing::ResolveFair(fin);
+        p_fair = fr.p_fair;
+        // [fair-sanity] 防垃圾门 (2026-06-03): fair 与市场极端背离 (>kMaxPlausibleEdge) = 大概率
+        //   orientation 翻转 / EventMatcher 误配 / 模型饱和 (实测 inplay sharp de-vig clamp 0.9995 被
+        //   贴到便宜 underdog YES → 假 86% edge → 垃圾成交)。真实体育 edge 极少 >0.45 → fail-closed
+        //   不交易, 并 log src + 成分定位根因 (老韩式 edge 合理性上界)。
+        constexpr double kMaxPlausibleEdge = 0.45;
+        if (std::abs(p_fair - p_market_devig) > kMaxPlausibleEdge) {
+            static std::atomic<int> sanity_dbg{0};
+            if (sanity_dbg.fetch_add(1, std::memory_order_relaxed) < 60)
+                std::fprintf(stderr,
+                             "[fair-sanity] 拒: cond=%.24s sport=%s mkt_type=%d src=%s p_fair=%.4f "
+                             "mkt_devig=%.4f sharp=%.4f prior=%.4f\n",
+                             condition_id.c_str(), game_row.sport.c_str(), mkt_type,
+                             pricing::to_string(fr.src), p_fair, p_market_devig, fair_sharp_yes,
+                             fair_score_prior);
+            return;  // 极端背离 → 不交易 (fail-closed; 防 orientation/match/模型 垃圾)
+        }
     }
 
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
