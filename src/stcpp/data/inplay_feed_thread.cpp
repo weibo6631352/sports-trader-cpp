@@ -696,6 +696,8 @@ debug_api::EventScore InplayFeedThread::ToEventScore(const data::adapter::GameSc
     es.away = rec.away_team;
     es.home_score = rec.home_score_total;
     es.away_score = rec.away_score_total;
+    es.games_home = rec.home_games_total;  // 网球: 全场总局数 (totals/spreads); 非网球 0
+    es.games_away = rec.away_games_total;
     es.source = "goalserve";
 
     // sport 字符串

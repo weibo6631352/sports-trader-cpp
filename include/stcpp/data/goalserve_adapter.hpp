@@ -123,8 +123,11 @@ struct GameScoreRecord {
     std::optional<std::int32_t> stoppage_min;  // 补时分钟 (足球)
 
     // 比分
-    std::int32_t home_score_total = 0;  // 主队总分
+    std::int32_t home_score_total = 0;  // 主队总分 (网球: 已赢【盘】数)
     std::int32_t away_score_total = 0;  // 客队总分
+    // 网球: 全场已打【局】数 (逐盘局数求和; totals/spreads 用)。非网球 = 0。
+    std::int32_t home_games_total = 0;
+    std::int32_t away_games_total = 0;
     // 分节/分盘比分 (最多 12 槽, 0 = 未发生)
     std::array<std::int32_t, 12> home_periods{{}};
     std::array<std::int32_t, 12> away_periods{{}};

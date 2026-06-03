@@ -121,6 +121,16 @@ public:
                                          std::int32_t& away_total) noexcept;
 
     // ------------------------------------------------------------------------
+    // ParseTennisScore — 网球 info.score 是【逐盘局数】"2:6,6:4"(逗号分隔各盘 h:a), 非盘数!
+    //   sets_h/a = 已赢盘数 (完成盘: 该盘 ≥6 局且胜)。games_h/a = 全场总局数 (各盘求和)。
+    //   修旧 bug: ParseScore("2:6,6:4") 只取首盘 "2:6" → 误当比分喂 moneyline。
+    //   返回 false = 空/无效 (保持入参不变)。
+    // ------------------------------------------------------------------------
+    [[nodiscard]] static bool ParseTennisScore(const std::string& score_str, std::int32_t& sets_h,
+                                               std::int32_t& sets_a, std::int32_t& games_h,
+                                               std::int32_t& games_a) noexcept;
+
+    // ------------------------------------------------------------------------
     // ParseTimeStatus — info.time_status string → goalserve::TimeStatus
     // Goalserve inplay 传的是数字字符串 "0"/"1"/"3"/..."99"
     // 未知值 → TimeStatus::ToBeFixed + 记录 parse_errors

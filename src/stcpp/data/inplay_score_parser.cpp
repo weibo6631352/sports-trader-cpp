@@ -358,9 +358,17 @@ static constexpr int kMaxJsonDepth = 32;
     // --- score: "0:1" → home_score_total, away_score_total ---
     std::string score_str;
     if (ExtractStringValue(info_block, "score", score_str, base)) {
-        // 忽略返回值 (parse 失败时保持 0:0 默认值)
-        [[maybe_unused]] bool ok =
-            InplayScoreParser::ParseScore(score_str, rec.home_score_total, rec.away_score_total);
+        if (sport == goalserve::GoalserveSport::Tennis) {
+            // 网球 score = 逐盘局数 "2:6,6:4" → 盘数(home/away_score_total) + 总局(home/away_games_total)。
+            //   修旧 bug: 通用 ParseScore 只取首盘当比分喂 moneyline (实际 1-1 平却按 set1 局差定价)。
+            [[maybe_unused]] bool ok = InplayScoreParser::ParseTennisScore(
+                score_str, rec.home_score_total, rec.away_score_total, rec.home_games_total,
+                rec.away_games_total);
+        } else {
+            // 忽略返回值 (parse 失败时保持 0:0 默认值)
+            [[maybe_unused]] bool ok =
+                InplayScoreParser::ParseScore(score_str, rec.home_score_total, rec.away_score_total);
+        }
     }
     // 电竞: info.score 为空, 系列赛比分(已赢地图数)在 stats."Res" (老板 2026-06-01)。score_diff = 地图差,
     //   喂 score-prior fair (BO3/BO5 领先 → 胜率)。模型按地图差学权重 (与足球进球差同维, 量级不同模型自适应)。
@@ -726,6 +734,57 @@ bool InplayScoreParser::ParseScore(const std::string& score_str, std::int32_t& h
     auto [ap, aec] = std::from_chars(away_int.data(), away_int.data() + away_int.size(), away_total);
 
     return hec == std::errc{} && aec == std::errc{};
+}
+
+// ============================================================================
+// ParseTennisScore — "2:6,6:4" (逐盘局数) → 盘数 + 总局数
+//   各逗号段 = 一盘 "h:a"。总局 = 各段求和; 盘数 = 完成盘(该盘 max≥6 且胜方)计数。
+// ============================================================================
+bool InplayScoreParser::ParseTennisScore(const std::string& score_str, std::int32_t& sets_h,
+                                         std::int32_t& sets_a, std::int32_t& games_h,
+                                         std::int32_t& games_a) noexcept {
+    if (score_str.empty())
+        return false;
+    std::int32_t sh = 0, sa = 0, gh = 0, ga = 0;
+    bool any = false;
+    std::size_t pos = 0;
+    const std::string_view sv(score_str);
+    while (pos < sv.size()) {
+        std::size_t comma = sv.find(',', pos);
+        const std::string_view seg = sv.substr(pos, (comma == std::string_view::npos) ? std::string_view::npos
+                                                                                       : comma - pos);
+        const auto colon = seg.find(':');
+        if (colon != std::string_view::npos) {
+            std::int32_t h = 0, a = 0;
+            const auto hsv = seg.substr(0, colon);
+            const auto asv = seg.substr(colon + 1);
+            // 取整数部分 (防 "6.3" 之类)
+            const auto hi = hsv.substr(0, hsv.find('.'));
+            const auto ai = asv.substr(0, asv.find('.'));
+            auto [hp, hec] = std::from_chars(hi.data(), hi.data() + hi.size(), h);
+            auto [ap, aec] = std::from_chars(ai.data(), ai.data() + ai.size(), a);
+            if (hec == std::errc{} && aec == std::errc{}) {
+                gh += h;
+                ga += a;
+                // 完成盘 (该盘 ≥6 局且领先) → 盘数++; 进行中盘 (max<6) 不计。
+                if (h >= 6 && h > a)
+                    ++sh;
+                else if (a >= 6 && a > h)
+                    ++sa;
+                any = true;
+            }
+        }
+        if (comma == std::string_view::npos)
+            break;
+        pos = comma + 1;
+    }
+    if (!any)
+        return false;
+    sets_h = sh;
+    sets_a = sa;
+    games_h = gh;
+    games_a = ga;
+    return true;
 }
 
 // ============================================================================

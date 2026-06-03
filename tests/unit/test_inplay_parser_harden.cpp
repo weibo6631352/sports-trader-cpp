@@ -395,6 +395,48 @@ TEST(InplayParserHarden_H9, ParseScoreMalformed) {
     EXPECT_FALSE(InplayScoreParser::ParseScore("nocodon", h, a));
 }
 
+// H9b: ParseTennisScore — 逐盘局数 "2:6,6:4" → 盘数 + 总局 (修旧 bug: 不是只取首盘)
+TEST(InplayParserHarden_H9b, ParseTennisScoreSetsAndGames) {
+    std::int32_t sh = 0, sa = 0, gh = 0, ga = 0;
+    // 1-1 平: 第1盘 away 赢(2:6), 第2盘 home 赢(6:4); 当前 set3 未开 → 盘 1-1, 总局 8-10
+    ASSERT_TRUE(InplayScoreParser::ParseTennisScore("2:6,6:4", sh, sa, gh, ga));
+    EXPECT_EQ(sh, 1) << "home 赢第2盘";
+    EXPECT_EQ(sa, 1) << "away 赢第1盘";
+    EXPECT_EQ(gh, 8) << "总局 home = 2+6";
+    EXPECT_EQ(ga, 10) << "总局 away = 6+4";
+}
+
+TEST(InplayParserHarden_H9b, ParseTennisScoreWithCurrentSet) {
+    std::int32_t sh = 0, sa = 0, gh = 0, ga = 0;
+    // 2:6,6:4,3:2: 当前 set3 进行中(3:2, max<6 不计盘) → 盘 1-1, 总局 11-12
+    ASSERT_TRUE(InplayScoreParser::ParseTennisScore("2:6,6:4,3:2", sh, sa, gh, ga));
+    EXPECT_EQ(sh, 1);
+    EXPECT_EQ(sa, 1);
+    EXPECT_EQ(gh, 11) << "2+6+3";
+    EXPECT_EQ(ga, 12) << "6+4+2";
+}
+
+TEST(InplayParserHarden_H9b, ParseTennisScoreStraightSets) {
+    std::int32_t sh = 0, sa = 0, gh = 0, ga = 0;
+    // 6:3,7:5: home 直落两盘 → 盘 2-0, 总局 13-8
+    ASSERT_TRUE(InplayScoreParser::ParseTennisScore("6:3,7:5", sh, sa, gh, ga));
+    EXPECT_EQ(sh, 2);
+    EXPECT_EQ(sa, 0);
+    EXPECT_EQ(gh, 13);
+    EXPECT_EQ(ga, 8);
+}
+
+TEST(InplayParserHarden_H9b, ParseTennisScoreEmptyAndSingleSet) {
+    std::int32_t sh = 0, sa = 0, gh = 0, ga = 0;
+    EXPECT_FALSE(InplayScoreParser::ParseTennisScore("", sh, sa, gh, ga));
+    // 单盘进行中 "4:3" → 盘 0-0, 总局 4-3
+    ASSERT_TRUE(InplayScoreParser::ParseTennisScore("4:3", sh, sa, gh, ga));
+    EXPECT_EQ(sh, 0);
+    EXPECT_EQ(sa, 0);
+    EXPECT_EQ(gh, 4);
+    EXPECT_EQ(ga, 3);
+}
+
 // ============================================================================
 // H10: 电竞系列赛比分从 stats."Res" 解析 (老板 2026-06-01: info.score 为空, 比分在 stats)
 // ============================================================================
