@@ -698,6 +698,28 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         market_implied = true;
     }
 
+    // derivative 有效性兜底 (2026-06-03 修 fair=0.999/0.001 垃圾单, catch-all): totals/spreads 模型对
+    //   子盘口格式 (网球 sets/games/分盘 · 电竞 maps/kills/BO3-BO5 · 让分 handicap) 有多重假设, 假设被
+    //   违反时输出【钉在 clamp】的极端 fair (0.001/0.999), 而市场价仍正常 → 假大 edge 垃圾单。单位守卫
+    //   (tennis line 比例 / esports line>9) 已挡明显的, 此处通用兜底: derivative 钉极端而市场不极端 →
+    //   判定格式错配 → 弃用 derivative, 走市场兜底 (不产垃圾 fair, 不交易)。真实 in-play 派生大 edge 极少
+    //   恰好钉在 clamp; 误挡的 paper 期可观测再放宽 (老板「虚拟盘别太谨慎」— 但垃圾单更污染调模型反馈)。
+    if (derivative_p_yes.has_value()) {
+        const double dp = *derivative_p_yes;
+        const bool deriv_pinned = (dp <= 0.02 || dp >= 0.98);
+        const bool mkt_normal = (p_market_devig >= 0.05 && p_market_devig <= 0.95);
+        if (deriv_pinned && mkt_normal) {
+            static std::atomic<int> deriv_dbg{0};
+            if (deriv_dbg.fetch_add(1, std::memory_order_relaxed) < 60)
+                std::fprintf(stderr,
+                             "[deriv-sanity] 弃用钉极端派生 fair (格式错配?) cond=%.16s mkt_type=%d "
+                             "deriv=%.4f mkt_devig=%.4f → 市场兜底\n",
+                             condition_id.c_str(), mkt_type, dp, p_market_devig);
+            derivative_p_yes = std::nullopt;
+            market_implied = true;
+        }
+    }
+
     // ---- P0-3 / P1-8 fair 锚定 --------------------------------------------
     // 默认 (无真实 Goalserve 先验, M1 stub 路径): p_fair = p_market_devig.
     //   → edge ≈ 0 (锚在去 vig 的市场上自己跟自己比), 配合 has_real_fair gate 不产 intent.
