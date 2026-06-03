@@ -254,11 +254,15 @@ export interface Score {
   away: string;
   home_score: number | null;
   away_score: number | null;
+  games_home?: number | null;       // 网球: 当前盘已打局数 (赛点/进度); 非网球=0
+  games_away?: number | null;
+  sharp_home_fair?: number | null;  // in-play bet365 de-vig home 胜率 (-1=无 odds); 套利信号锚
+  sharp_away_fair?: number | null;
   source: string;
   event_ts: number;
   data_source_ts: number;
   ingestion_ts: number;
-  score_as_of_ts: number;
+  score_as_of_ts?: number;
 }
 
 // ---------- /api/v1/quote/{conditionId} ----------

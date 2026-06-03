@@ -548,6 +548,20 @@ public:
         return miss;
     }
 
+    // scores_all — 枚举 score_store 全部快照 (绕开 per-event key 不匹配; 盯盘看板用)。
+    //   R-12: GetSnapshot 原子引用计数快照, 只读零热路径依赖。只返 found 的 (in-play feed 只填进行中)。
+    std::vector<EventScore> scores_all() const override {
+        std::vector<EventScore> out;
+        if (score_store_ == nullptr) return out;
+        const auto snap = score_store_->GetSnapshot();
+        if (!snap) return out;
+        out.reserve(snap->size());
+        for (const auto& [key, es] : *snap) {
+            if (es.found) out.push_back(es);
+        }
+        return out;
+    }
+
     // ---- quote_params — 读 QuoteSnapshotHub (PaperLoop Publish); 无数据 → found=false ----
     // R-12: hub_.Read() 原子 acquire, 无持锁
     // R-20: as_of_ts_ns 来自 QuoteFeatures.as_of_ts_ns (上游链路)

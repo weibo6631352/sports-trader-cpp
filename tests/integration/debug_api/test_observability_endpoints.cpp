@@ -236,6 +236,10 @@ public:
         return s;
     }
 
+    std::vector<stcpp::debug_api::EventScore> scores_all() const override {
+        return {score("evt-fake")};  // 单条 fake live 比分 (盯盘看板测试)
+    }
+
     stcpp::debug_api::QuoteParams quote_params(const std::string& cid) const override {
         stcpp::debug_api::QuoteParams q;
         q.found = true;

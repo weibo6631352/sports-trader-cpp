@@ -121,6 +121,7 @@ interface AppState {
   account: Account | null;
   conditionCache: Record<string, PerConditionCache>;
   eventGroups: EventGroup[];
+  liveGames: Score[];  // 盯盘看板: 全部 in-play 比赛比分 (SSE scores 通道直推; 老板「人盯盘」)
   secondaryOpen: boolean;
 }
 
@@ -136,6 +137,7 @@ export const [state, setState] = createStore<AppState>({
   featureHealth: null,
   mappingStatus: null,
   account: null,
+  liveGames: [],
   conditionCache: {},
   eventGroups: [],
   secondaryOpen: false,
@@ -521,6 +523,7 @@ function connectSSE(): void {
     const arr = (d as { scores?: Score[] })?.scores;
     if (!arr) return;
     for (const s of arr) if (s.event_id) lastEventScore[s.event_id] = s;
+    setState({ liveGames: arr });  // 盯盘看板: 全部 in-play 比赛 (老板「人盯盘看比分/赛点/进度」)
     rebuildGroups();
   });
   on('grid', (d, mode) => {

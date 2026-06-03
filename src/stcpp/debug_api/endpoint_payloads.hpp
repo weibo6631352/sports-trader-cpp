@@ -381,18 +381,21 @@ inline std::string grid(const StateProvider& sp, std::int64_t as_of_ns = -1) {
 // ---- scores (SSE 专用: live 赛事比分数组; REST 是 per-event /api/v1/score/{id}) ----
 //   字段与 endpoint_score 单条一致, 包成数组供 SSE scores 通道。
 inline std::string scores(const StateProvider& sp, std::int64_t as_of_ns = -1) {
-    const std::vector<EventInfo> evs = sp.events();
+    // 2026-06-03 (老板「人盯盘看比分/赛点/进度」+ WSS 实时): 改用 scores_all() 直接枚举 score_store —
+    //   原 events()→score(event_id) 按 PM event_id 查, 但 store 按 Goalserve inplay_match_id 做 key →
+    //   永远 found=false → 通道空。scores_all 绕开 key 不匹配, 全 live 赛事比分都推。新增 games(网球
+    //   赛点/进度) + sharp_fair(in-play bet365 de-vig, 看板显套利信号: sharp vs PM mid 的差就是机会)。
+    const std::vector<EventScore> all = sp.scores_all();
     std::string b;
-    b.reserve(2048);
+    b.reserve(4096);
     b += "{\"mode\":";
     b += json::str(exec_mode_str(sp.mode()));
     if (as_of_ns >= 0) { b += ",\"as_of_ts\":"; b += json::i64(as_of_ns); }
     b += ",\"scores\":[";
     bool first = true;
-    for (const auto& ev : evs) {
-        if (!ev.live) continue;  // 只推 live 赛事比分
-        const EventScore s = sp.score(ev.event_id);
+    for (const auto& s : all) {
         if (!s.found) continue;
+        if (s.status == "final" || s.status == "pregame" || s.status == "NotStarted") continue;  // 只推进行中
         if (!first) b += ',';
         first = false;
         b += "{\"event_id\":";
@@ -413,6 +416,14 @@ inline std::string scores(const StateProvider& sp, std::int64_t as_of_ns = -1) {
         b += json::i64(s.home_score);
         b += ",\"away_score\":";
         b += json::i64(s.away_score);
+        b += ",\"games_home\":";       // 网球: 当前盘已打局数 (赛点/进度); 非网球=0
+        b += json::i64(s.games_home);
+        b += ",\"games_away\":";
+        b += json::i64(s.games_away);
+        b += ",\"sharp_home_fair\":";  // in-play bet365 de-vig home 胜率 (-1=无 odds); 看板套利信号锚
+        b += json::num(s.inplay_bet365_home_fair);
+        b += ",\"sharp_away_fair\":";
+        b += json::num(s.inplay_bet365_away_fair);
         b += ",\"source\":";
         b += json::str(s.source);
         b += ",\"event_ts\":";

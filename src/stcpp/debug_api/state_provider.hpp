@@ -545,6 +545,11 @@ public:
 
     // 前端 v3 盯盘新增 (ADR-038 增量, G-FREEZE-W 只增不改名)
     virtual EventScore score(const std::string& event_id) const = 0;
+    // scores_all — 全部 live 比分快照 (2026-06-03 老板「人盯盘看比分/赛点/进度」+ WSS 实时推):
+    //   per-event score() 按 PM event_id 查, 但 score_store 按 Goalserve inplay_match_id 做 key → 永远
+    //   found=false → SSE scores 通道空。此法直接枚举 score_store snapshot, 绕开 key 不匹配 → 全 live 赛
+    //   事比分都能推 (盯盘看板用)。G-FREEZE-W 只增。
+    virtual std::vector<EventScore> scores_all() const = 0;
     virtual QuoteParams quote_params(const std::string& condition_id) const = 0;
     // 数据源标识 (返回 "demo"/"stub"/"live"; 供 /status DEMO 标记; 老钱红线)
     virtual const char* data_source() const = 0;
@@ -611,6 +616,8 @@ public:
         s.event_id = event_id;
         return s;
     }
+
+    std::vector<EventScore> scores_all() const override { return {}; }
 
     QuoteParams quote_params(const std::string& condition_id) const override {
         QuoteParams q;
