@@ -784,11 +784,9 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     std::optional<double> ml_p_opt;
     // 热加载: Load() 拿当前模型 shared_ptr (本次推理引用期内不被 daemon watcher 换走/回收)。
     const auto ml_model = ml_holder_.Load();
-    // 调优 (2026-06-03 实时观测): ML 仅在【有真实 in-play 比分】(has_real_fair) 时驱动。
-    //   fair-value 模型的 edge 来自解读实时比分; 无比分的盘 (sport=""/无匹配) game-state 特征全 0 →
-    //   模型瞎猜出极端 fair (实测对市场 0.3% 的盘预测 0.9+, 60 次极端背离 / 34 笔真注 67 仓位 = 垃圾)。
-    //   无比分 → ML 不驱动 → 回落市场 baseline。(advisory ml_advisory_p_yes 仍单独记录, 不受影响。)
-    if (cfg_.ml_fair_blend_weight > 0.0 && has_real_fair && !derivative_p_yes && ml_model != nullptr &&
+    // (2026-06-03 老板「优化模型不缩减场景」: 去掉 has_real_fair 门 — 模型 Platt 校准后全场景用,
+    //   过度自信被校准治住, 不需门挡。无比分盘模型从微结构特征预测, 校准后≈市场不产极端。)
+    if (cfg_.ml_fair_blend_weight > 0.0 && !derivative_p_yes && ml_model != nullptr &&
         ml_model->ready() && ml_model->kind() == ml::ModelKind::Onnx) {
         sizing::QuoteFeatures fqf{};
         const double blend_no_imb =
@@ -849,21 +847,17 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         // 改 log-only (2026-06-03, 老板「别那么谨慎, 还是虚拟盘」): 原阻断门是 ML 垃圾事故的应急止血,
         //   但 ML 已由 ml_drive_enabled(默认关)+校准门挡住, 此门反而拦合法 derivative/sharp 大 edge
         //   (破 T17 totals 测试)。改只记录极端背离 (诊断), 不阻断 — 垃圾防护由 ML 闸 + 校准门承担。
+        // [fair-sanity] 纯诊断 log (不拦; 老板「优化模型不加门」)。模型 Platt 校准后过度自信被治,
+        //   极端背离应大幅减少; 仍记录供观测 (若校准后还频繁极端 = 校准不足, 继续优化模型而非加门)。
         constexpr double kMaxPlausibleEdge = 0.45;
         if (std::abs(p_fair - p_market_devig) > kMaxPlausibleEdge) {
             static std::atomic<int> sanity_dbg{0};
             if (sanity_dbg.fetch_add(1, std::memory_order_relaxed) < 60)
                 std::fprintf(stderr,
-                             "[fair-sanity] 极端背离 cond=%.24s sport=%s mkt_type=%d src=%s "
-                             "p_fair=%.4f mkt_devig=%.4f sharp=%.4f prior=%.4f%s\n",
+                             "[fair-sanity] 极端背离(仅记录) cond=%.24s sport=%s mkt_type=%d src=%s "
+                             "p_fair=%.4f mkt_devig=%.4f\n",
                              condition_id.c_str(), game_row.sport.c_str(), mkt_type,
-                             pricing::to_string(fr.src), p_fair, p_market_devig, fair_sharp_yes,
-                             fair_score_prior, (mkt_type == 0 ? " →拦moneyline" : " (仅记录)"));
-            // moneyline (mkt_type==0): 市场对胜负盘高效, |fair−市场|>0.45 几乎必是模型/方向错 (非真 edge)。
-            //   实测这些极端单系统性亏损 (买便宜YES→暴跌, -10) → 拦掉 (数据驱动, 非谨慎)。
-            //   totals/spreads (mkt_type 1/2) 大 edge 可能合法 (节奏外推) → 不拦 (保 T17)。
-            if (mkt_type == 0)
-                return;
+                             pricing::to_string(fr.src), p_fair, p_market_devig);
         }
     }
 

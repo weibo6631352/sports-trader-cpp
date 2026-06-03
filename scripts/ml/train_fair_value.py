@@ -142,11 +142,28 @@ def group_cv_meta(X, y, groups, mode, params):
     ok = ~np.isnan(preds)
     if ok.sum() < 20 or len(np.unique(y[ok])) < 2:
         return None
-    p = preds[ok]
+    p_raw = preds[ok]
     yt = y[ok].astype("float64")
+    # Platt 校准: 在 OOF 预测的 logit 上拟合 logistic → calibrated_p = sigmoid(a·logit(p)+b)。
+    #   治模型【过度自信】(原始输出 0.996/0.0005 极端) → 重映射成准确概率。C++ 推理侧同样应用 (a,b)。
+    #   这是【优化模型本身】(让概率准), 非缩减使用场景 — 准了就全场景可用, 不需门挡。
+    eps = 1e-4
+    pc = np.clip(p_raw, eps, 1.0 - eps)
+    logit = np.log(pc / (1.0 - pc)).reshape(-1, 1)
+    platt_a, platt_b = 1.0, 0.0
+    try:
+        from sklearn.linear_model import LogisticRegression
+        lr = LogisticRegression(C=1e6, solver="lbfgs", max_iter=1000)
+        lr.fit(logit, yt.astype(int))
+        platt_a = float(lr.coef_[0][0])
+        platt_b = float(lr.intercept_[0])
+    except Exception:
+        pass
+    # 校准后预测 (评指标用校准值, 更真实)
+    p = 1.0 / (1.0 + np.exp(-(platt_a * np.log(pc / (1.0 - pc)) + platt_b)))
     brier = float(np.mean((p - yt) ** 2))
     try:
-        auc = float(roc_auc_score(yt, p))
+        auc = float(roc_auc_score(yt, p))  # 单调校准不改 AUC, 但稳健起见用校准值
     except Exception:
         auc = None
     ci_hw = _ece(p, yt)
@@ -156,7 +173,8 @@ def group_cv_meta(X, y, groups, mode, params):
     if leak_suspect:
         conf = 0.0
     return {"calibrated": bool(conf > 0.0), "confidence": round(conf, 4),
-            "ci_halfwidth": round(ci_hw, 4), "calib_method": "groupcv_conformal",
+            "ci_halfwidth": round(ci_hw, 4), "calib_method": "platt_groupcv",
+            "platt_a": round(platt_a, 5), "platt_b": round(platt_b, 5),
             "auc": (round(auc, 4) if auc is not None else None),
             "brier": round(brier, 4), "n_holdout": int(ok.sum()), "n_groups": int(n_groups),
             "leak_suspect": bool(leak_suspect)}

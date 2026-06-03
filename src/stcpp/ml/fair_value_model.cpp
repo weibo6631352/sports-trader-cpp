@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -127,10 +128,18 @@ public:
             (void)JsonBool(s, "calibrated", cal);  // 可选: 缺 → false
             std::string method;
             (void)JsonStr(s, "calib_method", method);  // 可选: 缺 → None
+            // Platt 校准 (a,b): calibrated_p = sigmoid(a·logit(raw_p)+b)。治模型过度自信 (优化模型,
+            //   非缩减场景)。缺 → 单位映射 (a=1,b=0 = 不变, 向后兼容老 sidecar)。
+            double pa = 1.0, pb = 0.0;
+            (void)JsonNum(s, "platt_a", pa);
+            (void)JsonNum(s, "platt_b", pb);
             meta_confidence_ = std::clamp(conf, 0.0, 1.0);
             meta_ci_hw_ = std::clamp(ci, 0.0, 1.0);
             meta_calibrated_ = cal;
-            meta_calib_ = (method == "conformal") ? CalibMethod::Conformal
+            meta_platt_a_ = std::isfinite(pa) ? pa : 1.0;
+            meta_platt_b_ = std::isfinite(pb) ? pb : 0.0;
+            meta_calib_ = (method.rfind("platt", 0) == 0) ? CalibMethod::Conformal
+                          : (method == "conformal") ? CalibMethod::Conformal
                           : (method == "isotonic") ? CalibMethod::Isotonic
                           : (method == "ensemble") ? CalibMethod::Ensemble
                                                    : CalibMethod::None;
@@ -174,8 +183,14 @@ public:
             const std::size_t cnt = info.GetElementCount();
             const float* data = outs[0].GetTensorData<float>();
             if (cnt == 1) {
-                // 回归: 单值 = p_yes (或残差; 调用方按 model 语义 blend)。clamp 到 [0,1]。
-                const double v = std::clamp(static_cast<double>(data[0]), 0.0, 1.0);
+                // 回归: 单值 = p_yes。clamp [0,1] → Platt 校准 (治过度自信) → 最终 p_yes。
+                double v = std::clamp(static_cast<double>(data[0]), 0.0, 1.0);
+                if (meta_loaded_ && (meta_platt_a_ != 1.0 || meta_platt_b_ != 0.0)) {
+                    // calibrated_p = sigmoid(a·logit(v)+b); v clamp 防 logit 发散。
+                    const double vc = std::clamp(v, 1e-4, 1.0 - 1e-4);
+                    const double logit = std::log(vc / (1.0 - vc));
+                    v = 1.0 / (1.0 + std::exp(-(meta_platt_a_ * logit + meta_platt_b_)));
+                }
                 p.probs[0] = v;
                 if (outcome_count_ >= 2) p.probs[1] = 1.0 - v;
                 p.normalized = (outcome_count_ == 2);
@@ -223,6 +238,8 @@ private:
     bool meta_calibrated_{false};
     double meta_confidence_{0.0};
     double meta_ci_hw_{0.0};
+    double meta_platt_a_{1.0};  // Platt 校准斜率 (logit 空间); 1.0 = 不变
+    double meta_platt_b_{0.0};  // Platt 校准截距; 0.0 = 不变
     CalibMethod meta_calib_{CalibMethod::None};
 };
 
