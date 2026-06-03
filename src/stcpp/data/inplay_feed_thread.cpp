@@ -624,6 +624,31 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                     es.inplay_bet365_draw_fair = parse_result.inplay_draw_fairs[i];
                 const std::string& key = rec.match_id.inplay_match_id;
                 if (!key.empty()) {
+                    // E2 事件检测器 (v3 事件套利; 只计数+log, 不交易; 双架构评审: 检测内联采集线程,
+                    //   帧间纯内存 diff <<R-12 100μs, 不碰 WSS loop)。diff 新 es vs 上一帧 merged_map_[key]:
+                    //   比分变化(进球/得分/跑垒) + state 码跳变(事件转移)。单 writer 线程, plain static 计数。
+                    if (auto pit = merged_map_.find(key); pit != merged_map_.end()) {
+                        const auto& prev = pit->second;
+                        const bool score_chg =
+                            (es.home_score != prev.home_score) || (es.away_score != prev.away_score);
+                        const bool state_chg =
+                            !es.gs_state_code.empty() && es.gs_state_code != prev.gs_state_code;
+                        if (score_chg || state_chg) {
+                            static long long ev_n = 0, ev_score = 0, ev_state = 0;
+                            ++ev_n;
+                            if (score_chg) ++ev_score;
+                            if (state_chg) ++ev_state;
+                            static int dbg = 0;
+                            if (dbg++ < 300)
+                                std::fprintf(stderr,
+                                             "[event-detect] %s %.16s %s sc=%d:%d->%d:%d state=%s->%s "
+                                             "(n=%lld score=%lld state=%lld)\n",
+                                             es.sport.c_str(), key.c_str(), score_chg ? "SCORE" : "state",
+                                             prev.home_score, prev.away_score, es.home_score, es.away_score,
+                                             prev.gs_state_code.c_str(), es.gs_state_code.c_str(), ev_n,
+                                             ev_score, ev_state);
+                        }
+                    }
                     merged_map_[key] = std::move(es);
                     old_keys.insert(key);
                 }
