@@ -363,7 +363,8 @@ static constexpr int kMaxJsonDepth = 32;
             //   修旧 bug: 通用 ParseScore 只取首盘当比分喂 moneyline (实际 1-1 平却按 set1 局差定价)。
             [[maybe_unused]] bool ok = InplayScoreParser::ParseTennisScore(
                 score_str, rec.home_score_total, rec.away_score_total, rec.home_games_total,
-                rec.away_games_total);
+                rec.away_games_total, rec.home_periods.data(), rec.away_periods.data(),
+                &rec.periods_used);
         } else {
             // 忽略返回值 (parse 失败时保持 0:0 默认值)
             [[maybe_unused]] bool ok =
@@ -742,10 +743,12 @@ bool InplayScoreParser::ParseScore(const std::string& score_str, std::int32_t& h
 // ============================================================================
 bool InplayScoreParser::ParseTennisScore(const std::string& score_str, std::int32_t& sets_h,
                                          std::int32_t& sets_a, std::int32_t& games_h,
-                                         std::int32_t& games_a) noexcept {
+                                         std::int32_t& games_a, std::int32_t* periods_h,
+                                         std::int32_t* periods_a, std::uint8_t* periods_used) noexcept {
     if (score_str.empty())
         return false;
     std::int32_t sh = 0, sa = 0, gh = 0, ga = 0;
+    std::uint8_t ns = 0;  // 已解析盘数 (实时比分 set_summary 用; periods_h/a 各盘局数)
     bool any = false;
     std::size_t pos = 0;
     const std::string_view sv(score_str);
@@ -766,6 +769,12 @@ bool InplayScoreParser::ParseTennisScore(const std::string& score_str, std::int3
             if (hec == std::errc{} && aec == std::errc{}) {
                 gh += h;
                 ga += a;
+                // 逐盘局数留存 (实时比分: 每盘 h-a; 最多 12 槽)。
+                if (periods_h && periods_a && ns < 12) {
+                    periods_h[ns] = h;
+                    periods_a[ns] = a;
+                }
+                ++ns;
                 // 完成盘 (该盘 ≥6 局且领先) → 盘数++; 进行中盘 (max<6) 不计。
                 if (h >= 6 && h > a)
                     ++sh;
@@ -784,6 +793,8 @@ bool InplayScoreParser::ParseTennisScore(const std::string& score_str, std::int3
     sets_a = sa;
     games_h = gh;
     games_a = ga;
+    if (periods_used)
+        *periods_used = (ns > 12) ? 12 : ns;
     return true;
 }
 

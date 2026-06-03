@@ -126,9 +126,12 @@ public:
     //   修旧 bug: ParseScore("2:6,6:4") 只取首盘 "2:6" → 误当比分喂 moneyline。
     //   返回 false = 空/无效 (保持入参不变)。
     // ------------------------------------------------------------------------
+    //   periods_h/a (可选, 各容 12): 逐盘局数 (实时比分 set_summary 用); periods_used: 实际盘数。
     [[nodiscard]] static bool ParseTennisScore(const std::string& score_str, std::int32_t& sets_h,
                                                std::int32_t& sets_a, std::int32_t& games_h,
-                                               std::int32_t& games_a) noexcept;
+                                               std::int32_t& games_a, std::int32_t* periods_h = nullptr,
+                                               std::int32_t* periods_a = nullptr,
+                                               std::uint8_t* periods_used = nullptr) noexcept;
 
     // ------------------------------------------------------------------------
     // ParseTimeStatus — info.time_status string → goalserve::TimeStatus

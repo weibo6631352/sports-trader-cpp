@@ -698,6 +698,18 @@ debug_api::EventScore InplayFeedThread::ToEventScore(const data::adapter::GameSc
     es.away_score = rec.away_score_total;
     es.games_home = rec.home_games_total;  // 网球: 全场总局数 (totals/spreads); 非网球 0
     es.games_away = rec.away_games_total;
+    // 实时比分 (老板 2026-06-03「显示实时比分」, inplay 主源): 逐盘比分 "2-6 6-4" (home-away/盘)。
+    //   从 GameScoreRecord.home_periods/away_periods (inplay info.score "2:6,6:4" 解析); 非网球 periods_used=0。
+    if (rec.periods_used > 0) {
+        std::string ss;
+        for (std::uint8_t i = 0; i < rec.periods_used && i < 12; ++i) {
+            if (!ss.empty()) ss += ' ';
+            ss += std::to_string(rec.home_periods[i]);
+            ss += '-';
+            ss += std::to_string(rec.away_periods[i]);
+        }
+        es.set_summary = std::move(ss);
+    }
     es.source = "goalserve";
 
     // sport 字符串
