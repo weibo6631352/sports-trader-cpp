@@ -792,6 +792,13 @@ function EventAccordion(props: { group: EventGroup }) {
             <span class="v8-evt-dash">—</span>
             <span class="v8-evt-score">{awayScore()}</span>
           </Show>
+          {/* 网球当前盘已打局数 (赛点/进度); 非网球=0 不显示 (老板 2026-06-03 盯盘) */}
+          <Show when={(score()?.games_home ?? 0) > 0 || (score()?.games_away ?? 0) > 0}>
+            <span class="v8-evt-games" title="当前盘已打局数 (网球赛点/进度)"
+              style={{ color: '#fbbf24', 'font-size': '11px', 'margin-left': '4px' }}>
+              局 {score()!.games_home}–{score()!.games_away}
+            </span>
+          </Show>
           <span class="v8-evt-team">{awayTeam() ?? '—'}</span>
         </Show>
 
@@ -962,66 +969,6 @@ function TradingToolbar(props: {
 // TradingPage (顶层导出)
 // ============================================================
 
-// LiveGamesBoard — 盯盘看板 (老板 2026-06-03「人盯盘看最新比分/赛点/事件/进度」)。
-//   数据: SSE scores 通道 (state.liveGames) 实时推; 显示每场 in-play 比赛: 运动/队名/比分/网球局数
-//   (赛点进度)/节序+计时/sharp 赔率(套利信号锚)/数据新鲜度(秒, >20s 变灰=陈旧)。比分跳变即"事件"。
-function LiveGamesBoard() {
-  const games = () => state.liveGames ?? [];
-  const fmtClock = (sec: number | null | undefined) => {
-    if (!sec || sec <= 0) return '';
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
-  };
-  const ageSec = (g: Score): number | null => {
-    if (!g.data_source_ts) return null;
-    return Math.max(0, Math.round((Date.now() - g.data_source_ts / 1e6) / 1000));
-  };
-  return (
-    <Show when={games().length > 0}>
-      <div style={{ padding: '6px 10px', background: '#0f1720', 'border-bottom': '1px solid #1e2a38' }}>
-        <div style={{ 'font-size': '11px', 'font-weight': 700, color: '#8fb3d9', 'margin-bottom': '4px' }}>
-          🔴 实时比赛 ({games().length}) · 比分 / 赛点 / 进度 (SSE 实时)
-        </div>
-        <div style={{ display: 'flex', 'flex-wrap': 'wrap', gap: '6px' }}>
-          <For each={games()}>
-            {(g) => {
-              const age = ageSec(g);
-              const stale = age != null && age > 20;
-              return (
-                <div
-                  style={{
-                    display: 'flex', 'align-items': 'center', gap: '6px', padding: '3px 8px',
-                    background: '#16202c', border: '1px solid #26384a', 'border-radius': '4px',
-                    'font-size': '11px', opacity: stale ? 0.55 : 1,
-                  }}
-                  title={`${g.sport} · ${g.status} · 数据 ${age ?? '?'}s 前`}
-                >
-                  <span style={{ color: '#6b8299', 'font-size': '9px', 'text-transform': 'uppercase' }}>{g.sport}</span>
-                  <span style={{ color: '#cdd9e5', 'font-weight': 600 }}>{g.home} v {g.away}</span>
-                  <span style={{ color: '#4ade80', 'font-weight': 700 }}>{g.home_score ?? 0}–{g.away_score ?? 0}</span>
-                  <Show when={(g.games_home ?? 0) > 0 || (g.games_away ?? 0) > 0}>
-                    <span style={{ color: '#fbbf24' }}>局 {g.games_home}–{g.games_away}</span>
-                  </Show>
-                  <span style={{ color: '#8fb3d9' }}>{g.period}{g.clock_sec ? ' ' + fmtClock(g.clock_sec) : ''}</span>
-                  <Show when={(g.sharp_home_fair ?? -1) >= 0}>
-                    <span style={{ color: '#a78bfa' }} title="in-play bet365 de-vig home 胜率 (套利信号锚)">
-                      sharp {((g.sharp_home_fair ?? 0) * 100).toFixed(0)}%
-                    </span>
-                  </Show>
-                  <Show when={age != null}>
-                    <span style={{ color: stale ? '#ef4444' : '#6b8299', 'font-size': '9px' }}>{age}s</span>
-                  </Show>
-                </div>
-              );
-            }}
-          </For>
-        </div>
-      </div>
-    </Show>
-  );
-}
-
 export function TradingPage() {
   // 默认只显示「正在比赛」(gamma live=true); 可切「全部/持仓」(老板 2026-06-01)
   const [filter, setFilter] = createSignal<FilterMode>('live');
@@ -1154,9 +1101,6 @@ export function TradingPage() {
         onExpandAll={() => expandAllMarkets(expandableCondIds())}
         onCollapseAll={() => collapseAllMarkets(allCondIds())}
       />
-
-      {/* 盯盘看板: 实时比赛比分/赛点/进度 (老板 2026-06-03; SSE scores 通道实时推) */}
-      <LiveGamesBoard />
 
       {/* PnL 净值曲线 — 无成交时明示语境 (空态语境) */}
       <div class="spark-section">

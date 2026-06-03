@@ -550,14 +550,34 @@ public:
 
     // scores_all — 枚举 score_store 全部快照 (绕开 per-event key 不匹配; 盯盘看板用)。
     //   R-12: GetSnapshot 原子引用计数快照, 只读零热路径依赖。只返 found 的 (in-play feed 只填进行中)。
+    //   2026-06-03 (老板「前端挂在比赛节点下面」): 反查 inplay_match_id → PM event_id (mapping markets +
+    //   catalog), 把 EventScore.event_id 改成 PM event_id → 前端 lastEventScore[PM event_id] 挂到对应
+    //   比赛节点 (EventAccordion) 显示比分/赛点/进度。查不到 PM event 的保留原 key (无节点, 前端忽略)。
     std::vector<EventScore> scores_all() const override {
         std::vector<EventScore> out;
         if (score_store_ == nullptr) return out;
         const auto snap = score_store_->GetSnapshot();
         if (!snap) return out;
+        // 反查表: inplay_match_id → PM event_id (经 matched mapping row → condition → catalog.event_id)。
+        std::unordered_map<std::string, std::string> imid_to_event;
+        {
+            MappingStatusReport rep;
+            { std::lock_guard<std::mutex> lk(mapping_mtx_); rep = mapping_snapshot_; }
+            std::lock_guard<std::mutex> lk(meta_mu_);
+            for (const auto& row : rep.markets) {
+                if (!row.matched || row.inplay_match_id.empty()) continue;
+                const auto cit = catalog_.find(row.condition_id);
+                if (cit != catalog_.end() && !cit->second.event_id.empty())
+                    imid_to_event[row.inplay_match_id] = cit->second.event_id;
+            }
+        }
         out.reserve(snap->size());
         for (const auto& [key, es] : *snap) {
-            if (es.found) out.push_back(es);
+            if (!es.found) continue;
+            EventScore e = es;
+            const auto it = imid_to_event.find(key);
+            if (it != imid_to_event.end()) e.event_id = it->second;  // → PM event_id (挂比赛节点)
+            out.push_back(std::move(e));
         }
         return out;
     }
