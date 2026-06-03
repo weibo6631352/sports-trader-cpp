@@ -801,8 +801,13 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         if (fv.size() == ml_model->expected_feature_count()) {
             const auto mp = ml_model->predict(fv);
             const double ml_p = mp.prob(0);
+            // 校准门 (2026-06-03 紧急修): 只有【已校准】(calibrated && conf>0) 的模型才驱动 fair。
+            //   未训练/退化模型 (无 sidecar → calibrated=false / conf=0) 会输出 ~恒定垃圾 (实测
+            //   ~0.9995) → weight=1.0 下 fair=垃圾 → 全 moneyline 假 edge → 垃圾成交。此门挡掉
+            //   (与前端 modelReady 同口径); 等 auto-train 训出带 sidecar 的真模型才放行驱动。
             // fail-safe: ML 输出非有限 (NaN 特征/数值) → 不 blend, 保 baseline (宁可不动不可乱动)。
-            if (mp.ok && std::isfinite(ml_p) && ml_p > 0.0 && ml_p < 1.0) {
+            if (mp.ok && mp.calibrated && mp.confidence > 0.0 && std::isfinite(ml_p) && ml_p > 0.0 &&
+                ml_p < 1.0) {
                 ml_p_opt = ml_p;
             }
         }
