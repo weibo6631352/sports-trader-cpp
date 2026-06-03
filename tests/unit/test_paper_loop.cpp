@@ -549,6 +549,7 @@ TEST_F(PaperLoopTest, T11g_MlDrivesDecision_OnnxBlend) {
     hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));
     hub_->Publish("1002", MakeSyntheticBook(0.45, 0.47));  // 双边 book: ML 选任一边都有 book
     cfg_.ml_fair_blend_weight = 1.0;  // ML 全驱动决策 fair
+    cfg_.ml_drive_enabled = true;     // 显式开驱动总闸 (默认 false 仅 advisory; 本测要测真驱动路径)
     loop_ = MakeLoop();
     loop_->SetMlModel(onnx.get());  // Start 前注入
     loop_->Start();

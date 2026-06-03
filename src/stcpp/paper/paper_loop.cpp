@@ -823,7 +823,9 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         fin.score_prior_yes = fair_score_prior;
         fin.prior_conf = fair_prior_conf;
         fin.has_real_fair = has_real_fair;
-        fin.ml_p_yes = ml_p_opt;
+        // ML 驱动总开关 (默认关): 关 → ml_p 仅 advisory (qf.ml_advisory_p_yes 仍记录/前端显示),
+        //   但【不进 fair】→ 不驱动交易。验证通过 + 策略评审后才 ml_drive_enabled=true 放行。
+        fin.ml_p_yes = cfg_.ml_drive_enabled ? ml_p_opt : std::nullopt;
         fin.ml_blend_weight = cfg_.ml_fair_blend_weight;
         if (market_implied) {
             // outright/prop/series 市场兜底: 挡 score-prior/sharp/derivative/ML → fair = 纯市场 de-vig。

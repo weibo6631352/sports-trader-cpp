@@ -256,6 +256,11 @@ struct PaperLoopConfig {
     //   0 = 纯 baseline (默认; 现有契约测试不变)。仅当真 ONNX 模型 (kind==Onnx) 加载才生效, stub 永不驱动。
     //   PaperLoop 天然 paper (不花真钱); live 路径不复用此 blend。daemon 生产可设 1.0 (有模型时 ML 全驱动)。
     double ml_fair_blend_weight{0.0};
+    // ML 驱动总开关 (2026-06-03, 小邓研究「绝不一上来 weight=1.0」+ §7 垃圾事故配套)。
+    //   false (默认) = ML 仅 advisory (照算照显示 ml_advisory_p_yes, 但【不进 fair / 不驱动交易】)。
+    //   true = 放行 ML blend 进 fair (须先过 7 道验证关卡 + 策略评审, 见 ml-engineer-fairvalue-alpha-design)。
+    //   独立于 weight: weight 是 blend 力度, drive_enabled 是"是否让模型碰真决策"的安全闸 (默认关)。
+    bool ml_drive_enabled{false};
 
     // 短时套利 advisory 配置 (seq_arb_model 旁路信号; 不驱动真单)。
     double arb_est_rtt_ns{50'000'000.0};  // 预估端到端 RTT (含成交确认); 就近部署 ~50ms 默认 (G1 实测后调)
