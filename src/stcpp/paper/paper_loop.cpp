@@ -854,11 +854,16 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             static std::atomic<int> sanity_dbg{0};
             if (sanity_dbg.fetch_add(1, std::memory_order_relaxed) < 60)
                 std::fprintf(stderr,
-                             "[fair-sanity] 极端背离(仅记录, 不拦): cond=%.24s sport=%s mkt_type=%d src=%s "
-                             "p_fair=%.4f mkt_devig=%.4f sharp=%.4f prior=%.4f\n",
+                             "[fair-sanity] 极端背离 cond=%.24s sport=%s mkt_type=%d src=%s "
+                             "p_fair=%.4f mkt_devig=%.4f sharp=%.4f prior=%.4f%s\n",
                              condition_id.c_str(), game_row.sport.c_str(), mkt_type,
                              pricing::to_string(fr.src), p_fair, p_market_devig, fair_sharp_yes,
-                             fair_score_prior);
+                             fair_score_prior, (mkt_type == 0 ? " →拦moneyline" : " (仅记录)"));
+            // moneyline (mkt_type==0): 市场对胜负盘高效, |fair−市场|>0.45 几乎必是模型/方向错 (非真 edge)。
+            //   实测这些极端单系统性亏损 (买便宜YES→暴跌, -10) → 拦掉 (数据驱动, 非谨慎)。
+            //   totals/spreads (mkt_type 1/2) 大 edge 可能合法 (节奏外推) → 不拦 (保 T17)。
+            if (mkt_type == 0)
+                return;
         }
     }
 
