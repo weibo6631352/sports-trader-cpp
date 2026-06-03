@@ -74,10 +74,13 @@ struct FairResult {
         }
     }
 
-    // 4. ML-blend (仅非 derivative — 上面 derivative 已 early-return)。有效 ml_p 才动 (fail-safe 保 baseline)。
-    //   src→kMlBlend 让 ML 实际驱动可观测 (2026-06-03: 原无此枚举值 → ML 驱动的 fair 在日志显 market_devig,
-    //   误导根因定位 "57 个 market_devig 极端背离" 实为 ML。w>0 且真改了 p 才标 ML, 否则保原 src)。
-    if (in.ml_p_yes.has_value() && in.ml_blend_weight > 0.0) {
+    // 4. ML-blend (仅非 derivative + 仅【无 in-play 信号时】= src 仍 kMarketDevig = 纯 pre-game)。
+    //   2026-06-03 治本 (in-play 套利转向): 原 ML weight=1.0 会【覆盖】sharp/score_prior — pregame ML
+    //   (薄 alpha, 只买 YES) 盖掉真正的 in-play 套利信号 (sharp 随进球跳变 = 真 edge)。实测 in-play 路径
+    //   每 tick 触发 2772/24000 但全被 ML 盖成 ml_blend → sharp_inplay 决策 0 个。改: 有 in-play 信号
+    //   (sharp/score_prior, src≠market_devig) 时 ML 绝不动, in-play 权威; ML 只驱动纯 pre-game (无比分)。
+    //   src→kMlBlend 让 ML 实际驱动可观测 (原无此枚举值 → ML 的 fair 日志显 market_devig 误导根因定位)。
+    if (in.ml_p_yes.has_value() && in.ml_blend_weight > 0.0 && src == FairSrc::kMarketDevig) {
         const double ml = *in.ml_p_yes;
         if (std::isfinite(ml) && ml > 0.0 && ml < 1.0) {
             const double w = std::clamp(in.ml_blend_weight, 0.0, 1.0);

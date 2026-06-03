@@ -473,22 +473,33 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // A4: 用 TickAll 入口冻结的 tick_score_snap_/tick_event_map_ (整 tick 同版本, 消 read-skew),
     //     不再 per-condition 各自 Get()/LoadEventMap()。
     bool map_is_draw = false;  // 盈利修复: 3-way 平局盘 → 下游 sharp fair 取 draw 概率
+    // [score-flow diag] 地基可观测 (2026-06-03 老板「先打地基才知有什么事件」): 逐环计数 score→game_row
+    //   链掉点 (定位 in-play 事件为何不流入决策); 每 3000 次 emit 一行 (cov-diag 同风格, 临时诊断)。
+    static std::atomic<long long> sf_calls{0}, sf_mapped{0}, sf_scorefound{0}, sf_inplay{0},
+        sf_stale{0}, sf_realfair{0};
+    const long long sf_n = sf_calls.fetch_add(1, std::memory_order_relaxed) + 1;
     if (tick_inputs_.score != nullptr && tick_inputs_.event_map != nullptr) {
         const ConditionEventMap& map = *tick_inputs_.event_map;
         {
             const auto it = map.find(condition_id);
             if (it != map.end() && !it->second.inplay_match_id.empty()) {
+                sf_mapped.fetch_add(1, std::memory_order_relaxed);
                 map_is_draw = it->second.is_draw;
                 game_row.mapping_as_of_ns = it->second.match_as_of_ns;  // 映射新鲜度 (老板「每个源标时间」)
                 const auto sit = tick_inputs_.score->find(it->second.inplay_match_id);
                 if (sit != tick_inputs_.score->end() && sit->second.found) {
+                    sf_scorefound.fetch_add(1, std::memory_order_relaxed);
                     const auto& es = sit->second;
                     const auto ev_ts = MapEventScoreStatus(es.status);
                     // 新鲜度: data_source_ts 不能太旧 (老韩 D4 #8 + 老周 R-20: 冻结比分不当 live fair).
                     const std::int64_t now_ns = NowNs();
                     const bool fresh = es.ts.data_source_ts_ns > 0 &&
                                        (now_ns - es.ts.data_source_ts_ns) <= cfg_.score_staleness_limit_ns;
+                    const bool is_inplay = (ev_ts != stcpp::data::goalserve::TimeStatus::NotStarted);
+                    if (is_inplay) sf_inplay.fetch_add(1, std::memory_order_relaxed);
+                    if (is_inplay && !fresh) sf_stale.fetch_add(1, std::memory_order_relaxed);
                     if (ev_ts != stcpp::data::goalserve::TimeStatus::NotStarted && fresh) {
+                        sf_realfair.fetch_add(1, std::memory_order_relaxed);
                         game_row.time_status = ev_ts;
                         // orientation (老周张冠李戴防护): 把 YES 队比分填进 score_home_total,
                         //   令 FairValue score_diff = YES队 - 对手 (prior_yes 方向正确).
@@ -544,6 +555,14 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                 }
             }
         }
+    }
+    // [score-flow diag] emit: 每 3000 次决策 → 一行链路掉点 (地基可观测; 老板「先打地基才知有什么事件」)。
+    if (sf_n % 3000 == 0) {
+        std::fprintf(stderr,
+                     "[score-flow] calls=%lld mapped=%lld score_found=%lld in-play=%lld stale=%lld "
+                     "→ has_real_fair=%lld (链路掉点定位 in-play 事件流)\n",
+                     sf_n, sf_mapped.load(), sf_scorefound.load(), sf_inplay.load(), sf_stale.load(),
+                     sf_realfair.load());
     }
 
     // has_real_fair = true 当 time_status != NotStarted (真实 in-play Goalserve 比分已填).

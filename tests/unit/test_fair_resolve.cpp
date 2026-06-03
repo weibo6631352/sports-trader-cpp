@@ -74,17 +74,18 @@ TEST(ResolveFair, DefaultMarketDevigWhenNoRealFair) {
     EXPECT_DOUBLE_EQ(r.p_fair, 0.33);
 }
 
-// 5. ML blend 叠加在非 derivative 结果上 (sharp 之后)。
-TEST(ResolveFair, MlBlendOnTopOfSharp) {
+// 5. ML 不覆盖 in-play sharp (2026-06-03 in-play 套利转向): 有 in-play 信号 (sharp/score_prior)
+//    时 ML 绝不动, in-play 权威。原 weight=1.0 会让 pregame ML(薄 alpha)盖掉真 in-play 套利信号。
+TEST(ResolveFair, MlDoesNotOverrideInplaySharp) {
     FairInputs in;
     in.p_market_devig = 0.2;
-    in.sharp_yes = 0.5;          // sharp 定 base = 0.5
+    in.sharp_yes = 0.5;          // sharp 定 fair = 0.5 (in-play 套利信号, 权威)
     in.has_real_fair = true;
-    in.ml_p_yes = 0.8;
-    in.ml_blend_weight = 0.5;    // 0.5*0.5 + 0.5*0.8
+    in.ml_p_yes = 0.8;           // pregame ML 想盖成 0.8 — in-play 时不许
+    in.ml_blend_weight = 0.5;
     const auto r = ResolveFair(in);
-    EXPECT_EQ(r.src, FairSrc::kMlBlend);  // ML 真叠加 → src 记最终驱动 = ML (2026-06-03 可观测性修)
-    EXPECT_DOUBLE_EQ(r.p_fair, 0.65);     // (1-0.5)*0.5 + 0.5*0.8
+    EXPECT_EQ(r.src, FairSrc::kSharpInplay);  // in-play 权威, ML 被挡
+    EXPECT_DOUBLE_EQ(r.p_fair, 0.5);          // = sharp (ML 不动)
 }
 
 // 6. ML 无效值 (越界/NaN) → 不 blend, 保 base。
