@@ -352,7 +352,11 @@ def main():
     X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=True)
     print(f"[train] 筛选: 标注{st['labeled']} 滤类型{st['drop_type']} 滤已决{st['drop_decided']} → 留{st['kept']} 行/{ng(g)}场",
           file=sys.stderr)
-    if len(X) < 200 or ng(g) < 8:  # 行少 或 场少 (按场 CV 需足够场) → 放 moneyline 限制 (保滤已决)
+    # 阈值 40 (2026-06-03 治 residual delta 偏置): moneyline 场 < 40 → 放 moneyline 限制用全类型。
+    #   根因: 9 moneyline 场太少 → residual 目标均值 mean(label−b_mid) 采样噪声大 (实测 +0.5 而非真实
+    #   ~+0.05) → delta 系统性正 → fair=市价+0.5 → 仍只买 YES。147 全类型场 → 目标均值稳 (~+0.05) →
+    #   delta 两边 (OOF 验证 买YES 45996/买NO 36741)。需 ≥40 moneyline 场 (够稳) 才训 moneyline-only。
+    if len(X) < 200 or ng(g) < 40:  # 行少 或 moneyline 场不足 → 放 moneyline 限制用全类型 (保滤已决)
         X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=True)
         print(f"[train] fallback 放 moneyline → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
     if len(X) < 50 or ng(g) < 6:  # 仍不足 → 放滤已决 (最低保障; 靠泄漏守卫+sanity 兜底)
