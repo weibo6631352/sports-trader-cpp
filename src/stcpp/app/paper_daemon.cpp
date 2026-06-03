@@ -620,7 +620,10 @@ BuildResult PaperDaemon::Build() {
     //   lib 默认 false (向后兼容契约测试); 生产 daemon 置 true (可经 enable_phase0_gates 关, 供管线测试)。
     cfg_.paper_loop.dynamic_reservation = cfg_.enable_phase0_gates;
     cfg_.paper_loop.net_ev_gate = cfg_.enable_phase0_gates;
-    // ML 驱动决策 (老板放开 paper ML-R2): 有真 ONNX 模型时 ML 全驱动决策 fair (weight=1.0)。
+    // ML blend 权重 (老板 2026-06-03「让模型盈利」实测定标):
+    //   weight=1.0 全驱动 → 3.5h ~break-even+噪声; weight=0.3/0.7 市场锚定 → edge < 半价差 margin
+    //   → 0 成交。结论: 模型"edge"实为过度自信, 锚定高效市场后即消失 (PM in-play 高效, poly-arb 已证)。
+    //   权重只控成交频率不控 edge 符号 → 留 1.0 让其成交+取结算数据 (无哪个权重能把无 alpha 调成盈利)。
     //   stub 永不驱动 (blend 内 kind==Onnx 门); 无 onnx_model_path → stub → 纯 baseline, 安全。
     cfg_.paper_loop.ml_fair_blend_weight = 1.0;
     // ML 驱动总闸 (2026-06-03 老板「别那么谨慎, 虚拟盘要看模型真跑」): paper 放开 ML 驱动。

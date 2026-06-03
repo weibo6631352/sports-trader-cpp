@@ -898,13 +898,21 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         //   极端背离应大幅减少; 仍记录供观测 (若校准后还频繁极端 = 校准不足, 继续优化模型而非加门)。
         constexpr double kMaxPlausibleEdge = 0.45;
         if (std::abs(p_fair - p_market_devig) > kMaxPlausibleEdge) {
+            // 2026-06-03 老板「调通模型让其盈利」: 实测 PM 体育盘高效 (事件延迟/信息边验证), 模型源
+            //   (ml_blend/score_prior_blend) 对市场极端背离 (>0.45) = 大概率模型错配/过度自信 (实见
+            //   tennis/esports ml_blend fair 0.35~0.43 vs 市场 0.85~0.95) → 回退市场价 (edge 归零, 不
+            //   产单)。sharp_inplay/derivative 的大 edge 是合法信号 (sharp 钱 / totals 错价), 不拦, 仅记录。
+            const bool model_src = (fr.src == pricing::FairSrc::kMlBlend ||
+                                    fr.src == pricing::FairSrc::kScorePriorBlend);
             static std::atomic<int> sanity_dbg{0};
-            if (sanity_dbg.fetch_add(1, std::memory_order_relaxed) < 60)
+            if (sanity_dbg.fetch_add(1, std::memory_order_relaxed) < 80)
                 std::fprintf(stderr,
-                             "[fair-sanity] 极端背离(仅记录) cond=%.24s sport=%s mkt_type=%d src=%s "
-                             "p_fair=%.4f mkt_devig=%.4f\n",
+                             "[fair-sanity] 极端背离 cond=%.24s sport=%s mkt_type=%d src=%s "
+                             "p_fair=%.4f mkt_devig=%.4f%s\n",
                              condition_id.c_str(), game_row.sport.c_str(), mkt_type,
-                             pricing::to_string(fr.src), p_fair, p_market_devig);
+                             pricing::to_string(fr.src), p_fair, p_market_devig,
+                             model_src ? " → 模型源回退市场(不交易)" : " (sharp/deriv, 合法, 仅记录)");
+            if (model_src) p_fair = p_market_devig;  // 模型误配 → edge 归零, SelectSide 不产单
         }
     }
 
