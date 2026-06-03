@@ -287,16 +287,19 @@ def main():
         print("需 --features <training.jsonl> 或 --selftest", file=sys.stderr)
         sys.exit(2)
     rows = load_jsonl(a.features)
-    # 治本筛选 (moneyline + 滤已决出泄漏行); fallback: 筛后样本不足 → 逐步放松 (先放 moneyline 再放 decided)。
+    # 治本筛选 (moneyline + 滤已决出泄漏行); fallback 按【场数】判 (group CV 需 ≥6 场, 非看行数):
+    #   moneyline 场太少 → 放 moneyline (全类型, 早期数据稀时优先有足够场做按场 CV)。
+    def ng(g):
+        return len(set(g.tolist()))
     X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=True)
-    print(f"[train] 筛选: 标注{st['labeled']} 滤类型{st['drop_type']} 滤已决{st['drop_decided']} → 留{st['kept']}",
+    print(f"[train] 筛选: 标注{st['labeled']} 滤类型{st['drop_type']} 滤已决{st['drop_decided']} → 留{st['kept']} 行/{ng(g)}场",
           file=sys.stderr)
-    if len(X) < 200:  # moneyline+滤已决 太少 → 放 moneyline 限制 (保滤已决, 防泄漏)
+    if len(X) < 200 or ng(g) < 8:  # 行少 或 场少 (按场 CV 需足够场) → 放 moneyline 限制 (保滤已决)
         X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=True)
-        print(f"[train] fallback 放 moneyline 限制 → 留{st['kept']}", file=sys.stderr)
-    if len(X) < 50:  # 仍不足 → 放滤已决 (最低保障能训, 靠泄漏守卫 + sanity 门兜底)
+        print(f"[train] fallback 放 moneyline → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
+    if len(X) < 50 or ng(g) < 6:  # 仍不足 → 放滤已决 (最低保障; 靠泄漏守卫+sanity 兜底)
         X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=False)
-        print(f"[train] fallback 放全部筛选 → 留{st['kept']}", file=sys.stderr)
+        print(f"[train] fallback 放全部筛选 → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
     if len(X) < 50:
         print(f"样本不足 ({len(X)}<50), 训练跳过 — 等真数据攒够", file=sys.stderr)
         sys.exit(1)
