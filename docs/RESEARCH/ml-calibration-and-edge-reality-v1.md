@@ -116,3 +116,36 @@ tennis(84)/esports(15)/cricket(12)(盘/maps/innings 制) → 全不支持。只�
 ### 结论
 moneyline + tennis(itf/ch) + esports + (outright/prop/series 市场兜底) 已接入。**结构性「未接入」
 (无模型的市场类型)已消除**; 剩 totals/spreads 的温度性「未接入」(赛前/终态/atp-wta-无games)。
+
+---
+
+## §7 ML 垃圾成交事故 + 修复链 (2026-06-03, auto-train 首次触发后暴露)
+
+### 事故
+全盘口量化部署后, paper 突现大量垃圾成交: 多市场 fair=0.9995 (恒定), 在 0.006/0.14/0.54
+等便宜价位疯买 → 假 86-99% edge。
+
+### 根因链 (逐层挖出)
+1. **auto-train 真的训练了** (model 625B→27KB + sidecar), 但 sidecar 显示 **AUC=1.0 / conf=1.0**。
+2. **AUC=1.0 在体育上不可能 = 标签泄漏**: 训练特征含市场价 (microprice/bid/ask), 近结算捕获的行
+   市场价已 ≈0/1 → 模型平凡"预测"已定结果 → AUC 1.0 (无 alpha)。
+3. **93% NO 类别失衡** (settlements 929 value=0 / 87 value=1; 疑 outright 多 NO + settlement
+   误record: value=0 且 end_date 未来 6 天) → 模型退化, 对所有市场预测 ~0.0005。
+4. **AUC-based confidence 被泄漏骗** (以为模型完美 conf=1.0) → 过校准门。
+5. **ml_fair_blend_weight=1.0 满驱动** → fair = 100% ML = 0.0005 → 选 NO → 买 NO @ fair=0.9995。
+
+### 修复 (本轮, 全部署)
+1. **校准门** (commit 7dddb70): ml_blend 仅当 `calibrated && conf>0` (与前端 modelReady 同口径)。
+2. **fair-sanity 门** (commit 97b1c3e): `|p_fair − 市场 de-vig| > 0.45` → fail-closed 不交易 (真实
+   体育 edge 极少 >0.45; 防 orientation/match/模型饱和垃圾)。
+3. **训练泄漏守卫** (commit e3f5a56): AUC≥0.9 → leak_suspect → conf=0/calibrated=false → 不驱动。
+   selftest 改含噪二值标签 (AUC~0.57 真实)。
+4. **清当前垃圾模型**: 删 server model+sidecar + 重启 → stub fallback (不驱动) → fair=baseline。
+   验: 0 垃圾成交 / 0 持仓 / WSS 正常。
+
+### 深层待办 (治本, 需量化决策)
+- **标签泄漏**: fair-value 模型应【不含市场价特征】或【排近结算捕获行】, 否则永远学"价→果"无 alpha。
+  这是模型变可用的前提 (光 gate 掉只是不产垃圾, 模型仍无用)。
+- **类别失衡 + settlement 质量**: 查 SettlementRecorder 是否对 end_date 未来/未真结算的市场误录
+  value=0 (假 NO 标签); 训练应滤 moneyline (平衡) 或按类别加权。
+- 在此之前: 模型 calibrated=false 不驱动 (前端"未训练·占位"), 系统靠 sharp/score-prior/市场 baseline。
