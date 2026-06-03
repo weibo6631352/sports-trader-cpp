@@ -784,8 +784,12 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     std::optional<double> ml_p_opt;
     // 热加载: Load() 拿当前模型 shared_ptr (本次推理引用期内不被 daemon watcher 换走/回收)。
     const auto ml_model = ml_holder_.Load();
-    if (cfg_.ml_fair_blend_weight > 0.0 && !derivative_p_yes && ml_model != nullptr && ml_model->ready() &&
-        ml_model->kind() == ml::ModelKind::Onnx) {
+    // 调优 (2026-06-03 实时观测): ML 仅在【有真实 in-play 比分】(has_real_fair) 时驱动。
+    //   fair-value 模型的 edge 来自解读实时比分; 无比分的盘 (sport=""/无匹配) game-state 特征全 0 →
+    //   模型瞎猜出极端 fair (实测对市场 0.3% 的盘预测 0.9+, 60 次极端背离 / 34 笔真注 67 仓位 = 垃圾)。
+    //   无比分 → ML 不驱动 → 回落市场 baseline。(advisory ml_advisory_p_yes 仍单独记录, 不受影响。)
+    if (cfg_.ml_fair_blend_weight > 0.0 && has_real_fair && !derivative_p_yes && ml_model != nullptr &&
+        ml_model->ready() && ml_model->kind() == ml::ModelKind::Onnx) {
         sizing::QuoteFeatures fqf{};
         const double blend_no_imb =
             mkt.no.present ? mkt.no.book.imbalance : std::numeric_limits<double>::quiet_NaN();
