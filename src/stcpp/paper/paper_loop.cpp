@@ -657,22 +657,21 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             is_tennis    ? pricing::TennisTotalsFairYes(game_row, mc.line, mc.yes_is_over)
             : is_esports ? pricing::EsportsTotalsFairYes(game_row, mc.line, mc.yes_is_over)
                          : pricing::TotalsFairYes(game_row, mc.line, mc.yes_is_over);
-        if (!dr.valid) {
-            return;  // 派生定价不可用 (赛前/太早/不支持运动/无 line/终态) → 不交易
-        }
-        derivative_p_yes = dr.p_yes;
+        if (dr.valid)
+            derivative_p_yes = dr.p_yes;
+        else
+            market_implied = true;  // 模型不可用 (赛前/太早/不支持运动/无 line/终态) → 市场兜底 (不"未接入")
     } else if (mkt_type == 1) {  // spreads (让分 / 网球让局 / 电竞图让分)
         const pricing::DerivativeFairResult dr =
             is_tennis    ? pricing::TennisSpreadsFairYes(game_row, mc.line)
             : is_esports ? pricing::EsportsSpreadsFairYes(game_row, mc.line)
                          : pricing::SpreadsFairYes(game_row, mc.line);
-        if (!dr.valid) {
-            return;
-        }
-        derivative_p_yes = dr.p_yes;
+        if (dr.valid)
+            derivative_p_yes = dr.p_yes;
+        else
+            market_implied = true;  // 市场兜底
     } else if (mkt_type > 2) {
         // outright/prop/series: 无专属 score 模型 → 市场兜底 (发 quote, fair=市场 de-vig, 不交易)。
-        //   替代旧 `return` (永远"未接入")。下方 ResolveFair 强制走市场 (挡 score-prior/sharp/ML)。
         market_implied = true;
     }
 
