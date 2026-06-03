@@ -118,10 +118,19 @@ def compute_meta(model_eval, Xh, yh, mode):
         ci_hw = _ece(p, ytrue)
         conf = (2.0 * (auc - 0.5)) if auc is not None else (1.0 - 2.0 * brier)
         conf = max(0.0, min(1.0, conf))
+        # 泄漏/平凡态守卫 (2026-06-03): AUC≥0.9 在体育上几乎必是【标签泄漏】(近结算捕获的市场价
+        #   已≈0/1, 平凡"预测"已定结果) 或【平凡态】(大比分领先=显然胜负, 非可交易 alpha)。
+        #   真实可交易判别 alpha 极少 AUC>0.72。AUC≥0.9 → 不可信 → conf=0 → C++ 校准门挡其驱动交易
+        #   (避免退化/泄漏模型 weight=1.0 满驱动产垃圾 fair → 垃圾成交; 实测 auto-train 训出 AUC1.0
+        #   退化模型对所有市场预测 ~0.0005 → 假 86% edge)。
+        leak_suspect = (auc is not None and auc >= 0.9)
+        if leak_suspect:
+            conf = 0.0
         return {"calibrated": bool(conf > 0.0), "confidence": round(conf, 4),
                 "ci_halfwidth": round(ci_hw, 4), "calib_method": "conformal",
                 "auc": (round(auc, 4) if auc is not None else None),
-                "brier": round(brier, 4), "n_holdout": int(len(Xh))}
+                "brier": round(brier, 4), "n_holdout": int(len(Xh)),
+                "leak_suspect": bool(leak_suspect)}
     # residual: y=delta, 连续 → 用 RMSE 兜置信
     resid = np.abs(yh.astype("float64") - pred)
     rmse = float(np.sqrt(np.mean(resid ** 2))) if len(resid) else 0.5
@@ -178,16 +187,16 @@ def selftest(out_path):
     X[:, 83] = rng.integers(-1, 9, n).astype("float32")
     X[:, 84] = rng.integers(-1, 6, n).astype("float32")
     X[:, 85] = rng.choice([34, 104, 45, 46, 8, 35, 39], n).astype("float32")  # 真实 sport.id 样本
-    # y = sigmoid(线性组合) ∈ (0,1), 让回归输出像 p_yes (含一个类别交互项)
-    z = X[:, 0] * 0.8 + X[:, 30] * 0.5 - X[:, 18] * 0.3 + (X[:, 83] == 1.0) * 0.2
-    y = (1.0 / (1.0 + np.exp(-z))).astype("float32")
+    # 含噪二值标签 (弱信号 + 噪声 → AUC~0.65, 真实非泄漏; 避免触发泄漏守卫 AUC≥0.9 → fixture
+    #   sidecar 才会 calibrated=true 供 ON04 测试)。
+    z = X[:, 0] * 0.6 - X[:, 18] * 0.3 + (X[:, 83] == 1.0) * 0.15
+    p_true = 1.0 / (1.0 + np.exp(-z))
+    y = (rng.random(n) < p_true).astype("float32")  # 含噪二值: y∈{0,1}, 与特征弱相关
     # holdout 评估 (末 20%) → sidecar (C++ 测试 fixture 需要 meta)
     n_hold = max(20, int(n * 0.2))
     eval_model = lgb.LGBMRegressor(n_estimators=30, num_leaves=15, min_child_samples=5, verbose=-1)
     eval_model.fit(X[:-n_hold], y[:-n_hold])
-    # selftest 的 y 是 sigmoid 连续值 (非 {0,1}) → 当 regress 处理, AUC 用阈值 0.5 二值化评判别力
-    yh_bin = (y[-n_hold:] >= 0.5).astype("float32")
-    meta = compute_meta(eval_model, X[-n_hold:], yh_bin, "regress")
+    meta = compute_meta(eval_model, X[-n_hold:], y[-n_hold:], "regress")
     model = lgb.LGBMRegressor(n_estimators=30, num_leaves=15, min_child_samples=5, verbose=-1)
     model.fit(X, y)  # selftest 不声明 categorical (保 ONNX 导出稳; 仅验列数/round-trip)
     export_onnx(model, N_TOTAL, out_path)
