@@ -522,6 +522,9 @@ function connectSSE(): void {
   on('scores', (d) => {
     const arr = (d as { scores?: Score[] })?.scores;
     if (!arr) return;
+    // SSE scores 是【当前全部 in-play 比赛】的权威快照 (snapshot 模式) → 重建缓存, 清掉已结束/掉出
+    //   feed 的比赛 (老板 2026-06-03: 比赛已结束却还显示进行中 = 旧缓存从不清理的 bug)。
+    for (const k of Object.keys(lastEventScore)) delete lastEventScore[k];
     for (const s of arr) if (s.event_id) lastEventScore[s.event_id] = s;
     setState({ liveGames: arr });  // 盯盘看板: 全部 in-play 比赛 (老板「人盯盘看比分/赛点/进度」)
     rebuildGroups();

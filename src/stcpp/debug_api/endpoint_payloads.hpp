@@ -386,6 +386,10 @@ inline std::string scores(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     //   永远 found=false → 通道空。scores_all 绕开 key 不匹配, 全 live 赛事比分都推。新增 games(网球
     //   赛点/进度) + sharp_fair(in-play bet365 de-vig, 看板显套利信号: sharp vs PM mid 的差就是机会)。
     const std::vector<EventScore> all = sp.scores_all();
+    const std::int64_t now_ns = now_epoch_ns();
+    // 新鲜度上限 (与 paper_loop score_staleness_limit_ns 同 120s): 超此未更新 = 比赛已结束/掉出 feed
+    //   (Goalserve 停更 data_source_ts) → 不推, 防前端残留显示"已结束比赛仍进行中" (老板 2026-06-03)。
+    constexpr std::int64_t kScoreStaleNs = 120'000'000'000LL;
     std::string b;
     b.reserve(4096);
     b += "{\"mode\":";
@@ -396,6 +400,8 @@ inline std::string scores(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     for (const auto& s : all) {
         if (!s.found) continue;
         if (s.status == "final" || s.status == "pregame" || s.status == "NotStarted") continue;  // 只推进行中
+        // 陈旧 (停更 > 120s) → 视为已结束/断流, 不推 (防显示已结束比赛)。
+        if (s.ts.data_source_ts_ns > 0 && (now_ns - s.ts.data_source_ts_ns) > kScoreStaleNs) continue;
         if (!first) b += ',';
         first = false;
         b += "{\"event_id\":";
