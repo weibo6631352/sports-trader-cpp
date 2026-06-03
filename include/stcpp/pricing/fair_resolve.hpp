@@ -24,7 +24,7 @@
 namespace stcpp::pricing {
 
 // fair 来源 (provenance; 观测/调试: 这盘 fair 是哪层定的)。
-enum class FairSrc { kMarketDevig, kDerivative, kSharpInplay, kScorePriorBlend };
+enum class FairSrc { kMarketDevig, kDerivative, kSharpInplay, kScorePriorBlend, kMlBlend };
 
 [[nodiscard]] inline const char* to_string(FairSrc s) noexcept {
     switch (s) {
@@ -32,6 +32,7 @@ enum class FairSrc { kMarketDevig, kDerivative, kSharpInplay, kScorePriorBlend }
         case FairSrc::kDerivative: return "derivative";
         case FairSrc::kSharpInplay: return "sharp_inplay";
         case FairSrc::kScorePriorBlend: return "score_prior_blend";
+        case FairSrc::kMlBlend: return "ml_blend";
     }
     return "?";
 }
@@ -74,11 +75,14 @@ struct FairResult {
     }
 
     // 4. ML-blend (仅非 derivative — 上面 derivative 已 early-return)。有效 ml_p 才动 (fail-safe 保 baseline)。
+    //   src→kMlBlend 让 ML 实际驱动可观测 (2026-06-03: 原无此枚举值 → ML 驱动的 fair 在日志显 market_devig,
+    //   误导根因定位 "57 个 market_devig 极端背离" 实为 ML。w>0 且真改了 p 才标 ML, 否则保原 src)。
     if (in.ml_p_yes.has_value() && in.ml_blend_weight > 0.0) {
         const double ml = *in.ml_p_yes;
         if (std::isfinite(ml) && ml > 0.0 && ml < 1.0) {
             const double w = std::clamp(in.ml_blend_weight, 0.0, 1.0);
             p = (1.0 - w) * p + w * ml;
+            if (w > 0.0) src = FairSrc::kMlBlend;
         }
     }
 

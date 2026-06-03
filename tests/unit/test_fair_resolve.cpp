@@ -83,8 +83,8 @@ TEST(ResolveFair, MlBlendOnTopOfSharp) {
     in.ml_p_yes = 0.8;
     in.ml_blend_weight = 0.5;    // 0.5*0.5 + 0.5*0.8
     const auto r = ResolveFair(in);
-    EXPECT_EQ(r.src, FairSrc::kSharpInplay);  // src 记 base 来源
-    EXPECT_DOUBLE_EQ(r.p_fair, 0.65);         // (1-0.5)*0.5 + 0.5*0.8
+    EXPECT_EQ(r.src, FairSrc::kMlBlend);  // ML 真叠加 → src 记最终驱动 = ML (2026-06-03 可观测性修)
+    EXPECT_DOUBLE_EQ(r.p_fair, 0.65);     // (1-0.5)*0.5 + 0.5*0.8
 }
 
 // 6. ML 无效值 (越界/NaN) → 不 blend, 保 base。

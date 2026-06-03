@@ -133,9 +133,19 @@ public:
             double pa = 1.0, pb = 0.0;
             (void)JsonNum(s, "platt_a", pa);
             (void)JsonNum(s, "platt_b", pb);
+            // residual 模式 (2026-06-03 治"只买 YES"): mode=="residual" → 模型输出对 baseline(b_mid 市价,
+            //   特征索引 baseline_idx, 默认 F_MID=8)的增量 delta, predict() 做 fair=clip(b_mid+delta)。
+            //   缺 mode 字段 → regress (向后兼容老 sidecar + selftest 回归 fixture)。
+            std::string mode;
+            (void)JsonStr(s, "mode", mode);
+            const bool residual = (mode == "residual");
+            double bidx = 8.0;
+            (void)JsonNum(s, "baseline_idx", bidx);
             meta_confidence_ = std::clamp(conf, 0.0, 1.0);
             meta_ci_hw_ = std::clamp(ci, 0.0, 1.0);
             meta_calibrated_ = cal;
+            meta_residual_ = residual;
+            meta_baseline_idx_ = (bidx >= 0.0 && bidx < 1024.0) ? static_cast<std::size_t>(bidx) : 8;
             meta_platt_a_ = std::isfinite(pa) ? pa : 1.0;
             meta_platt_b_ = std::isfinite(pb) ? pb : 0.0;
             meta_calib_ = (method.rfind("platt", 0) == 0) ? CalibMethod::Conformal
@@ -183,13 +193,26 @@ public:
             const std::size_t cnt = info.GetElementCount();
             const float* data = outs[0].GetTensorData<float>();
             if (cnt == 1) {
-                // 回归: 单值 = p_yes。clamp [0,1] → Platt 校准 (治过度自信) → 最终 p_yes。
-                double v = std::clamp(static_cast<double>(data[0]), 0.0, 1.0);
-                if (meta_loaded_ && (meta_platt_a_ != 1.0 || meta_platt_b_ != 0.0)) {
-                    // calibrated_p = sigmoid(a·logit(v)+b); v clamp 防 logit 发散。
-                    const double vc = std::clamp(v, 1e-4, 1.0 - 1e-4);
-                    const double logit = std::log(vc / (1.0 - vc));
-                    v = 1.0 / (1.0 + std::exp(-(meta_platt_a_ * logit + meta_platt_b_)));
+                double v;
+                if (meta_loaded_ && meta_residual_) {
+                    // residual 模式 (2026-06-03 治"只买 YES"): 模型输出 = 对 baseline(b_mid 市价)的【增量
+                    //   delta】(可负)。fair = clip(fv[baseline_idx] + delta, 0, 1)。edge = fair − 市价 = delta
+                    //   天然两边 (delta>0 买 YES / <0 买 NO / ≈0 无 edge 不交易), 根治 regress+Platt 全局
+                    //   把准确低预测往 0.5 抬 → fair 系统性 > 市价 → 只买 YES 的退化。baseline 从特征向量
+                    //   自取 (训练 y=label−feats[F_MID] 与推理同源 b_mid, BR-1 零漂移); delta 非概率, 不套 Platt。
+                    const double base = (meta_baseline_idx_ < fv.values.size())
+                                            ? static_cast<double>(fv.values[meta_baseline_idx_])
+                                            : 0.5;
+                    v = std::clamp(base + static_cast<double>(data[0]), 0.0, 1.0);
+                } else {
+                    // 回归: 单值 = p_yes。clamp [0,1] → Platt 校准 (治过度自信) → 最终 p_yes。
+                    v = std::clamp(static_cast<double>(data[0]), 0.0, 1.0);
+                    if (meta_loaded_ && (meta_platt_a_ != 1.0 || meta_platt_b_ != 0.0)) {
+                        // calibrated_p = sigmoid(a·logit(v)+b); v clamp 防 logit 发散。
+                        const double vc = std::clamp(v, 1e-4, 1.0 - 1e-4);
+                        const double logit = std::log(vc / (1.0 - vc));
+                        v = 1.0 / (1.0 + std::exp(-(meta_platt_a_ * logit + meta_platt_b_)));
+                    }
                 }
                 p.probs[0] = v;
                 if (outcome_count_ >= 2) p.probs[1] = 1.0 - v;
@@ -240,6 +263,8 @@ private:
     double meta_ci_hw_{0.0};
     double meta_platt_a_{1.0};  // Platt 校准斜率 (logit 空间); 1.0 = 不变
     double meta_platt_b_{0.0};  // Platt 校准截距; 0.0 = 不变
+    bool meta_residual_{false};        // residual 模式: 模型输出 delta, fair=clip(b_mid+delta) (治"只买YES")
+    std::size_t meta_baseline_idx_{8}; // residual baseline 特征索引 (F_MID/b_mid=8; 训练=推理同源)
     CalibMethod meta_calib_{CalibMethod::None};
 };
 

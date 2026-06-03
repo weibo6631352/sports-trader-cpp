@@ -73,7 +73,11 @@ def build_xy(rows, mode, moneyline_only=True, drop_decided=True):
             continue
         label = float(r["label"])
         if mode == "residual":
-            y.append(label - num(r.get("fair_value"), 0.5))
+            # residual baseline = b_mid (F_MID 市场 mid), 不是 fair_value(score-prior)。
+            #   语义: 模型预测【对市价的增量 delta = label − 市价】。fair = 市价 + delta, edge = delta
+            #   天然两边 (治 regress+Platt 把准确低预测往 0.5 抬 → fair>市价 → 只买 YES 的退化)。
+            #   推理侧 C++ 同取 fv[F_MID] 作 baseline (BR-1 零漂移)。drop_decided 已保证 b_mid∈[0.03,0.97]。
+            y.append(label - feats[F_MID])
         else:
             y.append(label)
         X.append(feats)
@@ -119,8 +123,15 @@ def group_cv_meta(X, y, groups, mode, params):
     比时序末 20% holdout 稳健 (避免单类 holdout → AUC=None; 避免按行 split 记忆场次 → 假 AUC≈1)。"""
     import numpy as np
     n_groups = len(set(groups.tolist()))
-    if mode != "regress" or n_groups < 6 or len(np.unique(y)) < 2:
-        # 场数太少/单类/residual → 退回简单 holdout compute_meta (末 20%)。
+    # 重构二值 label + baseline (residual: y=delta=label−b_mid → label=y+b_mid; regress: y=label)。
+    if mode == "residual":
+        baseline_all = X[:, F_MID].astype("float64")
+        label_bin = np.round(np.clip(y.astype("float64") + baseline_all, 0.0, 1.0))
+    else:
+        baseline_all = None
+        label_bin = y.astype("float64")
+    if n_groups < 6 or len(np.unique(label_bin)) < 2:
+        # 场数太少/单类 → 退回简单 holdout compute_meta (末 20%)。
         nh = max(20, int(len(X) * 0.2))
         if len(X) - nh < 20:
             return None
@@ -132,52 +143,62 @@ def group_cv_meta(X, y, groups, mode, params):
     from sklearn.model_selection import GroupKFold
     from sklearn.metrics import roc_auc_score
     n_splits = min(5, n_groups)
-    preds = np.full(len(y), np.nan)
+    preds = np.full(len(y), np.nan)  # OOF: regress=raw p_yes; residual=delta (可负, 不 clip)
     for tr, te in GroupKFold(n_splits).split(X, y, groups):
-        if len(np.unique(y[tr])) < 2:
+        if mode == "regress" and len(np.unique(y[tr])) < 2:
             continue
         m = lgb.LGBMRegressor(**params)
         m.fit(X[tr], y[tr])
-        preds[te] = np.clip(m.predict(X[te]), 0.0, 1.0)
+        preds[te] = m.predict(X[te])
     ok = ~np.isnan(preds)
-    if ok.sum() < 20 or len(np.unique(y[ok])) < 2:
+    if ok.sum() < 20 or len(np.unique(label_bin[ok])) < 2:
         return None
-    p_raw = preds[ok]
-    yt = y[ok].astype("float64")
-    # Platt 校准: 在 OOF 预测的 logit 上拟合 logistic → calibrated_p = sigmoid(a·logit(p)+b)。
-    #   治模型【过度自信】(原始输出 0.996/0.0005 极端) → 重映射成准确概率。C++ 推理侧同样应用 (a,b)。
-    #   这是【优化模型本身】(让概率准), 非缩减使用场景 — 准了就全场景可用, 不需门挡。
-    eps = 1e-4
-    pc = np.clip(p_raw, eps, 1.0 - eps)
-    logit = np.log(pc / (1.0 - pc)).reshape(-1, 1)
-    platt_a, platt_b = 1.0, 0.0
+    yt = label_bin[ok].astype("float64")
+    if mode == "residual":
+        # residual: fair = clip(b_mid + delta)。不套 Platt (delta 非概率, Platt 是 logit 空间概率拉伸)。
+        #   指标在【最终 fair vs 重构二值 label】上算 (诚实评估模型实际驱动的 fair 准不准)。
+        fair = np.clip(baseline_all[ok] + preds[ok], 0.0, 1.0)
+        platt_a, platt_b = 1.0, 0.0
+        calib_method = "residual_groupcv"
+    else:
+        # Platt 校准: OOF 预测 logit 上拟合 logistic → calibrated_p = sigmoid(a·logit(p)+b)。
+        #   治【过度自信】(原始 0.996/0.0005 极端) → 准概率。C++ 推理侧同样应用 (a,b)。优化模型, 非缩减场景。
+        p_raw = np.clip(preds[ok], 0.0, 1.0)
+        eps = 1e-4
+        pc = np.clip(p_raw, eps, 1.0 - eps)
+        logit = np.log(pc / (1.0 - pc)).reshape(-1, 1)
+        platt_a, platt_b = 1.0, 0.0
+        try:
+            from sklearn.linear_model import LogisticRegression
+            lr = LogisticRegression(C=1e6, solver="lbfgs", max_iter=1000)
+            lr.fit(logit, yt.astype(int))
+            platt_a = float(lr.coef_[0][0])
+            platt_b = float(lr.intercept_[0])
+        except Exception:
+            pass
+        fair = 1.0 / (1.0 + np.exp(-(platt_a * np.log(pc / (1.0 - pc)) + platt_b)))
+        calib_method = "platt_groupcv"
+    brier = float(np.mean((fair - yt) ** 2))
     try:
-        from sklearn.linear_model import LogisticRegression
-        lr = LogisticRegression(C=1e6, solver="lbfgs", max_iter=1000)
-        lr.fit(logit, yt.astype(int))
-        platt_a = float(lr.coef_[0][0])
-        platt_b = float(lr.intercept_[0])
-    except Exception:
-        pass
-    # 校准后预测 (评指标用校准值, 更真实)
-    p = 1.0 / (1.0 + np.exp(-(platt_a * np.log(pc / (1.0 - pc)) + platt_b)))
-    brier = float(np.mean((p - yt) ** 2))
-    try:
-        auc = float(roc_auc_score(yt, p))  # 单调校准不改 AUC, 但稳健起见用校准值
+        auc = float(roc_auc_score(yt, fair))
     except Exception:
         auc = None
-    ci_hw = _ece(p, yt)
+    ci_hw = _ece(fair, yt)
     conf = (2.0 * (auc - 0.5)) if auc is not None else (1.0 - 2.0 * brier)
     conf = max(0.0, min(1.0, conf))
     leak_suspect = (auc is None) or (auc >= 0.9) or (brier < 0.05)
     if leak_suspect:
         conf = 0.0
-    return {"calibrated": bool(conf > 0.0), "confidence": round(conf, 4),
-            "ci_halfwidth": round(ci_hw, 4), "calib_method": "platt_groupcv",
+    meta = {"calibrated": bool(conf > 0.0), "confidence": round(conf, 4),
+            "ci_halfwidth": round(ci_hw, 4), "calib_method": calib_method,
             "platt_a": round(platt_a, 5), "platt_b": round(platt_b, 5),
             "auc": (round(auc, 4) if auc is not None else None),
             "brier": round(brier, 4), "n_holdout": int(ok.sum()), "n_groups": int(n_groups),
             "leak_suspect": bool(leak_suspect)}
+    if mode == "residual":
+        meta["mode"] = "residual"
+        meta["baseline_idx"] = int(F_MID)
+    return meta
 
 
 def compute_meta(model_eval, Xh, yh, mode):
@@ -223,14 +244,31 @@ def compute_meta(model_eval, Xh, yh, mode):
                 "auc": (round(auc, 4) if auc is not None else None),
                 "brier": round(brier, 4), "n_holdout": int(len(Xh)),
                 "leak_suspect": bool(leak_suspect)}
-    # residual: y=delta, 连续 → 用 RMSE 兜置信
-    resid = np.abs(yh.astype("float64") - pred)
-    rmse = float(np.sqrt(np.mean(resid ** 2))) if len(resid) else 0.5
-    ci_hw = float(np.quantile(resid, 0.8)) if len(resid) else 0.5
-    conf = max(0.0, min(1.0, 1.0 - 2.0 * rmse))
+    # residual (holdout 兜底, 场数<6 才走此路): y=delta=label−b_mid; fair=clip(b_mid+delta)。
+    #   指标在【fair vs 重构二值 label】上算 (与 group_cv_meta 同口径), 含泄漏守卫 → C++ 校准门可用。
+    base = Xh[:, F_MID].astype("float64")
+    fair = np.clip(base + pred, 0.0, 1.0)
+    ytrue = np.round(np.clip(yh.astype("float64") + base, 0.0, 1.0))
+    brier = float(np.mean((fair - ytrue) ** 2)) if len(fair) else 0.25
+    auc = None
+    try:
+        from sklearn.metrics import roc_auc_score
+        if len(np.unique(ytrue)) >= 2:
+            auc = float(roc_auc_score(ytrue, fair))
+    except Exception:
+        auc = None
+    ci_hw = _ece(fair, ytrue)
+    conf = (2.0 * (auc - 0.5)) if auc is not None else (1.0 - 2.0 * brier)
+    conf = max(0.0, min(1.0, conf))
+    leak_suspect = (auc is None) or (auc >= 0.9) or (brier < 0.05)
+    if leak_suspect:
+        conf = 0.0
     return {"calibrated": bool(conf > 0.0), "confidence": round(conf, 4),
-            "ci_halfwidth": round(ci_hw, 4), "calib_method": "conformal",
-            "rmse": round(rmse, 4), "n_holdout": int(len(Xh))}
+            "ci_halfwidth": round(ci_hw, 4), "calib_method": "residual_holdout",
+            "auc": (round(auc, 4) if auc is not None else None),
+            "brier": round(brier, 4), "n_holdout": int(len(Xh)),
+            "mode": "residual", "baseline_idx": int(F_MID),
+            "leak_suspect": bool(leak_suspect)}
 
 
 def write_sidecar(out_path, meta):
@@ -295,7 +333,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--features", help="training jsonl (含 f0..f84 + label)")
     ap.add_argument("--out", default="model_fair_value.onnx")
-    ap.add_argument("--mode", choices=["regress", "residual"], default="regress")
+    # 默认 residual (2026-06-03 治"只买 YES"): 模型预测对市价 b_mid 的增量 delta, fair=市价+delta,
+    #   edge=delta 天然两边。regress 仅供回退/对照 (Platt 全局拉伸破坏选边 → 系统性只买 YES)。
+    ap.add_argument("--mode", choices=["regress", "residual"], default="residual")
     ap.add_argument("--selftest", action="store_true", help="合成数据生成 fixture ONNX")
     a = ap.parse_args()
     if a.selftest:
