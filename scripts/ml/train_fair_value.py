@@ -142,7 +142,11 @@ def compute_meta(model_eval, Xh, yh, mode):
         #   真实可交易判别 alpha 极少 AUC>0.72。AUC≥0.9 → 不可信 → conf=0 → C++ 校准门挡其驱动交易
         #   (避免退化/泄漏模型 weight=1.0 满驱动产垃圾 fair → 垃圾成交; 实测 auto-train 训出 AUC1.0
         #   退化模型对所有市场预测 ~0.0005 → 假 86% edge)。
-        leak_suspect = (auc is not None and auc >= 0.9)
+        # 不可信判定 (任一 → conf=0, 不驱动交易):
+        #   ① AUC 无法算 (单类 holdout) → 判别力不可评估 → 不信。
+        #   ② AUC≥0.9 → 泄漏/平凡态 (真实体育 alpha 极少 >0.72)。
+        #   ③ brier<0.05 (近完美) → 泄漏/退化红旗 (真实体育 brier 0.15-0.25)。
+        leak_suspect = (auc is None) or (auc >= 0.9) or (brier < 0.05)
         if leak_suspect:
             conf = 0.0
         return {"calibrated": bool(conf > 0.0), "confidence": round(conf, 4),
