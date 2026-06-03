@@ -824,6 +824,17 @@ function EventAccordion(props: { group: EventGroup }) {
           />
         </Show>
 
+        {/* 在打但无 Goalserve 实时比分: 明示"数据源未覆盖", 不留空白让人以为漏了 (老板 2026-06-03)。
+            场景: 小众女子板球/ITF 等 Goalserve 列赛程但不直播逐球 (status=Not covered Live) → 无比分。 */}
+        <Show when={!score() && gameSummary()?.gameState === 'inplay'}>
+          <span
+            style={{ color: '#c8924a', 'font-size': '10px', 'margin-left': '2px' }}
+            title="该比赛 Goalserve 不提供实时比分 (小众赛事/女子赛/未直播覆盖); 非系统遗漏"
+          >
+            ⚠ 无实时比分·数据源未覆盖
+          </span>
+        </Show>
+
         {/* 开赛时间 (始终显示; 老板「看几点开赛」) */}
         <Show when={kickoffLabel()}>
           <span class="v8-evt-kickoff" title="开赛时间">🕒 {kickoffLabel()}</span>
