@@ -74,13 +74,15 @@ struct FairResult {
         }
     }
 
-    // 4. ML-blend (仅非 derivative + 仅【无 in-play 信号时】= src 仍 kMarketDevig = 纯 pre-game)。
-    //   2026-06-03 治本 (in-play 套利转向): 原 ML weight=1.0 会【覆盖】sharp/score_prior — pregame ML
-    //   (薄 alpha, 只买 YES) 盖掉真正的 in-play 套利信号 (sharp 随进球跳变 = 真 edge)。实测 in-play 路径
-    //   每 tick 触发 2772/24000 但全被 ML 盖成 ml_blend → sharp_inplay 决策 0 个。改: 有 in-play 信号
-    //   (sharp/score_prior, src≠market_devig) 时 ML 绝不动, in-play 权威; ML 只驱动纯 pre-game (无比分)。
-    //   src→kMlBlend 让 ML 实际驱动可观测 (原无此枚举值 → ML 的 fair 日志显 market_devig 误导根因定位)。
-    if (in.ml_p_yes.has_value() && in.ml_blend_weight > 0.0 && src == FairSrc::kMarketDevig) {
+    // 4. ML-blend (仅非 derivative)。2026-06-03 v2 (老板「模型自主, 识别应对各种情况」):
+    //   原 (v1) 限 src==kMarketDevig (仅纯 pre-game) — 为保 in-play sharp 权威、防薄 alpha pregame ML
+    //   覆盖 sharp 套利。现老板要模型【跨所有情况自主】→ 去掉该限制, ML 在 pre-game + in-play 全场景 blend。
+    //   安全不靠这层 gate, 靠【上游校准门】(paper_loop: 仅 calibrated && conf>0 的真模型才传 ml_p_yes;
+    //   退化/未训模型 conf=0 → ml_p 为空 → 此处不动 → 回落 sharp/score-prior)。即: 模型【可信时】自主驱动
+    //   (含 in-play, 取代 sharp), 【不可信时】自动让位 sharp。随 auto-train 变好, 模型接管越多 = 真自主。
+    //   blend 与 sharp/score-prior 加权 (weight<1 时 sharp 仍贡献; weight=1 时模型全驱动)。
+    //   src→kMlBlend 让 ML 实际驱动可观测。
+    if (in.ml_p_yes.has_value() && in.ml_blend_weight > 0.0) {
         const double ml = *in.ml_p_yes;
         if (std::isfinite(ml) && ml > 0.0 && ml < 1.0) {
             const double w = std::clamp(in.ml_blend_weight, 0.0, 1.0);

@@ -627,6 +627,12 @@ BuildResult PaperDaemon::Build() {
     //   仍受【校准门】保护 (仅 calibrated && conf>0 的模型驱动; 退化/泄漏模型 conf=0 不驱动)。
     //   真钱 live 路径不复用此 (PaperLoop 天然 paper)。生产可经此闸+校准联合控制。
     cfg_.paper_loop.ml_drive_enabled = true;
+    // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
+    //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
+    //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关
+    //   (--enable-fills 的 paper daemon 本就是调模型用; 不开 fills 则本就无成交, 此闸无意义)。
+    //   仍保: devig_ok + sizing Step5(净正) + RM cap 链 (仓位上限) + R-11 纯 VirtualFill 不碰真钱。
+    cfg_.paper_loop.paper_no_edge_gates = cfg_.enable_paper_fills;
     paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
                                                      token_map_, cfg_.paper_loop);

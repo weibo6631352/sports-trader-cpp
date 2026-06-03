@@ -98,20 +98,22 @@ SizingOutput SizingCalculator::compute(risk::RiskConfig const& cfg, SizingInput 
     //   无其他消费点 (edge 走 edge_ci_lower, Kelly 分子走 net_ci_edge, 分母走 c), 故不再取局部 p。
     double const c = in.price;  // 入场价 (CI gating fee 门 + Kelly 分母均用 c)
 
-    // ------------------------------------------------------------------
-    // Step 1: CI gating 门 (老韩 §2.1 裁定 — 与 RM check_signal_ L564 同源)
-    //   edge_ci_lower <= edge_ci_lower_floor → NO_EDGE
-    // ------------------------------------------------------------------
+    // no_edge_gate (老板 2026-06-03「把门都去了, 虚拟盘调模型」): 跳过 Step1/2/3 edge 门。
+    //   仅 paper daemon 显式置 true; 实盘/RM/契约测试 = false 不受影响。
     double const floor = cfg.edge_ci_lower_floor;
-    if (in.edge_ci_lower <= floor) {
-        return make_fail(in, CappedBy::NO_EDGE);
-    }
+    if (!in.no_edge_gate) {
+        // ------------------------------------------------------------------
+        // Step 1: CI gating 门 (老韩 §2.1 裁定 — 与 RM check_signal_ L564 同源)
+        //   edge_ci_lower <= edge_ci_lower_floor → NO_EDGE
+        // ------------------------------------------------------------------
+        if (in.edge_ci_lower <= floor) {
+            return make_fail(in, CappedBy::NO_EDGE);
+        }
 
-    // ------------------------------------------------------------------
-    // Step 2: 门 A (slippage, 老韩 §2.3 — RM check_signal_ L571 同源)
-    //   edge_ci_lower(bps) < slippage_bps → NO_EDGE
-    // ------------------------------------------------------------------
-    {
+        // ------------------------------------------------------------------
+        // Step 2: 门 A (slippage, 老韩 §2.3 — RM check_signal_ L571 同源)
+        //   edge_ci_lower(bps) < slippage_bps → NO_EDGE
+        // ------------------------------------------------------------------
         double const edge_ci_lower_bps = in.edge_ci_lower * 10'000.0;
         if (edge_ci_lower_bps < in.slippage_bps) {
             return make_fail(in, CappedBy::NO_EDGE);
@@ -126,9 +128,10 @@ SizingOutput SizingCalculator::compute(risk::RiskConfig const& cfg, SizingInput 
     //   net_ci_edge <= floor → NO_EDGE
     // ------------------------------------------------------------------
     double const net_ci_edge = compute_net_ci_edge(in.edge_ci_lower, c, in.fee_rate_coef);
-    if (net_ci_edge <= floor) {
+    if (!in.no_edge_gate && net_ci_edge <= floor) {
         return make_fail(in, CappedBy::NO_EDGE);
     }
+    // no_edge_gate 仍要 net_ci_edge>0 (否则 Step5 kelly<=0 → NO_EDGE): 不在保证亏 (edge<fee) 的盘交易。
 
     // ------------------------------------------------------------------
     // Step 4: FILL_RATE_FLOOR advisory (门 C, 老韩联签 §1 FILL_RATE_FLOOR=0.50)

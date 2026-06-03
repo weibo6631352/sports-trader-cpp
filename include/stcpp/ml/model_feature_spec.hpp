@@ -50,7 +50,7 @@ namespace stcpp::ml {
 // ---------------------------------------------------------------------------
 // kSpecVersion — 抽取契约版本. 列顺序 / 数量变更 → bump (ADR + 训练侧 retrain).
 // ---------------------------------------------------------------------------
-inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.13";
+inline constexpr std::string_view kSpecVersion = "ml-feature-spec-v0.14";
 //   v0.1 → v0.2 (2026-05-31, 老雷): append 6 列 (18..23) — inplay bet365 de-vig 赔率 +
 //     5 live_stats 差 (危险进攻/射正/控球/红牌/角球)。源全在 FeatureStoreGameRow。
 //   v0.2 → v0.3 (2026-05-31, 老雷): append 30 列 (24..53) — 双边时序微结构 (YES 24-33 +
@@ -236,9 +236,16 @@ enum class MlFeature : std::uint8_t {
     g_live_stats_age_sec = 111,      // live_stats(commentaries 30s 轮询) 数据龄秒
     g_mapping_age_sec = 112,         // condition↔event 匹配(EventMatcher 5s 刷新) 数据龄秒
     g_catalog_age_sec = 113,         // catalog 元数据(gamma 发现 300s 重建) 数据龄秒
+
+    // ---- v0.14 append (网球细粒度比分; 老板 2026-06-03「比分定价模型传入的正确吗」) ----
+    //   旧: g_score_diff(#0) 网球只填【盘数差】(0/±1/±2, 粗) → 模型对 75% 占盘口的网球比分几乎瞎。
+    //   补: 局数差/总局数 (FeatureStoreGameRow.score_home/away_games; ParseTennisScore 已解析全场总局)。
+    //   非网球 games=0 → 这两列=0 (与 pre-game 一致, 模型自学网球语义)。append-only, 列序锁。
+    g_score_games_diff = 114,        // 总局数差 home−away (网球细粒度领先; 非网球 0)
+    g_score_games_total = 115,       // 总局数和 home+away (网球比赛进程代理; 非网球 0)
 };
 
-inline constexpr std::size_t kMlFeatureCount = 114;
+inline constexpr std::size_t kMlFeatureCount = 116;
 
 [[nodiscard]] constexpr std::string_view to_string(MlFeature f) noexcept {
     switch (f) {
@@ -380,6 +387,8 @@ inline constexpr std::size_t kMlFeatureCount = 114;
         case MlFeature::g_live_stats_age_sec: return "g_live_stats_age_sec";
         case MlFeature::g_mapping_age_sec: return "g_mapping_age_sec";
         case MlFeature::g_catalog_age_sec: return "g_catalog_age_sec";
+        case MlFeature::g_score_games_diff: return "g_score_games_diff";
+        case MlFeature::g_score_games_total: return "g_score_games_total";
     }
     return "unknown";
 }
@@ -432,6 +441,9 @@ inline void extract_from_game_row(const stcpp::data::feature_store::FeatureStore
 
     put(MlFeature::g_score_diff, static_cast<float>(g.score_home_total - g.score_away_total));
     put(MlFeature::g_score_total, static_cast<float>(g.score_home_total + g.score_away_total));
+    // v0.14: 网球细粒度比分 (局数; 非网球 score_*_games=0 → 这两列 0)。老板「比分传入正确」。
+    put(MlFeature::g_score_games_diff, static_cast<float>(g.score_home_games - g.score_away_games));
+    put(MlFeature::g_score_games_total, static_cast<float>(g.score_home_games + g.score_away_games));
     put(MlFeature::g_period, static_cast<float>(g.period));
     put(MlFeature::g_elapsed_sec, (g.elapsed_sec >= 0) ? static_cast<float>(g.elapsed_sec) : kNaNf);
     put(MlFeature::g_time_status, static_cast<float>(static_cast<std::uint8_t>(g.time_status)));
@@ -748,9 +760,11 @@ inline void fill_categorical_context(const stcpp::sizing::QuoteFeatures& q,
 }
 
 // ---- 编译期列序锁 ----
-static_assert(kMlFeatureCount == 114, "MlFeature count must be 114 (v0.13; append 4 新鲜度列)");
-static_assert(static_cast<std::size_t>(MlFeature::g_catalog_age_sec) == kMlFeatureCount - 1,
-              "最后一列必须是 g_catalog_age_sec (append-only 约束; v0.13 末列)");
+static_assert(kMlFeatureCount == 116, "MlFeature count must be 116 (v0.14; append 网球 games 2 列)");
+static_assert(static_cast<std::size_t>(MlFeature::g_score_games_total) == kMlFeatureCount - 1,
+              "最后一列必须是 g_score_games_total (append-only 约束; v0.14 末列)");
+static_assert(static_cast<std::size_t>(MlFeature::g_catalog_age_sec) == 113,
+              "g_catalog_age_sec 必须恒为 113 (v0.13 末列, v0.14 append 后不得移位)");
 static_assert(static_cast<std::size_t>(MlFeature::g_resolution_age_sec) == 110,
               "v0.13 新鲜度列从 110 起 (append-only)");
 static_assert(static_cast<std::size_t>(MlFeature::x_inplay_market_absdev) == 103,

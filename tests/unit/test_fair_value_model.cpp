@@ -116,10 +116,13 @@ TEST(ModelFeatureSpec, ColumnOrderLock) {
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_mp_accel), 109u);  // v0.12 末列
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_yes_no_bid_sum), 104u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::x_arb_free_edge), 105u);
-    // v0.13 新末列 = g_catalog_age_sec (113; 4 个慢源新鲜度 110-113).
+    // v0.13 慢源新鲜度 110-113 (g_catalog_age_sec=113 不再是末列, v0.14 后被 games 列推后).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_resolution_age_sec), 110u);
-    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_catalog_age_sec), kMlFeatureCount - 1);
-    EXPECT_EQ(kMlFeatureCount, 114u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_catalog_age_sec), 113u);
+    // v0.14 新末列 = g_score_games_total (115; 网球 games 2 列 114-115).
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_score_games_diff), 114u);
+    EXPECT_EQ(static_cast<std::size_t>(MlFeature::g_score_games_total), kMlFeatureCount - 1);
+    EXPECT_EQ(kMlFeatureCount, 116u);
     // 双边对称 + v0.5 延迟特征抽查 (双边 book 龄独立).
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::b_ofi), 30u);
     EXPECT_EQ(static_cast<std::size_t>(MlFeature::no_b_ofi), 40u);

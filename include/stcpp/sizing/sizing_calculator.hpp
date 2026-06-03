@@ -92,6 +92,12 @@ struct SizingInput {
 
     // v1 留接口 (不乘, 参见小梁 §1.3 v2 候选)
     double model_conf{1.0};  // ∈ [0,1], v1 不乘 λ (接口预留)
+
+    // no_edge_gate (老板 2026-06-03「把门都去了, 虚拟盘专门调模型」): 跳过 Step1/2/3 edge 门
+    //   (CI floor / slippage / fee 门), 让模型/sharp 任意正净 edge 都成交 → 全反馈供调模型。
+    //   仍保 Step0 输入校验 (NaN/边界) + Step5 (kelly>0 = net_ci_edge>0, 不在保证亏的 edge 上交易)。
+    //   默认 false: 实盘/RM/契约测试路径不受影响 (仅 paper daemon 显式置 true)。
+    bool no_edge_gate{false};
 };
 
 // ---------------------------------------------------------------------------

@@ -948,9 +948,12 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   sharp_inplay = bet365 de-vig 共识【点估计】, 二项抽样惩罚 (n_eff≈6 → ~0.22) 对它是错误模型,
     //   砍杀全部 in-play 套利 → 永不成交。sharp 源改纯 net-EV (raw_edge, margin 交下游 slippage/fee/net_ev 门);
     //   score-prior/ML 源仍走二项 CI (确为噪声估计)。fair_src_dbg 即 ResolveFair 真实选源。
+    // paper_no_edge_gates (老板「把门都去了, 调模型」): 全源走 raw_edge (不扣二项噪声), margin=0。
+    //   否则只 sharp 源走 raw, 其余 (score-prior/ML) 仍二项 CI。
     const bool fair_is_sharp = (fair_src_dbg == pricing::FairSrc::kSharpInplay);
     const double edge_ci_lower = stcpp::strategy::ResolveEdgeCiLower(
-        fair_is_sharp, p_fair_selected, p_devig_selected, n_eff_dyn, cfg_.z_90, cfg_.sharp_edge_margin);
+        fair_is_sharp || cfg_.paper_no_edge_gates, p_fair_selected, p_devig_selected, n_eff_dyn, cfg_.z_90,
+        cfg_.paper_no_edge_gates ? 0.0 : cfg_.sharp_edge_margin);
 
     const double mark_price = exec_mark;  // 真实 mark (被选边 hub)
 
@@ -982,6 +985,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     sz_in.slippage_bps = 8.0;  // 保守固定 (M1)
     sz_in.buy_yes = is_yes;
     sz_in.fee_rate_coef = FeeCoefFor(condition_id);  // R-fee-2: per-market 真值 (gamma feeSchedule.rate)
+    sz_in.no_edge_gate = cfg_.paper_no_edge_gates;   // 老板「把门都去了」: 跳过 sizing edge 门 (Step1/2/3)
 
     // c4 (P0-2 隐患#1 闭合, 老韩 review): sizing 必须看 RM 同源的真实累计 exposure。否则第 2 笔起
     //   sizing 以为满 headroom (硬编码 0) 而 RM 按真实 exposure 拒 → surprise-reject + sizing 无感分叉
@@ -1036,9 +1040,15 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const double fee_pu = sz_in.fee_rate_coef * exec_ask * (1.0 - exec_ask);
     const double slippage_frac = sz_in.slippage_bps / 10'000.0;
     const double net_ev_edge = std::abs(p_fair_selected - p_devig_selected);
-    const bool net_ev_ok = !cfg_.net_ev_gate || (net_ev_edge >= (2.0 * fee_pu + slippage_frac));
+    // 老板「把门都去了」: 调模型模式跳过 net-EV 门。
+    const bool net_ev_ok =
+        cfg_.paper_no_edge_gates || !cfg_.net_ev_gate || (net_ev_edge >= (2.0 * fee_pu + slippage_frac));
+    // target 放行条件: 常规要 has_real_fair (Goalserve 比分); 调模型模式放行模型驱动 fair (pre-game ml_blend)
+    //   + sharp, 让模型在其训练域 (pre-game) 也能自主交易。sizing_out.valid 已保证 net edge>0 (真有 edge 才动),
+    //   src=market_devig (无 fair) 时 edge=0 → sizing 无效 → 不交易, 故放行安全 (不会在无 fair 盘乱开)。
+    const bool tradeable_fair = has_real_fair || cfg_.paper_no_edge_gates;
     const double target_mag =
-        (has_real_fair && sizing_out.valid && devig_ok && net_ev_ok) ? sizing_out.suggested_notional : 0.0;
+        (tradeable_fair && sizing_out.valid && devig_ok && net_ev_ok) ? sizing_out.suggested_notional : 0.0;
     const double target_signed = is_yes ? target_mag : -target_mag;
 
     // [decision-diag] 定位 sharp→可下单侧 脱节 (老板「为什么有 sharp 的源进不了可下单侧」)。

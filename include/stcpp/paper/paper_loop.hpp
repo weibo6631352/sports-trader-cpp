@@ -257,6 +257,16 @@ struct PaperLoopConfig {
     //   默认 0 = 纯 net-EV (经济 margin 由下游 slippage/fee/net_ev_ok 门承担)。>0 = 额外保守安全带。
     double sharp_edge_margin{0.0};
 
+    // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
+    //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
+    //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)
+    //     ② net_ev_ok 强制 true (不要 2×fee+slippage 门)
+    //     ③ sizing 跳过 Step1/2/3 edge 门 (sz_in.no_edge_gate)
+    //     ④ target 放行模型驱动 fair (ml_blend) + sharp, 不再硬要 has_real_fair (让模型在其训练域 pre-game 也能交易)
+    //   仍保: devig_ok (市场锚有效) + sizing Step5 (net 正, 不在保证亏的盘交易) + RM cap 链 (仓位上限非 edge 门)。
+    //   默认 false (实盘/契约测试不变); paper daemon 显式置 true。R-11: 纯 paper VirtualFill, 不碰真钱。
+    bool paper_no_edge_gates{false};
+
     // ML 驱动决策 blend 权重 (老板 2026-05-31 放开 paper 期 ML-R2)。p_fair = (1−w)·baseline + w·ml_p_yes。
     //   0 = 纯 baseline (默认; 现有契约测试不变)。仅当真 ONNX 模型 (kind==Onnx) 加载才生效, stub 永不驱动。
     //   PaperLoop 天然 paper (不花真钱); live 路径不复用此 blend。daemon 生产可设 1.0 (有模型时 ML 全驱动)。

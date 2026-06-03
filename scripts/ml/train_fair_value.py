@@ -18,7 +18,7 @@ import argparse
 import json
 import sys
 
-N_TOTAL = 114  # = kMlFeatureCount (ml-feature-spec v0.13); +4 慢源新鲜度 110-113
+N_TOTAL = 116  # = kMlFeatureCount (ml-feature-spec v0.14); +网球 games 2 列 114-115
 # 类别上下文列 (82-85): categorical 非 ordinal — 必须声明 categorical_feature, 否则 LightGBM
 #   把 league=104(CBA) 当 "比 34(NBA) 大" 的有序数值 (错)。整数码仅作 level; unknown=-1 独立 level。
 #   82 cat_asset_class / 83 cat_sport(家族) / 84 cat_market_type / 85 cat_league(Polymarket sport.id)
@@ -40,7 +40,7 @@ def load_jsonl(path):
 F_MID = 8
 F_CAT_MARKET_TYPE = 84
 # game/score 列 (extract_from_game_row → 0-7, 18-23): 比分差/时钟/动量等; 全≈0 = pre-game (无比分)。
-F_GAME_COLS = list(range(0, 8)) + list(range(18, 24))
+F_GAME_COLS = list(range(0, 8)) + list(range(18, 24)) + [114, 115]  # +v0.14 网球 games (pre-game 0)
 
 
 def _is_pregame(feats):
@@ -365,21 +365,16 @@ def main():
     #   moneyline 场太少 → 放 moneyline (全类型, 早期数据稀时优先有足够场做按场 CV)。
     def ng(g):
         return len(set(g.tolist()))
-    # 默认: moneyline + 滤已决 + pre-game (训练总体 = ML 推理总体 pre-game)。
-    X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=True, pregame_only=True)
-    print(f"[train] 筛选: 标注{st['labeled']} 滤类型{st['drop_type']} 滤已决{st['drop_decided']} 滤in-play{st['drop_inplay']} → 留{st['kept']} 行/{ng(g)}场",
+    # 老板 2026-06-03「模型自主, 识别应对各种情况」: 默认【全场景 + 全市场类型】训练 —
+    #   in-play + pre-game, moneyline/totals/spreads/outright/... 全收。residual 模式 (预测 delta over
+    #   b_mid, 市场锚有界) + cat_market_type(#84) + game 列 (score/games/period/time) 让模型自区分情况。
+    #   serve 侧已同步放开 (fair_resolve ML 跨所有情况 blend, 校准门守) → 训练总体 = 推理总体, 无 train/serve 失配。
+    #   仅保 drop_decided (防市场已决出的平凡预测泄漏, AUC=1.0 源 — 这是反泄漏不是缩范围)。
+    X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=True, pregame_only=False)
+    print(f"[train] 全场景筛选: 标注{st['labeled']} 滤已决{st['drop_decided']} → 留{st['kept']} 行/{ng(g)}场",
           file=sys.stderr)
-    # 阈值 40 (2026-06-03 治 residual delta 偏置): moneyline 场 < 40 → 放 moneyline 限制用全类型。
-    #   根因: moneyline 场太少 → residual 目标均值 mean(label−b_mid) 采样噪声大 → delta 系统性正 →
-    #   仍只买 YES。需 ≥40 moneyline 场 (够稳) 才训 moneyline-only; 否则全类型 (cat_market_type 特征区分)。
-    if len(X) < 200 or ng(g) < 40:  # 行少 或 moneyline 场不足 → 放 moneyline 限制用全类型 (保 pre-game + 滤已决)
-        X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=True, pregame_only=True)
-        print(f"[train] fallback 放 moneyline → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
-    # pre-game 场太少 → 放 pre-game 限制 (含 in-play; 退而求其次, 模型靠 game 列自区分 pre/in-play)。
-    if len(X) < 200 or ng(g) < 12:
-        X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=True, pregame_only=False)
-        print(f"[train] fallback 放 pre-game (含 in-play) → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
-    if len(X) < 50 or ng(g) < 6:  # 仍不足 → 放滤已决 (最低保障; 靠泄漏守卫+sanity 兜底)
+    # 数据极稀 → 放 drop_decided (最低保障; 靠泄漏守卫+sanity 兜底)。
+    if len(X) < 50 or ng(g) < 6:
         X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=False, pregame_only=False)
         print(f"[train] fallback 放全部筛选 → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
     if len(X) < 50:

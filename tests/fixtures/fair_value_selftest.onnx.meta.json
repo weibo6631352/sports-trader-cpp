@@ -1,1 +1,1 @@
-{"calibrated": true, "confidence": 0.1469, "ci_halfwidth": 0.1359, "calib_method": "conformal", "auc": 0.5734, "brier": 0.2506, "n_holdout": 100, "leak_suspect": false}
+{"calibrated": true, "confidence": 0.1765, "ci_halfwidth": 0.1042, "calib_method": "conformal", "auc": 0.5882, "brier": 0.2535, "n_holdout": 100, "leak_suspect": false}

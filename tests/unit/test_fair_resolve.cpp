@@ -75,17 +75,18 @@ TEST(ResolveFair, DefaultMarketDevigWhenNoRealFair) {
 }
 
 // 5. ML 不覆盖 in-play sharp (2026-06-03 in-play 套利转向): 有 in-play 信号 (sharp/score_prior)
-//    时 ML 绝不动, in-play 权威。原 weight=1.0 会让 pregame ML(薄 alpha)盖掉真 in-play 套利信号。
-TEST(ResolveFair, MlDoesNotOverrideInplaySharp) {
+//    2026-06-03 v2 (老板「模型自主, 识别应对各种情况」): ML 现在跨所有情况 blend, 含 in-play sharp 之上。
+//    安全靠上游校准门 (仅 calibrated 真模型才传 ml_p), 不靠这层挡。模型可信时自主驱动 (含 in-play)。
+TEST(ResolveFair, MlBlendsWithInplaySharp) {
     FairInputs in;
     in.p_market_devig = 0.2;
-    in.sharp_yes = 0.5;          // sharp 定 fair = 0.5 (in-play 套利信号, 权威)
+    in.sharp_yes = 0.5;          // sharp base = 0.5
     in.has_real_fair = true;
-    in.ml_p_yes = 0.8;           // pregame ML 想盖成 0.8 — in-play 时不许
+    in.ml_p_yes = 0.8;           // 校准模型 (上游已过门) → 与 sharp blend
     in.ml_blend_weight = 0.5;
     const auto r = ResolveFair(in);
-    EXPECT_EQ(r.src, FairSrc::kSharpInplay);  // in-play 权威, ML 被挡
-    EXPECT_DOUBLE_EQ(r.p_fair, 0.5);          // = sharp (ML 不动)
+    EXPECT_EQ(r.src, FairSrc::kMlBlend);      // v2: ML 在 in-play 也驱动
+    EXPECT_DOUBLE_EQ(r.p_fair, 0.65);         // (1-0.5)*0.5 + 0.5*0.8
 }
 
 // 6. ML 无效值 (越界/NaN) → 不 blend, 保 base。

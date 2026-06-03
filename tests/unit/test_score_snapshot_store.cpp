@@ -110,7 +110,7 @@ static const std::string kTennisInplaySample = R"JSON({
         "id": "134300001",
         "league_id": "7890",
         "period": "Set 2",
-        "score": "1:0",
+        "score": "6:3,1:0",
         "minute": "",
         "seconds": "",
         "time_status": "1"
