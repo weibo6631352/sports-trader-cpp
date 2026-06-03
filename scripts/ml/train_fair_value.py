@@ -36,29 +36,48 @@ def load_jsonl(path):
     return rows
 
 
-def build_xy(rows, mode):
+# 数据质量列索引 (model_feature_spec.hpp): b_mid=8 (YES 市场价), cat_market_type=84 (moneyline=0)。
+F_MID = 8
+F_CAT_MARKET_TYPE = 84
+
+
+def build_xy(rows, mode, moneyline_only=True, drop_decided=True):
+    """X,y 构建 + 数据质量筛选 (2026-06-03 治本, 防退化/泄漏模型):
+      moneyline_only: 只留 cat_market_type==0 → 平衡类别 (outright 多 NO 失衡 + 不可建模)。
+      drop_decided: 滤市场价 (b_mid) 已极端 ≈0/1 的行 = 市场已决出, 平凡"预测"已定结果 (AUC=1.0 泄漏源)。
+    返回 (X, y, stats)。"""
     import numpy as np
+
+    def num(v, d=0.0):
+        return d if v is None else float(v)
+
     X, y = [], []
+    n_label, n_drop_type, n_drop_decided = 0, 0, 0
     for r in rows:
         if not r.get("label_valid", 0):
             continue  # 只用已结算
-        # 优先 f0..f84 (完整向量列序锁; 含类别上下文); 否则跳过 (需完整 X)
         if "f0" not in r:
             continue
-        # 缺失/NaN → 0: recorder 把 NaN 写成 JSON null (合法 JSON; C++ << 的 "nan" 非法), 读回为 None。
-        #   None/NaN 统一填 0 (LightGBM 原生 missing 也可; 这里保守填 0, 与 C++ 推理一致性留训练侧定)。
-        def num(v, d=0.0):
-            return d if v is None else float(v)
         feats = [num(r.get(f"f{i}")) for i in range(N_TOTAL)]
         feats = [0.0 if (x != x) else x for x in feats]
+        n_label += 1
+        # 治本①: 只留 moneyline (平衡 + 可建模; outright/prop 多 NO 失衡且无单场 score 模型)。
+        if moneyline_only and abs(feats[F_CAT_MARKET_TYPE]) > 1e-6:
+            n_drop_type += 1
+            continue
+        # 治本②: 滤泄漏行 — 市场价已极端 (已决出 → 平凡预测已定结果, AUC 泄漏源)。
+        mid = feats[F_MID]
+        if drop_decided and (mid < 0.03 or mid > 0.97):
+            n_drop_decided += 1
+            continue
         label = float(r["label"])
         if mode == "residual":
-            base = num(r.get("fair_value"), 0.5)
-            y.append(label - base)
+            y.append(label - num(r.get("fair_value"), 0.5))
         else:
             y.append(label)
         X.append(feats)
-    return np.asarray(X, dtype="float32"), np.asarray(y, dtype="float32")
+    stats = {"labeled": n_label, "drop_type": n_drop_type, "drop_decided": n_drop_decided, "kept": len(X)}
+    return np.asarray(X, dtype="float32"), np.asarray(y, dtype="float32"), stats
 
 
 def export_onnx(model, n_features, out_path):
@@ -219,10 +238,19 @@ def main():
     if not a.features:
         print("需 --features <training.jsonl> 或 --selftest", file=sys.stderr)
         sys.exit(2)
-    X, y = build_xy(load_jsonl(a.features), a.mode)
+    rows = load_jsonl(a.features)
+    # 治本筛选 (moneyline + 滤已决出泄漏行); fallback: 筛后样本不足 → 逐步放松 (先放 moneyline 再放 decided)。
+    X, y, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=True)
+    print(f"[train] 筛选: 标注{st['labeled']} 滤类型{st['drop_type']} 滤已决{st['drop_decided']} → 留{st['kept']}",
+          file=sys.stderr)
+    if len(X) < 200:  # moneyline+滤已决 太少 → 放 moneyline 限制 (保滤已决, 防泄漏)
+        X, y, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=True)
+        print(f"[train] fallback 放 moneyline 限制 → 留{st['kept']}", file=sys.stderr)
+    if len(X) < 50:  # 仍不足 → 放滤已决 (最低保障能训, 靠泄漏守卫 + sanity 门兜底)
+        X, y, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=False)
+        print(f"[train] fallback 放全部筛选 → 留{st['kept']}", file=sys.stderr)
     if len(X) < 50:
-        print(f"样本不足 ({len(X)}<50), 训练跳过 — 等真数据攒够 (book-only walk-forward 先验证)",
-              file=sys.stderr)
+        print(f"样本不足 ({len(X)}<50), 训练跳过 — 等真数据攒够", file=sys.stderr)
         sys.exit(1)
     print(f"[train] {len(X)} 样本 × {X.shape[1]} 列, mode={a.mode}")
     train(X, y, a.out, a.mode)
