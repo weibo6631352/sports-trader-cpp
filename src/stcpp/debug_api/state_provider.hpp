@@ -356,6 +356,12 @@ struct EventScore {
     std::string pts_home;   // 当前局得分 "0"/"15"/"30"/"40"/"AD" (网球; 非网球留空)
     std::string pts_away;
     int serving{-1};        // 发球方 0=home / 1=away / -1=未知 (网球)
+    // v3 事件套利地基 (E1, 2026-06-03 老板「不做市/事件套利」+ 双架构评审):
+    //   gs_state_code = Goalserve inplay info.state 5位【瞬时事件状态码】(11003=进球/11008=点球/
+    //   11006=红牌/网球 11118=破发点/11119=赢局…)。已抓进 GameScoreRecord.gs_state_code, 此前
+    //   ToEventScore 未透传 → 下游零消费。E1 纯透传【事实字段】(wire 层只产事实, 不产信号语义;
+    //   状态码→事件类型→套利触发 的语义/逻辑归下游 小田/小梁, 非此层)。空=无。G-FREEZE-W 只增。
+    std::string gs_state_code;
 };
 
 // ============================================================

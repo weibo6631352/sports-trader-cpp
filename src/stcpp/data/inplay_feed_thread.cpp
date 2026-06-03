@@ -711,6 +711,9 @@ debug_api::EventScore InplayFeedThread::ToEventScore(const data::adapter::GameSc
         es.set_summary = std::move(ss);
     }
     es.source = "goalserve";
+    // v3 事件套利地基 (E1): 透传 Goalserve info.state 5位瞬时事件码 (已抓进 rec 但此前未传到
+    //   EventScore → 下游零消费)。纯事实字段透传, 不产信号语义 (语义/触发归下游)。空=无。
+    es.gs_state_code = rec.gs_state_code.value_or("");
 
     // sport 字符串
     es.sport = std::string(goalserve::SportInplaySlug(sport));

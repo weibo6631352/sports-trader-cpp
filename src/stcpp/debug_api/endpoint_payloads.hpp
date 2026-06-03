@@ -434,6 +434,8 @@ inline std::string scores(const StateProvider& sp, std::int64_t as_of_ns = -1) {
         b += json::str(s.pts_away);
         b += ",\"serving\":";          // 发球方 0=home/1=away/-1
         b += json::i64(s.serving);
+        b += ",\"gs_state_code\":";    // v3 事件套利: Goalserve 瞬时事件码 (11003进球等; 空=无); 观测事件流
+        b += json::str(s.gs_state_code);
         b += ",\"sharp_home_fair\":";  // in-play bet365 de-vig home 胜率 (-1=无 odds); 看板套利信号锚
         b += json::num(s.inplay_bet365_home_fair);
         b += ",\"sharp_away_fair\":";
