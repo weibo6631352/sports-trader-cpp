@@ -59,6 +59,11 @@ inline constexpr int kTennisSetsToWin = 2;             // bo3 (默认)
     // 当前盘之后还要打几整盘 (bo3): 0-0 → 期望 ~1.5 整盘; 已打 ≥1 盘 → ~0.5。
     const double add_sets = (sets_done == 0) ? 1.5 : 0.5;
     const double e_total = static_cast<double>(games_total) + games_to_finish_cur + add_sets * kTennisMuSet;
+    // 单位守卫 (2026-06-03 修 fair=0.999 垃圾): 本模型按【整场总局数】定价 (e_total~12-40 局)。网球 totals
+    //   另有【总盘数】(line~2.5)/【分盘局数】(line~9.5) 等子盘口 — 拿它们的 line 比整场局数 e_total → NormalCdf
+    //   饱和成 0/1 → fair=0.999 垃圾单。line 与 e_total 量级严重不符 → 非整场总局盘, 不定价 (市场 de-vig 兜底)。
+    if (line < 0.5 * e_total || line > 2.0 * e_total)
+        return out;
     // 方差: 盘数不确定 (是否多打一盘, Bernoulli var≈0.25 × μ²) + 剩余各盘局数方差。
     const double n_rem_sets = add_sets + 1.0;
     const double var = 0.25 * kTennisMuSet * kTennisMuSet + n_rem_sets * kTennisSigSet * kTennisSigSet;

@@ -110,3 +110,15 @@ TEST(TennisTotals, MonotoneSanityManyLines) {
         prev = r.p_yes;
     }
 }
+
+// 单位守卫 (2026-06-03 修 fair=0.999 垃圾): 整场总局模型只价整场总局盘。"Total Sets O/U 2.5" (盘数 line)
+//   / 分盘局数 (line~9.5) 量级与 e_total(~22 局) 不符 → invalid (市场兜底), 不产 0.999 垃圾。
+TEST(TennisTotals, RejectsNonGamesTotalLine_SetsAndPerSet) {
+    auto g = MakeTennis(1, 0, 6, 4);  // 1-0, 已打 10 局, e_total≈22
+    // "Total Sets O/U 2.5" — line 是盘数, 远低于整场总局 → 不定价 (旧 bug: p_over=1.0 → fair=0.999)。
+    EXPECT_FALSE(pricing::TennisTotalsFairYes(g, 2.5, true).valid);
+    // 分盘局数 O/U 9.5 — 也远低于整场总局 → 不定价 (整场模型不适用分盘)。
+    EXPECT_FALSE(pricing::TennisTotalsFairYes(g, 9.5, true).valid);
+    // 真整场总局 O/U 22.5 — 量级吻合 → 正常定价。
+    EXPECT_TRUE(pricing::TennisTotalsFairYes(g, 22.5, true).valid);
+}

@@ -90,3 +90,12 @@ TEST(EsportsSpreads, FailClosedTerminalAndEarly) {
     EXPECT_FALSE(pricing::EsportsSpreadsFairYes(MakeEsports(2, 1), -1.5).valid);
     EXPECT_FALSE(pricing::EsportsSpreadsFairYes(MakeEsports(0, 0), -1.5).valid);
 }
+
+// 单位守卫 (2026-06-03 修 fair=0.999 垃圾): 总图模型只价总图盘。"Total Kills O/U 27.5" (击杀 line)
+//   远超最大总图 (BO7 也 ≤7) → invalid (市场兜底), 不产 0.999 垃圾 (旧 bug: 无 leaf 超过 → under=0.999)。
+TEST(EsportsTotals, RejectsNonMapsTotalLine_Kills) {
+    auto g = MakeEsports(1, 0);
+    EXPECT_FALSE(pricing::EsportsTotalsFairYes(g, 27.5, true).valid);   // 击杀 line → 不定价
+    EXPECT_FALSE(pricing::EsportsTotalsFairYes(g, 15.5, false).valid);  // 回合/击杀 line → 不定价
+    EXPECT_TRUE(pricing::EsportsTotalsFairYes(g, 2.5, true).valid);     // 真总图 line → 正常
+}

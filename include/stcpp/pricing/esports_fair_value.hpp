@@ -52,6 +52,12 @@ inline void EnumMaps(int a, int b, int to_win, double p, double acc, std::vector
     DerivativeFairResult out;
     if (!std::isfinite(line))
         return out;
+    // 单位守卫 (2026-06-03 修 fair=0.999 垃圾): 本模型按【总图数】定价 (BO_n 总图 ≤ 2k−1)。电竞 totals
+    //   另有【总击杀】(line~27.5)/【总回合】等子盘口 — 拿击杀 line 比总图 (2-3) → 无 leaf 超过 → p_over=0
+    //   → under 边 fair=0.999 垃圾单。line 远超最大可能总图 (BO7 也 ≤7) → 非总图盘, 不定价 (市场 de-vig 兜底)。
+    //   阈值 9 取在「最大总图(BO7=7)」与「击杀/回合总数(≥15)」之间的安全间隔, 不误伤边界图数 line。
+    if (line > 9.0)
+        return out;
     const int maps_y = g.score_home_total;
     const int maps_o = g.score_away_total;
     const int maps_done = maps_y + maps_o;
