@@ -252,6 +252,11 @@ struct PaperLoopConfig {
     double goal_freshness_force_thr{0.6};
     double ofi_force_thr{0.0};  // |OFI|≥此值 (默认 0 = 进球新鲜即触发; force_cross 仅绕死区, 仍受限价门约束)
 
+    // sharp 路径 edge margin (老板 2026-06-03「sharp 纯 net-EV 门」, 见 edge_ci.hpp ResolveEdgeCiLower)。
+    //   sharp_inplay 源 (bet365 de-vig 共识点估计) 不扣二项抽样噪声 → edge_ci_lower = raw_edge − 此 margin。
+    //   默认 0 = 纯 net-EV (经济 margin 由下游 slippage/fee/net_ev_ok 门承担)。>0 = 额外保守安全带。
+    double sharp_edge_margin{0.0};
+
     // ML 驱动决策 blend 权重 (老板 2026-05-31 放开 paper 期 ML-R2)。p_fair = (1−w)·baseline + w·ml_p_yes。
     //   0 = 纯 baseline (默认; 现有契约测试不变)。仅当真 ONNX 模型 (kind==Onnx) 加载才生效, stub 永不驱动。
     //   PaperLoop 天然 paper (不花真钱); live 路径不复用此 blend。daemon 生产可设 1.0 (有模型时 ML 全驱动)。

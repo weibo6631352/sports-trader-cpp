@@ -476,7 +476,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // [score-flow diag] 地基可观测 (2026-06-03 老板「先打地基才知有什么事件」): 逐环计数 score→game_row
     //   链掉点 (定位 in-play 事件为何不流入决策); 每 3000 次 emit 一行 (cov-diag 同风格, 临时诊断)。
     static std::atomic<long long> sf_calls{0}, sf_mapped{0}, sf_scorefound{0}, sf_inplay{0},
-        sf_stale{0}, sf_realfair{0};
+        sf_stale{0}, sf_realfair{0}, sf_sharp{0};
     const long long sf_n = sf_calls.fetch_add(1, std::memory_order_relaxed) + 1;
     if (tick_inputs_.score != nullptr && tick_inputs_.event_map != nullptr) {
         const ConditionEventMap& map = *tick_inputs_.event_map;
@@ -533,6 +533,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                             es.inplay_bet365_away_fair);
                         game_row.inplay_bet365_home_fair = inplay_yc.yes_fair;  // YES 边胜率
                         game_row.inplay_bet365_away_fair = inplay_yc.opp_fair;  // 对手边胜率
+                        // [score-flow diag] 匹配上的 in-play 场是否有 sharp (bet365 de-vig 真值)?
+                        //   定位脱节: has_real_fair 场里多少真带 sharp (vs 只 score_prior)。
+                        if (es.inplay_bet365_home_fair >= 0.0)
+                            sf_sharp.fetch_add(1, std::memory_order_relaxed);
                         game_row.inplay_bet365_draw_fair = es.inplay_bet365_draw_fair;  // 平局 (与边无关)
                         // bm_slots: 跨庄家赔率注入 (getodds 经 inplay-mapping join 到 inplay_match_id,
                         //   RefreshOdds 注入)。按 yes_is_home + map_is_draw 定向 de-vig 折二元 →
@@ -560,9 +564,9 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (sf_n % 3000 == 0) {
         std::fprintf(stderr,
                      "[score-flow] calls=%lld mapped=%lld score_found=%lld in-play=%lld stale=%lld "
-                     "→ has_real_fair=%lld (链路掉点定位 in-play 事件流)\n",
+                     "→ has_real_fair=%lld 其中有sharp=%lld (链路掉点 + sharp 脱节定位)\n",
                      sf_n, sf_mapped.load(), sf_scorefound.load(), sf_inplay.load(), sf_stale.load(),
-                     sf_realfair.load());
+                     sf_realfair.load(), sf_sharp.load());
     }
 
     // has_real_fair = true 当 time_status != NotStarted (真实 in-play Goalserve 比分已填).
@@ -701,6 +705,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 有真实 in-play game_row 时: 用 score-prior 置信加权混合到 de-vig 市场锚上,
     //   置信随时钟从 kBasePriorConfidence 升到 kMaxPriorConfidence; 终态 conf=1.0.
     double p_fair = p_market_devig;  // 最终由 ResolveFair 一处解析 (优先级集中在 fair_resolve.hpp; R-2 老周/老郭)
+    pricing::FairSrc fair_src_dbg = pricing::FairSrc::kMarketDevig;  // [diag] 捕获 ResolveFair 真实选源
     // fair-input 标量: has_real_fair 块内填; sharp<0=无效 → ResolveFair 回落 score-prior。derivative 在下面 optional。
     double fair_sharp_yes = -1.0;
     double fair_score_prior = 0.5;
@@ -859,6 +864,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
         const auto fr = pricing::ResolveFair(fin);
         p_fair = fr.p_fair;
+        fair_src_dbg = fr.src;  // [diag] 真实选源 (sharp_inplay / score_prior_blend / ...)
         // [fair-sanity] 防垃圾门 (2026-06-03): fair 与市场极端背离 (>kMaxPlausibleEdge) = 大概率
         //   orientation 翻转 / EventMatcher 误配 / 模型饱和 (实测 inplay sharp de-vig clamp 0.9995 被
         //   贴到便宜 underdog YES → 假 86% edge → 垃圾成交)。真实体育 edge 极少 >0.45 → fail-closed
@@ -938,8 +944,13 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const double p_devig_selected = is_yes ? p_market_devig : (1.0 - p_market_devig);
     // 注 (老板「别草率守门」2026-05-31): cross_spread(vig) 不接 CI 硬收紧 — 只作模型输入(进 QuoteFeatures),
     //   让模型/策略学 vig 影响, 是否用它调门留给「守门审计 + 小梁/老韩」定。这里维持原 n_eff (不加守门)。
-    const double edge_ci_lower =
-        ComputeEdgeCiLower(p_fair_selected, p_devig_selected, n_eff_dyn, cfg_.z_90);
+    // 源感知 edge 下界 (老板 2026-06-03「sharp 路径纯 net-EV 门」, 见 edge_ci.hpp ResolveEdgeCiLower):
+    //   sharp_inplay = bet365 de-vig 共识【点估计】, 二项抽样惩罚 (n_eff≈6 → ~0.22) 对它是错误模型,
+    //   砍杀全部 in-play 套利 → 永不成交。sharp 源改纯 net-EV (raw_edge, margin 交下游 slippage/fee/net_ev 门);
+    //   score-prior/ML 源仍走二项 CI (确为噪声估计)。fair_src_dbg 即 ResolveFair 真实选源。
+    const bool fair_is_sharp = (fair_src_dbg == pricing::FairSrc::kSharpInplay);
+    const double edge_ci_lower = stcpp::strategy::ResolveEdgeCiLower(
+        fair_is_sharp, p_fair_selected, p_devig_selected, n_eff_dyn, cfg_.z_90, cfg_.sharp_edge_margin);
 
     const double mark_price = exec_mark;  // 真实 mark (被选边 hub)
 
@@ -1029,6 +1040,22 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const double target_mag =
         (has_real_fair && sizing_out.valid && devig_ok && net_ev_ok) ? sizing_out.suggested_notional : 0.0;
     const double target_signed = is_yes ? target_mag : -target_mag;
+
+    // [decision-diag] 定位 sharp→可下单侧 脱节 (老板「为什么有 sharp 的源进不了可下单侧」)。
+    //   仅 has_real_fair + 有 sharp 的盘, 节流打印: 真实选源/p_fair/devig/sharp_in/edge_ci/sizing 是否有效/
+    //   net_ev 是否过/target。一眼看出 sharp 是否被选为 fair, 以及 valid/edge 在哪一步被砍成 0。
+    if (has_real_fair && fair_sharp_yes >= 0.0 && fair_sharp_yes <= 1.0) {
+        static std::atomic<int> dd_n{0};
+        const int k = dd_n.fetch_add(1, std::memory_order_relaxed);
+        if (k < 80)
+            std::fprintf(stderr,
+                         "[decision-diag] %s src=%s pfair=%.3f devig=%.3f sharp_in=%.3f side=%s "
+                         "edge_ci=%.4f szvalid=%d net_ci=%.4f net_ev_ok=%d target=%.1f map_draw=%d\n",
+                         condition_id.substr(0, 12).c_str(), pricing::to_string(fair_src_dbg), p_fair,
+                         p_market_devig, fair_sharp_yes, is_yes ? "YES" : "NO", edge_ci_lower,
+                         sizing_out.valid ? 1 : 0, sizing_out.net_ci_edge, net_ev_ok ? 1 : 0, target_mag,
+                         map_is_draw ? 1 : 0);
+    }
 
     // ---- Step 4: QuoteSnapshotHub::Publish ---------------------------------
     // 无论下单与否, 发布 quote 快照 (供 /api/v1/quote 端点显示真实估值)
