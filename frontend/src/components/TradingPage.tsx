@@ -1007,8 +1007,15 @@ export function TradingPage() {
     let groups = allGroups();
     const f = filter();
     if (f === 'live') {
-      // gamma live=true (正在比赛) 优先; 兼容 Goalserve 比分 inplay/halftime
-      groups = groups.filter((g) => g.live || g.score?.status === 'inplay' || g.score?.status === 'halftime');
+      // 只显示【真正在打】= Goalserve 比分 status=inplay/halftime (有真比分)。2026-06-03 老板:
+      //   "很多看不到比分" —— 因 PM 的 g.live 过度包含 (把未开赛的 ITF/cricket 也标 live, Goalserve
+      //   实为 Not Started, 无比分)。不再用 g.live, 改要求确认有 in-play 比分 → 进行中只剩真在打+有比分。
+      //   game_state=inplay 兜底 (matched 但 score 状态未及更新时)。看全部用「全部」过滤。
+      groups = groups.filter((g) => {
+        if (g.score?.status === 'inplay' || g.score?.status === 'halftime') return true;
+        // 兜底: 后端 game_state 明确 inplay (有比分链路但 score chip 未及刷新)
+        return g.conditions.some((c) => c.summary?.gameState === 'inplay');
+      });
     } else if (f === 'position') {
       // 只看持仓: 过滤到【有持仓的盘口】本身 (不只是有持仓的 event); 组内无持仓的盘也隐藏 (老板 2026-06-03)。
       groups = groups
