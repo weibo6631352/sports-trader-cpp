@@ -122,12 +122,17 @@ namespace settlement_detail {
     r.accepting_order_ts_ns = ParseIso8601ToUnixNs(ExtractString(json, "accepting_order_timestamp"));
     r.end_date_ts_ns = ParseIso8601ToUnixNs(ExtractString(json, "end_date_iso"));
 
-    // 扫 tokens[]: 找 winner=true 的 token, 按其 outcome 定 settlement_value (YES-canonical)。
-    //   tokens 是对象数组 [{"token_id":"..","outcome":"Yes","price":..,"winner":true}, ...]。
-    //   逐 token 子对象切片: 找 "winner":true, 取同对象的 outcome + token_id。
+    // 扫 tokens[]: 找 winner=true 的 token, 按其【索引】定 settlement_value (YES-canonical)。
+    //   tokens 是对象数组 [{"token_id":"..","outcome":"..","winner":..}, ...]; 顺序 = outcome 顺序,
+    //   token[0] = YES-canonical 边 (与 feature 捕获的 YES 同源: gamma outcomes[0])。
+    //   ⚠ 真 bug 修 (2026-06-03): 旧版用 outcome[0]=='y' 定值 — 假设结果是 "Yes"/"No"。但 moneyline
+    //     结果是队名("Lakers"/"Celtics")、totals 是 "Over"/"Under" → 首字母非 'y' → 永远判 0(NO)!
+    //     致 moneyline/totals 标签【系统性全 NO】→ 模型无正例 → 退化全预测 NO → 垃圾。改用 token 索引:
+    //     winner 是 token[0] → 1 (YES赢), token[1] → 0 (NO赢)。prop(Yes/No)结果不变 (tokens[0]="Yes")。
     std::size_t tpos = json.find("\"tokens\"");
     if (tpos != std::string_view::npos) {
         std::size_t scan = tpos;
+        int token_index = 0;  // tokens[] 内序号 (0 = YES-canonical)
         // 逐个 token 对象 (depth-1 的 {...}) 扫描
         while (scan < json.size()) {
             std::size_t obj_start = json.find('{', scan);
@@ -140,15 +145,12 @@ namespace settlement_detail {
             std::size_t arr_end = json.find(']', tpos);
             if (arr_end != std::string_view::npos && obj_start > arr_end) break;
             if (ExtractBool(tok, "winner", false)) {
-                const std::string_view outcome = ExtractString(tok, "outcome");
                 r.winner_token_id = std::string(ExtractString(tok, "token_id"));
-                // YES-canonical: outcome "Yes" → 1, "No" → 0 (大小写不敏感首字母)
-                if (!outcome.empty()) {
-                    const char c = static_cast<char>(std::tolower(static_cast<unsigned char>(outcome[0])));
-                    r.settlement_value = (c == 'y') ? std::int8_t{1} : std::int8_t{0};
-                }
+                // YES-canonical: 赢家是第 0 个 token → YES 赢 → 1; 否则(第 1 个)→ NO 赢 → 0。
+                r.settlement_value = (token_index == 0) ? std::int8_t{1} : std::int8_t{0};
                 break;
             }
+            ++token_index;
             scan = obj_end + 1;
         }
     }

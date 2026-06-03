@@ -56,6 +56,32 @@ TEST(SettlementRecord, SR03_SettledMarket_YesWon) {
     EXPECT_EQ(r.winner_token_id, "555");
 }
 
+// SR-03b (真 bug 回归, 2026-06-03): moneyline 结果是队名 / totals 是 Over-Under, 非 "Yes/No"。
+//   旧版 outcome[0]=='y' → 队名/Over/Under 首字母非 y → 永远判 0 → moneyline/totals 标签全 NO (致模型退化)。
+//   修后用 token 索引: 赢家是 token[0](YES-canonical) → 1。
+TEST(SettlementRecord, SR03b_MoneylineTeamNames_YesCanonicalByIndex) {
+    // moneyline: token[0]=主队(YES-canonical) 赢 → 应判 1 (旧版误判 0)
+    const std::string ml_home_won =
+        R"({"condition_id":"0xml1","closed":true,"accepting_orders":false,)"
+        R"("tokens":[{"token_id":"a1","outcome":"Los Angeles Lakers","winner":true},)"
+        R"({"token_id":"a2","outcome":"Boston Celtics","winner":false}]})";
+    EXPECT_EQ(ParseMarketJson(ml_home_won, "0xml1").settlement_value, 1)
+        << "队名 token[0] 赢 → YES-canonical=1 (旧版误判 0)";
+    // moneyline: token[1] 赢 → 0
+    const std::string ml_away_won =
+        R"({"condition_id":"0xml2","closed":true,"accepting_orders":false,)"
+        R"("tokens":[{"token_id":"b1","outcome":"Los Angeles Lakers","winner":false},)"
+        R"({"token_id":"b2","outcome":"Boston Celtics","winner":true}]})";
+    EXPECT_EQ(ParseMarketJson(ml_away_won, "0xml2").settlement_value, 0);
+    // totals: Over(token[0]) 赢 → 1 (旧版 "Over" 首字母 o → 误判 0)
+    const std::string totals_over =
+        R"({"condition_id":"0xtot","closed":true,"accepting_orders":false,)"
+        R"("tokens":[{"token_id":"c1","outcome":"Over 220.5","winner":true},)"
+        R"({"token_id":"c2","outcome":"Under 220.5","winner":false}]})";
+    EXPECT_EQ(ParseMarketJson(totals_over, "0xtot").settlement_value, 1)
+        << "Over=token[0] 赢 → 1 (旧版误判 0)";
+}
+
 // SR-04: resolution_status Resolving — 停接单但未链上结算 (accepting=false, closed=false)
 TEST(SettlementRecord, SR04_Resolving) {
     const std::string j = R"({"condition_id":"0xdef","closed":false,"accepting_orders":false,"tokens":[]})";
