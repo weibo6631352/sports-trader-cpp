@@ -74,6 +74,27 @@ public:
     return IsYesNoOutcome(s) || IsOverUnder(s);
 }
 
+// 分局/分盘/分节盘检测 (2026-06-04 老板「第一局 第二局这样的盘」): group_item_title 含【分段词】→
+//   per-segment 盘 (Game N Winner / Set N / 1st Half …)。这类盘【绝不能套全场赛果 sharp fair】(映射是
+//   per-event + de-vig 选全场盘 → 把全场 fair 套到"第N局赢家" = 错价乱单, 比丢了更糟)。
+//   正确交易需 per-segment bet365 赔率匹配 (A-step-2): PM "Set N Winner" → bet365 "Home/Away (Nth Set)"。
+//   未建前: 不进 matching → 不套全场 fair → 不错价 (仍留 token_map/catalog, 不丢)。全场盘 (gi 空 /
+//   Money Line / Match·Series Winner / 队名) 不命中 → 正常全场匹配交易。
+[[nodiscard]] bool IsSegmentMarket(const std::string& gi) noexcept {
+    if (gi.empty()) return false;
+    std::string g = gi;
+    std::transform(g.begin(), g.end(), g.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    static const char* const kSeg[] = {
+        "game ",  "set ",   "map ",     "frame ", "1st ", "2nd ",   "3rd ",
+        "4th ",   "5th ",   "6th ",     "7th ",   "half", "quarter", "period",
+        "inning", "1h",     "2h",       "leg ",
+    };
+    for (const char* s : kSeg)
+        if (g.find(s) != std::string::npos) return true;
+    return false;
+}
+
 // 从 event title "Team A vs. Team B" 拆两队名 (分隔符 " vs. " / " vs " / " v. "). 失败返 false.
 [[nodiscard]] bool SplitVsTitle(const std::string& title, std::string& a, std::string& b) {
     for (const char* sep : {" vs. ", " vs ", " v. ", " VS "}) {
@@ -192,8 +213,10 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
                     }
                 }
             }
+            // 分局盘 (Game N / Set N / 1st Half …) 不进 matching: 它们不能套全场 fair (会错价乱单);
+            //   per-segment bet365 赔率匹配建好前 (A-step-2), 不匹配 = 不套全场 fair = 不错价 (留 catalog 不丢)。
             if (!team0.empty() && !team1.empty() && !IsNonOpponentOutcome(team0) &&
-                !IsNonOpponentOutcome(team1)) {
+                !IsNonOpponentOutcome(team1) && !IsSegmentMarket(dm.group_item_title)) {
                 EventMatchInput mi_in;
                 mi_in.team0 = team0;
                 mi_in.team1 = team1;
