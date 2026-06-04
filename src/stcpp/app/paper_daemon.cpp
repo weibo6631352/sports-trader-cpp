@@ -708,6 +708,12 @@ BuildResult PaperDaemon::Build() {
     paper_rm_cfg.bankroll_usdc =
         domain::MicroPUSD::from_pusd(cfg_.paper_loop.bankroll_usdc);  // c2b: 与 cap 对称
     paper_rm_cfg.edge_ci_lower_floor = -1.0;                          // M1 放宽 CI 门
+    // 2026-06-04 老板「不要卡他, 让他亏, 看亏的极限」: 解除日损熔断 (-3%软/-5%硬) + consec-loss halt,
+    //   让 -EV sharp 策略在 paper 放开亏到 bankroll 见底 (INSUFFICIENT_BANKROLL 才是自然底)。纯观测, R-11 不碰真钱。
+    paper_rm_cfg.daily_loss_soft_pct = 100.0;   // 实际不触发
+    paper_rm_cfg.daily_loss_hard_pct = 100.0;
+    paper_rm_cfg.daily_loss_halt_usdc = domain::MicroPUSD::from_pusd(1.0e9);  // 巨值 → 永不触发
+    paper_rm_cfg.consec_loss_halt_count = 1'000'000'000;                       // 连亏门关
     // 盘口准入已移到定价层 (paper_loop: 非 moneyline 无专属定价 → fail-closed); RM enable_xxx 已删。
     paper_rm_ = std::make_unique<risk::RiskGateway>(paper_rm_cfg, paper_audit_emitter_);
 
@@ -737,7 +743,16 @@ BuildResult PaperDaemon::Build() {
     //   2026-06-03 老板「改成 sharp 驱动」: 关 ML 驱动。回测证实模型对高效 PM 无 edge (de-bias→0成交=
     //   过度自信); 真 edge 在 sharp (bet365 inplay de-vig 领先 PM, ≥5% 偏离结算站 sharp 77%/+0.20单)。
     //   关 ML → fair 落 sharp_inplay (有 sharp 时) → 下游 sharp +EV 门只放高置信 sharp 信号。
+    // 2026-06-04 老板「一根筋调整模型, 再试试能不能救活他」: 切回【模型驱动】(calibrated AUC0.78 模型掌舵)。
+    //   ml_drive=true 让 ONNX 模型直接定 fair (不再 sharp 规则); 配 sharp_only_gate=false 不让 sharp 门掐死模型单。
+    //   纯观测实验: 模型 AUC0.78 是预测【结果】, edge 在赢【PM 价】—— 让数字定论(beat PM 还是只是同意 PM)。
+    // 2026-06-04 数字定论 → 切【纪律盈利配置】(目标: 赔率 edge 盈利 +$200):
+    //   模型驱动实验跑完, 结果 -$429 (实现 -$287 + 手续费 -$107)。AUC0.78 是预测【结果】不是赢【PM 价】——
+    //   模型只是同意高效 PM, 无 edge, 还因无门狂下单烧 $107 费。「救活模型」已被数字证伪 (PM 太高效)。
+    //   → 关模型驱动; 开 sharp 门 (仅匹配正确的 bet365 inplay de-vig sharp 信号产单, 现匹配已严格认姓修好)。
+    //   要回模型驱动: ml_drive_enabled=true + sharp_only_gate=false (恢复实验配置)。
     cfg_.paper_loop.ml_drive_enabled = false;
+    cfg_.sharp_only_gate = true;  // 盈利配置: 只交易高置信 sharp 信号 (~8/170 盘有 sharp 源)
     // sharp 驱动门 (2026-06-04): 生产 daemon 默认开 (cfg_.sharp_only_gate 默认 true) —— 仅高置信
     //   sharp(bet365) 信号产单, 其余源回退市场 (edge 归零)。管线机制测试可置 false (走 score-prior 出成交)。
     cfg_.paper_loop.sharp_only_gate = cfg_.sharp_only_gate;
@@ -749,7 +764,12 @@ BuildResult PaperDaemon::Build() {
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关
     //   (--enable-fills 的 paper daemon 本就是调模型用; 不开 fills 则本就无成交, 此闸无意义)。
     //   仍保: devig_ok + sizing Step5(净正) + RM cap 链 (仓位上限) + R-11 纯 VirtualFill 不碰真钱。
-    cfg_.paper_loop.paper_no_edge_gates = cfg_.enable_paper_fills;
+    // 2026-06-04 切盈利配置: 重新【开所有 edge 边门】(edge_ci/slippage/fee/net_ev)。这是 $107 手续费
+    //   烧光的根治 —— 实验期 paper_no_edge_gates=true 去掉 fee/net_ev 门 → 任意微 edge 都成交 + 付费。
+    //   开门后: 只有【净 EV 过手续费】的 sharp 信号才下单 (fee=shares×rate×p×(1-p), 体育 rate 0.03),
+    //   交易频率骤降 → 费烧停 → 只留真正 +EV 单。若开门 + sharp 门后仍亏, 即赔率 edge 线已死的铁证。
+    //   要回实验「调模型」全开模式: paper_no_edge_gates = cfg_.enable_paper_fills。
+    cfg_.paper_loop.paper_no_edge_gates = false;
     paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
                                                      token_map_, cfg_.paper_loop);
@@ -824,10 +844,12 @@ BuildResult PaperDaemon::Build() {
 
     // [2026-06-04 老板「多少价格买的/卖出的都不知道」] /api/v1/fills 成交流水回调:
     //   paper_loop RecentFills() (定长 ring, mutex 保护) → FillView (前端流水面板)。
-    real_provider_->set_fills_fn([this]() -> std::vector<debug_api::FillView> {
+    real_provider_->set_fills_fn([this](const std::string& market) -> std::vector<debug_api::FillView> {
         std::vector<debug_api::FillView> out;
         if (!paper_loop_) return out;
-        const auto rows = paper_loop_->RecentFills(200);
+        // market 非空 → 按盘取(盯盘按盘看); 空 → 全局最近 (AnalyticsPage 全量日志)。
+        const auto rows = market.empty() ? paper_loop_->RecentFills(200)
+                                         : paper_loop_->RecentFills(30, market);
         out.reserve(rows.size());
         for (const auto& r : rows) {
             debug_api::FillView v;
