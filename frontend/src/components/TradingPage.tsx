@@ -572,12 +572,14 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
 // 展开区子块 C: 持仓 + 拒单
 // ============================================================
 
-function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; perMarketPnl: number | null }) {
+function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; perMarketPnl: number | null; conditionId: string }) {
   const pnlStr = () => {
     const v = props.perMarketPnl;
     if (v == null) return null;
     return { text: fmtUsdc(v), pos: v >= 0 };
   };
+  // 本盘口成交流水 (2026-06-04 老板「盯盘页面要看懂买卖价」): 从全局 fills 过滤本 condition, 最新在前。
+  const myFills = () => (state.fills?.fills ?? []).filter((f) => f.market_id === props.conditionId).slice(0, 8);
 
   return (
     <div class="v8-expand-panel">
@@ -626,6 +628,28 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
         </Show>
       </Show>
 
+      {/* 成交流水 (2026-06-04 老板「盯盘页面看懂买卖价」): 本盘口每笔 买@X / 卖@Y + 已实现 */}
+      <div class="v8-reject-title">成交 (最近 {myFills().length} 笔)</div>
+      <Show
+        when={myFills().length > 0}
+        fallback={<Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>—</Typography>}
+      >
+        <For each={myFills()}>
+          {(f) => (
+            <div class="v8-pos-row" title={fmtTs(f.as_of_ts)}>
+              <span class="mono-sub" style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700 }}>
+                {f.side === 'buy' ? '买' : (f.is_close ? '卖平' : '卖')}{f.outcome}
+              </span>
+              <span class="mono-sub" style={{ 'font-weight': 700 }}>@{f.price.toFixed(4)}</span>
+              <span class="mono-sub">{f.size_usdc.toFixed(1)}u</span>
+              <span class={`mono-sub ${f.side === 'sell' ? (f.realized >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`} style={{ 'margin-left': 'auto' }}>
+                {f.side === 'sell' ? `${f.realized >= 0 ? '+' : ''}${f.realized.toFixed(2)}` : '—'}
+              </span>
+            </div>
+          )}
+        </For>
+      </Show>
+
       {/* 拒单明细 */}
       <div class="v8-reject-title">拒单 (最近 {Math.min(props.rejectRows.length, 5)} 条)</div>
       <Show
@@ -658,7 +682,7 @@ function MarketExpandArea(props: { cond: ConditionData }) {
     <div class="v8-expand-area">
       <ExpandBookPanel book={c().book} conditionId={c().conditionId} />
       <ExpandQuotePanel quote={c().quote} />
-      <ExpandPosPanel posRows={c().posRows} rejectRows={c().rejectRows} perMarketPnl={c().perMarketPnl} />
+      <ExpandPosPanel posRows={c().posRows} rejectRows={c().rejectRows} perMarketPnl={c().perMarketPnl} conditionId={c().conditionId} />
     </div>
   );
 }
