@@ -687,6 +687,12 @@ inline std::string mapping_status(const StateProvider& sp, std::int64_t as_of_ns
     b += json::i64(rep.matched);
     b += ",\"live_games\":";
     b += json::i64(rep.live_games);
+    b += ",\"matched_with_sharp\":";
+    b += json::i64(rep.matched_with_sharp);
+    b += ",\"matched_no_sharp\":";
+    b += json::i64(rep.matched_no_sharp);
+    b += ",\"no_match\":";
+    b += json::i64(rep.no_match);
     b += ",\"markets\":[";
     bool first = true;
     for (const auto& r : rep.markets) {
@@ -727,6 +733,34 @@ inline std::string mapping_status(const StateProvider& sp, std::int64_t as_of_ns
         b += json::i64(g.home_score);
         b += ",\"away_score\":";
         b += json::i64(g.away_score);
+        b += '}';
+    }
+    // 无赔率源明细 (源头 pass 清单, 2026-06-04 老板「匹配不上的记录, api可查」)。
+    b += "],\"no_sharp\":[";
+    first = true;
+    for (const auto& n : rep.no_sharp) {
+        if (!first) b += ',';
+        first = false;
+        b += "{\"condition_id\":";
+        b += json::str(n.condition_id);
+        b += ",\"team0\":";
+        b += json::str(n.team0);
+        b += ",\"team1\":";
+        b += json::str(n.team1);
+        b += ",\"sport\":";
+        b += json::str(n.sport);
+        b += ",\"reason\":";
+        b += json::str(n.reason);
+        b += ",\"best_home\":";
+        b += json::str(n.best_home);
+        b += ",\"best_away\":";
+        b += json::str(n.best_away);
+        b += ",\"best_score\":";
+        b += json::num(n.best_score);
+        b += ",\"kickoff_state\":";
+        b += json::str(n.kickoff_state);
+        b += ",\"matched_event_id\":";
+        b += json::str(n.matched_event_id);
         b += '}';
     }
     b += "]}";

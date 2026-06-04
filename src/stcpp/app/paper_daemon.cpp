@@ -1317,34 +1317,84 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         static bool diag_unmatched_dumped = false;
         std::size_t unmatched_shown = 0;
         const bool do_unmatched_diag = (!diag_unmatched_dumped && !candidates.empty());
+        // 无赔率源记录 (2026-06-04 老板「源头pass无赔率源, 匹配不上的记录, api可查」):
+        //   候选按 event_id 索引 → matched 行 O(1) 查 bet365 赔率有无 (区分真可交易 vs matched-no-sharp)。
+        std::unordered_map<std::string, const debug_api::EventScore*> cand_by_id;
+        cand_by_id.reserve(candidates.size() * 2);
+        for (const auto& c : candidates) cand_by_id[c.event_id] = &c;
+        constexpr std::size_t kMaxNoSharpReport = 300;  // 明细上限 (api 清单, 防爆内存)
+        int matched_with_sharp = 0, matched_no_sharp = 0, no_match = 0;
+        const std::int64_t now_s_loop = std::chrono::duration_cast<std::chrono::seconds>(
+                                            std::chrono::system_clock::now().time_since_epoch())
+                                            .count();
         for (const auto& [cond_id, in] : market_match_inputs_) {
             const auto r = event_matcher_.Match(in, candidates);
-            if (!r.matched && do_unmatched_diag && unmatched_shown < 40) {
-                double best = -1.0;
-                std::string bh, ba;
-                for (const auto& c : candidates) {
-                    if (c.home.empty() || c.away.empty()) continue;
-                    const double d = std::min(EventMatcher::TeamSimilarity(in.team0, c.home),
-                                              EventMatcher::TeamSimilarity(in.team1, c.away));
-                    const double x = std::min(EventMatcher::TeamSimilarity(in.team0, c.away),
-                                              EventMatcher::TeamSimilarity(in.team1, c.home));
-                    const double s = std::max(d, x);
-                    if (s > best) { best = s; bh = c.home; ba = c.away; }
+            if (!r.matched) {
+                ++no_match;
+                // 无 Goalserve 候选可匹配 → 源头 pass。记最佳候选+相似分 (诊断覆盖缺口 vs 名字 bug)。
+                if (map_report.no_sharp.size() < kMaxNoSharpReport) {
+                    double best = -1.0;
+                    std::string bh, ba;
+                    for (const auto& c : candidates) {
+                        if (c.home.empty() || c.away.empty()) continue;
+                        const double d = std::min(EventMatcher::TeamSimilarity(in.team0, c.home),
+                                                  EventMatcher::TeamSimilarity(in.team1, c.away));
+                        const double x = std::min(EventMatcher::TeamSimilarity(in.team0, c.away),
+                                                  EventMatcher::TeamSimilarity(in.team1, c.home));
+                        const double s = std::max(d, x);
+                        if (s > best) { best = s; bh = c.home; ba = c.away; }
+                    }
+                    const char* ks = (in.kickoff_ts_sec <= 0)          ? "无ts"
+                                     : (in.kickoff_ts_sec <= now_s_loop) ? "在打"
+                                                                         : "赛前";
+                    if (do_unmatched_diag && unmatched_shown < 40) {
+                        std::fprintf(stderr,
+                                     "[map-unmatched][%s] '%s' vs '%s' (%s) → 最佳候选 '%s' vs '%s' "
+                                     "score=%.2f\n",
+                                     ks, in.team0.c_str(), in.team1.c_str(), in.sport.c_str(), bh.c_str(),
+                                     ba.c_str(), best);
+                        ++unmatched_shown;
+                    }
+                    debug_api::MappingNoSharpRow nr;
+                    nr.condition_id = cond_id;
+                    nr.team0 = in.team0;
+                    nr.team1 = in.team1;
+                    nr.sport = in.sport;
+                    nr.reason = "no_goalserve_match";
+                    nr.best_home = bh;
+                    nr.best_away = ba;
+                    nr.best_score = best;
+                    nr.kickoff_state = ks;
+                    map_report.no_sharp.push_back(std::move(nr));
                 }
-                // 标注 kickoff 状态: 在打(kickoff<now) vs 赛前(future) —— 区分真 bug vs 物理必然。
-                const std::int64_t now_s = std::chrono::duration_cast<std::chrono::seconds>(
-                                               std::chrono::system_clock::now().time_since_epoch())
-                                               .count();
-                const char* ks = (in.kickoff_ts_sec <= 0)          ? "无ts"
-                                 : (in.kickoff_ts_sec <= now_s)    ? "在打"
-                                                                   : "赛前";
-                std::fprintf(stderr,
-                             "[map-unmatched][%s] '%s' vs '%s' (%s) → 最佳候选 '%s' vs '%s' score=%.2f\n",
-                             ks, in.team0.c_str(), in.team1.c_str(), in.sport.c_str(), bh.c_str(),
-                             ba.c_str(), best);
-                ++unmatched_shown;
             }
             if (r.matched) {
+                // sharp 赔率源校验 (源头 pass): matched event 须有 bet365 inplay 赔率才算真可交易;
+                //   matched-no-sharp = 匹配上但无赔率 → 记清单 + 不计入可交易。
+                const auto cf = cand_by_id.find(r.inplay_match_id);
+                const debug_api::EventScore* cand = (cf != cand_by_id.end()) ? cf->second : nullptr;
+                const bool has_sharp =
+                    cand && (cand->inplay_bet365_home_fair >= 0.0 || cand->inplay_bet365_away_fair >= 0.0 ||
+                             (in.is_draw && cand->inplay_bet365_draw_fair >= 0.0));
+                if (has_sharp) {
+                    ++matched_with_sharp;
+                } else {
+                    ++matched_no_sharp;
+                    if (map_report.no_sharp.size() < kMaxNoSharpReport) {
+                        debug_api::MappingNoSharpRow nr;
+                        nr.condition_id = cond_id;
+                        nr.team0 = in.team0;
+                        nr.team1 = in.team1;
+                        nr.sport = in.sport;
+                        nr.reason = "matched_no_sharp";
+                        nr.best_score = -1.0;
+                        nr.kickoff_state = (in.kickoff_ts_sec <= 0)          ? "无ts"
+                                           : (in.kickoff_ts_sec <= now_s_loop) ? "在打"
+                                                                               : "赛前";
+                        nr.matched_event_id = r.inplay_match_id;
+                        map_report.no_sharp.push_back(std::move(nr));
+                    }
+                }
                 // 结束→拉黑 (老板): 匹配的 Goalserve 赛事 status=final → 直播结束, 把该盘的 PM event_id
                 //   入黑名单, 下轮 RediscoverOnce 退订其 token + 释放 hub, 且不再重订 (即便 gamma 仍列)。
                 auto fit = final_by_match_id.find(r.inplay_match_id);
@@ -1385,6 +1435,9 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
 
         // 3b. 可观测: 构建映射状态报告 (matched 行 + Goalserve live 候选) → push debug_api。
         map_report.matched = static_cast<int>(matched);
+        map_report.matched_with_sharp = matched_with_sharp;
+        map_report.matched_no_sharp = matched_no_sharp;
+        map_report.no_match = no_match;
         map_report.live_games = static_cast<int>(candidates.size());
         for (const auto& c : candidates) {
             debug_api::MappingLiveGame g;

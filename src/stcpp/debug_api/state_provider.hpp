@@ -518,12 +518,33 @@ struct MappingLiveGame {         // Goalserve 当前 live 比赛 (score_store �
     int home_score{0};
     int away_score{0};
 };
+// 无赔率源 market 记录 (2026-06-04 老板「源头pass无赔率源, 匹配不上的记录, api可查」)。
+//   reason: "no_goalserve_match" = 无任何 Goalserve live 候选可匹配 (覆盖缺口或名字不对);
+//           "matched_no_sharp"   = 匹配到 Goalserve event 但该 event 无 bet365 inplay 赔率 (-1)。
+//   两类均无 sharp 直播赔率源 → 源头 pass 不订阅。best_* = 最接近候选 + 相似分 (诊断覆盖 vs bug)。
+struct MappingNoSharpRow {
+    std::string condition_id;
+    std::string team0;
+    std::string team1;
+    std::string sport;
+    std::string reason;          // no_goalserve_match / matched_no_sharp
+    std::string best_home;       // 最接近 Goalserve 候选 home (no_goalserve_match 时填)
+    std::string best_away;
+    double best_score{0.0};      // 最佳双队相似分 ∈[0,1]; -1 = 未算
+    std::string kickoff_state;   // 在打 / 赛前 / 无ts
+    std::string matched_event_id;// matched_no_sharp 时的 Goalserve event id
+};
 struct MappingStatusReport {
     int total_markets{0};        // 有匹配输入的 market 数
     int matched{0};              // 成功映射数
     int live_games{0};           // Goalserve 当前 live 候选数
     std::vector<MappingMarketRow> markets;   // 仅含 matched 或 近似 (诊断)
     std::vector<MappingLiveGame> games;      // Goalserve live 候选
+    // G-FREEZE-W 只增 (2026-06-04 老板「无赔率源 market 记录, api可查」):
+    int matched_with_sharp{0};   // 匹配且有 bet365 赔率 (真正可订阅交易)
+    int matched_no_sharp{0};     // 匹配但无 bet365 赔率 (源头 pass)
+    int no_match{0};             // 无 Goalserve 候选可匹配 (源头 pass)
+    std::vector<MappingNoSharpRow> no_sharp;  // 无赔率源明细 (源头 pass 清单, api可查)
 };
 
 class StateProvider {
