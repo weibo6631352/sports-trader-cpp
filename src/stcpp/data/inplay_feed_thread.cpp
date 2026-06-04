@@ -563,8 +563,8 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
     // 相位对齐状态 (2026-06-05 老板「保持频率, 只做相位对齐」): 锚 feed 真实 updated_ts (非我方抓到时刻,
     //   无相位反馈漂移); 间隔 EMA 自适应。详见 Config 注释 + docs/RESEARCH/laolei-inplay-clock-alignment-v1.md。
     std::int64_t phase_prev_updated_ts = 0;     // 上版 feed updated_ts (检测新版本 + 算真实间隔)
-    std::int64_t phase_interval_ema_ms = 2000;  // feed 版本间隔 EMA (ms; 锚 updated_ts 差, init 2s)
-    std::uint64_t phase_catch_count = 0;        // 抓到新版本计数 (周期 log 抓取延迟验证相位锁)
+    std::int64_t phase_interval_ema_ms = 2000;  // feed 版本间隔 EMA (ms; 锚 updated_ts 差, init 2s; 自适应)
+    std::int64_t phase_corr_ms = 0;             // 自适应相位校正 (闭环: 实测抓取延迟 → 自动调 aim-point, 每 sport 自收敛)
 
     // 赛果盘 market_id 集合 (本 sport, thread-local 无锁): Goalserve 字典解析所得 (2026-06-04 老板
     //   「用字典匹配, 别只靠白名单」)。启动拉一次 + 每 kDictRefreshMs 刷新 (市场名/id 极少变)。空 →
@@ -721,18 +721,22 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
 
         // 相位对齐: 检测新版本 → 用 feed 真实 updated_ts 间隔更新 EMA (锚真实更新节奏, 无相位反馈漂移)。
         if (cfg_.phase_align_enabled && parse_result.updated_ts_ms > phase_prev_updated_ts) {
-            // 抓取相位延迟 L = 我方收到时刻(realtime) − feed 版本 updated_ts; 锁牢时 ≈ margin + fetch 往返。
+            // 自适应相位对齐 (2026-06-05 老板「自适应」): 用实测抓取延迟 L 闭环校正 aim-point, 每 sport 自动收敛,
+            //   无需人读日志。L = 收到时刻(realtime) − feed 版本 updated_ts。
             const std::int64_t L = rt_ms_now() - parse_result.updated_ts_ms;
             if (phase_prev_updated_ts > 0) {
                 const std::int64_t gap = parse_result.updated_ts_ms - phase_prev_updated_ts;
-                if (gap >= 500 && gap <= 8000)  // 滤异常 (丢版/重连大跳)
-                    phase_interval_ema_ms = (phase_interval_ema_ms * 7 + gap * 3) / 10;  // EMA α=0.3
+                if (gap >= 500 && gap <= 8000)  // 滤异常 → 间隔 EMA 自适应 (α=0.3)
+                    phase_interval_ema_ms = (phase_interval_ema_ms * 7 + gap * 3) / 10;
             }
-            // 周期 log 抓取延迟 (验证相位锁: 稳定低 = 贴住相位; 忽高忽低 = 没锁住)。每 20 版本一次防刷屏。
-            if ((++phase_catch_count % 20) == 0)
-                std::fprintf(stderr, "[inplay_phase] sport=%-10s catch_latency=%4lldms interval_ema=%lldms\n",
-                             sport_slug.c_str(), static_cast<long long>(L),
-                             static_cast<long long>(phase_interval_ema_ms));
+            // 闭环校正: 仅正常 catch (L 非漏版离群) 才调。L 偏高(抓晚)→ phase_corr 增大 → 瞄更早 → 拉低 L。
+            //   目标 ~250ms (margin + fetch 往返不可压下限)。clamp [0, margin] 保证仍瞄在 update 之后 (不抓到旧版)。
+            if (L >= 0 && L < phase_interval_ema_ms * 3 / 2) {
+                phase_corr_ms += (L - 250) * 3 / 10;  // 比例增益 0.3
+                if (phase_corr_ms < 0) phase_corr_ms = 0;
+                if (phase_corr_ms > static_cast<std::int64_t>(cfg_.phase_margin_ms))
+                    phase_corr_ms = static_cast<std::int64_t>(cfg_.phase_margin_ms);
+            }
             phase_prev_updated_ts = parse_result.updated_ts_ms;
         }
 
@@ -757,7 +761,7 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
             const std::int64_t now_rt = rt_ms_now();
             const std::int64_t floor = static_cast<std::int64_t>(cfg_.poll_interval_ms);
             std::int64_t target = phase_prev_updated_ts + phase_interval_ema_ms +
-                                  static_cast<std::int64_t>(cfg_.phase_margin_ms);
+                                  static_cast<std::int64_t>(cfg_.phase_margin_ms) - phase_corr_ms;  // 自适应瞄点
             // 推进到 ≥ now+floor 的那一版 catch (跳过已过去/太近的, 防失锁)
             while (target < now_rt + floor) target += phase_interval_ema_ms;
             const std::int64_t w = target - now_rt;
