@@ -88,6 +88,15 @@ struct InplayFeedConfig {
     //   1000ms = 每 sport ≤1 req/s (恰好贴限, 配 poll_interval_ms=1200 实际 0.83/s 留 margin)。
     //   2026-06-01: 800→1000, 给 1/s 硬上限留余量 (此前 429 实为诊断期手动 curl 叠加, 非 daemon 本身超速)。
     std::uint32_t min_fetch_interval_ms = 1000;
+
+    // 相位对齐 (2026-06-05 老板「保持频率, 只做相位对齐, 别假设固定2s」): 把轮询相位锁到 feed 更新节奏,
+    //   使每版更新后尽快抓到 (而非随机相位 0~poll 内抓到) → 3s 新鲜度门不被倒霉相位误杀。
+    //   **保频率**: sleep 钳在 [poll_interval_ms, poll_interval_ms + phase_max_nudge_ms] —— 永不降到 floor 以下
+    //   (不破限速/不减频), 仅在能把 just-before-更新 的轮询推到 just-after 时小幅 +nudge。
+    //   间隔用 EMA 自适应 (锚 feed 真实 updated_ts 间隔, 不硬编 2s; feed 变速也跟得上)。
+    bool phase_align_enabled = true;
+    std::uint32_t phase_margin_ms = 150;     // 预测更新后 +此值 抓 (留 feed 落地/网络余量)
+    std::uint32_t phase_max_nudge_ms = 350;  // 对齐最多延后此值 (保频率: 最坏 poll≈1.35s)
 };
 
 // ============================================================================

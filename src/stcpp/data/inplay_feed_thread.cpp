@@ -552,6 +552,18 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
         return static_cast<std::uint64_t>(ts.tv_sec) * 1000ULL +
                static_cast<std::uint64_t>(ts.tv_nsec) / 1'000'000ULL;
     };
+    // CLOCK_REALTIME ms — 与 Goalserve updated_ts 同域 (相位对齐锚 feed 真实更新时刻, 见 R-20 注释 §68)。
+    auto rt_ms_now = []() -> std::int64_t {
+        struct timespec ts{};
+        ::clock_gettime(CLOCK_REALTIME, &ts);
+        return static_cast<std::int64_t>(ts.tv_sec) * 1000LL +
+               static_cast<std::int64_t>(ts.tv_nsec) / 1'000'000LL;
+    };
+
+    // 相位对齐状态 (2026-06-05 老板「保持频率, 只做相位对齐」): 锚 feed 真实 updated_ts (非我方抓到时刻,
+    //   无相位反馈漂移); 间隔 EMA 自适应。详见 Config 注释 + docs/RESEARCH/laolei-inplay-clock-alignment-v1.md。
+    std::int64_t phase_prev_updated_ts = 0;     // 上版 feed updated_ts (检测新版本 + 算真实间隔)
+    std::int64_t phase_interval_ema_ms = 2000;  // feed 版本间隔 EMA (ms; 锚 updated_ts 差, init 2s)
 
     // 赛果盘 market_id 集合 (本 sport, thread-local 无锁): Goalserve 字典解析所得 (2026-06-04 老板
     //   「用字典匹配, 别只靠白名单」)。启动拉一次 + 每 kDictRefreshMs 刷新 (市场名/id 极少变)。空 →
@@ -706,6 +718,16 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
             store_.Publish(std::make_shared<ScoreMap>(merged_map_));
         }
 
+        // 相位对齐: 检测新版本 → 用 feed 真实 updated_ts 间隔更新 EMA (锚真实更新节奏, 无相位反馈漂移)。
+        if (cfg_.phase_align_enabled && parse_result.updated_ts_ms > phase_prev_updated_ts) {
+            if (phase_prev_updated_ts > 0) {
+                const std::int64_t gap = parse_result.updated_ts_ms - phase_prev_updated_ts;
+                if (gap >= 500 && gap <= 8000)  // 滤异常 (丢版/重连大跳)
+                    phase_interval_ema_ms = (phase_interval_ema_ms * 7 + gap * 3) / 10;  // EMA α=0.3
+            }
+            phase_prev_updated_ts = parse_result.updated_ts_ms;
+        }
+
         // 诊断计数器更新
         if (sport_idx < kNumSports) {
             last_updated_ts_ms_[sport_idx].store(parse_result.updated_ts_ms, std::memory_order_relaxed);
@@ -718,7 +740,22 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                      sport_slug.c_str(), parse_result.scores.size(),
                      static_cast<long long>(parse_result.updated_ts_ms), gz_body.size(), json_body.size());
 
-        SleepMs(cfg_.poll_interval_ms);
+        // 相位对齐 sleep (替代固定 poll_interval_ms; 2026-06-05 老板「保持频率, 只对齐相位, 别假设固定2s」):
+        //   默认睡 poll_interval_ms (频率不变)。仅当能把下一次轮询对齐到【预测更新刚发生后】(updated_ts +
+        //   EMA间隔 + margin) 且延后量 ≤ phase_max_nudge_ms 时, 小幅延后 → 抓新鲜版而非 just-before 抓 duplicate。
+        //   钳 [poll_interval_ms, poll_interval_ms+max_nudge]: 永不降频/破限速 (老板「别降低我的频率」)。
+        std::uint32_t sleep_ms = cfg_.poll_interval_ms;
+        if (cfg_.phase_align_enabled && phase_prev_updated_ts > 0 && phase_interval_ema_ms >= 500) {
+            const std::int64_t now_rt = rt_ms_now();
+            const std::int64_t target = phase_prev_updated_ts + phase_interval_ema_ms +
+                                        static_cast<std::int64_t>(cfg_.phase_margin_ms);  // 预测下一版更新后抓
+            const std::int64_t w = target - now_rt;
+            if (w >= static_cast<std::int64_t>(cfg_.poll_interval_ms) &&
+                w <= static_cast<std::int64_t>(cfg_.poll_interval_ms) + cfg_.phase_max_nudge_ms) {
+                sleep_ms = static_cast<std::uint32_t>(w);
+            }
+        }
+        SleepMs(sleep_ms);
     }
 
     std::fprintf(stderr, "[inplay_feed] sport=%s thread stopped.\n", sport_slug.c_str());
