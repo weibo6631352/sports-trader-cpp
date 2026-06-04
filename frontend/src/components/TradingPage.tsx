@@ -503,26 +503,27 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
   const mapped     = () => jointTs() > 0;                                // 比分/订单簿映射已连通 (匹配上)
   const devigOk    = () => q().devig_ok === true;
   const jointAgeS  = () => mapped() ? Math.max(0, (Date.now() * 1e6 - jointTs()) / 1e9) : NaN;
-  // 新鲜度心跳 (2026-06-05 老板「量化AI 刷新慢」诊断配套): quote 快照数据年龄 = uiNow - quote_as_of_ts。
-  //   实测后端每秒重算+重发 quote (as_of_ts 帧帧前进), 静市场时值不变 → 面板"看着没刷新"是错觉。
-  //   年龄每秒重算 (uiNow 驱动): 活但静市场=年龄小且稳(绿), 数据真停=年龄持续涨(黄→红)。
-  //   keyed 脉冲点: 每收到一帧新 quote (as_of 变) 闪一次 = 肉眼可见"在刷新"。
-  const quoteTs    = () => Number(q().quote_as_of_ts ?? 0);
-  const quoteAgeS  = () => quoteTs() > 0 ? Math.max(0, (uiNow() - quoteTs() / 1e6) / 1000) : NaN;
-  const freshColor = () => !Number.isFinite(quoteAgeS()) ? '#888'
-    : quoteAgeS() < 3 ? '#4caf50' : quoteAgeS() < 6 ? '#ff9800' : '#f44336';
+  // 真实赔率新鲜度心跳 (2026-06-05 老板「现在就换成真实赔率新鲜度」): 显 now − 订单簿 WSS 版本时刻
+  //   (data_source_ts), 即【市场赔率有多旧】—— 非旧的"推送新鲜度"(quote_as_of_ts=后端发布时刻, 恒~1s)。
+  //   WSS 健康时亚秒(绿); WSS 断流/赔率过期时年龄持续涨(黄→红), 直观暴露 (这次 WSS 死 18min 就该红)。
+  //   脉冲点 keyed 在 quote_as_of_ts: 每收一帧新 quote 闪一次 = 后端在推 (liveness, 独立于赔率年龄)。
+  const pushTs     = () => Number(q().quote_as_of_ts ?? 0);   // 推送帧标记 (脉冲点用)
+  const oddsTs     = () => Number(q().data_source_ts ?? 0);   // 订单簿 WSS 版本时刻 (真实赔率新鲜度锚)
+  const oddsAgeS   = () => oddsTs() > 0 ? Math.max(0, (uiNow() - oddsTs() / 1e6) / 1000) : NaN;
+  const freshColor = () => !Number.isFinite(oddsAgeS()) ? '#888'
+    : oddsAgeS() < 3 ? '#4caf50' : oddsAgeS() < 8 ? '#ff9800' : '#f44336';
 
   return (
     <div class="v8-expand-panel">
       <div class="v8-panel-title">
         量化 / AI <span class="mono-sub" style={{ 'font-weight': '400' }}>· 均为 YES 边胜率</span>
-        {/* 推送心跳: 脉冲点(每帧闪=后端在推) + 推送年龄(前端now − 后端算出此quote时刻)。
-            注: 这是【推送/管道新鲜度】(后端→SSE→前端, 健康~1s), 不是赔率信号滞后(那是 Goalserve 版本年龄, 另算)。 */}
-        <Show when={Number.isFinite(quoteAgeS())}>
+        {/* 真实赔率新鲜度心跳: 脉冲点(每帧闪=后端在推) + 赔率年龄(now − 订单簿 WSS 版本时刻 data_source_ts)。
+            WSS 健康亚秒(绿); 断流/过期持续涨(黄≥3s→红≥8s)。这才是"市场赔率多旧", 非推送/管道延迟。 */}
+        <Show when={Number.isFinite(oddsAgeS())}>
           <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700', color: freshColor() }}
-                title="推送新鲜度 = 前端now − 后端算出此 quote 的时刻 (相对前端时钟, 1s/次)。健康~1s; 持续涨=推送断/卡。这不是赔率信号滞后(Goalserve 版本年龄另算)。">
-            <Show keyed when={quoteTs()}><span class="v8-live-dot">●</span></Show>
-            {' '}推送 {quoteAgeS().toFixed(1)}s前
+                title="真实赔率新鲜度 = now − 订单簿 WSS 版本时刻 (data_source_ts)。WSS 健康亚秒; 持续涨=WSS断流/赔率过期(本次断18min就会红)。脉冲点每帧闪=后端在推(liveness)。">
+            <Show keyed when={pushTs()}><span class="v8-live-dot">●</span></Show>
+            {' '}赔率 {oddsAgeS().toFixed(1)}s前
           </span>
         </Show>
         {/* XD-3: ADVISORY 角标强制显示 (paper 期) */}

@@ -442,6 +442,9 @@ struct QuoteParams {
     bool devig_ok{false};           // de-vig 成功? (区分「de-vig 失败」vs「edge 不足」)
     double g_time_x_lead{0.0};      // 时间感知领先 = score_diff×(1−time_frac) (映射上+in-play 才非0)
     std::int64_t joint_as_of_ts_ns{0};  // 联合新鲜度 = min(score,book).as_of (映射连通时 >0)
+    // 真实赔率新鲜度 (2026-06-05 老板「现在就换成真实赔率新鲜度」): 订单簿 data_source_ts (WSS 版本时刻,
+    //   非快照发布的 as_of=now)。now − 它 = 市场赔率有多旧 (WSS 健康时亚秒; WSS 死时会涨, 直观暴露断流)。
+    std::int64_t data_source_ts_ns{0};
 };
 
 // ============================================================

@@ -369,6 +369,8 @@ export interface Quote {
   g_time_x_lead?: number;
   /** 联合新鲜度 epoch_ns = min(score,book).as_of; 映射连通时 >0 */
   joint_as_of_ts?: number;
+  /** 真实赔率新鲜度 epoch_ns = 订单簿 WSS 版本时刻 (data_source_ts); now−它 = 市场赔率多旧 */
+  data_source_ts?: number;
 
   // --- AI provenance 字段 (小邓 XD 红线) ---
   /** 模型 ID, e.g. "demo-fv-v0" */
