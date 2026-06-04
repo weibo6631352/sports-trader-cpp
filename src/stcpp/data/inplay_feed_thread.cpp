@@ -552,19 +552,8 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
         return static_cast<std::uint64_t>(ts.tv_sec) * 1000ULL +
                static_cast<std::uint64_t>(ts.tv_nsec) / 1'000'000ULL;
     };
-    // CLOCK_REALTIME ms — 与 Goalserve updated_ts 同域 (相位对齐锚 feed 真实更新时刻, 见 R-20 注释 §68)。
-    auto rt_ms_now = []() -> std::int64_t {
-        struct timespec ts{};
-        ::clock_gettime(CLOCK_REALTIME, &ts);
-        return static_cast<std::int64_t>(ts.tv_sec) * 1000LL +
-               static_cast<std::int64_t>(ts.tv_nsec) / 1'000'000LL;
-    };
-
-    // 相位对齐状态 (2026-06-05 老板「保持频率, 只做相位对齐」): 锚 feed 真实 updated_ts (非我方抓到时刻,
-    //   无相位反馈漂移); 间隔 EMA 自适应。详见 Config 注释 + docs/RESEARCH/laolei-inplay-clock-alignment-v1.md。
-    std::int64_t phase_prev_updated_ts = 0;     // 上版 feed updated_ts (检测新版本 + 算真实间隔)
-    std::int64_t phase_interval_ema_ms = 2000;  // feed 版本间隔 EMA (ms; 锚 updated_ts 差, init 2s; 自适应)
-    std::int64_t phase_corr_ms = 0;             // 自适应相位校正 (闭环: 实测抓取延迟 → 自动调 aim-point, 每 sport 自收敛)
+    // (相位对齐算法已移除 2026-06-05: 实验 experiments/laolei-phase-align 证明 1 req/s ToS 限速下相位锁不住
+    //   — 命中延迟结构性随机 ~半周期, 任何参数 no-op; 提频到 2/s 违反 Goalserve ToS 红线。回到朴素固定轮询。)
 
     // 赛果盘 market_id 集合 (本 sport, thread-local 无锁): Goalserve 字典解析所得 (2026-06-04 老板
     //   「用字典匹配, 别只靠白名单」)。启动拉一次 + 每 kDictRefreshMs 刷新 (市场名/id 极少变)。空 →
@@ -719,32 +708,6 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
             store_.Publish(std::make_shared<ScoreMap>(merged_map_));
         }
 
-        // 相位对齐: 检测新版本 → 用 feed 真实 updated_ts 间隔更新 EMA (锚真实更新节奏, 无相位反馈漂移)。
-        if (cfg_.phase_align_enabled && parse_result.updated_ts_ms > phase_prev_updated_ts) {
-            // 自适应相位对齐 (2026-06-05 老板「自适应」): 用实测抓取延迟 L 闭环校正 aim-point, 每 sport 自动收敛,
-            //   无需人读日志。L = 收到时刻(realtime) − feed 版本 updated_ts。
-            const std::int64_t L = rt_ms_now() - parse_result.updated_ts_ms;
-            if (phase_prev_updated_ts > 0) {
-                const std::int64_t gap = parse_result.updated_ts_ms - phase_prev_updated_ts;
-                if (gap >= 500 && gap <= 8000)  // 滤异常 → 间隔 EMA 自适应 (α=0.3)
-                    phase_interval_ema_ms = (phase_interval_ema_ms * 7 + gap * 3) / 10;
-            }
-            // 闭环【双向】校正 (2026-06-05 老板「左右偏移都要算, 不能只减; 落到1.99就+0.05顶到2.04」):
-            //   L 偏高(抓晚)→ phase_corr↑ → 瞄更早; L 偏低(抓太早/快撞到更新前)→ phase_corr↓(转负) → 瞄更晚(+offset)。
-            //   伺服到目标 ~250ms。clamp [−max_nudge, margin−safety]: 负=往后顶(老板的+0.05), 正=往前。
-            //   safety=30ms (老板「压太狠了, 留30ms余量让他稳定」): aim-offset 下限 30ms, 永远瞄在更新后 ≥30ms,
-            //   留余量吸收 interval 预测误差 → 不会抢在更新前漏版(消除 max 尖峰), 用 30ms 换稳定。
-            if (L >= 0 && L < phase_interval_ema_ms * 3 / 2) {
-                constexpr std::int64_t kPhaseSafetyMs = 30;  // 留 30ms 余量防漏版 (老板)
-                phase_corr_ms += (L - 250) * 3 / 10;  // 比例增益 0.3 (双向: err 正往早, err 负往晚)
-                const std::int64_t lo = -static_cast<std::int64_t>(cfg_.phase_max_nudge_ms);  // 允许往后顶
-                const std::int64_t hi = static_cast<std::int64_t>(cfg_.phase_margin_ms) - kPhaseSafetyMs;  // aim≥update+30ms
-                if (phase_corr_ms < lo) phase_corr_ms = lo;
-                if (phase_corr_ms > hi) phase_corr_ms = hi;
-            }
-            phase_prev_updated_ts = parse_result.updated_ts_ms;
-        }
-
         // 诊断计数器更新
         if (sport_idx < kNumSports) {
             last_updated_ts_ms_[sport_idx].store(parse_result.updated_ts_ms, std::memory_order_relaxed);
@@ -757,32 +720,9 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                      sport_slug.c_str(), parse_result.scores.size(),
                      static_cast<long long>(parse_result.updated_ts_ms), gz_body.size(), json_body.size());
 
-        // 相位对齐 sleep (2026-06-05 老板「不提频~1s, 对齐相位」): 瞄准【下一次 feed 更新刚发生后】抓
-        //   (updated_ts + n×EMA间隔 + margin − phase_corr; O(1) ceil 算出未来那一版, 非 while)。每收新版本重锚
-        //   updated_ts → 消累积漂移。够近才瞄 catch, 否则 floor dup 轮询保 ~1/s 频率。fetch~94ms+floor 本就不漏版。
-        //   注: 版本年龄(now−data_source)在两次 feed 更新间必然爬 0→2s (feed 2s 物理), 这是「最新版本就这么新」,
-        //   非漏版; 相位锁让 catch 命中点低 (~0.2s), 但锯齿到 ~2s 消不掉 (再快轮询也拿不到 feed 还没发的版本)。
-        std::uint32_t sleep_ms = cfg_.poll_interval_ms;
-        if (cfg_.phase_align_enabled && phase_prev_updated_ts > 0 && phase_interval_ema_ms >= 500) {
-            const std::int64_t now_rt = rt_ms_now();
-            const std::int64_t floor = static_cast<std::int64_t>(cfg_.poll_interval_ms);
-            // 算出 ≥ now+floor 的那一版 catch (O(1) 算术, 不用 while 循环 — 老板「别独占cpu写死while循环」;
-            //   原 while 若 interval_ema=0 会死循环, 现直接 ceil 除法一步到位)。base = 相位基准(自适应瞄点)。
-            const std::int64_t base = phase_prev_updated_ts +
-                                      static_cast<std::int64_t>(cfg_.phase_margin_ms) - phase_corr_ms;
-            const std::int64_t need = now_rt + floor - base;
-            const std::int64_t k = (need <= phase_interval_ema_ms)
-                                       ? 1
-                                       : (need + phase_interval_ema_ms - 1) / phase_interval_ema_ms;  // ceil≥1
-            const std::int64_t target = base + k * phase_interval_ema_ms;
-            const std::int64_t w = target - now_rt;
-            // 够近(≤ floor+max_nudge)才瞄 catch; 否则默认 poll_interval(floor) 做 dup 轮询保 ~1/s 频率。
-            //   fetch 仅 ~94ms, floor(1005)+max_nudge(350)+fetch < 1.5s < 最快 feed 间隔 → 本就不漏版,
-            //   无需 (已撤回) 的 interval−400 上限 (那会把 sleep 撑到 1.3s 使频率掉到 0.75/s)。
-            if (w <= floor + static_cast<std::int64_t>(cfg_.phase_max_nudge_ms))
-                sleep_ms = static_cast<std::uint32_t>(w);
-        }
-        SleepMs(sleep_ms);
+        // 朴素固定轮询 (相位对齐已移除): 距上次 fetch 满 min_fetch_interval 即下一轮 (顶部 token-bucket 守限速)。
+        //   Goalserve 1 req/s ToS 限速下相位锁不住 (实验已证), 故不做相位调度, 等间隔轮询即可 (每版必抓到)。
+        SleepMs(cfg_.poll_interval_ms);
     }
 
     std::fprintf(stderr, "[inplay_feed] sport=%s thread stopped.\n", sport_slug.c_str());
