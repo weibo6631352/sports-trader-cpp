@@ -282,6 +282,12 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
   const bk = () => book()!;
   // grid 顶档摘要 (含两边 outcome 名); book 未带 outcome 时用它标注哪边是哪队/选手。
   const summ = () => state.conditionCache[props.conditionId]?.summary ?? null;
+  // 订单簿新鲜度 (2026-06-05 老板「WSS新鲜度放订单簿位置, 改名订单簿新鲜度」): now − 订单簿 WSS 版本时刻
+  //   (data_source_ts)。WSS 健康亚秒; 断流持续涨变红。从量化AI标题挪来 (它本就是订单簿/市场赔率的新鲜度)。
+  const bookTs    = () => Number(state.conditionCache[props.conditionId]?.quote?.data_source_ts ?? 0);
+  const bookAgeS  = () => bookTs() > 0 ? Math.max(0, (uiNow() - bookTs() / 1e6) / 1000) : NaN;
+  const bookFresh = () => !Number.isFinite(bookAgeS()) ? '#888'
+    : bookAgeS() < 3 ? '#4caf50' : bookAgeS() < 8 ? '#ff9800' : '#f44336';
   const vigInfo = () => {
     const cs = Number(bk().cross_spread);
     if (!Number.isFinite(cs)) return null;
@@ -378,6 +384,14 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
       <div class="v8-expand-panel">
         <div class="v8-panel-title">
           双边订单簿
+          {/* 订单簿新鲜度 (老板「WSS新鲜度放这+改名」): now − book WSS 版本时刻; 脉冲点每帧闪=在推 */}
+          <Show when={Number.isFinite(bookAgeS())}>
+            <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700', color: bookFresh() }}
+                  title="订单簿新鲜度 = now − 订单簿 WSS 版本时刻 (data_source_ts)。WSS 健康亚秒; 持续涨=WSS断流/订单簿过期。">
+              <Show keyed when={bookTs()}><span class="v8-live-dot">●</span></Show>
+              {' '}订单簿新鲜度 {bookAgeS().toFixed(1)}s
+            </span>
+          </Show>
           <Show when={vigInfo()}>
             {(vi) => (
               <Chip
@@ -503,15 +517,7 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
   const mapped     = () => jointTs() > 0;                                // 比分/订单簿映射已连通 (匹配上)
   const devigOk    = () => q().devig_ok === true;
   const jointAgeS  = () => mapped() ? Math.max(0, (Date.now() * 1e6 - jointTs()) / 1e9) : NaN;
-  // 真实赔率新鲜度心跳 (2026-06-05 老板「现在就换成真实赔率新鲜度」): 显 now − 订单簿 WSS 版本时刻
-  //   (data_source_ts), 即【市场赔率有多旧】—— 非旧的"推送新鲜度"(quote_as_of_ts=后端发布时刻, 恒~1s)。
-  //   WSS 健康时亚秒(绿); WSS 断流/赔率过期时年龄持续涨(黄→红), 直观暴露 (这次 WSS 死 18min 就该红)。
-  //   脉冲点 keyed 在 quote_as_of_ts: 每收一帧新 quote 闪一次 = 后端在推 (liveness, 独立于赔率年龄)。
-  const pushTs     = () => Number(q().quote_as_of_ts ?? 0);   // 推送帧标记 (脉冲点用)
-  const oddsTs     = () => Number(q().data_source_ts ?? 0);   // 订单簿 WSS 版本时刻 (真实赔率新鲜度锚)
-  const oddsAgeS   = () => oddsTs() > 0 ? Math.max(0, (uiNow() - oddsTs() / 1e6) / 1000) : NaN;
-  const freshColor = () => !Number.isFinite(oddsAgeS()) ? '#888'
-    : oddsAgeS() < 3 ? '#4caf50' : oddsAgeS() < 8 ? '#ff9800' : '#f44336';
+  // (订单簿新鲜度心跳已挪到「双边订单簿」面板 — 老板 2026-06-05「WSS新鲜度放订单簿位置+改名订单簿新鲜度」)
   // GS sharp 赔率延迟 (2026-06-05 老板「赔率延迟放合适位置」): now − sharp 赔率版本时刻 (Goalserve inplay
   //   updated_ts; 驱动 sharp fair 的那一版多旧)。这是 3s 新鲜度门管的延迟; 摆 sharp 行旁。
   const sharpTs    = () => Number(q().sharp_data_source_ts ?? 0);
@@ -523,15 +529,6 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
     <div class="v8-expand-panel">
       <div class="v8-panel-title">
         量化 / AI <span class="mono-sub" style={{ 'font-weight': '400' }}>· 均为 YES 边胜率</span>
-        {/* 真实赔率新鲜度心跳: 脉冲点(每帧闪=后端在推) + 赔率年龄(now − 订单簿 WSS 版本时刻 data_source_ts)。
-            WSS 健康亚秒(绿); 断流/过期持续涨(黄≥3s→红≥8s)。这才是"市场赔率多旧", 非推送/管道延迟。 */}
-        <Show when={Number.isFinite(oddsAgeS())}>
-          <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700', color: freshColor() }}
-                title="真实赔率新鲜度 = now − 订单簿 WSS 版本时刻 (data_source_ts)。WSS 健康亚秒; 持续涨=WSS断流/赔率过期(本次断18min就会红)。脉冲点每帧闪=后端在推(liveness)。">
-            <Show keyed when={pushTs()}><span class="v8-live-dot">●</span></Show>
-            {' '}赔率 {oddsAgeS().toFixed(1)}s前
-          </span>
-        </Show>
         {/* XD-3: ADVISORY 角标强制显示 (paper 期) */}
         <Show when={advisory()}>
           <span class="v8-advisory-badge">ADVISORY</span>
