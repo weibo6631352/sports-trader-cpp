@@ -42,6 +42,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "stcpp/app/event_matcher.hpp"     // EventMatcher / EventMatchInput (A1 映射桥)
@@ -377,6 +378,22 @@ private:
     std::shared_ptr<const std::vector<std::string>> TokenSnapshot() const {
         std::lock_guard<std::mutex> lk(token_ids_mu_);
         return token_ids_snapshot_;
+    }
+
+    // 源头 pass (2026-06-04 老板「从源头就不订阅无赔率源的比赛」): 有 bet365 赔率源的 condition 集快照。
+    //   RefreshEventMapping (映射线程) 每周期算出有 sharp 赔率的 condition (含 grace 滞回 — 赔率短暂
+    //   挂起 halftime 不立即退订), 发布此快照。PopulateCatalog (发现/重订线程) 读它过滤 all_token_ids_:
+    //   只订阅有赔率源的盘 → 退订无源盘, 腾出 WSS/book 配额给 149hz 主动轮询。
+    //   null = 映射线程尚未就绪 (bootstrap): 订全量, 首个映射周期后收敛 sharp-only。
+    mutable std::mutex sharp_conds_mu_;
+    std::shared_ptr<const std::unordered_set<std::string>> sharp_conditions_snapshot_;  // null=未就绪
+    void PublishSharpConditions(std::shared_ptr<const std::unordered_set<std::string>> snap) {
+        std::lock_guard<std::mutex> lk(sharp_conds_mu_);
+        sharp_conditions_snapshot_ = std::move(snap);
+    }
+    [[nodiscard]] std::shared_ptr<const std::unordered_set<std::string>> SharpConditionsSnapshot() const {
+        std::lock_guard<std::mutex> lk(sharp_conds_mu_);
+        return sharp_conditions_snapshot_;
     }
 
     // ---- A1b: 映射桥 (EventMatcher + 元数据 + 刷新线程) ----

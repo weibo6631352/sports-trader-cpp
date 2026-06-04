@@ -256,11 +256,26 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
         event_infos_.push_back(std::move(ei));
     }
 
-    // Collect all token_ids for WSS subscription
+    // Collect token_ids for WSS subscription — 源头 pass (2026-06-04 老板「从源头就不订阅无赔率源的比赛」):
+    //   只订有 sharp(bet365) 赔率源的 condition 的 token。RefreshEventMapping 发布 eligible 集 (grace 滞回)。
+    //   快照 null = 映射线程尚未就绪 (bootstrap, e.g. 初次 Build) → 订全量, 首个映射周期后收敛 sharp-only。
+    //   注: market_match_inputs_ 不过滤 (全市场仍参与匹配 → 才能判定哪些有 sharp); 只过滤订阅集。
+    const auto sharp_snap = SharpConditionsSnapshot();
     all_token_ids_.reserve(token_map_.size() * 2);
+    std::size_t passed_no_source = 0;
     for (const auto& [cond_id, tok_pair] : token_map_) {
+        if (sharp_snap && sharp_snap->count(cond_id) == 0) {
+            ++passed_no_source;  // 无赔率源 → 源头 pass, 不订阅
+            continue;
+        }
         all_token_ids_.push_back(tok_pair.first);
         all_token_ids_.push_back(tok_pair.second);
+    }
+    if (sharp_snap) {
+        std::fprintf(stderr,
+                     "[paper_daemon] 源头 pass: 订阅 %zu/%zu market (跳过 %zu 无赔率源), token=%zu\n",
+                     token_map_.size() - passed_no_source, token_map_.size(), passed_no_source,
+                     all_token_ids_.size());
     }
     // A1: 发布不可变 token 快照 (OnConnected/seed 等并发读方读它, 不碰裸 all_token_ids_ → 消 race)
     PublishTokenSnapshot();
@@ -1257,6 +1272,10 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
     using namespace std::chrono;
     // R-6: 周期重发现计时 (本线程跑 → match_inputs 同线程无竞争)。初始化为 now, 首次重发现在一个间隔后。
     auto last_rediscover = steady_clock::now();
+    // 源头 pass (2026-06-04 老板「从源头就不订阅无赔率源的比赛」): condition → 末次有 sharp 赔率时刻。
+    //   仅本线程读写 (无锁)。每周期更新 + 算 eligible 集 (grace 滞回内有过 sharp) 发布给 PopulateCatalog。
+    std::unordered_map<std::string, std::int64_t> sharp_last_seen;
+    constexpr std::int64_t kSharpGraceNs = 180LL * 1'000'000'000;  // 3min 滞回: halftime 赔率挂起不退订
     while (!st.stop_requested()) {
         // 0. R-6 周期重发现 (间隔到 → 全量重建 catalog + WSS 重订; 在 match 之前, match_inputs 已是新版)。
         if (cfg_.rediscover_interval_sec > 0 &&
@@ -1381,6 +1400,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                              (in.is_draw && cand->inplay_bet365_draw_fair >= 0.0));
                 if (has_sharp) {
                     ++matched_with_sharp;
+                    sharp_last_seen[cond_id] = refresh_now_ns;  // 源头 pass: 记末次有赔率时刻 (grace 滞回)
                 } else {
                     ++matched_no_sharp;
                     if (map_report.no_sharp.size() < kMaxNoSharpReport) {
@@ -1456,8 +1476,25 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         if (real_provider_) {
             real_provider_->set_mapping_status(std::move(map_report));
         }
-        std::fprintf(stderr, "[paper_daemon] 映射刷新: %zu/%zu market 匹配到 Goalserve event\n", matched,
-                     market_match_inputs_.size());
+
+        // 源头 pass: 发布 sharp-eligible condition 集 (grace 滞回内有过 bet365 赔率) → PopulateCatalog
+        //   据此过滤 all_token_ids_, 只订有赔率源的盘 (老板「从源头就不订阅无赔率源的比赛」)。过期清理。
+        {
+            auto eligible = std::make_shared<std::unordered_set<std::string>>();
+            eligible->reserve(sharp_last_seen.size());
+            for (auto it = sharp_last_seen.begin(); it != sharp_last_seen.end();) {
+                if (refresh_now_ns - it->second < kSharpGraceNs) {
+                    eligible->insert(it->first);
+                    ++it;
+                } else {
+                    it = sharp_last_seen.erase(it);  // 超 grace: 清理 + 不入 eligible (退订)
+                }
+            }
+            PublishSharpConditions(std::move(eligible));
+        }
+        std::fprintf(stderr,
+                     "[paper_daemon] 映射刷新: %zu/%zu market 匹配, sharp-eligible(订阅)=%zu (源头 pass 无赔率源)\n",
+                     matched, market_match_inputs_.size(), sharp_last_seen.size());
 
         // [COVERAGE-DIAG] 覆盖率门诊断 (2026-06-03, 老板「是不是名字不匹配」):
         //   隔离「名字配上 threshold 却被后续门拒」的 market = 可恢复缺口 + 凶手门。
