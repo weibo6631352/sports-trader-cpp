@@ -517,6 +517,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                         //   先验置信永远压在 base 0.15, 真实领先 edge 被 CI 吃掉 → 几乎不成交.
                         game_row.elapsed_sec = static_cast<std::int32_t>(es.clock_sec);
                         game_row.sport = es.sport;  // SportInplaySlug (total_game_seconds 匹配)
+                        // 记队名 (2026-06-04 老板「名字是已知的, 你是没记录吗, 很不严谨」): YES-canonical
+                        //   落 game_row 供审计匹配对错。home_team=YES 队, away_team=对手 (按 yes_is_home 翻)。
+                        game_row.home_team = it->second.yes_is_home ? es.home : es.away;
+                        game_row.away_team = it->second.yes_is_home ? es.away : es.home;
                         // P1.1 (特征审计): Goalserve period 字符串 → 1-based 节序数, 喂 g_period (#2)。
                         //   此前 game_row.period 从不赋值 → 恒 0 → g_period 死。无时钟运动 (网球/棒球)
                         //   也由此拿到 set/inning 进度 (P3.2 phase 锚基础)。
@@ -927,6 +931,23 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                              pricing::to_string(fr.src), p_fair, p_market_devig,
                              model_src ? " → 模型源回退市场(不交易)" : " (sharp/deriv, 合法, 仅记录)");
             if (model_src) p_fair = p_market_devig;  // 模型误配 → edge 归零, SelectSide 不产单
+        }
+        // [orientation-flip 门] (2026-06-04 老板「方向错了, 排查一下」): sharp 与市场互补 (sharp+market≈1
+        //   且差>0.30) = sharp 被贴到错误一边 (张冠李戴 / orientation 翻转, 实测 ~9 盘 sharp 0.91 vs 市场
+        //   0.12) → 凭空造反向 fantasy edge → 反向下单亏。朝向可疑 → fail-closed: p_fair=市场 (edge 归零,
+        //   任何源都不产单)。补 fair-sanity(>0.45) 漏掉的"互补但 model 已回退" + 中价位翻转。
+        {
+            const double sh = fin.sharp_yes;
+            if (sh >= 0.0 && sh <= 1.0 && std::abs(sh + p_market_devig - 1.0) < 0.08 &&
+                std::abs(sh - p_market_devig) > 0.30) {
+                static std::atomic<int> flip_dbg{0};
+                if (flip_dbg.fetch_add(1, std::memory_order_relaxed) < 60)
+                    std::fprintf(stderr,
+                                 "[orient-flip] cond=%.24s sharp=%.4f mkt=%.4f GS[home=%s|away=%s] (互补→朝向可疑, 排查名字匹配)\n",
+                                 condition_id.c_str(), sh, p_market_devig,
+                                 game_row.home_team.c_str(), game_row.away_team.c_str());
+                p_fair = p_market_devig;  // 朝向可疑 → 不交易
+            }
         }
     }
 

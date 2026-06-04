@@ -6,9 +6,12 @@
 #include "stcpp/app/event_matcher.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
+#include <set>
 
 #include "stcpp/app/team_alias.hpp"  // sport-aware: ClassifySportMatch / CanonicalTeam
 
@@ -78,7 +81,24 @@ std::vector<std::string> EventMatcher::NormalizeTeamTokens(const std::string& na
     if (!cur.empty()) {
         tokens.push_back(cur);
     }
-    // 去重 + 排序 (集合语义)
+    // 剥离通用词 (2026-06-04 老板「名字已知, 要严谨」): "Invictus Gaming" vs "Aurora Gaming" 靠共享
+    //   "gaming" 假配到无关比赛 (实测 Invictus/Vamos 配上 Yandex/Aurora)。去掉电竞/通用词, 只留区分性队名。
+    //   保守表 (不碰足球意义词 united/city/fc): gaming/esports/team/club/the/gg/e-sports。
+    static const std::set<std::string> kStop = {"gaming", "esports", "esport", "team", "club",
+                                                "the", "gg", "es"};
+    tokens.erase(std::remove_if(tokens.begin(), tokens.end(),
+                                [](const std::string& t) { return kStop.count(t) > 0; }),
+                 tokens.end());
+    // 去重 + 排序 (集合语义); 全被剥光则回退原 token (防空集 → 0 匹配)
+    if (tokens.empty()) {
+        // 罕见: 队名全是通用词 → 保留原始 (不剥) 防误伤
+        for (char c : folded) {
+            const unsigned char uc = static_cast<unsigned char>(c);
+            if (std::isalnum(uc)) cur.push_back(static_cast<char>(std::tolower(uc)));
+            else if (!cur.empty()) { tokens.push_back(cur); cur.clear(); }
+        }
+        if (!cur.empty()) tokens.push_back(cur);
+    }
     std::sort(tokens.begin(), tokens.end());
     tokens.erase(std::unique(tokens.begin(), tokens.end()), tokens.end());
     return tokens;
@@ -112,24 +132,30 @@ double EventMatcher::TeamSimilarity(const std::string& a, const std::string& b) 
 }
 
 namespace {
-// 个人项目 (网球/MMA) 相似度: 共享一个 ≥3 字符 token (= 姓) → 1.0 (语序无关:
-//   "Daria Khomutsianskaya" vs "Khomutsianskaya D." 共享 khomutsianskaya)。无共享姓 → 回退通用。
-double IndividualSim(const std::string& a, const std::string& b) {
-    const auto ta = EventMatcher::NormalizeTeamTokens(a);
-    const auto tb = EventMatcher::NormalizeTeamTokens(b);
-    std::size_t i = 0, j = 0;
-    while (i < ta.size() && j < tb.size()) {
-        if (ta[i] == tb[j]) {
-            if (ta[i].size() >= 3) return 1.0;  // 共享真姓 (非首字母) → 强匹配
-            ++i;
-            ++j;
-        } else if (ta[i] < tb[j]) {
-            ++i;
-        } else {
-            ++j;
-        }
+// 提取姓: 原序 token 中最后一个 ≥3 字符的 (跳过末尾首字母缩写如 "D.")。空 → ""。
+//   "Ioana Maria Sandru"→sandru; "Khomutsianskaya D."→khomutsianskaya; "Tena Lukas"→lukas。
+std::string SurnameToken(const std::string& name) {
+    std::vector<std::string> toks;
+    std::string cur;
+    for (char c : name) {
+        if (std::isalnum(static_cast<unsigned char>(c)))
+            cur += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        else if (!cur.empty()) { toks.push_back(cur); cur.clear(); }
     }
-    return EventMatcher::TeamSimilarity(a, b);  // 无共享姓 → 通用回退
+    if (!cur.empty()) toks.push_back(cur);
+    for (auto it = toks.rbegin(); it != toks.rend(); ++it)
+        if (it->size() >= 3) return *it;
+    return "";
+}
+
+// 个人项目 (网球/MMA) 相似度: 严格认【姓】(最后一个 ≥3 字 token)。
+//   2026-06-04 老板「名字已知, 要严谨」根治: 旧版任一共享 ≥3 token →1.0, 但【名】(Ioana/Maria/Sara)
+//   也 ≥3 字 → 不同人因共享名假配到无关比赛 (实测 Sandru/Popa 配上 Kastakova/Tatu, sharp 全错)。
+//   改: 只比姓相等。"Daria Khomutsianskaya" vs "Khomutsianskaya D." 姓都=khomutsianskaya→1.0 (语序无关)。
+double IndividualSim(const std::string& a, const std::string& b) {
+    const std::string sa = SurnameToken(a), sb = SurnameToken(b);
+    if (!sa.empty() && !sb.empty()) return (sa == sb) ? 1.0 : 0.0;  // 严格认姓: 姓不同=不同人
+    return EventMatcher::TeamSimilarity(a, b);  // 极少数解析不出姓 → 通用兜底
 }
 
 // sport-aware 相似度: 团队→规范队 ID 精确比 (解析不出回退通用); 个人→姓锚; 未知→通用。
@@ -215,6 +241,14 @@ EventMatchResult EventMatcher::Match(const EventMatchInput& in,
             best.team_score = team_sum;
             // orientation: 直配胜出 → YES(team0)=home; 交叉胜出 → YES=away.
             best.yes_is_home = (direct_min >= cross_min);
+            // [match-diag] 2026-06-04 老板「看为什么名字匹配错」: 记 PM 名 vs GS 名 + 直配/交叉 sim + 朝向。
+            //   翻转盘(cross 胜) = PM team0 跟 GS away 更像 → YES 贴错边。看 sim 定位是名字格式/顺序/碰撞。
+            static std::atomic<int> md{0};
+            if (md.fetch_add(1, std::memory_order_relaxed) < 300)
+                std::fprintf(stderr,
+                             "[match-diag] PM[%s|%s] GS[%s|%s] direct(%.2f,%.2f) cross(%.2f,%.2f) yes_is_home=%d\n",
+                             in.team0.c_str(), in.team1.c_str(), ev.home.c_str(), ev.away.c_str(),
+                             direct0, direct1, cross0, cross1, best.yes_is_home ? 1 : 0);
         }
     }
 
