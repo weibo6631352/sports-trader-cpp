@@ -761,6 +761,10 @@ BuildResult PaperDaemon::Build() {
     //   仅当 sharp fair 真跌破均入超 5 分 (信号反转=止损) 才卖, 否则持有等回归/结算。治 predictive_unwind
     //   在小回撤里 churn 卖出实现亏损。取利平仓不受限。
     cfg_.paper_loop.loss_cut_fair_band = 0.05;
+    // 订单簿结构感知 买/卖 (2026-06-04 老板「买卖都要看簿结构, 一直涨能卖就持仓, 簿转向才止盈」):
+    //   买不接下跌的刀 (簿下行不进), 盈利骑趋势 (簿支撑不急止盈), 簿结构转向才止盈。持仓管理。
+    cfg_.paper_loop.book_exit_enabled = true;
+    cfg_.paper_loop.book_exit_imb_thr = 0.15;
     // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
     //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关

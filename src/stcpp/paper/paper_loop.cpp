@@ -1338,6 +1338,35 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         }
     }
 
+    // ---- 订单簿结构感知 买/卖 (2026-06-04 老板「买卖都要看订单簿结构; 一直涨能卖就持仓, 簿转向才止盈」) ----
+    //   本边簿结构: L1 失衡 imb=(bid_sz−ask_sz)/和; microprice vs mid = 方向压力。
+    //   簿转向下行 (卖压) = 失衡 < −thr 且 microprice < mid。
+    //   · 买入(建仓/加仓): 簿正下行 → 不接下跌的刀, 等簿稳 (HOLD)。
+    //   · 盈利减仓(bid≥均入=取利): 簿仍支撑(未转向下行) → 骑住趋势不急止盈; 仅簿转向才放行止盈。
+    if (cfg_.book_exit_enabled) {
+        const double bsz = side_book.best_bid_size();
+        const double asz = side_book.best_ask_size();
+        const double imb = (std::isfinite(bsz) && std::isfinite(asz) && bsz + asz > 0.0)
+                               ? (bsz - asz) / (bsz + asz)
+                               : 0.0;
+        const double micro = std::isfinite(side_book.microprice) ? side_book.microprice : mark_price;
+        const bool book_down = (imb < -cfg_.book_exit_imb_thr) && (micro < side_book.mid);  // 簿转向下行
+        if (action.side == strategy::Side::Buy && book_down) {
+            // 买入时簿正在下行 (卖压起) → 不接下跌的刀, 等簿稳再进。
+            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        if (action.side == strategy::Side::Sell && action.is_close && !book_down) {
+            const auto pos_tp = position_ledger_.get_position(token_id);
+            const double avg_e = (pos_tp && pos_tp->avg_entry_price > 0.0) ? pos_tp->avg_entry_price : 0.0;
+            if (avg_e > 0.0 && exec_bid >= avg_e) {
+                // 盈利取利但簿仍支撑 (未转向下行) → 骑住趋势, 不急止盈 (等簿结构转向再卖)。
+                stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+        }
+    }
+
     // ---- Step 5: 构造 OrderIntent v0.6 (按控制器动作: side/size/is_close/限价) -----
     const std::int64_t as_of_now = NowNs();
     // 校验 4 ts 链 (R-20: 数据源 = 被交易 token 的 hub 快照, 禁 now() 替代)。

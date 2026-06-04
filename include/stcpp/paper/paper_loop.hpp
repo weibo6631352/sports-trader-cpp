@@ -291,6 +291,13 @@ struct PaperLoopConfig {
     //   取利平仓 (bid ≥ 均入) 与盈利减仓不受此限。0 = 关 (旧行为); 生产 daemon 置 0.05 (5 分 band)。
     double loss_cut_fair_band{0.0};
 
+    // 订单簿结构感知止盈 (2026-06-04 老板「买卖要考虑订单簿结构: 一直涨且能卖出去就持仓, 簿结构转向才止盈」):
+    //   盈利减仓 (bid≥均入=取利) 时, 若本边订单簿仍【支撑持仓方向】(L1 失衡未明显翻负 或 microprice≥mid =
+    //   上行压力仍在) → HOLD 骑住趋势, 不急于止盈; 仅当簿结构【转向】(失衡 < −book_exit_imb_thr 且
+    //   microprice < mid = 卖压起) 才放行止盈卖出。亏损侧由 loss_cut_fair_band 管, 此闸只管盈利侧骑趋势。
+    bool book_exit_enabled{false};        // 0/false = 关 (契约测试不变); 生产 daemon 置 true
+    double book_exit_imb_thr{0.15};       // L1 失衡跌破 −此值 (且 microprice<mid) 才算簿结构转向
+
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)
