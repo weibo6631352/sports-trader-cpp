@@ -1375,6 +1375,14 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         }
     }
 
+    // ---- 必输局保护 (2026-06-04 老板「别买 0.2 以下必输局被套结算」) -------------------------
+    //   开新仓买入价 < min_buy_price = 市场实时把该边定为近必输 (时间+比分已定) → 不买 (避免结算归零被套)。
+    //   用 exec_ask (真市场价, 非陈旧 sharp) 判, 对无时钟运动 (CS2/网球) 同样鲁棒。减仓/平仓不受限。
+    if (cfg_.min_buy_price > 0.0 && action.side == strategy::Side::Buy && exec_ask < cfg_.min_buy_price) {
+        stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
     // ---- Step 5: 构造 OrderIntent v0.6 (按控制器动作: side/size/is_close/限价) -----
     const std::int64_t as_of_now = NowNs();
     // 校验 4 ts 链 (R-20: 数据源 = 被交易 token 的 hub 快照, 禁 now() 替代)。

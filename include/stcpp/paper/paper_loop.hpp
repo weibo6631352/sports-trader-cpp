@@ -303,6 +303,12 @@ struct PaperLoopConfig {
     bool book_exit_enabled{false};        // 0/false = 关 (契约测试不变); 生产 daemon 置 true
     double book_exit_imb_thr{0.15};       // L1 失衡跌破 −此值 (且 microprice<mid) 才算簿结构转向
 
+    // 必输局保护 (2026-06-04 老板「很接近比赛末尾、比分差距大时, 别买 0.2 以下必输局被套结算」):
+    //   不开新仓买入价(exec_ask) < 此下限 —— 市场实时把该边定到 <此价 = 近乎确定输 (时间+比分已定),
+    //   买进去多半结算归零被套。用【市场价】(实时、对的) 当决出度信号 → 对所有运动鲁棒, 且不被陈旧 sharp 骗。
+    //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.10 (拦市场<10%胜率的近必输边)。减仓/平仓不受限。
+    double min_buy_price{0.0};
+
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)
