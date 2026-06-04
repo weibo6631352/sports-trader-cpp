@@ -746,13 +746,10 @@ BuildResult PaperDaemon::Build() {
     // 2026-06-04 老板「一根筋调整模型, 再试试能不能救活他」: 切回【模型驱动】(calibrated AUC0.78 模型掌舵)。
     //   ml_drive=true 让 ONNX 模型直接定 fair (不再 sharp 规则); 配 sharp_only_gate=false 不让 sharp 门掐死模型单。
     //   纯观测实验: 模型 AUC0.78 是预测【结果】, edge 在赢【PM 价】—— 让数字定论(beat PM 还是只是同意 PM)。
-    // 2026-06-04 数字定论 → 切【纪律盈利配置】(目标: 赔率 edge 盈利 +$200):
-    //   模型驱动实验跑完, 结果 -$429 (实现 -$287 + 手续费 -$107)。AUC0.78 是预测【结果】不是赢【PM 价】——
-    //   模型只是同意高效 PM, 无 edge, 还因无门狂下单烧 $107 费。「救活模型」已被数字证伪 (PM 太高效)。
-    //   → 关模型驱动; 开 sharp 门 (仅匹配正确的 bet365 inplay de-vig sharp 信号产单, 现匹配已严格认姓修好)。
-    //   要回模型驱动: ml_drive_enabled=true + sharp_only_gate=false (恢复实验配置)。
-    cfg_.paper_loop.ml_drive_enabled = false;
-    cfg_.sharp_only_gate = true;  // 盈利配置: 只交易高置信 sharp 信号 (~8/170 盘有 sharp 源)
+    // 2026-06-04 老板「看数据分析调模型」: 保持【模型驱动】(calibrated 模型掌舵), 通过数据分析调模型救活。
+    //   ml_drive=true 让 ONNX 模型直接定 fair; 配 sharp_only_gate=false 不让 sharp 门掐死模型单。
+    cfg_.paper_loop.ml_drive_enabled = true;
+    cfg_.sharp_only_gate = false;  // 模型驱动模式: 关 sharp 门 (否则 ml_blend 源被门归零)
     // sharp 驱动门 (2026-06-04): 生产 daemon 默认开 (cfg_.sharp_only_gate 默认 true) —— 仅高置信
     //   sharp(bet365) 信号产单, 其余源回退市场 (edge 归零)。管线机制测试可置 false (走 score-prior 出成交)。
     cfg_.paper_loop.sharp_only_gate = cfg_.sharp_only_gate;
@@ -764,12 +761,11 @@ BuildResult PaperDaemon::Build() {
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关
     //   (--enable-fills 的 paper daemon 本就是调模型用; 不开 fills 则本就无成交, 此闸无意义)。
     //   仍保: devig_ok + sizing Step5(净正) + RM cap 链 (仓位上限) + R-11 纯 VirtualFill 不碰真钱。
-    // 2026-06-04 切盈利配置: 重新【开所有 edge 边门】(edge_ci/slippage/fee/net_ev)。这是 $107 手续费
-    //   烧光的根治 —— 实验期 paper_no_edge_gates=true 去掉 fee/net_ev 门 → 任意微 edge 都成交 + 付费。
-    //   开门后: 只有【净 EV 过手续费】的 sharp 信号才下单 (fee=shares×rate×p×(1-p), 体育 rate 0.03),
-    //   交易频率骤降 → 费烧停 → 只留真正 +EV 单。若开门 + sharp 门后仍亏, 即赔率 edge 线已死的铁证。
-    //   要回实验「调模型」全开模式: paper_no_edge_gates = cfg_.enable_paper_fills。
-    cfg_.paper_loop.paper_no_edge_gates = false;
+    // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
+    //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
+    //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关。
+    //   仍保: devig_ok + sizing Step5(净正) + RM cap 链 (仓位上限) + R-11 纯 VirtualFill 不碰真钱。
+    cfg_.paper_loop.paper_no_edge_gates = cfg_.enable_paper_fills;
     paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
                                                      token_map_, cfg_.paper_loop);
