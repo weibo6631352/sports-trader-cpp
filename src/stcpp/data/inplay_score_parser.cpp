@@ -639,6 +639,8 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
         //   双边/三边完整透传 (home/away/draw); orientation 在 paper_loop 按 yes_is_home 翻 YES-canonical。
         //   从同一 event_block 切 odds 节点 (共享 updated_ts, R-20 守法)。无 odds / 选不到盘 → -1.0 sentinel。
         double home_fair = -1.0, away_fair = -1.0, draw_fair = -1.0;
+        double seg_home_fair = -1.0, seg_away_fair = -1.0;  // A-step-2 当前段 fair (-1=无段赔率)
+        int seg_index = 0;                                  // 当前段序号 (0=不适用)
         {
             const auto odds_key = event_block.find("\"odds\":");
             if (odds_key != std::string_view::npos) {
@@ -661,13 +663,26 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
                     }
                     if (d == 0) {
                         static const std::unordered_set<std::string> kNoIds;
+                        const std::string_view odds_sv = event_block.substr(ob, oe - ob + 1);
                         const auto devig = ParseInplayOddsDevigResult(
-                            event_block.substr(ob, oe - ob + 1),
-                            result_market_ids ? *result_market_ids : kNoIds);
+                            odds_sv, result_market_ids ? *result_market_ids : kNoIds);
                         if (devig.valid) {
                             home_fair = devig.home_fair;
                             away_fair = devig.away_fair;
                             draw_fair = devig.draw_fair;  // 2-way 无平局 = 0
+                        }
+                        // A-step-2 分局盘 (MVP=tennis 当前盘): 当前盘 = 已赢盘数 + 1 (在打的那盘有 live 赔率)。
+                        //   对当前盘再 de-vig 一次 (Set N Winner / Home/Away (Nth Set))。fail-closed: 选不到 → -1。
+                        if (sport == goalserve::GoalserveSport::Tennis) {
+                            const int cur_set = rec.home_score_total + rec.away_score_total + 1;
+                            if (cur_set >= 1 && cur_set <= 7) {
+                                const auto seg = ParseTennisSetDevig(odds_sv, cur_set);
+                                if (seg.valid) {
+                                    seg_home_fair = seg.home_fair;
+                                    seg_away_fair = seg.away_fair;
+                                    seg_index = cur_set;
+                                }
+                            }
                         }
                     }
                 }
@@ -678,6 +693,9 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
         result.inplay_home_fairs.push_back(home_fair);  // 1:1 对齐 scores
         result.inplay_away_fairs.push_back(away_fair);
         result.inplay_draw_fairs.push_back(draw_fair);
+        result.inplay_seg_home_fairs.push_back(seg_home_fair);  // A-step-2 当前段 fair
+        result.inplay_seg_away_fairs.push_back(seg_away_fair);
+        result.inplay_seg_index.push_back(seg_index);
     }
 
     return result;

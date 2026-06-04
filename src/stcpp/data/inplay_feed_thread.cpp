@@ -667,6 +667,13 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                     es.inplay_bet365_away_fair = parse_result.inplay_away_fairs[i];
                 if (i < parse_result.inplay_draw_fairs.size())
                     es.inplay_bet365_draw_fair = parse_result.inplay_draw_fairs[i];
+                // A-step-2 分局盘当前段 fair (与 scores 1:1; -1=当前段无赔率)。
+                if (i < parse_result.inplay_seg_home_fairs.size())
+                    es.inplay_seg_home_fair = parse_result.inplay_seg_home_fairs[i];
+                if (i < parse_result.inplay_seg_away_fairs.size())
+                    es.inplay_seg_away_fair = parse_result.inplay_seg_away_fairs[i];
+                if (i < parse_result.inplay_seg_index.size())
+                    es.inplay_seg_index = parse_result.inplay_seg_index[i];
                 const std::string& key = rec.match_id.inplay_match_id;
                 if (!key.empty()) {
                     // E2 事件检测器 (v3 事件套利; 只计数+log, 不交易; 双架构评审: 检测内联采集线程,

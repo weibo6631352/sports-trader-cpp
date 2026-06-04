@@ -80,6 +80,13 @@ struct ParseResult {
     std::vector<double> inplay_home_fairs;
     std::vector<double> inplay_away_fairs;
     std::vector<double> inplay_draw_fairs;  // binary 无平局市场 = 0
+
+    // A-step-2 分局盘 sharp (2026-06-04 老板「第一局/第二局这样的盘」, 小田设计; G-FREEZE-W 只增):
+    //   当前段 de-vig fair (MVP=tennis 当前盘 Set Winner)。与 scores 1:1 对齐。seg_index = 当前段序号
+    //   (tennis: 当前盘 1-5; 0 = 不适用/非分段运动)。-1.0 = 当前段无 bet365 赔率 (fail-closed 不交易)。
+    std::vector<double> inplay_seg_home_fairs;
+    std::vector<double> inplay_seg_away_fairs;
+    std::vector<int> inplay_seg_index;  // 当前段序号 (0=不适用)
 };
 
 // soccer 1X2 (Full Time) inplay market_id (SSOT xiaoduan-w8 §4.3: "1"=1X2全场)。
