@@ -72,6 +72,11 @@ struct ReservationInput {
     double margin_floor{0.0}; // required_margin 下限 (小梁: edge_ci_lower_floor 同源)
     double z{1.645};          // CI z (90% = 1.645)
     int n_eff{200};           // 有效样本数
+    // noise_free (2026-06-04 老板「跑通赔率 edge 线」): fair 是无抽样噪声【点估计】(sharp bet365 de-vig /
+    //   paper_no_edge_gates 调模型模式) → required_margin 跳过二项 z×σ 惩罚, 仅留 margin_floor (半 vig 经济
+    //   地基)。否则 (score-prior/ML 噪声估计) 仍 max(floor, z×σ)。与 edge_ci 同源判据 (ResolveEdgeCiLower),
+    //   消「sizing 说买 / reservation 说噪声不让买」的双标 —— sharp 进不了可下单侧的真因。
+    bool noise_free{false};
 };
 
 struct ReservationPrices {
@@ -91,7 +96,9 @@ struct ReservationPrices {
     }
     const double sigma = std::sqrt(in.fair * (1.0 - in.fair) / static_cast<double>(in.n_eff));
     const double floor = std::isfinite(in.margin_floor) ? in.margin_floor : 0.0;
-    out.required_margin = std::max(floor, in.z * sigma);
+    // noise_free: sharp 点估计 / 调模型模式 → 跳过二项 z×σ (对点估计是错模型, 见 ResolveEdgeCiLower),
+    //   仅留 margin_floor (半 vig 经济地基, 防保证亏交易)。否则噪声估计仍 max(floor, z×σ)。
+    out.required_margin = in.noise_free ? floor : std::max(floor, in.z * sigma);
     const double coef = std::isfinite(in.fee_coef) ? std::max(0.0, in.fee_coef) : 0.0;
     // fee 锚在各自触价 (买 ask / 卖 bid); 触价非有限则退回 fair 锚 (保守)。
     const double pa = (std::isfinite(in.exec_ask) && in.exec_ask > 0.0 && in.exec_ask < 1.0) ? in.exec_ask : in.fair;

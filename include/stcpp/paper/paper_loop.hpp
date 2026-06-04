@@ -737,8 +737,8 @@ private:
                                strategy::Outcome outcome,
                                const polymarket::clob_wss::OrderBookFeatures& side_book,
                                double book_depth_l1, double p_fair_side, double target_mag,
-                               double fee_coef, bool force_cross, int n_eff,
-                               double margin_floor) noexcept;
+                               double fee_coef, bool force_cross, int n_eff, double margin_floor,
+                               bool noise_free) noexcept;
 
     // slice-3b 结算: 比赛 Ended → 按终态比分把 YES/NO 持仓 realize 到结算值 (winner 1 / loser 0) +
     //   平仓 (apply_fill 负 delta), realized PnL 累加进 cum_realized_pnl_pusd_。loop_thread_ 单 writer。

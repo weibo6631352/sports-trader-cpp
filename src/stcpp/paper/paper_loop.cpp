@@ -1187,10 +1187,14 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         force_cross = true;
     }
 
+    // noise_free: sharp 点估计 / 调模型模式 → reservation 跳二项 z×σ (与 edge_ci 同源判据), 让 sharp
+    //   信号能跨价进可下单侧 (2026-06-04 老板「跑通赔率 edge 线」修「sizing 说买/reservation 说噪声」双标)。
+    const bool reservation_noise_free = fair_is_sharp || cfg_.paper_no_edge_gates;
+
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, target_mag, sz_in.fee_rate_coef,
-                          force_cross, n_eff_dyn, margin_floor_dyn);
+                          force_cross, n_eff_dyn, margin_floor_dyn, reservation_noise_free);
 
     // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
     const SideView& other = is_yes ? mkt.no : mkt.yes;
@@ -1213,7 +1217,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             ExecuteControllerSide(condition_id, other_token,
                                   is_yes ? strategy::Outcome::No : strategy::Outcome::Yes, other_feat,
                                   other_depth, 1.0 - p_fair_selected, /*target_mag=*/0.0,
-                                  FeeCoefFor(condition_id), force_cross, n_eff_dyn, margin_floor_dyn);
+                                  FeeCoefFor(condition_id), force_cross, n_eff_dyn, margin_floor_dyn,
+                                  reservation_noise_free);
         }
     }
 }
@@ -1230,8 +1235,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
                                       strategy::Outcome outcome,
                                       const polymarket::clob_wss::OrderBookFeatures& side_book,
                                       double book_depth_l1, double p_fair_side, double target_mag,
-                                      double fee_coef, bool force_cross, int n_eff,
-                                      double margin_floor) noexcept {
+                                      double fee_coef, bool force_cross, int n_eff, double margin_floor,
+                                      bool noise_free) noexcept {
     const double exec_ask = side_book.best_ask();
     const double exec_bid = side_book.best_bid();
     const double mark_price = std::isfinite(side_book.microprice) ? side_book.microprice : side_book.mid;
@@ -1248,6 +1253,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         /*margin_floor=*/margin_floor,  // Phase 0 项2: 动态 (半 vig + amihud); 调用方算好传入
         /*z=*/cfg_.z_90,
         /*n_eff=*/n_eff,  // Phase 0 项1: 动态 (min YES/NO 样本, clamp)
+        /*noise_free=*/noise_free,  // sharp/调模型 → 跳二项 z×σ (只留半 vig 地基), 让 sharp 进可下单侧
     });
 
     // current = 本边 token 当前持仓 (ledger per-outcome, micro→whole pUSD; long ≥0)。

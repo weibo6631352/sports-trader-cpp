@@ -284,3 +284,29 @@ TEST(ReservationFormula, CR04_MarginShrinksWithN) {
     EXPECT_GT(ComputeReservation(hi).buy_px, ComputeReservation(lo).buy_px);
     EXPECT_LT(ComputeReservation(hi).required_margin, ComputeReservation(lo).required_margin);
 }
+
+// CR-05: noise_free 跳二项 z×σ → buy_px 跨过 ask (复现 0xd6e1fbe628 sharp 进不了可下单侧 + 修复)。
+//   2026-06-04 老板「跑通赔率 edge 线」: sharp fair=0.783, ask=0.74, n_eff 小 (in-play 稀疏样本)。
+//   未修 (noise_free=false): z×σ≈0.10 → buy_px≈0.68 < ask 0.74 → NotMarketable → 永不成交。
+//   修后 (noise_free=true): 仅留 margin_floor(半 vig) → buy_px≈0.76 ≥ ask → marketable → 成交。
+TEST(ReservationFormula, CR05_NoiseFreeCrossesAsk) {
+    ReservationInput in;
+    in.fair = 0.783;
+    in.exec_ask = 0.74;
+    in.exec_bid = 0.70;
+    in.fee_coef = 0.03;
+    in.margin_floor = 0.02;  // 半 vig (0.5×0.04 cross_spread)
+    in.z = 1.645;
+    in.n_eff = 12;  // in-play 稀疏 → 大 σ
+
+    in.noise_free = false;
+    const auto noisy = ComputeReservation(in);
+    EXPECT_GT(noisy.required_margin, 0.05) << "二项 z×σ 应给出大 margin";
+    EXPECT_LT(noisy.buy_px, in.exec_ask) << "未修: buy_px < ask → NotMarketable (sharp 进不了可下单侧)";
+
+    in.noise_free = true;
+    const auto clean = ComputeReservation(in);
+    EXPECT_DOUBLE_EQ(clean.required_margin, 0.02) << "noise_free: 仅留 margin_floor (半 vig)";
+    EXPECT_GE(clean.buy_px, in.exec_ask) << "修后: buy_px ≥ ask → marketable → sharp 信号成交";
+    EXPECT_LT(clean.buy_px, in.fair) << "仍 < fair (净 edge>0 才买, 不亏)";
+}
