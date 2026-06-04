@@ -776,6 +776,9 @@ BuildResult PaperDaemon::Build() {
     // 临近末尾必输买入闸 (2026-06-05 老板「临近末尾必输的那种, 还得禁止买入」): 末段(phase>0.85)+ 本边
     //   exec_ask<0.15 (市场定为近必输) → 不开新仓, 防末段 longshot 结算归零。窄闸, 中前段/非便宜不受限。
     cfg_.paper_loop.near_end_max_buy_price = 0.15;
+    // 必赢锁利买入 (2026-06-05 老板「必赢的, 除去买卖手续费有利润就买」): 决出赢方, (1−ask)−买卖费>0 → 强制
+    //   买到此上限锁结算利润 (事件延迟真 edge)。50 = per_order_cap, 保守起步, 受 RM market cap(120) 兜底。
+    cfg_.paper_loop.must_win_lock_usdc = 50.0;
     // 相对止损 (2026-06-05 老板「亏大就割」): 持仓 mark 跌破均入价 25% → 强平 (绕 fair-based loss_cut 的滞后)。
     //   修「bid 比 fair 跌得快, 等 fair 跌够时簿已 gap 到地板, 割在 −85%」; 把均亏 −0.70 压到 ~−0.25。
     cfg_.paper_loop.rel_stop_pct = 0.25;

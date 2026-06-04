@@ -321,6 +321,12 @@ struct PaperLoopConfig {
     //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.15。
     double near_end_max_buy_price{0.0};
 
+    // 必赢锁利买入 (2026-06-05 老板「必赢的, 只要除去买和卖手续费有利润就买」): 已决出且被选边是【赢方】→
+    //   买价(exec_ask)买进、结算收敛到 1, 扣买+卖手续费仍净正 ((1−ask)−买费−卖费>0) → 强制买到此上限
+    //   (绕模型 edge/Kelly 谨慎 + force_cross 穿价锁单)。事件延迟真 edge: 市场尚未把决出赢方收敛到 1。
+    //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 50 (= per_order_cap, 保守起步; 受 RM market cap 约束)。
+    double must_win_lock_usdc{0.0};
+
     // 相对止损 (2026-06-05 老板「亏大就割」): 持仓 mark(microprice) 跌破均入价 ×(1−rel_stop_pct) → 强制平仓
     //   (sel_target=0 + 绕 loss_cut HOLD)。修「bid 比 fair 跌得快, fair-based loss_cut 等 fair 跌够时簿早 gap 到
     //   地板, 割也割在 −85%」: 改用 mark 相对入场价的跌幅当触发, 把均亏从 −0.70 压到 ~−0.25。

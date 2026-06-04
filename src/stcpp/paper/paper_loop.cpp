@@ -1290,6 +1290,24 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         if (sel_is_loser) sel_target = 0.0;  // 该运动已决出, 被选边是落后必输方 → 不开仓
     }
 
+    // 必赢锁利买入 (2026-06-05 老板「必赢的, 只要除去买和卖手续费有利润就买」): 已决出且被选边是【赢方】→
+    //   锁结算收敛利润。买进结算到 1, 扣买+卖手续费仍净正 → 强制买到 must_win_lock_usdc (绕 Kelly 谨慎 +
+    //   force_cross 穿价)。事件延迟真 edge (市场尚未把赢方收敛到 1)。decided 阈值已含高 phase, 不另判末段。
+    bool sel_force_winbuy = false;
+    if (cfg_.must_win_lock_usdc > 0.0 && game_decided_sign != 0.0) {
+        const bool sel_is_winner = (is_yes && game_decided_sign > 0.0) || (!is_yes && game_decided_sign < 0.0);
+        if (sel_is_winner && std::isfinite(exec_ask) && exec_ask > 0.0 && exec_ask < 1.0) {
+            const double fcoef = sz_in.fee_rate_coef;
+            const double buy_fee = fcoef * exec_ask * (1.0 - exec_ask);
+            const double sell_bid = (std::isfinite(exec_bid) && exec_bid > 0.0) ? exec_bid : exec_ask;
+            const double sell_fee = fcoef * sell_bid * (1.0 - sell_bid);
+            if ((1.0 - exec_ask) - buy_fee - sell_fee > 0.0) {  // 扣买卖费仍净正 = 锁利
+                sel_target = std::max(sel_target, cfg_.must_win_lock_usdc);  // 买到锁仓上限 (RM market cap 兜)
+                sel_force_winbuy = true;
+            }
+        }
+    }
+
     // 相对止损 (2026-06-05 老板「亏大就割」): 被选边持仓 mark 跌破均入价 ×(1−rel_stop_pct) → 强平
     //   (sel_target=0 让控制器产平仓卖单 + force_stop 绕过 loss_cut 的 HOLD)。predictive_unwind 下 best_bid>0 即可成交。
     bool sel_force_stop = false;
@@ -1305,8 +1323,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
-                          force_cross || sel_force_stop, n_eff_dyn, margin_floor_dyn, reservation_noise_free,
-                          sel_force_stop, near_end);
+                          force_cross || sel_force_stop || sel_force_winbuy, n_eff_dyn, margin_floor_dyn,
+                          reservation_noise_free, sel_force_stop, near_end);
 
     // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
     const SideView& other = is_yes ? mkt.no : mkt.yes;
