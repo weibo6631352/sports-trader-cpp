@@ -963,9 +963,13 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   2026-06-04: 收进 cfg_.sharp_only_gate (默认关) —— 这是【策略过滤器】非管线不变量, 无条件施加会
     //   把通用 fill 管线/契约单测的非 sharp fair 全归零 (T17/T_Profit/TS4… 9 测试)。生产 daemon 置 true。
     if (cfg_.sharp_only_gate) {
+        const double sharp_gap = std::abs(p_fair - p_market_devig);
+        // 2026-06-04 老板「这个差的太多了」: gap 既要够大(≥min_edge 才有信号), 又不能离谱大
+        //   (> max_gap = 快变盘 sharp 滞后 2.3s 的假 gap / 错配, 不是真 edge — 别拿陈旧 sharp 逆市场正确移动下单)。
         const bool sharp_signal = (fair_src_dbg == pricing::FairSrc::kSharpInplay) &&
-                                  (std::abs(p_fair - p_market_devig) >= cfg_.sharp_only_min_edge);
-        if (!sharp_signal) p_fair = p_market_devig;  // 非高置信 sharp → 不产单
+                                  (sharp_gap >= cfg_.sharp_only_min_edge) &&
+                                  (sharp_gap <= cfg_.sharp_max_gap);
+        if (!sharp_signal) p_fair = p_market_devig;  // 非高置信 sharp (无信号/离谱大滞后) → 不产单
     }
 
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----

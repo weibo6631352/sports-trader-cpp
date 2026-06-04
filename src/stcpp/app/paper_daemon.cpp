@@ -754,6 +754,9 @@ BuildResult PaperDaemon::Build() {
     // sharp 驱动门 (2026-06-04): 生产 daemon 默认开 (cfg_.sharp_only_gate 默认 true) —— 仅高置信
     //   sharp(bet365) 信号产单, 其余源回退市场 (edge 归零)。管线机制测试可置 false (走 score-prior 出成交)。
     cfg_.paper_loop.sharp_only_gate = cfg_.sharp_only_gate;
+    // sharp 偏离上界 (2026-06-04 老板「这个差的太多了」): >15pt 的 sharp-市场 gap 判为滞后/错配假信号,
+    //   不产单 (实测快变盘 CS2/网球 sharp 滞后 2.3s 造 20-26pt 假 gap → 逆市场正确移动下单必亏)。
+    cfg_.paper_loop.sharp_max_gap = 0.15;
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 生产开 —— 减仓随预测回 flat (收敛兑现),
     //   解「只买不卖持到结算」。lib 默认关 (契约/管线测试不变)。
     cfg_.paper_loop.predictive_unwind = true;

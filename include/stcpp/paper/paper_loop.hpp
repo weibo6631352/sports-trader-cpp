@@ -272,6 +272,10 @@ struct PaperLoopConfig {
     //   纯【策略过滤器】非管线不变量, 故默认关; 生产 daemon (sharp 驱动) 显式置 true。
     bool sharp_only_gate{false};
     double sharp_only_min_edge{0.05};  // ≥此偏离才算高置信 sharp 信号 (回测 ≥5% 拐点)
+    // sharp 偏离上界 (2026-06-04 老板「这个差的太多了」): |sharp−市场| > 此值 = 不可信 (快变盘 sharp 滞后
+    //   2.3s 造的假 gap / 错配 / de-vig 异常, 不是真 edge — 实测 CS2/网球 26pt/20pt gap 全是 stale-lag)。
+    //   超此上界不产单 (回退市场)。1.0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.15。
+    double sharp_max_gap{1.0};
     // sharp fair 延迟校正 (2026-06-04 实测「goalserve vs bet365 谁快」: 我们落后 bet365 赔率变更 P50 2.3s)。
     //   我们消费的 bet365 fair 是 ~2.3s 前的快照。若 fair 在移动, 当前真值 ≈ stale_fair + velocity×lag。
     //   用观测到的 fair 速度把 stale fair 外推到「现在」: 稳定 fair(v≈0) 不变; 下跌 fair 被校正下来 →
