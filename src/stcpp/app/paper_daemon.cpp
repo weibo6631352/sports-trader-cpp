@@ -844,7 +844,8 @@ BuildResult PaperDaemon::Build() {
         std::vector<debug_api::FillView> out;
         if (!paper_loop_) return out;
         // market 非空 → 按盘取(盯盘按盘看); 空 → 全局最近 (AnalyticsPage 全量日志)。
-        const auto rows = market.empty() ? paper_loop_->RecentFills(200)
+        // 全局(market 空)取 500 深 — 模型诊断需足量样本算偏差/胜率 (深环 5000 够; 已 gzip 传输)。
+        const auto rows = market.empty() ? paper_loop_->RecentFills(500)
                                          : paper_loop_->RecentFills(30, market);
         out.reserve(rows.size());
         for (const auto& r : rows) {
@@ -858,6 +859,8 @@ BuildResult PaperDaemon::Build() {
             v.size_usdc = r.size_usdc;
             v.realized = r.realized;
             v.cum_realized = r.cum_realized;
+            v.fair = r.fair;
+            v.mark = r.mark;
             out.push_back(std::move(v));
         }
         return out;

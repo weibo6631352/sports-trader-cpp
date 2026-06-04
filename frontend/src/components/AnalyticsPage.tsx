@@ -530,6 +530,8 @@ function FillsLogSection() {
                   <TableCell sx={{ fontWeight: 700 }}>盘口</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>动作</TableCell>
                   <TableCell sx={{ fontWeight: 700 }} align="right">成交价</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }} align="right">模型fair</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }} align="right">声称edge</TableCell>
                   <TableCell sx={{ fontWeight: 700 }} align="right">数量(u)</TableCell>
                   <TableCell sx={{ fontWeight: 700 }} align="right">本笔已实现</TableCell>
                   <TableCell sx={{ fontWeight: 700 }} align="right">累计已实现</TableCell>
@@ -554,6 +556,12 @@ function FillsLogSection() {
                       <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
                         {f.price.toFixed(4)}
                       </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: 'monospace', color: '#bbb' }}>
+                        {f.fair > 0 ? f.fair.toFixed(4) : '—'}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: 'monospace', color: f.fair > 0 && Math.abs((f.side === 'buy' ? f.fair - f.price : f.price - f.fair)) > 0.05 ? '#f44336' : '#888', fontWeight: 700 }}>
+                        {f.fair > 0 ? `${(f.side === 'buy' ? f.fair - f.price : f.price - f.fair) >= 0 ? '+' : ''}${(((f.side === 'buy' ? f.fair - f.price : f.price - f.fair)) * 100).toFixed(1)}` : '—'}
+                      </TableCell>
                       <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
                         {f.size_usdc.toFixed(1)}
                       </TableCell>
@@ -576,6 +584,112 @@ function FillsLogSection() {
 }
 
 // ============================================================
+// 模型诊断 (2026-06-04 老板「分析我们的交易, 看看模型怎么调」+「前端没有要了解的数据=前端功能不够」)
+//   从成交流水算模型可观测: fair 系统偏差 / 声称 edge / 方向偏置 / 声称利润 vs 实际实现 →
+//   一眼看出模型哪里错 + 怎么调。后端已把成交刻 fair+mark 落进 FillRow (前端零猜)。
+// ============================================================
+function ModelDiagnosticSection() {
+  const fills = () => state.fills?.fills ?? [];
+  const buys = () => fills().filter((f) => f.side === 'buy' && f.fair > 0);
+  const sells = () => fills().filter((f) => f.side === 'sell');
+  const withMark = () => fills().filter((f) => f.mark > 0 && f.fair > 0);
+
+  // 模型偏差 = fair − mark (>0 = 模型系统性高估价值, 到处看到"便宜")
+  const biasMean = createMemo(() => {
+    const a = withMark().map((f) => f.fair - f.mark);
+    return a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+  });
+  // 声称 edge (买入视角 = fair − price; 模型认为便宜多少)
+  const claimed = () => buys().map((f) => f.fair - f.price);
+  const claimedMean = createMemo(() => {
+    const a = claimed();
+    return a.length ? a.reduce((s, x) => s + x, 0) / a.length : 0;
+  });
+  const posPct = createMemo(() => {
+    const a = claimed();
+    return a.length ? (100 * a.filter((e) => e > 0).length) / a.length : 0;
+  });
+  const buyYes = () => buys().filter((f) => f.outcome === 'YES').length;
+  const buyNo = () => buys().filter((f) => f.outcome === 'NO').length;
+  // 声称总利润 (按量加权) vs 实际实现 — 声称巨大正、实现负 = edge 是幻觉
+  const claimedProfit = createMemo(() => buys().reduce((s, f) => s + (f.fair - f.price) * f.size_usdc, 0));
+  const realizedTot = createMemo(() => sells().reduce((s, f) => s + f.realized, 0));
+  const hasData = () => buys().length >= 3;
+
+  const verdict = createMemo(() => {
+    if (!hasData()) return [];
+    const m: string[] = [];
+    if (biasMean() > 0.03)
+      m.push(`模型 fair 系统性高于市场 +${(biasMean() * 100).toFixed(1)} 点 → 到处看到假"便宜"`);
+    if (posPct() > 85)
+      m.push(`${posPct().toFixed(0)}% 买入都声称正 edge → 模型几乎从不认为高估 (严重单向偏置)`);
+    if (claimedProfit() > 1 && realizedTot() < 0)
+      m.push(`声称总利润 +$${claimedProfit().toFixed(0)} 但实际实现 -$${Math.abs(realizedTot()).toFixed(2)} → 声称 edge 是幻觉, 不是真 alpha`);
+    return m;
+  });
+
+  const Metric = (p: { label: string; value: string; sub?: string; color?: string }) => (
+    <Box sx={{ flex: '1 1 0', minWidth: 130, p: 1.2, border: '1px solid #373737', borderRadius: 1 }}>
+      <Typography sx={{ fontSize: '11px', color: '#999' }}>{p.label}</Typography>
+      <Typography sx={{ fontSize: '20px', fontWeight: 700, fontFamily: 'monospace', color: p.color ?? '#e0e0e0' }}>
+        {p.value}
+      </Typography>
+      <Show when={p.sub}><Typography sx={{ fontSize: '10px', color: '#777' }}>{p.sub}</Typography></Show>
+    </Box>
+  );
+
+  return (
+    <Card variant="outlined">
+      <CardHeader
+        title={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              模型诊断 (调模型看这里)
+            </Typography>
+            <span class="poll-hint">5s</span>
+            <Chip label={`${buys().length} 买入样本`} size="small" variant="outlined" sx={{ fontWeight: 700 }} />
+          </Box>
+        }
+        sx={{ py: 1, px: 2, borderBottom: '1px solid #373737' }}
+      />
+      <CardContent sx={{ p: 2 }}>
+        <Show when={hasData()} fallback={
+          <Alert severity="info" sx={{ fontSize: '12px' }}>
+            样本不足 (需 ≥3 笔带模型上下文的买入)。重启后等成交累积; 模型偏差/声称 edge/方向偏置在此实时呈现。
+          </Alert>
+        }>
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 1.5 }}>
+            <Metric label="模型偏差 (fair−mark)" value={`${biasMean() >= 0 ? '+' : ''}${(biasMean() * 100).toFixed(1)}点`}
+              sub="模型 fair 相对市场系统偏离" color={biasMean() > 0.03 ? '#f44336' : biasMean() < -0.03 ? '#ff9800' : '#4caf50'} />
+            <Metric label="声称 edge 均值" value={`${claimedMean() >= 0 ? '+' : ''}${(claimedMean() * 100).toFixed(1)}点`}
+              sub="买入时模型认为便宜多少" color={claimedMean() > 0.05 ? '#f44336' : '#e0e0e0'} />
+            <Metric label="正 edge 买入占比" value={`${posPct().toFixed(0)}%`}
+              sub=">85% = 单向偏置" color={posPct() > 85 ? '#f44336' : '#e0e0e0'} />
+            <Metric label="买入方向" value={`Y${buyYes()} / N${buyNo()}`} sub="YES / NO 笔数" />
+            <Metric label="声称利润 vs 实现"
+              value={`$${claimedProfit().toFixed(0)} / ${realizedTot() >= 0 ? '+' : ''}$${realizedTot().toFixed(0)}`}
+              sub="声称(按量) vs 实际已实现"
+              color={claimedProfit() > 1 && realizedTot() < 0 ? '#f44336' : '#e0e0e0'} />
+          </Box>
+          <Show when={verdict().length > 0}>
+            <Alert severity="warning" sx={{ fontSize: '12px', mb: 1 }}>
+              <Typography sx={{ fontSize: '12px', fontWeight: 700, mb: 0.5 }}>诊断</Typography>
+              <For each={verdict()}>{(v) => <div>• {v}</div>}</For>
+            </Alert>
+          </Show>
+          <Alert severity="info" sx={{ fontSize: '12px' }}>
+            <Typography sx={{ fontSize: '12px', fontWeight: 700, mb: 0.5 }}>调模型方向</Typography>
+            <div>① <b>去偏</b>: 训练残差中心化 (减均值) / serving 减去已测偏差 — 直接干掉系统性高估</div>
+            <div>② <b>收紧校准</b>: Platt/isotonic 把过度自信的 fair 压回市场附近</div>
+            <div>③ <b>cap 异常 edge</b>: 声称 &gt;X 点的当过度自信丢弃 (高效市场没那么大真 edge)</div>
+          </Alert>
+        </Show>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
 // AnalyticsPage (顶层导出)
 // ============================================================
 
@@ -583,6 +697,7 @@ export function AnalyticsPage() {
   return (
     <div class="ops-page">
       <AccountSummarySection />
+      <ModelDiagnosticSection />
       <FillsLogSection />
       <PnlTimeseriesSection />
       <WaterfallSection />

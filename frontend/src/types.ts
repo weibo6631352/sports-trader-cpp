@@ -74,6 +74,8 @@ export interface Fill {
   size_usdc: number;
   realized: number;      // 本笔已实现 (卖=（卖价−均入）×量; 买=0)
   cum_realized: number;  // 成交后累计已实现
+  fair: number;          // 成交刻模型 fair (被交易边) — 模型诊断: 声称 edge=fair−price
+  mark: number;          // 成交刻市场 mark — 模型诊断: 模型偏差=fair−mark
   as_of_ts: number;
 }
 

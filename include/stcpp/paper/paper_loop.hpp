@@ -422,15 +422,22 @@ public:
         double size_usdc{0.0};         // 成交量 (whole pUSD)
         double realized{0.0};          // 本笔已实现 (卖出=（卖价−均入）×量; 买入=0)
         double cum_realized{0.0};      // 成交后累计已实现
+        // 模型决策上下文 (2026-06-04 老板「分析交易调模型」): 成交刻模型 fair + 市场 mark,
+        //   供前端模型诊断 (声称 edge = fair−price; 模型偏差 = fair−mark; 看是否反指标/系统偏高)。
+        double fair{0.0};              // 成交刻模型对【被交易边】的 fair (= p_fair_side, FILL 日志同源)
+        double mark{0.0};              // 成交刻市场 mark price
     };
-    // 最近 N 笔成交 (最新在前)。前端流水 + 复盘用。
-    [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200) const {
+    // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
+    [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200,
+                                                   const std::string& market = "") const {
         std::lock_guard<std::mutex> lk(fills_mu_);
         std::vector<FillRow> out;
-        const std::size_t n = std::min(max_n, fills_ring_.size());
-        out.reserve(n);
-        // fills_ring_ 末尾最新 → 倒序取
-        for (std::size_t i = 0; i < n; ++i) out.push_back(fills_ring_[fills_ring_.size() - 1 - i]);
+        out.reserve(std::min(max_n, fills_ring_.size()));
+        // fills_ring_ 末尾最新 → 倒序取; market 过滤 (深环 5000 → 单盘历史够深)
+        for (std::size_t i = 0; i < fills_ring_.size() && out.size() < max_n; ++i) {
+            const FillRow& r = fills_ring_[fills_ring_.size() - 1 - i];
+            if (market.empty() || r.condition_id == market) out.push_back(r);
+        }
         return out;
     }
 
@@ -760,7 +767,7 @@ private:
     std::unordered_map<std::string, char> settled_conditions_;
 
     // 成交流水 ring (2026-06-04 老板「看懂买卖价」): 定长, loop_thread_ 写 / 端点读 mutex 保护。
-    static constexpr std::size_t kFillsRingCap = 500;
+    static constexpr std::size_t kFillsRingCap = 5000;  // 深环: 模型驱动100+笔/30s, 5000≈数十分钟/单盘历史够深
     mutable std::mutex fills_mu_;
     std::deque<FillRow> fills_ring_;  // 末尾最新; 超 cap 弹头
 

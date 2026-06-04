@@ -123,6 +123,8 @@ struct FillView {
     double size_usdc{0.0};   // 成交量 (whole pUSD)
     double realized{0.0};    // 本笔已实现 (卖=（卖价−均入）×量; 买=0)
     double cum_realized{0.0};// 成交后累计已实现
+    double fair{0.0};        // 成交刻模型 fair (被交易边) — 前端模型诊断: 声称 edge=fair−price
+    double mark{0.0};        // 成交刻市场 mark — 前端模型诊断: 模型偏差=fair−mark
 };
 
 // ============================================================
@@ -579,7 +581,8 @@ public:
     // 账户级现金/估值 (老雷 2026-06-01 凯利评审; 默认空 has_data=false → stub/未注入 paper_loop 灰显)。
     virtual AccountSnapshot account_snapshot() const { return {}; }
     // 成交流水 (2026-06-04 老板「看懂买卖价」; 默认空 → stub/未注入 paper_loop 返回空)。
-    virtual std::vector<FillView> fills() const { return {}; }
+    //   market 非空 → 只返该 condition 的成交 (盯盘按盘看, 不受全局环churn丢失)。
+    virtual std::vector<FillView> fills(const std::string& market = "") const { (void)market; return {}; }
 
     // R-11: 全局运行模式 (build-time 锁定, 运行时不可切)
     virtual ExecMode mode() const = 0;
