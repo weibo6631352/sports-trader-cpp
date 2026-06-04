@@ -677,6 +677,11 @@ BuildResult PaperDaemon::Build() {
     // sharp 驱动门 (2026-06-04): 生产 daemon 默认开 (cfg_.sharp_only_gate 默认 true) —— 仅高置信
     //   sharp(bet365) 信号产单, 其余源回退市场 (edge 归零)。管线机制测试可置 false (走 score-prior 出成交)。
     cfg_.paper_loop.sharp_only_gate = cfg_.sharp_only_gate;
+    // 动态持仓退出 (2026-06-04 金融团队会议「动态持仓实现盈利, 非结算」): 收敛兑现锁利, 解「只买不卖」。
+    //   边收敛到 fair (剩余 edge ≤2%) + best_bid 越 avg_entry+1.5¢ → 平仓锁利 (覆盖往返费 ~0.85¢ + 净利)。
+    //   lib 默认关 (契约/管线测试不变); 生产 daemon opt-in。
+    cfg_.paper_loop.take_profit_margin = 0.015;
+    cfg_.paper_loop.take_profit_edge_cap = 0.02;
     // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
     //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关

@@ -1268,6 +1268,20 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     // 防抖死区 (小梁 Q-梁-2): threshold = max(floor, 0.10×|target|)。
     const double min_rebalance = std::max(cfg_.min_rebalance_floor_pusd, 0.10 * std::abs(target_mag));
 
+    // 动态持仓退出 (金融团队会议 2026-06-04): 收敛兑现锁利。仅当 ① 剩余 edge (fair−mark) 已收敛到
+    //   ≤ cap (市场追上 fair, 套利空间没了, 退了不会立刻回买 → 防 churn) ② best_bid 越获利线
+    //   (avg_entry + margin, 锚 entry 免 fair 漂移) → take_profit_px 启用 → Decide 平仓锁利。
+    //   take_profit_margin ≤0 (默认) → -1 关闭 (契约/管线测试不变)。
+    double take_profit_px = -1.0;
+    if (cfg_.take_profit_margin > 0.0 && current_pusd > 0.0) {
+        const double remaining_edge = p_fair_side - mark_price;  // 本边剩余 edge (fair − 市场)
+        if (remaining_edge <= cfg_.take_profit_edge_cap) {
+            const auto pos = position_ledger_.get_position(token_id);
+            if (pos && pos->avg_entry_price > 0.0)
+                take_profit_px = pos->avg_entry_price + cfg_.take_profit_margin;
+        }
+    }
+
     control::ControlInput cin;
     cin.target_pusd = target_mag;  // 被选边 = Kelly; 非选边平旧边 = 0
     cin.current_pusd = current_pusd;
@@ -1279,6 +1293,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     cin.per_order_cap_pusd = cfg_.per_order_cap_usdc;
     cin.allow_short = false;       // 空头 clamp 0 (sell-to-open 对二元市场 N/A; 见 spec §11.6)
     cin.force_cross = force_cross;  // 小梁 Q-梁-2: fair 大跳绕死区
+    cin.take_profit_px = take_profit_px;  // 动态持仓退出 (收敛兑现锁利)
 
     const control::ControlAction action = control::Decide(cin);
     if (!action.act) {
@@ -1381,6 +1396,20 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
 
     // ---- Step 8: PositionLedger::apply_fill (卖负 delta, 老周 Q-周-2) ----------
     //   matcher 出 fill_size_usdc 恒正; 符号在此按 side 定。减仓量已被控制器 clamp ≤ 持仓 → new_size≥0。
+    // 卖减仓 realize PnL (2026-06-04 金融团队会议「动态持仓实现盈利, 非结算」): 平仓卖出 →
+    //   (卖价 − avg_entry) × 卖出 qty 累加进 cum_realized。原仅结算 realize → take-profit/收敛退出卖出
+    //   realized 永 0 (账面看不到动态盈利)。此处补齐, 与 SettleToken (:1459) / unrealized (:1536) 同公式。
+    //   取 apply_fill 【前】的 avg_entry (减仓不改 avg, 但前置取更稳)。
+    double sell_realized = 0.0;
+    if (intent.side == strategy::Side::Sell) {
+        const auto pos_before = position_ledger_.get_position(token_id);
+        if (pos_before && pos_before->avg_entry_price > 0.0) {
+            const double sold_qty = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
+            sell_realized = (fill.fill_price - pos_before->avg_entry_price) * sold_qty;
+            cum_realized_pnl_pusd_ += sell_realized;
+        }
+    }
+
     risk::FillEvent ev;
     ev.filled_size_micro =
         (intent.side == strategy::Side::Sell) ? -fill.fill_size_usdc : fill.fill_size_usdc;
@@ -1405,10 +1434,11 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
 
     std::fprintf(stderr,
                  "[paper_loop] FILL cond=%.24s... tok=%.16s... side=%s is_close=%d "
-                 "fill_sz=%.4f fill_px=%.4f fair=%.4f\n",
+                 "fill_sz=%.4f fill_px=%.4f fair=%.4f realized=%.4f\n",
                  condition_id.c_str(), token_id.c_str(),
                  (intent.side == strategy::Side::Buy) ? "BUY" : "SELL", intent.is_close ? 1 : 0,
-                 static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.fill_price, p_fair_side);
+                 static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.fill_price, p_fair_side,
+                 sell_realized);
 }
 
 // ---------------------------------------------------------------------------
