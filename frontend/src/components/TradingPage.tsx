@@ -282,8 +282,9 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
   const bk = () => book()!;
   // grid 顶档摘要 (含两边 outcome 名); book 未带 outcome 时用它标注哪边是哪队/选手。
   const summ = () => state.conditionCache[props.conditionId]?.summary ?? null;
-  // 订单簿新鲜度 (2026-06-05 老板「WSS新鲜度放订单簿位置, 改名订单簿新鲜度」): now − 订单簿 WSS 版本时刻
-  //   (data_source_ts)。WSS 健康亚秒; 断流持续涨变红。从量化AI标题挪来 (它本就是订单簿/市场赔率的新鲜度)。
+  // 订单簿新鲜度 (2026-06-05 老板「订单簿有两源刷新: WSS + 订单簿REST API, 别叫WSS新鲜度」): now − 订单簿
+  //   数据源时刻 (data_source_ts = hub 里 WSS 推送 / 订单簿 REST 两源中最新那次的版本时刻)。两源任一刷新都更新它,
+  //   故是【订单簿整体】新鲜度, 非单 WSS。健康亚秒; 两源都停才持续涨变红。
   const bookTs    = () => Number(state.conditionCache[props.conditionId]?.quote?.data_source_ts ?? 0);
   const bookAgeS  = () => bookTs() > 0 ? Math.max(0, (uiNow() - bookTs() / 1e6) / 1000) : NaN;
   const bookFresh = () => !Number.isFinite(bookAgeS()) ? '#888'
@@ -384,10 +385,10 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
       <div class="v8-expand-panel">
         <div class="v8-panel-title">
           双边订单簿
-          {/* 订单簿新鲜度 (老板「WSS新鲜度放这+改名」): now − book WSS 版本时刻; 脉冲点每帧闪=在推 */}
+          {/* 订单簿新鲜度 (老板「订单簿两源刷新: WSS + REST API, 非WSS新鲜度」): now − 订单簿数据源时刻 */}
           <Show when={Number.isFinite(bookAgeS())}>
             <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700', color: bookFresh() }}
-                  title="订单簿新鲜度 = now − 订单簿 WSS 版本时刻 (data_source_ts)。WSS 健康亚秒; 持续涨=WSS断流/订单簿过期。">
+                  title="订单簿新鲜度 = now − 订单簿数据源时刻 (data_source_ts; WSS 推送 + 订单簿 REST API 两源中最新)。健康亚秒; 两源都停才持续涨变红。">
               <Show keyed when={bookTs()}><span class="v8-live-dot">●</span></Show>
               {' '}订单簿新鲜度 {bookAgeS().toFixed(1)}s
             </span>
