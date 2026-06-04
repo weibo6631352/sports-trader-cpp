@@ -564,6 +564,7 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
     //   无相位反馈漂移); 间隔 EMA 自适应。详见 Config 注释 + docs/RESEARCH/laolei-inplay-clock-alignment-v1.md。
     std::int64_t phase_prev_updated_ts = 0;     // 上版 feed updated_ts (检测新版本 + 算真实间隔)
     std::int64_t phase_interval_ema_ms = 2000;  // feed 版本间隔 EMA (ms; 锚 updated_ts 差, init 2s)
+    std::uint64_t phase_catch_count = 0;        // 抓到新版本计数 (周期 log 抓取延迟验证相位锁)
 
     // 赛果盘 market_id 集合 (本 sport, thread-local 无锁): Goalserve 字典解析所得 (2026-06-04 老板
     //   「用字典匹配, 别只靠白名单」)。启动拉一次 + 每 kDictRefreshMs 刷新 (市场名/id 极少变)。空 →
@@ -720,11 +721,18 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
 
         // 相位对齐: 检测新版本 → 用 feed 真实 updated_ts 间隔更新 EMA (锚真实更新节奏, 无相位反馈漂移)。
         if (cfg_.phase_align_enabled && parse_result.updated_ts_ms > phase_prev_updated_ts) {
+            // 抓取相位延迟 L = 我方收到时刻(realtime) − feed 版本 updated_ts; 锁牢时 ≈ margin + fetch 往返。
+            const std::int64_t L = rt_ms_now() - parse_result.updated_ts_ms;
             if (phase_prev_updated_ts > 0) {
                 const std::int64_t gap = parse_result.updated_ts_ms - phase_prev_updated_ts;
                 if (gap >= 500 && gap <= 8000)  // 滤异常 (丢版/重连大跳)
                     phase_interval_ema_ms = (phase_interval_ema_ms * 7 + gap * 3) / 10;  // EMA α=0.3
             }
+            // 周期 log 抓取延迟 (验证相位锁: 稳定低 = 贴住相位; 忽高忽低 = 没锁住)。每 20 版本一次防刷屏。
+            if ((++phase_catch_count % 20) == 0)
+                std::fprintf(stderr, "[inplay_phase] sport=%-10s catch_latency=%4lldms interval_ema=%lldms\n",
+                             sport_slug.c_str(), static_cast<long long>(L),
+                             static_cast<long long>(phase_interval_ema_ms));
             phase_prev_updated_ts = parse_result.updated_ts_ms;
         }
 
@@ -740,20 +748,22 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                      sport_slug.c_str(), parse_result.scores.size(),
                      static_cast<long long>(parse_result.updated_ts_ms), gz_body.size(), json_body.size());
 
-        // 相位对齐 sleep (替代固定 poll_interval_ms; 2026-06-05 老板「保持频率, 只对齐相位, 别假设固定2s」):
-        //   默认睡 poll_interval_ms (频率不变)。仅当能把下一次轮询对齐到【预测更新刚发生后】(updated_ts +
-        //   EMA间隔 + margin) 且延后量 ≤ phase_max_nudge_ms 时, 小幅延后 → 抓新鲜版而非 just-before 抓 duplicate。
-        //   钳 [poll_interval_ms, poll_interval_ms+max_nudge]: 永不降频/破限速 (老板「别降低我的频率」)。
+        // 相位对齐 sleep (2026-06-05 老板「不提频, ~1s, 尽量对齐相位」): 瞄准【下一次 feed 更新刚发生后】抓
+        //   (updated_ts + n×EMA间隔 + margin)。关键: while 推进 target 到【未来】那一版 —— 修旧版 bug (target 落在
+        //   过去就一直默认 1005 失锁直到下个新版本)。每收新版本重锚 updated_ts → 消累积漂移。
+        //   保频率: 够近(≤ floor+max_nudge)才瞄 catch, 否则默认 poll_interval (中间 dup 保 ~1s 频率)。
         std::uint32_t sleep_ms = cfg_.poll_interval_ms;
         if (cfg_.phase_align_enabled && phase_prev_updated_ts > 0 && phase_interval_ema_ms >= 500) {
             const std::int64_t now_rt = rt_ms_now();
-            const std::int64_t target = phase_prev_updated_ts + phase_interval_ema_ms +
-                                        static_cast<std::int64_t>(cfg_.phase_margin_ms);  // 预测下一版更新后抓
+            const std::int64_t floor = static_cast<std::int64_t>(cfg_.poll_interval_ms);
+            std::int64_t target = phase_prev_updated_ts + phase_interval_ema_ms +
+                                  static_cast<std::int64_t>(cfg_.phase_margin_ms);
+            // 推进到 ≥ now+floor 的那一版 catch (跳过已过去/太近的, 防失锁)
+            while (target < now_rt + floor) target += phase_interval_ema_ms;
             const std::int64_t w = target - now_rt;
-            if (w >= static_cast<std::int64_t>(cfg_.poll_interval_ms) &&
-                w <= static_cast<std::int64_t>(cfg_.poll_interval_ms) + cfg_.phase_max_nudge_ms) {
+            if (w <= floor + static_cast<std::int64_t>(cfg_.phase_max_nudge_ms))  // 够近 → 瞄 catch
                 sleep_ms = static_cast<std::uint32_t>(w);
-            }
+            // 否则默认 poll_interval (中间 dup 保频率, 下轮再瞄)
         }
         SleepMs(sleep_ms);
     }
