@@ -338,6 +338,85 @@ namespace inplay_odds_detail {
     return ParseInplayOddsDevig(odds_json, mid);
 }
 
+// ===========================================================================
+// A-step-2 分局盘 sharp (2026-06-04 老板「第一局/第二局这样的盘要正确交易」, 小田设计):
+//   bet365 inplay 只对【当前在打的 segment】有 result 赔率 → per-segment 交易 = 对当前段那一个盘 de-vig。
+//   MVP: tennis 当前盘 Set Winner。bet365: "Set N Winner"(N≤3) / "Home/Away (Nth Set)"(N≥4)。
+//   fail-closed: 选不到段盘 → invalid → 绝不回退全场 fair (修 A-step-1 之前「全场 fair 套错段」事故)。
+// ===========================================================================
+namespace inplay_odds_detail {
+// 序数 1→"1st" .. 7→"7th"; 越界 → ""。
+[[nodiscard]] inline std::string SegOrdinal(int n) noexcept {
+    switch (n) {
+        case 1: return "1st";
+        case 2: return "2nd";
+        case 3: return "3rd";
+        case 4: return "4th";
+        case 5: return "5th";
+        case 6: return "6th";
+        case 7: return "7th";
+    }
+    return {};
+}
+// tennis 第 set_n 盘【赛果盘】名判定: 含 set 限定 ("set N" / "Nth set") + 强 result 词
+//   (winner/home-away/1x2/money line/to win), 且不含 game/point/total/handicap 等派生词
+//   (排除 "Game Winner (Nth Set)" 这种【局】赢家 — 它含 "game" → 拒)。
+[[nodiscard]] inline bool IsTennisSetResultName(std::string_view name, int set_n) noexcept {
+    if (name.empty() || set_n < 1 || set_n > 7) return false;
+    const std::string q1 = "set " + std::to_string(set_n);  // "set 2"
+    const std::string q2 = SegOrdinal(set_n) + " set";        // "2nd set"
+    if (!IContains(name, q1) && !IContains(name, q2)) return false;
+    static constexpr std::string_view kDisq[] = {
+        "game",  "point", "break", "ace",     "fault",   "double",  "total",  "over",
+        "under", "handicap", "spread", "odd",  "even",    "correct", "margin", "tie",
+        "deuce", "serve", "score", "first to", "how many",
+    };
+    for (const auto d : kDisq)
+        if (IContains(name, d)) return false;
+    static constexpr std::string_view kRes[] = {"winner", "home/away", "1x2", "money line", "to win"};
+    for (const auto r : kRes)
+        if (IContains(name, r)) return true;
+    return false;
+}
+}  // namespace inplay_odds_detail
+
+// SelectTennisSetResultMarketId — 选 tennis 第 set_n 盘赛果盘 market_id (扫描骨架同 SelectResultMarketId)。
+[[nodiscard]] inline std::string SelectTennisSetResultMarketId(std::string_view odds_json,
+                                                               int set_n) noexcept {
+    using namespace inplay_odds_detail;
+    const std::size_t root = odds_json.find('{');
+    if (root == std::string_view::npos) return {};
+    std::size_t i = root + 1;
+    while (i < odds_json.size()) {
+        while (i < odds_json.size() && odds_json[i] != '"' && odds_json[i] != '}') ++i;
+        if (i >= odds_json.size() || odds_json[i] == '}') break;
+        const std::size_t kstart = i + 1;
+        const std::size_t kend = odds_json.find('"', kstart);
+        if (kend == std::string_view::npos) break;
+        const std::string_view key = odds_json.substr(kstart, kend - kstart);
+        const std::size_t objstart = odds_json.find('{', kend);
+        if (objstart == std::string_view::npos) break;
+        std::size_t j = objstart + 1;
+        int d = 1;
+        while (j < odds_json.size() && d > 0) {
+            if (odds_json[j] == '{') ++d;
+            else if (odds_json[j] == '}') --d;
+            ++j;
+        }
+        const std::string_view market_obj = odds_json.substr(objstart, j - objstart);
+        if (IsTennisSetResultName(ExtractName(market_obj), set_n)) return std::string(key);
+        i = j;
+    }
+    return {};
+}
+
+// ParseTennisSetDevig — 选 tennis 第 set_n 盘赛果盘 → de-vig。fail-closed: 选不到 → invalid。
+[[nodiscard]] inline InplayOddsDevig ParseTennisSetDevig(std::string_view odds_json, int set_n) noexcept {
+    const std::string mid = SelectTennisSetResultMarketId(odds_json, set_n);
+    if (mid.empty()) return {};
+    return ParseInplayOddsDevig(odds_json, mid);
+}
+
 // ParseResultMarketIdsFromDict — 解析 Goalserve dictionaries/odds-markets/{sport} 字典 →
 //   【全场赛果盘 market_id 集合】(2026-06-04 老板「用 goalserve 字典匹配功能」)。
 //   字典格式: [{"id":1777,"name":"Fulltime Result"},{"id":12,"name":"Asian Handicap"},...]。

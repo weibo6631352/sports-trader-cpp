@@ -195,4 +195,37 @@ TEST(InplayDictResult, IdPriorityOverHeuristic) {
     EXPECT_EQ(SelectResultMarketId(kBoth, ids), "999") << "id-set 命中优先于启发式 To Win";
 }
 
+// ============================================================================
+// A-step-2 分局盘 sharp: tennis 当前盘 Set Winner 选盘 (2026-06-04 老板「第一局第二局」, 小田设计)
+// ============================================================================
+using stcpp::data::SelectTennisSetResultMarketId;
+using stcpp::data::ParseTennisSetDevig;
+using stcpp::data::inplay_odds_detail::IsTennisSetResultName;
+
+TEST(InplaySegment, IsTennisSetResultName_PicksSetNotGameNotFull) {
+    EXPECT_TRUE(IsTennisSetResultName("Set 2 Winner", 2));
+    EXPECT_TRUE(IsTennisSetResultName("Home/Away (4th Set)", 4));
+    EXPECT_FALSE(IsTennisSetResultName("Game Winner (2nd Set)", 2)) << "局赢家含 game → 拒";
+    EXPECT_FALSE(IsTennisSetResultName("Set 2 Total Games", 2)) << "总局数 total → 拒";
+    EXPECT_FALSE(IsTennisSetResultName("To Win", 2)) << "全场盘无 set 限定 → 拒";
+    EXPECT_FALSE(IsTennisSetResultName("Set 1 Winner", 2)) << "盘号不符 → 拒";
+}
+
+TEST(InplaySegment, SelectsCurrentSetMarket) {
+    constexpr const char* kOdds = R"JSON({
+      "67": {"id":67,"name":"To Win","participants":{
+          "a":{"name":"Home","value_eu":"1.5","suspend":"0"},"b":{"name":"Away","value_eu":"2.6","suspend":"0"}}},
+      "80088": {"id":80088,"name":"Game Winner (2nd Set)","participants":{
+          "a":{"name":"Home","value_eu":"1.9","suspend":"0"},"b":{"name":"Away","value_eu":"1.9","suspend":"0"}}},
+      "130015": {"id":130015,"name":"Set 2 Winner","participants":{
+          "a":{"name":"Home","value_eu":"1.4","suspend":"0"},"b":{"name":"Away","value_eu":"2.9","suspend":"0"}}}
+    })JSON";
+    EXPECT_EQ(SelectTennisSetResultMarketId(kOdds, 2), "130015") << "选 Set 2 Winner, 非全场/局";
+    EXPECT_EQ(SelectTennisSetResultMarketId(kOdds, 3), "") << "第3盘无盘 → 空 (fail-closed)";
+    const auto d = ParseTennisSetDevig(kOdds, 2);
+    ASSERT_TRUE(d.valid);
+    EXPECT_NEAR(d.home_fair + d.away_fair, 1.0, 1e-6);
+    EXPECT_GT(d.home_fair, 0.6);  // 1.4 < 2.9 → home 占优
+}
+
 }  // namespace
