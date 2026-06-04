@@ -80,6 +80,13 @@ void HttpServer::start() {
 
     register_handlers();
 
+    // 线程池放大 (2026-06-05 老板「是否是长链接短链接的问题」—— 正解): httplib 默认池 = max(8, 核-1)
+    //   = 4vCPU 上只 8 线程, 而【每条 SSE 长连接占用一个 worker 线程整个生命周期】(推送循环阻塞在该线程)。
+    //   多 SSE 连接 (多 tab / 重连残留 / 探针) + REST 短请求 抢这 8 个线程 → 互相饿死 (实测探针 SSE 8s 只收 1 帧)。
+    //   → 池放大到 64: SSE 多为 I/O 等待 (200ms tick sleep, 不占 CPU), 4vCPU 上 64 线程对 I/O-bound 安全,
+    //   长连接不再饿死短请求, book/quote SSE 推送与 positions 同步。
+    server_.new_task_queue = [] { return new httplib::ThreadPool(64); };
+
     // 启动 server_thread_; listen() 是 blocking call — 在独立线程运行 (R-12)
     server_thread_ = std::thread([this] {
         running_.store(true, std::memory_order_release);
