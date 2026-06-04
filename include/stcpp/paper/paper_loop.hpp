@@ -276,6 +276,11 @@ struct PaperLoopConfig {
     //   2.3s 造的假 gap / 错配 / de-vig 异常, 不是真 edge — 实测 CS2/网球 26pt/20pt gap 全是 stale-lag)。
     //   超此上界不产单 (回退市场)。1.0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.15。
     double sharp_max_gap{1.0};
+    // 赔率源新鲜度门 (2026-06-04 老板「超过3秒的赔率源不进决策」): sharp 来自 inplay 赔率 feed
+    //   (Goalserve updated_ts = data_source_ts, R-20)。feed 版本距决策刻 > 此秒数 = 赔率源陈旧
+    //   (feed 停更/掉点, 可能已偏离真实) → 不用 sharp 决策, 回退市场。feed 常态 ~2s/版 (data_source_ts
+    //   每版重盖), 仅 feed 真停才触发, 不误伤静默盘。0 = 关 (lib 默认); 生产 daemon 置 3.0。
+    double sharp_max_staleness_sec{0.0};
     // sharp fair 延迟校正 (2026-06-04 实测「goalserve vs bet365 谁快」: 我们落后 bet365 赔率变更 P50 2.3s)。
     //   我们消费的 bet365 fair 是 ~2.3s 前的快照。若 fair 在移动, 当前真值 ≈ stale_fair + velocity×lag。
     //   用观测到的 fair 速度把 stale fair 外推到「现在」: 稳定 fair(v≈0) 不变; 下跌 fair 被校正下来 →

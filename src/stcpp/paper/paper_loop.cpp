@@ -986,6 +986,23 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   (ML 驱动已关 ml_drive_enabled=false → fair 落 sharp/score-prior/market; 此门再收到只剩 sharp。)
     //   2026-06-04: 收进 cfg_.sharp_only_gate (默认关) —— 这是【策略过滤器】非管线不变量, 无条件施加会
     //   把通用 fill 管线/契约单测的非 sharp fair 全归零 (T17/T_Profit/TS4… 9 测试)。生产 daemon 置 true。
+    // ---- 赔率源新鲜度门 (2026-06-04 老板「超过3秒的赔率源不进决策」) ----------------------------
+    //   sharp 来自 inplay 赔率 feed (data_source_ts = Goalserve updated_ts, R-20 上游ts, 每版~2s 重盖)。
+    //   feed 版本距决策刻 > sharp_max_staleness_sec = 赔率源陈旧 (feed 停更/掉点) → 回退市场 (不拿陈旧
+    //   赔率决策, 防 feed 停更期市场已动而我们用旧值逆向下单)。常态不触发 (feed 活着每~2s 重盖 ts)。
+    if (cfg_.sharp_max_staleness_sec > 0.0 && fair_src_dbg == pricing::FairSrc::kSharpInplay &&
+        game_row.data_source_ts_ns > 0) {
+        const double odds_age_sec = static_cast<double>(NowNs() - game_row.data_source_ts_ns) / 1e9;
+        if (odds_age_sec > cfg_.sharp_max_staleness_sec) {
+            static std::atomic<int> stale_dbg{0};
+            if (stale_dbg.fetch_add(1, std::memory_order_relaxed) < 40)
+                std::fprintf(stderr, "[odds-stale] cond=%.24s 赔率源 age=%.1fs > %.1fs → 回退市场(不决策)\n",
+                             condition_id.c_str(), odds_age_sec, cfg_.sharp_max_staleness_sec);
+            p_fair = p_market_devig;                       // 陈旧赔率源 → edge 归零, 不产单
+            fair_src_dbg = pricing::FairSrc::kMarketDevig;  // 标记已回退 (下游 sharp_only_gate 不再当 sharp)
+        }
+    }
+
     if (cfg_.sharp_only_gate) {
         const double sharp_gap = std::abs(p_fair - p_market_devig);
         // 2026-06-04 老板「这个差的太多了」: gap 既要够大(≥min_edge 才有信号), 又不能离谱大
