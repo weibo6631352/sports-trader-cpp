@@ -501,8 +501,8 @@ function startFallbackPolling(): void {
   _fallbackTimers.push(every(() => { void refreshFeatureHealth(); }, 20000));
   _fallbackTimers.push(every(() => { void refreshMappingStatus(); }, 10000));
   _fallbackTimers.push(every(() => { void refreshHealthz(); }, 10000));
-  // refreshExpandedDetail 已移到 initPolling 真常驻 1s (展开盘 book/quote 不再仅靠 SSE focus 推, 跨洋更稳)
-  //   → 此处不再挂 (避免 SSE 断时双跑)。
+  // SSE 断 → focus 推送也死, 展开盘的全档 book/quote 改由 REST 兜 (2s)。SSE 活时不跑 (服务端推)。
+  _fallbackTimers.push(every(() => { void refreshExpandedDetail(); }, 2000));
 }
 
 function stopFallbackPolling(): void {
@@ -660,9 +660,7 @@ export function initPolling(): void {
   // 成交流水(全局 500 深): SSE 9 通道【不含 fills】→ 必须常驻轮询, 否则 SSE 活时 AnalyticsPage 成交/
   //   模型诊断永远空 (2026-06-04 bug: refreshFills 只挂在 fallback, SSE 健康时从不拉)。已 gzip, 5s 一拉。
   every(() => { void refreshFills(); }, 5000);
-  // 展开盘口全档 book/quote/fills 常驻 1s 快刷 (2026-06-05 老板「订单簿/量化AI 比持仓管理刷新慢很多」):
-  //   根因: book/quote 此前【仅靠 SSE focus 推】(无 REST 兜底), 跨洋 focus 推延迟 → 比 positions 通道慢。
-  //   注释一直写「常驻 refreshExpandedDetail 兜底」但其实只挂在 fallback (SSE 断才跑) = 文档与实现不符。
-  //   改真常驻 1s: 展开盘 (detailInterest, 封顶 DETAIL_CAP, 闸6 控并发) book/quote/fills 与持仓同节奏刷新。
-  every(() => { void refreshExpandedDetail(); }, 1000);
+  // (2026-06-05 老板「SSE 推送挺好的, 修复它就行, 为什么还要请求」): 撤回 1s REST 常驻快刷 ——
+  //   实测它对展开 8 盘 = 24 req/s 风暴 + 大量 ERR_ABORTED, 还挤占浏览器连接池。book/quote 回归纯 SSE focus 推,
+  //   REST 仅 SSE 断线 fallback。SSE focus 推的真实问题单独修 (不靠轮询盖)。
 }
