@@ -512,6 +512,12 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
   const oddsAgeS   = () => oddsTs() > 0 ? Math.max(0, (uiNow() - oddsTs() / 1e6) / 1000) : NaN;
   const freshColor = () => !Number.isFinite(oddsAgeS()) ? '#888'
     : oddsAgeS() < 3 ? '#4caf50' : oddsAgeS() < 8 ? '#ff9800' : '#f44336';
+  // GS sharp 赔率延迟 (2026-06-05 老板「赔率延迟放合适位置」): now − sharp 赔率版本时刻 (Goalserve inplay
+  //   updated_ts; 驱动 sharp fair 的那一版多旧)。这是 3s 新鲜度门管的延迟; 摆 sharp 行旁。
+  const sharpTs    = () => Number(q().sharp_data_source_ts ?? 0);
+  const sharpAgeS  = () => sharpTs() > 0 ? Math.max(0, (uiNow() - sharpTs() / 1e6) / 1000) : NaN;
+  const sharpAgeColor = () => !Number.isFinite(sharpAgeS()) ? '#888'
+    : sharpAgeS() < 3 ? '#4caf50' : sharpAgeS() < 5 ? '#ff9800' : '#f44336';  // 3s 门 → ≥3 黄, ≥5 红
 
   return (
     <div class="v8-expand-panel">
@@ -544,6 +550,14 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
             {fmtBps(sharpDev() * 10000)}
           </span>
           <Show when={!modelReady()}><span class="mono-sub" style={{ 'color': '#4caf50' }}>← 当前 fair</span></Show>
+          {/* GS sharp 赔率延迟 (老板「赔率延迟放合适位置」): now − inplay 赔率版本时刻 = sharp 多旧。
+              3s 门管的就是它; ≥3s 黄/≥5s 红 = 信号过旧, 决策会被门挡。摆 sharp 值旁最贴切。 */}
+          <Show when={Number.isFinite(sharpAgeS())}>
+            <span class="mono-sub" style={{ 'margin-left': 'auto', 'font-weight': '700', color: sharpAgeColor() }}
+                  title="sharp 赔率延迟 = now − Goalserve inplay 赔率版本时刻 (data_source_ts)。这是驱动 sharp fair 的那一版赔率有多旧; 3s 新鲜度门用它 (≥3s 决策被挡)。相位对齐就是为压低它。">
+              延迟 {sharpAgeS().toFixed(1)}s
+            </span>
+          </Show>
         </Show>
       </div>
 

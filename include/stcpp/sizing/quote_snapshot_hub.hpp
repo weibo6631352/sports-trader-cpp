@@ -109,6 +109,9 @@ struct QuoteFeatures {
     double no_imbalance{0.0};           // NO  L1 簿口失衡 ∈ [−1,1]
     bool devig_ok{false};               // de-vig 成功? (观测: 区分「de-vig 失败」vs「edge 不足」)
     std::int64_t joint_as_of_ts_ns{0};  // 联合新鲜度 = min(score.as_of, book.as_of); 模型输入+观测, 绝不 gate
+    // GS sharp 赔率版本时刻 (2026-06-05 老板「赔率延迟放合适位置」): = game_row.data_source_ts_ns
+    //   (驱动 sharp fair 的那一版 Goalserve inplay 赔率的 updated_ts; 3s 新鲜度门用的就是它)。now−它 = sharp 赔率多旧。
+    std::int64_t sharp_data_source_ts_ns{0};
     // NO book 时间戳载体 (双边 book 时间独立; YES book ts 在 extract_full 的 book_row, NO 经此传)。
     //   裸 ts 非 MlFeature 特征 (同 4ts 排除); 仅供 extract_full.fill_latency_features 算 NO book 龄/延迟。
     std::int64_t no_book_data_source_ts_ns{0};

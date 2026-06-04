@@ -649,8 +649,10 @@ inline std::string quote(const StateProvider& sp, const std::string& condition_i
         b += json::num(q.g_time_x_lead);
         b += ",\"joint_as_of_ts\":";
         b += json::i64(q.joint_as_of_ts_ns);
-        b += ",\"data_source_ts\":";  // 真实赔率新鲜度 (订单簿 WSS 版本时刻; now−它 = 赔率多旧)
+        b += ",\"data_source_ts\":";  // PM 订单簿赔率新鲜度 (book WSS 版本时刻; now−它 = 市场赔率多旧)
         b += json::i64(q.data_source_ts_ns);
+        b += ",\"sharp_data_source_ts\":";  // GS sharp 赔率新鲜度 (inplay 赔率版本时刻; now−它 = sharp 多旧)
+        b += json::i64(q.sharp_data_source_ts_ns);
     }
     b += '}';
     return b;

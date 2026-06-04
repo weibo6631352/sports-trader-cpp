@@ -923,6 +923,7 @@ private:
         q.g_time_x_lead = qf.g_time_x_lead;
         q.joint_as_of_ts_ns = qf.joint_as_of_ts_ns;
         q.data_source_ts_ns = qf.data_source_ts_ns;  // 真实赔率新鲜度 (订单簿 WSS 版本时刻)
+        q.sharp_data_source_ts_ns = qf.sharp_data_source_ts_ns;  // GS sharp 赔率新鲜度 (inplay 赔率版本时刻)
         return q;
     }
 };

@@ -445,6 +445,9 @@ struct QuoteParams {
     // 真实赔率新鲜度 (2026-06-05 老板「现在就换成真实赔率新鲜度」): 订单簿 data_source_ts (WSS 版本时刻,
     //   非快照发布的 as_of=now)。now − 它 = 市场赔率有多旧 (WSS 健康时亚秒; WSS 死时会涨, 直观暴露断流)。
     std::int64_t data_source_ts_ns{0};
+    // GS sharp 赔率新鲜度 (2026-06-05 老板「赔率延迟放合适位置」): = game_row.data_source_ts_ns
+    //   (驱动 sharp fair 的那一版 Goalserve inplay 赔率 updated_ts); now−它 = sharp 赔率多旧 (3s 门管的就是它)。
+    std::int64_t sharp_data_source_ts_ns{0};
 };
 
 // ============================================================

@@ -2127,6 +2127,8 @@ void PaperLoop::PublishQuoteSnapshot(
                            time_to_resolution_frac, g_time_x_lead, g_fld_signal, g_remaining_sec,
                            g_periods_won_home, g_periods_won_away, sports, no_book_ds_ts, no_book_ing_ts,
                            no_book_full);
+    // GS sharp 赔率版本时刻 (2026-06-05 老板「赔率延迟放合适位置」): now−它 = 驱动 sharp fair 的 inplay 赔率多旧。
+    qf.sharp_data_source_ts_ns = ml_game_row.data_source_ts_ns;
 
     if (has_real_fair) {
         // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.
