@@ -17,6 +17,7 @@
  *   market info:              60s
  */
 
+import { createSignal } from 'solid-js';
 import { createStore, produce, reconcile } from 'solid-js/store';
 import {
   fetchHealthz, fetchStatus, fetchPositions, fetchPnlTimeseries,
@@ -60,6 +61,11 @@ let _scoreTick = 0;
 
 /** 当前「用户正在看」需要实时 detail 的盘口集合 (Trading 展开行 / 详情页选中行 注册) */
 const detailInterest = new Set<string>();
+
+/** 全局 1s UI 时钟 (2026-06-05 老板「量化AI 刷新慢」诊断配套): 任何"数据年龄"对 uiNow() 求差即每秒重算,
+ *  使【活但静市场】(quote 每秒重发但值不变) 与【真冻】(快照停更) 在面板上可视区分 ——
+ *  age 小且稳=实时·静市场, age 持续增长=数据滞后。initPolling 启一个 setInterval 驱动, 全站复用。 */
+export const [uiNow, setUiNow] = createSignal(Date.now());
 
 // ---- SSE focus 订阅状态 (Phase 2) ----
 let _streamId: string | null = null;   // hello 下发, focus POST 回传
@@ -648,6 +654,9 @@ export function initPolling(): void {
   // 主通路: SSE 推 9 通道 (status/account/grid/scores/events/positions/pnl/gate/rejects)。
   //   失败自动回退到 fast 轮询 (startFallbackPolling)。
   connectSSE();
+
+  // 全局 1s UI 时钟: 驱动各面板的"数据年龄/新鲜度"显示每秒重算 (量化AI 心跳等)。
+  every(() => setUiNow(Date.now()), 1000);
 
   // 展开行全档 book/quote: 不再常驻 REST 轮询 (2026-06-02 老板「接口都做成推送了为什么还要拉」)。
   //   服务端 endpoint_stream.cpp:351 — 新进 focus 的盘口下一 tick(≤1s) 立即推一次 book 快照,

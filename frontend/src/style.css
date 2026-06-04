@@ -295,6 +295,10 @@ html, body {
 
 @keyframes blink { 50% { opacity: 0.3; } }
 
+/* 量化AI 新鲜度心跳: 一次性脉冲 (keyed Show 每收到新 quote 帧重建元素 → 动画重放, 闪一下 = 在刷新) */
+@keyframes pulse-once { 0% { transform: scale(2); opacity: 1; } 100% { transform: scale(1); opacity: 0.5; } }
+.v8-live-dot { display: inline-block; font-size: 9px; animation: pulse-once 0.85s ease-out; }
+
 /* 盘口列 */
 .event-columns {
   display: flex;

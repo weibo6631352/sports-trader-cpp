@@ -24,7 +24,7 @@ import TextField from '@suid/material/TextField';
 import Box from '@suid/material/Box';
 import Alert from '@suid/material/Alert';
 import Badge from '@suid/material/Badge';
-import { state, setDetailInterest, addDetailInterest } from '../store';
+import { state, setDetailInterest, addDetailInterest, uiNow } from '../store';
 import {
   fmtTs, fmtBps, fmtUsdc, fmtClock, stalenessMs, isEndpointFailing,
 } from '../api';
@@ -503,11 +503,27 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
   const mapped     = () => jointTs() > 0;                                // 比分/订单簿映射已连通 (匹配上)
   const devigOk    = () => q().devig_ok === true;
   const jointAgeS  = () => mapped() ? Math.max(0, (Date.now() * 1e6 - jointTs()) / 1e9) : NaN;
+  // 新鲜度心跳 (2026-06-05 老板「量化AI 刷新慢」诊断配套): quote 快照数据年龄 = uiNow - quote_as_of_ts。
+  //   实测后端每秒重算+重发 quote (as_of_ts 帧帧前进), 静市场时值不变 → 面板"看着没刷新"是错觉。
+  //   年龄每秒重算 (uiNow 驱动): 活但静市场=年龄小且稳(绿), 数据真停=年龄持续涨(黄→红)。
+  //   keyed 脉冲点: 每收到一帧新 quote (as_of 变) 闪一次 = 肉眼可见"在刷新"。
+  const quoteTs    = () => Number(q().quote_as_of_ts ?? 0);
+  const quoteAgeS  = () => quoteTs() > 0 ? Math.max(0, (uiNow() - quoteTs() / 1e6) / 1000) : NaN;
+  const freshColor = () => !Number.isFinite(quoteAgeS()) ? '#888'
+    : quoteAgeS() < 3 ? '#4caf50' : quoteAgeS() < 6 ? '#ff9800' : '#f44336';
 
   return (
     <div class="v8-expand-panel">
       <div class="v8-panel-title">
         量化 / AI <span class="mono-sub" style={{ 'font-weight': '400' }}>· 均为 YES 边胜率</span>
+        {/* 新鲜度心跳: 脉冲点(每帧闪) + 数据年龄(每秒重算, 滞后变红) — 区分"活但静市场" vs "真冻" */}
+        <Show when={Number.isFinite(quoteAgeS())}>
+          <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700', color: freshColor() }}
+                title="quote 快照数据年龄 (now − quote_as_of_ts); 后端每秒重发, 数字小且稳=实时·静市场, 持续涨=数据滞后">
+            <Show keyed when={quoteTs()}><span class="v8-live-dot">●</span></Show>
+            {' '}{quoteAgeS() < 3 ? '实时' : '滞后'} {quoteAgeS().toFixed(1)}s
+          </span>
+        </Show>
         {/* XD-3: ADVISORY 角标强制显示 (paper 期) */}
         <Show when={advisory()}>
           <span class="v8-advisory-badge">ADVISORY</span>
