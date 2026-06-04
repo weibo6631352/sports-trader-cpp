@@ -424,6 +424,11 @@ export async function fetchDetailFor(condIds: string[], priority = false): Promi
           s.conditionCache[condId].quote = quote;
         }),
       );
+      // 成交流水: 与 book/quote 同一拉取触发 (老板 2026-06-04「都走同一个 wss 多好啊」/「刷新频率和
+      //   订单簿、量化 ai 不一致」)。折进 fetchDetailFor → 与订单簿/量化 AI 同 2s 节拍刷新, 单一 store 源,
+      //   不再 MarketFills 自己 4s 轮询 (那是 desync 根源)。权威来自后端 per-market 深环 (5000), 直接覆盖。
+      const fd = await fetchFills(condId);
+      if (fd) setState(produce((s) => { s.fillsByMarket[condId] = fd.fills; }));
       // market 元数据仅在用户交互(priority)且未缓存时拉一次 —— 常驻 refreshExpandedDetail
       //   (priority=false) 不拉 market, 彻底消除 market 重拉风暴; 元数据由 refreshMarketInfoSlow(60s) 兜。
       if (priority && !state.conditionCache[condId]?.market) {

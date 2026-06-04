@@ -13,7 +13,7 @@
  *  - sessionStorage 保留展开状态
  */
 
-import { createSignal, For, Show, createMemo, createEffect } from 'solid-js';
+import { createSignal, For, Show, createMemo, createEffect, onCleanup } from 'solid-js';
 import { createStore, produce } from 'solid-js/store';
 import Chip from '@suid/material/Chip';
 import LinearProgress from '@suid/material/LinearProgress';
@@ -34,7 +34,7 @@ import {
 } from '../i18n';
 import type {
   EventGroup, ConditionData, BinaryMarketBookView, HalfBook,
-  Quote, Position, RiskReject, Score,
+  Quote, Position, RiskReject, Score, Fill,
 } from '../types';
 import { PnlSparkline } from './PnlSparkline';
 import { StatusDot, wssStateToDot } from './ui/StatusDot';
@@ -394,19 +394,20 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
           <HalfPane half={bk().token0} label={summ()?.outcome0 || 'YES'} />
           <HalfPane half={bk().token1} label={summ()?.outcome1 || 'NO'} />
         </div>
-        {/* 最近成交 — 就在盘口下面 (老板 2026-06-04「就在我们盘口下面看」) */}
-        <MarketFills conditionId={props.conditionId} />
       </div>
     </Show>
   );
 }
 
-// 单盘口最近成交 (老板「就在盘口下面看」): 读累积 per-market 历史, 即便已平仓也留着买卖价。
+// 单盘口最近成交 (老板「还是持仓那个地方显示」): 直接后端按盘拉 /api/v1/fills?market=cond,
+//   深环5000保证有数据(不受全局churn丢失), 即便已平仓也留着买卖价。展开时每4s刷。
 function MarketFills(props: { conditionId: string }) {
-  const all = () => state.fillsByMarket[props.conditionId] ?? [];
-  const fills = () => all().slice(0, 10);
-  // 合计已实现 = 累积成交里所有卖出的已实现之和 (老板「还有一个合计别漏了」)。
-  const totalReal = () => all().reduce((s, f) => s + (f.side === 'sell' ? f.realized : 0), 0);
+  // 2026-06-04 老板「都走同一个 wss」「刷新频率对齐订单簿/量化 AI」: 不再自己 4s 轮询,
+  //   直接读 store.fillsByMarket (由 fetchDetailFor 与 book/quote 同 2s 节拍写入) → 完全同步刷新。
+  const rows = () => state.fillsByMarket[props.conditionId] ?? [];
+  const fills = () => rows().slice(0, 7);  // 7 行对齐订单簿/量化 AI 两栏高度 (老板「显示7行就行了」)
+  // 合计已实现 = 该盘所有卖出已实现之和 (老板「还有一个合计别漏了」)。
+  const totalReal = () => rows().reduce((s, f) => s + (f.side === 'sell' ? f.realized : 0), 0);
   return (
     <>
       <div class="v8-reject-title">成交 (最近 {fills().length} 笔)</div>
@@ -614,58 +615,14 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
 // ============================================================
 
 function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; perMarketPnl: number | null; conditionId: string }) {
-  const pnlStr = () => {
-    const v = props.perMarketPnl;
-    if (v == null) return null;
-    return { text: fmtUsdc(v), pos: v >= 0 };
-  };
-
+  // 2026-06-04 老板「最上面的 yes 持仓意义不明, 不行就删了」: 删掉冗余持仓块 (当前持仓已在折叠行头
+  //   posText/pnlFmt 显示)。展开区直接以【成交】为主 — 盯盘要的是买卖价+已实现, 不是再重复一遍持仓。
   return (
     <div class="v8-expand-panel">
-      <div class="v8-panel-title">持仓 + 拒单</div>
+      <div class="v8-panel-title">成交 + 拒单</div>
 
-      {/* 持仓 */}
-      <Show
-        when={props.posRows.length > 0}
-        fallback={
-          <div class="v8-pos-empty">
-            <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>
-              暂无 paper 成交（策略未触发 edge）
-            </Typography>
-          </div>
-        }
-      >
-        <For each={props.posRows}>
-          {(p) => {
-            const netQty  = () => Number(p.net_qty);
-            const mark    = () => Number(p.mark_price);
-            const entry   = () => Number(p.avg_entry_price);
-            const pnlTot  = () => Number(p.pnl_realized) + Number(p.pnl_unrealized);
-            const pos     = () => pnlTot() >= 0;
-            return (
-              <div class="v8-pos-row">
-                <Chip label={p.outcome ?? '—'} size="small" variant="outlined"
-                  sx={{ fontSize: '9px', height: '16px', fontWeight: 700 }} />
-                <span class="mono-sub">{netQty() >= 0 ? '+' : ''}{netQty().toLocaleString()}u</span>
-                {/* 2026-06-04 老板「@价被当成买入价」: 明确区分 均入价 vs 现价, 不再裸 @mark 误导 */}
-                <span class="mono-sub" title="买入均价">入@{Number.isFinite(entry()) && entry() > 0 ? entry().toFixed(4) : '—'}</span>
-                <span class="mono-sub" style={{ color: '#888' }} title="当前市场标记价">现@{Number.isFinite(mark()) ? mark().toFixed(4) : '—'}</span>
-                <span class={`mono-sub ${pos() ? 'pnl-pos' : 'pnl-neg'}`} style={{ 'margin-left': 'auto' }} title="本盘口已实现+浮盈">
-                  {fmtUsdc(pnlTot())}
-                </span>
-              </div>
-            );
-          }}
-        </For>
-        <Show when={pnlStr()}>
-          {(ps) => (
-            <div class="v8-pos-total">
-              <span class="q-lbl">合计</span>
-              <span class={`mono-strong ${ps().pos ? 'pnl-pos' : 'pnl-neg'}`}>{ps().text}</span>
-            </div>
-          )}
-        </Show>
-      </Show>
+      {/* 成交 — 与订单簿/量化 AI 同 2s 节拍刷新 (走同一个 fetchDetailFor), 7 行对齐 */}
+      <MarketFills conditionId={props.conditionId} />
 
       {/* 拒单明细 */}
       <div class="v8-reject-title">拒单 (最近 {Math.min(props.rejectRows.length, 5)} 条)</div>
