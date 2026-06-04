@@ -758,17 +758,22 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                      static_cast<long long>(parse_result.updated_ts_ms), gz_body.size(), json_body.size());
 
         // 相位对齐 sleep (2026-06-05 老板「不提频, ~1s, 尽量对齐相位」): 瞄准【下一次 feed 更新刚发生后】抓
-        //   (updated_ts + n×EMA间隔 + margin)。关键: while 推进 target 到【未来】那一版 —— 修旧版 bug (target 落在
-        //   过去就一直默认 1005 失锁直到下个新版本)。每收新版本重锚 updated_ts → 消累积漂移。
-        //   保频率: 够近(≤ floor+max_nudge)才瞄 catch, 否则默认 poll_interval (中间 dup 保 ~1s 频率)。
+        //   (updated_ts + n×EMA间隔 + margin − phase_corr)。算出 ≥ now+floor 的未来那一版 (O(1) ceil, 非 while)。
+        //   每收新版本重锚 updated_ts → 消累积漂移。保频率: 够近(≤ floor+max_nudge)才瞄 catch, 否则默认
+        //   poll_interval (中间 dup 保 ~1s 频率)。SleepMs 让出 CPU, 不 busy-wait。
         std::uint32_t sleep_ms = cfg_.poll_interval_ms;
         if (cfg_.phase_align_enabled && phase_prev_updated_ts > 0 && phase_interval_ema_ms >= 500) {
             const std::int64_t now_rt = rt_ms_now();
             const std::int64_t floor = static_cast<std::int64_t>(cfg_.poll_interval_ms);
-            std::int64_t target = phase_prev_updated_ts + phase_interval_ema_ms +
-                                  static_cast<std::int64_t>(cfg_.phase_margin_ms) - phase_corr_ms;  // 自适应瞄点
-            // 推进到 ≥ now+floor 的那一版 catch (跳过已过去/太近的, 防失锁)
-            while (target < now_rt + floor) target += phase_interval_ema_ms;
+            // 算出 ≥ now+floor 的那一版 catch (O(1) 算术, 不用 while 循环 — 老板「别独占cpu写死while循环」;
+            //   原 while 若 interval_ema=0 会死循环, 现直接 ceil 除法一步到位)。base = 相位基准(自适应瞄点)。
+            const std::int64_t base = phase_prev_updated_ts +
+                                      static_cast<std::int64_t>(cfg_.phase_margin_ms) - phase_corr_ms;
+            const std::int64_t need = now_rt + floor - base;
+            const std::int64_t k = (need <= phase_interval_ema_ms)
+                                       ? 1
+                                       : (need + phase_interval_ema_ms - 1) / phase_interval_ema_ms;  // ceil≥1
+            const std::int64_t target = base + k * phase_interval_ema_ms;
             const std::int64_t w = target - now_rt;
             if (w <= floor + static_cast<std::int64_t>(cfg_.phase_max_nudge_ms))  // 够近 → 瞄 catch
                 sleep_ms = static_cast<std::uint32_t>(w);
