@@ -729,13 +729,15 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                 if (gap >= 500 && gap <= 8000)  // 滤异常 → 间隔 EMA 自适应 (α=0.3)
                     phase_interval_ema_ms = (phase_interval_ema_ms * 7 + gap * 3) / 10;
             }
-            // 闭环校正: 仅正常 catch (L 非漏版离群) 才调。L 偏高(抓晚)→ phase_corr 增大 → 瞄更早 → 拉低 L。
-            //   目标 ~250ms (margin + fetch 往返不可压下限)。clamp [0, margin] 保证仍瞄在 update 之后 (不抓到旧版)。
+            // 闭环【双向】校正 (2026-06-05 老板「左右偏移都要算, 不能只减; 落到1.99就+0.05顶到2.04」):
+            //   L 偏高(抓晚)→ phase_corr↑ → 瞄更早; L 偏低(抓太早/快撞到更新前)→ phase_corr↓(转负) → 瞄更晚(+offset)。
+            //   伺服到目标 ~250ms。clamp [−max_nudge, margin]: 负=往后顶(老板的+0.05), 正=往前(上限 update 后不抓旧版)。
             if (L >= 0 && L < phase_interval_ema_ms * 3 / 2) {
-                phase_corr_ms += (L - 250) * 3 / 10;  // 比例增益 0.3
-                if (phase_corr_ms < 0) phase_corr_ms = 0;
-                if (phase_corr_ms > static_cast<std::int64_t>(cfg_.phase_margin_ms))
-                    phase_corr_ms = static_cast<std::int64_t>(cfg_.phase_margin_ms);
+                phase_corr_ms += (L - 250) * 3 / 10;  // 比例增益 0.3 (双向: err 正往早, err 负往晚)
+                const std::int64_t lo = -static_cast<std::int64_t>(cfg_.phase_max_nudge_ms);  // 允许往后顶
+                const std::int64_t hi = static_cast<std::int64_t>(cfg_.phase_margin_ms);
+                if (phase_corr_ms < lo) phase_corr_ms = lo;
+                if (phase_corr_ms > hi) phase_corr_ms = hi;
             }
             phase_prev_updated_ts = parse_result.updated_ts_ms;
         }
