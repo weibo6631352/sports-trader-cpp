@@ -768,8 +768,9 @@ BuildResult PaperDaemon::Build() {
     //   买不接下跌的刀 (簿下行不进), 盈利骑趋势 (簿支撑不急止盈), 簿结构转向才止盈。持仓管理。
     cfg_.paper_loop.book_exit_enabled = true;
     cfg_.paper_loop.book_exit_imb_thr = 0.15;
-    // 必输局保护 (2026-06-04 老板「别买 0.2 以下必输局被套结算」): 买入价 <0.10 (市场<10%胜率近必输) 不开仓。
-    cfg_.paper_loop.min_buy_price = 0.10;
+    // 必输局保护 (2026-06-04 老板「用比赛阶段数学模型, 不是价格地板」): 改用既有 game_phase/garbage_time
+    //   模型 (TickOne: 垃圾时间落后方 target=0 不开仓)。价格地板关闭 (boss「不是这样的」)。
+    cfg_.paper_loop.min_buy_price = 0.0;
     // 决策节拍 (2026-06-04 老板「三源都触发决策没」): 500ms→100ms。三源(WSS/149hz poll/赔率)写共享态,
     //   决策每 tick 读最新; 500ms 把 149hz 新鲜簿+簿结构反应硬卡住 → 簿转向止盈/不被吃单反应慢, 小赢大亏。
     //   降到 100ms: 决策 10×/s 采样新鲜簿; 48 盘×10/s 对 4 核轻松, 新加簿结构+入场价闸防过度交易。

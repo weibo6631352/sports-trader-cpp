@@ -1234,9 +1234,20 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   信号能跨价进可下单侧 (2026-06-04 老板「跑通赔率 edge 线」修「sizing 说买/reservation 说噪声」双标)。
     const bool reservation_noise_free = fair_is_sharp || cfg_.paper_no_edge_gates;
 
+    // 必输局保护 (2026-06-04 老板「用比赛阶段数学模型, 不是价格地板」): 复用既有 game_phase 模型 ——
+    //   sports.garbage_time (末段 phase_frac>0.85 ∧ |比分差|≥3 = 已决出/blowout; 无时钟运动用 period 进度锚)
+    //   时, 被选边若是【落后方】= 近必输 → target=0, 控制器只减不开 (不买进必输局结算归零被套)。
+    double sel_target = target_mag;
+    if (sports.garbage_time > 0.5) {
+        const double score_diff_sd = static_cast<double>(game_row.score_home_total) -
+                                     static_cast<double>(game_row.score_away_total);  // YES-canonical: >0=YES领先
+        const bool sel_is_loser = (is_yes && score_diff_sd < 0.0) || (!is_yes && score_diff_sd > 0.0);
+        if (sel_is_loser) sel_target = 0.0;  // 垃圾时间落后方 = 近必输, 不开仓
+    }
+
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
-                          exec_feat, book_depth_l1, p_fair_selected, target_mag, sz_in.fee_rate_coef,
+                          exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
                           force_cross, n_eff_dyn, margin_floor_dyn, reservation_noise_free);
 
     // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
