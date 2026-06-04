@@ -485,6 +485,97 @@ function AccountSummarySection() {
 }
 
 // ============================================================
+// 成交流水 (2026-06-04 老板「多少价格买的/卖出的都不知道」)
+//   每笔: 时间 | 盘口 | 买/卖 | 边 | 成交价 | 数量 | 本笔已实现 | 累计已实现
+// ============================================================
+function FillsLogSection() {
+  const fills = () => state.fills?.fills ?? [];
+  // condition_id → 人读队名 (用 /grid 写进 conditionCache 的 title; 缺则短 hash)
+  const nameFor = (cid: string): string => {
+    const t = state.conditionCache[cid]?.summary?.title;
+    return t && t.length > 0 ? t : `${cid.slice(0, 10)}…`;
+  };
+  const realColor = (v: number): 'green' | 'red' | 'default' =>
+    v > 0.0001 ? 'green' : v < -0.0001 ? 'red' : 'default';
+  const chipSx = (c: 'green' | 'red' | 'default') =>
+    c === 'green' ? { color: '#4caf50', fontWeight: 700 }
+      : c === 'red' ? { color: '#f44336', fontWeight: 700 }
+        : { color: '#aaa' };
+
+  return (
+    <Card variant="outlined">
+      <CardHeader
+        title={
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+              成交流水 (每笔买/卖价 + 已实现盈亏)
+            </Typography>
+            <span class="poll-hint">5s</span>
+            <Chip label={`${fills().length} 笔`} size="small" variant="outlined" sx={{ fontWeight: 700 }} />
+          </Box>
+        }
+        sx={{ py: 1, px: 2, borderBottom: '1px solid #373737' }}
+      />
+      <CardContent sx={{ p: 0 }}>
+        <Show when={fills().length > 0} fallback={
+          <Alert severity="info" sx={{ fontSize: '12px', m: 2 }}>
+            尚无成交 (paper 引擎未产生成交; 有成交后这里逐笔显示买价/卖价/已实现)
+          </Alert>
+        }>
+          <TableContainer sx={{ maxHeight: 420 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700 }}>时间</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>盘口</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>动作</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }} align="right">成交价</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }} align="right">数量(u)</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }} align="right">本笔已实现</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }} align="right">累计已实现</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                <For each={fills()}>
+                  {(f) => (
+                    <TableRow hover>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: '11px', color: '#999' }}>
+                        {fmtTs(f.as_of_ts)}
+                      </TableCell>
+                      <TableCell sx={{ fontSize: '12px', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {nameFor(f.market_id)}
+                      </TableCell>
+                      <TableCell>
+                        <span style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700 }}>
+                          {f.side === 'buy' ? '买入' : (f.is_close ? '卖出(平)' : '卖出')}
+                        </span>
+                        <span style={{ color: '#888', 'margin-left': '6px', 'font-size': '11px' }}>{f.outcome}</span>
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: 'monospace', fontWeight: 700 }}>
+                        {f.price.toFixed(4)}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: 'monospace' }}>
+                        {f.size_usdc.toFixed(1)}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: 'monospace', ...chipSx(realColor(f.realized)) }}>
+                        {f.side === 'sell' ? `${f.realized >= 0 ? '+' : ''}${f.realized.toFixed(2)}` : '—'}
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontFamily: 'monospace', ...chipSx(realColor(f.cum_realized)) }}>
+                        {`${f.cum_realized >= 0 ? '+' : ''}${f.cum_realized.toFixed(2)}`}
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </For>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Show>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
 // AnalyticsPage (顶层导出)
 // ============================================================
 
@@ -492,6 +583,7 @@ export function AnalyticsPage() {
   return (
     <div class="ops-page">
       <AccountSummarySection />
+      <FillsLogSection />
       <PnlTimeseriesSection />
       <WaterfallSection />
       <GateSection />

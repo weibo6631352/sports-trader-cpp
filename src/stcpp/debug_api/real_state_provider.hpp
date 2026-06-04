@@ -219,6 +219,13 @@ public:
         return {};  // 未注入 → has_data=false (前端灰显)
     }
 
+    // 成交流水回调 (2026-06-04 老板「看懂买卖价」): daemon 注入 lambda (捕获 paper_loop_, 调 RecentFills())。
+    void set_fills_fn(std::function<std::vector<FillView>()> fn) { fills_fn_ = std::move(fn); }
+    [[nodiscard]] std::vector<FillView> fills() const override {
+        if (fills_fn_) return fills_fn_();
+        return {};
+    }
+
     // 映射状态可观测 (老雷 2026-06-01): daemon RefreshEventMapping 线程周期 push 快照。
     //   互斥保护 (写: 映射刷新线程; 读: HTTP 线程; 频率低, 短锁安全)。
     void set_mapping_status(MappingStatusReport rep) {
@@ -778,6 +785,7 @@ private:
     const sizing::QuoteSnapshotHub* quote_hub_{nullptr};  // nullable; nullptr → found=false
     const ml::FeatureVectorHub* fv_hub_{nullptr};         // nullable; nullptr → feature_health 空
     std::function<AccountSnapshot()> account_fn_{};       // 账户现金/估值回调 (daemon 注入); 空 → has_data=false
+    std::function<std::vector<FillView>()> fills_fn_{};   // 成交流水回调 (daemon 注入); 空 → 空流水
     std::function<std::vector<PnlBucket>(std::int64_t, std::int64_t)> pnl_ts_fn_{};  // 净值时序回调 (daemon 注入)
     mutable std::mutex mapping_mtx_;                       // 保护 mapping_snapshot_ (低频写/读)
     MappingStatusReport mapping_snapshot_;                // daemon push 的映射快照

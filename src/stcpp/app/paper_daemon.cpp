@@ -822,6 +822,29 @@ BuildResult PaperDaemon::Build() {
         return a;
     });
 
+    // [2026-06-04 老板「多少价格买的/卖出的都不知道」] /api/v1/fills 成交流水回调:
+    //   paper_loop RecentFills() (定长 ring, mutex 保护) → FillView (前端流水面板)。
+    real_provider_->set_fills_fn([this]() -> std::vector<debug_api::FillView> {
+        std::vector<debug_api::FillView> out;
+        if (!paper_loop_) return out;
+        const auto rows = paper_loop_->RecentFills(200);
+        out.reserve(rows.size());
+        for (const auto& r : rows) {
+            debug_api::FillView v;
+            v.as_of_ts_ns = r.as_of_ts_ns;
+            v.market_id = r.condition_id;
+            v.is_yes = r.is_yes;
+            v.is_buy = r.is_buy;
+            v.is_close = r.is_close;
+            v.price = r.price;
+            v.size_usdc = r.size_usdc;
+            v.realized = r.realized;
+            v.cum_realized = r.cum_realized;
+            out.push_back(std::move(v));
+        }
+        return out;
+    });
+
     // [2026-06-01 凯利评审 Step3] /api/v1/pnl/timeseries 净值曲线回调: paper_loop equity_snapshot (每 tick
     //   等间隔权益样本) 按 bucket_sec 分桶 (按 ts), 每桶取末尾 equity → cum_net_pnl = equity − bankroll_init。
     real_provider_->set_pnl_timeseries_fn(
@@ -1001,7 +1024,7 @@ BuildResult PaperDaemon::Build() {
     if (cfg_.record_ml) {
         ml::FeatureRecorder::Config rec_cfg;
         rec_cfg.output_path = cfg_.ml_path;
-        rec_cfg.poll_interval_sec = 5;
+        rec_cfg.poll_interval_sec = cfg_.ml_poll_sec;
         std::vector<std::string> ml_cond_ids;
         ml_cond_ids.reserve(token_map_.size());
         for (const auto& [cond_id, _tok] : token_map_) {

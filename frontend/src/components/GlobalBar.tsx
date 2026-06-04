@@ -49,11 +49,14 @@ export function GlobalBar() {
 
   const wssEntries = () => Object.entries(s().wss_connected ?? {}) as [string, boolean][];
 
-  const netPnl = () => {
-    const attr = state.attribution;
-    if (attr?.waterfall) return Number(attr.waterfall.net);
-    return null;
-  };
+  // 账户级赚亏单一口径 (2026-06-04 老板「到底是亏还是赚」): 顶栏直读 /api/v1/account,
+  //   与资金面板同源 (废弃旧 attribution.waterfall.net 双源不一致)。净值/已实现/浮盈 一眼看懂。
+  const acct = () => (state.account?.has_data ? state.account?.account ?? null : null);
+  const netPnl = () => { const a = acct(); return a ? a.net_pnl : null; };
+  const realizedPnl = () => { const a = acct(); return a ? a.cum_realized_pnl : null; };
+  const unrealizedPnl = () => { const a = acct(); return a ? a.cum_unrealized_pnl : null; };
+  const equityVal = () => { const a = acct(); return a ? a.equity : null; };
+  const pnlCls = (v: number | null) => (v == null ? '' : v >= 0 ? 'pnl-pos' : 'pnl-neg');
 
   const p99Text = () => {
     const m = state.metrics;
@@ -104,9 +107,22 @@ export function GlobalBar() {
         <span class={`badge ${modeInfo().cls}`}>{modeInfo().text}</span>
         <span class={`state-label ${stateClass()}`} title={stateTitle()}>{stateText()}</span>
         <span class="top-sep">|</span>
-        <span class="top-label">净PnL</span>
-        <span class={`top-pnl ${netPnl() != null ? (netPnl()! >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`}>
-          {netPnl() != null ? fmtUsdc(netPnl()) : '—'}
+        <span class="top-label" title="净值 = 起始本金 + 已实现 + 浮盈 − 手续费">净值</span>
+        <span class={`top-pnl ${pnlCls(netPnl())}`} title="账户总盈亏 (净值 − 起始本金)">
+          {equityVal() != null ? fmtUsdc(equityVal()) : '—'}
+          <span style={{ 'font-size': '11px', 'margin-left': '4px' }}>
+            ({netPnl() != null ? (netPnl()! >= 0 ? '+' : '') + fmtUsdc(netPnl()) : '—'})
+          </span>
+        </span>
+        <span class="top-sep">|</span>
+        <span class="top-label" title="已落袋盈亏 (卖出平仓兑现)">已实现</span>
+        <span class={`top-pnl ${pnlCls(realizedPnl())}`}>
+          {realizedPnl() != null ? (realizedPnl()! >= 0 ? '+' : '') + fmtUsdc(realizedPnl()) : '—'}
+        </span>
+        <span class="top-sep">|</span>
+        <span class="top-label" title="当前持仓未平仓的账面盈亏">浮盈</span>
+        <span class={`top-pnl ${pnlCls(unrealizedPnl())}`}>
+          {unrealizedPnl() != null ? (unrealizedPnl()! >= 0 ? '+' : '') + fmtUsdc(unrealizedPnl()) : '—'}
         </span>
         <span class="top-sep">|</span>
         <span class="top-dim">运行 {fmtUptime(uptimeSec())}</span>

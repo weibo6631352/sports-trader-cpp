@@ -169,6 +169,41 @@ inline std::string positions(const StateProvider& sp, std::int64_t as_of_ns = -1
     return b;
 }
 
+// ---- fills (= GET /api/v1/fills) — 成交流水 (2026-06-04 老板「看懂买卖价」) ----
+inline std::string fills(const StateProvider& sp) {
+    const std::vector<FillView> rows = sp.fills();
+    std::string b;
+    b.reserve(256 + rows.size() * 200);
+    b += "{\"mode\":";
+    b += json::str(exec_mode_str(sp.mode()));
+    b += ",\"fills\":[";
+    for (std::size_t i = 0; i < rows.size(); ++i) {
+        const FillView& r = rows[i];
+        if (i) b += ',';
+        b += "{\"market_id\":";
+        b += json::str(r.market_id);
+        b += ",\"side\":";
+        b += json::str(r.is_buy ? "buy" : "sell");
+        b += ",\"outcome\":";
+        b += json::str(r.is_yes ? "YES" : "NO");
+        b += ",\"is_close\":";
+        b += (r.is_close ? "true" : "false");
+        b += ",\"price\":";
+        b += json::num(r.price);
+        b += ",\"size_usdc\":";
+        b += json::num(r.size_usdc);
+        b += ",\"realized\":";
+        b += json::num(r.realized);
+        b += ",\"cum_realized\":";
+        b += json::num(r.cum_realized);
+        b += ",\"as_of_ts\":";
+        b += json::i64(r.as_of_ts_ns);
+        b += '}';
+    }
+    b += "]}";
+    return b;
+}
+
 // ---- pnl attribution (= GET /api/v1/pnl/attribution) ----
 inline std::string pnl_attribution(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     const PnlAttribution a = sp.pnl_attribution();

@@ -63,6 +63,25 @@ export interface Positions {
   positions: Position[];
 }
 
+// ---------- /api/v1/fills (成交流水: 多少价买/卖 + 本笔已实现) ----------
+
+export interface Fill {
+  market_id: string;     // condition_id (前端用市场缓存映射成人读队名)
+  side: 'buy' | 'sell';
+  outcome: 'YES' | 'NO';
+  is_close: boolean;
+  price: number;
+  size_usdc: number;
+  realized: number;      // 本笔已实现 (卖=（卖价−均入）×量; 买=0)
+  cum_realized: number;  // 成交后累计已实现
+  as_of_ts: number;
+}
+
+export interface Fills {
+  mode: string;
+  fills: Fill[];         // 最新在前
+}
+
 // ---------- /api/v1/pnl/timeseries ----------
 
 export interface PnlBucket {

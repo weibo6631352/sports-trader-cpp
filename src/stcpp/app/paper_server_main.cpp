@@ -72,6 +72,8 @@ int main(int argc, char** argv) {
             cfg.record_ml = false;
         } else if (a == "--ml-path" && i + 1 < argc) {
             cfg.ml_path = argv[++i];
+        } else if (a == "--ml-poll-sec" && i + 1 < argc) {
+            cfg.ml_poll_sec = std::atoi(argv[++i]);  // 采集间隔秒 (lead-lag 精测降 1s)
         } else if (a == "--no-paper") {
             cfg.enable_paper_trading = false;  // 仅观测, 不起 PaperLoop
         } else if (a == "--enable-fills") {

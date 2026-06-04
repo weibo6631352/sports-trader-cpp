@@ -598,6 +598,7 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
           {(p) => {
             const netQty  = () => Number(p.net_qty);
             const mark    = () => Number(p.mark_price);
+            const entry   = () => Number(p.avg_entry_price);
             const pnlTot  = () => Number(p.pnl_realized) + Number(p.pnl_unrealized);
             const pos     = () => pnlTot() >= 0;
             return (
@@ -605,8 +606,10 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
                 <Chip label={p.outcome ?? '—'} size="small" variant="outlined"
                   sx={{ fontSize: '9px', height: '16px', fontWeight: 700 }} />
                 <span class="mono-sub">{netQty() >= 0 ? '+' : ''}{netQty().toLocaleString()}u</span>
-                <span class="mono-sub">@{Number.isFinite(mark()) ? mark().toFixed(4) : '—'}</span>
-                <span class={`mono-sub ${pos() ? 'pnl-pos' : 'pnl-neg'}`} style={{ 'margin-left': 'auto' }}>
+                {/* 2026-06-04 老板「@价被当成买入价」: 明确区分 均入价 vs 现价, 不再裸 @mark 误导 */}
+                <span class="mono-sub" title="买入均价">入@{Number.isFinite(entry()) && entry() > 0 ? entry().toFixed(4) : '—'}</span>
+                <span class="mono-sub" style={{ color: '#888' }} title="当前市场标记价">现@{Number.isFinite(mark()) ? mark().toFixed(4) : '—'}</span>
+                <span class={`mono-sub ${pos() ? 'pnl-pos' : 'pnl-neg'}`} style={{ 'margin-left': 'auto' }} title="本盘口已实现+浮盈">
                   {fmtUsdc(pnlTot())}
                 </span>
               </div>

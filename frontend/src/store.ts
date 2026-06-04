@@ -22,7 +22,7 @@ import {
   fetchHealthz, fetchStatus, fetchPositions, fetchPnlTimeseries,
   fetchPnlAttribution, fetchRiskRejects, fetchGatePaper,
   fetchMarket, fetchBook, fetchScore, fetchQuote, fetchMetrics, fetchEvents,
-  fetchFeatureHealth, fetchMappingStatus, fetchAccount, fetchGrid,
+  fetchFeatureHealth, fetchMappingStatus, fetchAccount, fetchFills, fetchGrid,
 } from './api';
 import {
   STUB_HEALTHZ, STUB_STATUS, STUB_POSITIONS, STUB_PNL_TIMESERIES,
@@ -35,7 +35,7 @@ import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, BinaryMarketBookView, Market, Score, Quote,
   EventGroup, ConditionData, Position, RiskReject, FeatureHealth, MappingStatus, Account,
-  EventSummary, ConditionSummary, GridMarket,
+  EventSummary, ConditionSummary, GridMarket, Fills,
 } from './types';
 
 // ---------- stub 检测 ----------
@@ -119,6 +119,7 @@ interface AppState {
   featureHealth: FeatureHealth | null;
   mappingStatus: MappingStatus | null;
   account: Account | null;
+  fills: Fills | null;  // 成交流水 (老板「看懂买卖价」)
   conditionCache: Record<string, PerConditionCache>;
   eventGroups: EventGroup[];
   liveGames: Score[];  // 盯盘看板: 全部 in-play 比赛比分 (SSE scores 通道直推; 老板「人盯盘」)
@@ -137,6 +138,7 @@ export const [state, setState] = createStore<AppState>({
   featureHealth: null,
   mappingStatus: null,
   account: null,
+  fills: null,
   liveGames: [],
   conditionCache: {},
   eventGroups: [],
@@ -220,6 +222,14 @@ export async function refreshFeatureHealth(): Promise<void> {
 export async function refreshAccount(): Promise<void> {
   const data = await safeGet(fetchAccount, STUB_ACCOUNT);
   setState({ account: data });
+}
+
+// ---------- refreshFills (2026-06-04 老板「多少价格买的/卖出的都不知道」) ----------
+
+export async function refreshFills(): Promise<void> {
+  if (USE_STUB) return;
+  const data = await fetchFills();
+  if (data) setState({ fills: data });
 }
 
 export async function refreshMappingStatus(): Promise<void> {
@@ -456,6 +466,7 @@ function startFallbackPolling(): void {
   _fallbackTimers.push(every(() => { void refreshGrid(); }, 2000));
   _fallbackTimers.push(every(() => { void refreshMarketGrid(); }, 5000));
   _fallbackTimers.push(every(() => { void refreshAccount(); }, 5000));
+  _fallbackTimers.push(every(() => { void refreshFills(); }, 5000));
   _fallbackTimers.push(every(() => { void refreshAttribution(); }, 15000));
   _fallbackTimers.push(every(() => { void refreshGate(); }, 15000));
   // Ops/慢通道: SSE 活时由 healthz/features/mapping/timeseries 通道推; 仅回退时轮询。

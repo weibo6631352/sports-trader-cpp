@@ -145,6 +145,7 @@ struct PaperDaemonConfig {
     std::int32_t disk_prune_free_gb{5};        // 一次释放 GB
     std::int32_t disk_prune_interval_sec{600}; // 检查周期 (10 分钟)
     std::string ml_path{"data/ml_capture/quotes.jsonl"};
+    int ml_poll_sec{5};  // FeatureRecorder 采集间隔 (2026-06-04 加: lead-lag 精测可降 1s; 默认 5)
 
     // 仅观测不交易 (老周: 替代 ObserverOnly 枚举档). true=起 PaperLoop (默认).
     bool enable_paper_trading{true};

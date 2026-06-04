@@ -1439,6 +1439,24 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
                  (intent.side == strategy::Side::Buy) ? "BUY" : "SELL", intent.is_close ? 1 : 0,
                  static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.fill_price, p_fair_side,
                  sell_realized);
+
+    // ---- 成交流水落 ring (2026-06-04 老板「看懂买卖价」) — 前端流水 + /api/v1/fills ----
+    //   event_title 留空: 前端用自己的市场缓存把 condition_id 映射成人读队名 (后端不重复查)。
+    {
+        FillRow fr;
+        fr.as_of_ts_ns = fill.as_of_ts_ns;
+        fr.condition_id = condition_id;
+        fr.is_yes = (intent.outcome == strategy::Outcome::Yes);
+        fr.is_buy = (intent.side == strategy::Side::Buy);
+        fr.is_close = intent.is_close;
+        fr.price = fill.fill_price;
+        fr.size_usdc = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
+        fr.realized = sell_realized;
+        fr.cum_realized = cum_realized_pnl_pusd_;
+        std::lock_guard<std::mutex> lk(fills_mu_);
+        fills_ring_.push_back(std::move(fr));
+        if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
+    }
 }
 
 // ---------------------------------------------------------------------------

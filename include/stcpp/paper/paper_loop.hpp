@@ -58,8 +58,10 @@
 
 #pragma once
 
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -68,6 +70,7 @@
 #include <thread>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "stcpp/data/score_snapshot_store.hpp"  // A4: ScoreMap (tick-local 共享比分快照, 消 read-skew)
 #include "stcpp/data/live_stats_store.hpp"      // live_stats 采集 hop: LiveStatsMap/LiveStatsFields join
@@ -268,6 +271,15 @@ struct PaperLoopConfig {
     //   纯【策略过滤器】非管线不变量, 故默认关; 生产 daemon (sharp 驱动) 显式置 true。
     bool sharp_only_gate{false};
     double sharp_only_min_edge{0.05};  // ≥此偏离才算高置信 sharp 信号 (回测 ≥5% 拐点)
+    // sharp fair 延迟校正 (2026-06-04 实测「goalserve vs bet365 谁快」: 我们落后 bet365 赔率变更 P50 2.3s)。
+    //   我们消费的 bet365 fair 是 ~2.3s 前的快照。若 fair 在移动, 当前真值 ≈ stale_fair + velocity×lag。
+    //   用观测到的 fair 速度把 stale fair 外推到「现在」: 稳定 fair(v≈0) 不变; 下跌 fair 被校正下来 →
+    //   虚假 edge 消失 (老彭「追移动靶」物理根因)。这是【给决策更准的信息】(用实测延迟 de-stale), 非 gate。
+    //   默认关 (契约/管线测试不变); 生产 daemon 置 true。velocity 始终计算供观测/特征, 仅 adjust 受此开关控。
+    bool sharp_lag_adjust{false};
+    double sharp_lag_sec{2.0};                          // 外推时长 (实测 median 落后 ~2.3s, 取 2.0 保守)
+    double sharp_lag_adj_cap{0.04};                     // |外推幅度| 上限 (防趋势过冲, 4 cents)
+    std::int64_t sharp_fair_vel_window_ns{10'000'000'000LL};  // fair 速度回看窗 (feed ~2s/版 → 10s≈5样本)
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 减仓 (预测说该减/收敛) 时 best_bid
     //   可成交即平 (仓位随预测回 flat = 收敛兑现), 不死等 reservation_sell「卖高」价。lib 默认关 (契约测试
     //   不变); 生产 daemon opt-in。解「只买不卖持到结算」(reservation_sell 在 fair 上方收敛永不触发)。
@@ -395,6 +407,32 @@ public:
     [[nodiscard]] double cum_realized_pnl_pusd() const noexcept { return cum_realized_pnl_pusd_; }
     // 累计已付 taker fee (whole pUSD, 绝对值单调)。AccountEquity / 端点 / 测试用 (2026-06-01 凯利评审)。
     [[nodiscard]] double cum_fee_pusd() const noexcept { return cum_fee_pusd_; }
+
+    // ---- 成交流水 (2026-06-04 老板「多少价格买的/卖出的都不知道」) ----
+    //   每笔 paper 成交落一行: 时间 + 盘口 + 买/卖 + 成交价 + 数量 + 本笔已实现。前端「成交流水」面板 +
+    //   /api/v1/fills 用。定长 ring (R-12 bounded), loop_thread_ 写 / 端点读, mutex 保护。纯观测不入决策。
+    struct FillRow {
+        std::int64_t as_of_ts_ns{0};   // 成交观测刻 (R-20, 上游 ts)
+        std::string condition_id;      // 盘口
+        std::string event_title;       // 人读队名/比赛 (前端展示; loop 填)
+        bool is_yes{true};             // 被交易边 (YES/NO)
+        bool is_buy{true};             // 买/卖
+        bool is_close{false};          // 是否平仓动作
+        double price{0.0};             // 成交价
+        double size_usdc{0.0};         // 成交量 (whole pUSD)
+        double realized{0.0};          // 本笔已实现 (卖出=（卖价−均入）×量; 买入=0)
+        double cum_realized{0.0};      // 成交后累计已实现
+    };
+    // 最近 N 笔成交 (最新在前)。前端流水 + 复盘用。
+    [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200) const {
+        std::lock_guard<std::mutex> lk(fills_mu_);
+        std::vector<FillRow> out;
+        const std::size_t n = std::min(max_n, fills_ring_.size());
+        out.reserve(n);
+        // fills_ring_ 末尾最新 → 倒序取
+        for (std::size_t i = 0; i < n; ++i) out.push_back(fills_ring_[fills_ring_.size() - 1 - i]);
+        return out;
+    }
 
     // AccountEquity — 单一账户权益口径 (2026-06-01 凯利评审, docs/MEETINGS/2026-06-01-kelly-equity-review.md)。
     //   收敛原双轨 (RecordEquity@TickAll 与 FeedRiskGateway daily_pnl 各算一套 = 审计噩梦)。
@@ -720,6 +758,11 @@ private:
     //   loop_thread_ 单 writer。settled_conditions_: 幂等 + 已定盘口跳过决策。
     double cum_realized_pnl_pusd_{0.0};
     std::unordered_map<std::string, char> settled_conditions_;
+
+    // 成交流水 ring (2026-06-04 老板「看懂买卖价」): 定长, loop_thread_ 写 / 端点读 mutex 保护。
+    static constexpr std::size_t kFillsRingCap = 500;
+    mutable std::mutex fills_mu_;
+    std::deque<FillRow> fills_ring_;  // 末尾最新; 超 cap 弹头
 
     // ---- M3 成果尺子 (老雷 results plan v1): CLV 测量 ----
     //   每笔买入成交记 entry; 每 tick 更新 mid; 结算时算 CLV (close mid / 0-1 settle)。

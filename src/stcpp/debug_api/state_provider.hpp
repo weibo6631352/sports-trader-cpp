@@ -111,6 +111,21 @@ struct HoldingView {
 };
 
 // ============================================================
+// /api/v1/fills — 成交流水 (2026-06-04 老板「多少价格买的/卖出的都不知道」)
+// ============================================================
+struct FillView {
+    std::int64_t as_of_ts_ns{0};
+    std::string market_id;   // condition_id (前端用市场缓存映射成人读队名)
+    bool is_yes{true};       // 被交易边
+    bool is_buy{true};       // 买/卖
+    bool is_close{false};    // 平仓动作
+    double price{0.0};       // 成交价
+    double size_usdc{0.0};   // 成交量 (whole pUSD)
+    double realized{0.0};    // 本笔已实现 (卖=（卖价−均入）×量; 买=0)
+    double cum_realized{0.0};// 成交后累计已实现
+};
+
+// ============================================================
 // /api/v1/pnl/timeseries
 // ============================================================
 struct PnlBucket {
@@ -563,6 +578,8 @@ public:
     virtual MappingStatusReport mapping_status() const { return {}; }
     // 账户级现金/估值 (老雷 2026-06-01 凯利评审; 默认空 has_data=false → stub/未注入 paper_loop 灰显)。
     virtual AccountSnapshot account_snapshot() const { return {}; }
+    // 成交流水 (2026-06-04 老板「看懂买卖价」; 默认空 → stub/未注入 paper_loop 返回空)。
+    virtual std::vector<FillView> fills() const { return {}; }
 
     // R-11: 全局运行模式 (build-time 锁定, 运行时不可切)
     virtual ExecMode mode() const = 0;
