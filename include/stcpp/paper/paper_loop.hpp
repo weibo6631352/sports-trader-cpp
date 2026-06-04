@@ -264,6 +264,10 @@ struct PaperLoopConfig {
     //   纯【策略过滤器】非管线不变量, 故默认关; 生产 daemon (sharp 驱动) 显式置 true。
     bool sharp_only_gate{false};
     double sharp_only_min_edge{0.05};  // ≥此偏离才算高置信 sharp 信号 (回测 ≥5% 拐点)
+    // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 减仓 (预测说该减/收敛) 时 best_bid
+    //   可成交即平 (仓位随预测回 flat = 收敛兑现), 不死等 reservation_sell「卖高」价。lib 默认关 (契约测试
+    //   不变); 生产 daemon opt-in。解「只买不卖持到结算」(reservation_sell 在 fair 上方收敛永不触发)。
+    bool predictive_unwind{false};
 
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:

@@ -1279,6 +1279,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     cin.per_order_cap_pusd = cfg_.per_order_cap_usdc;
     cin.allow_short = false;       // 空头 clamp 0 (sell-to-open 对二元市场 N/A; 见 spec §11.6)
     cin.force_cross = force_cross;  // 小梁 Q-梁-2: fair 大跳绕死区
+    cin.predictive_unwind = cfg_.predictive_unwind;  // 老板「双边预测的双边仓位管理」: 减仓随预测回 flat
 
     const control::ControlAction action = control::Decide(cin);
     if (!action.act) {

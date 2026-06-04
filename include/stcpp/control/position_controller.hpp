@@ -44,6 +44,11 @@ struct ControlInput {
     double per_order_cap_pusd{0.0};   // 单笔上限 (clamp; RM per_order_cap 同源)
     bool allow_short{false};          // v1=false (空头 clamp 0); M2 开
     bool force_cross{false};          // 强制穿越 (小梁 Q-梁-2: |Δfair|>0.02 → 绕死区; 比分大跳不堵)
+    // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 减仓 (target<current, 预测说该减/flat)
+    //   时, 不要求 best_bid ≥ reservation_sell(fair+margin, 做市「卖高」价 → 收敛到 fair 永不触发 → 持到结算),
+    //   改 best_bid 可成交即平 (仓位随预测回 flat = 收敛兑现)。≤false (默认) = 原做市卖高语义 (契约测试不变);
+    //   生产 daemon 置 true。买侧 + 加仓不受影响。
+    bool predictive_unwind{false};
 };
 
 // 控制器输出 (TickOne 据此构造 OrderIntent 或 skip)。
@@ -155,8 +160,14 @@ struct ReservationPrices {
         a.limit_price = in.reservation_buy_px;
         a.is_close = false;
     } else {
-        // 卖减: 限价不追 — best_bid 必须 ≥ 卖出保留价。
-        if (!(in.best_bid > 0.0 && in.best_bid >= in.reservation_sell_px)) {
+        // 卖减/平仓: target<current = 预测说该减仓 (edge 收敛/翻转 → 仓位回 flat)。
+        //   predictive_unwind (老板「双边预测的双边仓位管理」): best_bid 可成交即平 (随预测回 flat = 收敛兑现);
+        //     原门 best_bid ≥ reservation_sell(fair+margin) 是做市「卖高」价, 市场收敛到 fair 永不触发 → 只能
+        //     持到结算 (= alpha 退化成赌博)。买侧已保证 entry ≤ reservation_buy ≤ bid (减仓时市场≥fair) → 不锁亏。
+        //   默认 (做市): 维持「卖高」语义。
+        const bool marketable = in.predictive_unwind ? (in.best_bid > 0.0)
+                                                      : (in.best_bid > 0.0 && in.best_bid >= in.reservation_sell_px);
+        if (!marketable) {
             a.reason = NoActReason::NotMarketable;
             return a;
         }
@@ -172,7 +183,7 @@ struct ReservationPrices {
         a.act = true;
         a.side = strategy::Side::Sell;
         a.size_pusd = sell_sz;
-        a.limit_price = in.reservation_sell_px;
+        a.limit_price = in.predictive_unwind ? in.best_bid : in.reservation_sell_px;  // 平仓 marketable / 做市卖高
         a.is_close = true;  // 减仓 (降敞口 → RM cap 放行)
     }
 

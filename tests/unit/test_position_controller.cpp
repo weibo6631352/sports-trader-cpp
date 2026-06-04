@@ -210,6 +210,34 @@ TEST(PositionController, PC14_AllowShortOpensSell) {
     EXPECT_DOUBLE_EQ(a.size_pusd, 30.0);  // 开空 30 (无持仓约束)
 }
 
+// PC-15: 预测驱动平仓 — target<current 且 bid 可成交 → 平仓 (即便 bid < reservation_sell「卖高」价)。
+//   老板「双边预测给出的双边仓位管理」: 仓位随预测回 flat (收敛兑现), 不死等卖高 → 解「只买不卖持到结算」。
+TEST(PositionController, PC15_PredictiveUnwindSellsAtBid) {
+    auto in = base();
+    in.target_pusd = 0.0;        // 预测说 flat (edge 收敛/没了)
+    in.current_pusd = 20.0;      // 持 20
+    in.best_bid = 0.55;          // bid < reservation_sell(0.57) → 默认语义卖不掉
+    in.predictive_unwind = true;
+    const auto a = Decide(in);
+    ASSERT_TRUE(a.act);
+    EXPECT_EQ(a.side, Side::Sell) << "预测说减 → 平仓, 不死等卖高";
+    EXPECT_TRUE(a.is_close);
+    EXPECT_DOUBLE_EQ(a.limit_price, 0.55) << "marketable at best_bid";
+    EXPECT_DOUBLE_EQ(a.size_pusd, 20.0);  // 全平
+}
+
+// PC-16: 默认 (predictive_unwind=false) → 维持做市「卖高」语义 (bid<reservation_sell → 卖不掉, 契约不变)。
+TEST(PositionController, PC16_DefaultKeepsSellHigh) {
+    auto in = base();
+    in.target_pusd = 0.0;
+    in.current_pusd = 20.0;
+    in.best_bid = 0.55;          // < reservation_sell(0.57)
+    // predictive_unwind 默认 false
+    const auto a = Decide(in);
+    EXPECT_FALSE(a.act) << "默认: bid 未到卖高价 → 不卖 (NotMarketable)";
+    EXPECT_EQ(a.reason, stcpp::control::NoActReason::NotMarketable);
+}
+
 // ===========================================================================
 // ComputeReservation — reservation 公式纯函数 (小梁 Q-梁-1)
 //   required_margin = max(margin_floor, z×sqrt(fair(1−fair)/n))
