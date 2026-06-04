@@ -1485,9 +1485,12 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                                                 .count();
         auto new_map = std::make_shared<paper::ConditionEventMap>();
         std::size_t matched = 0;
-        // 结束检测: Goalserve 比分 status=final 的候选 (match_id → final) → 该赛事直播结束。
+        // 结束检测 (2026-06-05 老板 a: 扩到所有终态): status=="final"(Ended) 仅是终态之一; c.is_terminal
+        //   覆盖 IsTerminal 全集 (Retired/Walkover/Abandoned/Cancelled/Postponed/Removed —— 这些被
+        //   MapStatus 折成 "pregame", 单看 status 漏判)。网球退赛/比赛腰斩等"完赛"靠此识别 → 退订。
         std::unordered_map<std::string, bool> final_by_match_id;
-        for (const auto& c : candidates) final_by_match_id[c.event_id] = (c.status == "final");
+        for (const auto& c : candidates)
+            final_by_match_id[c.event_id] = (c.status == "final") || c.is_terminal;
         // [DIAG] 候选 Goalserve event + PM 待匹配 market 并排 (定位 0 匹配根因: 空候选/名不符/sport/kickoff).
         //   改: 候选非空时才 dump (避开启动 feed 未拉到的首轮空窗), 候选名 + 市场名并排各 16 条。
         static bool diag_mapping_dumped = false;
@@ -1573,6 +1576,15 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                 }
             }
             if (r.matched) {
+                // 完赛/终态前置判定 (2026-06-05 老板 a+b): final_by_match_id 已含所有终态 (上方 Fix a)。
+                //   终态 → ① 立即 sharp_last_seen.erase (本轮即掉出 eligible, 不等 3min grace, 不刷新)
+                //   ② 入黑名单 (discovery 层不再重订)。eligible 同时驱动 all_token_ids_(WSS)+poll_plan
+                //   (149hz 订单簿轮询), 故掉出 eligible = 两路一起断 (老板「wss 和访问订单簿的 api 都断」)。
+                //   否则: 完赛盘 feed 仍带冻结 bet365 赔率 → has_sharp=true → sharp_last_seen 每轮刷新 →
+                //   永留 eligible → 永不退订 (本次修复的真 bug)。
+                auto fit = final_by_match_id.find(r.inplay_match_id);
+                const bool is_final = (fit != final_by_match_id.end() && fit->second);
+
                 // sharp 赔率源校验 (源头 pass): matched event 须有 bet365 inplay 赔率才算真可交易;
                 //   matched-no-sharp = 匹配上但无赔率 → 记清单 + 不计入可交易。
                 const auto cf = cand_by_id.find(r.inplay_match_id);
@@ -1580,7 +1592,10 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                 const bool has_sharp =
                     cand && (cand->inplay_bet365_home_fair >= 0.0 || cand->inplay_bet365_away_fair >= 0.0 ||
                              (in.is_draw && cand->inplay_bet365_draw_fair >= 0.0));
-                if (has_sharp) {
+                if (is_final) {
+                    // 完赛: 立即掉出 eligible (即便 feed 仍挂冻结赔率); 下轮 RediscoverOnce 退订 WSS + 轮询。
+                    sharp_last_seen.erase(cond_id);
+                } else if (has_sharp) {
                     ++matched_with_sharp;
                     sharp_last_seen[cond_id] = refresh_now_ns;  // 源头 pass: 记末次有赔率时刻 (grace 滞回)
                 } else {
@@ -1600,10 +1615,9 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                         map_report.no_sharp.push_back(std::move(nr));
                     }
                 }
-                // 结束→拉黑 (老板): 匹配的 Goalserve 赛事 status=final → 直播结束, 把该盘的 PM event_id
-                //   入黑名单, 下轮 RediscoverOnce 退订其 token + 释放 hub, 且不再重订 (即便 gamma 仍列)。
-                auto fit = final_by_match_id.find(r.inplay_match_id);
-                if (fit != final_by_match_id.end() && fit->second) {
+                // 结束→拉黑 (老板): 终态 → 把该盘的 PM event_id 入黑名单, 下轮 RediscoverOnce 退订其
+                //   token + 释放 hub, 且不再重订 (即便 gamma 仍列, 等结算)。
+                if (is_final) {
                     const auto cit = market_catalog_.find(cond_id);
                     if (cit != market_catalog_.end() && !cit->second.event_id.empty()) {
                         std::lock_guard<std::mutex> lk(ended_blacklist_mu_);

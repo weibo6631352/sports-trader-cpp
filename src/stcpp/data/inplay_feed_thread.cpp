@@ -874,6 +874,9 @@ debug_api::EventScore InplayFeedThread::ToEventScore(const data::adapter::GameSc
 
     // status: inplay feed 事件均为 InPlay; MapStatus 处理 Half Time
     es.status = inplay::InplayScoreParser::MapStatus(rec.status, es.period);
+    // 终态标志 (2026-06-05 老板 a+b): 源头按 IsTerminal 填 (覆盖 Retired/Walkover/Abandoned/… 等
+    //   被 MapStatus 折成 "pregame" 的终态) → daemon 据此完赛即退订。见 EventScore::is_terminal 注。
+    es.is_terminal = goalserve::IsTerminal(rec.status);
 
     // 4ts 透传 (R-20)
     es.ts.event_ts_ns = rec.ts.event_ts_ns;

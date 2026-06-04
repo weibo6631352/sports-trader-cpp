@@ -385,6 +385,12 @@ struct EventScore {
     //   ToEventScore 未透传 → 下游零消费。E1 纯透传【事实字段】(wire 层只产事实, 不产信号语义;
     //   状态码→事件类型→套利触发 的语义/逻辑归下游 小田/小梁, 非此层)。空=无。G-FREEZE-W 只增。
     std::string gs_state_code;
+    // 终态标志 (2026-06-05 老板 a+b: 完赛必退订 WSS+订单簿 API): IsTerminal(rec.status) —
+    //   Ended/Retired/Walkover/Abandoned/Cancelled/Postponed/Removed 全为 true。MapStatus 把
+    //   Ended→"final" 但其余终态→"pregame"(歧义), 故单看 status 字符串无法区分"完赛"与"未开赛";
+    //   此 bool 由 ToEventScore 在源头按 IsTerminal 填, 供 daemon 判定完赛 → 立即退订 (不经 paper_loop,
+    //   不动 has_real_fair: 误判终态仍 status="pregame"→NotStarted→fail-closed 不交易)。G-FREEZE-W 只增。
+    bool is_terminal{false};
 };
 
 // ============================================================
