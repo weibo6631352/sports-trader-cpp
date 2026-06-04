@@ -493,7 +493,7 @@ function startFallbackPolling(): void {
   _fallbackTimers.push(every(() => { void refreshGrid(); }, 2000));
   _fallbackTimers.push(every(() => { void refreshMarketGrid(); }, 5000));
   _fallbackTimers.push(every(() => { void refreshAccount(); }, 5000));
-  _fallbackTimers.push(every(() => { void refreshFills(); }, 5000));
+  // refreshFills 已移到 initPolling 常驻 (fills 无 SSE 通道, 不分 SSE 死活都要拉) — 此处不再重复挂。
   _fallbackTimers.push(every(() => { void refreshAttribution(); }, 15000));
   _fallbackTimers.push(every(() => { void refreshGate(); }, 15000));
   // Ops/慢通道: SSE 活时由 healthz/features/mapping/timeseries 通道推; 仅回退时轮询。
@@ -657,4 +657,7 @@ export function initPolling(): void {
   // 其余常驻 REST: metrics (Prometheus 抓取需) + marketInfoSlow (market 元数据慢刷)。
   every(() => { void refreshMetrics(); }, 30000);
   every(() => { void refreshMarketInfoSlow(); }, 60000);
+  // 成交流水(全局 500 深): SSE 9 通道【不含 fills】→ 必须常驻轮询, 否则 SSE 活时 AnalyticsPage 成交/
+  //   模型诊断永远空 (2026-06-04 bug: refreshFills 只挂在 fallback, SSE 健康时从不拉)。已 gzip, 5s 一拉。
+  every(() => { void refreshFills(); }, 5000);
 }
