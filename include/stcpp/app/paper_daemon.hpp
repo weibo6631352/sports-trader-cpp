@@ -395,6 +395,9 @@ private:
         std::lock_guard<std::mutex> lk(sharp_conds_mu_);
         return sharp_conditions_snapshot_;
     }
+    // 上次据以构建订阅集的 eligible 快照内容 (仅映射线程读写, 无锁): RediscoverOnce 比对 → 即便市场集
+    //   未变, eligible 集变了 (赔率源增删) 也要重订/退订。否则稳定市场集下 bootstrap 全订阅永不收敛。
+    std::unordered_set<std::string> last_sub_eligible_;
 
     // ---- A1b: 映射桥 (EventMatcher + 元数据 + 刷新线程) ----
     EventMatcher event_matcher_;

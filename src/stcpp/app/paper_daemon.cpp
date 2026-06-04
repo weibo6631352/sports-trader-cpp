@@ -333,9 +333,16 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
             }
         }
     }
-    if (!changed) {
-        return false;  // 市场集未变, 不动
+    // 源头 pass: 即便市场集未变, sharp-eligible 集变了 (赔率源增删) 也须重建过滤 → 重订/退订。
+    //   否则稳定市场集下 bootstrap 时的全订阅 (snap=null) 永不收敛到 sharp-only。
+    const auto sharp_snap = SharpConditionsSnapshot();
+    const std::unordered_set<std::string> cur_elig =
+        sharp_snap ? *sharp_snap : std::unordered_set<std::string>{};
+    const bool elig_changed = (cur_elig != last_sub_eligible_);
+    if (!changed && !elig_changed) {
+        return false;  // 市场集 + eligible 集均未变, 不动
     }
+    last_sub_eligible_ = cur_elig;  // 记录本次据以订阅的 eligible 集
     // 增量订阅落地 (2026-06-01 设计, 2026-06-02 落地): 重建前快照旧 token 集, 重建后只对差异发
     //   operation:subscribe(新增)/unsubscribe(移除)。取代"全量重订"老格式帧 —— 后者在已订阅连接上
     //   语义不明(追加 vs 替换), 老李评审疑其催掉连接(recv_loop_ended 次因)。初次订阅(OnConnected)
