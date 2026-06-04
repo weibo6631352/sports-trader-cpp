@@ -234,14 +234,18 @@ void PaperLoop::RunLoop(std::stop_token st) {
                          rows.size());
         }
 
-        // 间隔 sleep (R-12: 不 spinlock; sleep 期间响应 stop_token)
-        const auto interval = std::chrono::milliseconds(cfg_.tick_interval_ms);
-        const auto deadline = std::chrono::steady_clock::now() + interval;
-        while (std::chrono::steady_clock::now() < deadline) {
-            if (st.stop_requested() || stop_requested_.load(std::memory_order_acquire)) {
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        // 事件驱动等待 (2026-06-04 老板「别轮询, 直接触发更快」): 不再定时 sleep, 改等 cv ——
+        //   数据源 (WSS book / 149hz poll / 赔率) 到达即 RequestTick() notify → 立即醒来跑下一轮决策。
+        //   tick_interval_ms 退化为【fallback 心跳】上限 (无数据时也定期跑一轮: staleness/结算/feed-liveness)。
+        //   R-12: 仅 loop_thread_ 阻塞在 cv (非 WSS io_thread); 数据线程 notify 不阻塞。
+        {
+            const auto fallback = std::chrono::milliseconds(cfg_.tick_interval_ms);
+            std::unique_lock<std::mutex> lk(tick_mu_);
+            tick_cv_.wait_for(lk, fallback, [this, &st] {
+                return tick_pending_ || st.stop_requested() ||
+                       stop_requested_.load(std::memory_order_acquire);
+            });
+            tick_pending_ = false;  // 消费触发标志 (本轮 TickAll 已覆盖到达的更新)
         }
     }
 }

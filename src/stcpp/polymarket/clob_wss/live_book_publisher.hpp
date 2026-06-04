@@ -47,6 +47,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <functional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -79,6 +80,11 @@ public:
     explicit LiveBookPublisher(OrderBookSnapshotHub& hub, const std::vector<std::string>& subscribed_tokens,
                                bool verbose = false)
         : hub_(hub), subscribed_tokens_(subscribed_tokens), verbose_(verbose) {}
+
+    // 事件驱动 hook (2026-06-04 老板「别轮询直接触发」): 每次 hub.Publish 后回调(token_id)。
+    //   PaperLoop 注册 → RequestTick() 即时唤醒决策。WSS io_thread_ + 149hz poll 线程都经此 Publish → 都触发。
+    //   R-12: 回调须极快 (PaperLoop::RequestTick 仅短锁 + cv.notify, <1us); 绝不在此做重活/阻塞 IO。
+    void SetOnPublish(std::function<void(const std::string&)> cb) { on_publish_ = std::move(cb); }
 
     // -----------------------------------------------------------------------
     // OnFrame — called by io_thread_ on each received WSS text frame
@@ -310,6 +316,8 @@ private:
         // hub.Publish (even if !valid, so hub knows the token exists with invalid state)
         hub_.Publish(token_id, feat);
         books_published_.fetch_add(1, std::memory_order_relaxed);
+        // 事件驱动: book 落 hub 即通知 PaperLoop 即时决策 (老板「别轮询直接触发」)。R-12: 回调极快。
+        if (on_publish_) on_publish_(token_id);
 
         if (verbose_) {
             std::fprintf(stderr, "[live_pub] Publish token=%.40s bid=%.4f ask=%.4f ts_ms=%lld\n",
@@ -588,6 +596,7 @@ private:
     // Data members
     // -----------------------------------------------------------------------
     OrderBookSnapshotHub& hub_;
+    std::function<void(const std::string&)> on_publish_;  // 事件驱动: Publish 后通知 (PaperLoop::RequestTick)
     std::vector<std::string> subscribed_tokens_;
     bool verbose_;
 

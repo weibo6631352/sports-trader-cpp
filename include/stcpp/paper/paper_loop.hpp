@@ -64,6 +64,7 @@
 #include <deque>
 #include <limits>
 #include <memory>
+#include <condition_variable>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -501,6 +502,16 @@ public:
     //   单 writer: 仅主线程在 Start() 前调用一次 (score_store_ 之后只读).
     void SetScoreStore(const data::ScoreSnapshotStore* s) noexcept { score_store_ = s; }
 
+    // 事件驱动触发 (2026-06-04 老板「别轮询, 直接触发更快」): 数据源 (WSS book / 149hz poll / 赔率) 到达即调。
+    //   仅短锁 + notify (R-12 安全, 调用线程<1us 不阻塞); loop_thread_ 等 cv 醒来即跑一轮决策 (单写, 无 ledger 竞争)。
+    void RequestTick() noexcept {
+        {
+            std::lock_guard<std::mutex> lk(tick_mu_);
+            tick_pending_ = true;
+        }
+        tick_cv_.notify_one();
+    }
+
     // R-3: fee/cat/parent 三表已并入 PaperCatalog (SetPaperCatalog 统一注入)。原 3 个独立 setter 删除。
 
     // slice-3c: 注入 per-condition 结算状态 (app 层轮询 gamma `closed` / clob `tokens[].winner` →
@@ -745,6 +756,13 @@ private:
     std::jthread loop_thread_;
     std::atomic<bool> stop_requested_{false};
     std::atomic<bool> running_{false};
+
+    // ---- 事件驱动触发 (2026-06-04 老板「别轮询直接触发」) ----
+    //   数据源到达 → RequestTick() 置 tick_pending_ + notify; RunLoop 等 cv (含 fallback 心跳超时) 醒来跑 TickAll。
+    //   决策仍 loop_thread_ 单写 (TickOne 不并发, 无 ledger/RM/pnl 竞争); 数据线程仅 notify 不碰决策态 (R-12)。
+    std::mutex tick_mu_;
+    std::condition_variable tick_cv_;
+    bool tick_pending_{false};
 
     // ---- 统计 ----
     mutable PaperLoopStats stats_;

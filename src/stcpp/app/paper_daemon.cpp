@@ -1010,6 +1010,12 @@ BuildResult PaperDaemon::Build() {
     //   R-6: 周期重发现开启时, 即便 0 起始 token 也构造 WSS (连上等重发现订阅; 否则 live 比赛来了无处订)。
     if (!all_token_ids_.empty() || cfg_.rediscover_interval_sec > 0) {
         live_publisher_ = std::make_unique<polymarket::clob_wss::LiveBookPublisher>(*hub_, all_token_ids_, cfg_.verbose);
+        // 事件驱动 (2026-06-04 老板「别轮询直接触发」): book 落 hub 即唤醒决策。WSS frame + 149hz poll
+        //   都经 publisher → Publish → 此回调 → RequestTick (短锁+notify, R-12 安全, 不阻塞数据线程)。
+        if (paper_loop_) {
+            live_publisher_->SetOnPublish(
+                [this](const std::string& /*token_id*/) { paper_loop_->RequestTick(); });
+        }
         live_transport_ = std::make_unique<polymarket::clob_wss::LiveWssTransport>(cfg_.verbose);
 
         // P1-2/P1-3 re-inject: wss_transport 指针就位后更新 hooks.
