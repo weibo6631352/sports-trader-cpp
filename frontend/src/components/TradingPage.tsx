@@ -408,22 +408,37 @@ function MarketFills(props: { conditionId: string }) {
   const fills = () => rows().slice(0, 7);  // 7 行对齐订单簿/量化 AI 两栏高度 (老板「显示7行就行了」)
   // 合计已实现 = 该盘所有卖出已实现之和 (老板「还有一个合计别漏了」)。
   const totalReal = () => rows().reduce((s, f) => s + (f.side === 'sell' ? f.realized : 0), 0);
+  // 该盘模型偏差 (2026-06-04 老板「在盯盘页面调模型」): 本盘买入声称 edge 均值 = 模型对此盘高估多少。
+  const buys = () => rows().filter((f) => f.side === 'buy' && f.fair > 0);
+  const avgClaim = () => { const b = buys(); return b.length ? b.reduce((s, f) => s + (f.fair - f.price), 0) / b.length : NaN; };
+  // 单笔声称 edge (买: fair−price; 卖: price−fair) — 模型自认便宜/贵多少 (点)。
+  const claimEdge = (f: Fill) => f.side === 'buy' ? f.fair - f.price : f.price - f.fair;
   return (
     <>
-      <div class="v8-reject-title">成交 (最近 {fills().length} 笔)</div>
+      <div class="v8-reject-title" style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
+        <span>成交 (最近 {fills().length} 笔)</span>
+        <Show when={Number.isFinite(avgClaim())}>
+          <span class="mono-sub" style={{ color: avgClaim() > 0.05 ? '#f44336' : '#888', 'font-size': '10px' }}
+            title="本盘买入时模型平均声称便宜多少 (>5点=模型对此盘系统性高估, 调模型信号)">
+            模型偏差 {avgClaim() >= 0 ? '+' : ''}{(avgClaim() * 100).toFixed(1)}点
+          </span>
+        </Show>
+      </div>
       <Show
         when={fills().length > 0}
         fallback={<Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>暂无成交</Typography>}
       >
         <For each={fills()}>
           {(f) => (
-            <div class="v8-pos-row" title={fmtTs(f.as_of_ts)} style={{ gap: '8px' }}>
+            <div class="v8-pos-row" title={fmtTs(f.as_of_ts)} style={{ gap: '6px' }}>
               <span class="mono-sub" style={{ color: '#888', 'font-size': '10px' }}>{fmtTs(f.as_of_ts).slice(-8)}</span>
               <span class="mono-sub" style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700 }}>
                 {f.side === 'buy' ? '买' : (f.is_close ? '卖平' : '卖')}{f.outcome}
               </span>
-              <span class="mono-sub" style={{ 'font-weight': 700 }}>@{f.price.toFixed(4)}</span>
-              <span class="mono-sub">{f.size_usdc.toFixed(1)}u</span>
+              <span class="mono-sub" style={{ 'font-weight': 700 }}>@{f.price.toFixed(3)}</span>
+              <span class="mono-sub" style={{ color: '#888', 'font-size': '10px' }} title="模型 fair">f{f.fair > 0 ? f.fair.toFixed(3) : '—'}</span>
+              <span class="mono-sub" style={{ color: f.fair > 0 && Math.abs(claimEdge(f)) > 0.05 ? '#f44336' : '#777', 'font-size': '10px' }}
+                title="模型声称 edge (点)">{f.fair > 0 ? `${claimEdge(f) >= 0 ? '+' : ''}${(claimEdge(f) * 100).toFixed(0)}` : ''}</span>
               <span class={`mono-sub ${f.side === 'sell' ? (f.realized >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`} style={{ 'margin-left': 'auto' }}>
                 {f.side === 'sell' ? `${f.realized >= 0 ? '+' : ''}${f.realized.toFixed(2)}` : '—'}
               </span>
@@ -984,6 +999,53 @@ function TradingToolbar(props: {
 }
 
 // ============================================================
+// 模型诊断条 (2026-06-04 老板「在盯盘页面本身做好, 不要分散」): 全局成交算模型偏差/声称edge/方向/
+//   实现 → 一条紧凑横条挂盯盘顶部, 调模型一眼看, 不用进 PNL/市场详情页找。
+// ============================================================
+function ModelBiasStrip() {
+  const fills = () => state.fills?.fills ?? [];
+  const buys = () => fills().filter((f) => f.side === 'buy' && f.fair > 0);
+  const withMark = () => fills().filter((f) => f.mark > 0 && f.fair > 0);
+  const mean = (a: number[]) => (a.length ? a.reduce((s, x) => s + x, 0) / a.length : NaN);
+  const bias = () => mean(withMark().map((f) => f.fair - f.mark));
+  const claim = () => mean(buys().map((f) => f.fair - f.price));
+  const posPct = () => { const a = buys(); return a.length ? (100 * a.filter((f) => f.fair > f.price).length) / a.length : NaN; };
+  const buyYes = () => buys().filter((f) => f.outcome === 'YES').length;
+  const buyNo = () => buys().filter((f) => f.outcome === 'NO').length;
+  const realized = () => fills().filter((f) => f.side === 'sell').reduce((s, f) => s + f.realized, 0);
+  const itemSx = { display: 'flex', 'align-items': 'baseline', gap: '4px', 'font-size': '11px' } as const;
+  const bad = '#f44336'; const dim = '#888';
+  return (
+    <Show when={buys().length >= 3}>
+      <div style={{ display: 'flex', 'align-items': 'center', gap: '16px', 'flex-wrap': 'wrap',
+        padding: '6px 12px', margin: '0 0 6px', background: '#1a1a1a', border: '1px solid #373737',
+        'border-radius': '6px' }}>
+        <span style={{ 'font-weight': 700, 'font-size': '11px', 'letter-spacing': '0.05em', color: '#ccc' }}>
+          模型诊断 · 调模型看这里
+        </span>
+        <span style={itemSx}><span style={{ color: dim }}>偏差(fair−mark)</span>
+          <b style={{ color: bias() > 0.03 ? bad : '#4caf50', 'font-family': 'monospace' }}>
+            {Number.isFinite(bias()) ? `${bias() >= 0 ? '+' : ''}${(bias() * 100).toFixed(1)}点` : '—'}</b></span>
+        <span style={itemSx}><span style={{ color: dim }}>声称edge</span>
+          <b style={{ color: claim() > 0.05 ? bad : '#ccc', 'font-family': 'monospace' }}>
+            {Number.isFinite(claim()) ? `${claim() >= 0 ? '+' : ''}${(claim() * 100).toFixed(1)}点` : '—'}</b></span>
+        <span style={itemSx}><span style={{ color: dim }}>正edge占比</span>
+          <b style={{ color: posPct() > 85 ? bad : '#ccc', 'font-family': 'monospace' }}>
+            {Number.isFinite(posPct()) ? `${posPct().toFixed(0)}%` : '—'}</b></span>
+        <span style={itemSx}><span style={{ color: dim }}>方向</span>
+          <b style={{ 'font-family': 'monospace', color: '#ccc' }}>Y{buyYes()}/N{buyNo()}</b></span>
+        <span style={itemSx}><span style={{ color: dim }}>已实现</span>
+          <b class={realized() >= 0 ? 'pnl-pos' : 'pnl-neg'} style={{ 'font-family': 'monospace' }}>
+            {realized() >= 0 ? '+' : ''}{realized().toFixed(2)}</b></span>
+        <Show when={bias() > 0.05}>
+          <span style={{ color: bad, 'font-size': '10px' }}>← 模型系统性高估, 先去偏/中心化残差</span>
+        </Show>
+      </div>
+    </Show>
+  );
+}
+
+// ============================================================
 // TradingPage (顶层导出)
 // ============================================================
 
@@ -1130,6 +1192,9 @@ export function TradingPage() {
         onExpandAll={() => expandAllMarkets(expandableCondIds())}
         onCollapseAll={() => collapseAllMarkets(allCondIds())}
       />
+
+      {/* 模型诊断条 (老板「在盯盘页面本身做好, 不要分散」) — 调模型一眼看, 不用进别的页 */}
+      <ModelBiasStrip />
 
       {/* PnL 净值曲线 — 无成交时明示语境 (空态语境) */}
       <div class="spark-section">
