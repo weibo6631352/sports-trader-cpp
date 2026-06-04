@@ -327,38 +327,33 @@ public:
     // 聚合所有 market_key 的 LedgerFeatures → PnlAttribution
     // R-12: 全程只读原子快照; R-20: as_of_ts_ns 取最大 (最新帧)
     PnlAttribution pnl_attribution() const override {
-        if (ledger_hub_ == nullptr) {
-            return {};  // 无数据源 → 全 0 空结构
-        }
         PnlAttribution attr;
-        attr.as_of_ts_ns = 0;
-        double gross = 0.0;
-        double fee = 0.0;
-        bool any_valid = false;
-        for (const auto& [cond_id, _] : token_map_) {
-            const auto opt = ledger_hub_->Read(cond_id);
-            if (!opt.has_value() || !opt->valid) {
-                continue;
+        // 2026-06-04 老板「顶部不准」根治: 顶层瀑布与【账户】同源。旧版 sum(ledger_hub.pnl_gross) 不含
+        //   动态平仓已实现 (gross 只 $0.10 vs 真实已实现 −$686) → net 严重偏小 → 顶栏/瀑布显示离谱。
+        //   改用 account 权威口径: gross=已实现+浮盈, fee=−已付费, net=account.net_pnl (与资金概览/顶栏一致)。
+        if (account_fn_) {
+            const auto a = account_fn_();
+            if (a.has_data) {
+                attr.gross = a.cum_realized_pnl + a.cum_unrealized_pnl;  // 费前毛 P&L
+                attr.fee = -a.cum_fee_paid;                              // 扣减 (负)
+                attr.net = a.net_pnl;                                    // = equity − bankroll (唯一真值)
+                attr.as_of_ts_ns = a.as_of_ts_ns;
             }
-            const auto& lf = *opt;
-            gross += lf.pnl_gross;
-            fee -= lf.pnl_fee;  // fee 字段约定为正数 (已付); PnlAttribution.fee 为负 (扣减)
-            attr.as_of_ts_ns = std::max(attr.as_of_ts_ns, lf.as_of_ts_ns);
-            PnlPerMarket pm;
-            pm.market_id = cond_id;
-            pm.net_pnl = lf.pnl_net();  // pnl_gross - pnl_fee
-            attr.per_market.push_back(std::move(pm));
-            any_valid = true;
         }
-        if (!any_valid) {
-            return {};  // hub 空 → 全 0 空结构 (非 demo)
+        attr.gas = 0.0;
+        attr.slippage = 0.0;
+        attr.spread = 0.0;
+        // per_market 分盘明细仍读 ledger_hub (分盘归因; 顶层已由 account 校准, 不再 sum 它)。
+        if (ledger_hub_ != nullptr) {
+            for (const auto& [cond_id, _] : token_map_) {
+                const auto opt = ledger_hub_->Read(cond_id);
+                if (!opt.has_value() || !opt->valid) continue;
+                PnlPerMarket pm;
+                pm.market_id = cond_id;
+                pm.net_pnl = opt->pnl_net();
+                attr.per_market.push_back(std::move(pm));
+            }
         }
-        attr.gross = gross;
-        attr.fee = fee;
-        attr.gas = 0.0;          // 无 gas 数据源
-        attr.slippage = 0.0;     // 无 slippage 数据源
-        attr.spread = 0.0;       // 无 spread 数据源
-        attr.net = gross + fee;  // net = gross - |fee| (fee 已为负)
         return attr;
     }
 
