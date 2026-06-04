@@ -757,10 +757,10 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                      sport_slug.c_str(), parse_result.scores.size(),
                      static_cast<long long>(parse_result.updated_ts_ms), gz_body.size(), json_body.size());
 
-        // 相位对齐 sleep (2026-06-05 老板「不提频, ~1s, 尽量对齐相位」): 瞄准【下一次 feed 更新刚发生后】抓
-        //   (updated_ts + n×EMA间隔 + margin − phase_corr)。算出 ≥ now+floor 的未来那一版 (O(1) ceil, 非 while)。
-        //   每收新版本重锚 updated_ts → 消累积漂移。保频率: 够近(≤ floor+max_nudge)才瞄 catch, 否则默认
-        //   poll_interval (中间 dup 保 ~1s 频率)。SleepMs 让出 CPU, 不 busy-wait。
+        // 相位对齐 sleep (2026-06-05 老板「不提频~1s, 对齐相位, 每次拿到最新版本不漏版」): 瞄准【下一次 feed
+        //   更新刚发生后】抓 (updated_ts + n×EMA间隔 + margin − phase_corr; O(1) ceil 算出未来那一版, 非 while)。
+        //   每收新版本重锚 updated_ts → 消累积漂移。sleep 钳 [floor(限速), 不漏版上限(=间隔−fetch余量)]:
+        //   保证下次轮询落在下一版之前 → 每版必抓到(无 3-4s 尖峰)。SleepMs 让出 CPU, 不 busy-wait。
         std::uint32_t sleep_ms = cfg_.poll_interval_ms;
         if (cfg_.phase_align_enabled && phase_prev_updated_ts > 0 && phase_interval_ema_ms >= 500) {
             const std::int64_t now_rt = rt_ms_now();
@@ -774,10 +774,18 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                                        ? 1
                                        : (need + phase_interval_ema_ms - 1) / phase_interval_ema_ms;  // ceil≥1
             const std::int64_t target = base + k * phase_interval_ema_ms;
-            const std::int64_t w = target - now_rt;
-            if (w <= floor + static_cast<std::int64_t>(cfg_.phase_max_nudge_ms))  // 够近 → 瞄 catch
-                sleep_ms = static_cast<std::uint32_t>(w);
-            // 否则默认 poll_interval (中间 dup 保频率, 下轮再瞄)
+            std::int64_t w = target - now_rt;
+            // 【不漏版上限】(2026-06-05 老板「每次都能拿到最新的版本」核心): sleep + fetch 必须 < 版本间隔,
+            //   否则两次轮询跨过一整版 → 漏版 → 年龄尖峰到 3-4s。cap = interval_ema − kFetchSafetyMs(400, fetch往返+余量),
+            //   保证下次轮询一定落在下一版【之前】, 每版必被抓到。也不超 nudge 上限; 极快 feed 退化到 floor(限速兜底)。
+            constexpr std::int64_t kFetchSafetyMs = 400;
+            std::int64_t cap = phase_interval_ema_ms - kFetchSafetyMs;
+            const std::int64_t nudge_cap = floor + static_cast<std::int64_t>(cfg_.phase_max_nudge_ms);
+            if (cap > nudge_cap) cap = nudge_cap;
+            if (cap < floor) cap = floor;
+            if (w < floor) w = floor;     // 不破限速
+            if (w > cap) w = cap;         // 不漏版 (gap < 版本间隔)
+            sleep_ms = static_cast<std::uint32_t>(w);  // 总是瞄相位, 但钳在 [floor, 不漏版上限]
         }
         SleepMs(sleep_ms);
     }
