@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -38,6 +39,7 @@
 #include "src/stcpp/polymarket/clob_wss/live_book_publisher.hpp"  // LiveBookPublisher
 #include "src/stcpp/polymarket/clob_wss/live_wss_transport.hpp"   // LiveWssTransport
 #include "src/stcpp/debug_api/server.hpp"               // HttpServer
+#include "stcpp/net/persistent_https.hpp"                // 149hz 主动 book 轮询热链 (老板 2026-06-04)
 
 namespace stcpp::app {
 
@@ -262,6 +264,8 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
     //   注: market_match_inputs_ 不过滤 (全市场仍参与匹配 → 才能判定哪些有 sharp); 只过滤订阅集。
     const auto sharp_snap = SharpConditionsSnapshot();
     all_token_ids_.reserve(token_map_.size() * 2);
+    std::vector<std::pair<std::string, double>> poll_plan;  // 149hz 主动轮询计划 (token, √liq+1 权重)
+    poll_plan.reserve(token_map_.size() * 2);
     std::size_t passed_no_source = 0;
     for (const auto& [cond_id, tok_pair] : token_map_) {
         if (sharp_snap && sharp_snap->count(cond_id) == 0) {
@@ -270,7 +274,15 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
         }
         all_token_ids_.push_back(tok_pair.first);
         all_token_ids_.push_back(tok_pair.second);
+        // 主动轮询权重 = √liquidity + 1 (压缩极差: 高流动性多刷但不饿死低流动性 sharp 盘)。
+        double liq = 0.0;
+        if (auto cit = market_cat_map_.find(cond_id); cit != market_cat_map_.end())
+            liq = cit->second.liquidity;
+        const double w = std::sqrt(std::max(0.0, liq)) + 1.0;
+        poll_plan.emplace_back(tok_pair.first, w);
+        poll_plan.emplace_back(tok_pair.second, w);
     }
+    PublishPollPlan(std::move(poll_plan));  // 发布给 ActiveBookPoller (流动性加权 149hz)
     if (sharp_snap) {
         std::fprintf(stderr,
                      "[paper_daemon] 源头 pass: 订阅 %zu/%zu market (跳过 %zu 无赔率源), token=%zu\n",
@@ -1065,6 +1077,10 @@ void PaperDaemon::Start() {
         // WSS 看门狗 (2026-06-02 会议): 心跳保活 (治 idle 超时真因) + 断线重连 (治不重连症状)。
         wss_watchdog_thread_ =
             std::jthread([this, wss_url](std::stop_token st) { WssWatchdogLoop(st, wss_url); });
+        // 149hz 主动 book 轮询 (2026-06-04 老板): 热链 GET /book 压官方限速, 流动性加权, 主动补 WSS。
+        active_poll_thread_ =
+            std::jthread([this](std::stop_token st) { RunActiveBookPoller(st); });
+        std::printf("[paper_daemon] 149hz 主动 book 轮询启动 (热链 /book, 流动性加权, 源头 pass 后 token)\n");
     }
 
     // ---- Step 4b start: PaperLoop (enable_paper_trading; "仅观测" flag=false 时不起) ----
@@ -1200,6 +1216,11 @@ void PaperDaemon::Shutdown() noexcept {
     if (wss_watchdog_thread_.joinable()) {
         wss_watchdog_thread_.request_stop();
         wss_watchdog_thread_.join();
+    }
+    // 0a'''. 149hz 主动轮询线程停 (它 touch live_publisher_/hub_ + 持 TLS 连接, 必在二者析构前 join).
+    if (active_poll_thread_.joinable()) {
+        active_poll_thread_.request_stop();
+        active_poll_thread_.join();
     }
     // 0b. REST 快照打底线程先停 (它 touch live_publisher_/hub_, 必在二者析构前 join; st 令其提前退出).
     if (seed_thread_.joinable()) {
@@ -1533,6 +1554,86 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                 return;
             }
             std::this_thread::sleep_for(milliseconds(100));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RunActiveBookPoller — 149hz 主动 book 轮询 (2026-06-04 老板「主动查订单簿压官方限速,
+//   全市场共享 149hz, 按流动性分配, 用热链」)。
+//   热链 (PersistentHttps keep-alive) GET /book?token_id=X → live_publisher_->SeedFromRestBooks → hub。
+//   smooth weighted round-robin 按 √liquidity 分配; 节流到 ~149 req/s (压着 PM /book 150/s 限速)。
+//   只轮询源头 pass 后有赔率源的 token (poll_plan_snapshot_)。WSS 仍并行推 (此为主动补/压频)。
+//   R-12: 独立线程, 非 WSS event loop。
+// ---------------------------------------------------------------------------
+void PaperDaemon::RunActiveBookPoller(std::stop_token st) noexcept {
+    using namespace std::chrono;
+    if (live_publisher_ == nullptr) return;
+    constexpr double kTargetRps = 149.0;
+    const auto kReqInterval = nanoseconds(static_cast<long long>(1e9 / kTargetRps));  // ~6.71ms/req
+    net::PersistentHttps https("clob.polymarket.com", /*timeout_ms=*/4000);
+
+    std::unordered_map<std::string, double> cw;  // smooth-WRR current_weight (跨迭代保留, 仅本线程)
+    std::shared_ptr<const std::vector<std::pair<std::string, double>>> plan;
+    auto last_plan_refresh = steady_clock::now() - seconds(10);  // 立即首刷
+    auto next_req = steady_clock::now();
+    std::uint64_t since_log = 0;
+
+    while (!st.stop_requested()) {
+        // 每 1s 刷新 plan (源头 pass eligible 变化时); 清理 cw 中已退出 plan 的 token。
+        if (steady_clock::now() - last_plan_refresh >= seconds(1)) {
+            plan = PollPlanSnapshot();
+            last_plan_refresh = steady_clock::now();
+            if (plan && !plan->empty()) {
+                std::unordered_set<std::string> live;
+                live.reserve(plan->size() * 2);
+                for (const auto& [t, _w] : *plan) live.insert(t);
+                for (auto it = cw.begin(); it != cw.end();) {
+                    if (live.find(it->first) == live.end()) it = cw.erase(it);
+                    else ++it;
+                }
+            }
+        }
+        if (!plan || plan->empty()) {
+            std::this_thread::sleep_for(milliseconds(200));  // 无赔率源 token → 等
+            continue;
+        }
+        // smooth weighted round-robin: 选 current_weight 最大者, 选后减 total_weight (nginx 法)。
+        double total_w = 0.0, best = -1e300;
+        std::string pick;
+        for (const auto& [t, w] : *plan) {
+            double& c = cw[t];
+            c += w;
+            total_w += w;
+            if (c > best) {
+                best = c;
+                pick = t;
+            }
+        }
+        if (!pick.empty()) cw[pick] -= total_w;
+
+        // 节流到 149 req/s。
+        const auto now = steady_clock::now();
+        if (now < next_req && !st.stop_requested()) {
+            std::this_thread::sleep_for(std::min(next_req - now, nanoseconds(kReqInterval)));
+        }
+        next_req = steady_clock::now() + kReqInterval;
+        if (pick.empty() || st.stop_requested()) continue;
+
+        // GET /book 单 token (token_id 全数字, path 安全; 公开端点无 key)。
+        const std::string resp = https.Get("/book?token_id=" + pick);
+        active_poll_total_.fetch_add(1, std::memory_order_relaxed);
+        if (!resp.empty() && resp.find("\"asset_id\"") != std::string::npos) {
+            const std::int64_t now_ns =
+                duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
+            live_publisher_->SeedFromRestBooks(resp, now_ns);
+            active_poll_ok_.fetch_add(1, std::memory_order_relaxed);
+        }
+        if (++since_log >= 1490) {  // ~每 10s 记一次 (149/s × 10)
+            since_log = 0;
+            std::fprintf(stderr, "[active-poll] 主动轮询 total=%llu ok=%llu tokens=%zu (149hz 热链)\n",
+                         static_cast<unsigned long long>(active_poll_total_.load()),
+                         static_cast<unsigned long long>(active_poll_ok_.load()), plan->size());
         }
     }
 }

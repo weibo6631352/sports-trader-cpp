@@ -399,6 +399,27 @@ private:
     //   未变, eligible 集变了 (赔率源增删) 也要重订/退订。否则稳定市场集下 bootstrap 全订阅永不收敛。
     std::unordered_set<std::string> last_sub_eligible_;
 
+    // 149hz 主动 book 轮询计划 (2026-06-04 老板「主动查订单簿压限速, 全市场共享 149hz, 按流动性分配」):
+    //   (token_id, weight=√liquidity+1) 列表, 仅含有赔率源 (源头 pass 过滤后) 的 token。映射线程写
+    //   (PopulateCatalog), ActiveBookPoller 线程读 (COW + mutex 快照)。weighted-RR 按 weight 分配 149 req/s。
+    mutable std::mutex poll_plan_mu_;
+    std::shared_ptr<const std::vector<std::pair<std::string, double>>> poll_plan_snapshot_{
+        std::make_shared<const std::vector<std::pair<std::string, double>>>()};
+    void PublishPollPlan(std::vector<std::pair<std::string, double>> plan) {
+        std::lock_guard<std::mutex> lk(poll_plan_mu_);
+        poll_plan_snapshot_ =
+            std::make_shared<const std::vector<std::pair<std::string, double>>>(std::move(plan));
+    }
+    [[nodiscard]] std::shared_ptr<const std::vector<std::pair<std::string, double>>> PollPlanSnapshot()
+        const {
+        std::lock_guard<std::mutex> lk(poll_plan_mu_);
+        return poll_plan_snapshot_;
+    }
+    // ActiveBookPoller — 热链 GET /book?token_id=X 主动轮询 (149 req/s, 流动性加权), 喂 live_publisher_。
+    void RunActiveBookPoller(std::stop_token st) noexcept;
+    std::atomic<std::uint64_t> active_poll_total_{0};  // 主动轮询请求计数 (观测)
+    std::atomic<std::uint64_t> active_poll_ok_{0};     // 成功 (非空响应) 计数
+
     // ---- A1b: 映射桥 (EventMatcher + 元数据 + 刷新线程) ----
     EventMatcher event_matcher_;
     // condition_id → market 锚定输入 (两队名 + kickoff + sport; Build 从 DiscoveredMarket 填).
@@ -413,6 +434,7 @@ private:
     std::jthread auto_train_thread_;          // 进程内自动训练编排 (周期 join + spawn Python 训练 → 产新模型)
     std::jthread disk_prune_thread_;          // 采集数据磁盘守护 (>阈值 → 截最老数据)
     std::jthread seed_thread_;  // REST 快照打底后台线程 (jthread: 析构自动 request_stop + join)
+    std::jthread active_poll_thread_;  // 149hz 主动 book 轮询 (热链 GET /book, 流动性加权; 老板 2026-06-04)
     std::jthread wss_watchdog_thread_;  // CLOB WSS 心跳(10s PING)+ 断线重连看门狗 (2026-06-02)
 
     // =====================================================================
