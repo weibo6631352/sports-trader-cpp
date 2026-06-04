@@ -765,6 +765,10 @@ BuildResult PaperDaemon::Build() {
     //   买不接下跌的刀 (簿下行不进), 盈利骑趋势 (簿支撑不急止盈), 簿结构转向才止盈。持仓管理。
     cfg_.paper_loop.book_exit_enabled = true;
     cfg_.paper_loop.book_exit_imb_thr = 0.15;
+    // 决策节拍 (2026-06-04 老板「三源都触发决策没」): 500ms→100ms。三源(WSS/149hz poll/赔率)写共享态,
+    //   决策每 tick 读最新; 500ms 把 149hz 新鲜簿+簿结构反应硬卡住 → 簿转向止盈/不被吃单反应慢, 小赢大亏。
+    //   降到 100ms: 决策 10×/s 采样新鲜簿; 48 盘×10/s 对 4 核轻松, 新加簿结构+入场价闸防过度交易。
+    cfg_.paper_loop.tick_interval_ms = 100;
     // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
     //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关
