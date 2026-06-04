@@ -528,14 +528,28 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                         game_row.as_of_ts_ns = es.ts.as_of_ts_ns;
                         // inplay bet365 de-vig fair → game_row, 按 yes_is_home 翻成 YES-canonical
                         //   (与上面比分同源翻转, 消 home/YES 混淆)。ToYesCanonical 纯函数 BR-1 共用。
-                        const auto inplay_yc = stcpp::data::ToYesCanonical(
-                            it->second.yes_is_home, es.inplay_bet365_home_fair,
-                            es.inplay_bet365_away_fair);
+                        // A-step-2 分局盘 (老板「第一局/第二局」): 段盘 (seg_index>0) 用【当前段 fair】, 且
+                        //   PM 段号 == bet365 当前段号 (es.inplay_seg_index) 才用 (过去/未来段无 live 赔率)。
+                        //   不符 → -1 (fail-closed 无 sharp, 绝不回退全场 fair = 修 A-step-1 之前「全场套错段」)。
+                        double src_home = es.inplay_bet365_home_fair;
+                        double src_away = es.inplay_bet365_away_fair;
+                        if (it->second.seg_index > 0) {
+                            if (es.inplay_seg_index == it->second.seg_index &&
+                                es.inplay_seg_home_fair >= 0.0) {
+                                src_home = es.inplay_seg_home_fair;
+                                src_away = es.inplay_seg_away_fair;
+                            } else {
+                                src_home = -1.0;  // 段号不符 / 无段赔率 → 无 sharp (fail-closed)
+                                src_away = -1.0;
+                            }
+                        }
+                        const auto inplay_yc =
+                            stcpp::data::ToYesCanonical(it->second.yes_is_home, src_home, src_away);
                         game_row.inplay_bet365_home_fair = inplay_yc.yes_fair;  // YES 边胜率
                         game_row.inplay_bet365_away_fair = inplay_yc.opp_fair;  // 对手边胜率
                         // [score-flow diag] 匹配上的 in-play 场是否有 sharp (bet365 de-vig 真值)?
                         //   定位脱节: has_real_fair 场里多少真带 sharp (vs 只 score_prior)。
-                        if (es.inplay_bet365_home_fair >= 0.0)
+                        if (src_home >= 0.0)
                             sf_sharp.fetch_add(1, std::memory_order_relaxed);
                         game_row.inplay_bet365_draw_fair = es.inplay_bet365_draw_fair;  // 平局 (与边无关)
                         // bm_slots: 跨庄家赔率注入 (getodds 经 inplay-mapping join 到 inplay_match_id,

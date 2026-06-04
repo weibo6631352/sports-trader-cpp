@@ -46,6 +46,9 @@ struct EventMatchInput {
     // 3-way 足球: YES 代表「平局」盘 (gi="Draw(...)") → 定价用 inplay_bet365_draw_fair 而非 home/away。
     //   仅锚定 (取分源) 不受影响; 影响下游 sharp fair 选哪一边 (老雷 2026-06-01 盈利修复)。
     bool is_draw{false};
+    // A-step-2 分局盘 (2026-06-04 老板「第一局/第二局」): 此盘 segment 序号 (tennis 盘号 1-5; 0=全场盘)。
+    //   仅锚定 (取分源) 不受影响; 透传到 EventMapEntry.seg_index, 下游 paper_loop 用当前段 fair。
+    int seg_index{0};
 };
 
 struct EventMatchResult {

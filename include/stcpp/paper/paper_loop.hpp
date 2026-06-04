@@ -122,6 +122,10 @@ struct EventMapEntry {
     // A5 (小余 round-2): join 边是概率性 fuzzy 匹配, 会断会翻转 → 一等暴露质量 (观测/模型输入, 不 gate)。
     double match_confidence{0.0};    // EventMatcher team_score (双队 overlap 和; 越高越确信)
     std::int64_t match_as_of_ns{0};  // 映射上次刷新时刻 (本地 now; 数据新鲜度观测, 绝不守门)
+    // A-step-2 分局盘 (2026-06-04 老板「第一局/第二局」): 此盘的 segment 序号 (tennis 当前盘号 1-5;
+    //   0 = 全场盘)。>0 时 paper_loop 用 EventScore.inplay_seg_* (且 seg_index==当前段) 替全场 sharp fair;
+    //   段号不符/无段赔率 → fail-closed 无 fair (绝不回退全场, 修 A-step-1 之前事故)。
+    int seg_index{0};
 };
 using ConditionEventMap = std::unordered_map<std::string, EventMapEntry>;
 

@@ -95,6 +95,30 @@ public:
     return false;
 }
 
+// 从 PM tennis 分盘盘 gi 解析【盘号】(A-step-2): "Set 2 Winner"→2 / "2nd Set"→2。无 → 0。
+//   只认 1-7 盘。用于 tennis 分盘盘 un-fence + 标 seg_index (下游 paper_loop 用当前段 fair)。
+[[nodiscard]] int ParseTennisSetIndex(const std::string& gi) noexcept {
+    if (gi.empty()) return 0;
+    std::string g = gi;
+    std::transform(g.begin(), g.end(), g.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    // pattern 1: "set <digit>"
+    for (std::size_t p = g.find("set "); p != std::string::npos; p = g.find("set ", p + 1)) {
+        std::size_t q = p + 4;
+        while (q < g.size() && g[q] == ' ') ++q;
+        if (q < g.size() && g[q] >= '1' && g[q] <= '7') return g[q] - '0';
+    }
+    // pattern 2: "<ordinal> set"
+    static const struct {
+        const char* o;
+        int n;
+    } kOrd[] = {{"1st set", 1}, {"2nd set", 2}, {"3rd set", 3}, {"4th set", 4},
+                {"5th set", 5}, {"6th set", 6}, {"7th set", 7}};
+    for (const auto& e : kOrd)
+        if (g.find(e.o) != std::string::npos) return e.n;
+    return 0;
+}
+
 // 从 event title "Team A vs. Team B" 拆两队名 (分隔符 " vs. " / " vs " / " v. "). 失败返 false.
 [[nodiscard]] bool SplitVsTitle(const std::string& title, std::string& a, std::string& b) {
     for (const char* sep : {" vs. ", " vs ", " v. ", " VS "}) {
@@ -213,10 +237,17 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
                     }
                 }
             }
-            // 分局盘 (Game N / Set N / 1st Half …) 不进 matching: 它们不能套全场 fair (会错价乱单);
-            //   per-segment bet365 赔率匹配建好前 (A-step-2), 不匹配 = 不套全场 fair = 不错价 (留 catalog 不丢)。
+            // 分局盘准入 (A-step-2, 老板「第一局/第二局」): tennis 分盘盘 (Set N) 解析盘号 → 进 matching +
+            //   标 seg_index (下游用当前段 fair); 其余分段盘 (Game/Half/非 tennis 分盘) 继续围栏 (无 bet365
+            //   分段赔率, 进了会套全场 fair 错价)。全场盘 seg_index=0 正常。
+            const bool is_seg = IsSegmentMarket(dm.group_item_title);
+            int seg_idx = 0;
+            if (is_seg && stcpp::data::taxonomy::SportFamilyCode(ev.sport_code) == 2 /*tennis*/) {
+                seg_idx = ParseTennisSetIndex(dm.group_item_title);  // >0 = 可交易的分盘盘
+            }
+            const bool seg_tradeable = (seg_idx > 0);
             if (!team0.empty() && !team1.empty() && !IsNonOpponentOutcome(team0) &&
-                !IsNonOpponentOutcome(team1) && !IsSegmentMarket(dm.group_item_title)) {
+                !IsNonOpponentOutcome(team1) && (!is_seg || seg_tradeable)) {
                 EventMatchInput mi_in;
                 mi_in.team0 = team0;
                 mi_in.team1 = team1;
@@ -224,6 +255,7 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
                 mi_in.sport = ev.sport;
                 // 3-way 平局盘 (gi="Draw (...)") → 下游 sharp fair 取 draw 概率 (盈利修复)。
                 mi_in.is_draw = dm.group_item_title.rfind("Draw", 0) == 0;
+                mi_in.seg_index = seg_idx;  // A-step-2: tennis 分盘号 (0=全场)
                 market_match_inputs_[dm.condition_id] = std::move(mi_in);
             }
 
@@ -1503,6 +1535,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                 entry.inplay_match_id = r.inplay_match_id;
                 entry.yes_is_home = r.yes_is_home;
                 entry.is_draw = in.is_draw;  // 3-way 平局盘标志透传 → 下游 sharp fair 选 draw
+                entry.seg_index = in.seg_index;  // A-step-2: 分盘号透传 → 下游用当前段 fair
                 entry.match_confidence = r.team_score;
                 entry.match_as_of_ns = refresh_now_ns;
                 (*new_map)[cond_id] = std::move(entry);
