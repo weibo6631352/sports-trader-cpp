@@ -764,6 +764,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 分运动 必输局判定 (2026-06-04 老板「分运动」): +1=已决出且 YES 领先(NO 是必输方) / −1=已决出且 NO 领先
     //   (YES 是必输方) / 0=未决出。各运动用各自比分单位 + 阶段阈值 (替代统一 |diff|≥3 的 garbage_time)。
     double game_decided_sign = 0.0;
+    // 临近末尾标志 (2026-06-05 老板「临近末尾必输的那种, 还得禁止买入」): phase_frac 进末段 (>0.85)。
+    //   配 ExecuteControllerSide 内 exec_ask<near_end_max_buy_price (市场把本边定为近必输) → 禁止新开仓,
+    //   防买进末段 longshot 被结算归零。窄闸 (仅末段+便宜), 非广义 leaning 闸 (老板「不要入场闸了」已撤广义)。
+    bool near_end = false;
     // 批1 补漏 g_periods_won: 已完成节中各队领先节数 (score_*_periods[]; 有真实比分才有意义)。
     std::int32_t g_periods_won_home = 0, g_periods_won_away = 0;
     if (has_real_fair) {
@@ -817,6 +821,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             }
         }
         sports.game_phase = std::floor(std::clamp(phase_frac, 0.0, 0.999) * 3.0);  // 0早/1中/2末
+        near_end = (phase_frac > 0.85);  // 末段 (临近末尾必输买入闸用; 配 exec_ask 便宜判定)
         const double abs_diff = std::abs(score_diff);
         sports.garbage_time = (phase_frac > 0.85 && abs_diff >= 3.0) ? 1.0 : 0.0;
         sports.clutch = (phase_frac > 0.85 && abs_diff <= 1.0) ? 1.0 : 0.0;
@@ -1301,7 +1306,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
                           force_cross || sel_force_stop, n_eff_dyn, margin_floor_dyn, reservation_noise_free,
-                          sel_force_stop);
+                          sel_force_stop, near_end);
 
     // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
     const SideView& other = is_yes ? mkt.no : mkt.yes;
@@ -1325,7 +1330,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                   is_yes ? strategy::Outcome::No : strategy::Outcome::Yes, other_feat,
                                   other_depth, 1.0 - p_fair_selected, /*target_mag=*/0.0,
                                   FeeCoefFor(condition_id), force_cross, n_eff_dyn, margin_floor_dyn,
-                                  reservation_noise_free, /*force_stop=*/false);
+                                  reservation_noise_free, /*force_stop=*/false, /*near_end=*/false);
         }
     }
 }
@@ -1343,7 +1348,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
                                       const polymarket::clob_wss::OrderBookFeatures& side_book,
                                       double book_depth_l1, double p_fair_side, double target_mag,
                                       double fee_coef, bool force_cross, int n_eff, double margin_floor,
-                                      bool noise_free, bool force_stop) noexcept {
+                                      bool noise_free, bool force_stop, bool near_end) noexcept {
     const double exec_ask = side_book.best_ask();
     const double exec_bid = side_book.best_bid();
     const double mark_price = std::isfinite(side_book.microprice) ? side_book.microprice : side_book.mid;
@@ -1444,6 +1449,16 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     //   开新仓买入价 < min_buy_price = 市场实时把该边定为近必输 (时间+比分已定) → 不买 (避免结算归零被套)。
     //   用 exec_ask (真市场价, 非陈旧 sharp) 判, 对无时钟运动 (CS2/网球) 同样鲁棒。减仓/平仓不受限。
     if (cfg_.min_buy_price > 0.0 && action.side == strategy::Side::Buy && exec_ask < cfg_.min_buy_price) {
+        stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
+    // ---- 临近末尾必输买入闸 (2026-06-05 老板「临近末尾必输的那种, 还得禁止买入」) ----------------
+    //   末段 (near_end: phase_frac>0.85) 且本边市场买入价(exec_ask) < near_end_max_buy_price (市场把该边定为
+    //   近必输) → 不开新仓, 防买进末段 longshot 被结算归零。窄闸 (仅末段+便宜双条件, 用市场实时价非陈旧 sharp)。
+    //   减仓/平仓/中前段/非便宜边不受限。
+    if (cfg_.near_end_max_buy_price > 0.0 && near_end &&
+        action.side == strategy::Side::Buy && exec_ask < cfg_.near_end_max_buy_price) {
         stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
         return;
     }

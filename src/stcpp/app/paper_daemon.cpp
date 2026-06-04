@@ -773,6 +773,9 @@ BuildResult PaperDaemon::Build() {
     // 必输局保护 (2026-06-04 老板「用比赛阶段数学模型, 不是价格地板」): 改用既有 game_phase/garbage_time
     //   模型 (TickOne: 垃圾时间落后方 target=0 不开仓)。价格地板关闭 (boss「不是这样的」)。
     cfg_.paper_loop.min_buy_price = 0.0;
+    // 临近末尾必输买入闸 (2026-06-05 老板「临近末尾必输的那种, 还得禁止买入」): 末段(phase>0.85)+ 本边
+    //   exec_ask<0.15 (市场定为近必输) → 不开新仓, 防末段 longshot 结算归零。窄闸, 中前段/非便宜不受限。
+    cfg_.paper_loop.near_end_max_buy_price = 0.15;
     // 相对止损 (2026-06-05 老板「亏大就割」): 持仓 mark 跌破均入价 25% → 强平 (绕 fair-based loss_cut 的滞后)。
     //   修「bid 比 fair 跌得快, 等 fair 跌够时簿已 gap 到地板, 割在 −85%」; 把均亏 −0.70 压到 ~−0.25。
     cfg_.paper_loop.rel_stop_pct = 0.25;
