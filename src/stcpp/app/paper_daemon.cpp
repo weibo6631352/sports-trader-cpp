@@ -629,7 +629,10 @@ BuildResult PaperDaemon::Build() {
     // ML 驱动总闸 (2026-06-03 老板「别那么谨慎, 虚拟盘要看模型真跑」): paper 放开 ML 驱动。
     //   仍受【校准门】保护 (仅 calibrated && conf>0 的模型驱动; 退化/泄漏模型 conf=0 不驱动)。
     //   真钱 live 路径不复用此 (PaperLoop 天然 paper)。生产可经此闸+校准联合控制。
-    cfg_.paper_loop.ml_drive_enabled = true;
+    //   2026-06-03 老板「改成 sharp 驱动」: 关 ML 驱动。回测证实模型对高效 PM 无 edge (de-bias→0成交=
+    //   过度自信); 真 edge 在 sharp (bet365 inplay de-vig 领先 PM, ≥5% 偏离结算站 sharp 77%/+0.20单)。
+    //   关 ML → fair 落 sharp_inplay (有 sharp 时) → 下游 sharp +EV 门只放高置信 sharp 信号。
+    cfg_.paper_loop.ml_drive_enabled = false;
     // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
     //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关
@@ -748,6 +751,10 @@ BuildResult PaperDaemon::Build() {
 
     // ---- Step 3: InplayFeedThread (构造, 不 Start; Start() 内拉起) ----
     data::InplayFeedConfig feed_cfg;
+    // 2026-06-03 老板「inplay 接口 1.005s 一次, 压着限速」: per-sport 贴 Goalserve ~1 req/s/sport 限,
+    //   1005ms 留 5ms 抖动 margin (sharp 是策略 alpha 源 → 越新越好)。
+    feed_cfg.poll_interval_ms = 1005;
+    feed_cfg.min_fetch_interval_ms = 1005;
     feed_cfg.sports = {
         data::goalserve::GoalserveSport::Soccer,
         data::goalserve::GoalserveSport::Basketball,

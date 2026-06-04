@@ -916,6 +916,18 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
     }
 
+    // ---- sharp +EV 门 (2026-06-03 老板「改成 sharp 驱动」, 历史回测确认) ----
+    //   42 万已结算行回测: src=sharp_inplay 且 |sharp − 市场| ≥ 5% 时, 结算结果站 sharp 77%,
+    //   净 +0.20/单 (≥10% 偏离 98%/+0.36); <5% 偏离是噪声(亏); ML/score-prior/derivative 源无
+    //   回测确认 edge。→ 只交易高置信 sharp 信号, 其余回退市场(edge 归零, 不产单)。
+    //   (ML 驱动已关 ml_drive_enabled=false → fair 落 sharp/score-prior/market; 此门再收到只剩 sharp。)
+    {
+        constexpr double kSharpMinEdge = 0.05;
+        const bool sharp_signal = (fair_src_dbg == pricing::FairSrc::kSharpInplay) &&
+                                  (std::abs(p_fair - p_market_devig) >= kSharpMinEdge);
+        if (!sharp_signal) p_fair = p_market_devig;  // 非高置信 sharp → 不产单
+    }
+
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
     const DecisionSide decision = SelectSide(p_fair, p_market_devig);
     const bool is_yes = (decision.outcome == TradedSide::Yes);
