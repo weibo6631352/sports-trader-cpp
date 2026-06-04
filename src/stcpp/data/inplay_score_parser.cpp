@@ -66,7 +66,6 @@ struct MatchWinnerSpec {
 };
 
 [[nodiscard]] inline MatchWinnerSpec MatchWinnerSpecFor(goalserve::GoalserveSport sport) {
-    using S = goalserve::GoalserveSport;
     // 通用陷阱黑名单 (命中 substr 即非赛果盘)。小田 §3 实拉 tennis 字典逐条挑出。
     static const std::vector<std::string_view> kForbid = {
         "Half",  "Quarter", "Period",        "Inning",    "Set ",   "Game",    "Map ",
@@ -76,18 +75,20 @@ struct MatchWinnerSpec {
         "How many", "first to", "Will ",     "Next ",     "Correct Score", "Goals", "Serve",
         "Double", "Highest", "1st ",         "2nd ",      "3rd ",   "Frame",   "Leg",
     };
-    switch (sport) {
-        case S::Soccer:  // 3-way (Home/Draw/Away)
-            return {{"1x2 (Full Time)", "Fulltime Result", "Full Time Result", "1x2", "Match Result"},
-                    kForbid, true};
-        case S::Tennis:  // 2-way (Home/Away)
-            return {{"To Win", "Match Result", "Money Line", "Moneyline", "Winner"}, kForbid, true};
-        case S::Basketball:  // 2-way (NBA/WNBA 无平局)
-            return {{"Home/Away", "Money Line", "Moneyline", "Match Result", "To Win", "12"}, kForbid,
-                    true};
-        default:  // Esports 等: 暂不支持 (小田 §4)
-            return {{}, {}, false};
-    }
+    (void)sport;  // 2026-06-03 老板「加所有运动支持」: 不再按 sport 分支, 全运动用通用赛果盘白名单。
+    // 通用赛果盘白名单 (union; 实拉 Goalserve dictionaries/odds-markets 各运动字典确认真实命名):
+    //   "Home/Away" = baseball/hockey/volleyball/basketball 通用 2-way 赛果名; tennis="To Win";
+    //   soccer 3-way="1x2"/"Match Result"/"Fulltime Result"; esports/amfootball 用通用名("Match Winner"/
+    //   "Money Line"/"Winner") 兜底。de-vig (ParseInplayOddsDevig) 自动判 2-way(home/away)/3-way(home/draw/away),
+    //   故不需 per-sport 区分边数。IEquals 精确匹配 → 只命中赛果盘本名, "Winner in OT"/"Game Lines Money Line"
+    //   (含禁词 Game) / "Home/Away (1st Set)" (含禁词 Set) 等派生盘不会误中。fail-closed: 全 miss → invalid。
+    static const std::vector<std::string_view> kResult = {
+        "Home/Away",      "Home/Away (Including OT)", "Money Line",        "Moneyline",
+        "Match Result",   "Match Winner",            "To Win",            "Winner",
+        "12",             "Series Winner",           "Match Lines",
+        "1x2",            "1x2 (Full Time)",         "Fulltime Result",   "Full Time Result",
+    };
+    return {kResult, kForbid, true};  // 全运动支持
 }
 
 // ============================================================================

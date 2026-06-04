@@ -38,6 +38,7 @@ def load_jsonl(path):
 
 # 数据质量列索引 (model_feature_spec.hpp): b_mid=8 (YES 市场价), cat_market_type=84 (moneyline=0)。
 F_MID = 8
+F_SHARP = 18  # g_bm_inplay_fair: bet365 inplay de-vig sharp 胜率 (赔率源; 有效 ⇒ 此盘有 sharp 信号)
 F_CAT_MARKET_TYPE = 84
 # game/score 列 (extract_from_game_row → 0-7, 18-23): 比分差/时钟/动量等; 全≈0 = pre-game (无比分)。
 F_GAME_COLS = list(range(0, 8)) + list(range(18, 24)) + [114, 115]  # +v0.14 网球 games (pre-game 0)
@@ -50,11 +51,13 @@ def _is_pregame(feats):
     return sum(abs(feats[c]) for c in F_GAME_COLS) < 1e-6
 
 
-def build_xy(rows, mode, moneyline_only=True, drop_decided=True, pregame_only=True):
+def build_xy(rows, mode, moneyline_only=True, drop_decided=True, pregame_only=True, sharp_only=False):
     """X,y 构建 + 数据质量筛选 (2026-06-03 治本, 防退化/泄漏模型):
       moneyline_only: 只留 cat_market_type==0 → 平衡类别 (outright 多 NO 失衡 + 不可建模)。
       drop_decided: 滤市场价 (b_mid) 已极端 ≈0/1 的行 = 市场已决出, 平凡"预测"已定结果 (AUC=1.0 泄漏源)。
       pregame_only: 只留 pre-game 行 (game 列全≈0) → 与"ML 驱动 pre-game"推理总体一致 (治外推偏置)。
+      sharp_only: 只留有 bet365 inplay sharp 赔率的行 (f18 有效) → 训练总体 = 我们实际交易的 sharp 盘
+                  (老板「只训带赔率源的」, 给系统减负 + 对齐交易分布)。
     返回 (X, y, stats)。"""
     import numpy as np
 
@@ -62,7 +65,7 @@ def build_xy(rows, mode, moneyline_only=True, drop_decided=True, pregame_only=Tr
         return d if v is None else float(v)
 
     X, y, groups = [], [], []
-    n_label, n_drop_type, n_drop_decided, n_drop_inplay = 0, 0, 0, 0
+    n_label, n_drop_type, n_drop_decided, n_drop_inplay, n_drop_nosharp = 0, 0, 0, 0, 0
     for r in rows:
         if not r.get("label_valid", 0):
             continue  # 只用已结算
@@ -72,6 +75,10 @@ def build_xy(rows, mode, moneyline_only=True, drop_decided=True, pregame_only=Tr
         feats = [0.0 if (x != x) else x for x in feats]
         n_label += 1
         cid = r.get("condition_id", "")  # 按场 CV 分组锚 (防同场行跨 train/test 记忆泄漏)
+        # 老板「只训带赔率源的」: 无 bet365 inplay sharp (f18 无效/哨兵) → 丢 (这些盘我们也不交易)。
+        if sharp_only and not (0.02 < feats[F_SHARP] < 0.98):
+            n_drop_nosharp += 1
+            continue
         # 治本①: 只留 moneyline (平衡 + 可建模; outright/prop 多 NO 失衡且无单场 score 模型)。
         if moneyline_only and abs(feats[F_CAT_MARKET_TYPE]) > 1e-6:
             n_drop_type += 1
@@ -98,7 +105,7 @@ def build_xy(rows, mode, moneyline_only=True, drop_decided=True, pregame_only=Tr
         X.append(feats)
         groups.append(cid)
     stats = {"labeled": n_label, "drop_type": n_drop_type, "drop_decided": n_drop_decided,
-             "drop_inplay": n_drop_inplay, "kept": len(X)}
+             "drop_inplay": n_drop_inplay, "drop_nosharp": n_drop_nosharp, "kept": len(X)}
     return (np.asarray(X, dtype="float32"), np.asarray(y, dtype="float32"),
             np.asarray(groups, dtype=object), stats)
 
@@ -371,13 +378,19 @@ def main():
     #   改回 moneyline_only=True (= build_xy 本就为防此设的保护默认): 只用可建模 moneyline 训练。
     #   推翻前一版「全场景训练」(那是"观察模式", 现目标盈利)。serve 侧配套只让 ML 驱动 moneyline。
     #   pregame_only 仍 False (模型 serve in-play → 训练含 in-play 才对口径); drop_decided 仍 True (反泄漏)。
-    X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=True, pregame_only=False)
-    print(f"[train] moneyline-only: 标注{st['labeled']} 滤非ml{st['drop_type']} 滤已决{st['drop_decided']} → 留{st['kept']} 行/{ng(g)}场",
+    #   2026-06-03 老板「只训带赔率源的, 给系统减负」: + sharp_only=True (只留有 bet365 inplay sharp 的盘
+    #   = 我们实际交易的 sharp 盘; 无赔率源的盘训了也用不上)。训练总体对齐交易分布。
+    X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=True, pregame_only=False, sharp_only=True)
+    print(f"[train] moneyline+sharp-only: 标注{st['labeled']} 滤非ml{st['drop_type']} 滤无sharp{st['drop_nosharp']} 滤已决{st['drop_decided']} → 留{st['kept']} 行/{ng(g)}场",
           file=sys.stderr)
-    # 数据极稀 → 放 drop_decided (最低保障; 仍只 moneyline)。
+    # 数据极稀 → 放 drop_decided (最低保障; 仍 moneyline+sharp)。
     if len(X) < 50 or ng(g) < 6:
-        X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=False, pregame_only=False)
-        print(f"[train] fallback 放 drop_decided (仍 moneyline-only) → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
+        X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=False, pregame_only=False, sharp_only=True)
+        print(f"[train] fallback 放 drop_decided (仍 moneyline+sharp) → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
+        # sharp 盘极稀时再退一步: 放开 sharp_only (避免 0 样本无法训练 → 用全 moneyline 兜底)
+        if len(X) < 50:
+            X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=False, pregame_only=False, sharp_only=False)
+            print(f"[train] fallback2 放 sharp_only (sharp 盘太稀) → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
     if len(X) < 50:
         print(f"样本不足 ({len(X)}<50), 训练跳过 — 等真数据攒够", file=sys.stderr)
         sys.exit(1)
