@@ -152,6 +152,13 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
         ei.icon_url = ev.icon_url;  // 赛事图 → 前端事件头
 
         for (const auto& dm : ev.markets) {
+            // 只收录 moneyline 赛果盘 (2026-06-04 老板「prop 多了」): 非 moneyline (props/totals/handicap/
+            //   outright/series) 无 bet365 sharp 源 → 不入 catalog (免污染 matching/grid/订阅)。
+            //   MarketTypeCode==0 = moneyline (含 tennis To Win); !=0 跳过。
+            if (cfg_.moneyline_only &&
+                stcpp::data::taxonomy::MarketTypeCode(dm.sports_market_type) != 0) {
+                continue;
+            }
             std::printf("[paper_daemon]    market %.28s... | type=%s | gi=%s\n", dm.condition_id.c_str(),
                         dm.sports_market_type.c_str(), dm.group_item_title.c_str());
             token_map_[dm.condition_id] = {dm.token0_id, dm.token1_id};

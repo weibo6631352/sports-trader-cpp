@@ -167,6 +167,12 @@ struct PaperDaemonConfig {
     //   false → 通用 fill 管线 (管线机制测试用 score-prior/任意 edge 出成交; sharp 选盘逻辑另有单测)。
     bool sharp_only_gate{true};
 
+    // 只收录 moneyline 赛果盘 (2026-06-04 老板「Dota2 Roshan 等 prop 多了」): 发现/catalog 阶段只留
+    //   moneyline (MarketTypeCode==0, 含 tennis To Win), 丢弃 props (Roshan/Rampage/completed_match)/
+    //   totals/handicap/outright/series —— 它们无 bet365 sharp 源 (market_implied 本就不交易) → 不入
+    //   catalog 免污染 matching/grid/订阅。true (生产默认, 聚焦 sharp 赔率 edge); 全盘口 dispatch 需要时置 false。
+    bool moneyline_only{true};
+
     // 离线测试 seam (小宋): false → Start() 不起真 WSS/inplay 网络线程.
     // Build() 仍完整装配 (供装配正确性单测, 不发外网请求).
     bool start_live_feeds{true};
