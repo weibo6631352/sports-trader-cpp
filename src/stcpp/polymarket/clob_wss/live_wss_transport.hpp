@@ -168,10 +168,13 @@ public:
     // AsyncConnect — 解析 URL, host 白名单检查, 启动 io_thread_
     // -----------------------------------------------------------------------
     bool AsyncConnect(std::string_view url) override {
-        if (stop_.load(std::memory_order_acquire)) {
-            return false;
-        }
-        // Join any previous thread
+        // 2026-06-05 重连死锁 BUG 修复 (老板「WSS 全部断连」根因): 原此处 `if (stop_) return false` 会让
+        //   看门狗的每次重连失败 —— Close()(半死检测触发) 把 stop_=true 永不复位, AsyncConnect 一进来就
+        //   早退 → io_thread 永不重启 → WSS 永久断连 → 订单簿陈旧 → 决策跑在死数据上。实测: OnConnected 仅
+        //   触发 1 次(初连), 却有 23 次"断开重连"全 no-op。下方 join 旧线程 + line `stop_=false` 已正确管理
+        //   stop_, 故此早退是错的 (它把"本次连接停止"误当"永久关闭")。移除早退; 析构期看门狗 jthread 已先停,
+        //   不会在销毁后再调 AsyncConnect, 无 use-after-free 风险。
+        // Join any previous thread (transient stop_ to break its loop, then reset)
         if (io_thread_.joinable()) {
             stop_.store(true, std::memory_order_release);
             io_thread_.join();
