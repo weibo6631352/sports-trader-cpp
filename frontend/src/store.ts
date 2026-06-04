@@ -35,7 +35,7 @@ import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, BinaryMarketBookView, Market, Score, Quote,
   EventGroup, ConditionData, Position, RiskReject, FeatureHealth, MappingStatus, Account,
-  EventSummary, ConditionSummary, GridMarket, Fills,
+  EventSummary, ConditionSummary, GridMarket, Fills, Fill,
 } from './types';
 
 // ---------- stub 检测 ----------
@@ -119,7 +119,8 @@ interface AppState {
   featureHealth: FeatureHealth | null;
   mappingStatus: MappingStatus | null;
   account: Account | null;
-  fills: Fills | null;  // 成交流水 (老板「看懂买卖价」)
+  fills: Fills | null;  // 成交流水 (老板「看懂买卖价」) — 全局最近 (AnalyticsPage 全量日志)
+  fillsByMarket: Record<string, Fill[]>;  // 累积 per-market 成交 (全局环churn快; 盯盘按盘留住历史)
   conditionCache: Record<string, PerConditionCache>;
   eventGroups: EventGroup[];
   liveGames: Score[];  // 盯盘看板: 全部 in-play 比赛比分 (SSE scores 通道直推; 老板「人盯盘」)
@@ -139,6 +140,7 @@ export const [state, setState] = createStore<AppState>({
   mappingStatus: null,
   account: null,
   fills: null,
+  fillsByMarket: {},
   liveGames: [],
   conditionCache: {},
   eventGroups: [],
@@ -229,7 +231,25 @@ export async function refreshAccount(): Promise<void> {
 export async function refreshFills(): Promise<void> {
   if (USE_STUB) return;
   const data = await fetchFills();
-  if (data) setState({ fills: data });
+  if (!data) return;
+  setState({ fills: data });
+  // 累积 per-market: 全局环 churn 很快(模型驱动 100+笔/30s), 这里按盘留住成交历史 →
+  //   盯盘展开任一盘(含已平仓 flat)都能看到它"多少价买的/卖的"。dedup + 每盘留 40 笔, 最新在前。
+  const keyOf = (f: Fill) => `${f.as_of_ts}|${f.side}|${f.outcome}|${f.price}|${f.size_usdc}`;
+  const byM: Record<string, Fill[]> = { ...state.fillsByMarket };
+  const touched = new Set<string>();
+  for (const f of data.fills) touched.add(f.market_id);
+  for (const m of touched) {
+    const existing = byM[m] ?? [];
+    const seen = new Set(existing.map(keyOf));
+    const merged = existing.slice();
+    for (const f of data.fills) {
+      if (f.market_id === m && !seen.has(keyOf(f))) merged.push(f);
+    }
+    merged.sort((a, b) => b.as_of_ts - a.as_of_ts);
+    byM[m] = merged.slice(0, 40);
+  }
+  setState({ fillsByMarket: byM });
 }
 
 export async function refreshMappingStatus(): Promise<void> {
