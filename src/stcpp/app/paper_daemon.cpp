@@ -260,7 +260,9 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
 
     // Collect token_ids for WSS subscription — 源头 pass (2026-06-04 老板「从源头就不订阅无赔率源的比赛」):
     //   只订有 sharp(bet365) 赔率源的 condition 的 token。RefreshEventMapping 发布 eligible 集 (grace 滞回)。
-    //   快照 null = 映射线程尚未就绪 (bootstrap, e.g. 初次 Build) → 订全量, 首个映射周期后收敛 sharp-only。
+    //   **null (映射线程尚未就绪, e.g. 初次 Build) → 一个都不订** (老板二次强调: 绝不 bootstrap 全订 →
+    //   否则 WSS 连上先订全量 150, 之后靠 unsubscribe diff 收敛不可靠/被重连重置)。首个映射周期算出
+    //   eligible 后, RediscoverOnce 增量订阅 sharp 盘。映射判定不需 PM 订阅 (靠 inplay 比分+赔率), 故无鸡蛋问题。
     //   注: market_match_inputs_ 不过滤 (全市场仍参与匹配 → 才能判定哪些有 sharp); 只过滤订阅集。
     const auto sharp_snap = SharpConditionsSnapshot();
     all_token_ids_.reserve(token_map_.size() * 2);
@@ -268,8 +270,8 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
     poll_plan.reserve(token_map_.size() * 2);
     std::size_t passed_no_source = 0;
     for (const auto& [cond_id, tok_pair] : token_map_) {
-        if (sharp_snap && sharp_snap->count(cond_id) == 0) {
-            ++passed_no_source;  // 无赔率源 → 源头 pass, 不订阅
+        if (!sharp_snap || sharp_snap->count(cond_id) == 0) {
+            ++passed_no_source;  // 无赔率源 (或 eligible 未就绪) → 源头 pass, 不订阅
             continue;
         }
         all_token_ids_.push_back(tok_pair.first);

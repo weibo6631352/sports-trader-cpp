@@ -81,7 +81,10 @@ TEST(PaperDaemon, AssemblyOffline_InjectedMarkets_BuildOk) {
     const auto br = daemon.Build();
     EXPECT_TRUE(br.ok);
     EXPECT_EQ(br.market_count, 1u);
-    EXPECT_EQ(br.token_count, 2u);  // YES + NO
+    // 源头 pass (2026-06-04 老板「从源头不订无赔率源」): Build 时 eligible 集未就绪 (映射线程未跑) →
+    //   订阅集为空 (绝不 bootstrap 全订)。catalog/token_map 仍含该 market (下方验证); 订阅待映射判定有
+    //   sharp 赔率源后由 RediscoverOnce 增量加。故 token_count=0 (订阅), 非 2 (catalog)。
+    EXPECT_EQ(br.token_count, 0u);
 
     EXPECT_TRUE(daemon.is_built());
     // 组件接对 (非空句柄)
