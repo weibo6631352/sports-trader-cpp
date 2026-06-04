@@ -365,18 +365,19 @@ def main():
     #   moneyline 场太少 → 放 moneyline (全类型, 早期数据稀时优先有足够场做按场 CV)。
     def ng(g):
         return len(set(g.tolist()))
-    # 老板 2026-06-03「模型自主, 识别应对各种情况」: 默认【全场景 + 全市场类型】训练 —
-    #   in-play + pre-game, moneyline/totals/spreads/outright/... 全收。residual 模式 (预测 delta over
-    #   b_mid, 市场锚有界) + cat_market_type(#84) + game 列 (score/games/period/time) 让模型自区分情况。
-    #   serve 侧已同步放开 (fair_resolve ML 跨所有情况 blend, 校准门守) → 训练总体 = 推理总体, 无 train/serve 失配。
-    #   仅保 drop_decided (防市场已决出的平凡预测泄漏, AUC=1.0 源 — 这是反泄漏不是缩范围)。
-    X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=True, pregame_only=False)
-    print(f"[train] 全场景筛选: 标注{st['labeled']} 滤已决{st['drop_decided']} → 留{st['kept']} 行/{ng(g)}场",
+    # 2026-06-03 老板「让模型盈利」+ 训练污染实测: 抽样 30 万已结算行, 仅 18.8% 是 moneyline,
+    #   81.2% 是 totals/spreads/outright/prop (cat_market_type 1/2/4) = 注释里说的"多 NO 失衡 + 不可
+    #   建模"。模型 81% 容量花在学不会的盘上 → 出 fair 0.41 vs 市场 0.07 的垃圾, 还把 moneyline 校准带歪。
+    #   改回 moneyline_only=True (= build_xy 本就为防此设的保护默认): 只用可建模 moneyline 训练。
+    #   推翻前一版「全场景训练」(那是"观察模式", 现目标盈利)。serve 侧配套只让 ML 驱动 moneyline。
+    #   pregame_only 仍 False (模型 serve in-play → 训练含 in-play 才对口径); drop_decided 仍 True (反泄漏)。
+    X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=True, pregame_only=False)
+    print(f"[train] moneyline-only: 标注{st['labeled']} 滤非ml{st['drop_type']} 滤已决{st['drop_decided']} → 留{st['kept']} 行/{ng(g)}场",
           file=sys.stderr)
-    # 数据极稀 → 放 drop_decided (最低保障; 靠泄漏守卫+sanity 兜底)。
+    # 数据极稀 → 放 drop_decided (最低保障; 仍只 moneyline)。
     if len(X) < 50 or ng(g) < 6:
-        X, y, g, st = build_xy(rows, a.mode, moneyline_only=False, drop_decided=False, pregame_only=False)
-        print(f"[train] fallback 放全部筛选 → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
+        X, y, g, st = build_xy(rows, a.mode, moneyline_only=True, drop_decided=False, pregame_only=False)
+        print(f"[train] fallback 放 drop_decided (仍 moneyline-only) → 留{st['kept']} 行/{ng(g)}场", file=sys.stderr)
     if len(X) < 50:
         print(f"样本不足 ({len(X)}<50), 训练跳过 — 等真数据攒够", file=sys.stderr)
         sys.exit(1)
