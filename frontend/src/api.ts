@@ -220,7 +220,8 @@ export const fetchGatePaper = (): Promise<GatePaper | null> => apiFetch('/api/v1
 export const fetchFeatureHealth = (): Promise<FeatureHealth | null> => apiFetch('/api/v1/features/health');
 export const fetchMappingStatus = (): Promise<MappingStatus | null> => apiFetch('/api/v1/mapping/status');
 export const fetchAccount = (): Promise<Account | null> => apiFetch('/api/v1/account');
-export const fetchFills = (): Promise<Fills | null> => apiFetch('/api/v1/fills');
+export const fetchFills = (market?: string): Promise<Fills | null> =>
+  apiFetch(market ? `/api/v1/fills?market=${encodeURIComponent(market)}` : '/api/v1/fills');
 
 export const fetchMarket = (marketId: string, priority = false): Promise<Market | null> =>
   apiFetch(`/api/v1/market/${marketId}`, priority);

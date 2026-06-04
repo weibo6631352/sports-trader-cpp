@@ -24,10 +24,11 @@ void register_account(httplib::Server& svr, const HttpServer& hs) {
     });
 }
 
-// GET /api/v1/fills — 成交流水 (2026-06-04 老板「多少价格买的/卖出的都不知道」)
+// GET /api/v1/fills[?market=X] — 成交流水 (2026-06-04 老板「看懂买卖价」; market 过滤=盯盘按盘看)
 void register_fills(httplib::Server& svr, const HttpServer& hs) {
-    svr.Get("/api/v1/fills", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
-        res.set_content(payload::fills(hs.provider()), "application/json; charset=utf-8");
+    svr.Get("/api/v1/fills", [&hs](const httplib::Request& req, httplib::Response& res) {
+        const std::string market = req.has_param("market") ? req.get_param_value("market") : "";
+        res.set_content(payload::fills(hs.provider(), market), "application/json; charset=utf-8");
         res.status = 200;
     });
 }
