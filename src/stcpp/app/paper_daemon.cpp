@@ -633,6 +633,9 @@ BuildResult PaperDaemon::Build() {
     //   过度自信); 真 edge 在 sharp (bet365 inplay de-vig 领先 PM, ≥5% 偏离结算站 sharp 77%/+0.20单)。
     //   关 ML → fair 落 sharp_inplay (有 sharp 时) → 下游 sharp +EV 门只放高置信 sharp 信号。
     cfg_.paper_loop.ml_drive_enabled = false;
+    // sharp 驱动门 (2026-06-04): 生产 daemon 默认开 (cfg_.sharp_only_gate 默认 true) —— 仅高置信
+    //   sharp(bet365) 信号产单, 其余源回退市场 (edge 归零)。管线机制测试可置 false (走 score-prior 出成交)。
+    cfg_.paper_loop.sharp_only_gate = cfg_.sharp_only_gate;
     // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
     //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关

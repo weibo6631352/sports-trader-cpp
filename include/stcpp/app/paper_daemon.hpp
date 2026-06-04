@@ -161,6 +161,11 @@ struct PaperDaemonConfig {
     //   false → 用 lib 静态默认 (n=200/static floor; 管线机制测试关掉新门, 单测新门另测)。
     bool enable_phase0_gates{true};
 
+    // sharp 驱动门 (2026-06-04 老板「sharp 驱动 + 赔率 edge 线」): 仅高置信 sharp(bet365) 信号产单。
+    //   true (生产默认) → daemon 置 PaperLoopConfig.sharp_only_gate=true (其余源回退市场, edge 归零)。
+    //   false → 通用 fill 管线 (管线机制测试用 score-prior/任意 edge 出成交; sharp 选盘逻辑另有单测)。
+    bool sharp_only_gate{true};
+
     // 离线测试 seam (小宋): false → Start() 不起真 WSS/inplay 网络线程.
     // Build() 仍完整装配 (供装配正确性单测, 不发外网请求).
     bool start_live_feeds{true};

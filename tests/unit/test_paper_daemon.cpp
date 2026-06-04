@@ -294,6 +294,7 @@ TEST(PaperDaemon, A2_DaemonProducesPaperFill_IsolatedLedger) {
     auto cfg = OfflineHeadlessCfg();       // Headless + start_live_feeds=false + record_ml=false
     cfg.enable_paper_fills = true;         // A2: 解封成交
     cfg.enable_phase0_gates = false;       // 本测验管线机制 (出成交), 非 Phase0 新门; 新门另有专测
+    cfg.sharp_only_gate = false;           // 本测验管线机制 (score-prior edge 出成交), 非 sharp 策略门; sharp 选盘另有专测
     cfg.mapping_refresh_sec = 1;           // 快刷
     cfg.paper_loop.tick_interval_ms = 50;  // 快 tick
     cfg.paper_loop.n_effective = 500;      // 紧 CI 让真实 edge 过门 (生产 n_eff 小梁调)

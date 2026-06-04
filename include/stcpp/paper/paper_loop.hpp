@@ -257,6 +257,14 @@ struct PaperLoopConfig {
     //   默认 0 = 纯 net-EV (经济 margin 由下游 slippage/fee/net_ev_ok 门承担)。>0 = 额外保守安全带。
     double sharp_edge_margin{0.0};
 
+    // sharp-only 门 (老板 2026-06-03「改成 sharp 驱动」, 42 万结算行回测 ≥5% 偏离站 sharp 77%/+0.20单)。
+    //   true: 仅当 fair 源 = sharp_inplay 且 |sharp−市场| ≥ sharp_only_min_edge 才保留 edge;
+    //         其余源 (ml_blend/score_prior/derivative/market) 回退市场价 (edge 归零, 不产单)。
+    //   false (默认): 不施加此门 —— 通用 fill 管线 (契约/管线单测 + 非 sharp 策略) 照常成交。
+    //   纯【策略过滤器】非管线不变量, 故默认关; 生产 daemon (sharp 驱动) 显式置 true。
+    bool sharp_only_gate{false};
+    double sharp_only_min_edge{0.05};  // ≥此偏离才算高置信 sharp 信号 (回测 ≥5% 拐点)
+
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)

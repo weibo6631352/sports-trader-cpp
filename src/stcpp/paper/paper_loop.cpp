@@ -921,10 +921,11 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   净 +0.20/单 (≥10% 偏离 98%/+0.36); <5% 偏离是噪声(亏); ML/score-prior/derivative 源无
     //   回测确认 edge。→ 只交易高置信 sharp 信号, 其余回退市场(edge 归零, 不产单)。
     //   (ML 驱动已关 ml_drive_enabled=false → fair 落 sharp/score-prior/market; 此门再收到只剩 sharp。)
-    {
-        constexpr double kSharpMinEdge = 0.05;
+    //   2026-06-04: 收进 cfg_.sharp_only_gate (默认关) —— 这是【策略过滤器】非管线不变量, 无条件施加会
+    //   把通用 fill 管线/契约单测的非 sharp fair 全归零 (T17/T_Profit/TS4… 9 测试)。生产 daemon 置 true。
+    if (cfg_.sharp_only_gate) {
         const bool sharp_signal = (fair_src_dbg == pricing::FairSrc::kSharpInplay) &&
-                                  (std::abs(p_fair - p_market_devig) >= kSharpMinEdge);
+                                  (std::abs(p_fair - p_market_devig) >= cfg_.sharp_only_min_edge);
         if (!sharp_signal) p_fair = p_market_devig;  // 非高置信 sharp → 不产单
     }
 
