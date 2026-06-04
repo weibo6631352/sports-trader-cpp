@@ -394,8 +394,49 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
           <HalfPane half={bk().token0} label={summ()?.outcome0 || 'YES'} />
           <HalfPane half={bk().token1} label={summ()?.outcome1 || 'NO'} />
         </div>
+        {/* 最近成交 — 就在盘口下面 (老板 2026-06-04「就在我们盘口下面看」) */}
+        <MarketFills conditionId={props.conditionId} />
       </div>
     </Show>
+  );
+}
+
+// 单盘口最近成交 (老板「就在盘口下面看」): 读累积 per-market 历史, 即便已平仓也留着买卖价。
+function MarketFills(props: { conditionId: string }) {
+  const all = () => state.fillsByMarket[props.conditionId] ?? [];
+  const fills = () => all().slice(0, 10);
+  // 合计已实现 = 累积成交里所有卖出的已实现之和 (老板「还有一个合计别漏了」)。
+  const totalReal = () => all().reduce((s, f) => s + (f.side === 'sell' ? f.realized : 0), 0);
+  return (
+    <>
+      <div class="v8-reject-title">成交 (最近 {fills().length} 笔)</div>
+      <Show
+        when={fills().length > 0}
+        fallback={<Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>暂无成交</Typography>}
+      >
+        <For each={fills()}>
+          {(f) => (
+            <div class="v8-pos-row" title={fmtTs(f.as_of_ts)} style={{ gap: '8px' }}>
+              <span class="mono-sub" style={{ color: '#888', 'font-size': '10px' }}>{fmtTs(f.as_of_ts).slice(-8)}</span>
+              <span class="mono-sub" style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700 }}>
+                {f.side === 'buy' ? '买' : (f.is_close ? '卖平' : '卖')}{f.outcome}
+              </span>
+              <span class="mono-sub" style={{ 'font-weight': 700 }}>@{f.price.toFixed(4)}</span>
+              <span class="mono-sub">{f.size_usdc.toFixed(1)}u</span>
+              <span class={`mono-sub ${f.side === 'sell' ? (f.realized >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`} style={{ 'margin-left': 'auto' }}>
+                {f.side === 'sell' ? `${f.realized >= 0 ? '+' : ''}${f.realized.toFixed(2)}` : '—'}
+              </span>
+            </div>
+          )}
+        </For>
+        <div class="v8-pos-total">
+          <span class="q-lbl">合计 已实现</span>
+          <span class={`mono-strong ${totalReal() >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
+            {totalReal() >= 0 ? '+' : ''}{totalReal().toFixed(2)}
+          </span>
+        </div>
+      </Show>
+    </>
   );
 }
 
@@ -578,9 +619,6 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
     if (v == null) return null;
     return { text: fmtUsdc(v), pos: v >= 0 };
   };
-  // 本盘口成交流水 (2026-06-04 老板「盯盘看不到多少价入的」): 读累积 per-market 历史 (store 持续累积,
-  //   不受全局环 churn 影响) → 即便仓位已平(flat)也能看到这盘买卖了多少价。最新在前。
-  const myFills = () => (state.fillsByMarket[props.conditionId] ?? []).slice(0, 10);
 
   return (
     <div class="v8-expand-panel">
@@ -627,28 +665,6 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
             </div>
           )}
         </Show>
-      </Show>
-
-      {/* 成交流水 (2026-06-04 老板「盯盘页面看懂买卖价」): 本盘口每笔 买@X / 卖@Y + 已实现 */}
-      <div class="v8-reject-title">成交 (最近 {myFills().length} 笔)</div>
-      <Show
-        when={myFills().length > 0}
-        fallback={<Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>—</Typography>}
-      >
-        <For each={myFills()}>
-          {(f) => (
-            <div class="v8-pos-row" title={fmtTs(f.as_of_ts)}>
-              <span class="mono-sub" style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700 }}>
-                {f.side === 'buy' ? '买' : (f.is_close ? '卖平' : '卖')}{f.outcome}
-              </span>
-              <span class="mono-sub" style={{ 'font-weight': 700 }}>@{f.price.toFixed(4)}</span>
-              <span class="mono-sub">{f.size_usdc.toFixed(1)}u</span>
-              <span class={`mono-sub ${f.side === 'sell' ? (f.realized >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`} style={{ 'margin-left': 'auto' }}>
-                {f.side === 'sell' ? `${f.realized >= 0 ? '+' : ''}${f.realized.toFixed(2)}` : '—'}
-              </span>
-            </div>
-          )}
-        </For>
       </Show>
 
       {/* 拒单明细 */}
@@ -1011,54 +1027,6 @@ function TradingToolbar(props: {
 }
 
 // ============================================================
-// 最近成交 (2026-06-04 老板「我作为盯盘人员要看到最近几次交易, 信息太少」)
-//   盯盘页常驻面板: 全局最近成交逐笔 时间|盘口|买/卖|价|量|已实现, 不用展开任何盘就能看。
-// ============================================================
-function RecentTradesPanel() {
-  const fills = () => (state.fills?.fills ?? []).slice(0, 14);
-  const nameFor = (cid: string): string => {
-    const t = state.conditionCache[cid]?.summary?.title;
-    return t && t.length > 0 ? t : `${cid.slice(0, 10)}…`;
-  };
-  return (
-    <div class="v8-expand-panel" style={{ margin: '0 0 8px 0' }}>
-      <div class="v8-panel-title">
-        最近成交 ({fills().length}) · 盯盘逐笔
-      </div>
-      <Show
-        when={fills().length > 0}
-        fallback={
-          <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>
-            暂无成交（策略未触发 / 引擎未跑）
-          </Typography>
-        }
-      >
-        <For each={fills()}>
-          {(f) => (
-            <div class="v8-pos-row" style={{ gap: '8px' }}>
-              <span class="mono-sub" style={{ color: '#888', 'font-size': '10px', 'min-width': '62px' }}>
-                {fmtTs(f.as_of_ts).slice(-12)}
-              </span>
-              <span class="mono-sub" style={{ flex: '1 1 auto', overflow: 'hidden', 'text-overflow': 'ellipsis', 'white-space': 'nowrap', 'max-width': '160px' }}>
-                {nameFor(f.market_id)}
-              </span>
-              <span class="mono-sub" style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700, 'min-width': '52px' }}>
-                {f.side === 'buy' ? '买' : (f.is_close ? '卖平' : '卖')}{f.outcome}
-              </span>
-              <span class="mono-sub" style={{ 'font-weight': 700, 'min-width': '54px' }}>@{f.price.toFixed(4)}</span>
-              <span class="mono-sub" style={{ 'min-width': '46px', color: '#aaa' }}>{f.size_usdc.toFixed(1)}u</span>
-              <span class={`mono-sub ${f.side === 'sell' ? (f.realized >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`} style={{ 'min-width': '52px', 'text-align': 'right' }}>
-                {f.side === 'sell' ? `${f.realized >= 0 ? '+' : ''}${f.realized.toFixed(2)}` : '—'}
-              </span>
-            </div>
-          )}
-        </For>
-      </Show>
-    </div>
-  );
-}
-
-// ============================================================
 // TradingPage (顶层导出)
 // ============================================================
 
@@ -1210,9 +1178,6 @@ export function TradingPage() {
       <div class="spark-section">
         <PnlSparkline noFills={!hasFills()} />
       </div>
-
-      {/* 最近成交 — 盯盘常驻逐笔 (老板「信息太少」) */}
-      <RecentTradesPanel />
 
       {/* 赛事列表 (v8 Accordion) */}
       <div class="v8-event-list">
