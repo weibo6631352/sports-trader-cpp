@@ -350,20 +350,17 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                             if (cid.empty() || n >= kMaxFocus) break;  // provider 侧也夹 cap (评审)
                             ++n;
                             focus_now.insert(cid);
-                            std::string bk = payload::book_pair(sp, cid);  // as_of=-1 (省顶层 as_of, on-change 比对生效)
-                            auto bit = last_book.find(cid);
-                            if (keyframe || bit == last_book.end() || bit->second != bk) {
-                                last_book[cid] = bk;
-                                if (!send_frame(sink, "book", "snapshot", bk, fseq)) return true;
-                                sent = true;
-                            }
+                            // 2026-06-05 老板「订单簿/量化AI 刷新比持仓慢, 撤 REST 轮询后更慢」: 聚焦盘 book/quote
+                            //   改【每 tick 必推】(原 on-change 比对 → 静市场 0 变化就不推 → 面板不重渲 → "冻结"感;
+                            //   而 positions 面板靠 rebuildGroups 每秒重渲故"快")。聚焦集小 (用户展开的, 封顶 32),
+                            //   每秒推全档 = 面板每秒重渲, 与 positions 同节奏。纯 SSE, 不靠 REST 轮询。
+                            std::string bk = payload::book_pair(sp, cid);
+                            last_book[cid] = bk;
+                            if (!send_frame(sink, "book", "snapshot", bk, fseq)) return true;
+                            sent = true;
                             std::string qt = payload::quote(sp, cid);
-                            auto qit = last_quote.find(cid);
-                            if (keyframe || qit == last_quote.end() || qit->second != qt) {
-                                last_quote[cid] = qt;
-                                if (!send_frame(sink, "quote", "snapshot", qt, fseq)) return true;
-                                sent = true;
-                            }
+                            last_quote[cid] = qt;
+                            if (!send_frame(sink, "quote", "snapshot", qt, fseq)) return true;
                         }
                         // 已移出 focus 的盘口: 清基线 (下次重新 focus 会重推)
                         for (auto it = last_book.begin(); it != last_book.end();)
