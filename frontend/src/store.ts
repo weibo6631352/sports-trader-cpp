@@ -412,23 +412,25 @@ export async function refreshGrid(): Promise<void> {
 export async function fetchDetailFor(condIds: string[], priority = false): Promise<void> {
   await Promise.all(
     condIds.map(async (condId) => {
-      // book/quote 直接用 condId 拉 (book_pair/quote 端点 key = condId)。
+      // book/quote/fills 直接用 condId 拉 (端点 key = condId)。
       //   修 bug: 原先先拉 market 再用 market.condition_id 拉 book → market 没缓存住时每轮重拉
       //   market(58次/6s 风暴)挤满并发闸、把 book 拉取饿死 → 后端有簿前端却"未接入"。
-      const book = await safeGetMapped(() => fetchBook(condId, priority), STUB_BOOK_MAP, condId);
-      const quote = await safeGetMapped(() => fetchQuote(condId, priority), STUB_QUOTE_MAP, condId);
+      // 2026-06-04 老板「订单簿和量化 ai 加载的很慢」: 服务器端点 <1ms, 慢=跨洋 RTT × 串行往返。
+      //   book→quote→fills 三次串行 await = 3× RTT 才出数据 → 改 Promise.all 并行, 1× RTT 同时到。
+      //   成交折进同一拉取 (老板「都走同一个」「刷新对齐订单簿/量化 ai」): 单一 store 源 + 同 2s 节拍。
+      const [book, quote, fd] = await Promise.all([
+        safeGetMapped(() => fetchBook(condId, priority), STUB_BOOK_MAP, condId),
+        safeGetMapped(() => fetchQuote(condId, priority), STUB_QUOTE_MAP, condId),
+        fetchFills(condId),
+      ]);
       setState(
         produce((s) => {
           s.conditionCache[condId] ??= { market: null, book: null, quote: null, score: null, summary: null };
           s.conditionCache[condId].book = book;
           s.conditionCache[condId].quote = quote;
+          if (fd) s.fillsByMarket[condId] = fd.fills;
         }),
       );
-      // 成交流水: 与 book/quote 同一拉取触发 (老板 2026-06-04「都走同一个 wss 多好啊」/「刷新频率和
-      //   订单簿、量化 ai 不一致」)。折进 fetchDetailFor → 与订单簿/量化 AI 同 2s 节拍刷新, 单一 store 源,
-      //   不再 MarketFills 自己 4s 轮询 (那是 desync 根源)。权威来自后端 per-market 深环 (5000), 直接覆盖。
-      const fd = await fetchFills(condId);
-      if (fd) setState(produce((s) => { s.fillsByMarket[condId] = fd.fills; }));
       // market 元数据仅在用户交互(priority)且未缓存时拉一次 —— 常驻 refreshExpandedDetail
       //   (priority=false) 不拉 market, 彻底消除 market 重拉风暴; 元数据由 refreshMarketInfoSlow(60s) 兜。
       if (priority && !state.conditionCache[condId]?.market) {
