@@ -305,15 +305,10 @@ def write_sidecar(out_path, meta):
 def train(X, y, groups, out_path, mode="regress"):
     import lightgbm as lgb
     cat = [c for c in CAT_FEATURES if c < X.shape[1]]
-    # 2026-06-04 老板「调整模型」: 重正则化治过拟合。仅 ~2800 结算标签 vs 116 特征, 旧参
-    #   (num_leaves=15/min_child=5/无正则) 必记噪声 → 模型在零信号盘虚报 +2351bps → 烧本金。
-    #   重收缩使 residual delta 朝 0 缩 (无强信号就贴市场, 不瞎下单)。
-    params = dict(n_estimators=150, num_leaves=7, max_depth=3, learning_rate=0.02,
-                  min_child_samples=150,            # 大叶: 每叶≥150样本 → 不记单点噪声
-                  reg_alpha=1.0, reg_lambda=20.0,   # L1+强L2 → delta 朝 0 收缩
-                  feature_fraction=0.5, bagging_fraction=0.7, bagging_freq=1,  # 子采样防过拟合
-                  min_split_gain=0.002,             # 要真增益才分裂 → 减 spurious 分裂
-                  verbose=-1)
+    # 2026-06-04 老板「先回退训练文件的修改」: 撤回上一轮重正则化「调模型」尝试 —— 那是给【结算预测】
+    #   模型治过拟合的补丁; 现正把建模目标改成【短期市场波动预测】, 旧目标的调参作废。回到基线参。
+    params = dict(n_estimators=50, num_leaves=15, learning_rate=0.1,
+                  min_child_samples=5, verbose=-1)
     # 评估: 按场次 (condition_id) GroupKFold CV → 诚实 AUC (防同场行记忆泄漏 → 假 AUC≈1; 防单类 holdout)。
     meta = group_cv_meta(X, y, groups, mode, params)
     # categorical_feature: 类别列声明为 categorical, 树学 == 分裂而非有序阈值 (v0.6)。
