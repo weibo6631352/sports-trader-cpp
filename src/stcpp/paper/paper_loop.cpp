@@ -761,6 +761,9 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     double g_time_x_lead = std::numeric_limits<double>::quiet_NaN();  // 批1: 时间感知领先 (体育最大非线性)
     double g_remaining_sec = std::numeric_limits<double>::quiet_NaN();  // 批1 补漏: 剩余秒
     SportsFeatures sports;  // 批1 体育动态 (game_row.score/live_stats 派生; 无真比分→NaN)
+    // 分运动 必输局判定 (2026-06-04 老板「分运动」): +1=已决出且 YES 领先(NO 是必输方) / −1=已决出且 NO 领先
+    //   (YES 是必输方) / 0=未决出。各运动用各自比分单位 + 阶段阈值 (替代统一 |diff|≥3 的 garbage_time)。
+    double game_decided_sign = 0.0;
     // 批1 补漏 g_periods_won: 已完成节中各队领先节数 (score_*_periods[]; 有真实比分才有意义)。
     std::int32_t g_periods_won_home = 0, g_periods_won_away = 0;
     if (has_real_fair) {
@@ -817,6 +820,27 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         const double abs_diff = std::abs(score_diff);
         sports.garbage_time = (phase_frac > 0.85 && abs_diff >= 3.0) ? 1.0 : 0.0;
         sports.clutch = (phase_frac > 0.85 && abs_diff <= 1.0) ? 1.0 : 0.0;
+        // 分运动 必输局判定 (老板「分运动」): 各运动比分单位 + 阶段阈值, 判该盘是否已基本决出。
+        //   tennis/volleyball=盘差, esports=图差(series), basket/rugby/amf=分差, soccer/hockey=球差, baseball=分差。
+        //   阈值 = 落后方近乎确定输的程度 (中后段)。落后方 = score_diff 符号反向。
+        {
+            const std::string& sp = game_row.sport;
+            bool decided = false;
+            if (sp == "tennis" || sp == "volleyball" || sp == "esports") {
+                decided = (abs_diff >= 1.0 && phase_frac > 0.50);  // 盘/图: 落后≥1 且中后段 = 需连扳, 近决出
+            } else if (sp == "basket") {
+                decided = (abs_diff >= 12.0 && phase_frac > 0.85);  // 篮球: 末节 + 12 分
+            } else if (sp == "amfootball" || sp == "rugby") {
+                decided = (abs_diff >= 16.0 && phase_frac > 0.85);  // 美式/橄榄: 末段 + 16 分 (>2 次得分)
+            } else if (sp == "soccer" || sp == "hockey") {
+                decided = (abs_diff >= 2.0 && phase_frac > 0.82);   // 足/冰: 末段 + 2 球
+            } else if (sp == "baseball") {
+                decided = (abs_diff >= 4.0 && phase_frac > 0.70);   // 棒球: 末局 + 4 分
+            } else {
+                decided = (abs_diff >= 3.0 && phase_frac > 0.85);   // 默认 (原 garbage_time)
+            }
+            if (decided && score_diff != 0.0) game_decided_sign = (score_diff > 0.0) ? 1.0 : -1.0;
+        }
         // 比分时序 ring: Observe (as_of 上游观测刻, 禁 now()) → 进球新鲜度 + 5min 动量。
         auto& gh = game_history_[condition_id];
         gh.Observe(feat.as_of_ts_ns, game_row.score_home_total, game_row.score_away_total);
@@ -1234,15 +1258,14 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   信号能跨价进可下单侧 (2026-06-04 老板「跑通赔率 edge 线」修「sizing 说买/reservation 说噪声」双标)。
     const bool reservation_noise_free = fair_is_sharp || cfg_.paper_no_edge_gates;
 
-    // 必输局保护 (2026-06-04 老板「用比赛阶段数学模型, 不是价格地板」): 复用既有 game_phase 模型 ——
-    //   sports.garbage_time (末段 phase_frac>0.85 ∧ |比分差|≥3 = 已决出/blowout; 无时钟运动用 period 进度锚)
-    //   时, 被选边若是【落后方】= 近必输 → target=0, 控制器只减不开 (不买进必输局结算归零被套)。
+    // 必输局保护 (2026-06-04 老板「用比赛阶段数学模型, 分运动」): 用分运动决出判定 game_decided_sign ——
+    //   +1=YES 领先已决出(NO 必输) / −1=NO 领先已决出(YES 必输)。被选边若是【必输方】→ target=0,
+    //   控制器只减不开 (不买进必输局结算归零被套)。各运动用各自比分单位+阶段阈值 (tennis/esports 盘图差,
+    //   clock 运动时间+分差), 修「统一 |diff|≥3 对 tennis/esports 永不触发」。
     double sel_target = target_mag;
-    if (sports.garbage_time > 0.5) {
-        const double score_diff_sd = static_cast<double>(game_row.score_home_total) -
-                                     static_cast<double>(game_row.score_away_total);  // YES-canonical: >0=YES领先
-        const bool sel_is_loser = (is_yes && score_diff_sd < 0.0) || (!is_yes && score_diff_sd > 0.0);
-        if (sel_is_loser) sel_target = 0.0;  // 垃圾时间落后方 = 近必输, 不开仓
+    if (game_decided_sign != 0.0) {
+        const bool sel_is_loser = (is_yes && game_decided_sign < 0.0) || (!is_yes && game_decided_sign > 0.0);
+        if (sel_is_loser) sel_target = 0.0;  // 该运动已决出, 被选边是落后必输方 → 不开仓
     }
 
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
