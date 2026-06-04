@@ -42,6 +42,7 @@
 #include <thread>
 #include <tuple>
 #include <unordered_map>
+#include <unordered_set>
 
 // POSIX
 #include <arpa/inet.h>
@@ -52,6 +53,7 @@
 #include <unistd.h>
 
 // zlib
+#include "stcpp/data/inplay_odds_parser.hpp"  // ParseResultMarketIdsFromDict (字典驱动选盘)
 #include "stcpp/data/inplay_score_parser.hpp"
 
 #include <zlib.h>
@@ -551,7 +553,40 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
                static_cast<std::uint64_t>(ts.tv_nsec) / 1'000'000ULL;
     };
 
+    // 赛果盘 market_id 集合 (本 sport, thread-local 无锁): Goalserve 字典解析所得 (2026-06-04 老板
+    //   「用字典匹配, 别只靠白名单」)。启动拉一次 + 每 kDictRefreshMs 刷新 (市场名/id 极少变)。空 →
+    //   Parse 回退 IsResultMarketName 启发式 (按 feed market name 选)。
+    std::unordered_set<std::string> result_ids;
+    std::uint64_t last_dict_fetch_ms = 0;
+    constexpr std::uint64_t kDictRefreshMs = 6ULL * 3600ULL * 1000ULL;  // 6h
+
     while (!stop_.load(std::memory_order_acquire)) {
+        // 周期性拉字典 → 解析赛果盘 id-set (启动即拉; 之后 6h 刷新)。失败保留旧集 (不清空)。
+        {
+            const std::uint64_t now_ms = mono_ms_now();
+            if (last_dict_fetch_ms == 0 || now_ms >= last_dict_fetch_ms + kDictRefreshMs) {
+                std::string dict_json;
+                if (FetchDict(sport, dict_json)) {
+                    auto ids = ParseResultMarketIdsFromDict(dict_json);
+                    if (!ids.empty()) {
+                        result_ids = std::move(ids);
+                        std::fprintf(stderr, "[inplay_dict] sport=%s 赛果盘 id-set=%zu (字典驱动选盘)\n",
+                                     sport_slug.c_str(), result_ids.size());
+                    } else {
+                        std::fprintf(stderr,
+                                     "[inplay_dict] sport=%s 字典无赛果盘命中 → 回退启发式选盘\n",
+                                     sport_slug.c_str());
+                    }
+                    last_dict_fetch_ms = now_ms;  // 仅成功才记时, 失败下轮重试
+                } else {
+                    std::fprintf(stderr, "[inplay_dict] sport=%s 字典拉取失败 → 回退启发式 (下轮重试)\n",
+                                 sport_slug.c_str());
+                    // 失败不更新 last_dict_fetch_ms? 会每轮重试打爆。设一个短重试节流: 记当前时刻但
+                    //   减去大部分间隔, 使 ~60s 后重试 (而非 6h 后)。
+                    last_dict_fetch_ms = now_ms - (kDictRefreshMs - 60ULL * 1000ULL);
+                }
+            }
+        }
         // token-bucket 速率控制 (per-sport): 距上次 fetch 不足 min_fetch_interval_ms 则等待。
         {
             const std::uint64_t now_ms = mono_ms_now();
@@ -589,8 +624,9 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
             continue;
         }
 
-        // 解析 GameScoreRecord
-        const auto parse_result = inplay::InplayScoreParser::Parse(json_body, sport, ingestion_ns);
+        // 解析 GameScoreRecord (传字典赛果盘 id-set → SelectResultMarketId 优先按 id 匹配)
+        const auto parse_result =
+            inplay::InplayScoreParser::Parse(json_body, sport, ingestion_ns, &result_ids);
 
         // 记录 parse_errors (非致命, 继续)
         if (!parse_result.parse_errors.empty()) {
@@ -709,6 +745,28 @@ bool InplayFeedThread::FetchGz(goalserve::GoalserveSport sport, std::string& gz_
 
     gz_body = result.body;
     ingestion_ns = result.ingestion_ns;
+    return true;
+}
+
+// ---- FetchDict: HTTP GET dictionaries/odds-markets/<sport> → 明文 JSON ----
+//   2026-06-04 老板「用 goalserve 字典匹配功能」: 字典端点公开 (无 key) + 明文 (非 .gz)。
+//   复用 HttpGetGz (通用 GET; gunzip 另在 DecompressGz, 此处明文不解压)。极少数情况服务器仍可能
+//   gzip → magic byte (1f 8b) 检测兜底解压。
+bool InplayFeedThread::FetchDict(goalserve::GoalserveSport sport, std::string& json_body) noexcept {
+    const std::string path =
+        "/dictionaries/odds-markets/" + std::string(goalserve::SportInplaySlug(sport)) + "?json=1";
+    const auto result =
+        HttpGetGz(cfg_.inplay_host, cfg_.inplay_port, path, cfg_.http_proxy, cfg_.http_timeout_ms);
+    if (result.status != 200 || result.body.empty()) return false;
+    // gzip magic 兜底 (字典通常明文, 但若服务器压缩则解之)。
+    if (result.body.size() >= 2 && static_cast<unsigned char>(result.body[0]) == 0x1f &&
+        static_cast<unsigned char>(result.body[1]) == 0x8b) {
+        std::string out;
+        if (!DecompressGz(result.body, out)) return false;
+        json_body = std::move(out);
+    } else {
+        json_body = result.body;
+    }
     return true;
 }
 

@@ -150,6 +150,39 @@ TEST(InplayDictResult, IdSet_MatchesByIdAcrossNameDrift) {
     EXPECT_EQ(SelectResultMarketId(kDrift, kNoIds), "") << "纯启发式对漂移怪名 fail-closed";
 }
 
+TEST(InplayDictResult, ParseResultMarketIdsFromDict_RealDictShapes) {
+    using stcpp::data::ParseResultMarketIdsFromDict;
+    // soccer 字典缩样 (真 id): Fulltime Result=1777 是赛果, 其余派生盘排掉。
+    constexpr const char* kSoccerDict = R"JSON([
+      {"id":12,"name":"Asian Handicap"},
+      {"id":1777,"name":"Fulltime Result"},
+      {"id":27,"name":"1x2 (1st Half)"},
+      {"id":2134,"name":"1x2 Extra Time"},
+      {"id":50010,"name":"Penalties Shootout Winner"}
+    ])JSON";
+    const auto soccer = ParseResultMarketIdsFromDict(kSoccerDict);
+    EXPECT_EQ(soccer.size(), 1u);
+    EXPECT_TRUE(soccer.count("1777"));
+
+    // basket 字典缩样: Game Lines Money Line=180032 + 1x2=96 都是全场赛果 (篮球无平局 2-way)。
+    constexpr const char* kBasketDict = R"JSON([
+      {"id":180032,"name":"Game Lines Money Line"},
+      {"id":90,"name":"Total Points"},
+      {"id":96,"name":"1x2"},
+      {"id":180061,"name":"1st Half Spread"},
+      {"id":9204630,"name":"1x2 40 Mins"}
+    ])JSON";
+    const auto basket = ParseResultMarketIdsFromDict(kBasketDict);
+    EXPECT_TRUE(basket.count("180032")) << "Game Lines Money Line 应入集 (旧 bug 漏)";
+    EXPECT_TRUE(basket.count("96"));
+    EXPECT_FALSE(basket.count("90"));        // Total
+    EXPECT_FALSE(basket.count("9204630"));   // 1x2 40 Mins (派生)
+    EXPECT_EQ(basket.size(), 2u);
+
+    EXPECT_TRUE(ParseResultMarketIdsFromDict("").empty());
+    EXPECT_TRUE(ParseResultMarketIdsFromDict("not json").empty());
+}
+
 TEST(InplayDictResult, IdPriorityOverHeuristic) {
     // 同时有启发式可选盘 + id-set 指定另一盘 → id 优先。
     constexpr const char* kBoth = R"JSON({

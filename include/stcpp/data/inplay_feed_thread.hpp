@@ -154,6 +154,10 @@ private:
     [[nodiscard]] bool FetchGz(goalserve::GoalserveSport sport, std::string& gz_body,
                                std::int64_t& ingestion_ns) noexcept;
 
+    // HTTP GET dictionaries/odds-markets/<sport> → 明文 JSON (2026-06-04 老板「用 goalserve 字典」)。
+    //   字典无 key (公开端点) + 非 gz (明文)。返回 true = 200 且 body 非空。失败 → 调用方回退启发式选盘。
+    [[nodiscard]] bool FetchDict(goalserve::GoalserveSport sport, std::string& json_body) noexcept;
+
     // gzip 解压 (zlib inflate)
     // 返回 true = 成功; out_json 填充解压后 JSON
     [[nodiscard]] static bool DecompressGz(const std::string& gz_body, std::string& out_json) noexcept;

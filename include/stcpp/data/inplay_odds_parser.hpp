@@ -338,6 +338,39 @@ namespace inplay_odds_detail {
     return ParseInplayOddsDevig(odds_json, mid);
 }
 
+// ParseResultMarketIdsFromDict — 解析 Goalserve dictionaries/odds-markets/{sport} 字典 →
+//   【全场赛果盘 market_id 集合】(2026-06-04 老板「用 goalserve 字典匹配功能」)。
+//   字典格式: [{"id":1777,"name":"Fulltime Result"},{"id":12,"name":"Asian Handicap"},...]。
+//   逐 object 抽 id + name, IsResultMarketName(name) 命中 → 收 id。喂 feed 线程 → Parse(result_ids)。
+//   纯函数; 解析失败 / 无命中 → 空集 (调用方回退 IsResultMarketName 启发式)。
+[[nodiscard]] inline std::unordered_set<std::string> ParseResultMarketIdsFromDict(
+    std::string_view dict_json) noexcept {
+    using namespace inplay_odds_detail;
+    std::unordered_set<std::string> ids;
+    std::size_t i = 0;
+    while (true) {
+        const std::size_t ob = dict_json.find('{', i);
+        if (ob == std::string_view::npos) break;
+        const std::size_t oe = dict_json.find('}', ob);
+        if (oe == std::string_view::npos) break;
+        const std::string_view obj = dict_json.substr(ob, oe - ob + 1);  // 字典 entry 扁平无嵌套
+        i = oe + 1;
+        // 抽 id (数字; 可能带引号)。
+        const std::size_t idk = obj.find("\"id\"");
+        if (idk == std::string_view::npos) continue;
+        std::size_t p = idk + 4;
+        while (p < obj.size() && (obj[p] == ':' || obj[p] == ' ' || obj[p] == '"')) ++p;
+        const std::size_t id_start = p;
+        while (p < obj.size() && obj[p] >= '0' && obj[p] <= '9') ++p;
+        if (p == id_start) continue;  // 无数字 id
+        const std::string_view id_sv = obj.substr(id_start, p - id_start);
+        // 抽 name 并判定。
+        const std::string_view name_sv = ExtractName(obj);
+        if (IsResultMarketName(name_sv)) ids.emplace(id_sv);
+    }
+    return ids;
+}
+
 // InplayYesCanonical — Goalserve home/away 视角 → Polymarket YES/对手 视角的翻转结果。
 struct InplayYesCanonical {
     double yes_fair{-1.0};  // YES 边 (被交易盘口的 "YES" 结果) de-vig 胜率
