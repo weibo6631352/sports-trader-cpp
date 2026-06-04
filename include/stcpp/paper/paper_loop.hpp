@@ -285,6 +285,12 @@ struct PaperLoopConfig {
     //   不变); 生产 daemon opt-in。解「只买不卖持到结算」(reservation_sell 在 fair 上方收敛永不触发)。
     bool predictive_unwind{false};
 
+    // 入场价感知平仓 (2026-06-04 老板「把持仓决策做好, 别稍微亏本就卖, 根本不考虑持仓买卖价格」):
+    //   减仓卖单若 bid < 均入价 = 锁亏。仅当本边 fair 跌破均入超此 band (信号真反转 = 该止损) 才放行卖;
+    //   否则 HOLD —— 不为 fair 小波动在亏损里夺路卖出 (churn 实现亏损), 等回归/结算。
+    //   取利平仓 (bid ≥ 均入) 与盈利减仓不受此限。0 = 关 (旧行为); 生产 daemon 置 0.05 (5 分 band)。
+    double loss_cut_fair_band{0.0};
+
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)

@@ -1323,6 +1323,21 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         return;
     }
 
+    // ---- 入场价感知平仓闸 (2026-06-04 老板「别稍微亏本就卖, 要考虑持仓买卖价格」) ----------
+    //   减仓卖单若卖价(bid) < 均入价 = 锁亏。只在【信号真反转】(本边 fair 跌破均入超 loss_cut_fair_band,
+    //   = 该止损) 才放行割损; 否则 HOLD —— 不为 fair 小波动/predictive_unwind 在亏损里 churn 卖出。
+    //   取利平仓 (bid ≥ 均入) 与盈利减仓不受限。settlement realize 走 SettleToken 不经此, 不受影响。
+    if (cfg_.loss_cut_fair_band > 0.0 && action.side == strategy::Side::Sell && action.is_close) {
+        const auto pos_now = position_ledger_.get_position(token_id);
+        const double avg_entry = (pos_now && pos_now->avg_entry_price > 0.0) ? pos_now->avg_entry_price : 0.0;
+        if (avg_entry > 0.0 && exec_bid < avg_entry &&
+            p_fair_side > avg_entry - cfg_.loss_cut_fair_band) {
+            // 卖价低于均入(会锁亏) 且 fair 未真跌破均入(信号没反转) → 不在亏损里卖, 持有等回归/结算。
+            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+    }
+
     // ---- Step 5: 构造 OrderIntent v0.6 (按控制器动作: side/size/is_close/限价) -----
     const std::int64_t as_of_now = NowNs();
     // 校验 4 ts 链 (R-20: 数据源 = 被交易 token 的 hub 快照, 禁 now() 替代)。

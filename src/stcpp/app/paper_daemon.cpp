@@ -746,16 +746,21 @@ BuildResult PaperDaemon::Build() {
     // 2026-06-04 老板「一根筋调整模型, 再试试能不能救活他」: 切回【模型驱动】(calibrated AUC0.78 模型掌舵)。
     //   ml_drive=true 让 ONNX 模型直接定 fair (不再 sharp 规则); 配 sharp_only_gate=false 不让 sharp 门掐死模型单。
     //   纯观测实验: 模型 AUC0.78 是预测【结果】, edge 在赢【PM 价】—— 让数字定论(beat PM 还是只是同意 PM)。
-    // 2026-06-04 老板「看数据分析调模型」: 保持【模型驱动】(calibrated 模型掌舵), 通过数据分析调模型救活。
-    //   ml_drive=true 让 ONNX 模型直接定 fair; 配 sharp_only_gate=false 不让 sharp 门掐死模型单。
-    cfg_.paper_loop.ml_drive_enabled = true;
-    cfg_.sharp_only_gate = false;  // 模型驱动模式: 关 sharp 门 (否则 ml_blend 源被门归零)
+    // 2026-06-04 老板「把这个项目收尾, 决策源就只用直播源的赔率」: 切【sharp 驱动】, 关模型驱动。
+    //   fair = bet365 inplay de-vig sharp (直播源赔率); 模型分析/微观结构套利归入【新项目】, 不再混入本线。
+    //   要回模型驱动: ml_drive_enabled=true + sharp_only_gate=false。
+    cfg_.paper_loop.ml_drive_enabled = false;
+    cfg_.sharp_only_gate = true;   // 决策源 = 直播源赔率: 仅高置信 sharp 信号 (≥sharp_only_min_edge) 产单
     // sharp 驱动门 (2026-06-04): 生产 daemon 默认开 (cfg_.sharp_only_gate 默认 true) —— 仅高置信
     //   sharp(bet365) 信号产单, 其余源回退市场 (edge 归零)。管线机制测试可置 false (走 score-prior 出成交)。
     cfg_.paper_loop.sharp_only_gate = cfg_.sharp_only_gate;
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 生产开 —— 减仓随预测回 flat (收敛兑现),
     //   解「只买不卖持到结算」。lib 默认关 (契约/管线测试不变)。
     cfg_.paper_loop.predictive_unwind = true;
+    // 入场价感知平仓 (2026-06-04 老板「别稍微亏本就卖, 要考虑持仓买卖价格」): 卖价低于均入(锁亏)时,
+    //   仅当 sharp fair 真跌破均入超 5 分 (信号反转=止损) 才卖, 否则持有等回归/结算。治 predictive_unwind
+    //   在小回撤里 churn 卖出实现亏损。取利平仓不受限。
+    cfg_.paper_loop.loss_cut_fair_band = 0.05;
     // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
     //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关
