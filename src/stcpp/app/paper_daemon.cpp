@@ -773,6 +773,9 @@ BuildResult PaperDaemon::Build() {
     // 必输局保护 (2026-06-04 老板「用比赛阶段数学模型, 不是价格地板」): 改用既有 game_phase/garbage_time
     //   模型 (TickOne: 垃圾时间落后方 target=0 不开仓)。价格地板关闭 (boss「不是这样的」)。
     cfg_.paper_loop.min_buy_price = 0.0;
+    // 相对止损 (2026-06-05 老板「亏大就割」): 持仓 mark 跌破均入价 25% → 强平 (绕 fair-based loss_cut 的滞后)。
+    //   修「bid 比 fair 跌得快, 等 fair 跌够时簿已 gap 到地板, 割在 −85%」; 把均亏 −0.70 压到 ~−0.25。
+    cfg_.paper_loop.rel_stop_pct = 0.25;
     // 决策节拍 (2026-06-04 老板「三源都触发决策没」): 500ms→100ms。三源(WSS/149hz poll/赔率)写共享态,
     //   决策每 tick 读最新; 500ms 把 149hz 新鲜簿+簿结构反应硬卡住 → 簿转向止盈/不被吃单反应慢, 小赢大亏。
     //   降到 100ms: 决策 10×/s 采样新鲜簿; 48 盘×10/s 对 4 核轻松, 新加簿结构+入场价闸防过度交易。

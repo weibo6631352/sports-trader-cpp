@@ -1285,10 +1285,23 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         if (sel_is_loser) sel_target = 0.0;  // 该运动已决出, 被选边是落后必输方 → 不开仓
     }
 
+    // 相对止损 (2026-06-05 老板「亏大就割」): 被选边持仓 mark 跌破均入价 ×(1−rel_stop_pct) → 强平
+    //   (sel_target=0 让控制器产平仓卖单 + force_stop 绕过 loss_cut 的 HOLD)。predictive_unwind 下 best_bid>0 即可成交。
+    bool sel_force_stop = false;
+    if (cfg_.rel_stop_pct > 0.0) {
+        const auto pos_sel = position_ledger_.get_position(token_id);
+        const double avg_e = (pos_sel && pos_sel->avg_entry_price > 0.0) ? pos_sel->avg_entry_price : 0.0;
+        if (avg_e > 0.0 && std::isfinite(mark_price) && mark_price < avg_e * (1.0 - cfg_.rel_stop_pct)) {
+            sel_target = 0.0;       // 强制平仓目标
+            sel_force_stop = true;  // 绕 loss_cut HOLD
+        }
+    }
+
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
-                          force_cross, n_eff_dyn, margin_floor_dyn, reservation_noise_free);
+                          force_cross || sel_force_stop, n_eff_dyn, margin_floor_dyn, reservation_noise_free,
+                          sel_force_stop);
 
     // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
     const SideView& other = is_yes ? mkt.no : mkt.yes;
@@ -1312,7 +1325,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                   is_yes ? strategy::Outcome::No : strategy::Outcome::Yes, other_feat,
                                   other_depth, 1.0 - p_fair_selected, /*target_mag=*/0.0,
                                   FeeCoefFor(condition_id), force_cross, n_eff_dyn, margin_floor_dyn,
-                                  reservation_noise_free);
+                                  reservation_noise_free, /*force_stop=*/false);
         }
     }
 }
@@ -1330,7 +1343,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
                                       const polymarket::clob_wss::OrderBookFeatures& side_book,
                                       double book_depth_l1, double p_fair_side, double target_mag,
                                       double fee_coef, bool force_cross, int n_eff, double margin_floor,
-                                      bool noise_free) noexcept {
+                                      bool noise_free, bool force_stop) noexcept {
     const double exec_ask = side_book.best_ask();
     const double exec_bid = side_book.best_bid();
     const double mark_price = std::isfinite(side_book.microprice) ? side_book.microprice : side_book.mid;
@@ -1386,7 +1399,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     //   减仓卖单若卖价(bid) < 均入价 = 锁亏。只在【信号真反转】(本边 fair 跌破均入超 loss_cut_fair_band,
     //   = 该止损) 才放行割损; 否则 HOLD —— 不为 fair 小波动/predictive_unwind 在亏损里 churn 卖出。
     //   取利平仓 (bid ≥ 均入) 与盈利减仓不受限。settlement realize 走 SettleToken 不经此, 不受影响。
-    if (cfg_.loss_cut_fair_band > 0.0 && action.side == strategy::Side::Sell && action.is_close) {
+    //   force_stop (相对止损已触发) 时绕过此 HOLD —— mark 已跌破均入 ×(1−rel_stop_pct), 该割就割, 不再等 fair。
+    if (!force_stop && cfg_.loss_cut_fair_band > 0.0 && action.side == strategy::Side::Sell && action.is_close) {
         const auto pos_now = position_ledger_.get_position(token_id);
         const double avg_entry = (pos_now && pos_now->avg_entry_price > 0.0) ? pos_now->avg_entry_price : 0.0;
         if (avg_entry > 0.0 && exec_bid < avg_entry &&

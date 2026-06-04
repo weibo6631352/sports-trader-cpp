@@ -314,6 +314,12 @@ struct PaperLoopConfig {
     //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.10 (拦市场<10%胜率的近必输边)。减仓/平仓不受限。
     double min_buy_price{0.0};
 
+    // 相对止损 (2026-06-05 老板「亏大就割」): 持仓 mark(microprice) 跌破均入价 ×(1−rel_stop_pct) → 强制平仓
+    //   (sel_target=0 + 绕 loss_cut HOLD)。修「bid 比 fair 跌得快, fair-based loss_cut 等 fair 跌够时簿早 gap 到
+    //   地板, 割也割在 −85%」: 改用 mark 相对入场价的跌幅当触发, 把均亏从 −0.70 压到 ~−0.25。
+    //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.25 (mark 跌 25% 即止损)。
+    double rel_stop_pct{0.0};
+
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)
@@ -842,7 +848,7 @@ private:
                                const polymarket::clob_wss::OrderBookFeatures& side_book,
                                double book_depth_l1, double p_fair_side, double target_mag,
                                double fee_coef, bool force_cross, int n_eff, double margin_floor,
-                               bool noise_free) noexcept;
+                               bool noise_free, bool force_stop) noexcept;
 
     // slice-3b 结算: 比赛 Ended → 按终态比分把 YES/NO 持仓 realize 到结算值 (winner 1 / loser 0) +
     //   平仓 (apply_fill 负 delta), realized PnL 累加进 cum_realized_pnl_pusd_。loop_thread_ 单 writer。
