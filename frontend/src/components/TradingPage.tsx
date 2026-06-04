@@ -406,24 +406,31 @@ function MarketFills(props: { conditionId: string }) {
   //   直接读 store.fillsByMarket (由 fetchDetailFor 与 book/quote 同 2s 节拍写入) → 完全同步刷新。
   const rows = () => state.fillsByMarket[props.conditionId] ?? [];
   const fills = () => rows().slice(0, 7);  // 7 行对齐订单簿/量化 AI 两栏高度 (老板「显示7行就行了」)
-  // 合计已实现 = 该盘所有卖出已实现之和 (老板「还有一个合计别漏了」)。
-  const totalReal = () => rows().reduce((s, f) => s + (f.side === 'sell' ? f.realized : 0), 0);
-  // 该盘模型偏差 (2026-06-04 老板「在盯盘页面调模型」): 本盘买入声称 edge 均值 = 模型对此盘高估多少。
-  const buys = () => rows().filter((f) => f.side === 'buy' && f.fair > 0);
-  const avgClaim = () => { const b = buys(); return b.length ? b.reduce((s, f) => s + (f.fair - f.price), 0) / b.length : NaN; };
-  // 单笔声称 edge (买: fair−price; 卖: price−fair) — 模型自认便宜/贵多少 (点)。
+  // 2026-06-05 老板「买入卖出太草率, 看不懂卖了几单」: 加 买/卖 笔数 + 单位汇总, 每笔明确显示数量。
+  const buysAll = () => rows().filter((f) => f.side === 'buy');
+  const sellsAll = () => rows().filter((f) => f.side === 'sell');
+  const sumU = (a: Fill[]) => a.reduce((s, f) => s + f.size_usdc, 0);
+  const totalReal = () => sellsAll().reduce((s, f) => s + f.realized, 0);
+  const buysFair = () => rows().filter((f) => f.side === 'buy' && f.fair > 0);
+  const avgClaim = () => { const b = buysFair(); return b.length ? b.reduce((s, f) => s + (f.fair - f.price), 0) / b.length : NaN; };
   const claimEdge = (f: Fill) => f.side === 'buy' ? f.fair - f.price : f.price - f.fair;
   return (
     <>
-      <div class="v8-reject-title" style={{ display: 'flex', 'align-items': 'center', gap: '8px' }}>
-        <span>成交 (最近 {fills().length} 笔)</span>
-        <Show when={Number.isFinite(avgClaim())}>
-          <span class="mono-sub" style={{ color: avgClaim() > 0.05 ? '#f44336' : '#888', 'font-size': '10px' }}
-            title="本盘买入时模型平均声称便宜多少 (>5点=模型对此盘系统性高估, 调模型信号)">
-            模型偏差 {avgClaim() >= 0 ? '+' : ''}{(avgClaim() * 100).toFixed(1)}点
-          </span>
-        </Show>
+      <div class="v8-reject-title">成交</div>
+      {/* 买/卖 笔数 + 单位汇总 — 一眼看清买了几单卖了几单 (老板) */}
+      <div class="v8-pos-row" style={{ gap: '10px', 'font-size': '11px' }}>
+        <span style={{ color: '#42a5f5', 'font-weight': 700 }}>买 {buysAll().length}笔 · {sumU(buysAll()).toFixed(1)}u</span>
+        <span style={{ color: '#ffa726', 'font-weight': 700 }}>卖 {sellsAll().length}笔 · {sumU(sellsAll()).toFixed(1)}u</span>
+        <span class={`${totalReal() >= 0 ? 'pnl-pos' : 'pnl-neg'}`} style={{ 'margin-left': 'auto', 'font-weight': 700 }}>
+          已实现 {totalReal() >= 0 ? '+' : ''}{totalReal().toFixed(2)}
+        </span>
       </div>
+      <Show when={Number.isFinite(avgClaim())}>
+        <div class="mono-sub" style={{ color: avgClaim() > 0.05 ? '#f44336' : '#888', 'font-size': '10px', 'margin-bottom': '2px' }}
+          title="本盘买入时模型平均声称便宜多少 (>5点=模型对此盘系统性高估)">
+          模型偏差 {avgClaim() >= 0 ? '+' : ''}{(avgClaim() * 100).toFixed(1)}点 · 下方逐笔
+        </div>
+      </Show>
       <Show
         when={fills().length > 0}
         fallback={<Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>暂无成交</Typography>}
@@ -431,26 +438,20 @@ function MarketFills(props: { conditionId: string }) {
         <For each={fills()}>
           {(f) => (
             <div class="v8-pos-row" title={fmtTs(f.as_of_ts)} style={{ gap: '6px' }}>
-              <span class="mono-sub" style={{ color: '#888', 'font-size': '10px' }}>{fmtTs(f.as_of_ts).slice(-8)}</span>
-              <span class="mono-sub" style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700 }}>
+              <span class="mono-sub" style={{ color: '#888', 'font-size': '10px', width: '54px' }}>{fmtTs(f.as_of_ts).slice(-8)}</span>
+              <span class="mono-sub" style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700, width: '46px' }}>
                 {f.side === 'buy' ? '买' : (f.is_close ? '卖平' : '卖')}{f.outcome}
               </span>
-              <span class="mono-sub" style={{ 'font-weight': 700 }}>@{f.price.toFixed(3)}</span>
-              <span class="mono-sub" style={{ color: '#888', 'font-size': '10px' }} title="模型 fair">f{f.fair > 0 ? f.fair.toFixed(3) : '—'}</span>
-              <span class="mono-sub" style={{ color: f.fair > 0 && Math.abs(claimEdge(f)) > 0.05 ? '#f44336' : '#777', 'font-size': '10px' }}
-                title="模型声称 edge (点)">{f.fair > 0 ? `${claimEdge(f) >= 0 ? '+' : ''}${(claimEdge(f) * 100).toFixed(0)}` : ''}</span>
-              <span class={`mono-sub ${f.side === 'sell' ? (f.realized >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`} style={{ 'margin-left': 'auto' }}>
+              <span class="mono-sub" style={{ 'font-weight': 700, width: '52px', 'text-align': 'right' }} title="本笔数量(单位)">{f.size_usdc.toFixed(1)}u</span>
+              <span class="mono-sub" style={{ width: '54px', 'text-align': 'right' }} title="成交价">@{f.price.toFixed(3)}</span>
+              <span class="mono-sub" style={{ color: f.fair > 0 && Math.abs(claimEdge(f)) > 0.05 ? '#f44336' : '#777', 'font-size': '10px', width: '34px', 'text-align': 'right' }}
+                title="模型声称 edge (点)">{f.fair > 0 ? `${claimEdge(f) >= 0 ? '+' : ''}${(claimEdge(f) * 100).toFixed(0)}pt` : ''}</span>
+              <span class={`mono-sub ${f.side === 'sell' ? (f.realized >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`} style={{ 'margin-left': 'auto' }} title="本笔已实现(卖出才有)">
                 {f.side === 'sell' ? `${f.realized >= 0 ? '+' : ''}${f.realized.toFixed(2)}` : '—'}
               </span>
             </div>
           )}
         </For>
-        <div class="v8-pos-total">
-          <span class="q-lbl">合计 已实现</span>
-          <span class={`mono-strong ${totalReal() >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>
-            {totalReal() >= 0 ? '+' : ''}{totalReal().toFixed(2)}
-          </span>
-        </div>
       </Show>
     </>
   );
@@ -630,11 +631,56 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
 // ============================================================
 
 function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; perMarketPnl: number | null; conditionId: string }) {
-  // 2026-06-04 老板「最上面的 yes 持仓意义不明, 不行就删了」: 删掉冗余持仓块 (当前持仓已在折叠行头
-  //   posText/pnlFmt 显示)。展开区直接以【成交】为主 — 盯盘要的是买卖价+已实现, 不是再重复一遍持仓。
+  // 持仓管理 (2026-06-05 老板「持仓管理怎么体现: 凯利系数 / 希望持多少yes多少no / 实际持有 + 估值」):
+  //   凯利系数 + 控制器目标仓位(希望持) vs 实际持仓 + 估值, 按 YES/NO 两边列清楚。数据: quote(凯利/目标/
+  //   选边) + posRows(实际/mark)。希望持: 被选边(fair≥市场=YES, 否则NO)= 凯利目标 suggested_notional, 另一边 0。
+  const quote = () => state.conditionCache[props.conditionId]?.quote ?? null;
+  const num = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
+  const kelly = () => { const q = quote(); return q ? num(q.kelly_fraction) : NaN; };
+  const favoredYes = () => { const q = quote(); return q ? num(q.fair_value) >= num(q.market_mid) : true; };
+  const target = () => { const q = quote(); return q ? num(q.suggested_notional) : 0; };
+  const posFor = (oc: string) => props.posRows.find((p) => p.outcome === oc) ?? null;
+  const held = (oc: string) => { const p = posFor(oc); return p ? num(p.net_qty) : 0; };
+  const val = (oc: string) => { const p = posFor(oc); return p ? num(p.net_qty) * num(p.mark_price) : 0; };
+  const want = (oc: string) => { const t = target(); return (oc === 'YES') === favoredYes() ? (Number.isFinite(t) ? t : 0) : 0; };
+  const u = (v: number) => (Number.isFinite(v) && v !== 0 ? `${v >= 0 ? '' : ''}${v.toFixed(1)}u` : '—');
+  const hasPos = () => props.posRows.length > 0 || (Number.isFinite(target()) && target() > 0);
   return (
     <div class="v8-expand-panel">
-      <div class="v8-panel-title">成交 + 拒单</div>
+      <div class="v8-panel-title">
+        持仓管理
+        <Show when={Number.isFinite(kelly())}>
+          <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': 400 }}>
+            · 凯利系数 <b style={{ color: kelly() > 0 ? '#4caf50' : '#888' }}>{(kelly() * 100).toFixed(0)}%</b>
+          </span>
+        </Show>
+      </div>
+      <Show when={hasPos()} fallback={
+        <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>无持仓 / 无目标</Typography>
+      }>
+        <div class="v8-pos-row" style={{ gap: '8px', color: '#888', 'font-size': '10px' }}>
+          <span style={{ width: '32px' }}>边</span>
+          <span style={{ width: '64px', 'text-align': 'right' }} title="控制器凯利目标仓位">希望持</span>
+          <span style={{ width: '64px', 'text-align': 'right' }} title="账本当前实际持仓">实际持</span>
+          <span style={{ 'margin-left': 'auto' }} title="实际持仓 × 标记价">估值</span>
+        </div>
+        <For each={['YES', 'NO']}>
+          {(oc) => (
+            <div class="v8-pos-row" style={{ gap: '8px' }}>
+              <Chip label={oc} size="small" variant="outlined" sx={{ fontSize: '9px', height: '16px', fontWeight: 700, width: '32px' }} />
+              <span class="mono-sub" style={{ width: '64px', 'text-align': 'right', color: want(oc) > 0 ? '#42a5f5' : '#666' }}>{u(want(oc))}</span>
+              <span class="mono-sub" style={{ width: '64px', 'text-align': 'right', 'font-weight': 700 }}>{u(held(oc))}</span>
+              <span class="mono-sub" style={{ 'margin-left': 'auto', color: '#bbb' }}>{val(oc) !== 0 ? fmtUsdc(val(oc)) : '—'}</span>
+            </div>
+          )}
+        </For>
+        <Show when={props.perMarketPnl != null}>
+          <div class="v8-pos-total">
+            <span class="q-lbl">本盘 已实现+浮盈</span>
+            <span class={`mono-strong ${(props.perMarketPnl ?? 0) >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>{fmtUsdc(props.perMarketPnl ?? 0)}</span>
+          </div>
+        </Show>
+      </Show>
 
       {/* 成交 — 与订单簿/量化 AI 同 2s 节拍刷新 (走同一个 fetchDetailFor), 7 行对齐 */}
       <MarketFills conditionId={props.conditionId} />
