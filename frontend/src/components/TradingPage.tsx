@@ -516,12 +516,13 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
     <div class="v8-expand-panel">
       <div class="v8-panel-title">
         量化 / AI <span class="mono-sub" style={{ 'font-weight': '400' }}>· 均为 YES 边胜率</span>
-        {/* 新鲜度心跳: 脉冲点(每帧闪) + 数据年龄(每秒重算, 滞后变红) — 区分"活但静市场" vs "真冻" */}
+        {/* 推送心跳: 脉冲点(每帧闪=后端在推) + 推送年龄(前端now − 后端算出此quote时刻)。
+            注: 这是【推送/管道新鲜度】(后端→SSE→前端, 健康~1s), 不是赔率信号滞后(那是 Goalserve 版本年龄, 另算)。 */}
         <Show when={Number.isFinite(quoteAgeS())}>
           <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700', color: freshColor() }}
-                title="quote 快照数据年龄 (now − quote_as_of_ts); 后端每秒重发, 数字小且稳=实时·静市场, 持续涨=数据滞后">
+                title="推送新鲜度 = 前端now − 后端算出此 quote 的时刻 (相对前端时钟, 1s/次)。健康~1s; 持续涨=推送断/卡。这不是赔率信号滞后(Goalserve 版本年龄另算)。">
             <Show keyed when={quoteTs()}><span class="v8-live-dot">●</span></Show>
-            {' '}{quoteAgeS() < 3 ? '实时' : '滞后'} {quoteAgeS().toFixed(1)}s
+            {' '}推送 {quoteAgeS().toFixed(1)}s前
           </span>
         </Show>
         {/* XD-3: ADVISORY 角标强制显示 (paper 期) */}
