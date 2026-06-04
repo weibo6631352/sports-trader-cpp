@@ -48,6 +48,7 @@
 
 #include <cstdint>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "stcpp/data/goalserve_adapter.hpp"
@@ -109,8 +110,13 @@ public:
     //   → InplayScoreParser::Parse(body, sport, recv_ns)
     //   接线点在采集线程 (vCPU3 worker pool, 非 WSS event loop, R-12 合规).
     // ------------------------------------------------------------------------
-    [[nodiscard]] static ParseResult Parse(const std::string& json_body, goalserve::GoalserveSport sport,
-                                           std::int64_t ingestion_ts_ns) noexcept;
+    //   result_market_ids (可选, 2026-06-04 老板「用 goalserve 字典」): 该 sport 字典解析出的
+    //     【全场赛果盘 market_id 集合】(SelectResultMarketId 优先按 id 命中, 免 name 漂移)。
+    //     nullptr/空 → 纯启发式 (IsResultMarketName 按 feed market name 选)。feed 线程从
+    //     dictionaries/odds-markets/{sport} 拉取 + 解析后传入; 纯函数无 IO 红线保持。
+    [[nodiscard]] static ParseResult Parse(
+        const std::string& json_body, goalserve::GoalserveSport sport, std::int64_t ingestion_ts_ns,
+        const std::unordered_set<std::string>* result_market_ids = nullptr) noexcept;
 
     // ------------------------------------------------------------------------
     // ParseScore — 解析 info.score 字段 "home:away" → (home_total, away_total)

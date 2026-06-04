@@ -30,6 +30,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 namespace stcpp::data {
@@ -240,6 +241,99 @@ namespace inplay_odds_detail {
     std::string_view odds_json, const std::vector<std::string_view>& allow_names,
     const std::vector<std::string_view>& forbidden_substrs) noexcept {
     const std::string mid = SelectMatchWinnerMarketId(odds_json, allow_names, forbidden_substrs);
+    if (mid.empty()) return {};
+    return ParseInplayOddsDevig(odds_json, mid);
+}
+
+namespace inplay_odds_detail {
+
+// IsResultMarketName — 判定一个 odds market name 是否是【全场赛果胜负盘】(moneyline / match result)。
+//   2026-06-04 老板「goalserve 字典匹配功能也别错过, 单白名单太脆弱」: 8 运动字典实拉验证 —
+//     soccer "Fulltime Result" / basket·hockey "Game Lines Money Line" / tennis "To Win" /
+//     baseball·amfootball·volleyball "Home/Away" / 全运动 plain "1x2"。
+//   规则: 含【强赛果词组】(IContains 任一) 且 不含【派生/分段限定词】(IContains 任一)。
+//   关键修复: 强词组用【词组】非裸词 → "Game Lines Money Line" 命中 "money line" (篮球/冰球主盘),
+//     而 "Game Winner"/"Point Winner" 不含任何强词组 → 自然排除。旧静态表把裸 "Game" 拉黑 →
+//     误杀 "Game Lines Money Line" → 篮球 sharp 全丢 (本次字典实拉揪出的真 bug)。fail-closed。
+[[nodiscard]] inline bool IsResultMarketName(std::string_view name) noexcept {
+    if (name.empty()) return false;
+    // 派生/分段限定词: 半场/节/盘/局/加时/点球/让分/总分/单双/角球/网球分盘/电竞 map 等 → 非全场赛果。
+    static constexpr std::string_view kDisq[] = {
+        "1st",       "2nd",        "3rd",          "4th",        "5th",     "6th",
+        "7th",       "8th",        "9th",          "10th",       " ot",     "overtime",
+        "extra time","extratime",  "half",         "quarter",    "period",  "inning",
+        "set",       "frame",      " map",         "leg",        "penalt",  "shootout",
+        "corner",    "card",       "booking",      "handicap",   "spread",  "total",
+        "over",      "under",      "odd",          "even",       "double chance", "no bet",
+        "both",      "correct",    "race",         "margin",     "tie",     "break",
+        "deuce",     "ace",        "fault",        "point",      "minute",  "goal",
+        "serve",     "highest",    "asian",        "between",    "trophy",  "straight",
+        "next",      "player 1",   "player 2",     "rebound",    "assist",  "shots",
+        "mins",      "3-point",    "2-point",      "game winner","set winner","point winner",
+        "map winner","frame winner","first to",    "how many",   "which",   "to win the",
+        "to win 2nd","to win both","winner by",    "2min",       "team total","substitut",
+        "timeout",
+    };
+    for (const auto d : kDisq)
+        if (IContains(name, d)) return false;
+    // 强赛果词组 (命中任一 → 全场赛果胜负盘)。
+    static constexpr std::string_view kStrong[] = {
+        "money line",      "moneyline",       "fulltime result", "full time result",
+        "match result",    "match winner",    "series winner",   "to win",
+        "home/away",       "1x2",             "head to head",
+    };
+    for (const auto s : kStrong)
+        if (IContains(name, s)) return true;
+    return false;
+}
+
+}  // namespace inplay_odds_detail
+
+// SelectResultMarketId — 选全场赛果盘 market_id, 字典驱动 + 启发式回退 (2026-06-04 老板):
+//   ① 命中【字典 result id-set】(feed market key ∈ result_ids) → 最稳, 跨 name 漂移免疫
+//      (实证: id 1777 在字典叫 "Fulltime Result" 在 feed 叫 "1x2 (Full Time)" —— 同 id 异名, id 才稳)。
+//   ② 回退 IsResultMarketName(market.name) 启发式 (字典未拉到 / feed 未列该 id 时)。
+//   id 优先于 name; 全 miss → "" (fail-closed, 不喂错值)。
+[[nodiscard]] inline std::string SelectResultMarketId(
+    std::string_view odds_json, const std::unordered_set<std::string>& result_ids) noexcept {
+    using namespace inplay_odds_detail;
+    const std::size_t root = odds_json.find('{');
+    if (root == std::string_view::npos) return {};
+    std::string heuristic_hit;  // 启发式命中的首个 (id 未命中时回退)
+    std::size_t i = root + 1;
+    while (i < odds_json.size()) {
+        while (i < odds_json.size() && odds_json[i] != '"' && odds_json[i] != '}') ++i;
+        if (i >= odds_json.size() || odds_json[i] == '}') break;
+        const std::size_t kstart = i + 1;
+        const std::size_t kend = odds_json.find('"', kstart);
+        if (kend == std::string_view::npos) break;
+        const std::string_view key = odds_json.substr(kstart, kend - kstart);
+        const std::size_t objstart = odds_json.find('{', kend);
+        if (objstart == std::string_view::npos) break;
+        std::size_t j = objstart + 1;
+        int d = 1;
+        while (j < odds_json.size() && d > 0) {
+            if (odds_json[j] == '{') ++d;
+            else if (odds_json[j] == '}') --d;
+            ++j;
+        }
+        // ① 字典 id 命中 → 立即返 (id 优先)。
+        if (!result_ids.empty() && result_ids.count(std::string(key)) > 0) return std::string(key);
+        // ② 启发式命中 → 记首个回退。
+        if (heuristic_hit.empty()) {
+            const std::string_view market_obj = odds_json.substr(objstart, j - objstart);
+            const std::string_view mname = ExtractName(market_obj);  // 第一个 name = market 级
+            if (IsResultMarketName(mname)) heuristic_hit = std::string(key);
+        }
+        i = j;  // 下一 market
+    }
+    return heuristic_hit;
+}
+
+// ParseInplayOddsDevigResult — 字典驱动选赛果盘 → 复用 de-vig。各运动通用; result_ids 空 = 纯启发式。
+[[nodiscard]] inline InplayOddsDevig ParseInplayOddsDevigResult(
+    std::string_view odds_json, const std::unordered_set<std::string>& result_ids) noexcept {
+    const std::string mid = SelectResultMarketId(odds_json, result_ids);
     if (mid.empty()) return {};
     return ParseInplayOddsDevig(odds_json, mid);
 }

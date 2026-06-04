@@ -53,44 +53,10 @@ namespace stcpp::data::inplay {
 namespace {
 
 // ============================================================================
-// 各运动赛果盘 (match-winner) name allowlist + forbidden substr — sharp fair 选盘表。
-//   小田 (体育市场专家) 2026-06-01: 各运动 odds market_id 不稳定 (soccer 字典 id=1 实为 "Home Team
-//   Goals" 非赛果, 旧硬编码 "1" 疑似一直错), 改按 market name 选盘 + forbidden 黑名单排非赛果盘。
-//   forbidden 先排 (set/game/map/half/handicap/total...), 再 IEquals 命中 allow → 选中。
-//   esports 暂不支持 (无 odds dict / map-vs-series, 小田 §4); fail-closed: 选不到 → fair=-1 不喂错值。
-// ============================================================================
-struct MatchWinnerSpec {
-    std::vector<std::string_view> allow;
-    std::vector<std::string_view> forbidden;
-    bool supported = false;
-};
-
-[[nodiscard]] inline MatchWinnerSpec MatchWinnerSpecFor(goalserve::GoalserveSport sport) {
-    // 通用陷阱黑名单 (命中 substr 即非赛果盘)。小田 §3 实拉 tennis 字典逐条挑出。
-    static const std::vector<std::string_view> kForbid = {
-        "Half",  "Quarter", "Period",        "Inning",    "Set ",   "Game",    "Map ",
-        "Handicap", "Asian", "Spread",       "Over",      "Under",  "Total",   "Odd",
-        "Even",  "Corner",  "Card",          "Booking",   "Both Teams", "Race", "Margin",
-        "Tie",   "Break",   "Deuce",         "Ace",       "Fault",  "Point",   "Minute",
-        "How many", "first to", "Will ",     "Next ",     "Correct Score", "Goals", "Serve",
-        "Double", "Highest", "1st ",         "2nd ",      "3rd ",   "Frame",   "Leg",
-    };
-    (void)sport;  // 2026-06-03 老板「加所有运动支持」: 不再按 sport 分支, 全运动用通用赛果盘白名单。
-    // 通用赛果盘白名单 (union; 实拉 Goalserve dictionaries/odds-markets 各运动字典确认真实命名):
-    //   "Home/Away" = baseball/hockey/volleyball/basketball 通用 2-way 赛果名; tennis="To Win";
-    //   soccer 3-way="1x2"/"Match Result"/"Fulltime Result"; esports/amfootball 用通用名("Match Winner"/
-    //   "Money Line"/"Winner") 兜底。de-vig (ParseInplayOddsDevig) 自动判 2-way(home/away)/3-way(home/draw/away),
-    //   故不需 per-sport 区分边数。IEquals 精确匹配 → 只命中赛果盘本名, "Winner in OT"/"Game Lines Money Line"
-    //   (含禁词 Game) / "Home/Away (1st Set)" (含禁词 Set) 等派生盘不会误中。fail-closed: 全 miss → invalid。
-    static const std::vector<std::string_view> kResult = {
-        "Home/Away",      "Home/Away (Including OT)", "Money Line",        "Moneyline",
-        "Match Result",   "Match Winner",            "To Win",            "Winner",
-        "12",             "Series Winner",           "Match Lines",
-        "1x2",            "1x2 (Full Time)",         "Fulltime Result",   "Full Time Result",
-    };
-    return {kResult, kForbid, true};  // 全运动支持
-}
-
+// 赛果盘 (全场 match-winner) 选盘已迁至 inplay_odds_parser.hpp 的 SelectResultMarketId:
+//   字典驱动 (dictionaries/odds-markets/{sport} 解析出的 result id-set) + IsResultMarketName 启发式回退。
+//   2026-06-04 老板「goalserve 字典匹配功能别错过, 单白名单太脆弱」—— 旧静态 allow/forbidden 表
+//   (kResult/kForbid) 已删: 它把裸 "Game" 拉黑误杀篮球/冰球主盘 "Game Lines Money Line" (字典实拉揪出)。
 // ============================================================================
 // §-1 安全常量 + 安全工具 (小白审计 §1.3-B/C, 2026-05-30)
 //
@@ -606,7 +572,8 @@ struct EventEntry {
 // InplayScoreParser::Parse — 主入口实现
 // ============================================================================
 ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::GoalserveSport sport,
-                                     std::int64_t ingestion_ts_ns) noexcept {
+                                     std::int64_t ingestion_ts_ns,
+                                     const std::unordered_set<std::string>* result_market_ids) noexcept {
     ParseResult result;
     result.sport = sport;
 
@@ -672,7 +639,7 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
         //   双边/三边完整透传 (home/away/draw); orientation 在 paper_loop 按 yes_is_home 翻 YES-canonical。
         //   从同一 event_block 切 odds 节点 (共享 updated_ts, R-20 守法)。无 odds / 选不到盘 → -1.0 sentinel。
         double home_fair = -1.0, away_fair = -1.0, draw_fair = -1.0;
-        if (const MatchWinnerSpec spec = MatchWinnerSpecFor(sport); spec.supported) {
+        {
             const auto odds_key = event_block.find("\"odds\":");
             if (odds_key != std::string_view::npos) {
                 const auto ob = event_block.find('{', odds_key);
@@ -693,8 +660,10 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
                         }
                     }
                     if (d == 0) {
-                        const auto devig = ParseInplayOddsDevigByName(
-                            event_block.substr(ob, oe - ob + 1), spec.allow, spec.forbidden);
+                        static const std::unordered_set<std::string> kNoIds;
+                        const auto devig = ParseInplayOddsDevigResult(
+                            event_block.substr(ob, oe - ob + 1),
+                            result_market_ids ? *result_market_ids : kNoIds);
                         if (devig.valid) {
                             home_fair = devig.home_fair;
                             away_fair = devig.away_fair;
