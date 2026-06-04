@@ -731,11 +731,14 @@ void InplayFeedThread::RunSportLoop(goalserve::GoalserveSport sport) noexcept {
             }
             // 闭环【双向】校正 (2026-06-05 老板「左右偏移都要算, 不能只减; 落到1.99就+0.05顶到2.04」):
             //   L 偏高(抓晚)→ phase_corr↑ → 瞄更早; L 偏低(抓太早/快撞到更新前)→ phase_corr↓(转负) → 瞄更晚(+offset)。
-            //   伺服到目标 ~250ms。clamp [−max_nudge, margin]: 负=往后顶(老板的+0.05), 正=往前(上限 update 后不抓旧版)。
+            //   伺服到目标 ~250ms。clamp [−max_nudge, margin−safety]: 负=往后顶(老板的+0.05), 正=往前。
+            //   safety=30ms (老板「压太狠了, 留30ms余量让他稳定」): aim-offset 下限 30ms, 永远瞄在更新后 ≥30ms,
+            //   留余量吸收 interval 预测误差 → 不会抢在更新前漏版(消除 max 尖峰), 用 30ms 换稳定。
             if (L >= 0 && L < phase_interval_ema_ms * 3 / 2) {
+                constexpr std::int64_t kPhaseSafetyMs = 30;  // 留 30ms 余量防漏版 (老板)
                 phase_corr_ms += (L - 250) * 3 / 10;  // 比例增益 0.3 (双向: err 正往早, err 负往晚)
                 const std::int64_t lo = -static_cast<std::int64_t>(cfg_.phase_max_nudge_ms);  // 允许往后顶
-                const std::int64_t hi = static_cast<std::int64_t>(cfg_.phase_margin_ms);
+                const std::int64_t hi = static_cast<std::int64_t>(cfg_.phase_margin_ms) - kPhaseSafetyMs;  // aim≥update+30ms
                 if (phase_corr_ms < lo) phase_corr_ms = lo;
                 if (phase_corr_ms > hi) phase_corr_ms = hi;
             }
