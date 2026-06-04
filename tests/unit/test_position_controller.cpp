@@ -210,46 +210,6 @@ TEST(PositionController, PC14_AllowShortOpensSell) {
     EXPECT_DOUBLE_EQ(a.size_pusd, 30.0);  // 开空 30 (无持仓约束)
 }
 
-// PC-15: 动态持仓退出 — 持仓 + best_bid 越获利线 → 卖平锁利 (优先于 Kelly target 持仓惯性)。
-//   金融团队会议 2026-06-04「动态持仓实现盈利, 非结算」。
-TEST(PositionController, PC15_TakeProfitClosesHeldPosition) {
-    auto in = base();
-    in.target_pusd = 30.0;      // Kelly 还想持/加 (edge 惯性)
-    in.current_pusd = 20.0;     // 已持 20
-    in.best_bid = 0.62;         // bid 涨到获利线之上
-    in.take_profit_px = 0.61;   // avg_entry(0.595)+净利垫 → 触发线
-    const auto a = Decide(in);
-    ASSERT_TRUE(a.act);
-    EXPECT_EQ(a.side, Side::Sell) << "bid 越获利线 → 卖平, 而非按 target 继续买";
-    EXPECT_TRUE(a.is_close);
-    EXPECT_DOUBLE_EQ(a.size_pusd, 20.0);   // 全平 (≤ cap)
-    EXPECT_DOUBLE_EQ(a.limit_price, 0.62);  // marketable at best_bid
-}
-
-// PC-16: bid 未到获利线 → 不 take-profit, 走正常逻辑 (target>current → 买)。
-TEST(PositionController, PC16_TakeProfitNotTriggeredBelowLine) {
-    auto in = base();
-    in.target_pusd = 30.0;
-    in.current_pusd = 20.0;
-    in.best_ask = 0.52;
-    in.best_bid = 0.55;         // bid < 获利线
-    in.take_profit_px = 0.61;
-    const auto a = Decide(in);
-    ASSERT_TRUE(a.act);
-    EXPECT_EQ(a.side, Side::Buy) << "bid 未到获利线 → 不平, 正常买增";
-}
-
-// PC-17: take_profit_px=-1 (默认关) → 行为与无此功能完全一致 (契约不变)。
-TEST(PositionController, PC17_TakeProfitDisabledByDefault) {
-    auto in = base();  // take_profit_px 默认 -1
-    in.target_pusd = 30.0;
-    in.current_pusd = 20.0;
-    in.best_bid = 0.62;
-    const auto a = Decide(in);
-    ASSERT_TRUE(a.act);
-    EXPECT_EQ(a.side, Side::Buy) << "关闭 take-profit → 正常 Kelly 买增";
-}
-
 // ===========================================================================
 // ComputeReservation — reservation 公式纯函数 (小梁 Q-梁-1)
 //   required_margin = max(margin_floor, z×sqrt(fair(1−fair)/n))

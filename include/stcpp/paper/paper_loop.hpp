@@ -265,13 +265,6 @@ struct PaperLoopConfig {
     bool sharp_only_gate{false};
     double sharp_only_min_edge{0.05};  // ≥此偏离才算高置信 sharp 信号 (回测 ≥5% 拐点)
 
-    // 动态持仓退出 (2026-06-04 金融团队会议「动态持仓实现盈利, 非结算」, docs/MEETINGS/2026-06-04-dynamic-exit-realization.md):
-    //   收敛兑现: 持仓边市场收敛到 fair (剩余 edge ≤ cap) 且 best_bid 越获利线 (avg_entry+margin) → 卖平锁利。
-    //   解「只买不卖」死结 (Kelly target 随 live fair 涨不降 + reservation_sell 在 fair 上方永不触发)。
-    //   take_profit_margin ≤0 = 关 (默认, 契约/管线测试不变); 生产 daemon 置正值开。
-    double take_profit_margin{0.0};      // best_bid ≥ avg_entry + 此值 → 平仓锁利 (净利垫, 覆盖往返成本)
-    double take_profit_edge_cap{0.02};   // 仅当剩余 edge(fair−mark) ≤ 此值才退 (收敛已捕获, 防 churn 立即回买)
-
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)

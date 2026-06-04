@@ -1268,20 +1268,6 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     // 防抖死区 (小梁 Q-梁-2): threshold = max(floor, 0.10×|target|)。
     const double min_rebalance = std::max(cfg_.min_rebalance_floor_pusd, 0.10 * std::abs(target_mag));
 
-    // 动态持仓退出 (金融团队会议 2026-06-04): 收敛兑现锁利。仅当 ① 剩余 edge (fair−mark) 已收敛到
-    //   ≤ cap (市场追上 fair, 套利空间没了, 退了不会立刻回买 → 防 churn) ② best_bid 越获利线
-    //   (avg_entry + margin, 锚 entry 免 fair 漂移) → take_profit_px 启用 → Decide 平仓锁利。
-    //   take_profit_margin ≤0 (默认) → -1 关闭 (契约/管线测试不变)。
-    double take_profit_px = -1.0;
-    if (cfg_.take_profit_margin > 0.0 && current_pusd > 0.0) {
-        const double remaining_edge = p_fair_side - mark_price;  // 本边剩余 edge (fair − 市场)
-        if (remaining_edge <= cfg_.take_profit_edge_cap) {
-            const auto pos = position_ledger_.get_position(token_id);
-            if (pos && pos->avg_entry_price > 0.0)
-                take_profit_px = pos->avg_entry_price + cfg_.take_profit_margin;
-        }
-    }
-
     control::ControlInput cin;
     cin.target_pusd = target_mag;  // 被选边 = Kelly; 非选边平旧边 = 0
     cin.current_pusd = current_pusd;
@@ -1293,7 +1279,6 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     cin.per_order_cap_pusd = cfg_.per_order_cap_usdc;
     cin.allow_short = false;       // 空头 clamp 0 (sell-to-open 对二元市场 N/A; 见 spec §11.6)
     cin.force_cross = force_cross;  // 小梁 Q-梁-2: fair 大跳绕死区
-    cin.take_profit_px = take_profit_px;  // 动态持仓退出 (收敛兑现锁利)
 
     const control::ControlAction action = control::Decide(cin);
     if (!action.act) {

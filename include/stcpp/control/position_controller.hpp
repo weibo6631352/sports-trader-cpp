@@ -44,10 +44,6 @@ struct ControlInput {
     double per_order_cap_pusd{0.0};   // 单笔上限 (clamp; RM per_order_cap 同源)
     bool allow_short{false};          // v1=false (空头 clamp 0); M2 开
     bool force_cross{false};          // 强制穿越 (小梁 Q-梁-2: |Δfair|>0.02 → 绕死区; 比分大跳不堵)
-    // 动态持仓退出 (2026-06-04 金融团队会议「动态持仓实现盈利非结算」): 持仓 bid 越获利线 → 卖平锁利,
-    //   绕开 Kelly target 持仓惯性 (live fair 涨 → edge 恒正 → target 不降 → 永不卖的死结)。
-    //   take_profit_px = avg_entry + 净利垫 (锚 entry 不锚 fair, 免 fair 漂移)。≤0 = 关 (默认, 契约测试不变)。
-    double take_profit_px{-1.0};
 };
 
 // 控制器输出 (TickOne 据此构造 OrderIntent 或 skip)。
@@ -134,22 +130,6 @@ struct ReservationPrices {
     }
 
     const double current = in.current_pusd;
-
-    // 动态持仓退出 (金融团队会议 2026-06-04「动态持仓实现盈利, 非结算」): 有持仓且 best_bid 越过获利线
-    //   (avg_entry + 净利垫) → 卖平锁利, 【优先于】Kelly target 持仓惯性 + 死区。绕开「live fair 涨 →
-    //   edge 恒正 → target 不降 → 永不卖」死结 (会议 D2)。锚 avg_entry 不锚 fair (免 fair 漂移, 会议 D1)。
-    //   marketable 平 (limit=best_bid, taker 兜底; maker 零费腿后续接 OrderIntent.post_only)。
-    if (in.take_profit_px > 0.0 && current > 0.0 && in.best_bid > 0.0 &&
-        in.best_bid >= in.take_profit_px) {
-        const double tp_cap = (in.per_order_cap_pusd > 0.0) ? in.per_order_cap_pusd : current;
-        a.act = true;
-        a.side = strategy::Side::Sell;
-        a.size_pusd = std::min(current, tp_cap);
-        a.limit_price = in.best_bid;  // marketable 平仓 (锁已实现收敛收益)
-        a.is_close = true;
-        return a;
-    }
-
     const double gap = target - current;
     const double abs_gap = std::abs(gap);
 
