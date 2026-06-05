@@ -312,6 +312,9 @@ struct RiskConfig {
     domain::MicroPUSD per_order_cap_usdc{1'000'000'000};        // 1000 pUSD (micro)
     domain::MicroPUSD market_exposure_cap_usdc{5'000'000'000};  // 5000 pUSD (micro); per-condition
     domain::MicroPUSD per_outcome_cap_usdc{2'000'000'000};      // 2000 pUSD (micro); per-token (R6.2b)
+    // 持仓管理 Stage 2 P0 (R6.2c, 相关性集中度): 同赛事各 condition 合并 Σ|敞口| ≤ 此 (保守 ρ=1)。
+    //   默认 10000 pUSD (= 2× per-condition); 仅 set_condition_event 注册后生效 (旧路径无影响)。0=禁用。
+    domain::MicroPUSD event_exposure_cap_usdc{10'000'000'000};  // 10000 pUSD (micro); per-event gross
     // c2b (P0-2, 老韩 spec): bankroll/daily_loss 转 MicroPUSD (micro 真值, 锚 bankroll 意图 100k pUSD)。
     //   原默认 100'000/5'000 名带 _usdc 实为 micro=0.1/0.005pUSD 荒谬 (同 cap bug); 校准真值。
     //   atomic bankroll_usdc_ 保持 int64 micro (老姜), ctor .v 灌; set_bankroll(int64) 签名不变。
@@ -358,6 +361,9 @@ public:
     // v0.5 新接口: per-condition + per-outcome 双维度
     void set_condition_exposure(std::string const& condition_id, std::int64_t usdc) noexcept;
     void set_outcome_exposure(std::string const& token_id, std::int64_t usdc) noexcept;
+    // 持仓管理 Stage 2 P0: 注册 condition→event 映射 (相关性集中度 cap R6.2c 用)。
+    //   幂等; event_id 空则跳过。注册后 set_condition_exposure 自动维护 per-event Σ|敞口|。
+    void set_condition_event(std::string const& condition_id, std::string const& event_id) noexcept;
 
     // A4 (老韩 spec §2): 去 inline — body 移 .cpp 以记 last_fed_ns_ (now_realtime_ns 在 .cpp;
     //   避免给 ABI-locked hpp 加 pit.hpp 依赖)。非热路径 (每 tick 喂一次), out-of-line 开销可忽略。

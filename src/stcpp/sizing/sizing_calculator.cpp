@@ -163,7 +163,7 @@ SizingOutput SizingCalculator::compute(risk::RiskConfig const& cfg, SizingInput 
     double const kelly_full_clamped = (kelly_full > 1.0) ? 1.0 : kelly_full;
 
     // ------------------------------------------------------------------
-    // Step 6: Fractional Kelly λ = 0.25 (quarter Kelly; 小梁 §1.3)
+    // Step 6: Fractional Kelly λ = kLambdaBase (0.35, 老板 2026-06-01; 原 0.25 quarter Kelly 已废, 见 hpp)
     // ------------------------------------------------------------------
     double const kelly_fractional = kLambdaBase * kelly_full_clamped;
 

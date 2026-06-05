@@ -295,6 +295,11 @@ void PaperLoop::TickAll() {
         if (const ParentRef* pr = ParentRefFor(cond_id); pr != nullptr) {
             mkt.event_id = pr->event_id;
             mkt.neg_risk_market_id = pr->neg_risk_market_id;
+            // R6.2c 相关性集中度 cap: 首次见即向 RM 注册 condition→event (eager, 覆盖首单;
+            //   register-once 防每 tick 锁churn)。event_gross 由 FeedRiskGateway 喂敞口时维护。
+            if (!mkt.event_id.empty() && rm_event_registered_.insert(cond_id).second) {
+                rm_.set_condition_event(cond_id, mkt.event_id);
+            }
         }
         if (const auto yo = hub_.Read(yes_tok); yo.has_value() && yo->valid) {
             mkt.yes.present = true;

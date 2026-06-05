@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-# tests/ci_grep/risk_enum_coverage.py — 22 reject enum × (unit + sim/replay) 全覆盖闸
+# tests/ci_grep/risk_enum_coverage.py — 23 reject enum × (unit + sim/replay) 全覆盖闸
 #
 # Owner: 小宋 (test-replay-engineer)  Sprint-2 W3 Wave 18
-# v1.1 (Wave 77, 老高): 21 → 22 (v0.5 新增 EXCEED_PER_OUTCOME_CAP=22); 别名行排除计数
-# 关联: include/stcpp/risk/reject_enum.hpp (老韩 v0.5, 22 enum — ADR-003 C-4 扩展值)
+# v1.1 (Wave 77, 老高): 22 → 23 (Stage2 P0 新增 EXCEED_EVENT_EXPOSURE=23; v0.5 EXCEED_PER_OUTCOME_CAP=22); 别名行排除计数
+# 关联: include/stcpp/risk/reject_enum.hpp (Stage2 P0, 23 enum — ADR-003 C-4 扩展值)
 #       tests/unit/risk_enum_coverage_test.cpp (unit 入口)
 #       tests/sim/**/*.cpp, tests/replay/**/*.cpp, tests/chaos/**/*.cpp (sim/replay 层)
 #
 # 规则:
-#   - 22 enum 名必须 每一个 在 tests/unit/ 出现 (unit 覆盖)
-#   - 22 enum 名必须 每一个 在 tests/{sim,replay,chaos}/ 出现 (sim/replay/chaos 覆盖)
+#   - 23 enum 名必须 每一个 在 tests/unit/ 出现 (unit 覆盖)
+#   - 23 enum 名必须 每一个 在 tests/{sim,replay,chaos}/ 出现 (sim/replay/chaos 覆盖)
 #   - W3 placeholder 期: sim/replay 覆盖暂作 WARN 不 FAIL (W4-W5 转 FAIL)
 #   - unit 缺一 → exit 1
 #   - 别名行 (行内注释含 "别名" / "alias") 不计入 enum 总数
@@ -97,9 +97,9 @@ def main() -> int:
 
     enums = parse_reject_enums(header)
     print(f"[risk_enum_coverage] parsed {len(enums)} RejectCode enum names from {HEADER_REL}")
-    # v0.5 新增 EXCEED_PER_OUTCOME_CAP: 22 个语义唯一 enum (别名行已排除计数, Wave 77)
-    if len(enums) != 22:
-        print(f"::error::ADR-003 C-4: 22 enum 总数不符 (got {len(enums)})", file=sys.stderr)
+    # v0.5 新增 EXCEED_PER_OUTCOME_CAP: 23 个语义唯一 enum (别名行已排除计数, Wave 77)
+    if len(enums) != 23:
+        print(f"::error::ADR-003 C-4: 23 enum 总数不符 (got {len(enums)})", file=sys.stderr)
         return 1
 
     unit_roots = [args.repo_root / d for d in UNIT_DIRS_REL]

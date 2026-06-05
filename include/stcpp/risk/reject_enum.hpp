@@ -63,6 +63,12 @@ enum class RejectCode : std::uint8_t {
     // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §6.3
     // 老韩 spec §9.1: token_exposure[token_id] + size > per_outcome_cap → REJECT
     EXCEED_PER_OUTCOME_CAP = 22,  // ADR-003 C-4: 此为扩展值, 21 active 不增原意
+
+    // 持仓管理 Stage 2 P0 (2026-06-05, laolei-position-management-synthesis-v1.md):
+    //   per-event 相关性集中度 cap (R6.2c)。同赛事多盘 ρ0.6-0.9 高相关, per-condition 单点 cap
+    //   拦不住合并超注 → 按 event 聚合 Σ|condition_exposure| 比 event_exposure_cap (保守 ρ=1 上界)。
+    //   仅当 set_condition_event 注册了 condition→event 才生效 (纯加性, 旧路径无影响)。
+    EXCEED_EVENT_EXPOSURE = 23,  // ADR-003 C-4: 扩展值, 同 22 不增原 21 active 原意
 };
 
 // INVALID_INTENT 子原因 (老韩 v0.3.1 + 小肖 v1 §2 + 老孙 v5.1 + v0.5)

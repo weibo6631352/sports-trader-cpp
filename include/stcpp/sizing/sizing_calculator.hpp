@@ -107,7 +107,7 @@ struct SizingInput {
 struct SizingOutput {
     // Kelly 比例 (∈ [0,1], 无方向符号; 方向在调用方按 SizingInput.buy_yes 决定)
     double kelly_full{0.0};        // f*_full = net_ci_edge / denom (CI 下界净 Kelly)
-    double kelly_fractional{0.0};  // λ × f*_full, λ = 0.25 (quarter Kelly)
+    double kelly_fractional{0.0};  // λ × f*_full, λ = kLambdaBase (0.35; 见下方常量)
 
     // 名义额 (USDC)
     double suggested_notional{0.0};  // 过完 5 cap 的意图名义额 — /api/v1/quote 真值来源

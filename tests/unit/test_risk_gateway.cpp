@@ -371,6 +371,53 @@ TEST_F(RiskGatewayTest, H1_BuyIncrease_StillCapped) {
                 d.reject == RejectCode::EXCEED_MARKET_EXPOSURE);
 }
 
+// ---- R6.2c per-event 相关性集中度 cap (持仓管理 Stage 2 P0) ------------------
+// 同赛事多盘合并 Σ|敞口| > event_exposure_cap → EXCEED_EVENT_EXPOSURE。
+// 仅 set_condition_event 注册 + 升敞口时比 cap (减仓/未注册放行, 纯加性安全)。
+
+TEST_F(RiskGatewayTest, R6_2c_EXCEED_EVENT_EXPOSURE) {
+    RiskConfig c = cfg_;
+    c.event_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(2'500);
+    auto rm = make_local_rm(c);
+    rm->set_condition_event(kMockConditionId, "evt1");
+    rm->set_condition_event("cond_sibling", "evt1");
+    rm->set_condition_exposure("cond_sibling", 2'000);  // 同赛事兄弟盘已占 2000
+    auto it = make_ok_intent();
+    it.size_pUSD_micro = 1'000;  // 本盘买 1000 → event_gross = 2000 + 1000 = 3000 > 2500 cap
+    auto d = rm->evaluate(it);
+    expect_rejected(d, RejectCode::EXCEED_EVENT_EXPOSURE);
+}
+
+TEST_F(RiskGatewayTest, R6_2c_SellReduce_PassesEventCap) {
+    RiskConfig c = cfg_;
+    c.event_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(2'500);
+    auto rm = make_local_rm(c);
+    rm->set_condition_event(kMockConditionId, "evt1");
+    rm->set_condition_event("cond_sibling", "evt1");
+    rm->set_condition_exposure("cond_sibling", 2'000);
+    rm->set_condition_exposure(kMockConditionId, 1'000);  // event_gross = 3000 > cap
+    auto it = make_ok_intent();
+    it.side = Side::Sell;  // 减仓降敞口
+    it.is_close = true;
+    it.size_pUSD_micro = 500;  // 本盘 |敞口| 1000→500 (减) → 放行 (升敞口才比 cap)
+    auto d = rm->evaluate(it);
+    EXPECT_NE(d.reject, RejectCode::EXCEED_EVENT_EXPOSURE)
+        << "R6.2c: 减仓降 |敞口| 不应触 event cap";
+}
+
+TEST_F(RiskGatewayTest, R6_2c_UnregisteredEvent_NoEventCap) {
+    RiskConfig c = cfg_;
+    c.event_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(500);  // 很低
+    auto rm = make_local_rm(c);
+    // 不注册 condition→event → event cap 不应触发 (未知 event 放行, 纯加性安全)
+    rm->set_condition_exposure(kMockConditionId, 400);
+    auto it = make_ok_intent();
+    it.size_pUSD_micro = 1'000;  // 即使 400+1000 远超 500, 因未注册 event → 不触 event cap
+    auto d = rm->evaluate(it);
+    EXPECT_NE(d.reject, RejectCode::EXCEED_EVENT_EXPOSURE)
+        << "R6.2c: 未注册 event 的 condition 不应触 event cap";
+}
+
 TEST_F(RiskGatewayTest, R09_DAILY_LOSS_HALT) {
     rm_->set_daily_pnl(-6'000 * 1'000'000LL);
     auto d = rm_->evaluate(make_ok_intent());

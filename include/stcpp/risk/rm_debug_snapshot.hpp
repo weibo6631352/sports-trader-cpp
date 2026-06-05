@@ -155,6 +155,8 @@ static_assert(std::is_trivially_copyable_v<RejectRow>,
             return "INTERNAL_ERROR";
         case RejectCode::EXCEED_PER_OUTCOME_CAP:
             return "EXCEED_PER_OUTCOME_CAP";
+        case RejectCode::EXCEED_EVENT_EXPOSURE:
+            return "EXCEED_EVENT_EXPOSURE";
         default:
             return "UNKNOWN";
     }

@@ -137,6 +137,10 @@ struct RiskGateway::State_ {
     // v0.5: per-condition + per-token exposure
     std::unordered_map<std::string, std::int64_t> condition_exposure_usdc;
     std::unordered_map<std::string, std::int64_t> token_exposure_usdc;
+    // 持仓管理 Stage 2 P0 (R6.2c 相关性集中度 cap): condition→event 映射 + per-event Σ|敞口|。
+    //   event_gross 在 set_condition_exposure/set_condition_event 增量维护 (|new|−|old| 累加)。
+    std::unordered_map<std::string, std::string> condition_event;     // condition_id → event_id
+    std::unordered_map<std::string, std::int64_t> event_gross_usdc;   // event_id → Σ|condition_exposure| (micro)
     std::unordered_map<std::string, std::uint32_t> market_freshness_ms;
     // v0.5: per-token book freshness (R8.4)
     std::unordered_map<std::string, std::uint32_t> token_book_freshness_ms;
@@ -194,10 +198,37 @@ void RiskGateway::set_market_exposure(std::string const& m, std::int64_t v) noex
 void RiskGateway::set_condition_exposure(std::string const& cid, std::int64_t v) noexcept {
     {
         std::lock_guard<std::mutex> g(s_->mu);
+        // R6.2c: 维护 per-event Σ|敞口| (event_gross += |new| − |old|), 仅当该 condition 已注册 event。
+        auto ce = s_->condition_exposure_usdc.find(cid);
+        std::int64_t const old = (ce != s_->condition_exposure_usdc.end()) ? ce->second : 0;
         s_->condition_exposure_usdc[cid] = v;
         s_->market_exposure_usdc[cid] = v;  // keep compat map in sync
+        auto ev = s_->condition_event.find(cid);
+        if (ev != s_->condition_event.end()) {
+            std::int64_t const abs_v = v < 0 ? -v : v;
+            std::int64_t const abs_old = old < 0 ? -old : old;
+            s_->event_gross_usdc[ev->second] += (abs_v - abs_old);
+        }
     }
     mark_fed_(FeedKey::Exposure);
+}
+
+// R6.2c: 注册 condition→event 映射 (持仓管理 Stage 2 P0)。幂等。
+//   若该 condition 已有敞口, 把其当前 |敞口| 计入(或迁移到)对应 event_gross。
+void RiskGateway::set_condition_event(std::string const& cid, std::string const& event_id) noexcept {
+    if (event_id.empty()) return;
+    std::lock_guard<std::mutex> g(s_->mu);
+    auto it = s_->condition_event.find(cid);
+    if (it != s_->condition_event.end() && it->second == event_id) return;  // 幂等: 未变
+    // 当前该 condition 的 |敞口| (注册前 set_condition_exposure 未计入新 event)
+    std::int64_t cur_abs = 0;
+    auto ce = s_->condition_exposure_usdc.find(cid);
+    if (ce != s_->condition_exposure_usdc.end()) cur_abs = ce->second < 0 ? -ce->second : ce->second;
+    if (it != s_->condition_event.end()) {
+        s_->event_gross_usdc[it->second] -= cur_abs;  // 从旧 event 扣除 (condition 改挂, 罕见)
+    }
+    s_->condition_event[cid] = event_id;
+    s_->event_gross_usdc[event_id] += cur_abs;  // 计入新 event
 }
 
 void RiskGateway::set_outcome_exposure(std::string const& token_id, std::int64_t v) noexcept {
@@ -529,6 +560,34 @@ bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) c
         if (abs_new > abs_cur && domain::MicroPUSD::from_micro(abs_new) > cfg_.market_exposure_cap_usdc) {
             d.reject = RejectCode::EXCEED_CONDITION_EXPOSURE;
             return true;
+        }
+    }
+
+    // R6.2c: per-event 相关性集中度 cap (持仓管理 Stage 2 P0)。
+    //   同赛事多盘合并 Σ|condition_exposure| (保守 ρ=1 上界, 不 netting) ≤ event_exposure_cap。
+    //   仅 event 已注册 + 本单升本 condition |敞口| 时比 cap (减仓/未注册 event 放行, 纯加性安全)。
+    if (cfg_.event_exposure_cap_usdc.v > 0) {
+        auto ev_it = s_->condition_event.find(it.condition_id);
+        if (ev_it != s_->condition_event.end()) {
+            std::int64_t cur_cond = 0;
+            auto cc_it = s_->condition_exposure_usdc.find(it.condition_id);
+            if (cc_it != s_->condition_exposure_usdc.end()) cur_cond = cc_it->second;
+            const std::int64_t delta_ev =
+                (it.side == Side::Sell) ? -it.size_pUSD_micro : it.size_pUSD_micro;
+            const std::int64_t new_cond = cur_cond + delta_ev;
+            const std::int64_t abs_new_cond = new_cond < 0 ? -new_cond : new_cond;
+            const std::int64_t abs_cur_cond = cur_cond < 0 ? -cur_cond : cur_cond;
+            if (abs_new_cond > abs_cur_cond) {  // 仅升敞口才比 (减仓放行)
+                std::int64_t ev_gross = 0;
+                auto eg_it = s_->event_gross_usdc.find(ev_it->second);
+                if (eg_it != s_->event_gross_usdc.end()) ev_gross = eg_it->second;
+                // 替换本 condition 的贡献: event_gross − |cur_cond| + |new_cond|
+                const std::int64_t ev_gross_after = ev_gross - abs_cur_cond + abs_new_cond;
+                if (domain::MicroPUSD::from_micro(ev_gross_after) > cfg_.event_exposure_cap_usdc) {
+                    d.reject = RejectCode::EXCEED_EVENT_EXPOSURE;
+                    return true;
+                }
+            }
         }
     }
 

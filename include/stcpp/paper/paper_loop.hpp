@@ -70,6 +70,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -821,6 +822,10 @@ private:
     //   condition_id → (sharp, mid) 时序; 派生 sharp velocity + 市场价相对 sharp 收敛/发散率 →
     //   QuoteFeatures (观测先行)。PIT-safe / loop_thread_ 单 writer (TickOne push + 读)。
     std::unordered_map<std::string, ml::SharpFairTrack> sharp_history_;
+
+    // ---- 已向 RM 注册 condition→event 的集合 (相关性集中度 cap R6.2c, 注册一次防每 tick 锁churn) ----
+    //   loop_thread_ 单 writer (TickAll insert)。首次见某 condition 即 rm_.set_condition_event。
+    std::unordered_set<std::string> rm_event_registered_;
 
     // ---- 批1 体育动态: 比分时序 (进球新鲜度/动量; game_row.score 派生) ----
     std::unordered_map<std::string, ml::GameScoreHistory> game_history_;
