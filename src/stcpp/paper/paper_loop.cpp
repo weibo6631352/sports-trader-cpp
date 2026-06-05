@@ -917,11 +917,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         //   orientation 翻转 / EventMatcher 误配 / 模型饱和 (实测 inplay sharp de-vig clamp 0.9995 被
         //   贴到便宜 underdog YES → 假 86% edge → 垃圾成交)。真实体育 edge 极少 >0.45 → fail-closed
         //   不交易, 并 log src + 成分定位根因 (老韩式 edge 合理性上界)。
-        // 改 log-only (2026-06-03, 老板「别那么谨慎, 还是虚拟盘」): 原阻断门是 ML 垃圾事故的应急止血,
-        //   但 ML 已由 ml_drive_enabled(默认关)+校准门挡住, 此门反而拦合法 derivative/sharp 大 edge
-        //   (破 T17 totals 测试)。改只记录极端背离 (诊断), 不阻断 — 垃圾防护由 ML 闸 + 校准门承担。
-        // [fair-sanity] 纯诊断 log (不拦; 老板「优化模型不加门」)。模型 Platt 校准后过度自信被治,
-        //   极端背离应大幅减少; 仍记录供观测 (若校准后还频繁极端 = 校准不足, 继续优化模型而非加门)。
+        // 改 log-only (2026-06-03, 老板「别那么谨慎, 还是虚拟盘」): 原阻断门是垃圾事故的应急止血, 但
+        //   此门反而拦合法 derivative/sharp 大 edge (破 T17 totals 测试)。改只记录极端背离 (诊断), 不阻断。
+        // [fair-sanity] 纯诊断 log (不拦)。砍大模型后 fair 由 sharp/derivative/score-prior 驱动
+        //   (2026-06-05), 极端背离多为 orientation 翻转/误配/derivative 单位错配 (后者已由 deriv-sanity 守卫拦)。
         constexpr double kMaxPlausibleEdge = 0.45;
         if (std::abs(p_fair - p_market_devig) > kMaxPlausibleEdge) {
             // 2026-06-03 老板「调通模型让其盈利」: 实测 PM 体育盘高效 (事件延迟/信息边验证), 模型源
@@ -963,7 +962,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   42 万已结算行回测: src=sharp_inplay 且 |sharp − 市场| ≥ 5% 时, 结算结果站 sharp 77%,
     //   净 +0.20/单 (≥10% 偏离 98%/+0.36); <5% 偏离是噪声(亏); ML/score-prior/derivative 源无
     //   回测确认 edge。→ 只交易高置信 sharp 信号, 其余回退市场(edge 归零, 不产单)。
-    //   (ML 驱动已关 ml_drive_enabled=false → fair 落 sharp/score-prior/market; 此门再收到只剩 sharp。)
+    //   (砍大模型后 fair 落 sharp/score-prior/market [无 ONNX blend]; 此门再收到只剩 sharp。)
     //   2026-06-04: 收进 cfg_.sharp_only_gate (默认关) —— 这是【策略过滤器】非管线不变量, 无条件施加会
     //   把通用 fill 管线/契约单测的非 sharp fair 全归零 (T17/T_Profit/TS4… 9 测试)。生产 daemon 置 true。
     // ---- 赔率源新鲜度门 (2026-06-04 老板「超过3秒的赔率源不进决策」) ----------------------------

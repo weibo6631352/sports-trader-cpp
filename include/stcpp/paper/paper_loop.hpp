@@ -371,17 +371,9 @@ struct PaperLoopConfig {
     //   默认 false (实盘/契约测试不变); paper daemon 显式置 true。R-11: 纯 paper VirtualFill, 不碰真钱。
     bool paper_no_edge_gates{false};
 
-    // ML 驱动决策 blend 权重 (老板 2026-05-31 放开 paper 期 ML-R2)。p_fair = (1−w)·baseline + w·ml_p_yes。
-    //   0 = 纯 baseline (默认; 现有契约测试不变)。仅当真 ONNX 模型 (kind==Onnx) 加载才生效, stub 永不驱动。
-    //   PaperLoop 天然 paper (不花真钱); live 路径不复用此 blend。daemon 生产可设 1.0 (有模型时 ML 全驱动)。
-    double ml_fair_blend_weight{0.0};
-    // ML 驱动总开关 (2026-06-03, 小邓研究「绝不一上来 weight=1.0」+ §7 垃圾事故配套)。
-    //   false (默认) = ML 仅 advisory (照算照显示 ml_advisory_p_yes, 但【不进 fair / 不驱动交易】)。
-    //   true = 放行 ML blend 进 fair (须先过 7 道验证关卡 + 策略评审, 见 ml-engineer-fairvalue-alpha-design)。
-    //   独立于 weight: weight 是 blend 力度, drive_enabled 是"是否让模型碰真决策"的安全闸 (默认关)。
-    bool ml_drive_enabled{false};
-
-    // (短时套利 advisory 配置已砍 2026-06-05: seq_arb_model 大模型旁路一并删)
+    // (ML 驱动 blend 配置 ml_fair_blend_weight / ml_drive_enabled 已砍 2026-06-05「砍掉大模型训练功能」:
+    //  fair 不再有 ONNX blend, 由 sharp/derivative/score-prior 驱动 [pricing::ResolveFair]。
+    //  短时套利 advisory 配置同砍: seq_arb_model 大模型旁路一并删。)
 
     // strategy_id / signal_id (audit / RM 去重用)
     std::string strategy_id{"paper-demo-v1"};

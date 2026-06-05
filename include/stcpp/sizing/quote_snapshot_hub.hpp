@@ -395,19 +395,11 @@ private:
 //   features.kelly_fraction        → QuoteParams::kelly_fraction
 //   features.suggested_notional    → QuoteParams::suggested_notional
 //   features.signal_strength       → QuoteParams::signal_strength
-//   features.model_confidence      → QuoteParams::model_conf (deprecated alias)
-//                                 + QuoteParams::model_confidence
-//   features.model_id (char[])     → QuoteParams::model_id (string)
-//   features.spec_version (char[]) → QuoteParams::spec_version (string)
-//   ModelKindTag::kStub  → "stub" / kOnnx → "onnx" / kTreelite → "treelite"
-//                                  → QuoteParams::model_kind
-//   features.model_calibrated      → QuoteParams::model_calibrated
-//   features.fair_ci_lower         → QuoteParams::fair_ci_lower
-//   features.fair_ci_upper         → QuoteParams::fair_ci_upper
 //   features.predict_ok            → QuoteParams::predict_ok
 //   features.model_as_of_ts_ns     → QuoteParams::model_as_of_ts_ns
-//   features.advisory              → QuoteParams::advisory
 //   features.as_of_ts_ns           → QuoteParams::as_of_ts_ns
+//   (大模型 provenance 映射 model_id/model_kind/spec_version/model_confidence/fair_ci/advisory
+//    已砍 2026-06-05「砍掉大模型训练功能」)
 // ---------------------------------------------------------------------------
 
 }  // namespace stcpp::sizing

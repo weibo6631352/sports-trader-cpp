@@ -6,7 +6,8 @@
 // 目的 (ADR-037 配套):
 //   从原始比赛信息自估 fair probability, 不依赖 bookmaker 赔率作唯一真值.
 //   消费 feature_store_contract.hpp FeatureStoreGameRow / FeatureStoreBookRow.
-//   接口留给小邓 ML 模型替换 (via IFairValueModel 抽象层).
+//   (IFairValueModel 抽象层留作 score-prior baseline 接口; 原计划的 ONNX 大模型实现已砍
+//    2026-06-05「砍掉大模型训练功能」, 当前唯一实现 = BaselineFairValueModel.)
 //
 // 算法 (baseline — 可解释先验 + 订单簿微调):
 //   1. ScoreBasedPrior  — 比分差 / 比赛时钟 → 简单胜率先验
@@ -27,10 +28,10 @@
 //   - clamp + epsilon 避免 p=0 或 p=1 传给 Kelly
 //   - 先验 sigmoid 参数远离溢出域 (alpha/beta 小量)
 //
-// 接口留给 ML 替换:
+// IFairValueModel 抽象 (score-prior baseline 唯一实现):
 //   IFairValueModel::estimate(game_row, book_row) → FairValueResult
-//   BaselineFairValueModel  : 当前 baseline
-//   可直接 swap → OnnxFairValueModel (小邓 W5+ onnxruntime)
+//   BaselineFairValueModel  : 当前且唯一实现
+//   (原计划 OnnxFairValueModel 已砍 2026-06-05「砍掉大模型训练功能」)
 //
 // vendor-agnostic:
 //   只消费 feature_store_contract.hpp 中间表示, 不硬编码 Goalserve/Polymarket 字段.

@@ -726,29 +726,11 @@ BuildResult PaperDaemon::Build() {
     //   lib 默认 false (向后兼容契约测试); 生产 daemon 置 true (可经 enable_phase0_gates 关, 供管线测试)。
     cfg_.paper_loop.dynamic_reservation = cfg_.enable_phase0_gates;
     cfg_.paper_loop.net_ev_gate = cfg_.enable_phase0_gates;
-    // ML blend 权重 (老板 2026-06-03「让模型盈利」实测定标):
-    //   weight=1.0 全驱动 → 3.5h ~break-even+噪声; weight=0.3/0.7 市场锚定 → edge < 半价差 margin
-    //   → 0 成交。结论: 模型"edge"实为过度自信, 锚定高效市场后即消失 (PM in-play 高效, poly-arb 已证)。
-    //   权重只控成交频率不控 edge 符号 → 留 1.0 让其成交+取结算数据 (无哪个权重能把无 alpha 调成盈利)。
-    //   stub 永不驱动 (blend 内 kind==Onnx 门); 无 onnx_model_path → stub → 纯 baseline, 安全。
-    // 2026-06-05 老板「砍掉大模型训练功能」: blend 权重置 0 → ML 彻底不进 fair (配 ml_drive_enabled=false
-    //   双保险)。flags 已砍 (无 onnx_model_path → 不加载真模型; auto-train/watcher gate 在 onnx_path 非空 → 不启)。
-    //   保留量化因子/统计计算 (FeatureHistory/SharpFairTrack/RollingClv 喂观测+Stage2 乘子, 不依赖大模型)。
-    cfg_.paper_loop.ml_fair_blend_weight = 0.0;
-    // ML 驱动总闸 (2026-06-03 老板「别那么谨慎, 虚拟盘要看模型真跑」): paper 放开 ML 驱动。
-    //   仍受【校准门】保护 (仅 calibrated && conf>0 的模型驱动; 退化/泄漏模型 conf=0 不驱动)。
-    //   真钱 live 路径不复用此 (PaperLoop 天然 paper)。生产可经此闸+校准联合控制。
-    //   2026-06-03 老板「改成 sharp 驱动」: 关 ML 驱动。回测证实模型对高效 PM 无 edge (de-bias→0成交=
-    //   过度自信); 真 edge 在 sharp (bet365 inplay de-vig 领先 PM, ≥5% 偏离结算站 sharp 77%/+0.20单)。
-    //   关 ML → fair 落 sharp_inplay (有 sharp 时) → 下游 sharp +EV 门只放高置信 sharp 信号。
-    // 2026-06-04 老板「一根筋调整模型, 再试试能不能救活他」: 切回【模型驱动】(calibrated AUC0.78 模型掌舵)。
-    //   ml_drive=true 让 ONNX 模型直接定 fair (不再 sharp 规则); 配 sharp_only_gate=false 不让 sharp 门掐死模型单。
-    //   纯观测实验: 模型 AUC0.78 是预测【结果】, edge 在赢【PM 价】—— 让数字定论(beat PM 还是只是同意 PM)。
-    // 2026-06-04 老板「把这个项目收尾, 决策源就只用直播源的赔率」: 切【sharp 驱动】, 关模型驱动。
-    //   fair = bet365 inplay de-vig sharp (直播源赔率); 模型分析/微观结构套利归入【新项目】, 不再混入本线。
-    //   要回模型驱动: ml_drive_enabled=true + sharp_only_gate=false。
-    cfg_.paper_loop.ml_drive_enabled = false;
-    cfg_.sharp_only_gate = true;   // 决策源 = 直播源赔率: 仅高置信 sharp 信号 (≥sharp_only_min_edge) 产单
+    // 决策源 = 直播源赔率 sharp (老板 2026-06-04「决策源就只用直播源赔率」+ 2026-06-05「砍掉大模型训练功能」):
+    //   fair 由 sharp/derivative/score-prior 驱动 (见 pricing::ResolveFair), 无 ONNX blend。
+    //   ml_fair_blend_weight/ml_drive_enabled 配置已随大模型一并砍。量化因子/统计
+    //   (FeatureHistory/SharpFairTrack/RollingClv) 保留喂观测 + Stage2 sizing 乘子。
+    cfg_.sharp_only_gate = true;   // 仅高置信 sharp 信号 (≥sharp_only_min_edge) 产单
     // sharp 驱动门 (2026-06-04): 生产 daemon 默认开 (cfg_.sharp_only_gate 默认 true) —— 仅高置信
     //   sharp(bet365) 信号产单, 其余源回退市场 (edge 归零)。管线机制测试可置 false (走 score-prior 出成交)。
     cfg_.paper_loop.sharp_only_gate = cfg_.sharp_only_gate;
