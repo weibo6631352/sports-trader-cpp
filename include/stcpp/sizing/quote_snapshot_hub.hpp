@@ -273,6 +273,15 @@ struct QuoteFeatures {
     //   NaN = 无 ML 模型 / 维度不匹配 / 推理失败。白名单+ONNX 一到即非 NaN, 零改码。
     double ml_advisory_p_yes{std::numeric_limits<double>::quiet_NaN()};
 
+    // ---- sharp fair 时序 (老板 2026-06-05「方向真值=赔率源 sharp; 盘口趋势/line movement 用一阶导」) ----
+    //   ml::SharpFairTrack 派生 (paper_loop sharp_history_ 环)。全部加性 (§8.1 #5; struct 末尾增,
+    //   trivially_copyable 保持)。观测先行 — Stage 1 只暴露/观测, 绝不驱动交易决策 (Stage 2 另行设计+回测)。
+    //   样本不足/无 sharp → NaN。窗口 = cfg.sharp_fair_vel_window_ns (默认 10s ≈ 5 样本)。
+    double g_sharp_velocity{std::numeric_limits<double>::quiet_NaN()};   // sharp 速度 prob/sec (+升 −降; line movement)
+    double g_sharp_conv_rate{std::numeric_limits<double>::quiet_NaN()};  // 收敛率 prob/sec (<0 市场向 sharp 收敛/>0 发散)
+    double g_sharp_vol{std::numeric_limits<double>::quiet_NaN()};        // sharp 抖动度 RMS (高=噪声多于真移动)
+    std::int32_t g_sharp_samples{0};                                    // sharp 环窗口内样本数 (<2 则上面 NaN)
+
     // ---- 有效性标记 (首次 Publish 后为 true) ----
     bool valid{false};
 

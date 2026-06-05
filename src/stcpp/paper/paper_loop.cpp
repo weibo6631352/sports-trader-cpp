@@ -2130,6 +2130,26 @@ void PaperLoop::PublishQuoteSnapshot(
     // GS sharp 赔率版本时刻 (2026-06-05 老板「赔率延迟放合适位置」): now−它 = 驱动 sharp fair 的 inplay 赔率多旧。
     qf.sharp_data_source_ts_ns = ml_game_row.data_source_ts_ns;
 
+    // sharp fair 时序环 push + 派生 (老板 2026-06-05「方向真值=赔率源 sharp; 盘口趋势/line movement 一阶导」):
+    //   把赔率源 sharp 的轨迹时序化 → sharp 速度(line movement 方向) + 市场价相对 sharp 收敛/发散率。
+    //   PIT: 用 sharp 赔率版本时刻 sharp_data_source_ts_ns (禁 now())。sharp/ts 无效 → 不 push (无环→NaN)。
+    //   观测先行 (§8.1): 仅填 QuoteFeatures 观测字段, 绝不驱动交易决策 (Stage 2 另行设计+回测+人确认)。
+    {
+        const double sharp_yes = qf.g_bm_inplay_fair;  // YES-canonical sharp (de-vig); ∈(0,1) 才有效
+        const std::int64_t sharp_ts = qf.sharp_data_source_ts_ns;
+        if (sharp_yes > 0.0 && sharp_yes < 1.0 && sharp_ts > 0) {
+            sharp_history_[condition_id].Push(sharp_ts, sharp_yes, qf.market_mid);
+        }
+        const auto sh = sharp_history_.find(condition_id);
+        if (sh != sharp_history_.end()) {
+            const std::int64_t sw = cfg_.sharp_fair_vel_window_ns;  // 默认 10s (~5 样本)
+            qf.g_sharp_velocity = sh->second.Velocity(sw);
+            qf.g_sharp_conv_rate = sh->second.ConvergenceRate(sw);
+            qf.g_sharp_vol = sh->second.Vol(sw);
+            qf.g_sharp_samples = static_cast<std::int32_t>(sh->second.WindowSampleCount(sw));
+        }
+    }
+
     if (has_real_fair) {
         // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.
         qf.edge_bps = sizing_out.valid ? sizing_out.net_ci_edge * 10'000.0 : 0.0;

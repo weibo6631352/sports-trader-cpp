@@ -80,6 +80,7 @@
 #include "stcpp/eval/clv_tracker.hpp"            // CLV 测量 harness (成果尺子, 离线评估)
 #include "stcpp/eval/portfolio_metrics.hpp"      // Phase 0 项5: Sharpe/maxDD/VaR (北极星 KPI)
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
+#include "stcpp/ml/sharp_fair_track.hpp"         // sharp fair 时序环 (line movement; velocity/收敛发散)
 #include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量)
 #include "stcpp/ml/fair_value_model.hpp"         // ml::FairValueModel/ModelPrediction (步④ 推理接线)
 #include "stcpp/ml/seq_arb_model.hpp"            // ml::SeqArbModel (短时套利 advisory 旁路)
@@ -815,6 +816,11 @@ private:
     // NO 边时序环 (老板 2026-05-31「双边信息都要有」): NO book 独立微结构 (OFI/amihud/depth 非
     //   YES 镜像, 各有 vig/流)。与 ts_history_ 对称, 派生 no_* 特征 (双边完整, 不只一边)。
     std::unordered_map<std::string, ml::FeatureHistory> ts_history_no_;
+
+    // ---- sharp fair 时序环 (老板 2026-06-05「方向真值=赔率源 sharp; line movement 一阶导」) ----
+    //   condition_id → (sharp, mid) 时序; 派生 sharp velocity + 市场价相对 sharp 收敛/发散率 →
+    //   QuoteFeatures (观测先行)。PIT-safe / loop_thread_ 单 writer (TickOne push + 读)。
+    std::unordered_map<std::string, ml::SharpFairTrack> sharp_history_;
 
     // ---- 批1 体育动态: 比分时序 (进球新鲜度/动量; game_row.score 派生) ----
     std::unordered_map<std::string, ml::GameScoreHistory> game_history_;
