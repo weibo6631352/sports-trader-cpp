@@ -34,8 +34,11 @@ namespace stcpp::debug_api {
 
 namespace {
 
-constexpr int kMaxSseClients = 8;
+// 连接上限抬到 64 (老板 2026-06-05「上限高一些」): 双流架构每用户开 2 条 (bulk + hot),
+//   64 → ~32 用户。跨洋实测「各连接独立卡, 不是物理链路一起卡」→ 多条独立 TCP 隔离卡顿 + 各自拥塞窗口涨吞吐。
+constexpr int kMaxSseClients = 64;
 constexpr int kTickMs = 1000;
+constexpr int kHotTickMs = 1000;     // hot 流 (focus book/quote 专用) tick; 隔离后可后续调快
 constexpr int kHeartbeatTicks = 10;  // 10s
 constexpr int kKeyframeTicks = 30;   // 30s
 constexpr int kSlowTicks = 5;        // Ops/慢通道(healthz/features/mapping/timeseries)每 5s 才比对一次
@@ -236,9 +239,7 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                     if (!send_frame(sink, "rejects", "full", last_rejects)) return true;
                 }
 
-                // focus 订阅的全档 book/quote on-change 基线 (cid → 序列化串)
-                std::unordered_map<std::string, std::string> last_book;
-                std::unordered_map<std::string, std::string> last_quote;
+                // (focus book/quote 已拆到独立 /api/v1/stream/hot 连接 — 跨洋隔离, 见下方 handler)
 
                 // Ops/慢通道初始 snapshot + 基线 (healthz/features/mapping/timeseries; 每 kSlowTicks 比对)
                 std::string last_healthz = payload::healthz(hs);
@@ -339,35 +340,7 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                         }
                     }
 
-                    // --- focus 订阅: 用户正在看的盘口推全档 book/quote (on-change, 带 focus_seq 对账) ---
-                    {
-                        std::shared_ptr<const std::vector<std::string>> conds;
-                        std::int64_t fseq = 0;
-                        focus_state->load(conds, fseq);  // 微锁拷贝 (一致快照)
-                        std::unordered_set<std::string> focus_now;
-                        std::size_t n = 0;
-                        for (const auto& cid : *conds) {
-                            if (cid.empty() || n >= kMaxFocus) break;  // provider 侧也夹 cap (评审)
-                            ++n;
-                            focus_now.insert(cid);
-                            // 聚焦盘 book/quote 每 tick 必推 (老板 2026-06-05 最终拍板「我要实时推送, 不要变动才推送」):
-                            //   每秒推当前快照, 不管簿变没变 → 快照时刻(as_of_ts)每秒刷新 → 前端"订单簿新鲜度"恒新;
-                            //   管道一卡(送达停)→ 快照时刻停 → 立刻看出来。冷门静盘也实时(我们在持续推它的当前快照)。
-                            //   注: 多盘跨洋有 firehose 带宽压力(老板「每秒推能承受」), 真卡时前端新鲜度会如实显示。
-                            std::string bk = payload::book_pair(sp, cid);
-                            last_book[cid] = bk;
-                            if (!send_frame(sink, "book", "snapshot", bk, fseq)) return true;
-                            sent = true;
-                            std::string qt = payload::quote(sp, cid);
-                            last_quote[cid] = qt;
-                            if (!send_frame(sink, "quote", "snapshot", qt, fseq)) return true;
-                        }
-                        // 已移出 focus 的盘口: 清基线 (下次重新 focus 会重推)
-                        for (auto it = last_book.begin(); it != last_book.end();)
-                            it = (focus_now.count(it->first) ? std::next(it) : last_book.erase(it));
-                        for (auto it = last_quote.begin(); it != last_quote.end();)
-                            it = (focus_now.count(it->first) ? std::next(it) : last_quote.erase(it));
-                    }
+                    // (focus book/quote 已拆到独立 /api/v1/stream/hot — 跨洋单独 TCP 管道, bulk 卡顿不波及)
 
                     // --- Ops/慢通道: 每 kSlowTicks 比对一次 (大 payload, 变化慢; 节流控 CPU) ---
                     if (keyframe || (tick % kSlowTicks == 0)) {
@@ -388,6 +361,108 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                 return true;
             },
             [](bool /*success*/) { g_sse_clients.fetch_sub(1); });  // resource releaser: 释放连接计数
+    });
+
+    // GET /api/v1/stream/hot — focus book/quote 专用流 (2026-06-05 双流架构, 老板「并行异步」+ 跨洋实测背书)
+    //   只发用户正盯的盘口 book/quote, 独立 TCP 连接 → 跨洋卡顿与 bulk 物理隔离 (实测各连接独立卡,
+    //   不是物理链路一起卡; 多条独立 TCP 各自拥塞窗口 → 总吞吐随连接数涨)。focus 走同一 g_focus_reg,
+    //   前端把 focus POST 指向本流的 stream_id (bulk 流不再推 book/quote)。
+    svr.Get("/api/v1/stream/hot", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
+        if (g_sse_clients.fetch_add(1) >= kMaxSseClients) {
+            g_sse_clients.fetch_sub(1);
+            res.status = 503;
+            res.set_content("retry: 30000\n\n", "text/event-stream; charset=utf-8");
+            return;
+        }
+        res.set_header("Cache-Control", "no-cache, no-store");
+        res.set_header("X-Accel-Buffering", "no");
+        res.set_header("Connection", "keep-alive");
+
+        res.set_chunked_content_provider(
+            "text/event-stream; charset=utf-8",
+            [&hs](std::size_t /*offset*/, httplib::DataSink& sink) -> bool {
+                const StateProvider& sp = hs.provider();
+
+                // 本连接唯一 stream_id + 注册 FocusState (RAII 退出摘除, 同 bulk 流)
+                const std::string stream_id = make_stream_id();
+                auto focus_state = std::make_shared<FocusState>();
+                {
+                    std::lock_guard<std::mutex> lk(g_focus_mu);
+                    g_focus_reg[stream_id] = focus_state;
+                }
+                struct Unreg {
+                    std::string id;
+                    ~Unreg() {
+                        std::lock_guard<std::mutex> lk(g_focus_mu);
+                        g_focus_reg.erase(id);
+                    }
+                } unreg{stream_id};
+
+                // padding 击穿中间节点缓冲
+                {
+                    std::string pad = ":";
+                    pad.append(256, ' ');
+                    pad += "\n\n";
+                    if (!sink.write(pad.data(), pad.size())) return true;
+                }
+
+                // hello: 标 stream:"hot" + stream_id (前端把 focus POST 指向它)
+                {
+                    std::string hello = "{\"v\":1,\"server\":\"";
+                    hello += STCPP_GIT_HASH_STR;
+                    hello += "\",\"stream_id\":\"";
+                    hello += stream_id;
+                    hello += "\",\"stream\":\"hot\",\"tick_ms\":";
+                    hello += json::i64(kHotTickMs);
+                    hello += ",\"channels\":[{\"name\":\"book\",\"delta\":\"snapshot\"},"
+                             "{\"name\":\"quote\",\"delta\":\"snapshot\"}]}";
+                    if (!send_frame(sink, "hello", "snapshot", hello)) return true;
+                }
+
+                std::unordered_map<std::string, std::string> last_book;   // 移出 focus 清基线用
+                std::unordered_map<std::string, std::string> last_quote;
+                int since_send = 0;
+
+                while (hs.is_running() && sink.is_writable()) {
+                    for (int k = 0; k < 5; ++k) {
+                        if (!hs.is_running() || !sink.is_writable()) return true;
+                        std::this_thread::sleep_for(std::chrono::milliseconds(kHotTickMs / 5));
+                    }
+                    bool sent = false;
+
+                    std::shared_ptr<const std::vector<std::string>> conds;
+                    std::int64_t fseq = 0;
+                    focus_state->load(conds, fseq);
+                    std::unordered_set<std::string> focus_now;
+                    std::size_t n = 0;
+                    for (const auto& cid : *conds) {
+                        if (cid.empty() || n >= kMaxFocus) break;
+                        ++n;
+                        focus_now.insert(cid);
+                        // 每 tick 必推当前快照 (老板「我要实时推送, 不要变动才推送」); book_pair as_of_ts
+                        //   每次盖 now → 前端"订单簿新鲜度"恒新; 本流独立管道, bulk 卡不波及。
+                        std::string bk = payload::book_pair(sp, cid);
+                        last_book[cid] = bk;
+                        if (!send_frame(sink, "book", "snapshot", bk, fseq)) return true;
+                        sent = true;
+                        std::string qt = payload::quote(sp, cid);
+                        last_quote[cid] = qt;
+                        if (!send_frame(sink, "quote", "snapshot", qt, fseq)) return true;
+                    }
+                    for (auto it = last_book.begin(); it != last_book.end();)
+                        it = (focus_now.count(it->first) ? std::next(it) : last_book.erase(it));
+                    for (auto it = last_quote.begin(); it != last_quote.end();)
+                        it = (focus_now.count(it->first) ? std::next(it) : last_quote.erase(it));
+
+                    since_send = sent ? 0 : (since_send + 1);
+                    if (since_send >= kHeartbeatTicks) {
+                        since_send = 0;
+                        if (!send_frame(sink, "heartbeat", "delta", "{}")) return true;
+                    }
+                }
+                return true;
+            },
+            [](bool /*success*/) { g_sse_clients.fetch_sub(1); });
     });
 
     // POST /api/v1/stream/focus?stream_id=..&seq=..&cids=cid1,cid2 — 告知服务端"我在看哪些盘口"

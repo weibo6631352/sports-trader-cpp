@@ -67,15 +67,17 @@ const detailInterest = new Set<string>();
  *  age 小且稳=实时·静市场, age 持续增长=数据滞后。initPolling 启一个 setInterval 驱动, 全站复用。 */
 export const [uiNow, setUiNow] = createSignal(Date.now());
 
-// ---- SSE focus 订阅状态 (Phase 2) ----
-let _streamId: string | null = null;   // hello 下发, focus POST 回传
-let _focusSeq = 0;                      // 单调递增, 每次 focus 变化 +1; book/quote 帧据此丢旧版本
+// ---- SSE focus 订阅状态 (双流架构 2026-06-05) ----
+// focus book/quote 走独立 hot 连接 (/api/v1/stream/hot) → focus POST 指向 hot 的 stream_id。
+let _streamId: string | null = null;       // bulk 流 hello 下发 (诊断用; focus 不再走它)
+let _hotStreamId: string | null = null;    // hot 流 hello 下发, focus POST 回传
+let _focusSeq = 0;                         // 单调递增, 每次 focus 变化 +1; book/quote 帧据此丢旧版本
 
-/** focus 变化 → 告知服务端 (仅 SSE 连上时; 未连/回退时由 refreshExpandedDetail REST 兜底) */
+/** focus 变化 → 告知服务端 hot 流 (仅 hot 连上时; 未连/回退时由 refreshExpandedDetail REST 兜底) */
 function maybePostFocus(): void {
-  if (!_streamId) return;
+  if (!_hotStreamId) return;
   _focusSeq += 1;
-  void postStreamFocus(_streamId, _focusSeq, Array.from(detailInterest).slice(0, 32));
+  void postStreamFocus(_hotStreamId, _focusSeq, Array.from(detailInterest).slice(0, 32));
 }
 
 /** 最近一次各 event 的 score 缓存 (score 节流时复用; addDetailInterest 即时拉取时回填) */
@@ -540,9 +542,12 @@ function every(fn: () => void, ms: number): number {
 //   失败(代理掐 SSE / 连不上)→ 自动回退到 fast 轮询, 永不比纯轮询差。
 //   回退轮询与 SSE 读同一后端快照、写同一 store, 不分叉 (老郭评审)。
 
-let _es: EventSource | null = null;
+let _es: EventSource | null = null;          // bulk 流 (/api/v1/stream): 9 通道 + Ops
 let _sseConnected = false;
 let _helloTimer: number | undefined;
+let _esHot: EventSource | null = null;       // hot 流 (/api/v1/stream/hot): focus book/quote 专用 (独立 TCP)
+let _hotConnected = false;
+let _hotHelloTimer: number | undefined;
 let _fallbackTimers: number[] = [];
 let _fallbackActive = false;
 // SSE 存活看门狗 (老板 2026-06-05「订单簿新鲜度阻塞严重延迟」根因): EventSource 半死 (TCP 开 /
@@ -551,11 +556,13 @@ let _fallbackActive = false;
 //   看门狗: 任何帧 (含 heartbeat) 刷新 _lastSseFrameMs; 超 SSE_STALE_MS 无帧 → 强制重连 → 自愈。
 const SSE_STALE_MS = 12_000;        // 任何帧停超此 = 全断
 const FOCUS_STALE_MS = 18_000;      // 展开盘有 focus 却超此收不到任何 book/quote 帧 = 半卡 (服务端 warmup 典型)
-let _lastSseFrameMs = 0;            // 最近【任何】帧到达时刻 (全断检测)
-let _lastFocusFrameMs = 0;          // 最近【book/quote】帧到达时刻 (半卡检测; 基于帧到达非 data_source_ts —
+let _lastSseFrameMs = 0;            // 最近【bulk 流任何帧】到达时刻 (bulk 全断检测)
+let _lastFocusFrameMs = 0;          // 最近【hot 流 book/quote】帧到达时刻 (hot 半卡检测; 基于帧到达非 data_source_ts —
                                     //   静市场 book 不变但服务端每 tick 必推, data_source_ts 老属正常, 不该误判)
+let _lastHotFrameMs = 0;            // 最近【hot 流任何帧】(book/quote/heartbeat) 到达时刻 (hot 全死检测)
 let _focusActiveSinceMs = 0;        // detailInterest 变非空的时刻 (0 = 无 focus); 半卡看门狗基准
-let _lastReconnectMs = 0;           // 最近重连时刻 (重连后给新连接 FOCUS_STALE_MS 宽限, 防重连风暴)
+let _lastReconnectMs = 0;           // bulk 最近重连时刻 (宽限防风暴)
+let _lastHotReconnectMs = 0;        // hot 最近重连时刻 (宽限防风暴)
 let _sseWatchdogStarted = false;
 
 /** SSE 死 → 启动 fast 轮询回退 (幂等) */
@@ -586,15 +593,27 @@ function stopFallbackPolling(): void {
   _fallbackTimers = [];
 }
 
-/** 强制重连 SSE (半死/半卡连接自愈): 关旧 ES → 重置 → 新建。新连接 hello 会重置 _sseConnected + 重订 focus。 */
-function reconnectSSE(reason: string): void {
-  console.warn(`[stcpp] SSE ${reason} → 强制重连`);
+/** 强制重连 bulk 流 (全断自愈): 关旧 ES → 重置 → 新建。 */
+function reconnectBulkSSE(reason: string): void {
+  console.warn(`[stcpp] SSE(bulk) ${reason} → 强制重连`);
   try { _es?.close(); } catch { /* noop */ }
   _sseConnected = false;
   const t = Date.now();
   _lastSseFrameMs = t;     // 给新连接 hello 窗口, 避免立即再判死
-  _lastReconnectMs = t;    // 半卡看门狗: 重连后给新连接 FOCUS_STALE_MS 宽限, 防风暴
+  _lastReconnectMs = t;
   connectSSE();
+}
+
+/** 强制重连 hot 流 (focus book/quote 半卡/半死自愈): 关旧 → 重置 → 新建; 新 hello 重订 focus。 */
+function reconnectHotSSE(reason: string): void {
+  console.warn(`[stcpp] SSE(hot) ${reason} → 强制重连`);
+  try { _esHot?.close(); } catch { /* noop */ }
+  _hotConnected = false;
+  const t = Date.now();
+  _lastHotFrameMs = t;
+  _lastFocusFrameMs = t;   // 给新连接 FOCUS_STALE_MS 宽限, 防风暴
+  _lastHotReconnectMs = t;
+  connectHotSSE();
 }
 
 /** 看门狗 tick (5s): 两类卡死自愈 (老板 2026-06-05「根治」)。健康连接每 1-2s 有 book/quote 帧 → 不误触。
@@ -609,19 +628,19 @@ export function sseAgeMs(): number { return _lastSseFrameMs > 0 ? Date.now() - _
 export function sseIsAlive(): boolean { return _sseConnected && !_fallbackActive; }
 
 function sseWatchdogTick(): void {
-  if (USE_STUB || _fallbackActive || !_sseConnected) return;
+  if (USE_STUB || _fallbackActive) return;
   const now = Date.now();
-  // ① 全断
-  if (_lastSseFrameMs > 0 && now - _lastSseFrameMs > SSE_STALE_MS) {
-    reconnectSSE(`静默 ${Math.round((now - _lastSseFrameMs) / 1000)}s (全断)`);
-    return;
+  // ① bulk 全断 (grid/status/heartbeat 都停)
+  if (_sseConnected && _lastSseFrameMs > 0 && now - _lastSseFrameMs > SSE_STALE_MS) {
+    reconnectBulkSSE(`静默 ${Math.round((now - _lastSseFrameMs) / 1000)}s (bulk 全断)`);
   }
-  // ② 半卡 (focus book/quote 推送死)
-  if (detailInterest.size > 0) {
-    const ref = Math.max(_focusActiveSinceMs, _lastReconnectMs);          // 何时开始期待 focus 帧
-    const lastFocus = Math.max(_lastFocusFrameMs, _lastReconnectMs);      // 最近 focus 帧 (重连给宽限)
+  // ② hot 半卡: focus 活但 book/quote 不来 (hot 连接半死 / 服务端 warmup 典型)。
+  //    判据用【帧到达】非 data_source_ts (静市场 book 不变但服务端每 tick 必推帧, 老 ts 属正常不该误判)。
+  if (_hotConnected && detailInterest.size > 0) {
+    const ref = Math.max(_focusActiveSinceMs, _lastHotReconnectMs);       // 何时开始期待 focus 帧
+    const lastFocus = Math.max(_lastFocusFrameMs, _lastHotReconnectMs);   // 最近 focus 帧 (重连给宽限)
     if (now - ref > FOCUS_STALE_MS && now - lastFocus > FOCUS_STALE_MS) {
-      reconnectSSE(`focus book/quote ${Math.round((now - lastFocus) / 1000)}s 无帧 (半卡)`);
+      reconnectHotSSE(`focus book/quote ${Math.round((now - lastFocus) / 1000)}s 无帧 (hot 半卡)`);
     }
   }
 }
@@ -662,8 +681,7 @@ function connectSSE(): void {
     _sseConnected = true;
     if (_helloTimer) clearTimeout(_helloTimer);
     stopFallbackPolling();  // SSE 通了 → 停掉回退轮询(若曾启动)
-    _streamId = (d as { stream_id?: string })?.stream_id ?? null;
-    maybePostFocus();  // (重)连后按当前展开集重订 focus (评审: 重连换 id 须重订)
+    _streamId = (d as { stream_id?: string })?.stream_id ?? null;  // 诊断用; focus 走 hot 流不走它
   });
   on('status', (d) => { if (d) setState({ status: d as Status }); });
   on('account', (d) => { setState({ account: (d as Account) ?? null }); });
@@ -700,16 +718,56 @@ function connectSSE(): void {
     }
     rebuildGroups();
   });
-  // focus 订阅: 展开/选中盘口的全档 book/quote (Phase 2)。
-  //   丢弃过期版本帧 (focusSeq < 当前) + 不在 detailInterest 的 (已折叠)。
-  // 注: 不再按 focus_seq 丢帧 (展开一次会 postFocus 两次, _focusSeq 跑在服务端回传前面 →
-  //   book 帧被全部误丢 → "未接入"。改: 只按 detailInterest.has(cid) 门控, 谁在看就收谁的)。
-  //   可靠性兜底由常驻 refreshExpandedDetail (REST) 提供; SSE book/quote 是加成。
-  on('book', (d) => {
+  // (focus book/quote 已拆到独立 hot 流 connectHotSSE — bulk 流不再接收 book/quote)
+  // Ops/慢通道 (healthz/features/mapping/timeseries) — SSE 推, 取代常驻轮询
+  on('healthz', (d) => { if (d) setState({ healthz: d as Healthz }); });
+  on('features', (d) => { if (d) setState({ featureHealth: d as FeatureHealth }); });
+  on('mapping', (d) => { if (d) setState({ mappingStatus: d as MappingStatus }); });
+  on('timeseries', (d) => { setState({ timeseries: (d as PnlTimeseries) ?? null }); });
+  // heartbeat: 仅保活, 无需处理 (收到即证明连接活着)
+
+  es.onerror = () => {
+    // EventSource 会自动重连; 仅当彻底关闭(CLOSED)才回退轮询
+    if (es.readyState === EventSource.CLOSED) startFallbackPolling();
+  };
+}
+
+/** hot 流 (/api/v1/stream/hot): focus book/quote 专用独立连接 (双流架构 2026-06-05)。
+ *  跨洋与 bulk 物理隔离 → book/quote 新鲜度不再被 grid 大帧/bulk 卡顿拖累 (实测各 TCP 连接独立卡)。
+ *  失败不致命: book/quote 由 refreshExpandedDetail (REST 兜底) 覆盖, 看门狗 ② 负责重连。 */
+function connectHotSSE(): void {
+  if (USE_STUB) return;  // stub: 无 hot 流 (book/quote 由 stub 数据 / REST 供)
+  let url: string;
+  try { url = `${getBaseUrl()}/api/v1/stream/hot`; } catch { return; }
+
+  const es = new EventSource(url);
+  _esHot = es;
+  _lastHotFrameMs = Date.now();
+
+  _hotHelloTimer = window.setTimeout(() => {
+    if (!_hotConnected) console.warn('[stcpp] hot SSE hello 超时, book/quote 暂由 REST 兜底');
+  }, 8000);
+
+  const onHot = (ch: string, fn: (data: unknown) => void) => {
+    es.addEventListener(ch, (ev: MessageEvent) => {
+      _lastHotFrameMs = Date.now();  // 任何 hot 帧 = 连接活着
+      const p = parseEnvelope(ev.data);
+      if (p) fn(p.data);
+    });
+  };
+  es.addEventListener('heartbeat', () => { _lastHotFrameMs = Date.now(); });
+
+  onHot('hello', (d) => {
+    _hotConnected = true;
+    if (_hotHelloTimer) clearTimeout(_hotHelloTimer);
+    _hotStreamId = (d as { stream_id?: string })?.stream_id ?? null;
+    maybePostFocus();  // (重)连后按当前展开集重订 focus 到 hot 流
+  });
+  onHot('book', (d) => {
     const bk = d as (BinaryMarketBookView & { found?: boolean; condition_id?: string }) | null;
     const cid = bk?.condition_id;
     if (!cid || !detailInterest.has(cid)) return;
-    if (!bk || bk.found !== true) return;  // found:false 不覆盖 (无 token0; 也别把已有簿冲成 null)
+    if (!bk || bk.found !== true) return;  // found:false 不覆盖 (无 token0; 别把已有簿冲成 null)
     _lastFocusFrameMs = Date.now();  // focus book 帧到达 (半卡看门狗存活信号)
     setState(produce((s) => {
       s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
@@ -717,7 +775,7 @@ function connectSSE(): void {
     }));
     rebuildGroups();
   });
-  on('quote', (d) => {
+  onHot('quote', (d) => {
     const qt = d as (Quote & { found?: boolean; market_id?: string }) | null;
     const cid = qt?.market_id;
     if (!cid || !detailInterest.has(cid)) return;
@@ -730,16 +788,10 @@ function connectSSE(): void {
     pushSharpTrend(cid, qt.sharp_fair, qt.market_mid, Date.now());  // SSE quote 更鲜的 sharp/mid 点
     rebuildGroups();
   });
-  // Ops/慢通道 (healthz/features/mapping/timeseries) — SSE 推, 取代常驻轮询
-  on('healthz', (d) => { if (d) setState({ healthz: d as Healthz }); });
-  on('features', (d) => { if (d) setState({ featureHealth: d as FeatureHealth }); });
-  on('mapping', (d) => { if (d) setState({ mappingStatus: d as MappingStatus }); });
-  on('timeseries', (d) => { setState({ timeseries: (d as PnlTimeseries) ?? null }); });
-  // heartbeat: 仅保活, 无需处理 (收到即证明连接活着)
 
   es.onerror = () => {
-    // EventSource 会自动重连; 仅当彻底关闭(CLOSED)才回退轮询
-    if (es.readyState === EventSource.CLOSED) startFallbackPolling();
+    // EventSource 自动重连; hot 彻底关闭不回退全局轮询 (book/quote 由 refreshExpandedDetail REST 兜)。
+    if (es.readyState === EventSource.CLOSED) _hotConnected = false;
   };
 }
 
@@ -766,16 +818,25 @@ function rebuildGroups(): void {
 // ---------- 定时轮询初始化 (入口) ----------
 
 export function initPolling(): void {
-  // 主通路: SSE 推 9 通道 (status/account/grid/scores/events/positions/pnl/gate/rejects)。
-  //   失败自动回退到 fast 轮询 (startFallbackPolling)。
+  // 双流架构 (2026-06-05 老板「并行异步」+ 跨洋实测背书):
+  //   bulk 流 connectSSE — 9 通道 + Ops (status/account/grid/scores/events/positions/pnl/gate/rejects)。
+  //   hot 流 connectHotSSE — focus book/quote 专用独立 TCP, 跨洋与 bulk 物理隔离。
+  //   任一失败自动回退/重连; bulk 死回退 fast 轮询 (startFallbackPolling)。
   connectSSE();
+  connectHotSSE();
 
-  // SSE 存活看门狗 (老板 2026-06-05 根因修复): 每 5s 查半死连接 → 强制重连自愈 (防服务端重启/
-  //   网络抖动后订单簿新鲜度静默 climbing)。启一次 (initPolling 仅入口调一次)。
+  // SSE 存活看门狗 (老板 2026-06-05 根因修复): 每 5s 查半死连接 → 强制重连自愈 (① bulk 全断 ② hot 半卡)。
+  //   启一次 (initPolling 仅入口调一次)。
   if (!_sseWatchdogStarted) {
     _sseWatchdogStarted = true;
     window.setInterval(() => sseWatchdogTick(), 5000);
   }
+
+  // hot 流断时的 book/quote 兜底: bulk 活但 hot 半死 (不触发全局 fallback) 时, 用 REST 覆盖展开盘
+  //   book/quote, 直到看门狗 ② 重连 hot。仅 focus 活 && hot 未连 && 非全局回退 (回退已自带 2s 兜) 时跑。
+  every(() => {
+    if (!_hotConnected && !_fallbackActive && detailInterest.size > 0) void refreshExpandedDetail();
+  }, 3000);
 
   // 全局 1s UI 时钟: 驱动各面板的"数据年龄/新鲜度"显示每秒重算 (量化AI 心跳等)。
   every(() => setUiNow(Date.now()), 1000);  // 1s: 与数据推送节奏一致 (老板「数据1s一推, 时钟没必要更快」)
