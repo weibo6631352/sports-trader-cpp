@@ -42,41 +42,5 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
     )
 endif()
 
-# ---------------------------------------------------------------------------
-# stcpp_ml_inference — FairValueModel 推理骨架 (ADR-037, 小邓 #31)
-#
-# 与 stcpp_ml (hook, R-7 paper-only) 解耦:
-#   推理接口 + feature 抽取仅依赖 feature_store_contract.hpp (header-only 中间表示),
-#   不含 VirtualFill, 三 mode (live/paper/backtest) 均可编译.
-#   ONNXRuntime 当前未链 (W11+ 接); make_onnx_fair_value_model() 返回 nullptr.
-# ---------------------------------------------------------------------------
-add_library(stcpp_ml_inference STATIC
-    fair_value_model.cpp
-    seq_arb_model.cpp
-)
-
-target_include_directories(stcpp_ml_inference
-    PUBLIC ${CMAKE_SOURCE_DIR}/include
-)
-
-target_compile_features(stcpp_ml_inference PUBLIC cxx_std_20)
-
-target_compile_definitions(stcpp_ml_inference PUBLIC
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-)
-
-# ONNXRuntime 条件链接 (Phase 2: 残差模型推理)。找到 → 编译真 OnnxFairValueModel; 否则 stub fallback。
-#   brew install onnxruntime → /opt/homebrew/lib + .../include/onnxruntime/。保持可构建 (无 onnxruntime 也编)。
-find_library(ONNXRUNTIME_LIB onnxruntime
-    PATHS /opt/homebrew/lib /opt/homebrew/opt/onnxruntime/lib /usr/local/lib /usr/lib)
-find_path(ONNXRUNTIME_INC onnxruntime_cxx_api.h
-    PATHS /opt/homebrew/include/onnxruntime /opt/homebrew/opt/onnxruntime/include/onnxruntime
-          /usr/local/include/onnxruntime /usr/include/onnxruntime)
-if(ONNXRUNTIME_LIB AND ONNXRUNTIME_INC)
-    message(STATUS "stcpp_ml_inference: onnxruntime 已找到 (${ONNXRUNTIME_LIB}) → OnnxFairValueModel 启用")
-    target_compile_definitions(stcpp_ml_inference PUBLIC STCPP_ONNX_ENABLED=1)
-    target_include_directories(stcpp_ml_inference SYSTEM PUBLIC ${ONNXRUNTIME_INC})  # SYSTEM: 三方头不触 -Werror
-    target_link_libraries(stcpp_ml_inference PUBLIC ${ONNXRUNTIME_LIB})
-else()
-    message(STATUS "stcpp_ml_inference: onnxruntime 未找到 → make_onnx 返回 nullptr (stub fallback)")
-endif()
+# (stcpp_ml_inference lib [fair_value_model + seq_arb_model + onnxruntime] 已砍 2026-06-05
+#  老板「砍掉大模型训练功能」: ONNX 大模型推理整库删, fair 由 sharp/derivative/score-prior 驱动。)

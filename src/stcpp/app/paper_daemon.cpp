@@ -30,7 +30,6 @@
 #include "stcpp/data/score_frame_recorder.hpp"  // 回测 P0 比分帧落盘 (红线#3 闭合数据前提)
 #include "stcpp/data/settlement_store.hpp"      // M2 SettlementStore
 #include "stcpp/data/score_snapshot_store.hpp"  // A1b: ScoreSnapshotStore::GetSnapshot
-#include "stcpp/ml/model_feature_spec.hpp"      // kMlFeatureCount (ML 模型维度契约)
 
 #include "src/stcpp/polymarket/clob_wss/live_book_publisher.hpp"  // LiveBookPublisher
 #include "src/stcpp/polymarket/clob_wss/live_wss_transport.hpp"   // LiveWssTransport

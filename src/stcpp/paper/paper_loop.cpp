@@ -38,7 +38,7 @@
 //         验证: /api/v1/risk/rejects 中 advisory 市场不应再出现 INVALID_INTENT.
 
 #include "stcpp/paper/paper_loop.hpp"
-#include "stcpp/risk/arb_signal.hpp"  // 模块5: 短时套利 advisory 信号
+// (risk/arb_signal.hpp 已砍 2026-06-05: seq_arb 短时套利 advisory 是大模型旁路, 一并删)
 
 #include <algorithm>
 #include <cassert>

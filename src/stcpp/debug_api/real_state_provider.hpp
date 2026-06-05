@@ -65,8 +65,7 @@
 #include <vector>
 
 #include "stcpp/data/score_snapshot_store.hpp"
-#include "stcpp/ml/feature_vector_hub.hpp"   // FeatureVectorHub (特征健康可观测)
-#include "stcpp/ml/model_feature_spec.hpp"   // MlFeature to_string / kMlFeatureCount
+// (ml/feature_vector_hub + model_feature_spec includes 已砍 2026-06-05: 大模型特征健康端点删)
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/polymarket/wss/pm_wss_subscriber.hpp"  // IWssTransport (P1-2/P1-3)
 #include "stcpp/risk/ledger_snapshot_hub.hpp"          // LedgerSnapshotHub
@@ -207,8 +206,7 @@ public:
     RealStateProvider& operator=(RealStateProvider&&) = delete;
     ~RealStateProvider() override = default;
 
-    // 特征健康可观测 (老雷 2026-06-01): 注入 fv_hub (PaperLoop Publish 全特征向量)。
-    void set_feature_vector_hub(const ml::FeatureVectorHub* h) noexcept { fv_hub_ = h; }
+    // (set_feature_vector_hub 已砍 2026-06-05: 大模型特征向量健康端点删)
 
     // 账户级现金/估值回调 (老雷 2026-06-01 凯利评审): daemon 注入 lambda (捕获 paper_loop_, 经
     //   published_account_equity() 线程安全拷贝读)。on-demand 求值 → HTTP 线程零陈旧。本头不 include
@@ -237,46 +235,9 @@ public:
         return mapping_snapshot_;
     }
 
-    // feature_health — fv_hub 全市场快照逐列聚合 (填充率/非零/range/方差判活)。
-    //   "特征没问题训练才有意义" (老板) 的可观测落地: 一眼看 110 列哪些死了。
-    [[nodiscard]] FeatureHealthReport feature_health() const override {
-        FeatureHealthReport rep;
-        if (fv_hub_ == nullptr) return rep;
-        const auto records = fv_hub_->SnapshotAll();
-        const std::size_t N = static_cast<std::size_t>(ml::kMlFeatureCount);
-        std::vector<int> pop(N, 0), nz(N, 0);
-        std::vector<double> mn(N, 0), mx(N, 0), sum(N, 0);
-        std::vector<bool> seen(N, false);
-        for (const auto& r : records) {
-            if (!r.valid) continue;
-            ++rep.n_records;
-            for (std::size_t i = 0; i < N; ++i) {
-                const double v = static_cast<double>(r.values[i]);
-                if (std::isnan(v)) continue;  // NaN = 缺失 (extract_full 产), 不计入填充
-                ++pop[i];
-                if (v != 0.0) ++nz[i];
-                sum[i] += v;
-                if (!seen[i]) { mn[i] = mx[i] = v; seen[i] = true; }
-                else { mn[i] = std::min(mn[i], v); mx[i] = std::max(mx[i], v); }
-            }
-        }
-        rep.rows.reserve(N);
-        for (std::size_t i = 0; i < N; ++i) {
-            FeatureHealthRow row;
-            row.index = static_cast<int>(i);
-            row.name = std::string(ml::to_string(static_cast<ml::MlFeature>(i)));
-            row.populated = pop[i];
-            row.nonzero = nz[i];
-            row.min = seen[i] ? mn[i] : 0.0;
-            row.max = seen[i] ? mx[i] : 0.0;
-            row.mean = pop[i] > 0 ? sum[i] / pop[i] : 0.0;
-            if (pop[i] == 0 || nz[i] == 0) { row.status = "dead"; ++rep.dead; }
-            else if (mn[i] == mx[i]) { row.status = "const"; ++rep.constant; }
-            else { row.status = "healthy"; ++rep.healthy; }
-            rep.rows.push_back(std::move(row));
-        }
-        return rep;
-    }
+    // feature_health — 大模型特征向量健康 (fv_hub 聚合) 已砍 2026-06-05「砍掉大模型训练功能」。
+    //   接口方法保留 (StateProvider 契约), 恒返空报告 (无大模型 → 无特征向量健康可言)。
+    [[nodiscard]] FeatureHealthReport feature_health() const override { return {}; }
 
     // ---- 运行模式 ----
     ExecMode mode() const override { return mode_; }
@@ -778,7 +739,7 @@ private:
     ExecMode mode_;
     const risk::LedgerSnapshotHub* ledger_hub_{nullptr};  // nullable; nullptr → 空
     const sizing::QuoteSnapshotHub* quote_hub_{nullptr};  // nullable; nullptr → found=false
-    const ml::FeatureVectorHub* fv_hub_{nullptr};         // nullable; nullptr → feature_health 空
+    // (fv_hub_ 已砍 2026-06-05: 大模型特征向量健康端点删, feature_health 恒返空)
     std::function<AccountSnapshot()> account_fn_{};       // 账户现金/估值回调 (daemon 注入); 空 → has_data=false
     std::function<std::vector<FillView>(const std::string&)> fills_fn_{};  // 成交流水回调(market过滤; daemon注入)
     std::function<std::vector<PnlBucket>(std::int64_t, std::int64_t)> pnl_ts_fn_{};  // 净值时序回调 (daemon 注入)

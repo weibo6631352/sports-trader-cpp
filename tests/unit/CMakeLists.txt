@@ -66,10 +66,6 @@ set(EXTRA_LIBS_test_live_order_gate     stcpp_polymarket_order_gate stcpp_risk)
 set(EXTRA_LIBS_test_live_executor       stcpp_polymarket_order_gate stcpp_risk)
 # Phase 4 接线: PositionLedger 中性 FillEvent 重载 (老郭 R-4 放行)
 set(EXTRA_LIBS_test_fill_event          stcpp_risk)
-set(EXTRA_LIBS_test_fair_value_model    stcpp_ml_inference)
-set(EXTRA_LIBS_test_seq_arb_model        stcpp_ml_inference)
-set(EXTRA_LIBS_test_model_reload_watcher stcpp_ml_inference)
-set(EXTRA_LIBS_test_onnx_fair_value     stcpp_ml_inference)
 set(EXTRA_LIBS_test_single_instance     stcpp_process_lock_test)
 set(EXTRA_LIBS_test_position_ledger     stcpp_infra_wal stcpp_process_lock_test)
 set(EXTRA_LIBS_test_pm_wss_subscriber   stcpp_polymarket_wss)
@@ -122,7 +118,6 @@ set(EXTRA_LIBS_test_quote_snapshot_hub    stcpp_quote_snapshot_hub)
 # 小肖 PaperLoop: 最小 paper 交易循环 (R-11/R-12/R-20; feat/xiaoxiao-paper-loop)
 set(EXTRA_LIBS_test_paper_loop
     stcpp_paper_loop
-    stcpp_ml_inference  # ML 驱动决策 blend 测试: make_onnx_fair_value_model
     stcpp_orderbook_snapshot_hub
     stcpp_risk
     stcpp_ledger_snapshot_hub
@@ -137,7 +132,6 @@ set(EXTRA_LIBS_test_paper_loop
 # 回测多输入回放 P2 (红线#3 闭合): ReplayDecisionInputProvider 注入 PaperLoop (= test_paper_loop 同栈 + 比分 store)
 set(EXTRA_LIBS_test_replay_decision_input_provider
     stcpp_paper_loop
-    stcpp_ml_inference
     stcpp_orderbook_snapshot_hub
     stcpp_risk
     stcpp_ledger_snapshot_hub
@@ -214,7 +208,6 @@ set(LABELS_test_live_section_classifier    "unit;signal;strategy;w4")
 set(LABELS_test_pm_client_abi              "unit;polymarket;abi-lock;w6")
 set(LABELS_test_paper_pm_client            "unit;polymarket;paper;w5")
 set(LABELS_test_ml_hook                    "unit;ml;w4")
-set(LABELS_test_fair_value_model           "unit;ml;adr037")
 set(LABELS_test_single_instance            "unit;process;single-instance;w5;w6")
 set(LABELS_test_position_ledger            "unit;wal;position;w6;p0")
 set(LABELS_test_pm_wss_subscriber          "unit;polymarket;wss;w5")

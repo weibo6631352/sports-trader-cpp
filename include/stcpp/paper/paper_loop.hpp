@@ -381,11 +381,7 @@ struct PaperLoopConfig {
     //   独立于 weight: weight 是 blend 力度, drive_enabled 是"是否让模型碰真决策"的安全闸 (默认关)。
     bool ml_drive_enabled{false};
 
-    // 短时套利 advisory 配置 (seq_arb_model 旁路信号; 不驱动真单)。
-    double arb_est_rtt_ns{50'000'000.0};  // 预估端到端 RTT (含成交确认); 就近部署 ~50ms 默认 (G1 实测后调)
-    double arb_max_notional_usdc{2'000.0};
-    int arb_max_open_legs{20};
-    double arb_lambda{0.10};  // 套利 Kelly 分数 (老韩 RM 联签起 0.10)
+    // (短时套利 advisory 配置已砍 2026-06-05: seq_arb_model 大模型旁路一并删)
 
     // strategy_id / signal_id (audit / RM 去重用)
     std::string strategy_id{"paper-demo-v1"};
