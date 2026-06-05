@@ -1243,12 +1243,12 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         const int k = dd_n.fetch_add(1, std::memory_order_relaxed);
         if (k < 80)
             std::fprintf(stderr,
-                         "[decision-diag] %s src=%s pfair=%.3f devig=%.3f sharp_in=%.3f side=%s "
-                         "edge_ci=%.4f szvalid=%d net_ci=%.4f net_ev_ok=%d target=%.1f map_draw=%d\n",
-                         condition_id.substr(0, 12).c_str(), pricing::to_string(fair_src_dbg), p_fair,
-                         p_market_devig, fair_sharp_yes, is_yes ? "YES" : "NO", edge_ci_lower,
-                         sizing_out.valid ? 1 : 0, sizing_out.net_ci_edge, net_ev_ok ? 1 : 0, target_mag,
-                         map_is_draw ? 1 : 0);
+                         "[decision-diag] %s sport=%s mkt_type=%d mimplied=%d src=%s pfair=%.3f devig=%.3f "
+                         "sharp_in=%.3f side=%s edge_ci=%.4f szvalid=%d net_ci=%.4f net_ev_ok=%d target=%.1f map_draw=%d\n",
+                         condition_id.substr(0, 12).c_str(), game_row.sport.c_str(), mkt_type,
+                         market_implied ? 1 : 0, pricing::to_string(fair_src_dbg), p_fair, p_market_devig,
+                         fair_sharp_yes, is_yes ? "YES" : "NO", edge_ci_lower, sizing_out.valid ? 1 : 0,
+                         sizing_out.net_ci_edge, net_ev_ok ? 1 : 0, target_mag, map_is_draw ? 1 : 0);
     }
 
     // ---- Step 4: QuoteSnapshotHub::Publish ---------------------------------
