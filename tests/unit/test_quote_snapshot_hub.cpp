@@ -55,13 +55,7 @@ static QuoteFeatures MakeFeatures(double fair_value, double market_mid, double e
     f.kelly_fraction = kelly;
     f.suggested_notional = notional;
     f.signal_strength = signal;
-    f.model_kind = ModelKindTag::kStub;
-    f.model_confidence = 0.0;
     f.predict_ok = false;
-    f.advisory = true;
-    f.model_calibrated = false;
-    f.fair_ci_lower = fair_value - 0.02;
-    f.fair_ci_upper = fair_value + 0.02;
     f.model_as_of_ts_ns = kTs3;
     return f;
 }
@@ -88,8 +82,6 @@ TEST(QuoteSnapshotHub, T01_BasicPublishRead) {
     EXPECT_EQ(snap->data_source_ts_ns, kTs2);
     EXPECT_EQ(snap->ingestion_ts_ns, kTs3);
     EXPECT_EQ(snap->as_of_ts_ns, kTs4);
-    EXPECT_TRUE(snap->advisory);
-    EXPECT_EQ(snap->model_kind, ModelKindTag::kStub);
 }
 
 // ---------------------------------------------------------------------------
@@ -256,22 +248,12 @@ TEST(QuoteSnapshotHub, T08_R20TsChainOk) {
 // ---------------------------------------------------------------------------
 // T09: ML provenance 字段透传
 // ---------------------------------------------------------------------------
-TEST(QuoteSnapshotHub, T09_MlProvenanceTransparent) {
+// T09: baseline fair 来源标记透传 (大模型 provenance 已砍 2026-06-05; 仅 predict_ok + PIT 锚保留)
+TEST(QuoteSnapshotHub, T09_BaselineFairFlagsTransparent) {
     QuoteSnapshotHub hub;
     QuoteFeatures feat = MakeFeatures(0.70, 0.68, 200.0);
 
-    // 填入 ML provenance
-    const char kModelId[] = "lgbm-moneyline-v3";
-    const char kSpecVer[] = "v1.2";
-    std::strncpy(feat.model_id, kModelId, sizeof(feat.model_id) - 1);
-    std::strncpy(feat.spec_version, kSpecVer, sizeof(feat.spec_version) - 1);
-    feat.model_kind = ModelKindTag::kTreelite;
-    feat.model_confidence = 0.82;
-    feat.model_calibrated = true;
-    feat.fair_ci_lower = 0.68;
-    feat.fair_ci_upper = 0.72;
     feat.predict_ok = true;
-    feat.advisory = false;
     feat.model_as_of_ts_ns = kTs3;
 
     hub.Publish("cond-ml", feat);
@@ -279,15 +261,7 @@ TEST(QuoteSnapshotHub, T09_MlProvenanceTransparent) {
     const auto snap = hub.Read("cond-ml");
     ASSERT_TRUE(snap.has_value());
 
-    EXPECT_STREQ(snap->model_id, kModelId);
-    EXPECT_STREQ(snap->spec_version, kSpecVer);
-    EXPECT_EQ(snap->model_kind, ModelKindTag::kTreelite);
-    EXPECT_DOUBLE_EQ(snap->model_confidence, 0.82);
-    EXPECT_TRUE(snap->model_calibrated);
-    EXPECT_DOUBLE_EQ(snap->fair_ci_lower, 0.68);
-    EXPECT_DOUBLE_EQ(snap->fair_ci_upper, 0.72);
     EXPECT_TRUE(snap->predict_ok);
-    EXPECT_FALSE(snap->advisory);
     EXPECT_EQ(snap->model_as_of_ts_ns, kTs3);
 }
 
@@ -385,30 +359,4 @@ TEST(QuoteSnapshotHub, T13_ReadRawConsistentWithRead) {
     EXPECT_EQ(snap_val->as_of_ts_ns, snap_ptr->as_of_ts_ns);
 }
 
-// ---------------------------------------------------------------------------
-// T14: ModelKindTag 枚举值覆盖
-// ---------------------------------------------------------------------------
-TEST(QuoteSnapshotHub, T14_ModelKindTagEnum) {
-    EXPECT_EQ(static_cast<std::uint8_t>(ModelKindTag::kStub), 0u);
-    EXPECT_EQ(static_cast<std::uint8_t>(ModelKindTag::kOnnx), 1u);
-    EXPECT_EQ(static_cast<std::uint8_t>(ModelKindTag::kTreelite), 2u);
-
-    // 三种 model_kind 均可透传
-    QuoteSnapshotHub hub;
-
-    QuoteFeatures fs = MakeFeatures(0.6, 0.58, 200.0);
-    fs.model_kind = ModelKindTag::kStub;
-    hub.Publish("cond-stub", fs);
-
-    QuoteFeatures fo = MakeFeatures(0.6, 0.58, 200.0);
-    fo.model_kind = ModelKindTag::kOnnx;
-    hub.Publish("cond-onnx", fo);
-
-    QuoteFeatures ft = MakeFeatures(0.6, 0.58, 200.0);
-    ft.model_kind = ModelKindTag::kTreelite;
-    hub.Publish("cond-treelite", ft);
-
-    EXPECT_EQ(hub.Read("cond-stub")->model_kind, ModelKindTag::kStub);
-    EXPECT_EQ(hub.Read("cond-onnx")->model_kind, ModelKindTag::kOnnx);
-    EXPECT_EQ(hub.Read("cond-treelite")->model_kind, ModelKindTag::kTreelite);
-}
+// (T14 ModelKindTag 枚举覆盖测试已删 2026-06-05「砍掉大模型训练功能」: ModelKindTag 枚举已砍)

@@ -356,8 +356,6 @@ export interface Quote {
   kelly_fraction: number;
   suggested_notional: number;
   signal_strength: number;
-  /** @deprecated 旧别名, 改用 model_confidence */
-  model_conf: number;
   quote_as_of_ts: number;
 
   // --- 调试可观测: fair 来源分解 (老雷 2026-06-01) ---
@@ -392,26 +390,11 @@ export interface Quote {
   /** 滚动 CLV 样本数 (<min 则 clv_mult=1 fail-open) */
   rolling_clv_n?: number;
 
-  // --- AI provenance 字段 (小邓 XD 红线) ---
-  /** 模型 ID, e.g. "demo-fv-v0" */
-  model_id: string;
-  /** 模型种类, e.g. "stub" / "lgbm" / "nn" */
-  model_kind: string;
-  /** 特征规格版本, e.g. "ml-feature-spec-v0.1" */
-  spec_version: string;
-  /** 模型置信度 [0,1] (XD-1 三位一体) */
-  model_confidence: number;
-  /** 是否已完成校准 (XD-4 降级门控) */
-  model_calibrated: boolean;
-  /** 公允价置信区间下界 */
-  fair_ci_lower: number;
-  /** 公允价置信区间上界 */
-  fair_ci_upper: number;
-  /** 预测是否正常 (XD-5: false → 不画 edge/kelly/notional) */
+  // --- 决策 fair 来源标记 (大模型 provenance model_id/kind/confidence/calibrated/fair_ci/advisory
+  //     已砍 2026-06-05「砍掉大模型训练功能」) ---
+  /** baseline fair 有效 (false → 不画 edge/kelly/notional) */
   predict_ok: boolean;
-  /** 仅供参考模式 (XD-3: true → advisory 角标 + 不下单) */
-  advisory: boolean;
-  /** 模型快照时间戳 epoch_ns */
+  /** feature PIT 锚 epoch_ns */
   model_as_of_ts: number;
 }
 
@@ -450,8 +433,6 @@ export interface GridMarket {
   market_mid?: number;
   edge_bps?: number;
   sharp_fair?: number;
-  model_confidence?: number;
-  advisory?: boolean;
   kickoff_ts?: number;   // 开赛时刻 (epoch ns; 0/缺=未知)
   end_ts?: number;       // 结束/结算窗口 (epoch ns)
   game_state?: string;   // 后端派生: pregame/inplay/ended/resolved/unknown

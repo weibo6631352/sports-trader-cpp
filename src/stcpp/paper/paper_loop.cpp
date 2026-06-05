@@ -2216,21 +2216,11 @@ void PaperLoop::PublishQuoteSnapshot(
         qf.required_margin = 0.0;
     }
 
-    // 大模型 ML 推理 / 训练捕获 (extract_full→fv_hub) / seq-arb advisory 已砍 (2026-06-05 老板「砍掉
-    //   大模型训练功能」)。量化因子由 PopulateFeatureColumns 直接填 qf (上面), 不再经 extract_full→模型。
-    //   fair_value/决策不依赖 ML (sharp/score-prior/derivative 驱动)。
-    //   model provenance 字段保留为"无模型"常量 (下游/前端读): fair CI 用 fair±5% 近似。
-    qf.ml_advisory_p_yes = std::numeric_limits<double>::quiet_NaN();
-    qf.model_kind = sizing::ModelKindTag::kStub;
-    std::strncpy(qf.model_id, "no-model", sizeof(qf.model_id) - 1);
-    qf.model_id[sizeof(qf.model_id) - 1] = '\0';
-    qf.spec_version[0] = '\0';
-    qf.model_confidence = 0.0;
-    qf.fair_ci_lower = fv_result.p_yes() - 0.05;
-    qf.fair_ci_upper = fv_result.p_yes() + 0.05;
-    qf.model_calibrated = false;
-    qf.model_as_of_ts_ns = feat.ingestion_ts_ns;
-    qf.advisory = true;
+    // 大模型 ML 推理 / 训练捕获 (extract_full→fv_hub) / seq-arb advisory + 全部 model provenance
+    //   字段 (model_id/model_kind/spec_version/model_confidence/fair_ci/advisory/ml_advisory_p_yes)
+    //   已砍 (2026-06-05 老板「砍掉大模型训练功能, 删干净不要留尾巴」)。量化因子由
+    //   PopulateFeatureColumns 直接填 qf (上面)。fair_value/决策由 sharp/score-prior/derivative 驱动。
+    qf.model_as_of_ts_ns = feat.ingestion_ts_ns;  // feature PIT 锚 (baseline)
 
     qf.valid = fv_result.valid;
 

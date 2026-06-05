@@ -386,9 +386,7 @@ html, body {
 
 .cond-quote-row,
 .cond-edge-row,
-.cond-kelly-row,
-.cond-ci-row,
-.cond-prov-row {
+.cond-kelly-row {
   display: flex;
   align-items: center;
   gap: 5px;
@@ -405,18 +403,7 @@ html, body {
 .q-kelly { font-family: var(--font-mono); font-size: 15px; font-weight: 700; }
 .q-notional { font-family: var(--font-mono); font-size: 11px; color: var(--md-text-dim); }
 .q-sig   { font-family: var(--font-mono); font-size: 11px; color: var(--md-text-dim); flex-shrink: 0; }
-.q-ci-label { font-size: 10px; color: var(--md-text-dim); }
-.q-ci-main  { font-family: var(--font-mono); font-size: 11px; color: var(--md-text-dim); white-space: nowrap; }
-.q-model-id {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--md-text-dim);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 90px;
-}
-.q-prov-sep { color: var(--md-border); font-size: 10px; flex-shrink: 0; }
+/* (大模型 provenance CSS q-ci/q-model-id/q-prov-sep 已砍 2026-06-05「砍掉大模型训练功能」) */
 
 .kelly-pos  { color: var(--q-green); }
 .kelly-zero { color: var(--md-text-dim); }
@@ -428,10 +415,7 @@ html, body {
 .edge-fill-sm.edge-pos { background: var(--q-green); }
 .edge-fill-sm.edge-neg { background: var(--q-red); }
 
-/* CI 区间 */
-.q-uncalibrated { opacity: 0.55; filter: grayscale(0.4); }
-
-/* uncalib chip */
+/* uncalib chip (OpsPage 复用为通用"前端估算/stub"标) */
 .uncalib-chip {
   font-size: 9px;
   font-weight: 700;
@@ -447,33 +431,7 @@ html, body {
 /* predict fail */
 .predict-fail-row { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
 
-/* advisory banner */
-.advisory-banner {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  background: rgba(255,152,0,0.08);
-  border: 1px solid var(--q-yellow);
-  border-radius: 4px;
-  color: var(--q-yellow);
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 8px;
-  letter-spacing: 0.03em;
-}
-.advisory-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  background: var(--q-yellow);
-  border-radius: 50%;
-  font-size: 10px;
-  font-weight: 900;
-  color: #000;
-  flex-shrink: 0;
-}
+/* (advisory-banner / advisory-icon 已砍 2026-06-05「砍掉大模型训练功能」) */
 
 /* ---- ConfBar ---- */
 .conf-bar-wrap   { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; }
@@ -1236,21 +1194,11 @@ html, body {
   min-width: 0;
   font-size: 11px;
 }
-.v8-model-row { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--md-surface2); }
-/* 可观测/数据源块: 大模型下方, 显 sharp 锚来源 + 管道连通状态 (老板 2026-06-02) */
+/* 可观测/数据源块: 显 sharp 锚来源 + 量化因子 + 管道连通状态 */
 .v8-obs-block { margin-top: 4px; padding-top: 4px; border-top: 1px dashed var(--md-surface2); }
 .v8-obs-block .v8-q-row { gap: 6px; }
 
-.v8-advisory-badge {
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--q-yellow);
-  background: rgba(255,152,0,0.1);
-  border: 1px solid var(--q-yellow);
-  border-radius: 3px;
-  padding: 1px 4px;
-  flex-shrink: 0;
-}
+/* (.v8-model-row / .v8-advisory-badge 已砍 2026-06-05「砍掉大模型训练功能」) */
 .v8-advisory-inline {
   font-size: 9px;
   color: var(--q-yellow);

@@ -62,22 +62,15 @@
 namespace stcpp::sizing {
 
 // ---------------------------------------------------------------------------
-// ModelKindTag — AI provenance (不引入 ml/hook.hpp 保持零反向依赖)
-// ---------------------------------------------------------------------------
-enum class ModelKindTag : std::uint8_t {
-    kStub = 0,      // 无 ML 模型 / 纯量化
-    kOnnx = 1,      // ONNX 推理
-    kTreelite = 2,  // Treelite 推理
-};
-
-// ---------------------------------------------------------------------------
 // QuoteFeatures — per-market 量化报价快照 POD (double-buffer 单元)
 //
 // 设计原则:
 //   - 纯 POD (trivially copyable) → 观测侧可安全 memcpy 或 value copy
-//   - 不含 std::string (model_id / spec_version 用固定 char 数组)
+//   - 不含 std::string
 //   - 4-ts 字段全部来自上游链路 (R-20)
-//   - 完整对应 debug_api::QuoteParams (含 ML provenance 字段)
+//   - 完整对应 debug_api::QuoteParams
+//   (大模型 provenance: model_id/model_kind/spec_version/model_confidence/model_calibrated/
+//    fair_ci/advisory/ml_advisory_p_yes + ModelKindTag 枚举已砍 2026-06-05「砍掉大模型训练功能」)
 // ---------------------------------------------------------------------------
 struct QuoteFeatures {
     // ---- R-20: 4 时间戳 (严格透传上游; 禁本地 now() 替代) ----
@@ -241,30 +234,11 @@ struct QuoteFeatures {
     double g_corner_diff{0.0};          // 角球差 home−away
     double g_bm_inplay_fair{0.0};       // inplay bet365 单源 de-vig home/YES 胜率 (sharp live 锚; 待 odds plan+白名单)
 
-    // ---- ML provenance (小邓 spec v1 §3.2; 对应 QuoteParams ML 字段) ----
-    // model_id: char 数组 (空 = 无模型; 对应 ModelPrediction.model_id)
-    char model_id[64]{};  // 最长 model_id ~48 char; 留余量
-    // spec_version: FeatureVector.spec_version
-    char spec_version[32]{};  // e.g. "v1.2"; 留余量
-    // model_kind: stub / onnx / treelite
-    ModelKindTag model_kind{ModelKindTag::kStub};
-    // model_confidence: 校准后置信度 ∈ [0, 1] (取代 model_conf)
-    double model_confidence{0.0};
-    // fair_ci_lower / fair_ci_upper: fair prob 置信区间
-    double fair_ci_lower{0.0};
-    double fair_ci_upper{0.0};
+    // ---- 决策 fair 来源标记 (baseline 量化估计; 大模型 provenance 已砍 2026-06-05) ----
     // model_as_of_ts_ns: feature PIT 锚 (≤ as_of_ts_ns; 非快照读取时刻)
     std::int64_t model_as_of_ts_ns{0};
-    // predict_ok: 推理成功标记 (false → 灰显 fair)
+    // predict_ok: baseline fair 有效标记 (false → 消费方灰显 fair, 不决策)
     bool predict_ok{false};
-    // advisory: ML-R2, paper 期恒 true
-    bool advisory{true};
-    // model_calibrated: confidence 是否已校准
-    bool model_calibrated{false};
-    // ml_advisory_p_yes: ML 模型 (ml::FairValueModel) 推理的 YES fair prob。
-    //   ML-R1/R2 红线: 旁路/观测/训练捕获, 绝不驱动决策 (fair_value 仍由 baseline 定)。
-    //   NaN = 无 ML 模型 / 维度不匹配 / 推理失败。白名单+ONNX 一到即非 NaN, 零改码。
-    double ml_advisory_p_yes{std::numeric_limits<double>::quiet_NaN()};
 
     // ---- sharp fair 时序 (老板 2026-06-05「方向真值=赔率源 sharp; 盘口趋势/line movement 用一阶导」) ----
     //   ml::SharpFairTrack 派生 (paper_loop sharp_history_ 环)。全部加性 (§8.1 #5; struct 末尾增,
@@ -287,7 +261,6 @@ struct QuoteFeatures {
 
     // ---- 快速访问 ----
     [[nodiscard]] bool has_edge() const noexcept { return edge_bps > 0.0; }
-    [[nodiscard]] bool has_model() const noexcept { return model_id[0] != '\0'; }
 
     // R-20: 4-ts 单调链验证
     [[nodiscard]] bool ts_chain_ok() const noexcept {

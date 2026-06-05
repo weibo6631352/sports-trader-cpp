@@ -340,10 +340,7 @@ inline std::string grid_market_obj(const StateProvider& sp, const std::string& c
         o += json::num(q.edge_bps);
         o += ",\"sharp_fair\":";
         o += json::num(q.sharp_fair);
-        o += ",\"model_confidence\":";
-        o += json::num(q.model_confidence);
-        o += ",\"advisory\":";
-        o += json::boolean(q.advisory);
+        // (大模型 model_confidence/advisory 已砍 2026-06-05「砍掉大模型训练功能」)
     }
     // 比赛时间 + 状态 (2026-06-02 老板「前端要看几点开赛 / 是否进行中」):
     //   kickoff_ts/end_ts 用 ns (与 event_ts 同口径, 前端 fmtTs 直接用); game_state 后端派生单一口径。
@@ -617,30 +614,14 @@ inline std::string quote(const StateProvider& sp, const std::string& condition_i
         b += json::num(q.suggested_notional);
         b += ",\"signal_strength\":";
         b += json::num(q.signal_strength);
-        b += ",\"model_conf\":";
-        b += json::num(q.model_conf);
         b += ",\"quote_as_of_ts\":";
         b += json::i64(q.as_of_ts_ns);
-        b += ",\"model_id\":";
-        b += json::str(q.model_id);
-        b += ",\"model_kind\":";
-        b += json::str(q.model_kind);
-        b += ",\"spec_version\":";
-        b += json::str(q.spec_version);
-        b += ",\"model_confidence\":";
-        b += json::num(q.model_confidence);
-        b += ",\"model_calibrated\":";
-        b += json::boolean(q.model_calibrated);
-        b += ",\"fair_ci_lower\":";
-        b += json::num(q.fair_ci_lower);
-        b += ",\"fair_ci_upper\":";
-        b += json::num(q.fair_ci_upper);
+        // (大模型 provenance model_id/model_kind/spec_version/model_confidence/model_calibrated/
+        //  fair_ci/advisory/model_conf 已砍 2026-06-05「砍掉大模型训练功能」)
         b += ",\"predict_ok\":";
         b += json::boolean(q.predict_ok);
         b += ",\"model_as_of_ts\":";
         b += json::i64(q.model_as_of_ts_ns);
-        b += ",\"advisory\":";
-        b += json::boolean(q.advisory);
         b += ",\"sharp_fair\":";
         b += json::num(q.sharp_fair);
         b += ",\"devig_ok\":";

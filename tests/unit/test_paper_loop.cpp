@@ -460,17 +460,16 @@ TEST_F(PaperLoopTest, T10_R11_LedgerMode) {
 }
 
 // ---------------------------------------------------------------------------
-// T11: QuoteFeatures.advisory = true (ML-R2)
+// T11: QuoteFeatures R-20 4-ts 链透传 (原 advisory 字段已砍 2026-06-05)
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T11_QuoteAdvisory) {
+TEST_F(PaperLoopTest, T11_QuoteTsChain) {
     QuoteSnapshotHub qhub;
     QuoteFeatures qf{};
     qf.event_ts_ns = kEventTs;
     qf.data_source_ts_ns = kDsTs;
     qf.ingestion_ts_ns = kIngTs;
     qf.as_of_ts_ns = kAsOfTs;
-    qf.advisory = true;  // ML-R2: paper 期恒 true
     qf.valid = true;
     qf.fair_value = 0.65;
     qf.market_mid = 0.545;
@@ -479,7 +478,6 @@ TEST_F(PaperLoopTest, T11_QuoteAdvisory) {
     qhub.Publish("cond-test-001", qf);
     const auto opt = qhub.Read("cond-test-001");
     ASSERT_TRUE(opt.has_value());
-    EXPECT_TRUE(opt->advisory) << "ML-R2: advisory must be true in paper mode";
     EXPECT_TRUE(opt->ts_chain_ok()) << "R-20: ts_chain must be valid";
 }
 
@@ -667,8 +665,6 @@ TEST_F(PaperLoopTest, T13_P0_3_FakeFairGate) {
             << "P0-3: signal_strength must be 0 when has_real_fair=false";
         EXPECT_FALSE(opt->predict_ok)
             << "P0-3: predict_ok must be false when has_real_fair=false (not calibrated)";
-        EXPECT_FALSE(opt->model_calibrated) << "P0-3: model_calibrated must be false (M1 stub)";
-        EXPECT_TRUE(opt->advisory) << "ML-R2: advisory must remain true in paper mode";
         // fair_value 字段仍输出 (供观察), 但因 predict_ok=false 不可决策
         EXPECT_GT(opt->fair_value, 0.0) << "fair_value output for observation (but predict_ok=false)";
     }
@@ -713,10 +709,9 @@ TEST_F(PaperLoopTest, T14_P0_4_AdvisoryGate) {
     EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0))
         << "P0-4: quote should still be published for observation (advisory gate fires after Step 4)";
 
-    // quote 内容: advisory=true, predict_ok=false, edge/notional=0 (P0-3 联动)
+    // quote 内容: predict_ok=false, edge/notional=0 (P0-3 联动)
     const auto opt = quote_hub_->Read("cond-test-001");
     if (opt.has_value() && opt->valid) {
-        EXPECT_TRUE(opt->advisory) << "ML-R2: advisory must be true";
         EXPECT_FALSE(opt->predict_ok) << "P0-3+P0-4: predict_ok=false (no real fair)";
         EXPECT_DOUBLE_EQ(opt->suggested_notional, 0.0)
             << "P0-3+P0-4: suggested_notional=0 (stub fair + advisory)";
@@ -973,11 +968,9 @@ TEST_F(PaperLoopTest, T17_A2_FirstPaperFill_AdvisoryUnlocked) {
     EXPECT_GT(loop_->stats().fills_completed.load(), static_cast<std::uint64_t>(0))
         << "A2: 应产生 ≥1 笔 paper 成交 (MVP 第一笔成交)";
 
-    // ② ML-R2: quote.advisory 仍恒 true (解封不撕 advisory 展示契约)
+    // ② 解封 paper fill 后 quote 仍发布 + predict_ok=true (真实 fair)
     const auto opt = quote_hub_->Read("cond-test-001");
     ASSERT_TRUE(opt.has_value() && opt->valid);
-    EXPECT_TRUE(opt->advisory)
-        << "老韩 D4 ②: quote.advisory 必须恒 true (解封 paper fill 不影响 ML-R2 展示标志)";
     EXPECT_TRUE(opt->predict_ok) << "A2: 真实 fair → predict_ok=true";
 }
 

@@ -363,16 +363,9 @@ function ScoreQuoteCard(props: { condId: string }) {
             }>
               {(qt) => (
                 <>
-                  {/* advisory */}
-                  <Show when={qt().advisory}>
-                    <Alert severity="warning" sx={{ mb: 1, py: 0.25, fontSize: '11px' }}>
-                      仅供参考 · 系统不会自动下单 (XD-3)
-                    </Alert>
-                  </Show>
                   <Grid container spacing={1.5} sx={{ mb: 1.5 }}>
                     <Grid item xs={6} sm={4}>
-                      <StatCard label="公允价" value={qt().fair_value?.toFixed(4) ?? '—'}
-                        color={qt().model_calibrated !== false ? 'default' : 'yellow'} />
+                      <StatCard label="公允价" value={qt().fair_value?.toFixed(4) ?? '—'} />
                     </Grid>
                     <Grid item xs={6} sm={4}>
                       <StatCard label="市场中间价" value={qt().market_mid?.toFixed(4) ?? '—'} />
@@ -404,40 +397,12 @@ function ScoreQuoteCard(props: { condId: string }) {
                     </Grid>
                   </Grid>
 
-                  {/* CI 区间 */}
-                  <Show when={Number.isFinite(qt().fair_ci_lower) && Number.isFinite(qt().fair_ci_upper)}>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.5, display: 'block' }}>
-                      公允价 CI 区间: [{qt().fair_ci_lower.toFixed(3)} – {qt().fair_ci_upper.toFixed(3)}]
-                    </Typography>
-                  </Show>
-
-                  {/* 置信度 LinearProgress */}
-                  <Box sx={{ mb: 1 }}>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 0.5 }}>
-                      模型置信度: {((qt().model_confidence ?? qt().model_conf) * 100).toFixed(0)}%
-                      <Show when={!qt().model_calibrated}>
-                        <Chip label="未校准" color="warning" size="small" sx={{ fontSize: '9px', height: '16px', ml: 0.5 }} />
-                      </Show>
-                    </Typography>
-                    <LinearProgress
-                      variant="determinate"
-                      value={(qt().model_confidence ?? qt().model_conf) * 100}
-                      color={(qt().model_confidence ?? qt().model_conf) >= 0.7 ? 'success' : (qt().model_confidence ?? qt().model_conf) >= 0.4 ? 'warning' : 'error'}
-                      sx={{ height: 8, borderRadius: 3 }}
-                    />
-                  </Box>
-
-                  {/* AI provenance 字段表 */}
+                  {/* 来源/时序字段表 (大模型 provenance model_id/kind/confidence/CI/advisory 已砍 2026-06-05) */}
                   <TableContainer>
                     <Table size="small">
                       <TableBody>
                         {[
-                          { k: 'model_id', v: qt().model_id },
-                          { k: 'model_kind', v: qt().model_kind },
-                          { k: 'spec_version', v: qt().spec_version },
                           { k: 'predict_ok', v: String(qt().predict_ok) },
-                          { k: 'advisory', v: String(qt().advisory) },
-                          { k: 'model_calibrated', v: String(qt().model_calibrated) },
                           { k: 'quote_as_of_ts', v: fmtTs(qt().quote_as_of_ts) },
                           { k: 'model_as_of_ts', v: fmtTs(qt().model_as_of_ts) },
                         ].map((row) => (

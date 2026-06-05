@@ -250,7 +250,6 @@ public:
         q.kelly_fraction = 0.042;
         q.suggested_notional = 850.0;
         q.signal_strength = 0.71;
-        q.model_conf = 0.62;
         q.as_of_ts_ns = 1700000000000000000LL;
         return q;
     }

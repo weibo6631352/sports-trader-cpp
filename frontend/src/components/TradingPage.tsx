@@ -610,7 +610,7 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
   if (!props.quote) {
     return (
       <div class="v8-expand-panel">
-        <div class="v8-panel-title">量化 / AI</div>
+        <div class="v8-panel-title">量化 / 盘口</div>
         <Typography variant="caption" sx={{ color: 'text.disabled', fontStyle: 'italic' }}>量化未接入</Typography>
       </div>
     );
@@ -622,21 +622,6 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
   const edgeBps    = () => Number(q().edge_bps);
   const kelly      = () => Number(q().kelly_fraction);
   const notional   = () => Number(q().suggested_notional);
-  const signalStr  = () => Number(q().signal_strength);
-  const modelConf  = () => Number(q().model_confidence ?? q().model_conf);
-  const modelId    = () => q().model_id ?? '—';
-  const modelKind  = () => String(q().model_kind ?? '').toLowerCase();  // onnx=真实模型 / stub=退化占位
-  const isOnnx     = () => modelKind() === 'onnx';
-  const calibrated = () => q().model_calibrated !== false;
-  const predictOk  = () => q().predict_ok !== false;
-  const advisory   = () => q().advisory === true;
-  const ciLower    = () => q().fair_ci_lower;
-  const ciUpper    = () => q().fair_ci_upper;
-  const hasCi      = () => Number.isFinite(ciLower()) && Number.isFinite(ciUpper()) && ciUpper() > ciLower();
-  const modelReady = () => calibrated() && Number.isFinite(modelConf()) && modelConf() > 0;  // 模型真出活
-  const confPct    = () => Number.isFinite(modelConf()) ? modelConf() * 100 : 0;
-  const confColor  = (): 'success' | 'warning' | 'error' | 'inherit' =>
-    modelConf() >= 0.7 ? 'success' : modelConf() >= 0.4 ? 'warning' : 'error';
   const edgePos    = () => fairValue() >= marketMid();
   const edgePct    = () => Math.min(Math.abs(edgeBps()) / 100, 1) * 100;
   const kellyPos   = () => Number.isFinite(kelly()) && kelly() > 0;
@@ -657,29 +642,37 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
   //   (团队记忆 gs-bet365-latency), 故 ≤3.5s 是固有物理延迟属正常, >6s 才真陈旧。放宽阈值, 不再让人误以为系统卡。
   const sharpAgeColor = () => !Number.isFinite(sharpAgeS()) ? '#888'
     : sharpAgeS() < 3.5 ? '#4caf50' : sharpAgeS() < 6 ? '#ff9800' : '#f44336';
+  // 量化因子 (砍大模型后保留的统计计算 — 老板 2026-06-05「留住量化因子之类的统计计算」):
+  //   line movement (sharp 线速度/收敛/波动) + 仓位乘子 (生命周期 × CLV, Stage-2) + 全局滚动 CLV。
+  const sharpVel   = () => Number(q().sharp_velocity);                          // prob/s, +升 −降
+  const sharpConv  = () => Number(q().sharp_conv_rate);                         // 收敛率
+  const sharpVol   = () => Number(q().sharp_vol);                               // 波动 σ
+  const sharpN     = () => Number(q().sharp_samples ?? 0);
+  const hasVel     = () => sharpN() >= 2;                                       // velocity/conv NaN→0, 凭 samples 判有效
+  const lifeMult   = () => Number(q().lifecycle_mult);
+  const clvMult    = () => Number(q().clv_mult);
+  const hasMult    = () => Number.isFinite(lifeMult()) && Number.isFinite(clvMult());
+  const rClvMean   = () => Number(q().rolling_clv_mean);
+  const rClvN      = () => Number(q().rolling_clv_n ?? 0);
 
   return (
     <div class="v8-expand-panel">
       <div class="v8-panel-title">
-        量化 / AI <span class="mono-sub" style={{ 'font-weight': '400' }}>· 均为 YES 边胜率</span>
-        {/* XD-3: ADVISORY 角标强制显示 (paper 期) */}
-        <Show when={advisory()}>
-          <span class="v8-advisory-badge">ADVISORY</span>
-        </Show>
+        量化 / 盘口 <span class="mono-sub" style={{ 'font-weight': '400' }}>· 均为 YES 边胜率</span>
       </div>
 
-      {/* sharp 锚 (inplay de-vig) — 模型未训练时这才是【可用 fair】, 摆最前高亮 */}
+      {/* sharp 锚 (inplay de-vig) — 砍大模型后这就是【决策 fair 来源】, 摆最前高亮 */}
       <div class="v8-q-row">
-        <span class="q-lbl" title="inplay bet365 'To Win' de-vig 的 YES 胜率 — 模型未训练时用它当 fair">sharp</span>
+        <span class="q-lbl" title="inplay bet365 'To Win' de-vig 的 YES 胜率 — 决策 fair 来源">sharp</span>
         <Show when={hasSharp()} fallback={<span class="mono-sub v8-dim">{mapped() ? '无赔率' : '未映射'}</span>}>
-          <span class="mono-strong" style={{ 'font-size': '15px', 'color': !modelReady() ? '#4caf50' : undefined }}>
+          <span class="mono-strong" style={{ 'font-size': '15px', 'color': '#4caf50' }}>
             {sharpFair().toFixed(4)}
           </span>
           <span class="q-lbl">vs市场</span>
           <span class={`mono-sub${sharpDev() >= 0 ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
             {fmtBps(sharpDev() * 10000)}
           </span>
-          <Show when={!modelReady()}><span class="mono-sub" style={{ 'color': '#4caf50' }}>← 当前 fair</span></Show>
+          <span class="mono-sub" style={{ 'color': '#4caf50' }}>← 决策 fair</span>
           {/* GS sharp 赔率延迟: now − Goalserve 赔率版本时刻 (Goalserve 每~2-3s 出一版+落后bet365~2.3s, 3s内属正常) */}
           <Show when={Number.isFinite(sharpAgeS())}>
             <span class="mono-sub" style={{ 'margin-left': 'auto', 'font-weight': '700', color: sharpAgeColor() }}
@@ -697,84 +690,62 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
       <div class="v8-q-row">
         <span class="q-lbl">市场</span>
         <span class="mono-sub">{Number.isFinite(marketMid()) ? marketMid().toFixed(4) : '—'}</span>
+        <span class="q-lbl" style={{ 'margin-left': 'auto' }} title="决策 fair (砍大模型后 = sharp 锚 / score-prior / 市场 de-vig)">fair</span>
+        <span class="mono-strong">{Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}</span>
       </div>
 
-      {/* 模型公允 — 未训练时 dim + 明确标注, 不当真值 */}
+      {/* edge / Kelly — 砍大模型后由 sharp fair vs 市场驱动 (不再 gated on 模型), paper 期仅建议 */}
       <div class="v8-q-row">
-        <span class="q-lbl">模型</span>
-        <span class={`mono-strong${!modelReady() ? ' v8-dim' : ''}`}>
-          {Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}
+        <span class="q-lbl">优势</span>
+        <Box sx={{ flex: 1, minWidth: '24px' }}>
+          <LinearProgress variant="determinate" value={edgePct()} color={edgePos() ? 'success' : 'error'} sx={{ height: 4, borderRadius: 2 }} />
+        </Box>
+        <span class={`mono-sub${edgePos() ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
+          {fmtBps(edgeBps())}
         </span>
-        <Show when={!modelReady()} fallback={hasCi() ? <span class="mono-sub">[{ciLower()!.toFixed(3)}–{ciUpper()!.toFixed(3)}]</span> : null}>
-          <span class="uncalib-chip">未训练·占位</span>
-        </Show>
       </div>
 
-      {/* 置信 / edge / kelly — 仅当模型真出活 (calibrated + conf>0) 才显; 未训练折叠成一句, 不堆 0 */}
-      <Show
-        when={modelReady() && predictOk()}
-        fallback={
-          <div class="v8-q-row v8-dim" style={{ 'margin-top': '3px', 'font-size': '11px' }}>
-            {!predictOk() ? '⚠ 预测异常 · 无信号' : '模型未训练 · paper 期不产生 edge/Kelly 信号 (看上方 sharp 价差)'}
-          </div>
-        }
-      >
-        <div class="v8-q-row">
-          <span class="q-lbl">置信</span>
-          <Box sx={{ flex: 1, minWidth: '40px' }}>
-            <LinearProgress variant="determinate" value={confPct()} color={confColor()} sx={{ height: 5, borderRadius: 2 }} />
-          </Box>
-          <Typography sx={{ fontFamily: 'monospace', fontSize: '10px', ml: 0.5,
-            color: confColor() === 'success' ? '#4caf50' : confColor() === 'warning' ? '#ff9800' : '#f44336' }}>
-            {`${(modelConf() * 100).toFixed(0)}%`}
-          </Typography>
-        </div>
+      <div class="v8-q-row">
+        <span class="q-lbl">Kelly</span>
+        <span class={`mono-strong${kellyPos() ? ' kelly-pos' : ' kelly-zero'}`}>
+          {Number.isFinite(kelly()) ? `${(kelly() * 100).toFixed(1)}%` : '—'}
+        </span>
+        <span class="q-lbl">额</span>
+        <span class="mono-sub">
+          ${Number.isFinite(notional()) ? notional().toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
+        </span>
+        <span class="v8-advisory-inline">[paper]</span>
+      </div>
 
-        <div class="v8-q-row">
-          <span class="q-lbl">优势</span>
-          <Box sx={{ flex: 1, minWidth: '24px' }}>
-            <LinearProgress variant="determinate" value={edgePct()} color={edgePos() ? 'success' : 'error'} sx={{ height: 4, borderRadius: 2 }} />
-          </Box>
-          <span class={`mono-sub${edgePos() ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
-            {fmtBps(edgeBps())}
-          </span>
-        </div>
-
-        <div class="v8-q-row">
-          <span class="q-lbl">Kelly</span>
-          <span class={`mono-strong${kellyPos() ? ' kelly-pos' : ' kelly-zero'}`}>
-            {Number.isFinite(kelly()) ? `${(kelly() * 100).toFixed(1)}%` : '—'}
-          </span>
-          <span class="q-lbl">额</span>
-          <span class="mono-sub">
-            ${Number.isFinite(notional()) ? notional().toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'}
-          </span>
-          <span class="v8-advisory-inline">[advisory]</span>
-        </div>
-
-        <div class="v8-q-row">
-          <span class="q-lbl">信号α</span>
-          <span class="mono-sub">{Number.isFinite(signalStr()) ? signalStr().toFixed(2) : '—'}</span>
+      {/* 量化因子 (砍大模型保留的统计计算): line movement + 仓位乘子 + 全局滚动 CLV */}
+      <Show when={hasVel() || hasMult()}>
+        <div class="v8-obs-block">
+          <Show when={hasVel()}>
+            <div class="v8-q-row">
+              <span class="q-lbl" title="sharp 线速度 (bps/s, +升 −降) — line movement 方向因子">线速</span>
+              <span class={`mono-sub${sharpVel() >= 0 ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
+                {(sharpVel() * 1e4 >= 0 ? '+' : '') + (sharpVel() * 1e4).toFixed(1)}<span class="v8-dim"> bps/s</span>
+              </span>
+              <span class="q-lbl" style={{ 'margin-left': '8px' }} title="收敛率 (sharp 向市场靠拢, ×1e4)">收敛</span>
+              <span class="mono-sub">{(sharpConv() * 1e4).toFixed(1)}</span>
+              <span class="q-lbl" style={{ 'margin-left': '8px' }} title="sharp 波动 σ (×1e4)">波动</span>
+              <span class="mono-sub">{(sharpVol() * 1e4).toFixed(1)}</span>
+            </div>
+          </Show>
+          <Show when={hasMult()}>
+            <div class="v8-q-row">
+              <span class="q-lbl" title="仓位乘子: 生命周期 × CLV (Stage-2 仓位管理 — 仅缩放规模, 不定方向)">乘子</span>
+              <span class="mono-sub" title="生命周期乘子 (赛段)">生命 <b>{lifeMult().toFixed(2)}×</b></span>
+              <span class="mono-sub" style={{ 'margin-left': '8px' }} title="CLV 乘子 (入场质量)">CLV <b>{clvMult().toFixed(2)}×</b></span>
+              <Show when={rClvN() >= 5}>
+                <span class="mono-sub" style={{ 'margin-left': 'auto' }} title={`全局滚动 CLV 均值 (n=${rClvN()}, 正=入场优于 fair)`}>
+                  滚动CLV <b class={rClvMean() >= 0 ? 'edge-pos' : 'edge-neg'}>{(rClvMean() * 1e4).toFixed(0)}bps</b>
+                </span>
+              </Show>
+            </div>
+          </Show>
         </div>
       </Show>
-
-      {/* model provenance — 清晰标出【真实大模型 vs 退化 stub】(老板 2026-06-03: 前端要看得出用哪个) */}
-      <div class="v8-q-row v8-model-row">
-        <span class="q-lbl">model</span>
-        <span class="mono-sub" title={`${q().model_id} · ${q().model_kind} · ${q().spec_version}`}>
-          {modelId()}
-        </span>
-        <span class="mono-sub" style={{
-          'font-weight': '700',
-          'color': (isOnnx() && modelReady()) ? '#4caf50' : isOnnx() ? '#ff9800' : '#888',
-        }}>
-          {isOnnx() && modelReady()
-            ? `🟢真实模型·已校准·置信${confPct().toFixed(0)}%`
-            : isOnnx()
-            ? '🟡ONNX·未校准(不驱动)'
-            : '⚪退化stub(不驱动)'}
-        </span>
-      </div>
 
       {/* 数据管道状态 (sharp 锚已挪到面板最上方) */}
       <div class="v8-obs-block">

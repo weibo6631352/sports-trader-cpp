@@ -490,16 +490,7 @@ export const STUB_SCORE_MAP: Record<string, Score> = {
 // v5: Quote stub map (按 condition_id)
 // ============================================================
 
-interface QuoteOpts {
-  modelId?: string;
-  modelKind?: string;
-  specVersion?: string;
-  modelCalibrated?: boolean;
-  predictOk?: boolean;
-  advisory?: boolean;
-  ciDelta?: number;
-}
-
+// 大模型 provenance (model_id/kind/confidence/calibrated/fair_ci/advisory) 已砍 2026-06-05。
 function makeQuote(
   condId: string,
   fairValue: number,
@@ -508,10 +499,8 @@ function makeQuote(
   kelly: number,
   notional: number,
   sig: number,
-  conf: number,
-  opts: QuoteOpts = {},
+  predictOk = true,
 ): Quote {
-  const ciDelta = opts.ciDelta ?? 0.025;
   return {
     mode: 'paper',
     as_of_ts: NOW_NS,
@@ -523,48 +512,20 @@ function makeQuote(
     kelly_fraction: kelly,
     suggested_notional: notional,
     signal_strength: sig,
-    model_conf: conf,
     quote_as_of_ts: NOW_NS - 3e8,
-    // AI provenance (小邓 XD 红线)
-    model_id: opts.modelId ?? 'demo-fv-v0',
-    model_kind: opts.modelKind ?? 'stub',
-    spec_version: opts.specVersion ?? 'ml-feature-spec-v0.1',
-    model_confidence: conf,
-    model_calibrated: opts.modelCalibrated ?? true,
-    fair_ci_lower: parseFloat((fairValue - ciDelta).toFixed(4)),
-    fair_ci_upper: parseFloat((fairValue + ciDelta).toFixed(4)),
-    predict_ok: opts.predictOk ?? true,
-    advisory: opts.advisory ?? false,
+    predict_ok: predictOk,
     model_as_of_ts: NOW_NS - 5e8,
   };
 }
 
 export const STUB_QUOTE_MAP: Record<string, Quote> = {
-  // 正常 + advisory=true 演示 XD-3
-  'nba-lal-bos-ml': makeQuote(
-    'nba-lal-bos-ml', 0.662, 0.648, 21.6, 0.042, 850, 0.71, 0.62,
-    { advisory: true },
-  ),
-  // 未校准演示 XD-4
-  'nba-lal-bos-total': makeQuote(
-    'nba-lal-bos-total', 0.503, 0.500, 4.1, 0.008, 160, 0.41, 0.55,
-    { modelCalibrated: false },
-  ),
-  // predict_ok=false 演示 XD-5 (不画 edge/kelly/notional)
-  'nba-lal-bos-spread': makeQuote(
-    'nba-lal-bos-spread', 0.491, 0.494, -3.8, 0.000, 0, 0.28, 0.38,
-    { predictOk: false },
-  ),
-  'epl-ars-che-total': makeQuote(
-    'epl-ars-che-total', 0.748, 0.742, 15.2, 0.031, 620, 0.65, 0.71,
-    { modelKind: 'lgbm', specVersion: 'ml-feature-spec-v0.2', ciDelta: 0.018 },
-  ),
-  'nfl-kc-buf-spread': makeQuote(
-    'nfl-kc-buf-spread', 0.617, 0.619, -4.9, 0.000, 0, 0.22, 0.44,
-  ),
-  'mlb-nyy-bos-ml': makeQuote(
-    'mlb-nyy-bos-ml', 0.541, 0.549, -7.8, 0.000, 0, 0.18, 0.31,
-  ),
+  'nba-lal-bos-ml': makeQuote('nba-lal-bos-ml', 0.662, 0.648, 21.6, 0.042, 850, 0.71),
+  'nba-lal-bos-total': makeQuote('nba-lal-bos-total', 0.503, 0.500, 4.1, 0.008, 160, 0.41),
+  // predict_ok=false 演示 (不画 edge/kelly/notional)
+  'nba-lal-bos-spread': makeQuote('nba-lal-bos-spread', 0.491, 0.494, -3.8, 0.000, 0, 0.28, false),
+  'epl-ars-che-total': makeQuote('epl-ars-che-total', 0.748, 0.742, 15.2, 0.031, 620, 0.65),
+  'nfl-kc-buf-spread': makeQuote('nfl-kc-buf-spread', 0.617, 0.619, -4.9, 0.000, 0, 0.22),
+  'mlb-nyy-bos-ml': makeQuote('mlb-nyy-bos-ml', 0.541, 0.549, -7.8, 0.000, 0, 0.18),
 };
 
 // ============================================================

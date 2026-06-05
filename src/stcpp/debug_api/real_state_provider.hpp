@@ -560,8 +560,6 @@ public:
         QuoteParams q;
         q.found = false;
         q.market_id = condition_id;
-        q.advisory = true;      // ML-R2: paper 期恒 true
-        q.model_kind = "stub";  // 无模型接入
         q.predict_ok = false;
         return q;
     }
@@ -850,32 +848,9 @@ private:
         q.suggested_notional = qf.suggested_notional;
         q.signal_strength = qf.signal_strength;
 
-        // model_confidence → model_conf (deprecated alias, G-FREEZE-W)
-        q.model_confidence = qf.model_confidence;
-        q.model_conf = qf.model_confidence;
-
-        // char[] → std::string (QuoteFeatures POD; 保证 nul 终止)
-        q.model_id = std::string(qf.model_id);
-        q.spec_version = std::string(qf.spec_version);
-
-        // ModelKindTag → string
-        switch (qf.model_kind) {
-            case sizing::ModelKindTag::kOnnx:
-                q.model_kind = "onnx";
-                break;
-            case sizing::ModelKindTag::kTreelite:
-                q.model_kind = "treelite";
-                break;
-            default:
-                q.model_kind = "stub";
-                break;
-        }
-        q.model_calibrated = qf.model_calibrated;
-        q.fair_ci_lower = qf.fair_ci_lower;
-        q.fair_ci_upper = qf.fair_ci_upper;
-        q.predict_ok = qf.predict_ok;
-        q.model_as_of_ts_ns = qf.model_as_of_ts_ns;
-        q.advisory = qf.advisory;
+        // 大模型 provenance (model_id/kind/spec/confidence/calibrated/fair_ci/advisory) 已砍 2026-06-05。
+        q.predict_ok = qf.predict_ok;             // baseline fair 有效
+        q.model_as_of_ts_ns = qf.model_as_of_ts_ns;  // feature PIT 锚
         // 调试可观测: fair 来源分解 (sharp 共识 / de-vig / 领先 / 新鲜度)。
         //   语义明确 (探针反馈): sharp ∈ (0,1) = 已映射 Goalserve + 有 bet365 odds;
         //   -1 = 未映射 / 无 odds (g_bm_inplay_fair 默认 0 不可与真 0 混淆)。

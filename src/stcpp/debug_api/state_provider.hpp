@@ -403,20 +403,11 @@ struct EventScore {
 //   kelly_fraction  — Kelly 仓位比例 (已 cap; 来自 SizingCalculator 真实计算)
 //   suggested_notional — 建议名义仓位 (USDC; 来自 SizingCalculator 真实计算)
 //   signal_strength — α 信号强度 ∈ [0,1]
-//   model_conf      — 模型置信度 ∈ [0,1] (DEPRECATED: 用 model_confidence)
 //   as_of_ts_ns     — 快照时刻 epoch ns (R-20)
-//
-// ML provenance 字段 (小邓 spec v1 §3.2, G-FREEZE-W 只增不改名):
-//   model_id        — ModelPrediction.model_id (空 = 无模型/纯量化)
-//   model_kind      — "stub"/"onnx"/"treelite"
-//   spec_version    — FeatureVector.spec_version
-//   model_confidence — 校准后置信度 (取代语义模糊的 model_conf)
-//   model_calibrated — confidence 是否已校准
-//   fair_ci_lower   — fair prob 区间下界
-//   fair_ci_upper   — fair prob 区间上界
-//   predict_ok      — 推理是否成功 (false → 看板灰显 fair)
+//   predict_ok      — baseline fair 有效 (false → 看板灰显 fair)
 //   model_as_of_ts_ns — feature PIT 锚 (不是快照读取时刻!)
-//   advisory        — ML-R2: paper 期恒 true (看板必显角标)
+//   (大模型 provenance model_id/model_kind/spec_version/model_confidence/model_calibrated/
+//    fair_ci/advisory/model_conf 已砍 2026-06-05「砍掉大模型训练功能」)
 struct QuoteParams {
     bool found{false};
     std::string market_id;
@@ -426,21 +417,11 @@ struct QuoteParams {
     double kelly_fraction{0.0};      // Kelly 仓位比例 (SizingCalculator 真实计算)
     double suggested_notional{0.0};  // 建议名义仓位 (USDC; SizingCalculator 真实计算)
     double signal_strength{0.0};     // α 信号强度
-    // DEPRECATED: 用 model_confidence。值跟随 model_confidence (G-FREEZE-W alias)
-    double model_conf{0.0};
     std::int64_t as_of_ts_ns{0};
 
-    // ---- ML provenance (小邓 spec v1 §3.2; G-FREEZE-W 只增不改名) ----
-    std::string model_id;               // ModelPrediction.model_id (空 = 无模型)
-    std::string model_kind{"stub"};     // "stub"/"onnx"/"treelite"
-    std::string spec_version;           // FeatureVector.spec_version
-    double model_confidence{0.0};       // 校准后置信度 ∈ [0,1] (取代 model_conf)
-    bool model_calibrated{false};       // confidence 是否已校准
-    double fair_ci_lower{0.0};          // fair prob 区间下界
-    double fair_ci_upper{0.0};          // fair prob 区间上界
-    bool predict_ok{false};             // 推理成功标记 (false → 灰显 fair)
+    // ---- 决策 fair 来源标记 (baseline; 大模型 provenance 已砍 2026-06-05) ----
+    bool predict_ok{false};             // baseline fair 有效 (false → 灰显 fair)
     std::int64_t model_as_of_ts_ns{0};  // feature PIT 锚 (非快照读取时刻!)
-    bool advisory{true};                // ML-R2: paper 期恒 true
     // ---- 调试可观测 (老雷 2026-06-01; G-FREEZE-W append-only) — fair 来源分解 ----
     //   sharp_fair = Goalserve bet365 in-play de-vig 真胜率共识 (盈利修复后 fair_value 锚到它)。
     //   前端用 fair_value(决策) / sharp_fair(源) / market_mid(PM 市场) 三栏看 edge 来源是否正当。
@@ -706,8 +687,6 @@ public:
         QuoteParams q;
         q.found = false;
         q.market_id = condition_id;
-        q.advisory = true;
-        q.model_kind = "stub";
         q.predict_ok = false;
         return q;
     }
