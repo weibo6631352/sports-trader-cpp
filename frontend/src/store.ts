@@ -602,6 +602,12 @@ function reconnectSSE(reason: string): void {
  *  ② 半卡: 全局帧在来但 focus 的 book/quote 不来 (服务端 warmup / 连接半死典型) — 展开盘有 focus 却超
  *     FOCUS_STALE_MS 收不到任何 book/quote 帧。判据用【帧到达】非 data_source_ts (静市场 book 不变但
  *     服务端每 tick 必推帧, data_source_ts 老属正常, 不该误判 → 否则会无谓重连健康的静市场)。 */
+/** SSE 管道存活年龄 (ms): now − 最近任何帧到达时刻 (老板 2026-06-05「飘」根治: 把「管道是否实时」与
+ *  「订单簿版本年龄」两个语义拆开)。健康连接每 1-2s 有帧 → 亚秒级稳定 = 真·管道实时指标 (不随静市场飘)。
+ *  NaN = 未连过。组件读它 (配 uiNow 每秒重算) 显「SSE ● 实时」灯。 */
+export function sseAgeMs(): number { return _lastSseFrameMs > 0 ? Date.now() - _lastSseFrameMs : Number.NaN; }
+export function sseIsAlive(): boolean { return _sseConnected && !_fallbackActive; }
+
 function sseWatchdogTick(): void {
   if (USE_STUB || _fallbackActive || !_sseConnected) return;
   const now = Date.now();
