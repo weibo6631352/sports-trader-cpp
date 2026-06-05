@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 #include "stcpp/strategy/signal_iface.hpp"  // strategy::Side
 
@@ -192,6 +193,49 @@ struct ReservationPrices {
         a.reason = NoActReason::ZeroGap;
     }
     return a;
+}
+
+// ============================================================================
+// edge-生命周期乘子 (持仓管理 Stage 2, 老板 2026-06-05「sharp 速度/收敛接进决策」+ 量化 Round1
+//   「target 别裸喂瞬时 edge」)。对【sharp 自身时序】做无预测描述统计 → [floor,1] 量级乘子, 缩小
+//   target 以抑制噪声驱动的过度交易。BR-1 纯函数 (回测=实盘同逻辑)。
+//
+// 架构界线 (老郭 2026-06-05 仲裁, 守「方向真值=赔率源 sharp; 量化不可靠永不驱动方向」):
+//   ✓ 合法: 描述 sharp 自己的 Vol(抖动)/ConvergenceRate(收敛对错), 只调【量级】∈[floor,1]。
+//   ✗ 越界: 乘子 >1 (放大过 Kelly 上界) / 让 target 反号 (预测翻转) / 用 ML 预测未来 fair。
+//   → 本函数恒 ∈[floor,1], 不碰符号; 调用方乘到 |target|, 方向仍由 sharp 低估边决定。
+// ============================================================================
+struct LifecycleInput {
+    double sharp_vol{std::numeric_limits<double>::quiet_NaN()};        // SharpFairTrack::Vol(w) prob RMS
+    double sharp_conv_rate{std::numeric_limits<double>::quiet_NaN()};  // ConvergenceRate(w): <0收敛 >0发散
+    std::int32_t sample_count{0};                                      // 窗口样本数 (不足→fail-open)
+};
+
+struct LifecycleConfig {
+    bool enabled{true};
+    double vol_ref{0.02};         // 参考 sharp 抖动 (prob); vol=vol_ref 时稳定性减 k_vol
+    double k_vol{0.5};            // 稳定性惩罚强度 (Vol 越大缩越多)
+    double div_ref{0.01};         // 参考发散率 (prob/sec); conv_rate=div_ref 时 regime 减 k_div
+    double k_div{0.5};            // 发散谨慎惩罚强度 (市场背离 sharp 越快缩越多)
+    double floor{0.3};            // 乘子下限 (绝不把合法 edge 砍到 0)
+    std::int32_t min_samples{3};  // 窗口样本 < 此 → fail-open (m=1, 不改基线)
+};
+
+// 返回 ∈ [cfg.floor, 1.0]。样本不足 / NaN → 1.0 (fail-open, 等于现行为)。
+[[nodiscard]] inline double ComputeLifecycleMultiplier(const LifecycleInput& in,
+                                                       const LifecycleConfig& cfg) noexcept {
+    if (!cfg.enabled) return 1.0;
+    if (in.sample_count < cfg.min_samples) return 1.0;
+    if (!std::isfinite(in.sharp_vol) || !std::isfinite(in.sharp_conv_rate)) return 1.0;
+    const double vr = cfg.vol_ref > 0.0 ? cfg.vol_ref : 1.0;
+    const double dr = cfg.div_ref > 0.0 ? cfg.div_ref : 1.0;
+    auto clampf = [&](double x) { return x < cfg.floor ? cfg.floor : (x > 1.0 ? 1.0 : x); };
+    // 1. 稳定性因子 (header 钦定 Vol 用途): sharp 抖动大 = 噪声多于真移动 → 缩量。
+    const double m_stab = clampf(1.0 - cfg.k_vol * (in.sharp_vol / vr));
+    // 2. 发散谨慎因子: ConvergenceRate>0 = 市场背离 sharp (我们 sharp 有 ~2.3s 延迟, 别盲目按瞬时大 gap
+    //    加满)→ 谨慎缩。收敛(<0)/震荡(≤0) 被确认或持平 → 不缩 (=1)。绝不因发散反号 (只缩量级)。
+    const double m_regime = in.sharp_conv_rate > 0.0 ? clampf(1.0 - cfg.k_div * (in.sharp_conv_rate / dr)) : 1.0;
+    return clampf(m_stab * m_regime);
 }
 
 }  // namespace stcpp::control

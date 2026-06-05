@@ -1184,8 +1184,27 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   + sharp, 让模型在其训练域 (pre-game) 也能自主交易。sizing_out.valid 已保证 net edge>0 (真有 edge 才动),
     //   src=market_devig (无 fair) 时 edge=0 → sizing 无效 → 不交易, 故放行安全 (不会在无 fair 盘乱开)。
     const bool tradeable_fair = has_real_fair || cfg_.paper_no_edge_gates;
-    const double target_mag =
+    double target_mag =
         (tradeable_fair && sizing_out.valid && devig_ok && net_ev_ok) ? sizing_out.suggested_notional : 0.0;
+    // edge-生命周期乘子 (持仓管理 Stage 2, 老板 2026-06-05「sharp 速度/收敛接进决策」): 用本盘 sharp 时序
+    //   状态 (Vol 稳定性 + ConvergenceRate 发散谨慎) 缩 target 【量级】∈[floor,1], 抑制噪声驱动过度交易。
+    //   PIT-safe: 查 sharp_history_ 已有样本 (本 tick push 在 PublishQuoteSnapshot, 在此之后)。
+    //   ∈[floor,1] 不碰方向/不放大; 样本不足/NaN → 1.0 (fail-open, 等于基线)。架构界线见 ComputeLifecycleMultiplier。
+    double lifecycle_mult = 1.0;
+    if (target_mag > 0.0) {
+        if (const auto sh_lc = sharp_history_.find(condition_id); sh_lc != sharp_history_.end()) {
+            const std::int64_t sw_lc = cfg_.sharp_fair_vel_window_ns;
+            const control::LifecycleInput lc_in{
+                sh_lc->second.Vol(sw_lc), sh_lc->second.ConvergenceRate(sw_lc),
+                static_cast<std::int32_t>(sh_lc->second.WindowSampleCount(sw_lc))};
+            const control::LifecycleConfig lc_cfg{
+                cfg_.lifecycle_mult_enabled, cfg_.lifecycle_vol_ref, cfg_.lifecycle_k_vol,
+                cfg_.lifecycle_div_ref,      cfg_.lifecycle_k_div,   cfg_.lifecycle_floor,
+                cfg_.lifecycle_min_samples};
+            lifecycle_mult = control::ComputeLifecycleMultiplier(lc_in, lc_cfg);
+            target_mag *= lifecycle_mult;
+        }
+    }
     const double target_signed = is_yes ? target_mag : -target_mag;
 
     // [decision-diag] 定位 sharp→可下单侧 脱节 (老板「为什么有 sharp 的源进不了可下单侧」)。

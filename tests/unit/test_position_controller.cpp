@@ -338,3 +338,65 @@ TEST(ReservationFormula, CR05_NoiseFreeCrossesAsk) {
     EXPECT_GE(clean.buy_px, in.exec_ask) << "修后: buy_px ≥ ask → marketable → sharp 信号成交";
     EXPECT_LT(clean.buy_px, in.fair) << "仍 < fair (净 edge>0 才买, 不亏)";
 }
+
+// ---- edge-生命周期乘子 (持仓管理 Stage 2) ----
+// 守架构界线: 恒 ∈[floor,1], 绝不 >1 (不放大过 Kelly), 不碰符号 (方向归 sharp)。
+
+static constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
+static LifecycleConfig lc_cfg_default() {
+    return LifecycleConfig{true, 0.02, 0.5, 0.01, 0.5, 0.3, 3};
+}
+
+TEST(LifecycleMultiplier, LC01_InsufficientSamples_FailOpen) {
+    auto cfg = lc_cfg_default();
+    // 样本 < min_samples → 1.0 (fail-open, 不改基线)
+    EXPECT_DOUBLE_EQ(ComputeLifecycleMultiplier({0.05, 0.005, 2}, cfg), 1.0);
+}
+
+TEST(LifecycleMultiplier, LC02_NaN_FailOpen) {
+    auto cfg = lc_cfg_default();
+    EXPECT_DOUBLE_EQ(ComputeLifecycleMultiplier({kNaN, 0.0, 10}, cfg), 1.0);
+    EXPECT_DOUBLE_EQ(ComputeLifecycleMultiplier({0.01, kNaN, 10}, cfg), 1.0);
+}
+
+TEST(LifecycleMultiplier, LC03_Disabled_ReturnsOne) {
+    auto cfg = lc_cfg_default();
+    cfg.enabled = false;
+    EXPECT_DOUBLE_EQ(ComputeLifecycleMultiplier({0.10, 0.05, 10}, cfg), 1.0);
+}
+
+TEST(LifecycleMultiplier, LC04_Calm_Converging_FullSize) {
+    auto cfg = lc_cfg_default();
+    // 低 vol (0) + 收敛 (conv<0) → 不缩 → 1.0
+    EXPECT_DOUBLE_EQ(ComputeLifecycleMultiplier({0.0, -0.005, 10}, cfg), 1.0);
+}
+
+TEST(LifecycleMultiplier, LC05_HighVol_Reduces) {
+    auto cfg = lc_cfg_default();
+    // vol = vol_ref(0.02) → m_stab = 1 − 0.5×1 = 0.5; 收敛 → m_regime=1 → m=0.5
+    EXPECT_NEAR(ComputeLifecycleMultiplier({0.02, -0.001, 10}, cfg), 0.5, 1e-9);
+}
+
+TEST(LifecycleMultiplier, LC06_Diverging_Reduces) {
+    auto cfg = lc_cfg_default();
+    // 低 vol(0, m_stab=1) + 发散 conv=div_ref(0.01) → m_regime = 1 − 0.5×1 = 0.5 → m=0.5
+    EXPECT_NEAR(ComputeLifecycleMultiplier({0.0, 0.01, 10}, cfg), 0.5, 1e-9);
+}
+
+TEST(LifecycleMultiplier, LC07_NeverBelowFloor) {
+    auto cfg = lc_cfg_default();
+    // 极端 vol + 极端发散 → m_stab/m_regime 都被 clamp 到 floor; 乘积仍夹到 floor
+    const double m = ComputeLifecycleMultiplier({1.0, 1.0, 10}, cfg);
+    EXPECT_GE(m, cfg.floor);
+    EXPECT_LE(m, 1.0);
+}
+
+TEST(LifecycleMultiplier, LC08_NeverAmplifies) {
+    auto cfg = lc_cfg_default();
+    // 任意输入恒 ≤ 1.0 (绝不放大过 Kelly 上界, 守架构界线)
+    for (double v : {0.0, 0.001, 0.05, 0.5}) {
+        for (double c : {-0.5, -0.001, 0.0, 0.001, 0.5}) {
+            EXPECT_LE(ComputeLifecycleMultiplier({v, c, 10}, cfg), 1.0);
+        }
+    }
+}

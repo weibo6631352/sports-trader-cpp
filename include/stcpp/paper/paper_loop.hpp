@@ -292,6 +292,16 @@ struct PaperLoopConfig {
     double sharp_lag_sec{2.0};                          // 外推时长 (实测 median 落后 ~2.3s, 取 2.0 保守)
     double sharp_lag_adj_cap{0.04};                     // |外推幅度| 上限 (防趋势过冲, 4 cents)
     std::int64_t sharp_fair_vel_window_ns{10'000'000'000LL};  // fair 速度回看窗 (feed ~2s/版 → 10s≈5样本)
+    // edge-生命周期乘子 (持仓管理 Stage 2, 老板 2026-06-05): sharp 时序状态 (Vol 稳定性 + ConvergenceRate
+    //   发散谨慎) 缩 target 【量级】∈[floor,1] (抑制噪声驱动过度交易; 不碰方向/不放大)。见
+    //   control::ComputeLifecycleMultiplier。组成 control::LifecycleConfig 传入。
+    bool lifecycle_mult_enabled{true};
+    double lifecycle_vol_ref{0.02};
+    double lifecycle_k_vol{0.5};
+    double lifecycle_div_ref{0.01};
+    double lifecycle_k_div{0.5};
+    double lifecycle_floor{0.3};
+    std::int32_t lifecycle_min_samples{3};
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 减仓 (预测说该减/收敛) 时 best_bid
     //   可成交即平 (仓位随预测回 flat = 收敛兑现), 不死等 reservation_sell「卖高」价。lib 默认关 (契约测试
     //   不变); 生产 daemon opt-in。解「只买不卖持到结算」(reservation_sell 在 fair 上方收敛永不触发)。
