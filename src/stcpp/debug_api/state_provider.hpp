@@ -454,6 +454,13 @@ struct QuoteParams {
     // GS sharp 赔率新鲜度 (2026-06-05 老板「赔率延迟放合适位置」): = game_row.data_source_ts_ns
     //   (驱动 sharp fair 的那一版 Goalserve inplay 赔率 updated_ts); now−它 = sharp 赔率多旧 (3s 门管的就是它)。
     std::int64_t sharp_data_source_ts_ns{0};
+    // sharp fair 时序 (2026-06-05 老板「方向真值=赔率源 sharp; 盘口趋势/line movement 一阶导」; QuoteFeatures
+    //   g_sharp_* 透传; G-FREEZE-W append-only)。盯盘页用它画服务端持久可信的 sharp 轨迹/收敛发散 (不再
+    //   前端刷新归零)。有效性看 sharp_samples≥2 (json NaN→0, 故不能凭 velocity=0 判无数据)。
+    double sharp_velocity{0.0};       // sharp 速度 prob/sec (+升 −降; line movement 方向)
+    double sharp_conv_rate{0.0};      // 收敛率 prob/sec (<0 市场向 sharp 收敛/>0 发散)
+    double sharp_vol{0.0};            // sharp 抖动度 RMS (高=噪声多于真移动)
+    std::int32_t sharp_samples{0};    // sharp 环窗口内样本数 (有效性闸: <2 则上面无意义)
 };
 
 // ============================================================

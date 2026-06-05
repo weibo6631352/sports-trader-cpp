@@ -653,6 +653,15 @@ inline std::string quote(const StateProvider& sp, const std::string& condition_i
         b += json::i64(q.data_source_ts_ns);
         b += ",\"sharp_data_source_ts\":";  // GS sharp 赔率新鲜度 (inplay 赔率版本时刻; now−它 = sharp 多旧)
         b += json::i64(q.sharp_data_source_ts_ns);
+        // sharp fair 时序 (老板 2026-06-05 line movement): velocity/收敛率/抖动/样本数 (前端 gate sharp_samples≥2)
+        b += ",\"sharp_velocity\":";
+        b += json::num(q.sharp_velocity);
+        b += ",\"sharp_conv_rate\":";
+        b += json::num(q.sharp_conv_rate);
+        b += ",\"sharp_vol\":";
+        b += json::num(q.sharp_vol);
+        b += ",\"sharp_samples\":";
+        b += json::i64(q.sharp_samples);
     }
     b += '}';
     return b;

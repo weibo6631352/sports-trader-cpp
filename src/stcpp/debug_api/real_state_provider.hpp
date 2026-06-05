@@ -924,6 +924,11 @@ private:
         q.joint_as_of_ts_ns = qf.joint_as_of_ts_ns;
         q.data_source_ts_ns = qf.data_source_ts_ns;  // 真实赔率新鲜度 (订单簿 WSS 版本时刻)
         q.sharp_data_source_ts_ns = qf.sharp_data_source_ts_ns;  // GS sharp 赔率新鲜度 (inplay 赔率版本时刻)
+        // sharp fair 时序 (老板 2026-06-05 line movement): velocity/收敛率/抖动/样本数 透传 (观测先行)。
+        q.sharp_velocity = qf.g_sharp_velocity;
+        q.sharp_conv_rate = qf.g_sharp_conv_rate;
+        q.sharp_vol = qf.g_sharp_vol;
+        q.sharp_samples = qf.g_sharp_samples;
         return q;
     }
 };
