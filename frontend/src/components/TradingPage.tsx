@@ -424,6 +424,7 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
                   title="订单簿版本年龄 = now − data_source_ts (Polymarket 订单簿版本号时刻, 只在簿真变化才前进)。= 这盘距上次簿变化多久; 静市场簿几秒不变属正常(数字会爬升/sawtooth, 非卡)。「数据管道是否实时」请看顶部「SSE 实时」灯(亚秒稳定)。">
               <Show keyed when={bookTs()}><span class="v8-live-dot">●</span></Show>
               {' '}版本年龄 {bookAgeS().toFixed(1)}s
+              <span class="mono-sub v8-dim" style={{ 'margin-left': '4px', 'font-weight': '400' }} title="该版订单簿的实际版本时刻 (data_source_ts; Polymarket 订单簿 timestamp)">· 时刻 {fmtTs(bookTs()).slice(-12)}</span>
             </span>
           </Show>
           <Show when={vigInfo()}>
@@ -665,6 +666,7 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
             <span class="mono-sub" style={{ 'margin-left': 'auto', 'font-weight': '700', color: sharpAgeColor() }}
                   title="赔率版本年龄 = now − Goalserve inplay 赔率版本时刻。Goalserve 每 ~2-3s 才出一版赔率 + 它本身落后 bet365 ~2.3s, 故 ≤3.5s 是固有物理延迟属正常 (sawtooth 0→3s 是 GS 出版节奏, 压不下去, 非系统卡)。>6s 才真陈旧。">
               赔率龄 {sharpAgeS().toFixed(1)}s
+              <span class="mono-sub v8-dim" style={{ 'margin-left': '4px', 'font-weight': '400' }} title="该版 Goalserve 赔率的实际版本时刻 (sharp_data_source_ts)">· 时刻 {fmtTs(sharpTs()).slice(-12)}</span>
             </span>
           </Show>
         </Show>
