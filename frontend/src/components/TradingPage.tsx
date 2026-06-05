@@ -1245,6 +1245,79 @@ function ModelBiasStrip() {
 // TradingPage (顶层导出)
 // ============================================================
 
+// ============================================================
+// 全局健康栏 (老板 2026-06-05「盯盘人 5 秒内要答: 系统活着吗? 有没有仓需关注?」)
+//   页顶常驻一屏概览: 后端/WSS 灯 + 信号/持仓/浮盈 + 异常置顶聚合。异常自己跳出来找人, 不用逐盘翻。
+//   全部基于现有 state 全局可算 (零新增请求); 持仓级异常用 summary.sharp + getSharpTrend (全市场可得)。
+// ============================================================
+function GlobalHealthBar() {
+  const [open, setOpen] = createSignal(false);
+  const backendOk = () => state.healthz?.ok === true;
+  const wssOk = () => state.status?.wss_connected?.clob === true;
+  const signals = () => state.status?.signals_active_count ?? 0;
+  const positions = () => state.positions?.positions?.filter((p) => Math.abs(Number(p.net_qty)) > 0) ?? [];
+  const floatPnl = () => positions().reduce((a, p) => a + Number(p.pnl_realized) + Number(p.pnl_unrealized), 0);
+  const mktName = (cid: string) => state.conditionCache[cid]?.summary?.title || cid.slice(0, 8);
+
+  // 异常扫描 (全局可算): 后端/WSS 断 + 持仓 sharp 反向 + 持仓发散 + 资金不足拒单。
+  const anomalies = () => {
+    uiNow();  // 趋势/年龄随 1s 时钟刷新
+    const out: Array<{ sev: 'err' | 'warn'; text: string }> = [];
+    if (state.healthz && !backendOk()) out.push({ sev: 'err', text: '后端离线 · 数据停更' });
+    if (state.status && !wssOk()) out.push({ sev: 'err', text: '订单簿 WSS 断连 · 价可能过期' });
+    for (const p of positions()) {
+      const cid = p.market_id;
+      const sy = state.conditionCache[cid]?.summary?.sharp;  // YES sharp
+      const entry = Number(p.avg_entry_price);
+      if (sy != null && sy > 0 && sy < 1 && Number.isFinite(entry)) {
+        const sSide = p.outcome === 'YES' ? sy : 1 - sy;        // 本边 sharp
+        const dist = sSide - entry;                              // <0 = sharp 已跌破入场 = 持仓亏向
+        if (dist < -0.02) out.push({ sev: 'warn', text: `${mktName(cid)} ${p.outcome} · sharp 已反向 ${(dist * 100).toFixed(1)}点` });
+      }
+      const ring = getSharpTrend(cid);
+      if (ring.length >= 3) {
+        const now = ring[ring.length - 1], past = ring[Math.max(0, ring.length - 6)];
+        const gNow = Math.abs(now.sharp - now.mid), gPast = Math.abs(past.sharp - past.mid);
+        if (gNow > gPast * 1.3 && gNow > 0.01) out.push({ sev: 'warn', text: `${mktName(cid)} · 持仓发散中 (市场远离 sharp)` });
+      }
+    }
+    const insf = (state.rejects?.rejects ?? []).filter((r) => r.reason_code === 'INSUFFICIENT_FUNDS').length;
+    if (insf > 0) out.push({ sev: 'warn', text: `资金不足拒单 ×${insf}` });
+    return out;
+  };
+  const errCount = () => anomalies().filter((a) => a.sev === 'err').length;
+
+  return (
+    <>
+      <div class="v8-health-bar">
+        <span class={`v8-health-dot ${backendOk() ? 'hd-ok' : 'hd-err'}`} title="后端心跳 /healthz">● 后端</span>
+        <span class={`v8-health-dot ${wssOk() ? 'hd-ok' : 'hd-err'}`} title="订单簿 WSS (clob) 连接">● WSS</span>
+        <span class="v8-health-sep">·</span>
+        <span class="mono-sub" title="活跃信号数">信号 {signals()}</span>
+        <span class="v8-health-sep">·</span>
+        <span class="mono-sub" title="有持仓盘口数 + 合计浮盈亏">
+          持仓 {positions().length} · 浮盈 <b class={floatPnl() >= 0 ? 'pnl-pos' : 'pnl-neg'}>{floatPnl() >= 0 ? '+' : ''}${floatPnl().toFixed(1)}</b>
+        </span>
+        <span class="v8-health-spacer" />
+        <Show when={anomalies().length > 0} fallback={<span class="v8-health-ok">✓ 无异常</span>}>
+          <span class={`v8-health-alert ${errCount() > 0 ? 'hd-err' : 'hd-warn'}`}
+                onClick={() => setOpen((v) => !v)} role="button" tabIndex={0}
+                title="点击展开/收起异常列表">
+            ⚠ {anomalies().length} 需关注 {open() ? '▲' : '▼'}
+          </span>
+        </Show>
+      </div>
+      <Show when={open() && anomalies().length > 0}>
+        <div class="v8-health-list">
+          <For each={anomalies().slice(0, 12)}>
+            {(a) => <div class={`v8-health-item ${a.sev === 'err' ? 'hd-err' : 'hd-warn'}`}>{a.sev === 'err' ? '🔴' : '🟠'} {a.text}</div>}
+          </For>
+        </div>
+      </Show>
+    </>
+  );
+}
+
 export function TradingPage() {
   // 默认只显示「正在比赛」(gamma live=true); 可切「全部/持仓」(老板 2026-06-01)
   const [filter, setFilter] = createSignal<FilterMode>('live');
@@ -1374,6 +1447,9 @@ export function TradingPage() {
           WSS 部分断连 · 部分市场数据可能已过期
         </Alert>
       </Show>
+
+      {/* 全局健康栏 (老板 2026-06-05): 一屏概览 + 异常置顶 */}
+      <GlobalHealthBar />
 
       <TradingToolbar
         filter={filter()}

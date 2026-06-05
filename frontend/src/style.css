@@ -1069,6 +1069,38 @@ html, body {
 }
 .v8-row-sharp-val { color: var(--md-text); font-weight: 600; }
 
+/* 全局健康栏 (一屏概览 + 异常置顶, 老板 2026-06-05) */
+.v8-health-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 3px 12px;
+  background: var(--md-surface2);
+  border-bottom: 1px solid var(--md-border);
+  font-size: 11px;
+  min-height: 24px;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.v8-health-dot { font-weight: 700; font-size: 11px; }
+.hd-ok   { color: var(--q-green); }
+.hd-err  { color: var(--q-red); }
+.hd-warn { color: var(--q-yellow); }
+.v8-health-sep { color: var(--md-text-dim); }
+.v8-health-spacer { flex: 1; }
+.v8-health-ok { color: var(--q-green); font-size: 11px; font-weight: 600; }
+.v8-health-alert { font-weight: 700; cursor: pointer; user-select: none; }
+.v8-health-list {
+  background: var(--md-surface2);
+  border-bottom: 1px solid var(--md-border);
+  padding: 4px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.v8-health-item { font-family: var(--font-mono); font-size: 11px; }
+
 /* C 持仓可解释行 (入场价 vs sharp 距离 + 持仓时长, 老板 2026-06-05) */
 .v8-pos-explain {
   display: flex;
