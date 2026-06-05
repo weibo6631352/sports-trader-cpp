@@ -210,6 +210,22 @@ export async function postStreamFocus(streamId: string, seq: number, cids: strin
   }
 }
 
+/** 批量取 focus 盘 book/quote/fills (一次往返替 N×3 REST)。仅 SSE 冷启/兜底用 (hot 流未连/断时);
+ *  常态 book/quote 走 SSE detail 帧推送。返回 {cid:{book,quote,fills}} 或 null (失败/超时)。 */
+export async function fetchDetailBatch(
+  cids: string[],
+): Promise<Record<string, { book?: unknown; quote?: unknown; fills?: unknown }> | null> {
+  if (cids.length === 0) return {};
+  try {
+    const q = `cids=${cids.map(encodeURIComponent).join(',')}`;
+    const r = await fetch(`${_baseUrl}/api/v1/detail?${q}`, { method: 'POST', signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch {
+    return null;
+  }
+}
+
 export const fetchPositions = (): Promise<Positions | null> => apiFetch('/api/v1/positions');
 export const fetchPnlTimeseries = (window = '1h', bucket = '5m'): Promise<PnlTimeseries | null> =>
   apiFetch(`/api/v1/pnl/timeseries?window=${window}&bucket=${bucket}`);

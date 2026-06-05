@@ -31,7 +31,7 @@ import {
   STUB_MARKET_MAP, STUB_BOOK_MAP, STUB_SCORE_MAP, STUB_QUOTE_MAP,
   STUB_METRICS_TEXT, STUB_EVENTS, STUB_ACCOUNT,
 } from './stub';
-import { getBaseUrl, postStreamFocus } from './api';
+import { getBaseUrl, postStreamFocus, fetchDetailBatch } from './api';
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
   RiskRejects, GatePaper, BinaryMarketBookView, Market, Score, Quote,
@@ -72,9 +72,12 @@ export const [uiNow, setUiNow] = createSignal(Date.now());
 //   (/api/v1/stream/hot), 按盯盘数弹性扩展多条独立 TCP, 把盘分摊到各连接 → 各自拥塞窗口、互不队头阻塞。
 //   真因: 带宽够, 卡=挤一条 TCP 干等(队头阻塞+阻塞写串行); 多条独立链路并行 = 不再干等。
 let _streamId: string | null = null;       // bulk 流 hello 下发 (诊断用; focus 不走它)
-const HOT_MAX_CONNS = 3;                    // hot 池上限 (+1 bulk = 4 长连接, 留 2 给 REST < 浏览器 ~6/域)
-const HOT_PER_CONN = 4;                     // 每条连接目标盘数 (超了扩池, 摊薄每条负载)
-const HOT_FOCUS_CAP = 30;                   // 总 focus 盘上限 (满池每条 ≤10, ≤ 服务端 kMaxFocus=32)
+// 2026-06-05 老板「没必要 rest 的用 sse + 全部打包一次性」: hot 流改【单连接 + 批量 detail 帧】。
+//   服务端把所有 focus 盘 book/quote/fills 合成一帧推 → 一条 TCP 够用, 多开反而撞浏览器 6 连接/域上限
+//   (跨洋实测多连接各卡各的 + 抢 REST 槽)。1 bulk + 1 hot = 2 长连接, 留 4 给 REST/多标签。
+const HOT_MAX_CONNS = 1;                    // hot 单连接 (批量帧, 不再多开链路 — 6 连接/域硬限下越多越抢)
+const HOT_PER_CONN = 64;                    // 单连接带全部 focus (≥ HOT_FOCUS_CAP, 不分片)
+const HOT_FOCUS_CAP = 30;                   // 总 focus 盘上限 (≤ 服务端 kMaxFocus=32)
 
 interface HotConn {
   es: EventSource;
@@ -366,15 +369,29 @@ export async function refreshMarketGrid(): Promise<void> {
   setState({ eventGroups: buildEventGroups() });
 }
 
-// ---------- refreshExpandedDetail (2s 快刷: 已展开/选中盘口的全档 book/quote) ----------
+// ---------- refreshExpandedDetail (SSE 冷启/兜底: 批量取展开盘全档 book/quote/fills) ----------
 
-/** 拉「用户正在看」的盘口全档 detail (展开行 / 详情页选中行), 封顶 DETAIL_CAP。
- *  2s 轮询 → 展开的深度阶梯 + Quote 详情与顶档摘要价同步刷新 (不再 5s 滞后)。
- *  detailInterest 为空(无展开)时立即返回, 零请求开销。 */
+/** 批量拉「用户正在看」的盘口全档 detail —— 【一次往返】(POST /api/v1/detail) 替原 N×3 个 REST。
+ *  2026-06-05 老板「没必要 rest 的用 sse + 全部打包一次性, 网络往返太浪费」: 常态 book/quote 走 SSE
+ *  detail 帧推送 (零轮询); 本函数仅【SSE 冷启 (展开瞬间) + hot 流断时兜底】用, 不再 2s 常驻轮询。 */
 export async function refreshExpandedDetail(): Promise<void> {
   const toFetch = Array.from(detailInterest).slice(0, DETAIL_CAP);
   if (toFetch.length === 0) return;
-  await fetchDetailFor(toFetch);
+  const map = await fetchDetailBatch(toFetch);
+  if (!map) return;
+  setState(produce((s) => {
+    for (const cid of Object.keys(map)) {
+      if (!detailInterest.has(cid)) continue;
+      const ent = map[cid];
+      const bk = ent.book as (BinaryMarketBookView & { found?: boolean }) | undefined;
+      const qt = ent.quote as (Quote & { found?: boolean }) | undefined;
+      const fl = ent.fills as { fills?: unknown[] } | undefined;
+      s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
+      if (bk && bk.found === true) s.conditionCache[cid].book = bk;
+      if (qt && qt.found === true) { s.conditionCache[cid].quote = qt; pushSharpTrend(cid, qt.sharp_fair, qt.market_mid, Date.now()); }
+      if (fl && Array.isArray(fl.fills)) s.fillsByMarket[cid] = fl.fills as Fill[];
+    }
+  }));
   setState({ eventGroups: buildEventGroups() });
 }
 
@@ -755,34 +772,31 @@ function hotPoolAllConnected(): boolean {
   return _hotPool.length > 0 && _hotPool.every((c) => c.connected);
 }
 
-/** hot 连接收到的 book 帧 → 写 conditionCache (任一连接只收自己 shard 的盘)。 */
-function handleHotBook(conn: HotConn, d: unknown): void {
-  const bk = d as (BinaryMarketBookView & { found?: boolean; condition_id?: string }) | null;
-  const cid = bk?.condition_id;
-  if (!cid || !detailInterest.has(cid)) return;
-  if (!bk || bk.found !== true) return;  // found:false 不覆盖 (无 token0; 别把已有簿冲成 null)
+/** hot 连接收到的【批量 detail 帧】→ 一帧含所有 focus 盘的 book/quote/fills, 一次写入 conditionCache。
+ *  2026-06-05 老板「全部打包一次性, 网络往返太浪费」: 替代原逐盘 book/quote 帧 (N×2 → 1)。 */
+function handleHotDetail(conn: HotConn, d: unknown): void {
+  const map = d as Record<string, { book?: unknown; quote?: unknown; fills?: unknown }> | null;
+  if (!map || typeof map !== 'object') return;
   const t = Date.now();
   conn.lastFocusFrameMs = t; _lastFocusFrameMs = t;  // 半卡看门狗存活信号 (帧到达)
+  const sharpPts: Array<{ cid: string; sharp: number | null | undefined; mid: number | null | undefined }> = [];
   setState(produce((s) => {
-    s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
-    s.conditionCache[cid].book = bk;
+    for (const cid of Object.keys(map)) {
+      if (!detailInterest.has(cid)) continue;
+      const ent = map[cid];
+      const bk = ent.book as (BinaryMarketBookView & { found?: boolean }) | undefined;
+      const qt = ent.quote as (Quote & { found?: boolean }) | undefined;
+      const fl = ent.fills as { fills?: unknown[] } | undefined;
+      s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
+      if (bk && bk.found === true) s.conditionCache[cid].book = bk;   // found:false 不覆盖已有簿
+      if (qt && qt.found === true) {
+        s.conditionCache[cid].quote = qt;
+        sharpPts.push({ cid, sharp: qt.sharp_fair, mid: qt.market_mid });
+      }
+      if (fl && Array.isArray(fl.fills)) s.fillsByMarket[cid] = fl.fills as Fill[];
+    }
   }));
-  rebuildGroups();
-}
-
-/** hot 连接收到的 quote 帧 → 写 conditionCache + sharp 时序。 */
-function handleHotQuote(conn: HotConn, d: unknown): void {
-  const qt = d as (Quote & { found?: boolean; market_id?: string }) | null;
-  const cid = qt?.market_id;
-  if (!cid || !detailInterest.has(cid)) return;
-  if (!qt || qt.found !== true) return;
-  const t = Date.now();
-  conn.lastFocusFrameMs = t; _lastFocusFrameMs = t;
-  setState(produce((s) => {
-    s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
-    s.conditionCache[cid].quote = qt;
-  }));
-  pushSharpTrend(cid, qt.sharp_fair, qt.market_mid, t);
+  for (const p of sharpPts) pushSharpTrend(p.cid, p.sharp, p.mid, t);
   rebuildGroups();
 }
 
@@ -816,8 +830,7 @@ function openHotConn(): HotConn {
     conn.streamId = (d as { stream_id?: string })?.stream_id ?? null;
     postHotFocus(conn);  // (重)连后上报本连接的 shard
   });
-  onHot('book', (d) => handleHotBook(conn, d));
-  onHot('quote', (d) => handleHotQuote(conn, d));
+  onHot('detail', (d) => handleHotDetail(conn, d));  // 批量帧: 一帧含所有 focus 盘 book/quote/fills
   es.onerror = () => {
     // EventSource 自动重连; 彻底关闭不回退全局轮询 (book/quote 由 refreshExpandedDetail REST 兜)。
     if (es.readyState === EventSource.CLOSED) conn.connected = false;

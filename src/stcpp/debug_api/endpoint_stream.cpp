@@ -48,7 +48,7 @@ constexpr std::size_t kMaxFocus = 32;            // 每连接 focus 盘口上限
 // 单帧上限 (评审: 防大帧撞 write_timeout)。2026-06-02 提到 256KB: 全盘口期 events/grid 帧随
 //   盘口数(600+)涨, 旧 64KB 把 events 帧(67KB)整帧丢 → 前端 0 赛事。256KB 给 ~2000+ 盘口余量,
 //   跨洋 256KB ≈0.25s 远低于 write_timeout(3s)。on-change 推送, 大帧不频繁。
-constexpr std::size_t kMaxFrameBytes = 256 * 1024;
+constexpr std::size_t kMaxFrameBytes = 1024 * 1024;  // 1MB: 批量 detail 帧 (≤32 盘 book+quote+fills 合一) 留头
 
 std::atomic<int> g_sse_clients{0};
 std::atomic<std::uint64_t> g_seq{0};
@@ -414,46 +414,55 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                     hello += stream_id;
                     hello += "\",\"stream\":\"hot\",\"tick_ms\":";
                     hello += json::i64(kHotTickMs);
-                    hello += ",\"channels\":[{\"name\":\"book\",\"delta\":\"snapshot\"},"
-                             "{\"name\":\"quote\",\"delta\":\"snapshot\"}]}";
+                    hello += ",\"channels\":[{\"name\":\"detail\",\"delta\":\"snapshot\"}]}";
                     if (!send_frame(sink, "hello", "snapshot", hello)) return true;
                 }
 
-                std::unordered_map<std::string, std::string> last_book;   // 移出 focus 清基线用
-                std::unordered_map<std::string, std::string> last_quote;
+                // 批量 detail 流 (2026-06-05 老板「没必要 rest 的用 sse + 全部打包一次性, 网络往返太浪费」):
+                //   每 tick 把【所有 focus 盘】的 book+quote+fills 合成【一帧】detail (替代原 N×2 逐盘帧)。
+                //   跨洋: 1 帧 1 信封 1 write 替 N×2 帧 → 省信封头/write/TCP 分段; 前端零 REST 轮询。
+                //   focus 变化 (fseq 推进) → 提前醒来立即推 → 展开即见, 免冷启 REST 往返。
                 int since_send = 0;
+                std::int64_t prev_fseq = -1;
 
                 while (hs.is_running() && sink.is_writable()) {
                     for (int k = 0; k < 5; ++k) {
                         if (!hs.is_running() || !sink.is_writable()) return true;
+                        std::shared_ptr<const std::vector<std::string>> probe;
+                        std::int64_t cur = 0;
+                        focus_state->load(probe, cur);
+                        if (cur != prev_fseq) break;  // focus 变了 → 立即推 (不等满 tick)
                         std::this_thread::sleep_for(std::chrono::milliseconds(kHotTickMs / 5));
                     }
-                    bool sent = false;
 
                     std::shared_ptr<const std::vector<std::string>> conds;
                     std::int64_t fseq = 0;
                     focus_state->load(conds, fseq);
-                    std::unordered_set<std::string> focus_now;
+                    prev_fseq = fseq;
+
+                    // {"<cid>":{"book":{..},"quote":{..},"fills":{..}}, ...} — 一帧含全部 focus 盘。
+                    std::string batched = "{";
                     std::size_t n = 0;
                     for (const auto& cid : *conds) {
                         if (cid.empty() || n >= kMaxFocus) break;
+                        if (n) batched += ',';
                         ++n;
-                        focus_now.insert(cid);
-                        // 每 tick 必推当前快照 (老板「我要实时推送, 不要变动才推送」); book_pair as_of_ts
-                        //   每次盖 now → 前端"订单簿新鲜度"恒新; 本流独立管道, bulk 卡不波及。
-                        std::string bk = payload::book_pair(sp, cid);
-                        last_book[cid] = bk;
-                        if (!send_frame(sink, "book", "snapshot", bk, fseq)) return true;
-                        sent = true;
-                        std::string qt = payload::quote(sp, cid);
-                        last_quote[cid] = qt;
-                        if (!send_frame(sink, "quote", "snapshot", qt, fseq)) return true;
+                        batched += json::str(cid);
+                        batched += ":{\"book\":";
+                        batched += payload::book_pair(sp, cid);
+                        batched += ",\"quote\":";
+                        batched += payload::quote(sp, cid);
+                        batched += ",\"fills\":";
+                        batched += payload::fills(sp, cid);
+                        batched += '}';
                     }
-                    for (auto it = last_book.begin(); it != last_book.end();)
-                        it = (focus_now.count(it->first) ? std::next(it) : last_book.erase(it));
-                    for (auto it = last_quote.begin(); it != last_quote.end();)
-                        it = (focus_now.count(it->first) ? std::next(it) : last_quote.erase(it));
+                    batched += '}';
 
+                    bool sent = false;
+                    if (n > 0) {
+                        if (!send_frame(sink, "detail", "snapshot", batched, fseq)) return true;
+                        sent = true;
+                    }
                     since_send = sent ? 0 : (since_send + 1);
                     if (since_send >= kHeartbeatTicks) {
                         since_send = 0;
@@ -509,6 +518,38 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
         body += std::to_string(fseq);
         body += '}';
         res.set_content(body, "application/json; charset=utf-8");
+    });
+
+    // POST /api/v1/detail?cids=cid1,cid2,.. — 批量取 focus 盘 book/quote/fills (一次往返替 N×3 REST)。
+    //   仅 SSE 冷启/兜底用 (hot 流未连/断时); 常态 book/quote 走 SSE detail 帧, 零轮询。
+    //   query 参数 comma-list (simple request 免 CORS 预检, 同 focus POST)。
+    svr.Post("/api/v1/detail", [&hs](const httplib::Request& req, httplib::Response& res) {
+        const StateProvider& sp = hs.provider();
+        const std::string raw = req.get_param_value("cids");
+        std::string out = "{";
+        std::size_t start = 0, n = 0;
+        bool first = true;
+        while (start <= raw.size() && n < kMaxFocus) {
+            const std::size_t comma = raw.find(',', start);
+            const std::string cid = raw.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+            if (!cid.empty()) {
+                if (!first) out += ',';
+                first = false;
+                ++n;
+                out += json::str(cid);
+                out += ":{\"book\":";
+                out += payload::book_pair(sp, cid);
+                out += ",\"quote\":";
+                out += payload::quote(sp, cid);
+                out += ",\"fills\":";
+                out += payload::fills(sp, cid);
+                out += '}';
+            }
+            if (comma == std::string::npos) break;
+            start = comma + 1;
+        }
+        out += '}';
+        res.set_content(out, "application/json; charset=utf-8");
     });
 }
 
