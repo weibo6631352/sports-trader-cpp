@@ -1594,7 +1594,15 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                              (in.is_draw && cand->inplay_bet365_draw_fair >= 0.0));
                 if (is_final) {
                     // 完赛: 立即掉出 eligible (即便 feed 仍挂冻结赔率); 下轮 RediscoverOnce 退订 WSS + 轮询。
-                    sharp_last_seen.erase(cond_id);
+                    //   只在【转移瞬间】(原在 eligible, 此刻被 erase 掉) 打一行可追溯日志 (§7); 后续刷新
+                    //   erase 返 0 不再 log (防刷屏)。这是 Fix B 终态即退的活证锚点。
+                    if (sharp_last_seen.erase(cond_id) > 0) {
+                        std::fprintf(stderr,
+                                     "[paper_daemon] 完赛退订: cond=%.18s.. 终态(is_terminal) → 立即掉出 "
+                                     "eligible (下轮 RediscoverOnce 断 WSS+订单簿轮询)\n",
+                                     cond_id.c_str());
+                        std::fflush(stderr);
+                    }
                 } else if (has_sharp) {
                     ++matched_with_sharp;
                     sharp_last_seen[cond_id] = refresh_now_ns;  // 源头 pass: 记末次有赔率时刻 (grace 滞回)
