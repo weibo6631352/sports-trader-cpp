@@ -461,6 +461,11 @@ struct QuoteParams {
     double sharp_conv_rate{0.0};      // 收敛率 prob/sec (<0 市场向 sharp 收敛/>0 发散)
     double sharp_vol{0.0};            // sharp 抖动度 RMS (高=噪声多于真移动)
     std::int32_t sharp_samples{0};    // sharp 环窗口内样本数 (有效性闸: <2 则上面无意义)
+    // 持仓管理 Stage 2 sizing 乘子 (观测, 老板 2026-06-05; G-FREEZE-W append-only): 实际乘到 |target| 的值。
+    double lifecycle_mult{1.0};       // sharp 生命周期乘子 ∈[floor,1] (缩噪声; per-market)
+    double clv_mult{1.0};             // CLV sizing 乘子 ∈[floor,max] (>1=放大; 全局)
+    double rolling_clv_mean{0.0};     // 全局滚动 CLV 均值 (prob; 正=入场优于 fair; json NaN→0, 看 n)
+    std::int32_t rolling_clv_n{0};    // 滚动 CLV 样本数 (有效性: <min 则 clv_mult=1)
 };
 
 // ============================================================

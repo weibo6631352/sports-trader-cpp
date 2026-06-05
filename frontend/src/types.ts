@@ -382,6 +382,15 @@ export interface Quote {
   sharp_vol?: number;
   /** sharp 时序环窗口内样本数 (有效性闸: <2 则 velocity/conv_rate 无意义) */
   sharp_samples?: number;
+  // --- 持仓管理 Stage 2 sizing 乘子 (观测; 实际乘到 |target| 的值, 方向仍归 sharp) ---
+  /** sharp 生命周期乘子 ∈[floor,1] (Vol 稳定性×发散谨慎; 缩噪声; per-market) */
+  lifecycle_mult?: number;
+  /** CLV sizing 乘子 ∈[floor,max] (滚动 CLV 调; >1=放大; 全局系统级) */
+  clv_mult?: number;
+  /** 全局滚动 CLV 均值 (prob; 正=入场优于 fair; NaN 经 json→0, 看 rolling_clv_n) */
+  rolling_clv_mean?: number;
+  /** 滚动 CLV 样本数 (<min 则 clv_mult=1 fail-open) */
+  rolling_clv_n?: number;
 
   // --- AI provenance 字段 (小邓 XD 红线) ---
   /** 模型 ID, e.g. "demo-fv-v0" */

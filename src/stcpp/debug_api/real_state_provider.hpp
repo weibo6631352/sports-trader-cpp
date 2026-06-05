@@ -929,6 +929,11 @@ private:
         q.sharp_conv_rate = qf.g_sharp_conv_rate;
         q.sharp_vol = qf.g_sharp_vol;
         q.sharp_samples = qf.g_sharp_samples;
+        // 持仓管理 Stage 2 sizing 乘子透传 (观测)。
+        q.lifecycle_mult = qf.g_lifecycle_mult;
+        q.clv_mult = qf.g_clv_mult;
+        q.rolling_clv_mean = qf.g_rolling_clv_mean;
+        q.rolling_clv_n = qf.g_rolling_clv_n;
         return q;
     }
 };

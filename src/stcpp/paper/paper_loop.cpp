@@ -2190,6 +2190,27 @@ void PaperLoop::PublishQuoteSnapshot(
         }
     }
 
+    // 持仓管理 Stage 2 sizing 乘子观测 (老板 2026-06-05): 用与 TickOne sizing 一致的成员重算, 暴露盯盘。
+    //   方向归 sharp, 乘子只调 |target| 量级。g_lifecycle 缩噪声(≤1); g_clv 可放大(>1, 全局 CLV 驱动)。
+    {
+        if (const auto sh2 = sharp_history_.find(condition_id); sh2 != sharp_history_.end()) {
+            const std::int64_t sw2 = cfg_.sharp_fair_vel_window_ns;
+            const control::LifecycleInput lc_in{sh2->second.Vol(sw2), sh2->second.ConvergenceRate(sw2),
+                                                static_cast<std::int32_t>(sh2->second.WindowSampleCount(sw2))};
+            const control::LifecycleConfig lc_cfg{cfg_.lifecycle_mult_enabled, cfg_.lifecycle_vol_ref,
+                                                  cfg_.lifecycle_k_vol,        cfg_.lifecycle_div_ref,
+                                                  cfg_.lifecycle_k_div,        cfg_.lifecycle_floor,
+                                                  cfg_.lifecycle_min_samples};
+            qf.g_lifecycle_mult = control::ComputeLifecycleMultiplier(lc_in, lc_cfg);
+        }
+        qf.g_rolling_clv_mean = rolling_clv_.Mean();
+        qf.g_rolling_clv_n = static_cast<std::int32_t>(rolling_clv_.Count());
+        const control::ClvSizingConfig clv_cfg{cfg_.clv_mult_enabled, cfg_.clv_ref,      cfg_.clv_k_amp,
+                                               cfg_.clv_k_cut,         cfg_.clv_max_mult, cfg_.clv_floor,
+                                               cfg_.clv_min_samples};
+        qf.g_clv_mult = control::ComputeClvMultiplier(qf.g_rolling_clv_mean, qf.g_rolling_clv_n, clv_cfg);
+    }
+
     if (has_real_fair) {
         // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.
         qf.edge_bps = sizing_out.valid ? sizing_out.net_ci_edge * 10'000.0 : 0.0;

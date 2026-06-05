@@ -586,6 +586,22 @@ function ConvergenceSparkline(props: { conditionId: string }) {
           速度 {srvVel() >= 0 ? '+' : ''}{(srvVel() * 100).toFixed(2)}pt/s
         </span>
       </Show>
+      {/* 持仓管理 Stage 2: 实际乘到 |target| 的调仓乘子 = 生命周期(缩噪声≤1) × CLV(可放大>1)。仅真调整时显示。 */}
+      <Show when={Math.abs(Number(q()?.lifecycle_mult ?? 1) * Number(q()?.clv_mult ?? 1) - 1) > 0.02}>
+        {(() => {
+          const lc = Number(q()?.lifecycle_mult ?? 1);
+          const cv = Number(q()?.clv_mult ?? 1);
+          const eff = lc * cv;
+          const n = Number(q()?.rolling_clv_n ?? 0);
+          const col = eff > 1.02 ? '#4caf50' : eff < 0.98 ? '#ff9800' : '#888';
+          return (
+            <span class="mono-sub" style={{ color: col, 'font-weight': 700 }}
+                  title={`调仓乘子 = 生命周期 ${lc.toFixed(2)} (sharp 抖动/发散→缩噪声, ≤1) × CLV ${cv.toFixed(2)} (${n} 笔滚动 CLV ${cv > 1 ? '好→放大' : cv < 1 ? '差→收缩' : ''}) = 实际乘到 |target| 的量级。方向仍 100% 归赔率源 sharp, 乘子只调规模。`}>
+              仓×{eff.toFixed(2)}
+            </span>
+          );
+        })()}
+      </Show>
     </div>
   );
 }

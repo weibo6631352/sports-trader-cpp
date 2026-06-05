@@ -282,6 +282,13 @@ struct QuoteFeatures {
     double g_sharp_vol{std::numeric_limits<double>::quiet_NaN()};        // sharp 抖动度 RMS (高=噪声多于真移动)
     std::int32_t g_sharp_samples{0};                                    // sharp 环窗口内样本数 (<2 则上面 NaN)
 
+    // ---- 持仓管理 Stage 2 sizing 乘子 (观测, 老板 2026-06-05; 纯加性, trivially_copyable 保持) ----
+    //   实际乘到 |target| 的乘子值, 让盯盘看清"信息优势怎么调仓"。方向仍归 sharp, 乘子只调量级。
+    double g_lifecycle_mult{1.0};   // sharp 生命周期乘子 ∈[floor,1] (Vol 稳定性 × ConvergenceRate 发散谨慎; 缩噪声; per-market)
+    double g_clv_mult{1.0};         // CLV sizing 乘子 ∈[floor,max] (滚动 CLV 均值调; >1=放大; 全局系统级)
+    double g_rolling_clv_mean{std::numeric_limits<double>::quiet_NaN()};  // 全局滚动 CLV 均值 (prob; 正=入场优于 fair)
+    std::int32_t g_rolling_clv_n{0};  // 滚动 CLV 样本数 (<min_samples 则 g_clv_mult=1 fail-open)
+
     // ---- 有效性标记 (首次 Publish 后为 true) ----
     bool valid{false};
 

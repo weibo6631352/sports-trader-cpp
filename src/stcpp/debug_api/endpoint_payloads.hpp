@@ -662,6 +662,15 @@ inline std::string quote(const StateProvider& sp, const std::string& condition_i
         b += json::num(q.sharp_vol);
         b += ",\"sharp_samples\":";
         b += json::i64(q.sharp_samples);
+        // 持仓管理 Stage 2 sizing 乘子 (观测): 实际乘到 |target| 的值 (盯盘看"信息优势怎么调仓")。
+        b += ",\"lifecycle_mult\":";
+        b += json::num(q.lifecycle_mult);
+        b += ",\"clv_mult\":";
+        b += json::num(q.clv_mult);
+        b += ",\"rolling_clv_mean\":";
+        b += json::num(q.rolling_clv_mean);
+        b += ",\"rolling_clv_n\":";
+        b += json::i64(q.rolling_clv_n);
     }
     b += '}';
     return b;
