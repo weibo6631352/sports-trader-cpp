@@ -105,6 +105,26 @@ function recordPositionSeen(p: Positions | null): void {
   for (const k of Object.keys(positionFirstSeen)) if (!live.has(k)) delete positionFirstSeen[k];
 }
 
+/** sharp/mid 时序环 (老板 2026-06-05「盘口趋势/收敛发散」): 前端自攒 sharp fair 与 PM mid 的时序,
+ *  供盯盘画「市场价相对 sharp 收敛/发散」迷你图。module-level 环 (非 store, 避免 600 盘×60 样本 reactivity
+ *  churn); 组件随 1s uiNow tick 读取重绘。从 /grid (全市场 2s) + 展开 quote (更鲜) 双源 push, 值不变去重。 */
+export interface SharpTrendPt { ts: number; sharp: number; mid: number }
+const sharpTrendRing: Record<string, SharpTrendPt[]> = {};
+const SHARP_TREND_CAP = 60;
+export function pushSharpTrend(cid: string | undefined, sharp: number | null | undefined, mid: number | null | undefined, ts: number): void {
+  if (!cid) return;
+  const s = Number(sharp), m = Number(mid);
+  if (!(s > 0 && s < 1) || !Number.isFinite(m)) return;
+  const ring = (sharpTrendRing[cid] ??= []);
+  const last = ring[ring.length - 1];
+  if (last && Math.abs(last.sharp - s) < 1e-6 && Math.abs(last.mid - m) < 1e-6) return;  // 静市场去重
+  ring.push({ ts, sharp: s, mid: m });
+  if (ring.length > SHARP_TREND_CAP) ring.shift();
+}
+export function getSharpTrend(cid: string): SharpTrendPt[] {
+  return sharpTrendRing[cid] ?? [];
+}
+
 /** 整体替换关注集 (组件 createEffect 调用: 展开集合变化时同步)。
  *  幂等: 集合未变则跳过 —— 防 SSE 每帧 rebuildGroups → effect 重跑 → 反复 postFocus 风暴。 */
 export function setDetailInterest(condIds: string[]): void {
@@ -426,6 +446,13 @@ function applyGridMarkets(markets: GridMarket[]): void {
       }
     }),
   );
+  // sharp/mid 时序环 (收敛/发散迷你图): 全市场每轮 grid push 一点 (值不变自动去重)。
+  const nowMs = Date.now();
+  for (const m of markets) {
+    const sh = m.quote_found && m.sharp_fair != null && m.sharp_fair > 0 && m.sharp_fair < 1 ? m.sharp_fair : null;
+    const md = m.quote_found && m.market_mid != null ? m.market_mid : null;
+    pushSharpTrend(m.condition_id, sh, md, nowMs);
+  }
 }
 
 export async function refreshGrid(): Promise<void> {
@@ -462,6 +489,7 @@ export async function fetchDetailFor(condIds: string[], priority = false): Promi
           if (fd) s.fillsByMarket[condId] = fd.fills;
         }),
       );
+      if (quote) pushSharpTrend(condId, quote.sharp_fair, quote.market_mid, Date.now());  // 展开盘更鲜的 sharp/mid 点
       // market 元数据仅在用户交互(priority)且未缓存时拉一次 —— 常驻 refreshExpandedDetail
       //   (priority=false) 不拉 market, 彻底消除 market 重拉风暴; 元数据由 refreshMarketInfoSlow(60s) 兜。
       if (priority && !state.conditionCache[condId]?.market) {
@@ -638,6 +666,7 @@ function connectSSE(): void {
       s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
       s.conditionCache[cid].quote = qt;
     }));
+    pushSharpTrend(cid, qt.sharp_fair, qt.market_mid, Date.now());  // SSE quote 更鲜的 sharp/mid 点
     rebuildGroups();
   });
   // Ops/慢通道 (healthz/features/mapping/timeseries) — SSE 推, 取代常驻轮询

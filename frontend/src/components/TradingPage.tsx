@@ -24,7 +24,7 @@ import TextField from '@suid/material/TextField';
 import Box from '@suid/material/Box';
 import Alert from '@suid/material/Alert';
 import Badge from '@suid/material/Badge';
-import { state, setDetailInterest, addDetailInterest, uiNow, posSeenAt } from '../store';
+import { state, setDetailInterest, addDetailInterest, uiNow, posSeenAt, getSharpTrend } from '../store';
 import {
   fmtTs, fmtBps, fmtUsdc, fmtClock, stalenessMs, isEndpointFailing,
 } from '../api';
@@ -508,7 +508,62 @@ function MarketFills(props: { conditionId: string }) {
 // 展开区子块 B: 量化 / AI (XD-1/3/4/5 红线保持)
 // ============================================================
 
-function ExpandQuotePanel(props: { quote: Quote | null }) {
+// 收敛/发散迷你图 (老板 2026-06-05「市场价相对 sharp 收敛/发散 = 持仓对错核心信号」):
+//   叠 PM mid(蓝) 与 sharp fair(橙) 时序; |gap| 缩小=收敛(绿底), 扩大=发散(红底)。随 1s uiNow 重绘。
+function ConvergenceSparkline(props: { conditionId: string }) {
+  const W = 132, H = 30;
+  const ring = () => { uiNow(); return getSharpTrend(props.conditionId); };  // uiNow 触发每秒重读 module 环
+  const bounds = () => {
+    const r = ring();
+    if (r.length < 2) return null;
+    let lo = Infinity, hi = -Infinity;
+    for (const p of r) { lo = Math.min(lo, p.sharp, p.mid); hi = Math.max(hi, p.sharp, p.mid); }
+    if (!(hi > lo)) { lo -= 0.01; hi += 0.01; }
+    const pad = (hi - lo) * 0.08;
+    return { lo: lo - pad, hi: hi + pad };
+  };
+  const poly = (sel: (p: { sharp: number; mid: number }) => number) => {
+    const r = ring(), b = bounds();
+    if (!b) return '';
+    return r.map((p, i) => {
+      const x = r.length <= 1 ? 0 : (i / (r.length - 1)) * W;
+      const y = H - ((sel(p) - b.lo) / (b.hi - b.lo)) * H;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+  };
+  const conv = (): 'converge' | 'diverge' | 'flat' | 'none' => {
+    const r = ring();
+    if (r.length < 3) return 'none';
+    const now = r[r.length - 1], past = r[Math.max(0, r.length - 6)];
+    const gNow = Math.abs(now.sharp - now.mid), gPast = Math.abs(past.sharp - past.mid);
+    if (gNow < gPast * 0.7) return 'converge';
+    if (gNow > gPast * 1.3) return 'diverge';
+    return 'flat';
+  };
+  const meta = () => ({
+    converge: { label: '收敛 →', color: '#4caf50', bg: 'rgba(76,175,80,0.10)' },
+    diverge: { label: '发散 ←', color: '#f44336', bg: 'rgba(244,67,54,0.10)' },
+    flat: { label: '震荡 ≈', color: '#888', bg: 'transparent' },
+    none: { label: '攒样本…', color: '#888', bg: 'transparent' },
+  }[conv()]);
+  return (
+    <div class="v8-q-row" style={{ 'align-items': 'center', gap: '6px' }}>
+      <span class="q-lbl" title="市场价(蓝) 相对 sharp(橙) 的收敛/发散轨迹 = 持仓对错的实时信号。收敛=市场向我们 sharp 靠拢=持仓变对; 发散=变错。前端自攒, 刷新重置。">趋势</span>
+      <Show when={ring().length >= 2} fallback={<span class="mono-sub v8-dim">攒样本中…</span>}>
+        <svg width={W} height={H} style={{ background: meta().bg, 'border-radius': '3px' }}>
+          <polyline points={poly((p) => p.mid)} fill="none" stroke="#42a5f5" stroke-width="1.2" />
+          <polyline points={poly((p) => p.sharp)} fill="none" stroke="#ffa726" stroke-width="1.2" />
+        </svg>
+        <span class="mono-sub" style={{ color: meta().color, 'font-weight': 700 }}>{meta().label}</span>
+        <span class="q-lbl" title="蓝=PM 市场 mid · 橙=sharp fair" style={{ 'font-size': '9px' }}>
+          <span style={{ color: '#42a5f5' }}>━mid</span> <span style={{ color: '#ffa726' }}>━sharp</span>
+        </span>
+      </Show>
+    </div>
+  );
+}
+
+function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
   if (!props.quote) {
     return (
       <div class="v8-expand-panel">
@@ -590,6 +645,9 @@ function ExpandQuotePanel(props: { quote: Quote | null }) {
           </Show>
         </Show>
       </div>
+
+      {/* 收敛/发散趋势迷你图 (老板 2026-06-05「盘口趋势 = 持仓对错核心信号」) */}
+      <ConvergenceSparkline conditionId={props.conditionId} />
 
       <div class="v8-q-row">
         <span class="q-lbl">市场</span>
@@ -807,7 +865,7 @@ function MarketExpandArea(props: { cond: ConditionData }) {
   return (
     <div class="v8-expand-area">
       <ExpandBookPanel book={c().book} conditionId={c().conditionId} />
-      <ExpandQuotePanel quote={c().quote} />
+      <ExpandQuotePanel quote={c().quote} conditionId={c().conditionId} />
       <ExpandPosPanel posRows={c().posRows} rejectRows={c().rejectRows} perMarketPnl={c().perMarketPnl} conditionId={c().conditionId} />
     </div>
   );
