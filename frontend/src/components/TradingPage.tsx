@@ -24,7 +24,7 @@ import TextField from '@suid/material/TextField';
 import Box from '@suid/material/Box';
 import Alert from '@suid/material/Alert';
 import Badge from '@suid/material/Badge';
-import { state, setDetailInterest, addDetailInterest, uiNow } from '../store';
+import { state, setDetailInterest, addDetailInterest, uiNow, posSeenAt } from '../store';
 import {
   fmtTs, fmtBps, fmtUsdc, fmtClock, stalenessMs, isEndpointFailing,
 } from '../api';
@@ -707,6 +707,18 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
   const want = (oc: string) => { const t = target(); return (oc === 'YES') === favoredYes() ? (Number.isFinite(t) ? t : 0) : 0; };
   const u = (v: number) => (Number.isFinite(v) && v !== 0 ? `${v >= 0 ? '' : ''}${v.toFixed(1)}u` : '—');
   const hasPos = () => props.posRows.length > 0 || (Number.isFinite(target()) && target() > 0);
+
+  // C 持仓可解释 (老板 2026-06-05「盯盘人要一眼判断这仓管得对不对」):
+  //   C2 距 sharp 距离 = 入场价 vs 当前 sharp(本边); sharp_fair 是 YES 胜率, NO 边=1−sharp_yes。
+  //     dist = sharp_side − 入场价: >0 = sharp 在我方上方 = 持仓正确(绿)。这是「这仓对不对」核心判据。
+  //   C1 持仓时长 = 本会话墙钟近似 (后端 entry_ts 待补; uiNow 驱动每秒重算; 刷新会重置)。
+  const sharpYes = () => { const q = quote(); const s = q ? num(q.sharp_fair) : NaN; return (s > 0 && s < 1) ? s : NaN; };
+  const sharpFor = (oc: string) => { const sy = sharpYes(); return Number.isFinite(sy) ? (oc === 'YES' ? sy : 1 - sy) : NaN; };
+  const entryFor = (oc: string) => { const p = posFor(oc); return p ? num(p.avg_entry_price) : NaN; };
+  const distFor = (oc: string) => { const s = sharpFor(oc), e = entryFor(oc); return (Number.isFinite(s) && Number.isFinite(e)) ? s - e : NaN; };
+  const ageSecFor = (oc: string) => { const p = posFor(oc); if (!p) return NaN; const seen = posSeenAt(p.market_id, oc); return seen ? Math.max(0, (uiNow() - seen) / 1000) : NaN; };
+  const ageText = (s: number) => !Number.isFinite(s) ? '—' : s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s / 60)}min` : `${(s / 3600).toFixed(1)}h`;
+  const heldSides = () => ['YES', 'NO'].filter((oc) => { const p = posFor(oc); return p != null && Math.abs(num(p.net_qty)) > 0; });
   return (
     <div class="v8-expand-panel">
       <div class="v8-panel-title">
@@ -733,6 +745,23 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
               <span class="mono-sub" style={{ width: '64px', 'text-align': 'right', color: want(oc) > 0 ? '#42a5f5' : '#666' }}>{u(want(oc))}</span>
               <span class="mono-sub" style={{ width: '64px', 'text-align': 'right', 'font-weight': 700 }}>{u(held(oc))}</span>
               <span class="mono-sub" style={{ 'margin-left': 'auto', color: '#bbb' }}>{val(oc) !== 0 ? fmtUsdc(val(oc)) : '—'}</span>
+            </div>
+          )}
+        </For>
+        {/* C 持仓可解释: 每个实际持仓边一行 — 入场价 vs 当前 sharp 距离 (距锚>0=持仓正确绿) + 本会话持仓时长 */}
+        <For each={heldSides()}>
+          {(oc) => (
+            <div class="v8-pos-explain"
+                 title="入场价 vs 当前 sharp(本边) 的距离 = 这仓对不对的核心判据; 距锚>0=sharp 在我方上方=持仓正确(绿)。持仓时长为本会话墙钟近似(后端 entry_ts 待补, 刷新页面会重置)。">
+              <Chip label={oc} size="small" variant="outlined" sx={{ fontSize: '8px', height: '14px', fontWeight: 700, width: '30px' }} />
+              <span class="mono-sub">入场 {Number.isFinite(entryFor(oc)) ? entryFor(oc).toFixed(3) : '—'}</span>
+              <Show when={Number.isFinite(sharpFor(oc))} fallback={<span class="mono-sub v8-dim">· 无 sharp 锚</span>}>
+                <span class="mono-sub">· sharp {sharpFor(oc).toFixed(3)}</span>
+                <span class={`mono-sub ${distFor(oc) >= 0 ? 'v8-edge-pos' : 'v8-edge-neg'}`} style={{ 'font-weight': 700 }}>
+                  · 距锚 {distFor(oc) >= 0 ? '+' : ''}{(distFor(oc) * 100).toFixed(1)}点
+                </span>
+              </Show>
+              <span class="mono-sub v8-dim" style={{ 'margin-left': 'auto' }} title="本会话持仓时长 (近似)">持 ~{ageText(ageSecFor(oc))}</span>
             </div>
           )}
         </For>

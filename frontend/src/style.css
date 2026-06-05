@@ -1068,6 +1068,19 @@ html, body {
   gap: 4px;
 }
 .v8-row-sharp-val { color: var(--md-text); font-weight: 600; }
+
+/* C 持仓可解释行 (入场价 vs sharp 距离 + 持仓时长, 老板 2026-06-05) */
+.v8-pos-explain {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 0;
+  border-top: 1px dashed var(--md-border);
+  white-space: nowrap;
+  overflow: hidden;
+}
 .v8-row-pos {
   font-family: var(--font-mono);
   font-size: 11px;

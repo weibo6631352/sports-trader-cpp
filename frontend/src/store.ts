@@ -84,6 +84,27 @@ const lastEventScore: Record<string, Score | null> = {};
 /** 最近一次 /events 发现的赛事列表 (供 refreshGrid 快刷时复用建组, 无需重拉 events) */
 let lastEvents: EventSummary[] = [];
 
+/** 持仓首见时刻 (本会话墙钟; 老板 2026-06-05「盯盘人要知道仓持了多久」)。后端暂无 entry_ts (N1 待补),
+ *  前端按「本会话首次见到该 (市场,边) 有非零仓」近似。刷新页面会重置 → UI 标注「~本会话估」。
+ *  平仓 (净仓归零) 即清除, 下次再建仓重新计时。 */
+const positionFirstSeen: Record<string, number> = {};
+export function posSeenAt(marketId: string, outcome: string): number | null {
+  return positionFirstSeen[`${marketId}|${outcome}`] ?? null;
+}
+function recordPositionSeen(p: Positions | null): void {
+  if (!p) return;
+  const now = Date.now();
+  const live = new Set<string>();
+  for (const pos of p.positions) {
+    if (Math.abs(Number(pos.net_qty)) > 0) {
+      const k = `${pos.market_id}|${pos.outcome}`;
+      live.add(k);
+      if (!(k in positionFirstSeen)) positionFirstSeen[k] = now;
+    }
+  }
+  for (const k of Object.keys(positionFirstSeen)) if (!live.has(k)) delete positionFirstSeen[k];
+}
+
 /** 整体替换关注集 (组件 createEffect 调用: 展开集合变化时同步)。
  *  幂等: 集合未变则跳过 —— 防 SSE 每帧 rebuildGroups → effect 重跑 → 反复 postFocus 风暴。 */
 export function setDetailInterest(condIds: string[]): void {
@@ -275,7 +296,7 @@ export async function refreshMarketGrid(): Promise<void> {
     safeGet(fetchRiskRejects, STUB_RISK_REJECTS),
   ]);
 
-  if (posData) setState({ positions: posData });
+  if (posData) { setState({ positions: posData }); recordPositionSeen(posData); }
   if (attrData) setState({ attribution: attrData });
   if (rejectsData) setState({ rejects: rejectsData });
   // posMap/pmPnlMap/rejectMap 现由 buildEventGroups 从 state 统一计算 (refreshGrid 也复用)。
@@ -559,7 +580,7 @@ function connectSSE(): void {
   });
   on('status', (d) => { if (d) setState({ status: d as Status }); });
   on('account', (d) => { setState({ account: (d as Account) ?? null }); });
-  on('positions', (d) => { if (d) setState({ positions: d as Positions }); rebuildGroups(); });
+  on('positions', (d) => { if (d) { setState({ positions: d as Positions }); recordPositionSeen(d as Positions); } rebuildGroups(); });
   on('pnl', (d) => { if (d) setState({ attribution: d as PnlAttribution }); rebuildGroups(); });
   on('gate', (d) => { if (d) setState({ gate: d as GatePaper }); });
   on('rejects', (d) => { if (d) setState({ rejects: d as RiskRejects }); rebuildGroups(); });
