@@ -318,10 +318,19 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
   //   data_source_ts 是 Polymarket /book 的 timestamp (订单簿【版本号时刻】, 只在簿真变化才前进; 149hz poller
   //   簿没变就拿到同一个 ts)。所以这个数 = 【距上次簿变化的年龄】, 静市场天然 sawtooth 爬升, 非"卡"。
   //   "数据管道是否实时"看顶部「SSE 实时」灯 (亚秒稳定), 别和这个会飘的版本年龄混淆。阈值放宽 (静市场几秒正常)。
-  const bookTs    = () => Number(state.conditionCache[props.conditionId]?.quote?.data_source_ts ?? 0);
+  // ★ bug 修复 (老板 2026-06-05「订单簿变动了但版本年龄还 6s」): 版本年龄必须读【你正在看的订单簿】自己的
+  //   data_source_ts (book.token0/token1 取最新那边), 不是读 quote 的 —— 二者是两条独立数据流, on-change 下
+  //   订单簿变了(book 帧推)但报价没变(quote 帧不推) → 读 quote.data_source_ts 会卡在旧值, 而订单簿其实是新的。
+  const freshTok  = () => { const b = book(); if (!b) return null; const d0 = Number(b.token0?.data_source_ts ?? 0), d1 = Number(b.token1?.data_source_ts ?? 0); return d0 >= d1 ? b.token0 : b.token1; };
+  const bookTs    = () => { const t = freshTok(); const ds = t ? Number(t.data_source_ts) : 0; return ds > 0 ? ds : Number(state.conditionCache[props.conditionId]?.quote?.data_source_ts ?? 0); };
   const bookAgeS  = () => bookTs() > 0 ? Math.max(0, (uiNow() - bookTs() / 1e6) / 1000) : NaN;
   const bookFresh = () => !Number.isFinite(bookAgeS()) ? '#888'
     : bookAgeS() < 5 ? '#4caf50' : bookAgeS() < 12 ? '#ff9800' : '#f44336';  // 版本年龄: <5s绿 <12s黄 (静市场几秒正常)
+  // 链路时间 (老板「能看出是我们系统卡还是本来就慢」): 后端入口 = ingestion_ts − data_source_ts
+  //   (Polymarket 发布该版 → 伦敦后端收到; 就近部署正常 ~毫秒; 跟源头静默无关、不随时间涨)。高 = 我们后端/取数在拖。
+  //   跨洋(后端→你浏览器)那段看顶部「SSE 实时」灯。
+  const linkMs    = () => { const t = freshTok(); if (!t) return NaN; const ds = Number(t.data_source_ts), ing = Number(t.ingestion_ts); return (ds > 0 && ing >= ds) ? (ing - ds) / 1e6 : NaN; };
+  const linkColor = () => !Number.isFinite(linkMs()) ? '#888' : linkMs() < 100 ? '#4caf50' : linkMs() < 500 ? '#ff9800' : '#f44336';
   const vigInfo = () => {
     const cs = Number(bk().cross_spread);
     if (!Number.isFinite(cs)) return null;
@@ -418,13 +427,17 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
       <div class="v8-expand-panel">
         <div class="v8-panel-title">
           双边订单簿
-          {/* 订单簿版本年龄 (2026-06-05「飘」根治): = 距上次簿变化, 非数据管道延迟。管道实时看顶部 SSE 灯 */}
+          {/* 数据年龄 + 链路 + 时刻 (老板 2026-06-05「让我看懂是我们系统卡还是源头本来就慢」):
+              数据年龄=源头这版多旧(读订单簿自己的ts, 已修6s bug); 链路=后端取数延迟(ms=快); 跨洋看顶部SSE灯。 */}
           <Show when={Number.isFinite(bookAgeS())}>
-            <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700', color: bookFresh() }}
-                  title="订单簿版本年龄 = now − data_source_ts (Polymarket 订单簿版本号时刻, 只在簿真变化才前进)。= 这盘距上次簿变化多久; 静市场簿几秒不变属正常(数字会爬升/sawtooth, 非卡)。「数据管道是否实时」请看顶部「SSE 实时」灯(亚秒稳定)。">
+            <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700' }}
+                  title="三段定位「卡在哪」: ①数据年龄=now−订单簿版本时刻(你看到这版数据多旧; 源头静默会涨属正常)。②链路=后端从源头取到这版的延迟(ingestion−data_source; 毫秒=我们后端没卡)。③跨洋(后端→你浏览器)看顶部「SSE 实时」灯。判断: 只有数据年龄高=源头本来就慢(不怪我们); 链路或SSE高=我们系统在卡。">
               <Show keyed when={bookTs()}><span class="v8-live-dot">●</span></Show>
-              {' '}版本年龄 {bookAgeS().toFixed(1)}s
-              <span class="mono-sub v8-dim" style={{ 'margin-left': '4px', 'font-weight': '400' }} title="该版订单簿的实际版本时刻 (data_source_ts; Polymarket 订单簿 timestamp)">· 时刻 {fmtTs(bookTs()).slice(-12)}</span>
+              {' '}<span style={{ color: bookFresh() }}>数据年龄 {bookAgeS().toFixed(1)}s</span>
+              <Show when={Number.isFinite(linkMs())}>
+                <span style={{ 'margin-left': '6px', color: linkColor() }} title="链路 = 后端从 Polymarket 取到这版的延迟 (ingestion−data_source)。就近部署正常 ~毫秒; 高=我们后端/取数在拖, 跟源头静默无关。">链路 {linkMs() < 1 ? '<1' : linkMs().toFixed(0)}ms</span>
+              </Show>
+              <span class="mono-sub v8-dim" style={{ 'margin-left': '6px', 'font-weight': '400' }} title="该版订单簿的实际版本时刻 (data_source_ts)">· 时刻 {fmtTs(bookTs()).slice(-12)}</span>
             </span>
           </Show>
           <Show when={vigInfo()}>
