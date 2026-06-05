@@ -1854,6 +1854,36 @@ PaperLoop::AccountEquitySnapshot PaperLoop::account_equity() const noexcept {
     return s;
 }
 
+// positions_mtm — per-持仓 live MTM (mark-staleness fix 2026-06-05)。与 account_equity() 同源 (hub_.Read
+//   live 簿 microprice), 但 per-token 展开 + 带 YES/NO (PositionView.outcome, 真账本里 side 是 known 的)。
+//   无 live 簿 → mark 回落 avg_entry (unrealized=0, 老韩铁律#2 不臆造浮盈)。已平仓 (qty=0) 不列。仅观测。
+std::vector<PaperLoop::PositionMtm> PaperLoop::positions_mtm() const noexcept {
+    std::vector<PositionMtm> out;
+    for (auto const& pv : position_ledger_.get_all_positions()) {
+        // unit-contract-ok: signed micro → whole share (qty); 同 account_equity()
+        const double qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        if (qty == 0.0) continue;  // 已平仓 → 不列 (与 account_equity open_positions 口径一致)
+        PositionMtm p;
+        p.condition_id = pv.condition_id;
+        p.is_yes = (pv.outcome == strategy::Outcome::Yes);
+        p.net_qty = qty;
+        p.avg_entry = pv.avg_entry_price;
+        double mark = pv.avg_entry_price;  // fallback: 无 live 簿 → 成本价 (unrealized=0)
+        std::int64_t as_of = pv.last_update_ts;
+        const auto bk = hub_.Read(pv.token_id);
+        if (bk.has_value()) {
+            const double m = bk->microprice;
+            if (std::isfinite(m) && m > 0.0 && m < 1.0) mark = m;  // 当前 live 中价 (展示口径同 account)
+            if (bk->data_source_ts_ns > 0) as_of = bk->data_source_ts_ns;  // R-20: 簿版本时刻, 禁 now()
+        }
+        p.mark = mark;
+        p.pnl_unrealized = (mark - pv.avg_entry_price) * qty;
+        p.as_of_ts_ns = as_of;
+        out.push_back(std::move(p));
+    }
+    return out;
+}
+
 void PaperLoop::FeedRiskGateway() noexcept {
     // A1 (老郭钳-6): 账本 micro 化后 get_*_exposure 已是 micro, 与 RM exposure 同单位 → 删原 ×1e6
     //   补偿乘 (P0-1 的"whole→micro"对冲乘已无意义)。直喂, 全量覆盖 (PL 真值, 自愈)。

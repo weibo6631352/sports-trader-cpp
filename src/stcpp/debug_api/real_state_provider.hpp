@@ -247,6 +247,10 @@ public:
     // R-12: hub_.Read() 原子 acquire, 无持锁
     // R-20: as_of_ts_ns 来自 LedgerFeatures.as_of_ts_ns (上游链路)
     std::vector<HoldingView> positions() const override {
+        // [mark-staleness fix 2026-06-05] 优先用 daemon 注入的 live MTM 回调 (per-token PositionLedger +
+        //   当前簿, 与 /account 同源)。修旧路径两病: ① LedgerSnapshotHub.mark_price fill-gated 冻结陈旧;
+        //   ② 该快照无 side → 硬编码 "YES" 误标 NO 仓。未注入时回落旧 ledger_hub_ 路径 (契约/单测兼容)。
+        if (positions_fn_) return positions_fn_();
         std::lock_guard<std::mutex> lk(meta_mu_);  // R-4: 守护 token_map_ 遍历 (重发现热刷)
         if (ledger_hub_ == nullptr) {
             return {};  // 无数据源 → 空
@@ -279,6 +283,9 @@ public:
     void set_pnl_timeseries_fn(std::function<std::vector<PnlBucket>(std::int64_t, std::int64_t)> fn) {
         pnl_ts_fn_ = std::move(fn);
     }
+    // [mark-staleness fix 2026-06-05] /api/v1/positions 回调: daemon 注入 lambda (捕获 paper_loop, 调
+    //   positions_mtm() → per-token live MTM + YES/NO)。注入时 positions() 走它, 不再读冻结的 LedgerSnapshotHub。
+    void set_positions_fn(std::function<std::vector<HoldingView>()> fn) { positions_fn_ = std::move(fn); }
     std::vector<PnlBucket> pnl_timeseries(std::int64_t window_sec, std::int64_t bucket_sec) const override {
         if (pnl_ts_fn_) return pnl_ts_fn_(window_sec, bucket_sec);
         return {};  // 未注入 → 空 (前端灰显)
@@ -741,6 +748,7 @@ private:
     std::function<AccountSnapshot()> account_fn_{};       // 账户现金/估值回调 (daemon 注入); 空 → has_data=false
     std::function<std::vector<FillView>(const std::string&)> fills_fn_{};  // 成交流水回调(market过滤; daemon注入)
     std::function<std::vector<PnlBucket>(std::int64_t, std::int64_t)> pnl_ts_fn_{};  // 净值时序回调 (daemon 注入)
+    std::function<std::vector<HoldingView>()> positions_fn_{};  // per-token live 持仓回调 (daemon 注入; 空→读 ledger_hub_)
     mutable std::mutex mapping_mtx_;                       // 保护 mapping_snapshot_ (低频写/读)
     MappingStatusReport mapping_snapshot_;                // daemon push 的映射快照
     // R-4 (老周 D-2): meta_mu_ 守护 token_map_/events_/catalog_ — R-6 周期重发现热刷, HTTP 线程读。

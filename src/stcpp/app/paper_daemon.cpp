@@ -855,6 +855,28 @@ BuildResult PaperDaemon::Build() {
         return out;
     });
 
+    // [mark-staleness fix 2026-06-05] /api/v1/positions 回调: paper_loop positions_mtm() (per-token 真账本
+    //   + 当前 live 簿, 与 /account 同源) → HoldingView。修旧 LedgerSnapshotHub 路径的陈旧 mark + YES/NO 误标。
+    real_provider_->set_positions_fn([this]() -> std::vector<debug_api::HoldingView> {
+        std::vector<debug_api::HoldingView> out;
+        if (!paper_loop_) return out;
+        const auto rows = paper_loop_->positions_mtm();
+        out.reserve(rows.size());
+        for (const auto& p : rows) {
+            debug_api::HoldingView hv;
+            hv.market_id = p.condition_id;
+            hv.outcome = p.is_yes ? "YES" : "NO";
+            hv.net_qty = p.net_qty;
+            hv.avg_entry_price = p.avg_entry;
+            hv.mark_price = p.mark;
+            hv.pnl_realized = 0.0;  // 开仓期 realized=0 (平仓时落 cum_realized; 已平仓 qty=0 不列)
+            hv.pnl_unrealized = p.pnl_unrealized;
+            hv.as_of_ts_ns = p.as_of_ts_ns;
+            out.push_back(std::move(hv));
+        }
+        return out;
+    });
+
     // [2026-06-01 凯利评审 Step3] /api/v1/pnl/timeseries 净值曲线回调: paper_loop equity_snapshot (每 tick
     //   等间隔权益样本) 按 bucket_sec 分桶 (按 ts), 每桶取末尾 equity → cum_net_pnl = equity − bankroll_init。
     real_provider_->set_pnl_timeseries_fn(

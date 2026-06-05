@@ -535,6 +535,22 @@ public:
         return published_equity_;
     }
 
+    // [mark-staleness fix 2026-06-05] per-持仓 live MTM — /api/v1/positions 盯盘端点用。
+    //   根因: 旧 /positions 读 LedgerSnapshotHub.mark_price, 仅该市场有新成交才更新 (PublishLedgerSnapshot
+    //   fill-gated) → 空仓期冻结陈旧 (实测落后 account 20min); 且该快照无 side 字段, 端点硬编码 "YES"。
+    //   本方法读真 PositionLedger (per-token, 带 Outcome) + 当前 live 簿 (hub_, 与 account_equity() 同源),
+    //   一次修对陈旧 + YES/NO。纯观测 (debug_api 经 daemon 回调读), 不喂决策/风控。
+    struct PositionMtm {
+        std::string condition_id;
+        bool is_yes{true};
+        double net_qty{0.0};
+        double avg_entry{0.0};
+        double mark{0.0};
+        double pnl_unrealized{0.0};
+        std::int64_t as_of_ts_ns{0};
+    };
+    [[nodiscard]] std::vector<PositionMtm> positions_mtm() const noexcept;
+
     // M3 成果尺子: CLV 聚合报告 (G1 验收: clv_close_mean>1.5% + positive_rate>55%)。
     [[nodiscard]] eval::CLVTracker::Report clv_report() const noexcept { return clv_tracker_.report(); }
     // Phase 0 项5: 组合度量 (Sharpe/maxDD/VaR; periods_per_year 由调用方按 tick 间隔传)。
