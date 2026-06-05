@@ -981,7 +981,7 @@ html, body {
 /* 表格列标题行 */
 .v8-market-list-header {
   display: grid;
-  grid-template-columns: 28px 60px 1fr 72px 72px 76px 96px 88px 44px 60px;
+  grid-template-columns: 28px 60px 1fr 72px 72px 96px 76px 96px 88px 44px 60px;
   align-items: center;
   gap: 0;
   padding: 2px 8px;
@@ -998,6 +998,7 @@ html, body {
 .v8-col-type   { width: 60px; }
 .v8-col-name   { /* flex 1 */ }
 .v8-col-price  { width: 72px; text-align: right; }
+.v8-col-sharp  { width: 96px; text-align: right; }
 .v8-col-edge   { width: 76px; text-align: right; }
 .v8-col-pos    { width: 96px; }
 .v8-col-pnl    { width: 88px; text-align: right; }
@@ -1007,7 +1008,7 @@ html, body {
 /* 单个 Market 摘要行 */
 .v8-market-row {
   display: grid;
-  grid-template-columns: 28px 60px 1fr 72px 72px 76px 96px 88px 44px 60px;
+  grid-template-columns: 28px 60px 1fr 72px 72px 96px 76px 96px 88px 44px 60px;
   align-items: center;
   gap: 0;
   padding: 0 8px;
@@ -1053,6 +1054,20 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
 }
+/* sharp 偏离列 (赔率源真值锚, 老板 2026-06-05) — sharp 值 + Δ 偏离并排, 右对齐 */
+.v8-row-sharp {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  display: flex;
+  justify-content: flex-end;
+  align-items: baseline;
+  gap: 4px;
+}
+.v8-row-sharp-val { color: var(--md-text); font-weight: 600; }
 .v8-row-pos {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -1137,7 +1152,7 @@ html, body {
   .v8-expand-area { grid-template-columns: 1fr; }
   .v8-market-list-header,
   .v8-market-row {
-    grid-template-columns: 24px 50px 1fr 60px 60px 64px 80px 72px 36px 50px;
+    grid-template-columns: 24px 50px 1fr 60px 60px 80px 64px 80px 72px 36px 50px;
   }
 }
 

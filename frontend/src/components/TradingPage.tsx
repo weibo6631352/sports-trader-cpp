@@ -164,6 +164,24 @@ function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onCli
   // edge: 优先 /grid 摘要, 降级全档 quote
   const edgeBps = () => fin(summary()?.edgeBps ?? quote()?.edge_bps);
 
+  // sharp 偏离 (老板 2026-06-05「赔率源=真值, 量化不可靠」): 折叠态直接显 sharp + 市场价距 sharp 多远。
+  //   优先展开拉来的 quote.sharp_fair (更鲜), 降级 /grid 摘要。Δ=sharp−mid (YES 视角):
+  //   Δ>0 = 市场价低于 sharp = YES 偏便宜(绿); Δ<0 = YES 偏贵(红)。这是方向真值, 比 ML 的 Edge 可信。
+  const sharpVal = () => {
+    const s = fin(quote()?.sharp_fair ?? summary()?.sharp);
+    return (s != null && s > 0 && s < 1) ? s : null;
+  };
+  const midVal = () => {
+    const m = fin(quote()?.market_mid ?? summary()?.mid);
+    if (m != null) return m;
+    const b = bestBid(), a = bestAsk();
+    return (b != null && a != null) ? (b + a) / 2 : null;
+  };
+  const sharpDev = () => {
+    const s = sharpVal(), m = midVal();
+    return (s != null && m != null) ? (s - m) : null;
+  };
+
   // 持仓摘要
   const posText = () => {
     if (posRows().length === 0) return null;
@@ -236,8 +254,22 @@ function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onCli
         {bestAsk() != null ? bestAsk()!.toFixed(3) : '—'}
       </span>
 
-      {/* Edge */}
-      <span class={`v8-row-edge${edgeBps() == null ? ' v8-dim' : edgeBps()! > 0 ? ' v8-edge-pos' : edgeBps()! < 0 ? ' v8-edge-neg' : ' v8-dim'}`}>
+      {/* sharp 偏离 (赔率源真值锚, 老板 2026-06-05) — 折叠态就能扫出"市场价距 sharp 多远" */}
+      <span class="v8-row-sharp"
+            title="赔率源 sharp (bet365 de-vig YES 胜率) + 市场价距 sharp 偏离 Δ=sharp−mid (点)。Δ>0=市场价低于 sharp=YES 偏便宜(绿); Δ<0=偏贵(红)。这是方向真值, 比右侧 ML差 可信。">
+        <Show when={sharpVal() != null} fallback={<span class="v8-dim">—</span>}>
+          <span class="v8-row-sharp-val">{sharpVal()!.toFixed(3)}</span>
+          <Show when={sharpDev() != null}>
+            <span class={sharpDev()! >= 0 ? 'v8-edge-pos' : 'v8-edge-neg'}>
+              {sharpDev()! >= 0 ? '+' : ''}{(sharpDev()! * 100).toFixed(1)}
+            </span>
+          </Show>
+        </Show>
+      </span>
+
+      {/* ML差 (模型 edge — 老板定调 ML 不可靠, 降级为灰色仅参考; 方向看左侧 sharp 偏离) */}
+      <span class="v8-row-edge v8-dim"
+            title="ML 模型 edge (bps) — 模型不可靠, 仅参考。方向真值看左侧 sharp 偏离。">
         {edgeBps() != null ? fmtBps(edgeBps()!) : '—'}
       </span>
 
@@ -970,7 +1002,8 @@ function EventAccordion(props: { group: EventGroup }) {
           <span class="v8-col-name">盘口</span>
           <span class="v8-col-price">买价</span>
           <span class="v8-col-price">卖价</span>
-          <span class="v8-col-edge">Edge</span>
+          <span class="v8-col-sharp" title="赔率源 sharp + 市场价距 sharp 偏离 (方向真值)">sharp偏离</span>
+          <span class="v8-col-edge" title="ML 模型 edge — 不可靠, 仅参考">ML差</span>
           <span class="v8-col-pos">持仓</span>
           <span class="v8-col-pnl">浮盈</span>
           <span class="v8-col-rej">拒单</span>

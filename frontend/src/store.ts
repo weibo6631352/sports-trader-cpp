@@ -391,6 +391,10 @@ function applyGridMarkets(markets: GridMarket[]): void {
           ask: m.book_found && m.best_ask != null ? m.best_ask : null,
           edgeBps: m.quote_found && m.edge_bps != null ? m.edge_bps : null,
           fair: m.quote_found && m.fair != null ? m.fair : null,
+          // 赔率源 sharp + 市场 mid (老板 2026-06-05「赔率源=真值」): 折叠摘要行直接显 sharp 偏离。
+          //   sharp_fair = -1 表示无 odds/未映射 → 存 null (前端显 '—' 而非假 0)。
+          sharp: m.quote_found && m.sharp_fair != null && m.sharp_fair > 0 && m.sharp_fair < 1 ? m.sharp_fair : null,
+          mid: m.quote_found && m.market_mid != null ? m.market_mid : null,
           eventTs: m.event_ts ?? null,
           kickoffTs: m.kickoff_ts && m.kickoff_ts > 0 ? m.kickoff_ts : null,
           gameState: m.game_state ?? null,

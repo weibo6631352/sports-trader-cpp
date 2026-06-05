@@ -457,6 +457,8 @@ export interface ConditionSummary {
   ask: number | null;
   edgeBps: number | null;
   fair: number | null;
+  sharp: number | null;       // 赔率源 sharp (bet365 de-vig YES 胜率; 方向真值锚, 老板 2026-06-05)
+  mid: number | null;         // 市场 microprice mid (算 sharp 偏离 Δ=sharp−mid 用)
   eventTs: number | null;
   kickoffTs: number | null;   // 开赛时刻 (epoch ns)
   gameState: string | null;   // pregame/inplay/ended/resolved/unknown
