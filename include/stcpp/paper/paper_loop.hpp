@@ -82,13 +82,10 @@
 #include "stcpp/eval/rolling_clv.hpp"            // 实时 CLV (PIT-safe) 滚动环 — sizing 用 (Stage2)
 #include "stcpp/eval/portfolio_metrics.hpp"      // Phase 0 项5: Sharpe/maxDD/VaR (北极星 KPI)
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
-#include "stcpp/ml/sharp_fair_track.hpp"         // sharp fair 时序环 (line movement; velocity/收敛发散)
-#include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量)
-#include "stcpp/ml/fair_value_model.hpp"         // ml::FairValueModel/ModelPrediction (步④ 推理接线)
-#include "stcpp/ml/seq_arb_model.hpp"            // ml::SeqArbModel (短时套利 advisory 旁路)
-#include "stcpp/ml/hot_swap_model.hpp"           // ml::HotSwapHolder (模型热加载)
-#include "stcpp/ml/feature_vector_hub.hpp"       // Phase 2 项6: 完整 75 列向量发布 (训练捕获)
-#include "stcpp/ml/model_feature_spec.hpp"       // extract_joined (game_row+book_row → FeatureVector)
+#include "stcpp/ml/sharp_fair_track.hpp"         // sharp fair 时序环 (line movement; velocity/收敛发散) — 量化因子
+#include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量) — 量化因子
+// (大模型/训练 includes 已砍 2026-06-05: fair_value_model / seq_arb_model / hot_swap_model /
+//  feature_vector_hub / model_feature_spec。保留上面两个纯统计因子环。)
 #include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
 #include "stcpp/paper/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
@@ -623,30 +620,8 @@ public:
     //   指针生命周期须覆盖 loop 运行期。live 路径恒 nullptr → 行为逐位不变。
     void SetReplayInputs(const DecisionInputSnapshot* s) noexcept { replay_inputs_ = s; }
 
-    // 步④: 注入 ML 推理模型 (ml::FairValueModel; daemon 装配 Stub/ONNX)。非占有 (调用方管生命周期, 启动期用)。
-    //   ML-R2 (老板 2026-05-31 放开): 真 ONNX 模型 blend 进决策 p_fair (stub 永不驱动); 无模型 → baseline。
-    void SetMlModel(const ml::FairValueModel* m) noexcept { ml_holder_.StoreNonOwning(m); }
-
-    // 热加载换 fair_value 模型 (老板「边训边跑边更新模型可重新加载」, 2026-06-01)。占有式: 训练产新 ONNX →
-    //   daemon watcher 加载校验后 Store 原子换上, 不停盘; 推理线程 Load 拿 copy 期内旧模型不被删。任意线程可调。
-    void SetMlModelShared(std::shared_ptr<const ml::FairValueModel> m) noexcept {
-        ml_holder_.Store(std::move(m));
-    }
-
-    // 注入短时套利序列模型 (ml::SeqArbModel; daemon 装配 Stub/ONNX)。advisory 旁路: 只填 qf.arb_* 观测,
-    //   绝不驱动真单 (stub 恒 ok=false 不发; 真模型也止于 advisory 直到 LiveOrderGate 开闸)。
-    //   非占有注入 (调用方管生命周期; 启动期用)。
-    void SetSeqArbModel(const ml::SeqArbModel* m) noexcept { seq_arb_holder_.StoreNonOwning(m); }
-
-    // 热加载换模型 ("边跑边训": 旁边离线训练进程产新 ONNX → 不停盘原子换上)。占有式 (holder 持引用,
-    //   旧模型最后引用释放时回收)。任意线程可调; 推理线程 Load 拿 copy 期内旧模型不被删。
-    void SetSeqArbModelShared(std::shared_ptr<const ml::SeqArbModel> m) noexcept {
-        seq_arb_holder_.Store(std::move(m));
-    }
-
-    // Phase 2 项6: 注入完整 75 列向量 hub (daemon 持有 + recorder 线程消费)。nullptr = 不捕获。
-    //   PublishQuoteSnapshot 算完 extract_full 后 Publish 进来 (训练 X 含 0-17 原始列)。单 writer loop_thread_。
-    void SetFeatureVectorHub(ml::FeatureVectorHub* h) noexcept { fv_hub_ = h; }
+    // (大模型注入方法已砍 2026-06-05「砍掉大模型训练功能」: SetMlModel/SetMlModelShared/SetSeqArbModel/
+    //  SetSeqArbModelShared/SetFeatureVectorHub。fair 不再有 ONNX 推理 blend; 量化因子直填 qf。)
 
     // R-3: parent_by_condition_ 已并入 PaperCatalog (SetPaperCatalog)。原 SetParentRefs 删除。
 
@@ -778,11 +753,7 @@ private:
         auto it = tick_inputs_.odds->find(inplay_match_id);
         return (it != tick_inputs_.odds->end()) ? &it->second : nullptr;
     }
-    // 步④: ML 推理模型 (非自有; daemon 注入 + 持有)。loop_thread_ 只读。nullptr = baseline only。
-    ml::HotSwapHolder<ml::FairValueModel> ml_holder_;    // 步④ fair_value 模型 (热加载: daemon watcher 原子换新 ONNX)
-    ml::HotSwapHolder<ml::SeqArbModel> seq_arb_holder_;  // 短时套利模型 (advisory 旁路; 支持热加载换模型)
-    // Phase 2 项6: 完整向量 hub (非自有; daemon 注入)。loop_thread_ 单 writer Publish。nullptr = 不捕获。
-    ml::FeatureVectorHub* fv_hub_{nullptr};
+    // (大模型成员已砍 2026-06-05: ml_holder_/seq_arb_holder_/fv_hub_。fair 不依赖 ML 推理。)
 
     // ---- A1: 真实比分源 + 映射 ----
     // score_store_: 单 writer (Start 前注入), 之后 loop_thread_ 只读 Get(). 可空 → stub 路径.

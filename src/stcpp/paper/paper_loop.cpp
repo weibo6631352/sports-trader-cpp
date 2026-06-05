@@ -891,50 +891,9 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                     : std::numeric_limits<double>::quiet_NaN();
     }
 
-    // ---- ML 驱动决策 blend (老板 2026-05-31 放开 paper 期 ML-R2) ----
-    //   真 ONNX 模型加载时, blend ML fair 进决策 p_fair (YES-canonical)。安全护栏:
-    //   ① 仅 kind==Onnx (stub 永不驱动决策, 无真模型→纯 baseline) ② ready+维度匹配+predict ok
-    //   ③ PaperLoop 天然 paper (VirtualFill 不花真钱; live 路径另接, 绝不复用此 blend 驱动真单)。
-    //   特征经 PopulateFeatureColumns 与 PublishQuoteSnapshot 同源 (BR-1: 训练捕获=决策推理一致)。
-    //   ⚠ derivative 盘口 (totals/spreads) 不 blend: 当前 ONNX 是 moneyline 语义, blend 进派生 p_fair 会污染
-    //     (派生解析模型即该盘口的 fair)。未来 market-type-aware ONNX 上线再放开 (cat_market_type 特征已就位)。
-    //   R-2: ML 推理 (非纯) 在此算 ml_p_opt, blend 算术交 ResolveFair (一处定优先级)。
-    std::optional<double> ml_p_opt;
-    // 热加载: Load() 拿当前模型 shared_ptr (本次推理引用期内不被 daemon watcher 换走/回收)。
-    const auto ml_model = ml_holder_.Load();
-    // (2026-06-03 老板「优化模型不缩减场景」: 去掉 has_real_fair 门 — 模型 Platt 校准后全场景用,
-    //   过度自信被校准治住, 不需门挡。无比分盘模型从微结构特征预测, 校准后≈市场不产极端。)
-    if (cfg_.ml_fair_blend_weight > 0.0 && !derivative_p_yes && ml_model != nullptr &&
-        ml_model->ready() && ml_model->kind() == ml::ModelKind::Onnx) {
-        sizing::QuoteFeatures fqf{};
-        const double blend_no_imb =
-            mkt.no.present ? mkt.no.book.imbalance : std::numeric_limits<double>::quiet_NaN();
-        const std::int64_t blend_joint = std::min(game_row.as_of_ts_ns, feat.as_of_ts_ns);
-        const std::int64_t blend_no_ds = mkt.no.present ? mkt.no.book.data_source_ts_ns : 0;
-        const std::int64_t blend_no_ing = mkt.no.present ? mkt.no.book.ingestion_ts_ns : 0;
-        PopulateFeatureColumns(fqf, condition_id, fv_result, microprice, feat, cross_spread, no_token_mid,
-                               blend_no_imb, devig_ok, blend_joint, mkt.event_id, mkt.neg_risk_market_id,
-                               time_to_resolution_frac, g_time_x_lead, g_fld_signal, g_remaining_sec,
-                               g_periods_won_home, g_periods_won_away, sports, blend_no_ds, blend_no_ing,
-                               mkt.no.present ? &mkt.no.book : nullptr);
-        const ml::FeatureVector fv = ml::extract_full(game_row, book_row, fqf);
-        if (fv.size() == ml_model->expected_feature_count()) {
-            const auto mp = ml_model->predict(fv);
-            const double ml_p = mp.prob(0);
-            // 校准门 (2026-06-03 紧急修): 只有【已校准】(calibrated && conf>0) 的模型才驱动 fair。
-            //   未训练/退化模型 (无 sidecar → calibrated=false / conf=0) 会输出 ~恒定垃圾 (实测
-            //   ~0.9995) → weight=1.0 下 fair=垃圾 → 全 moneyline 假 edge → 垃圾成交。此门挡掉
-            //   (与前端 modelReady 同口径); 等 auto-train 训出带 sidecar 的真模型才放行驱动。
-            // fail-safe: ML 输出非有限 (NaN 特征/数值) → 不 blend, 保 baseline (宁可不动不可乱动)。
-            if (mp.ok && mp.calibrated && mp.confidence > 0.0 && std::isfinite(ml_p) && ml_p > 0.0 &&
-                ml_p < 1.0) {
-                ml_p_opt = ml_p;
-            }
-        }
-    }
-
-    // ---- R-2 (老周/老郭 评审): 一处解析决策 fair (显式优先级 derivative > sharp > score-prior; ----
-    //   ML 仅非 derivative 叠加)。逐位等价原 inline 四层逻辑; 纯函数可单测 (fair_resolve.hpp)。
+    // ---- R-2 (老周/老郭 评审): 一处解析决策 fair (显式优先级 derivative > sharp > score-prior) ----
+    //   纯函数可单测 (fair_resolve.hpp)。大模型 ML blend 已砍 (2026-06-05 老板「砍掉大模型训练功能」):
+    //   fair 只来自 derivative/sharp/score-prior/市场 de-vig, 不再有 ONNX 推理 blend。
     {
         pricing::FairInputs fin;
         fin.p_market_devig = p_market_devig;
@@ -943,18 +902,13 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         fin.score_prior_yes = fair_score_prior;
         fin.prior_conf = fair_prior_conf;
         fin.has_real_fair = has_real_fair;
-        // ML 驱动总开关 (默认关): 关 → ml_p 仅 advisory (qf.ml_advisory_p_yes 仍记录/前端显示),
-        //   但【不进 fair】→ 不驱动交易。验证通过 + 策略评审后才 ml_drive_enabled=true 放行。
-        fin.ml_p_yes = cfg_.ml_drive_enabled ? ml_p_opt : std::nullopt;
-        fin.ml_blend_weight = cfg_.ml_fair_blend_weight;
         if (market_implied) {
-            // outright/prop/series 市场兜底: 挡 score-prior/sharp/derivative/ML → fair = 纯市场 de-vig。
+            // outright/prop/series 市场兜底: 挡 score-prior/sharp/derivative → fair = 纯市场 de-vig。
             //   单场比分/匹配的 sharp 对"冠军/系列"语义错误, 必须挡 (防垃圾 fair); edge≈0 不交易。
             fin.derivative_p_yes = std::nullopt;
             fin.sharp_yes = -1.0;
             fin.prior_conf = 0.0;
             fin.has_real_fair = false;
-            fin.ml_p_yes = std::nullopt;
         }
         const auto fr = pricing::ResolveFair(fin);
         p_fair = fr.p_fair;
@@ -2182,7 +2136,7 @@ void PaperLoop::PublishQuoteSnapshot(
     double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
     std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports,
     const data::feature_store::FeatureStoreGameRow& ml_game_row,
-    const data::feature_store::FeatureStoreBookRow& ml_book_row, std::int64_t no_book_ds_ts,
+    [[maybe_unused]] const data::feature_store::FeatureStoreBookRow& ml_book_row, std::int64_t no_book_ds_ts,
     std::int64_t no_book_ing_ts, const polymarket::clob_wss::OrderBookFeatures* no_book_full) noexcept {
     sizing::QuoteFeatures qf{};
     PopulateFeatureColumns(qf, condition_id, fv_result, mark_price, feat, cross_spread, no_microprice,
@@ -2262,100 +2216,21 @@ void PaperLoop::PublishQuoteSnapshot(
         qf.required_margin = 0.0;
     }
 
-    // ML 推理 (步④) + Phase 2 项6 完整向量捕获: qf 全特征就位 → extract_full 产完整
-    //   kMlFeatureCount(75) 列 (含 0-17 原始 game/book + 18-74 qf 派生)。一次算, 供 record + predict。
-    //   advisory, ML-R1/R2: 旁路, 绝不改 fair_value/决策。R-12: paper loop_thread_, 非 WSS。
-    const ml::FeatureVector fv = ml::extract_full(ml_game_row, ml_book_row, qf);
-    // 项6: 完整向量 Publish 进 fv_hub (短锁 POD copy; 独立 recorder 线程落盘, IO 离决策线程)。
-    //   训练 X 一列不缺 (含 score_diff/b_mid 等 FeatureRecorder 落不到的 0-17 原始列)。
-    if (fv_hub_ != nullptr && fv.size() == ml::kMlFeatureCount) {
-        ml::FeatureVectorRecord rec;
-        rec.set_condition(condition_id);
-        rec.as_of_ts_ns = qf.as_of_ts_ns;  // 决策时刻 (dedup + PIT; 同 FeatureRecorder 语义)
-        rec.set_spec(fv.spec_version);
-        rec.set_values(fv.values);
-        rec.baseline_fair = qf.fair_value;  // 缺口B: 残差训练 y=label−baseline 的锚 (非 X 列)
-        rec.line = qf.line;                 // totals/spreads 线值 (元数据旁注)
-        rec.valid = true;
-        fv_hub_->Publish(rec);
-    }
-    ml::ModelPrediction ml_pred_storage;
-    const ml::ModelPrediction* ml_pred = nullptr;
-    // 热加载: Load() 拿当前模型 (本次引用期内不被换走)。
-    const auto ml_model = ml_holder_.Load();
-    if (ml_model != nullptr && ml_model->ready() &&
-        fv.size() == ml_model->expected_feature_count()) {
-        ml_pred_storage = ml_model->predict(fv);
-        ml_pred = &ml_pred_storage;
-    }
-
-    // 短时套利 advisory 分支 (模块5): seq_arb_model 同源 fv → 预测 → ComputeArbSignal → 填 qf.arb_*。
-    //   旁路: 绝不驱动真单 (stub 恒 ok=false; 真模型也止于 advisory 直到开闸)。与结算链物理隔离 (主计划 §5.2)。
-    const auto seq_arb_model = seq_arb_holder_.Load();  // 热加载: 拿当前模型 copy (期内不被换走删)
-    if (seq_arb_model != nullptr && seq_arb_model->ready() &&
-        fv.size() == seq_arb_model->expected_feature_count()) {
-        const ml::ArbPrediction ap = seq_arb_model->predict(fv);
-        risk::ArbMarketState ms;
-        ms.mid = qf.market_mid;
-        ms.best_ask = feat.best_ask();
-        ms.best_bid = feat.best_bid();
-        const auto dm = polymarket::clob_wss::compute_depth_metrics(feat);
-        ms.exit_depth_usdc = std::isfinite(dm.bid_depth_5lvl) ? dm.bid_depth_5lvl : 0.0;  // 卖出平仓深度
-        const double p = std::isfinite(qf.market_mid) ? qf.market_mid : 0.5;
-        ms.fee_roundtrip = 2.0 * qf.fee_rate_coef * p * (1.0 - p);  // 往返手续费 (价格单位)
-        ms.slip_est = std::isfinite(qf.cross_spread) ? 0.0 : 0.0;
-        ms.slip_est = 0.5 * std::max(0.0, ms.best_ask - ms.best_bid);  // 半 spread 滑点估计
-        ms.bankroll_usdc = cfg_.bankroll_usdc;
-        ms.max_notional_usdc = cfg_.arb_max_notional_usdc;
-        ms.lambda = cfg_.arb_lambda;
-        ms.pred_gen_ts_ns = qf.as_of_ts_ns;
-        ms.now_ns = NowNs();
-        ms.est_rtt_ns = static_cast<std::int64_t>(cfg_.arb_est_rtt_ns);
-        ms.max_open_legs = cfg_.arb_max_open_legs;
-        const risk::ArbSignal sig = risk::ComputeArbSignal(ap, ms);
-        qf.arb_actionable = sig.actionable ? 1 : 0;
-        qf.arb_horizon_sec = sig.horizon_sec;
-        qf.arb_predicted_dmid = sig.predicted_dmid;
-        qf.arb_net_edge = sig.net_edge;
-        qf.arb_signal_quality = sig.signal_quality;
-        qf.arb_suggested_notional = sig.suggested_notional;
-        qf.arb_reject_code = static_cast<std::int32_t>(sig.reject);
-    }
-
-    // ML provenance.
-    //   若推理成功 → 填 ML 模型 provenance + advisory 输出 (ml_advisory_p_yes)。
-    //   否则: 回落 baseline provenance (无 ML 模型时的 M1 行为, 逐位不变)。
-    if (ml_pred != nullptr && ml_pred->ok) {
-        qf.ml_advisory_p_yes = ml_pred->prob(0);  // ML 模型 YES fair (advisory; 不驱动决策)
-        // ml::ModelKind → sizing::ModelKindTag (同值 0/1/2: Stub/Onnx/Treelite)。
-        qf.model_kind = (ml_model != nullptr)
-                            ? static_cast<sizing::ModelKindTag>(static_cast<std::uint8_t>(ml_model->kind()))
-                            : sizing::ModelKindTag::kStub;
-        std::strncpy(qf.model_id, ml_pred->model_id.data(),
-                     std::min(ml_pred->model_id.size(), sizeof(qf.model_id) - 1));
-        qf.model_id[std::min(ml_pred->model_id.size(), sizeof(qf.model_id) - 1)] = '\0';
-        std::strncpy(qf.spec_version, ml_pred->spec_version.data(),
-                     std::min(ml_pred->spec_version.size(), sizeof(qf.spec_version) - 1));
-        qf.spec_version[std::min(ml_pred->spec_version.size(), sizeof(qf.spec_version) - 1)] = '\0';
-        qf.model_confidence = ml_pred->confidence;
-        qf.fair_ci_lower = ml_pred->ci_low;
-        qf.fair_ci_upper = ml_pred->ci_high;
-        qf.model_calibrated = ml_pred->calibrated;
-        qf.model_as_of_ts_ns = ml_pred->as_of_ts_ns;
-    } else {
-        // baseline provenance (无 ML 模型; M1 行为不变)
-        qf.model_kind = sizing::ModelKindTag::kStub;
-        std::strncpy(qf.model_id, "paper-fv-baseline", sizeof(qf.model_id) - 1);
-        qf.model_id[sizeof(qf.model_id) - 1] = '\0';
-        std::strncpy(qf.spec_version, "m1-paper-v0.1", sizeof(qf.spec_version) - 1);
-        qf.spec_version[sizeof(qf.spec_version) - 1] = '\0';
-        qf.model_confidence = 0.0;                    // M1 stub: 无置信度
-        qf.fair_ci_lower = fv_result.p_yes() - 0.05;  // ±5% 近似 (M1)
-        qf.fair_ci_upper = fv_result.p_yes() + 0.05;
-        qf.model_calibrated = false;  // M1 stub: 未校准
-        qf.model_as_of_ts_ns = feat.ingestion_ts_ns;
-    }
-    qf.advisory = true;  // ML-R2: paper 期恒 true (ML 推理不进生产决策)
+    // 大模型 ML 推理 / 训练捕获 (extract_full→fv_hub) / seq-arb advisory 已砍 (2026-06-05 老板「砍掉
+    //   大模型训练功能」)。量化因子由 PopulateFeatureColumns 直接填 qf (上面), 不再经 extract_full→模型。
+    //   fair_value/决策不依赖 ML (sharp/score-prior/derivative 驱动)。
+    //   model provenance 字段保留为"无模型"常量 (下游/前端读): fair CI 用 fair±5% 近似。
+    qf.ml_advisory_p_yes = std::numeric_limits<double>::quiet_NaN();
+    qf.model_kind = sizing::ModelKindTag::kStub;
+    std::strncpy(qf.model_id, "no-model", sizeof(qf.model_id) - 1);
+    qf.model_id[sizeof(qf.model_id) - 1] = '\0';
+    qf.spec_version[0] = '\0';
+    qf.model_confidence = 0.0;
+    qf.fair_ci_lower = fv_result.p_yes() - 0.05;
+    qf.fair_ci_upper = fv_result.p_yes() + 0.05;
+    qf.model_calibrated = false;
+    qf.model_as_of_ts_ns = feat.ingestion_ts_ns;
+    qf.advisory = true;
 
     qf.valid = fv_result.valid;
 

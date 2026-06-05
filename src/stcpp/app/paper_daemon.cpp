@@ -30,10 +30,6 @@
 #include "stcpp/data/score_frame_recorder.hpp"  // 回测 P0 比分帧落盘 (红线#3 闭合数据前提)
 #include "stcpp/data/settlement_store.hpp"      // M2 SettlementStore
 #include "stcpp/data/score_snapshot_store.hpp"  // A1b: ScoreSnapshotStore::GetSnapshot
-#include "stcpp/ml/fair_value_model.hpp"        // 步④ make_onnx_fair_value_model / StubFairValueModel
-#include "stcpp/ml/feature_recorder.hpp"          // FeatureRecorder
-#include "stcpp/ml/feature_vector_recorder.hpp"   // Phase 2 项6 完整向量 recorder (含 hub)
-#include "stcpp/ml/label_pipeline.hpp"            // 自动训练 join: LoadLabelStoreFromJsonl + JoinFile
 #include "stcpp/ml/model_feature_spec.hpp"      // kMlFeatureCount (ML 模型维度契约)
 
 #include "src/stcpp/polymarket/clob_wss/live_book_publisher.hpp"  // LiveBookPublisher
@@ -805,30 +801,9 @@ BuildResult PaperDaemon::Build() {
     // A1b: 注入真实比分源 (Start 前; 之后 loop_thread_ 只读). 映射由刷新线程 SetEventMapping.
     paper_loop_->SetScoreStore(score_store_.get());
 
-    // 步④: ML 推理模型装配 + 注入 (advisory, ML-R1/R2 — 旁路, 不进决策)。
-    //   优先 ONNX (make_onnx_fair_value_model; W11+ 接 ONNXRuntime, 当前返 nullptr) →
-    //   回落 StubFairValueModel(kMlFeatureCount=24) 管道占位, 跑通 inplay 赔率+live_stats →
-    //   FeatureVector → predict → QuoteFeatures.ml_advisory_p_yes 全路径。训出真 ONNX 后,
-    //   仅换工厂返回值, paper_loop 推理路径零改码。白名单决定特征是真值还是 NaN。
-    {
-        ml::OnnxModelConfig onnx_cfg;
-        onnx_cfg.onnx_path = cfg_.onnx_model_path;  // 配置路径: 放训好的 .onnx 即激活 (零改码)
-        onnx_cfg.expected_feature_count = ml::kMlFeatureCount;
-        onnx_cfg.output_outcome_count = 2;  // Moneyline YES/NO
-        onnx_cfg.model_id = "paper-onnx-fair";
-        fair_value_model_ = ml::make_onnx_fair_value_model(onnx_cfg);  // 空路径/无文件 → nullptr → stub
-        if (!fair_value_model_) {
-            fair_value_model_ =
-                std::make_shared<ml::StubFairValueModel>(ml::kMlFeatureCount, /*outcome_count=*/2);
-        }
-        // 热加载注入 (老板「模型可重新加载」): 经 HotSwapHolder Store shared 引用; watcher 线程后续原子换。
-        paper_loop_->SetMlModelShared(fair_value_model_);
-        std::printf("[paper_daemon] 步④ ML 推理模型注入: kind=%s id=%.*s feat=%zu (advisory ML-R2)\n",
-                    std::string(ml::to_string(fair_value_model_->kind())).c_str(),
-                    static_cast<int>(fair_value_model_->model_id().size()),
-                    fair_value_model_->model_id().data(), fair_value_model_->expected_feature_count());
-        std::fflush(stdout);
-    }
+    // (大模型 ONNX 推理装配已砍 2026-06-05「砍掉大模型训练功能」: 原 make_onnx_fair_value_model /
+    //  StubFairValueModel / SetMlModelShared。fair_value 由 paper_fv_model_ baseline (score-prior 统计)
+    //  + sharp/derivative 驱动, 不再有大模型推理 advisory。)
 
     // R-3 (老周/老郭 评审): per-condition 静态元数据 (token/fee/cat/parent) 统一为 PaperCatalog,
     //   一次原子注入 (替代原 3 个独立 setter)。BuildPaperCatalog 供 R-6 周期重发现复用。
@@ -1080,29 +1055,9 @@ BuildResult PaperDaemon::Build() {
             "[paper_daemon] WARNING: 无 token 可订阅 (发现失败), WSS 未装配, book 回落 found=false.\n");
     }
 
-    // ---- Step 4c: FeatureRecorder (构造, 不 Start) ----
+    // ---- Step 4c: 结算/比分落盘 (回测等价数据; 大模型特征捕获 FeatureRecorder/FeatureVectorHub/
+    //   FeatureVectorRecorder 已砍 2026-06-05「砍掉大模型训练功能」) ----
     if (cfg_.record_ml) {
-        ml::FeatureRecorder::Config rec_cfg;
-        rec_cfg.output_path = cfg_.ml_path;
-        rec_cfg.poll_interval_sec = cfg_.ml_poll_sec;
-        std::vector<std::string> ml_cond_ids;
-        ml_cond_ids.reserve(token_map_.size());
-        for (const auto& [cond_id, _tok] : token_map_) {
-            ml_cond_ids.push_back(cond_id);
-        }
-        ml_recorder_ = std::make_unique<ml::FeatureRecorder>(*quote_hub_, std::move(ml_cond_ids), rec_cfg);
-
-        // Phase 2 项6: 完整 75 列向量 hub + recorder (训练 X 含 0-17 原始列, FeatureRecorder 落不到的)。
-        //   paper_loop loop_thread_ Publish → 独立 recorder 线程落盘 (IO 离决策线程)。
-        fv_hub_ = std::make_unique<ml::FeatureVectorHub>();
-        paper_loop_->SetFeatureVectorHub(fv_hub_.get());
-        // 可观测: debug_api /api/v1/features/health 从同一 fv_hub 聚合特征健康 (只读)。
-        if (real_provider_) real_provider_->set_feature_vector_hub(fv_hub_.get());
-        ml::FeatureVectorRecorder::Config fv_cfg;
-        fv_cfg.output_path = cfg_.ml_path + ".fv.jsonl";  // 与 quotes.jsonl 并列
-        fv_cfg.poll_interval_sec = 5;
-        fv_recorder_ = std::make_unique<ml::FeatureVectorRecorder>(*fv_hub_, fv_cfg);
-
         // Phase 2 缺口E: 结算落盘 (离线 label join 的 y 来源)。读 settlement_store_ 落 settlements.jsonl。
         if (settlement_store_) {
             data::SettlementRecorder::Config se_cfg;
@@ -1254,26 +1209,8 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
-    // ---- Step 4b'' start: 模型热重载 watcher (老板「边训边跑边更新模型可重新加载」, 2026-06-01) ----
-    //   onnx_model_path 非空 + interval>0 + 起交易 → 启线程周期 stat mtime, 训练旁路产新 .onnx 自动换上。
-    if (cfg_.enable_paper_trading && paper_loop_ && !cfg_.onnx_model_path.empty() &&
-        cfg_.model_reload_interval_sec > 0) {
-        model_reload_thread_ = std::jthread([this](std::stop_token st) { RefreshModel(st); });
-        std::printf("[paper_daemon] 模型热重载 watcher 启动 (监测 %s, 周期 %ds)\n",
-                    cfg_.onnx_model_path.c_str(), cfg_.model_reload_interval_sec);
-        std::fflush(stdout);
-    }
-
-    // ---- Step 4b''' start: 进程内自动训练编排 (老板「A. 周期重训 + 热加载」, 2026-06-01) ----
-    //   起交易 + onnx_model_path 非空 (产模型目标) + interval>0 才启 (默认关; 需 ops 配 venv python)。
-    if (cfg_.enable_paper_trading && paper_loop_ && !cfg_.onnx_model_path.empty() &&
-        cfg_.auto_train_interval_sec > 0) {
-        auto_train_thread_ = std::jthread([this](std::stop_token st) { AutoTrain(st); });
-        std::printf("[paper_daemon] 自动训练编排线程启动 (周期 %ds, python=%s, 脚本=%s, 最小样本 %zu)\n",
-                    cfg_.auto_train_interval_sec, cfg_.train_python_bin.c_str(),
-                    cfg_.train_script_path.c_str(), cfg_.min_train_samples);
-        std::fflush(stdout);
-    }
+    // (模型热重载 watcher + 进程内自动训练编排已砍 2026-06-05「砍掉大模型训练功能」: 原 RefreshModel /
+    //  AutoTrain 线程。不再监测 .onnx mtime, 不再周期重训。)
 
     // ---- 采集数据磁盘守护 (老板「超过30g后开始删,一次删5G」) — 默认开 (仅超阈值才动) ----
     if (cfg_.disk_prune_threshold_gb > 0) {
@@ -1283,16 +1220,7 @@ void PaperDaemon::Start() {
         std::fflush(stdout);
     }
 
-    // ---- Step 4c start: FeatureRecorder + 完整向量 recorder (项6) ----
-    if (ml_recorder_) {
-        ml_recorder_->Start();
-        std::printf("[paper_daemon] ML 训练数据采集启动 (FeatureRecorder -> %s)\n", cfg_.ml_path.c_str());
-    }
-    if (fv_recorder_) {
-        fv_recorder_->Start();
-        std::printf("[paper_daemon] 完整 75 列向量采集启动 (FeatureVectorRecorder -> %s.fv.jsonl)\n",
-                    cfg_.ml_path.c_str());
-    }
+    // ---- Step 4c start: 结算/比分 recorder (回测数据; ML 特征 recorder 已砍 2026-06-05) ----
     if (settlement_recorder_) {
         settlement_recorder_->Start();
         std::printf("[paper_daemon] 结算落盘启动 (SettlementRecorder -> %s.settlements.jsonl, label y)\n",
@@ -1383,13 +1311,7 @@ void PaperDaemon::Shutdown() noexcept {
         server_->stop();
     }
 
-    // 2. FeatureRecorder + 完整向量 recorder (项6) (先于 hub/paper_loop 析构; Stop 内含 join)
-    if (ml_recorder_) {
-        ml_recorder_->Stop();
-    }
-    if (fv_recorder_) {
-        fv_recorder_->Stop();  // 停读 fv_hub_ (paper_loop 随后 Stop 停写; 二者先于 fv_hub_ 析构)
-    }
+    // 2. (ML 特征 recorder 已砍 2026-06-05) 结算/比分 recorder Stop (先于 store 析构)
     if (settlement_recorder_) {
         settlement_recorder_->Stop();  // 停读 settlement_store_ (先于其析构)
     }
@@ -2171,131 +2093,6 @@ void PaperDaemon::RefreshOdds(std::stop_token st) {
 }
 
 // ---------------------------------------------------------------------------
-// RefreshModel — 模型热重载 watcher (老板「边训边跑边更新模型可重新加载」, 2026-06-01)
-//   周期 stat onnx_model_path mtime; 变了 → make_onnx 加载新模型 → 校验 (ready+维度+真 ONNX) →
-//   paper_loop_->SetMlModelShared 原子换上 (推理线程 Load 拿存活引用, 不停盘)。失败 → 保留旧模型 (fail-safe)。
-//   注: 加载在本线程 (非 loop_thread_), 不阻塞决策。onnxruntime 未装时 make_onnx 返 nullptr → 校验不过 →
-//   保留旧 (stub), 机制就位待 runtime 装好 + 真 .onnx 产出即自动生效。
-// ---------------------------------------------------------------------------
-void PaperDaemon::RefreshModel(std::stop_token st) {
-    using namespace std::chrono;
-    namespace fs = std::filesystem;
-    const std::string path = cfg_.onnx_model_path;
-    auto file_mtime = [](const std::string& p) -> std::int64_t {
-        std::error_code ec;
-        const auto t = fs::last_write_time(p, ec);
-        return ec ? 0 : t.time_since_epoch().count();
-    };
-    std::int64_t last_mtime = file_mtime(path);  // Build 已加载一次; 仅文件变化后才重载
-    while (!st.stop_requested()) {
-        const auto deadline = steady_clock::now() + seconds(cfg_.model_reload_interval_sec);
-        while (steady_clock::now() < deadline) {
-            if (st.stop_requested()) return;
-            std::this_thread::sleep_for(milliseconds(200));
-        }
-        const std::int64_t m = file_mtime(path);
-        if (m == 0 || m == last_mtime) continue;  // 无文件 / 未变
-        ml::OnnxModelConfig onnx_cfg;
-        onnx_cfg.onnx_path = path;
-        onnx_cfg.expected_feature_count = ml::kMlFeatureCount;
-        onnx_cfg.output_outcome_count = 2;
-        onnx_cfg.model_id = "paper-onnx-fair";
-        std::shared_ptr<ml::FairValueModel> fresh = ml::make_onnx_fair_value_model(onnx_cfg);
-        if (!fresh || !fresh->ready() || fresh->expected_feature_count() != ml::kMlFeatureCount ||
-            fresh->kind() != ml::ModelKind::Onnx) {
-            std::fprintf(stderr, "[paper_daemon] ⚠ 模型热重载校验失败 (加载/ready/维度/kind), 保留旧模型: %s\n",
-                         path.c_str());
-            last_mtime = m;  // 不反复重试同一坏文件
-            continue;
-        }
-        fair_value_model_ = fresh;             // daemon 持引用 (旧模型最后引用释放回收)
-        paper_loop_->SetMlModelShared(fresh);  // 原子换上, 不停盘
-        last_mtime = m;
-        std::printf("[paper_daemon] ✓ 模型热重载: %s (feat=%zu) → 原子换上不停盘\n", path.c_str(),
-                    fresh->expected_feature_count());
-        std::fflush(stdout);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// AutoTrain — 进程内自动训练编排 (老板「A. 周期重训 + 热加载」, 2026-06-01)
-//   周期循环 (auto_train_interval_sec):
-//     ① 进程内 C++ join: feature_vectors.jsonl(X) × settlements.jsonl(y) → training.jsonl
-//        (直接调 label_pipeline, 不经外部 CLI; 只收已结算监督集)。
-//     ② 标注样本 ≥ min_train_samples → spawn Python 训练子进程 (train_fair_value.py → candidate.onnx)。
-//        §12.4 红线: 训练栈 LightGBM 只能 Python 离线, daemon 仅编排 + spawn (跑完即弃), 不进 C++ 进程。
-//     ③ 训练成功 → 原子 mv candidate → onnx_model_path → RefreshModel watcher 接力热加载换上 (不停盘)。
-//   失败任一步 → 跳过本轮, 保留旧模型 (fail-safe)。冷启动样本不足 → 等积累 (体育结算稀疏, 按天/周)。
-// ---------------------------------------------------------------------------
-void PaperDaemon::AutoTrain(std::stop_token st) {
-    using namespace std::chrono;
-    namespace fs = std::filesystem;
-    const std::string fv = cfg_.ml_path + ".fv.jsonl";            // FeatureVectorRecorder 落 (X)
-    const std::string settle = cfg_.ml_path + ".settlements.jsonl";  // SettlementRecorder 落 (y)
-    const std::string training = cfg_.ml_path + ".training.jsonl";   // join 产出 (X+label)
-    const std::string candidate = cfg_.onnx_model_path + ".candidate";
-    while (!st.stop_requested()) {
-        const auto deadline = steady_clock::now() + seconds(cfg_.auto_train_interval_sec);
-        while (steady_clock::now() < deadline) {
-            if (st.stop_requested()) return;
-            std::this_thread::sleep_for(seconds(1));
-        }
-        // ① 进程内 join (C++; label_pipeline 纯函数核已单测)。滑动窗口: 只 join 最近 train_window_days 天
-        //   (老板「就 5 天」): join 量/训练时间有界 + 模型不被陈旧数据拖累。窗口下界用 now (训练窗口边界,
-        //   非数据源 ts, 不违 R-20)。
-        std::int64_t min_as_of_ns = 0;
-        if (cfg_.train_window_days > 0) {
-            const std::int64_t now_ns = duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
-            min_as_of_ns = now_ns - static_cast<std::int64_t>(cfg_.train_window_days) * 86400LL * 1'000'000'000LL;
-        }
-        const auto store = ml::LoadLabelStoreFromJsonl(settle);
-        const auto js = ml::JoinFile(fv, store, training, /*drop_unlabeled=*/true, min_as_of_ns);
-        std::printf("[auto_train] join(窗口%d天): 标注 %zu / 读 %zu / 窗口外 %zu (已结算 condition %zu)\n",
-                    cfg_.train_window_days, js.labeled, js.total, js.out_of_window, store.size());
-        std::fflush(stdout);
-        if (js.labeled < cfg_.min_train_samples) {
-            std::printf("[auto_train] 标注 %zu < 阈值 %zu → 跳过 (样本不足, 等积累)\n", js.labeled,
-                        cfg_.min_train_samples);
-            std::fflush(stdout);
-            continue;
-        }
-        // ② spawn Python 训练子进程 (§12.4: 训练只能 Python 离线; 跑完即弃, 不进 C++ 进程)
-        const std::string cmd = cfg_.train_python_bin + " " + cfg_.train_script_path + " --features " +
-                                training + " --out " + candidate + " > /tmp/auto_train.log 2>&1";
-        std::printf("[auto_train] spawn 训练: %s\n", cmd.c_str());
-        std::fflush(stdout);
-        const int rc = std::system(cmd.c_str());  // NOLINT: ops 编排 spawn (路径内部 config, 非用户输入)
-        if (rc != 0) {
-            std::fprintf(stderr, "[auto_train] ⚠ 训练子进程 rc=%d → 不换模型 (见 /tmp/auto_train.log)\n", rc);
-            continue;
-        }
-        // ③ 原子换 candidate → onnx_model_path → RefreshModel watcher 接力热加载。
-        //   ⚠ 顺序: 先搬校准 sidecar, 再搬 .onnx。watcher 按 .onnx mtime 触发热加载, 加载侧构造
-        //   OnnxFairValueModel 时 LoadMeta 读 <onnx>.meta.json。若先搬 .onnx, watcher 可能在 meta
-        //   就位前触发 → 新模型套旧/缺 meta (race)。故 meta 先到位, .onnx 作"提交点"最后搬。
-        const std::string cand_meta = candidate + ".meta.json";
-        const std::string model_meta = cfg_.onnx_model_path + ".meta.json";
-        std::error_code mec;
-        if (fs::exists(cand_meta, mec)) {
-            fs::rename(cand_meta, model_meta, mec);  // sidecar 先到位
-            if (mec)
-                std::fprintf(stderr, "[auto_train] ⚠ sidecar mv 失败 (%s) → 模型将降级占位\n",
-                             mec.message().c_str());
-        } else {
-            // 训练没产 meta (旧脚本/holdout 太小) → 删旧 meta, 避免新模型套旧校准 (误标已校准)。
-            fs::remove(model_meta, mec);
-        }
-        std::error_code ec;
-        fs::rename(candidate, cfg_.onnx_model_path, ec);  // .onnx = 提交点 (触发 watcher)
-        if (ec) {
-            std::fprintf(stderr, "[auto_train] ⚠ 原子 mv 失败 (%s) → 不换\n", ec.message().c_str());
-            continue;
-        }
-        std::printf("[auto_train] ✓ 新模型就位 → watcher 将热加载: %s\n", cfg_.onnx_model_path.c_str());
-        std::fflush(stdout);
-    }
-}
-
 // ---------------------------------------------------------------------------
 // DiskPrune — 采集数据磁盘守护 (老板「超过30g后开始删,一次删5G」, 2026-06-01)
 //   周期算 ml_capture 目录 *.jsonl 总大小; 超 disk_prune_threshold_gb → 从最大文件头部截 (删最老数据)

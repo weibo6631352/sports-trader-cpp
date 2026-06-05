@@ -50,8 +50,6 @@
 #include "stcpp/risk/risk_gateway.hpp"
 #include "stcpp/risk/rm_debug_snapshot.hpp"
 #include "stcpp/sizing/quote_snapshot_hub.hpp"
-#include "stcpp/ml/fair_value_model.hpp"    // 步④ StubFairValueModel (ML 推理接线测试)
-#include "stcpp/ml/model_feature_spec.hpp"  // kMlFeatureCount
 
 using namespace stcpp;
 using namespace stcpp::paper;
@@ -509,59 +507,6 @@ TEST_F(PaperLoopTest, T11c_NoSideMicrostructure_Captured) {
 }
 
 // ---------------------------------------------------------------------------
-// T11f (Phase 2 项6): paper_loop 算完 extract_full → Publish 完整 75 列向量进 fv_hub。
-// ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T11f_Phase2_FullVectorPublishedToHub) {
-    hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));
-    stcpp::ml::FeatureVectorHub fv_hub;
-    loop_ = MakeLoop();
-    loop_->SetFeatureVectorHub(&fv_hub);  // Start 前注入
-    loop_->Start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
-    loop_->Stop();  // join loop_thread_ 先于 fv_hub 析构 (本测局部)
-
-    // fv_hub 应收到该 condition 的完整 75 列向量。
-    const auto rec = fv_hub.Read("cond-test-001");
-    if (rec.has_value()) {
-        EXPECT_EQ(rec->count, stcpp::ml::kMlFeatureCount) << "完整 75 列 (含 0-17 原始 game/book)";
-        EXPECT_STREQ(rec->spec_version, std::string(stcpp::ml::kSpecVersion).c_str());
-        EXPECT_GT(rec->as_of_ts_ns, 0LL);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// T11g (老板放开 paper ML-R2): 真 ONNX 模型 + blend weight=1.0 → ML 驱动决策路径跑通不崩。
-//   stub 永不驱动 (kind 门); 仅 ONNX 触发 blend。验证 predict-before-decision 接线 + BR-1 同源特征。
-// ---------------------------------------------------------------------------
-#ifdef STCPP_ONNX_ENABLED
-TEST_F(PaperLoopTest, T11g_MlDrivesDecision_OnnxBlend) {
-    const auto fixture = std::filesystem::path(__FILE__).parent_path().parent_path() / "fixtures" /
-                         "fair_value_selftest.onnx";
-    if (!std::filesystem::exists(fixture)) GTEST_SKIP() << "fixture ONNX 缺失";
-    stcpp::ml::OnnxModelConfig ocfg;
-    ocfg.onnx_path = fixture.string();
-    ocfg.expected_feature_count = stcpp::ml::kMlFeatureCount;
-    ocfg.output_outcome_count = 2;
-    auto onnx = stcpp::ml::make_onnx_fair_value_model(ocfg);
-    ASSERT_NE(onnx, nullptr);
-    ASSERT_EQ(onnx->kind(), stcpp::ml::ModelKind::Onnx) << "真 ONNX (非 stub) 才驱动决策";
-
-    hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));
-    hub_->Publish("1002", MakeSyntheticBook(0.45, 0.47));  // 双边 book: ML 选任一边都有 book
-    cfg_.ml_fair_blend_weight = 1.0;  // ML 全驱动决策 fair
-    cfg_.ml_drive_enabled = true;     // 显式开驱动总闸 (默认 false 仅 advisory; 本测要测真驱动路径)
-    loop_ = MakeLoop();
-    loop_->SetMlModel(onnx.get());  // Start 前注入
-    loop_->Start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    loop_->Stop();  // join loop_thread_ 先于 onnx 析构 (本测局部)
-
-    // ML 驱动决策路径跑通 (extract_full→predict→blend p_fair→SelectSide), 不崩 + 正常发 quote。
-    EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0));
-}
-#endif
-
-// ---------------------------------------------------------------------------
 // T11e (Phase 0 联合评审): 项5 组合度量接入 TickAll (权益每周期采样) + 项1-3 门 ON 路径不崩。
 // ---------------------------------------------------------------------------
 TEST_F(PaperLoopTest, T11e_Phase0_PortfolioMetricsAndGatesWired) {
@@ -612,41 +557,6 @@ TEST_F(PaperLoopTest, T11d_BothSidePositions_Captured) {
         EXPECT_NEAR(opt->pos_net_qty, 70.0, 1e-6) << "净 YES = 100 − 30";
         EXPECT_GT(opt->pos_yes_avg_entry, 0.0);
         EXPECT_GT(opt->pos_no_avg_entry, 0.0) << "NO 边 avg entry 也要有";
-    }
-}
-
-// ---------------------------------------------------------------------------
-// T11b (步④): 注入 ml::FairValueModel → 推理路径跑通, ml_advisory_p_yes 填充, provenance
-//   反映 ML 模型; ML-R1/R2: 推理 advisory, fair_value 仍由 baseline 定 (不被 ML 驱动)。
-// ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T11b_MlInferenceAdvisoryWired) {
-    const auto feat = MakeSyntheticBook(0.53, 0.55);
-    hub_->Publish("1001", feat);
-
-    // StubFairValueModel(24) — 必与 kMlFeatureCount/extract_joined 维度一致, 否则 predict ok=false。
-    stcpp::ml::StubFairValueModel stub(stcpp::ml::kMlFeatureCount, /*outcome_count=*/2);
-    loop_ = MakeLoop();
-    loop_->SetMlModel(&stub);  // Start 前注入 (单 writer)
-    loop_->Start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(250));
-    loop_->Stop();  // join loop_thread_ 先于 stub 析构 (stub 是本测局部)
-
-    EXPECT_GT(loop_->stats().quote_publishes.load(), static_cast<std::uint64_t>(0));
-    const auto opt = quote_hub_->Read("cond-test-001");
-    if (opt.has_value() && opt->valid) {
-        // 推理结果填进 advisory 列 (stub logistic 输出 ∈ (0,1]; 合成 book 固定旧 ts → 延迟特征巨大
-        //   → stub 可能饱和到 1.0, 测试用 LE; 真数据 data_source_ts 近实时, 延迟小不饱和)。
-        EXPECT_FALSE(std::isnan(opt->ml_advisory_p_yes)) << "ML 推理应填 ml_advisory_p_yes";
-        EXPECT_GT(opt->ml_advisory_p_yes, 0.0);
-        EXPECT_LE(opt->ml_advisory_p_yes, 1.0);
-        // provenance 反映注入的 ML 模型 (非 baseline)。
-        EXPECT_EQ(opt->model_kind, ModelKindTag::kStub);
-        EXPECT_STREQ(opt->model_id, "stub-fair-value-v0.1");
-        EXPECT_STREQ(opt->spec_version, std::string(stcpp::ml::kSpecVersion).c_str());
-        // ML-R1/R2: fair_value 仍是 baseline 产出 (∈ (0,1)), 未被 ML advisory 覆盖。
-        EXPECT_GT(opt->fair_value, 0.0);
-        EXPECT_LE(opt->fair_value, 1.0);
-        EXPECT_TRUE(opt->advisory) << "ML-R2: 推理 advisory";
     }
 }
 
@@ -946,52 +856,6 @@ TEST_F(PaperLoopTest, T17_TotalsMarket_DerivativePricing) {
     EXPECT_GT(opt->fair_value, 0.85)
         << "平局但总分高 → 派生 Over 概率≈0.96; >0.85 证明走 totals 定价 (moneyline 平局会给≈0.5)";
     EXPECT_EQ(opt->cat_market_type_id, 2) << "类别码: totals=2 (经 MarketCat 注入)";
-}
-
-// ---------------------------------------------------------------------------
-// T18: 模块5 短时套利 advisory 接线 — 注入产信号的 mock SeqArbModel → quote.arb_* 填充。
-//   验证: predict → ComputeArbSignal → qf.arb_actionable 端到端通 (旁路, 不驱动真单)。
-// ---------------------------------------------------------------------------
-namespace {
-class MockArbModel final : public stcpp::ml::SeqArbModel {
-public:
-    [[nodiscard]] stcpp::ml::ArbPrediction predict(const stcpp::ml::FeatureVector& fv) const noexcept override {
-        stcpp::ml::ArbPrediction p;
-        p.ok = true;
-        p.as_of_ts_ns = fv.as_of_ts_ns;
-        p.model_id = "mock-arb";
-        p.wall[6].dmid = 0.10;  // 30s horizon (idx6): 强多头, 延迟充裕不 stale
-        p.wall[6].ci_low = 0.09;
-        p.wall[6].ci_high = 0.11;
-        p.wall[6].confidence = 0.8;
-        return p;
-    }
-    [[nodiscard]] std::size_t expected_feature_count() const noexcept override {
-        return stcpp::ml::kMlFeatureCount;
-    }
-    [[nodiscard]] stcpp::ml::ModelKind kind() const noexcept override { return stcpp::ml::ModelKind::Onnx; }
-    [[nodiscard]] std::string_view model_id() const noexcept override { return "mock-arb"; }
-    [[nodiscard]] bool ready() const noexcept override { return true; }
-};
-}  // namespace
-
-TEST_F(PaperLoopTest, T18_SeqArbAdvisoryWired) {
-    MockArbModel mock;
-    // BE = fee(2·0.03·0.5·0.5=0.015) + slip(0.5·0.04=0.02) + spread(0.04) = 0.075; ci_low 0.09 > BE → 够本。
-    hub_->Publish("1001", MakeSyntheticBook(0.48, 0.52));  // bid 0.48 / ask 0.52, L1 size 500
-    cfg_.arb_max_notional_usdc = 300.0;  // desired ≤ 300 ≤ depth 500 → 过退出深度门
-    loop_ = MakeLoop();
-    loop_->SetSeqArbModel(&mock);  // Start 前注入
-    loop_->Start();
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
-    loop_->Stop();
-    const auto opt = quote_hub_->Read("cond-test-001");
-    ASSERT_TRUE(opt.has_value() && opt->valid);
-    EXPECT_EQ(opt->arb_actionable, 1) << "mock 强信号 + 够本 + 过门 → 可操作";
-    EXPECT_EQ(opt->arb_horizon_sec, 30) << "选中 30s horizon";
-    EXPECT_NEAR(opt->arb_net_edge, 0.09 - 0.075, 1e-6) << "保守净 edge = ci_low − BE";
-    EXPECT_GT(opt->arb_suggested_notional, 0.0);
-    EXPECT_GT(opt->arb_signal_quality, 0.0);
 }
 
 // ---------------------------------------------------------------------------

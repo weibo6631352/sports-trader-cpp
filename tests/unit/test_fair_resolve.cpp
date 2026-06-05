@@ -17,8 +17,6 @@ TEST(ResolveFair, DerivativeOverridesAll) {
     in.derivative_p_yes = 0.62;
     in.sharp_yes = 0.5;          // 即便有 sharp
     in.has_real_fair = true;
-    in.ml_p_yes = 0.8;           // 即便有 ML
-    in.ml_blend_weight = 0.5;
     const auto r = ResolveFair(in);
     EXPECT_EQ(r.src, FairSrc::kDerivative);
     EXPECT_DOUBLE_EQ(r.p_fair, 0.62);  // 不被 ML 污染
@@ -72,44 +70,6 @@ TEST(ResolveFair, DefaultMarketDevigWhenNoRealFair) {
     const auto r = ResolveFair(in);
     EXPECT_EQ(r.src, FairSrc::kMarketDevig);
     EXPECT_DOUBLE_EQ(r.p_fair, 0.33);
-}
-
-// 5. ML 不覆盖 in-play sharp (2026-06-03 in-play 套利转向): 有 in-play 信号 (sharp/score_prior)
-//    2026-06-03 v2 (老板「模型自主, 识别应对各种情况」): ML 现在跨所有情况 blend, 含 in-play sharp 之上。
-//    安全靠上游校准门 (仅 calibrated 真模型才传 ml_p), 不靠这层挡。模型可信时自主驱动 (含 in-play)。
-TEST(ResolveFair, MlBlendsWithInplaySharp) {
-    FairInputs in;
-    in.p_market_devig = 0.2;
-    in.sharp_yes = 0.5;          // sharp base = 0.5
-    in.has_real_fair = true;
-    in.ml_p_yes = 0.8;           // 校准模型 (上游已过门) → 与 sharp blend
-    in.ml_blend_weight = 0.5;
-    const auto r = ResolveFair(in);
-    EXPECT_EQ(r.src, FairSrc::kMlBlend);      // v2: ML 在 in-play 也驱动
-    EXPECT_DOUBLE_EQ(r.p_fair, 0.65);         // (1-0.5)*0.5 + 0.5*0.8
-}
-
-// 6. ML 无效值 (越界/NaN) → 不 blend, 保 base。
-TEST(ResolveFair, MlInvalidNoBlend) {
-    FairInputs in;
-    in.p_market_devig = 0.2;
-    in.sharp_yes = 0.5;
-    in.has_real_fair = true;
-    in.ml_p_yes = 1.5;           // 越界
-    in.ml_blend_weight = 0.5;
-    const auto r = ResolveFair(in);
-    EXPECT_DOUBLE_EQ(r.p_fair, 0.5);  // ML 不动
-}
-
-// 7. ML 在默认市场锚上也能 blend (无真比分但有真 ONNX — 原行为)。
-TEST(ResolveFair, MlBlendOnMarketDevig) {
-    FairInputs in;
-    in.p_market_devig = 0.4;
-    in.has_real_fair = false;
-    in.ml_p_yes = 0.6;
-    in.ml_blend_weight = 0.5;
-    const auto r = ResolveFair(in);
-    EXPECT_DOUBLE_EQ(r.p_fair, 0.5);  // (1-0.5)*0.4 + 0.5*0.6
 }
 
 }  // namespace

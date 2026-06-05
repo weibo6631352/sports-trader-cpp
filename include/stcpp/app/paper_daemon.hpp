@@ -71,12 +71,7 @@ class LiveStatsStore;     // live_stats 快照 store (forward; .cpp 实体化)
 class CommentariesPoller;  // commentaries 轮询线程 (forward)
 }  // namespace livescore
 }  // namespace stcpp::data
-namespace stcpp::ml {
-class FeatureRecorder;
-class FairValueModel;          // 步④ ML 推理模型 (forward; .cpp 实体化 Stub/ONNX)
-class FeatureVectorHub;        // Phase 2 项6 完整向量 hub (forward)
-class FeatureVectorRecorder;   // Phase 2 项6 完整向量 recorder 线程 (forward)
-}  // namespace stcpp::ml
+// (ml:: forward decls 已砍 2026-06-05: FeatureRecorder/FairValueModel/FeatureVectorHub/FeatureVectorRecorder)
 
 namespace stcpp::app {
 
@@ -119,26 +114,11 @@ struct PaperDaemonConfig {
 
     bool verbose{false};  // WSS/parser 调试日志
 
-    // ML 训练数据采集 (FeatureRecorder)
+    // 结算/比分落盘 (回测等价数据; record_ml 名沿用)。大模型训练采集字段已砍 2026-06-05
+    //   「砍掉大模型训练功能」: onnx_model_path / model_reload_interval_sec / auto_train_interval_sec /
+    //   train_python_bin / train_script_path / min_train_samples / train_window_days。
     bool record_ml{true};
 
-    // Phase 2: 训好的 ONNX fair value 模型路径 (空 → make_onnx 返 nullptr → StubFairValueModel)。
-    //   放 model.onnx + 设此路径 → OnnxFairValueModel 激活, 推理路径零改码 (advisory, ML-R1/R2)。
-    std::string onnx_model_path{};
-    // [2026-06-01 老板「边训边跑边更新模型可重新加载」] 模型热重载轮询周期 (秒)。daemon watcher 周期 stat
-    //   onnx_model_path mtime, 变了 → 加载新模型校验后原子换上不停盘 (训练旁路产新 .onnx → 自动生效)。0=关闭。
-    std::int32_t model_reload_interval_sec{30};
-    // [2026-06-01 老板「直接在程序里起一个多线程」] 进程内自动训练编排线程:
-    //   周期 (auto_train_interval_sec) → 进程内 C++ join (feature_vectors × settlements → training.jsonl) →
-    //   spawn Python 训练子进程 (§12.4: 训练栈 LightGBM 只能 Python 离线, 禁进 C++ 进程; 跑完即弃) →
-    //   产 candidate.onnx → 原子换 onnx_model_path → 上面 model_reload watcher 自动热加载。
-    //   0=关闭 (默认; 需 ops 设 venv python + 脚本路径 + 间隔 才启)。
-    std::int32_t auto_train_interval_sec{0};
-    std::string train_python_bin{"python3"};  // 训练子进程解释器 (服务器设 .venv/bin/python3)
-    std::string train_script_path{"scripts/ml/train_fair_value.py"};
-    std::size_t min_train_samples{500};  // join 标注行 < 此 → 跳过 (冷启动样本不足不产模型)
-    std::int32_t train_window_days{5};   // 训练滑动窗口 (老板「就 5 天」): 只 join 最近 N 天数据 →
-                                         //   join 量/训练时间有界 + 不被陈旧数据拖累 (0=全量, 默认 5)
     // [2026-06-01 老板「超过30g后开始删,一次删5G」] 采集数据磁盘守护: ml_capture 目录总大小超阈值 →
     //   从最大采集文件头部截掉 (删最老数据) 释放一批。默认开 (安全护栏, 仅超阈值才动)。排除小文件 (标签)。
     std::int32_t disk_prune_threshold_gb{30};  // 总大小超此 GB → 触发删 (0=关)
@@ -330,15 +310,8 @@ private:
     //   inplay_feed_->InjectSupplementalScores 并入 score store → EventMatcher 配上 PM 的 crint/esports 盘。
     void RefreshTeamLivescores(std::stop_token st);
 
-    // [2026-06-01 老板「边训边跑边更新模型可重新加载」] 模型热重载线程: 周期 stat onnx_model_path mtime,
-    //   变了 → make_onnx 加载新模型 → 校验 (ready + feat 数) → paper_loop_->SetMlModelShared 原子换上不停盘。
-    //   加载/校验失败 → 保留旧模型 (fail-safe)。onnx_model_path 空 / interval=0 → 不启线程。
-    void RefreshModel(std::stop_token st);
-
-    // [2026-06-01 老板「直接在程序里起一个多线程」] 进程内自动训练编排: 周期 C++ join → spawn Python
-    //   训练子进程 → 产 candidate.onnx → 原子换 onnx_model_path (RefreshModel watcher 接力热加载)。
-    //   §12.4: 训练栈 Python 离线, daemon 线程只编排 + spawn (跑完即弃), 不在 C++ 进程内跑训练。
-    void AutoTrain(std::stop_token st);
+    // (RefreshModel / AutoTrain 已砍 2026-06-05「砍掉大模型训练功能」: 不再有模型热重载 watcher /
+    //  进程内自动训练编排。)
 
     // [2026-06-01 老板「超过30g后开始删,一次删5G」] 采集数据磁盘守护线程: 周期算 ml_capture 总大小,
     //   超阈值 → 从最大采集文件头部截 (删最老数据, recorder 每 poll 重开文件故安全) 释放 disk_prune_free_gb。
@@ -437,8 +410,7 @@ private:
     std::jthread odds_refresh_thread_;        // bm_slots 刷新 (getodds + inplay-mapping → SetOddsByMatchId)
     std::jthread tennis_scores_refresh_thread_;  // 覆盖率: tennis_scores livescore → InjectSupplementalScores
     std::jthread team_livescore_refresh_thread_;  // 覆盖率: cricket/esports livescore → InjectSupplementalScores
-    std::jthread model_reload_thread_;        // 模型热重载 watcher (onnx mtime 变 → SetMlModelShared 原子换)
-    std::jthread auto_train_thread_;          // 进程内自动训练编排 (周期 join + spawn Python 训练 → 产新模型)
+    // (model_reload_thread_ / auto_train_thread_ 已砍 2026-06-05「砍掉大模型训练功能」)
     std::jthread disk_prune_thread_;          // 采集数据磁盘守护 (>阈值 → 截最老数据)
     std::jthread seed_thread_;  // REST 快照打底后台线程 (jthread: 析构自动 request_stop + join)
     std::jthread active_poll_thread_;  // 149hz 主动 book 轮询 (热链 GET /book, 流动性加权; 老板 2026-06-04)
@@ -465,11 +437,8 @@ private:
     // paper RM 栈
     std::shared_ptr<risk::AuditEmitter> paper_audit_emitter_;
     std::unique_ptr<risk::RiskGateway> paper_rm_;
-    std::unique_ptr<pricing::BaselineFairValueModel> paper_fv_model_;
-    // 步④ ML 推理模型 (Stub/ONNX)。2026-06-01 改 shared_ptr: paper_loop_ 经 HotSwapHolder 自持 shared 引用
-    //   → 不再依赖此成员的析构顺序 (旧裸指针需 daemon 成员先声明后析构; shared 后任一持有方释放即可)。
-    //   model_reload_thread_ 热重载时原子换此引用 (单 writer: Build 一次 + watcher 线程后续)。
-    std::shared_ptr<ml::FairValueModel> fair_value_model_;
+    std::unique_ptr<pricing::BaselineFairValueModel> paper_fv_model_;  // score-prior 统计估计器 (留)
+    // (大模型 fair_value_model_ (ml::FairValueModel ONNX) 已砍 2026-06-05「砍掉大模型训练功能」)
 
     // PaperLoop (用上述全部; 必在 paper_rm_snap_ 之后声明)
     std::unique_ptr<paper::PaperLoop> paper_loop_;
@@ -487,13 +456,8 @@ private:
     std::unique_ptr<debug_api::RealStateProvider> real_provider_;
     debug_api::LiveMetricsHooks metrics_hooks_;
 
-    // ML 采集 (读 quote_hub_)
-    std::unique_ptr<ml::FeatureRecorder> ml_recorder_;
-    // Phase 2 项6: 完整 75 列向量 hub + recorder。fv_hub_ 先于 fv_recorder_ 声明 (recorder 持 hub 引用,
-    //   须先析构); paper_loop_ 持 fv_hub_ 裸指针 (Shutdown 已先 Stop, 析构序无访问)。
-    std::unique_ptr<ml::FeatureVectorHub> fv_hub_;
-    std::unique_ptr<ml::FeatureVectorRecorder> fv_recorder_;
-    std::unique_ptr<data::SettlementRecorder> settlement_recorder_;  // Phase 2 缺口E: 结算落盘 (label y)
+    // (ML 训练采集成员已砍 2026-06-05: ml_recorder_/fv_hub_/fv_recorder_)
+    std::unique_ptr<data::SettlementRecorder> settlement_recorder_;  // 结算落盘 (回测数据)
     std::unique_ptr<data::ScoreFrameRecorder> score_recorder_;       // 回测 P0: 比分帧落盘 (红线#3 闭合数据前提)
 
     // HTTP 观测端 (最后声明, 最先析构; 仅 RunMode::PaperDaemon)
