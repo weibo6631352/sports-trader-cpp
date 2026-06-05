@@ -542,6 +542,13 @@ let _sseConnected = false;
 let _helloTimer: number | undefined;
 let _fallbackTimers: number[] = [];
 let _fallbackActive = false;
+// SSE 存活看门狗 (老板 2026-06-05「订单簿新鲜度阻塞严重延迟」根因): EventSource 半死 (TCP 开 /
+//   readyState=OPEN 但帧停, 不触发 onerror/CLOSED) → 前端静默停滞且永不重连 (旧逻辑仅 CLOSED 才重连)。
+//   实测: 服务端重启时所有已开 tab 的 SSE 连接半死, 订单簿新鲜度一路 climbing, reload 才恢复。
+//   看门狗: 任何帧 (含 heartbeat) 刷新 _lastSseFrameMs; 超 SSE_STALE_MS 无帧 → 强制重连 → 自愈。
+const SSE_STALE_MS = 12_000;
+let _lastSseFrameMs = 0;
+let _sseWatchdogStarted = false;
 
 /** SSE 死 → 启动 fast 轮询回退 (幂等) */
 function startFallbackPolling(): void {
@@ -571,6 +578,23 @@ function stopFallbackPolling(): void {
   _fallbackTimers = [];
 }
 
+/** 强制重连 SSE (半死连接自愈): 关旧 ES → 重置 → 新建。新连接 hello 会重置 _sseConnected + 重订 focus。 */
+function reconnectSSE(reason: string): void {
+  console.warn(`[stcpp] SSE ${reason} → 强制重连`);
+  try { _es?.close(); } catch { /* noop */ }
+  _sseConnected = false;
+  _lastSseFrameMs = Date.now();  // 给新连接 hello 窗口, 避免立即再判死
+  connectSSE();
+}
+
+/** 看门狗 tick (5s): SSE 应活 (已连 + 未回退) 但超 SSE_STALE_MS 无任何帧 = 半死 → 强制重连。
+ *  健康连接每 1-5s 有帧 (status/grid/scores/heartbeat) → _lastSseFrameMs 常新, 不误触。 */
+function sseWatchdogTick(): void {
+  if (USE_STUB || _fallbackActive || !_sseConnected || _lastSseFrameMs === 0) return;
+  const silent = Date.now() - _lastSseFrameMs;
+  if (silent > SSE_STALE_MS) reconnectSSE(`静默 ${Math.round(silent / 1000)}s (半死)`);
+}
+
 /** 解析一帧信封, 返回内层 data (失败返回 null) */
 function parseEnvelope(raw: string): { mode: string; data: unknown; focusSeq: number | null } | null {
   try {
@@ -586,6 +610,7 @@ function connectSSE(): void {
 
   const es = new EventSource(url);
   _es = es;
+  _lastSseFrameMs = Date.now();  // 连接建立即视为刚收帧 (hello 窗口内不误判半死)
 
   // hello 8s 内没来 → 判定 SSE 不通, 回退轮询
   _helloTimer = window.setTimeout(() => {
@@ -594,10 +619,13 @@ function connectSSE(): void {
 
   const on = (ch: string, fn: (data: unknown, mode: string, focusSeq: number | null) => void) => {
     es.addEventListener(ch, (ev: MessageEvent) => {
+      _lastSseFrameMs = Date.now();  // 任何帧 = 连接活着 (看门狗存活信号)
       const p = parseEnvelope(ev.data);
       if (p) fn(p.data, p.mode, p.focusSeq);
     });
   };
+  // heartbeat: 不进 on() (无 envelope), 单独监听仅刷新存活时间戳 (空闲连接靠它喂看门狗, 防误重连)。
+  es.addEventListener('heartbeat', () => { _lastSseFrameMs = Date.now(); });
 
   on('hello', (d) => {
     _sseConnected = true;
@@ -708,6 +736,13 @@ export function initPolling(): void {
   // 主通路: SSE 推 9 通道 (status/account/grid/scores/events/positions/pnl/gate/rejects)。
   //   失败自动回退到 fast 轮询 (startFallbackPolling)。
   connectSSE();
+
+  // SSE 存活看门狗 (老板 2026-06-05 根因修复): 每 5s 查半死连接 → 强制重连自愈 (防服务端重启/
+  //   网络抖动后订单簿新鲜度静默 climbing)。启一次 (initPolling 仅入口调一次)。
+  if (!_sseWatchdogStarted) {
+    _sseWatchdogStarted = true;
+    window.setInterval(() => sseWatchdogTick(), 5000);
+  }
 
   // 全局 1s UI 时钟: 驱动各面板的"数据年龄/新鲜度"显示每秒重算 (量化AI 心跳等)。
   every(() => setUiNow(Date.now()), 1000);  // 1s: 与数据推送节奏一致 (老板「数据1s一推, 时钟没必要更快」)
