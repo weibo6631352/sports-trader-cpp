@@ -274,4 +274,29 @@ struct ClvSizingConfig {
     return m < cfg.floor ? cfg.floor : (m > 1.0 ? 1.0 : m);
 }
 
+// ============================================================================
+// DD→target 乘子 (持仓管理 Stage 2, 老板 2026-06-05 裁决「回撤大只停加仓 + hysteresis, 不主动砍现仓」)。
+//   按【当前回撤】分档给乘子 m∈[0,1]; 调用方据此【只限制加仓幅度, 绝不强制减仓】(见 paper_loop)。
+//   这把「出场=target 缩小」在账户级机制化, 但低流动性 DD 区不被迫 taker 锤实浮亏 (老板裁决)。
+//   保命门 (daily-loss 熔断 / maxDD 红线) 仍在, 本乘子是叠加收紧非替代。
+// ============================================================================
+struct DrawdownConfig {
+    bool enabled{true};
+    double dd_t1{0.05};            // 回撤 ≥ 此 → m_t1 (轻度去险)
+    double dd_t2{0.10};            // 回撤 ≥ 此 → m_t2
+    double dd_halt{0.15};          // 回撤 ≥ 此 (北极星红线) → m=0 (只持不加; 砍仓交给保命门)
+    double m_t1{0.5};
+    double m_t2{0.25};
+    double hysteresis_band{0.02};  // 恢复需比降档阈值多回落此带 (防抖)
+};
+
+// 纯 tier 映射 (无 hysteresis): 当前回撤 dd → 乘子。调用方用 dd / dd+band 两路实现黏滞恢复。
+[[nodiscard]] inline double DrawdownTierMultiplier(double dd, const DrawdownConfig& cfg) noexcept {
+    if (!cfg.enabled) return 1.0;
+    if (dd >= cfg.dd_halt) return 0.0;
+    if (dd >= cfg.dd_t2) return cfg.m_t2;
+    if (dd >= cfg.dd_t1) return cfg.m_t1;
+    return 1.0;
+}
+
 }  // namespace stcpp::control

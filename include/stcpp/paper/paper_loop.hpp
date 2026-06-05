@@ -312,6 +312,15 @@ struct PaperLoopConfig {
     double clv_max_mult{1.5};
     double clv_floor{0.3};
     std::int32_t clv_min_samples{20};
+    // DD→target 乘子 (持仓管理 Stage 2, 老板「回撤大只停加仓 + hysteresis, 不砍现仓」): 当前回撤分档限制
+    //   加仓幅度。见 control::DrawdownTierMultiplier。
+    bool dd_mult_enabled{true};
+    double dd_t1{0.05};
+    double dd_t2{0.10};
+    double dd_halt{0.15};
+    double dd_m_t1{0.5};
+    double dd_m_t2{0.25};
+    double dd_hysteresis_band{0.02};
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 减仓 (预测说该减/收敛) 时 best_bid
     //   可成交即平 (仓位随预测回 flat = 收敛兑现), 不死等 reservation_sell「卖高」价。lib 默认关 (契约测试
     //   不变); 生产 daemon opt-in。解「只买不卖持到结算」(reservation_sell 在 fair 上方收敛永不触发)。
@@ -875,6 +884,9 @@ private:
     //   loop_thread_ 单 writer (买入成交记录 + sizing 读 Mean)。
     eval::RollingClv rolling_clv_;
     eval::PortfolioMetrics portfolio_metrics_;  // Phase 0 项5: 权益曲线 → Sharpe/maxDD/VaR
+    // DD→target 乘子状态 (Stage2 老板「回撤大只停加仓 + hysteresis」): 当前回撤分档乘子, 黏滞恢复。
+    //   loop_thread_ 单 writer (RecordEquity 后 UpdateDrawdownMultiplier 写; ControlInput 读)。
+    double dd_mult_{1.0};
 
     // ---- 内部实现 ----
     void RunLoop(std::stop_token st);

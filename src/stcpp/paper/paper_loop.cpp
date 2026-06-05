@@ -322,6 +322,22 @@ void PaperLoop::TickAll() {
     //   用 tick 入口冻结快照 (与本轮 sizing bankroll 同源同版本)。
     portfolio_metrics_.RecordEquity(NowNs(), tick_equity_.equity_bid);
 
+    // DD→target 乘子更新 (持仓管理 Stage2, 老板「回撤大只停加仓 + hysteresis, 不砍现仓」):
+    //   降档立即生效 (回撤加深快去险); 升档需当前回撤比降档阈值再回落 hysteresis_band (黏滞防抖)。
+    {
+        const double dd = portfolio_metrics_.current_drawdown();
+        const control::DrawdownConfig dc{cfg_.dd_mult_enabled, cfg_.dd_t1,  cfg_.dd_t2,
+                                         cfg_.dd_halt,          cfg_.dd_m_t1, cfg_.dd_m_t2,
+                                         cfg_.dd_hysteresis_band};
+        const double drop_m = control::DrawdownTierMultiplier(dd, dc);
+        const double restore_m = control::DrawdownTierMultiplier(dd + cfg_.dd_hysteresis_band, dc);
+        if (drop_m < dd_mult_) {
+            dd_mult_ = drop_m;  // 回撤加深 → 立即降档
+        } else if (restore_m > dd_mult_) {
+            dd_mult_ = restore_m;  // 回撤回落超过 band → 升档恢复
+        }
+    }
+
     // [2026-06-01 凯利评审] 发布账户权益副本 (debug_api /api/v1/account 经 daemon 回调读)。
     //   loop_thread_ 算 sharpe/maxDD (portfolio_metrics_ 单 writer 此处读安全) → mutex 发布给 HTTP 线程。
     //   tick 末重算一次 equity (含本轮成交后的最新持仓), 比 tick 入口冻结的 tick_equity_ 新。
@@ -1435,7 +1451,14 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     const double min_rebalance = std::max(cfg_.min_rebalance_floor_pusd, 0.10 * std::abs(target_mag));
 
     control::ControlInput cin;
-    cin.target_pusd = target_mag;  // 被选边 = Kelly; 非选边平旧边 = 0
+    // DD→target (持仓管理 Stage2, 老板「只停加仓不砍现仓」): 回撤触发 (dd_mult_<1) 时只压【加仓】幅度
+    //   (target>current 时把增量 ×dd_mult_), target≤current 的减仓 (sharp 驱动) 原样放行 → 绝不因回撤
+    //   强制减仓 (低流动性区不被迫 taker 锤实浮亏)。dd_mult_=0 → 维持现仓 (只持不加不砍)。
+    double dd_target = target_mag;
+    if (dd_mult_ < 1.0 && target_mag > current_pusd) {
+        dd_target = current_pusd + dd_mult_ * (target_mag - current_pusd);
+    }
+    cin.target_pusd = dd_target;  // 被选边 = Kelly(×乘子, DD 限加仓); 非选边平旧边 = 0
     cin.current_pusd = current_pusd;
     cin.reservation_buy_px = reservation.buy_px;
     cin.reservation_sell_px = reservation.sell_px;

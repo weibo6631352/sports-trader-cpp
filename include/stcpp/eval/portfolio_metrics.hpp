@@ -51,6 +51,14 @@ public:
         }
     }
 
+    // 当前回撤 (峰到【当前】权益跌幅占比 ∈[0,1]; DD-aware 去险用, 区别于 max_drawdown 历史最大)。
+    //   空 / peak≤0 → 0。持仓管理 Stage2: 喂 DD→target 乘子 (老板「只停加仓不砍现仓」)。
+    [[nodiscard]] double current_drawdown() const noexcept {
+        if (equity_.empty() || peak_ <= 0.0) return 0.0;
+        const double dd = (peak_ - equity_.back()) / peak_;
+        return dd > 0.0 ? dd : 0.0;
+    }
+
     // periods_per_year: 年化因子 (e.g. 采样间隔 1s → 31.5M; 1tick/500ms → ~63M)。0 = 用构造值。
     [[nodiscard]] Report report(double periods_per_year = 0.0) const noexcept {
         Report r;

@@ -462,3 +462,52 @@ TEST(ClvMultiplier, CV09_AlwaysInBounds) {
         EXPECT_LE(r, cfg.max_mult);
     }
 }
+
+// ---- DD→target 乘子 (持仓管理 Stage 2, 老板「回撤大只停加仓 + hysteresis」) ----
+static DrawdownConfig dd_cfg_default() {
+    return DrawdownConfig{true, 0.05, 0.10, 0.15, 0.5, 0.25, 0.02};
+}
+
+TEST(DrawdownMultiplier, DD01_Disabled_ReturnsOne) {
+    auto cfg = dd_cfg_default();
+    cfg.enabled = false;
+    EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.20, cfg), 1.0);
+}
+
+TEST(DrawdownMultiplier, DD02_Tiers) {
+    auto cfg = dd_cfg_default();
+    EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.00, cfg), 1.0);   // 无回撤
+    EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.049, cfg), 1.0);  // <t1
+    EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.05, cfg), 0.5);   // t1
+    EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.099, cfg), 0.5);  // <t2
+    EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.10, cfg), 0.25);  // t2
+    EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.149, cfg), 0.25); // <halt
+    EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.15, cfg), 0.0);   // halt → 0 (只持不加)
+    EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.30, cfg), 0.0);
+}
+
+// hysteresis: 模拟 paper_loop 成员逻辑 (drop 用 dd, restore 用 dd+band)。
+TEST(DrawdownMultiplier, DD03_Hysteresis_DropImmediate_RestoreSticky) {
+    auto cfg = dd_cfg_default();
+    double m = 1.0;
+    auto update = [&](double dd) {
+        const double drop = DrawdownTierMultiplier(dd, cfg);
+        const double restore = DrawdownTierMultiplier(dd + cfg.hysteresis_band, cfg);
+        if (drop < m) m = drop;
+        else if (restore > m) m = restore;
+    };
+    update(0.06);  // 进 t1 → 立即降到 0.5
+    EXPECT_DOUBLE_EQ(m, 0.5);
+    update(0.04);  // 回落到 0.04: restore=tier(0.06)=0.5 → 不恢复 (黏滞, 需 <0.03)
+    EXPECT_DOUBLE_EQ(m, 0.5);
+    update(0.02);  // 回落到 0.02: restore=tier(0.04)=1.0 → 恢复满仓
+    EXPECT_DOUBLE_EQ(m, 1.0);
+}
+
+TEST(DrawdownMultiplier, DD04_DeepDrop_HoldOnly) {
+    auto cfg = dd_cfg_default();
+    double m = 1.0;
+    const double drop = DrawdownTierMultiplier(0.16, cfg);  // ≥halt
+    if (drop < m) m = drop;
+    EXPECT_DOUBLE_EQ(m, 0.0);  // m=0 → 只持不加 (砍仓交保命门)
+}
