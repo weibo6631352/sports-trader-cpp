@@ -531,8 +531,18 @@ function ConvergenceSparkline(props: { conditionId: string }) {
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
   };
+  // 服务端权威 (SharpFairTrack; 持久可信, 不随刷新归零): sharp_samples≥2 时用后端 conv_rate(prob/sec) 判向。
+  const q = () => state.conditionCache[props.conditionId]?.quote ?? null;
+  const srvSamples = () => Number(q()?.sharp_samples ?? 0);
+  const srvConv = () => Number(q()?.sharp_conv_rate ?? Number.NaN);
+  const srvVel = () => Number(q()?.sharp_velocity ?? Number.NaN);
   const conv = (): 'converge' | 'diverge' | 'flat' | 'none' => {
-    const r = ring();
+    if (srvSamples() >= 2 && Number.isFinite(srvConv())) {  // 优先服务端
+      if (srvConv() < -1e-4) return 'converge';
+      if (srvConv() > 1e-4) return 'diverge';
+      return 'flat';
+    }
+    const r = ring();  // 回退: 前端自攒环 (服务端样本不足时)
     if (r.length < 3) return 'none';
     const now = r[r.length - 1], past = r[Math.max(0, r.length - 6)];
     const gNow = Math.abs(now.sharp - now.mid), gPast = Math.abs(past.sharp - past.mid);
@@ -549,14 +559,26 @@ function ConvergenceSparkline(props: { conditionId: string }) {
   return (
     <div class="v8-q-row" style={{ 'align-items': 'center', gap: '6px' }}>
       <span class="q-lbl" title="市场价(蓝) 相对 sharp(橙) 的收敛/发散轨迹 = 持仓对错的实时信号。收敛=市场向我们 sharp 靠拢=持仓变对; 发散=变错。前端自攒, 刷新重置。">趋势</span>
-      <Show when={ring().length >= 2} fallback={<span class="mono-sub v8-dim">攒样本中…</span>}>
+      <Show when={ring().length >= 2}
+            fallback={<span class="mono-sub v8-dim">{srvSamples() >= 2 ? '' : '攒样本中…'}</span>}>
         <svg width={W} height={H} style={{ background: meta().bg, 'border-radius': '3px' }}>
           <polyline points={poly((p) => p.mid)} fill="none" stroke="#42a5f5" stroke-width="1.2" />
           <polyline points={poly((p) => p.sharp)} fill="none" stroke="#ffa726" stroke-width="1.2" />
         </svg>
-        <span class="mono-sub" style={{ color: meta().color, 'font-weight': 700 }}>{meta().label}</span>
         <span class="q-lbl" title="蓝=PM 市场 mid · 橙=sharp fair" style={{ 'font-size': '9px' }}>
           <span style={{ color: '#42a5f5' }}>━mid</span> <span style={{ color: '#ffa726' }}>━sharp</span>
+        </span>
+      </Show>
+      <Show when={conv() !== 'none'}>
+        <span class="mono-sub" style={{ color: meta().color, 'font-weight': 700 }}
+              title={srvSamples() >= 2 ? '服务端 SharpFairTrack 收敛率 (持久可信)' : '前端自攒 (服务端样本不足回退)'}>
+          {meta().label}{srvSamples() >= 2 ? '' : '·前'}
+        </span>
+      </Show>
+      <Show when={srvSamples() >= 2 && Number.isFinite(srvVel())}>
+        <span class="mono-sub" title="服务端 sharp 速度 (line movement; prob/sec → 点/秒)"
+              style={{ color: Math.abs(srvVel()) < 1e-5 ? '#888' : srvVel() > 0 ? '#4caf50' : '#f44336', 'font-weight': 700 }}>
+          速度 {srvVel() >= 0 ? '+' : ''}{(srvVel() * 100).toFixed(2)}pt/s
         </span>
       </Show>
     </div>
@@ -1274,11 +1296,19 @@ function GlobalHealthBar() {
         const dist = sSide - entry;                              // <0 = sharp 已跌破入场 = 持仓亏向
         if (dist < -0.02) out.push({ sev: 'warn', text: `${mktName(cid)} ${p.outcome} · sharp 已反向 ${(dist * 100).toFixed(1)}点` });
       }
-      const ring = getSharpTrend(cid);
-      if (ring.length >= 3) {
-        const now = ring[ring.length - 1], past = ring[Math.max(0, ring.length - 6)];
-        const gNow = Math.abs(now.sharp - now.mid), gPast = Math.abs(past.sharp - past.mid);
-        if (gNow > gPast * 1.3 && gNow > 0.01) out.push({ sev: 'warn', text: `${mktName(cid)} · 持仓发散中 (市场远离 sharp)` });
+      // 发散告警: 优先服务端 conv_rate (SharpFairTrack, 持久权威), 回退前端自攒环。
+      const sq = state.conditionCache[cid]?.quote;
+      const srvN = Number(sq?.sharp_samples ?? 0);
+      const srvC = Number(sq?.sharp_conv_rate ?? Number.NaN);
+      if (srvN >= 2 && Number.isFinite(srvC)) {
+        if (srvC > 1e-4) out.push({ sev: 'warn', text: `${mktName(cid)} · 持仓发散中 (市场远离 sharp)` });
+      } else {
+        const ring = getSharpTrend(cid);
+        if (ring.length >= 3) {
+          const now = ring[ring.length - 1], past = ring[Math.max(0, ring.length - 6)];
+          const gNow = Math.abs(now.sharp - now.mid), gPast = Math.abs(past.sharp - past.mid);
+          if (gNow > gPast * 1.3 && gNow > 0.01) out.push({ sev: 'warn', text: `${mktName(cid)} · 持仓发散中 (市场远离 sharp)` });
+        }
       }
     }
     const insf = (state.rejects?.rejects ?? []).filter((r) => r.reason_code === 'INSUFFICIENT_FUNDS').length;

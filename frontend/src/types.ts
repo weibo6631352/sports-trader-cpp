@@ -373,6 +373,15 @@ export interface Quote {
   data_source_ts?: number;
   /** GS sharp 赔率新鲜度 epoch_ns = inplay 赔率版本时刻; now−它 = sharp(bet365 de-vig) 赔率多旧 (3s 门管的就是它) */
   sharp_data_source_ts?: number;
+  // --- sharp fair 时序 (老板 2026-06-05「方向真值=赔率源 sharp; line movement 一阶导」; 服务端 SharpFairTrack 派生) ---
+  /** sharp 速度 prob/sec (+升 −降; line movement 方向)。有效性看 sharp_samples≥2 (NaN 经后端 json→0) */
+  sharp_velocity?: number;
+  /** 收敛率 prob/sec (<0 市场向 sharp 收敛=持仓变对 / >0 发散=变错)。服务端权威值, 优于前端自攒 */
+  sharp_conv_rate?: number;
+  /** sharp 抖动度 RMS (高=噪声多于真移动) */
+  sharp_vol?: number;
+  /** sharp 时序环窗口内样本数 (有效性闸: <2 则 velocity/conv_rate 无意义) */
+  sharp_samples?: number;
 
   // --- AI provenance 字段 (小邓 XD 红线) ---
   /** 模型 ID, e.g. "demo-fv-v0" */
