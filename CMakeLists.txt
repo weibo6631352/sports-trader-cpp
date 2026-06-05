@@ -102,8 +102,8 @@ add_subdirectory(src/stcpp/strategy)
 add_subdirectory(src/stcpp/stats)
 # Sprint-2 W4 Wave 20: 小袁 microstructure C++ lib v0.1 (FillRateModel + 8 sport profile)
 add_subdirectory(src/stcpp/microstructure)
-# Sprint-2 W4 Wave 20: 小邓 ML 数据钩子 v0.1 (paper / backtest 旁路抓拍 FeatureSnapshot + TrainingLabel)
-add_subdirectory(src/stcpp/ml)
+# (src/stcpp/ml [MLDataHook 训练数据捕获] 已砍 2026-06-05「砍掉大模型训练功能」;
+#  feature_snapshot/training_label header 留 include/stcpp/ml/ — feature_snapshot_id 是 live 信号 ABI)
 # Sprint-2 W5 Wave 24: 老李 PolymarketClient v0.1 (paper mock + live stub, R-7 物理隔离)
 add_subdirectory(src/stcpp/polymarket)
 

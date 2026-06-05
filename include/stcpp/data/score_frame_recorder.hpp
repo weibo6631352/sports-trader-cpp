@@ -9,7 +9,7 @@
 //   ScoreMap 原始帧 (EventScore 全字段 + 4ts + inplay bet365 sharp 赔率), 是小蒋 P2 ReplayImpl 喂帧
 //   解锁回测下单/结算的数据前提。resolution(#5)已由 settlement_recorder.hpp 覆盖, 故此处只补比分。
 //
-// 设计 (= FeatureVectorRecorder 范式, IO 离决策线程):
+// 设计 (IO 离决策线程, R-12):
 //   独立线程周期读 ScoreSnapshotStore::GetSnapshot() → 每帧一行 JSONL (整个 ScoreMap 快照)。
 //   去重: 帧内最大 as_of_ts_ns 未推进则跳过 (只在比分数据前进时落帧, 防膨胀)。
 //   replay 侧按 frame_ts_ns 排序重建 ScoreMap, 经 PaperLoop::SetReplayInputs 注入。

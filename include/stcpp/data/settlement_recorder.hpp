@@ -3,9 +3,9 @@
 // Owner: 老雷 (GM) — Phase 2 标签管道 y 持久化
 // last_review: 2026-05-31
 //
-// SettlementStore 只在内存 (SettlementPoller 填) → 离线 label join 拿不到 y。本 recorder 独立线程
-//   读 SettlementStore 快照, 把已结算 condition 落 settlement.jsonl, 供 label_pipeline 离线 BuildLabelStore。
-//   去重: 每 condition 首次 closed 落一行 (结算是终态, 不变)。IO 离决策线程 (同 FeatureRecorder 范式)。
+// SettlementStore 只在内存 (SettlementPoller 填)。本 recorder 独立线程读 SettlementStore 快照,
+//   把已结算 condition 落 settlement.jsonl (回测等价数据 / 离线对账 / 观测的 y 来源)。
+//   去重: 每 condition 首次 closed 落一行 (结算是终态, 不变)。IO 离决策线程 (R-12)。
 //   输出行: {"condition_id":"..","closed":1,"settlement_value":N,"end_date_ts_ns":N}
 #pragma once
 

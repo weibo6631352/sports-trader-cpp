@@ -12,12 +12,12 @@
 //   T06: ResetKey — 重置后 valid=false
 //   T07: ResetAll — 全部重置后 valid=false
 //   T08: R-20 ts_chain_ok 验证 (正常链 + 违规链 + 边界)
-//   T09: ML provenance 字段透传 (model_id / spec_version / model_kind / model_confidence)
+//   T09: baseline fair 来源标记透传 (predict_ok / model_as_of_ts; 大模型 provenance 已砍 2026-06-05)
 //   T10: 并发读安全 (TSan-friendly: 多读者同时 Read, writer 持续 Publish)
 //   T11: publish_count 计数正确
 //   T12: QuoteFeatures trivially_copyable static_assert (编译期)
 //   T13: ReadRaw — 与 Read 内容一致
-//   T14: ModelKindTag 枚举值覆盖
+//   (T14 ModelKindTag 枚举测试已砍 2026-06-05「砍掉大模型训练功能」)
 
 #include <atomic>
 #include <cstring>

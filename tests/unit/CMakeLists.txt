@@ -167,7 +167,6 @@ set(EXTRA_DEFS_test_ingest_raw          STCPP_INGEST_RAW_WAL_PREFIX="/var/lib/st
 # (在公共 grandfather 3 项之外追加)
 set(EXTRA_OPTS_test_wal_writer          -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_audit_emitter       -Wno-invalid-offsetof)
-set(EXTRA_OPTS_test_ml_hook             -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_pm_client_abi       -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_position_ledger     -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_blake3_audit        -Wno-invalid-offsetof)
@@ -207,7 +206,6 @@ set(LABELS_test_fill_rate_model_v2         "unit;microstructure;clob;mode-a;wave
 set(LABELS_test_live_section_classifier    "unit;signal;strategy;w4")
 set(LABELS_test_pm_client_abi              "unit;polymarket;abi-lock;w6")
 set(LABELS_test_paper_pm_client            "unit;polymarket;paper;w5")
-set(LABELS_test_ml_hook                    "unit;ml;w4")
 set(LABELS_test_single_instance            "unit;process;single-instance;w5;w6")
 set(LABELS_test_position_ledger            "unit;wal;position;w6;p0")
 set(LABELS_test_pm_wss_subscriber          "unit;polymarket;wss;w5")
@@ -317,7 +315,6 @@ stcpp_add_unit_test(stcpp_test_unit_risk risk_enum_coverage_test.cpp)
 set(_STCPP_CONDITIONAL_SRCS
     test_fill_rate_model_v2.cpp     # paper only
     test_paper_pm_client.cpp        # paper only
-    test_ml_hook.cpp                # paper|backtest only
     test_signer_v52.cpp             # paper only
     test_signer_v53_pit.cpp         # paper only
     test_signer_v62.cpp             # paper only
@@ -409,20 +406,7 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
 
 endif()
 
-# --- paper OR backtest ---
-if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
-
-    # 小邓 W4 Wave 20: MLDataHook v0.1 (FeatureSnapshot + TrainingLabel + 4 stage join)
-    set(EXTRA_LIBS_test_ml_hook
-        stcpp_ml
-        stcpp_infra_wal
-        stcpp_risk
-        stcpp_execution_paper
-        stcpp_strategy
-    )
-    stcpp_add_unit_test(test_ml_hook test_ml_hook.cpp)
-
-endif()
+# (test_ml_hook + stcpp_ml [MLDataHook 训练数据捕获] 已砍 2026-06-05「砍掉大模型训练功能」)
 
 # --- STCPP_BUILD_CLI guard ---
 if(STCPP_BUILD_CLI)

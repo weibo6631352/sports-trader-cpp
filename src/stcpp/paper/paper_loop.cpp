@@ -1950,7 +1950,7 @@ void PaperLoop::PopulateFeatureColumns(
     qf.market_mid = yes_mark;
     (void)mark_price;  // 参数保留 (调用方对称); 特征用 yes_mark 保 BR-1 一致
     // R-fee-2: per-market 手续费系数 (始终输出, fee 是 market 元数据非决策派生, 不受 has_real_fair gate)。
-    //   进 ML 训练数据 (FeatureRecorder) + 前端 /quote。与 RM/sizing 同源 FeeCoefFor(condition)。
+    //   进前端 /quote (量化因子)。与 RM/sizing 同源 FeeCoefFor(condition)。
     qf.fee_rate_coef = FeeCoefFor(condition_id);
 
     // v0.7: 类别上下文码 (真实 Polymarket 市场结构 → ML 特征 82-85; per-condition 注入查填)。

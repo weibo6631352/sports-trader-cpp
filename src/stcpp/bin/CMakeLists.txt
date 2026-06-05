@@ -3,7 +3,7 @@
 # 注: 原 stcpp_paper (paper.cpp stub loop) 已于 2026-05-30 废弃删除。
 #   paper daemon 统一到 debug_server (src/stcpp/debug_api/debug_server_main.cpp):
 #   该进程已装配 gamma 发现 + PaperLoop + InplayFeedThread + LiveWss + HttpServer +
-#   FeatureRecorder, 是事实上的 paper 常驻进程 (老板 2026-05-30 定: 统一 debug_server)。
+#   settlement/score recorder, 是事实上的 paper 常驻进程 (老板 2026-05-30 定: 统一 debug_server)。
 #   老郭架构评审 B 表 #1 确认 stcpp_paper 零外部依赖, 安全删除。
 #
 # 本目录现仅余 stcpp-strategy-unlock CLI (三签解锁工具)。

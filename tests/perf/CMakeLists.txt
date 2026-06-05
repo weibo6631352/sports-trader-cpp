@@ -122,7 +122,7 @@ target_link_libraries(bench_tick_one         PRIVATE
     stcpp_execution_paper
     stcpp_infra_wal)
 
-# ----- 老姜性能评审 P1: ONNX fair predict 单次延迟 (最后一块天花板数据) -----
+# (bench_onnx_predict [ONNX fair predict 延迟] 已砍 2026-06-05「砍掉大模型训练功能」)
 
 # ----- W6 Wave 28: SPSC queue latency bench (小石 W6 SPSC framework 联调) -----
 # 5 capacity: 64/256/1024/4096/16384; upper guard p99 < 100 ns

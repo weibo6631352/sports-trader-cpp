@@ -72,8 +72,7 @@ int main(int argc, char** argv) {
             cfg.record_ml = false;
         } else if (a == "--ml-path" && i + 1 < argc) {
             cfg.ml_path = argv[++i];
-        } else if (a == "--ml-poll-sec" && i + 1 < argc) {
-            cfg.ml_poll_sec = std::atoi(argv[++i]);  // 采集间隔秒 (lead-lag 精测降 1s)
+        // (--ml-poll-sec 已砍 2026-06-05: FeatureRecorder 删, ml_poll_sec 无消费方)
         } else if (a == "--no-paper") {
             cfg.enable_paper_trading = false;  // 仅观测, 不起 PaperLoop
         } else if (a == "--enable-fills") {
