@@ -24,7 +24,7 @@ import TextField from '@suid/material/TextField';
 import Box from '@suid/material/Box';
 import Alert from '@suid/material/Alert';
 import Badge from '@suid/material/Badge';
-import { state, setDetailInterest, addDetailInterest, uiNow, posSeenAt, getSharpTrend, sseAgeMs, sseIsAlive } from '../store';
+import { state, setDetailInterest, addDetailInterest, uiNow, posSeenAt, getSharpTrend } from '../store';
 import {
   fmtTs, fmtBps, fmtUsdc, fmtClock, stalenessMs, isEndpointFailing,
 } from '../api';
@@ -318,19 +318,13 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
   //   data_source_ts 是 Polymarket /book 的 timestamp (订单簿【版本号时刻】, 只在簿真变化才前进; 149hz poller
   //   簿没变就拿到同一个 ts)。所以这个数 = 【距上次簿变化的年龄】, 静市场天然 sawtooth 爬升, 非"卡"。
   //   "数据管道是否实时"看顶部「SSE 实时」灯 (亚秒稳定), 别和这个会飘的版本年龄混淆。阈值放宽 (静市场几秒正常)。
-  // ★ bug 修复 (老板 2026-06-05「订单簿变动了但版本年龄还 6s」): 版本年龄必须读【你正在看的订单簿】自己的
-  //   data_source_ts (book.token0/token1 取最新那边), 不是读 quote 的 —— 二者是两条独立数据流, on-change 下
-  //   订单簿变了(book 帧推)但报价没变(quote 帧不推) → 读 quote.data_source_ts 会卡在旧值, 而订单簿其实是新的。
-  const freshTok  = () => { const b = book(); if (!b) return null; const d0 = Number(b.token0?.data_source_ts ?? 0), d1 = Number(b.token1?.data_source_ts ?? 0); return d0 >= d1 ? b.token0 : b.token1; };
-  const bookTs    = () => { const t = freshTok(); const ds = t ? Number(t.data_source_ts) : 0; return ds > 0 ? ds : Number(state.conditionCache[props.conditionId]?.quote?.data_source_ts ?? 0); };
+  // 订单簿新鲜度 = 快照新鲜度 (老板 2026-06-05 最终拍板「我要实时推送, 时刻就是订单簿快照时刻, 不要变动才推送」):
+  //   = now − as_of_ts (book 快照发布时刻)。实时(每 tick)推送下 as_of_ts 每秒刷新 → 恒 ~0.x s, 不管簿动不动;
+  //   管道一卡(送达停)→ as_of_ts 停 → 数字变大、立刻看出来。不用版本时刻(那是"距上次簿变化", 老板明确不要)。
+  const bookTs    = () => { const b = book(); const a = b ? Number(b.as_of_ts_ns ?? 0) : 0; return a > 0 ? a : Number(state.conditionCache[props.conditionId]?.quote?.quote_as_of_ts ?? 0); };
   const bookAgeS  = () => bookTs() > 0 ? Math.max(0, (uiNow() - bookTs() / 1e6) / 1000) : NaN;
   const bookFresh = () => !Number.isFinite(bookAgeS()) ? '#888'
-    : bookAgeS() < 5 ? '#4caf50' : bookAgeS() < 12 ? '#ff9800' : '#f44336';  // 版本年龄: <5s绿 <12s黄 (静市场几秒正常)
-  // 链路时间 (老板「能看出是我们系统卡还是本来就慢」): 后端入口 = ingestion_ts − data_source_ts
-  //   (Polymarket 发布该版 → 伦敦后端收到; 就近部署正常 ~毫秒; 跟源头静默无关、不随时间涨)。高 = 我们后端/取数在拖。
-  //   跨洋(后端→你浏览器)那段看顶部「SSE 实时」灯。
-  const linkMs    = () => { const t = freshTok(); if (!t) return NaN; const ds = Number(t.data_source_ts), ing = Number(t.ingestion_ts); return (ds > 0 && ing >= ds) ? (ing - ds) / 1e6 : NaN; };
-  const linkColor = () => !Number.isFinite(linkMs()) ? '#888' : linkMs() < 100 ? '#4caf50' : linkMs() < 500 ? '#ff9800' : '#f44336';
+    : bookAgeS() < 2 ? '#4caf50' : bookAgeS() < 5 ? '#ff9800' : '#f44336';  // 实时推送下恒~1s; <2s绿 <5s黄 ≥5s红=管道卡
   const vigInfo = () => {
     const cs = Number(bk().cross_spread);
     if (!Number.isFinite(cs)) return null;
@@ -427,17 +421,13 @@ function ExpandBookPanel(props: { book: BinaryMarketBookView | null; conditionId
       <div class="v8-expand-panel">
         <div class="v8-panel-title">
           双边订单簿
-          {/* 数据年龄 + 链路 + 时刻 (老板 2026-06-05「让我看懂是我们系统卡还是源头本来就慢」):
-              数据年龄=源头这版多旧(读订单簿自己的ts, 已修6s bug); 链路=后端取数延迟(ms=快); 跨洋看顶部SSE灯。 */}
+          {/* 订单簿新鲜度 + 快照时刻 (老板 2026-06-05 最终: 实时推送, 时刻=订单簿快照时刻) */}
           <Show when={Number.isFinite(bookAgeS())}>
-            <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700' }}
-                  title="三段定位「卡在哪」: ①数据年龄=now−订单簿版本时刻(你看到这版数据多旧; 源头静默会涨属正常)。②链路=后端从源头取到这版的延迟(ingestion−data_source; 毫秒=我们后端没卡)。③跨洋(后端→你浏览器)看顶部「SSE 实时」灯。判断: 只有数据年龄高=源头本来就慢(不怪我们); 链路或SSE高=我们系统在卡。">
+            <span class="mono-sub" style={{ 'margin-left': '8px', 'font-weight': '700', color: bookFresh() }}
+                  title="订单簿新鲜度 = now − 订单簿快照时刻 (as_of_ts; 后端实时每秒推当前快照)。实时推送下恒 ~0.x s, 不管簿动不动; 管道卡了(送达停)数字才变大 → 一眼看出卡。时刻 = 这份快照的发布时刻。">
               <Show keyed when={bookTs()}><span class="v8-live-dot">●</span></Show>
-              {' '}<span style={{ color: bookFresh() }}>数据年龄 {bookAgeS().toFixed(1)}s</span>
-              <Show when={Number.isFinite(linkMs())}>
-                <span style={{ 'margin-left': '6px', color: linkColor() }} title="链路 = 后端从 Polymarket 取到这版的延迟 (ingestion−data_source)。就近部署正常 ~毫秒; 高=我们后端/取数在拖, 跟源头静默无关。">链路 {linkMs() < 1 ? '<1' : linkMs().toFixed(0)}ms</span>
-              </Show>
-              <span class="mono-sub v8-dim" style={{ 'margin-left': '6px', 'font-weight': '400' }} title="该版订单簿的实际版本时刻 (data_source_ts)">· 时刻 {fmtTs(bookTs()).slice(-12)}</span>
+              {' '}订单簿新鲜度 {bookAgeS().toFixed(1)}s
+              <span class="mono-sub v8-dim" style={{ 'margin-left': '5px', 'font-weight': '400' }} title="这份订单簿快照的发布时刻 (as_of_ts)">· 时刻 {fmtTs(bookTs()).slice(-12)}</span>
             </span>
           </Show>
           <Show when={vigInfo()}>
@@ -674,12 +664,12 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
             {fmtBps(sharpDev() * 10000)}
           </span>
           <Show when={!modelReady()}><span class="mono-sub" style={{ 'color': '#4caf50' }}>← 当前 fair</span></Show>
-          {/* GS sharp 赔率版本年龄 (2026-06-05「飘」根治): = Goalserve 赔率版本年龄, 非系统卡。每~2-3s出一版属正常 */}
+          {/* GS sharp 赔率延迟: now − Goalserve 赔率版本时刻 (Goalserve 每~2-3s 出一版+落后bet365~2.3s, 3s内属正常) */}
           <Show when={Number.isFinite(sharpAgeS())}>
             <span class="mono-sub" style={{ 'margin-left': 'auto', 'font-weight': '700', color: sharpAgeColor() }}
-                  title="赔率版本年龄 = now − Goalserve inplay 赔率版本时刻。Goalserve 每 ~2-3s 才出一版赔率 + 它本身落后 bet365 ~2.3s, 故 ≤3.5s 是固有物理延迟属正常 (sawtooth 0→3s 是 GS 出版节奏, 压不下去, 非系统卡)。>6s 才真陈旧。">
-              赔率龄 {sharpAgeS().toFixed(1)}s
-              <span class="mono-sub v8-dim" style={{ 'margin-left': '4px', 'font-weight': '400' }} title="该版 Goalserve 赔率的实际版本时刻 (sharp_data_source_ts)">· 时刻 {fmtTs(sharpTs()).slice(-12)}</span>
+                  title="赔率延迟 = now − Goalserve inplay 赔率版本时刻 (sharp_data_source_ts)。Goalserve 每 ~2-3s 出一版 + 落后 bet365 ~2.3s, 故 ≤3.5s 属固有物理延迟(非系统卡), >6s 才陈旧。时刻=该版赔率的发布时刻。">
+              延迟 {sharpAgeS().toFixed(1)}s
+              <span class="mono-sub v8-dim" style={{ 'margin-left': '4px', 'font-weight': '400' }} title="该版 Goalserve 赔率的版本时刻">· 时刻 {fmtTs(sharpTs()).slice(-12)}</span>
             </span>
           </Show>
         </Show>
@@ -1293,7 +1283,6 @@ function GlobalHealthBar() {
   const [open, setOpen] = createSignal(false);
   const backendOk = () => state.healthz?.ok === true;
   const wssOk = () => state.status?.wss_connected?.clob === true;
-  const sseMs = () => { uiNow(); return sseAgeMs(); };  // SSE 管道存活年龄 (配 uiNow 每秒重算)
   const signals = () => state.status?.signals_active_count ?? 0;
   const positions = () => state.positions?.positions?.filter((p) => Math.abs(Number(p.net_qty)) > 0) ?? [];
   const floatPnl = () => positions().reduce((a, p) => a + Number(p.pnl_realized) + Number(p.pnl_unrealized), 0);
@@ -1340,11 +1329,6 @@ function GlobalHealthBar() {
       <div class="v8-health-bar">
         <span class={`v8-health-dot ${backendOk() ? 'hd-ok' : 'hd-err'}`} title="后端心跳 /healthz">● 后端</span>
         <span class={`v8-health-dot ${wssOk() ? 'hd-ok' : 'hd-err'}`} title="订单簿 WSS (clob) 连接">● WSS</span>
-        {/* SSE 管道实时灯 (老板 2026-06-05「飘」根治: 真·管道是否实时, 亚秒稳定; 区别于静市场会飘的"订单簿版本年龄") */}
-        <span class={`v8-health-dot ${sseIsAlive() && (sseMs() < 5000 || !Number.isFinite(sseMs())) ? 'hd-ok' : sseMs() < 12000 ? 'hd-warn' : 'hd-err'}`}
-              title="SSE 数据管道实时性 = now − 最近一帧到达。健康连接每 1-2s 有帧→亚秒稳定。这是「管道是否实时」的真指标 (149hz 订单簿/赔率推送是否在流); 不要和下面会飘的「订单簿版本年龄」(=距上次簿变化) 混淆。">
-          ● SSE {sseIsAlive() && Number.isFinite(sseMs()) ? `${(sseMs() / 1000).toFixed(1)}s` : (sseIsAlive() ? '实时' : '回退')}
-        </span>
         <span class="v8-health-sep">·</span>
         <span class="mono-sub" title="活跃信号数">信号 {signals()}</span>
         <span class="v8-health-sep">·</span>

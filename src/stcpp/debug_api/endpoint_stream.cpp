@@ -350,25 +350,17 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                             if (cid.empty() || n >= kMaxFocus) break;  // provider 侧也夹 cap (评审)
                             ++n;
                             focus_now.insert(cid);
-                            // on-change 推 (老板 2026-06-05「卡慢」根治: 撤回「每 tick 必推全档」firehose)。
-                            //   实测: 5 个 focus 盘时每秒 5×(全档 book+全档 quote) 大帧灌跨洋链路 → 发送缓冲排队 →
-                            //   连全局 grid 都从 1/s 掉到 0.6/s → "卡慢"。这正是 SSE 当初要消灭的跨洋问题。
-                            //   改回 on-change: book/quote 仅真变化才推 (静市场零流量); 新 focus(基线缺) 立即首推;
-                            //   keyframe(每 30s) 全推自愈。"面板冻结感"由前端订单簿新鲜度/● live 指示器表达, 不靠重推同数据。
+                            // 聚焦盘 book/quote 每 tick 必推 (老板 2026-06-05 最终拍板「我要实时推送, 不要变动才推送」):
+                            //   每秒推当前快照, 不管簿变没变 → 快照时刻(as_of_ts)每秒刷新 → 前端"订单簿新鲜度"恒新;
+                            //   管道一卡(送达停)→ 快照时刻停 → 立刻看出来。冷门静盘也实时(我们在持续推它的当前快照)。
+                            //   注: 多盘跨洋有 firehose 带宽压力(老板「每秒推能承受」), 真卡时前端新鲜度会如实显示。
                             std::string bk = payload::book_pair(sp, cid);
-                            auto bit = last_book.find(cid);
-                            if (keyframe || bit == last_book.end() || bit->second != bk) {
-                                last_book[cid] = bk;
-                                if (!send_frame(sink, "book", "snapshot", bk, fseq)) return true;
-                                sent = true;
-                            }
+                            last_book[cid] = bk;
+                            if (!send_frame(sink, "book", "snapshot", bk, fseq)) return true;
+                            sent = true;
                             std::string qt = payload::quote(sp, cid);
-                            auto qit = last_quote.find(cid);
-                            if (keyframe || qit == last_quote.end() || qit->second != qt) {
-                                last_quote[cid] = qt;
-                                if (!send_frame(sink, "quote", "snapshot", qt, fseq)) return true;
-                                sent = true;
-                            }
+                            last_quote[cid] = qt;
+                            if (!send_frame(sink, "quote", "snapshot", qt, fseq)) return true;
                         }
                         // 已移出 focus 的盘口: 清基线 (下次重新 focus 会重推)
                         for (auto it = last_book.begin(); it != last_book.end();)
