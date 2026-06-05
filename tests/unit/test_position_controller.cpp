@@ -400,3 +400,65 @@ TEST(LifecycleMultiplier, LC08_NeverAmplifies) {
         }
     }
 }
+
+// ---- CLV sizing 乘子 (持仓管理 Stage 2, 老板「CLV 好就实时放大」) ----
+// 可 >1 放大 (老板授权), 封顶 max_mult; 负 CLV 收缩到 floor; 样本不足 fail-open。
+static ClvSizingConfig clv_cfg_default() {
+    return ClvSizingConfig{true, 0.01, 0.5, 1.0, 1.5, 0.3, 20};
+}
+
+TEST(ClvMultiplier, CV01_InsufficientSamples_FailOpen) {
+    auto cfg = clv_cfg_default();
+    EXPECT_DOUBLE_EQ(ComputeClvMultiplier(0.02, 19, cfg), 1.0);  // n<min_samples
+}
+
+TEST(ClvMultiplier, CV02_NaN_FailOpen) {
+    auto cfg = clv_cfg_default();
+    EXPECT_DOUBLE_EQ(ComputeClvMultiplier(kNaN, 50, cfg), 1.0);
+}
+
+TEST(ClvMultiplier, CV03_Disabled_ReturnsOne) {
+    auto cfg = clv_cfg_default();
+    cfg.enabled = false;
+    EXPECT_DOUBLE_EQ(ComputeClvMultiplier(0.05, 50, cfg), 1.0);
+}
+
+TEST(ClvMultiplier, CV04_ZeroClv_NoChange) {
+    auto cfg = clv_cfg_default();
+    EXPECT_DOUBLE_EQ(ComputeClvMultiplier(0.0, 50, cfg), 1.0);
+}
+
+TEST(ClvMultiplier, CV05_PositiveClv_Amplifies) {
+    auto cfg = clv_cfg_default();
+    // clv_mean = clv_ref(0.01) → m = 1 + 0.5×1 = 1.5 (= max_mult)
+    EXPECT_NEAR(ComputeClvMultiplier(0.01, 50, cfg), 1.5, 1e-9);
+    // clv_mean = 0.5×clv_ref → m = 1.25
+    EXPECT_NEAR(ComputeClvMultiplier(0.005, 50, cfg), 1.25, 1e-9);
+}
+
+TEST(ClvMultiplier, CV06_AmplifyCappedAtMax) {
+    auto cfg = clv_cfg_default();
+    // 极大正 CLV → 封顶 max_mult(1.5), 绝不超 (护栏)
+    EXPECT_DOUBLE_EQ(ComputeClvMultiplier(1.0, 50, cfg), 1.5);
+}
+
+TEST(ClvMultiplier, CV07_NegativeClv_Reduces) {
+    auto cfg = clv_cfg_default();
+    // clv_mean = −0.005, k_cut=1.0 → m = 1 − 1.0×0.5 = 0.5
+    EXPECT_NEAR(ComputeClvMultiplier(-0.005, 50, cfg), 0.5, 1e-9);
+}
+
+TEST(ClvMultiplier, CV08_ReduceFlooredAtFloor) {
+    auto cfg = clv_cfg_default();
+    // 极大负 CLV → 夹到 floor(0.3), 绝不更低
+    EXPECT_DOUBLE_EQ(ComputeClvMultiplier(-1.0, 50, cfg), 0.3);
+}
+
+TEST(ClvMultiplier, CV09_AlwaysInBounds) {
+    auto cfg = clv_cfg_default();
+    for (double m : {-1.0, -0.01, -0.001, 0.0, 0.001, 0.01, 1.0}) {
+        const double r = ComputeClvMultiplier(m, 50, cfg);
+        EXPECT_GE(r, cfg.floor);
+        EXPECT_LE(r, cfg.max_mult);
+    }
+}

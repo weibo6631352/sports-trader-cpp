@@ -1205,6 +1205,18 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             target_mag *= lifecycle_mult;
         }
     }
+    // CLV sizing 乘子 (持仓管理 Stage 2, 老板 2026-06-05「CLV 好就实时放大」): 滚动 CLV 均值 (系统级近期
+    //   入场质量) 调 target 量级 —— 可 >1 放大 (老板授权; 封顶 clv_max_mult 护栏; RM caps 仍硬夹)。
+    //   样本不足/NaN → 1.0。不碰方向 (乘 |target|)。GM 护栏: 滚动均值非瞬时, 见 ComputeClvMultiplier。
+    double clv_mult = 1.0;
+    if (target_mag > 0.0) {
+        const control::ClvSizingConfig clv_cfg{cfg_.clv_mult_enabled, cfg_.clv_ref,   cfg_.clv_k_amp,
+                                               cfg_.clv_k_cut,         cfg_.clv_max_mult, cfg_.clv_floor,
+                                               cfg_.clv_min_samples};
+        clv_mult = control::ComputeClvMultiplier(
+            rolling_clv_.Mean(), static_cast<std::int32_t>(rolling_clv_.Count()), clv_cfg);
+        target_mag *= clv_mult;
+    }
     const double target_signed = is_yes ? target_mag : -target_mag;
 
     // [decision-diag] 定位 sharp→可下单侧 脱节 (老板「为什么有 sharp 的源进不了可下单侧」)。
@@ -1629,10 +1641,14 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     stats_.ledger_publishes.fetch_add(1, std::memory_order_relaxed);
     FeedRiskGateway();
 
-    // M3 CLV 尺子: 记买入(建仓)成交 entry (卖减仓是退出非建仓, 不计 CLV)。离线评估 only。
+    // M3 CLV 尺子: 记买入(建仓)成交 entry (卖减仓是退出非建仓, 不计 CLV)。
     if (intent.side == strategy::Side::Buy) {
         clv_tracker_.RecordFill(token_id, fill.fill_price, mark_price,
-                                static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.as_of_ts_ns);
+                                static_cast<double>(fill.fill_size_usdc) / 1'000'000.0,
+                                fill.as_of_ts_ns);  // 结算口径, 离线 only
+        // 实时 CLV (PIT-safe, Stage2 sizing): 决策 fair − 成交价 (买被低估边: 正=入场优于 fair=好入场)。
+        //   成交刻 fair 已观测 (无未来参考) → 可驱动 sizing。滚动均值 → control::ComputeClvMultiplier。
+        rolling_clv_.Record(p_fair_side - fill.fill_price);
     }
 
     std::fprintf(stderr,

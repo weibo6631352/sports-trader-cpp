@@ -238,4 +238,40 @@ struct LifecycleConfig {
     return clampf(m_stab * m_regime);
 }
 
+// ============================================================================
+// CLV sizing 乘子 (持仓管理 Stage 2, 老板 2026-06-05 裁决「CLV 好就实时放大」, 推翻架构"仅离线")。
+//   用【滚动 CLV 均值】(eval::RollingClv, ~50 笔稳健量) 调 target 量级。
+//   与生命周期乘子的关键不同: 本乘子【可 >1 放大】(老板明确授权), 但封顶 max_mult (护栏)。
+//
+// GM 护栏 (化解架构 2s 滞后噪声担忧):
+//   · 用滚动均值非单笔瞬时 CLV (滚动平滑掉 sharp 2.3s 噪声; 研究 ~50 笔显著)。
+//   · 放大封顶 max_mult (默认 1.5×); 配合 λ_base=0.35 → λ_eff ≤ 0.525 ≪ 全 Kelly f* (天花板未破)。
+//   · 下游 RM caps (per_order/condition/event/maxDD) 仍硬夹 → 放大的真实上界在 RM, 不失控。
+//   · 滚动样本 < min_samples → 1.0 (fail-open)。不碰符号 (方向归 sharp 低估边)。
+// ============================================================================
+struct ClvSizingConfig {
+    bool enabled{true};
+    double clv_ref{0.01};         // 参考 CLV (prob); |clv_mean|=clv_ref 时放大/收缩 k_amp/k_cut
+    double k_amp{0.5};            // 正 CLV 放大强度
+    double k_cut{1.0};            // 负 CLV 收缩强度 (更狠: 负 CLV=追市, 该缩)
+    double max_mult{1.5};         // 放大上限 (老板护栏 clamp≤1.5×)
+    double floor{0.3};            // 收缩下限
+    std::int32_t min_samples{20};  // 滚动样本 < 此 → fail-open (研究 ~50 显著; 20 起步)
+};
+
+// 返回 ∈ [cfg.floor, cfg.max_mult]。正 CLV→放大(>1), 负 CLV→收缩(<1), 样本不足/NaN→1.0。
+[[nodiscard]] inline double ComputeClvMultiplier(double clv_mean, std::int32_t n,
+                                                 const ClvSizingConfig& cfg) noexcept {
+    if (!cfg.enabled) return 1.0;
+    if (n < cfg.min_samples) return 1.0;
+    if (!std::isfinite(clv_mean)) return 1.0;
+    const double cr = cfg.clv_ref > 0.0 ? cfg.clv_ref : 1.0;
+    if (clv_mean >= 0.0) {
+        const double m = 1.0 + cfg.k_amp * (clv_mean / cr);  // 放大
+        return m > cfg.max_mult ? cfg.max_mult : (m < 1.0 ? 1.0 : m);
+    }
+    const double m = 1.0 + cfg.k_cut * (clv_mean / cr);  // clv_mean<0 → 收缩
+    return m < cfg.floor ? cfg.floor : (m > 1.0 ? 1.0 : m);
+}
+
 }  // namespace stcpp::control

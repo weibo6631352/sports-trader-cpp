@@ -78,7 +78,8 @@
 #include "stcpp/data/live_stats_store.hpp"      // live_stats 采集 hop: LiveStatsMap/LiveStatsFields join
 #include "stcpp/data/odds_snapshot_store.hpp"   // bm_slots: OddsMap (inplay_match_id→跨庄家赔率)
 #include "stcpp/data/bm_slots_fill.hpp"         // bm_slots: FillBmSlotsYesCanonical (定向 de-vig 填充)
-#include "stcpp/eval/clv_tracker.hpp"            // CLV 测量 harness (成果尺子, 离线评估)
+#include "stcpp/eval/clv_tracker.hpp"            // CLV 测量 harness (结算口径, 离线评估 only)
+#include "stcpp/eval/rolling_clv.hpp"            // 实时 CLV (PIT-safe) 滚动环 — sizing 用 (Stage2)
 #include "stcpp/eval/portfolio_metrics.hpp"      // Phase 0 项5: Sharpe/maxDD/VaR (北极星 KPI)
 #include "stcpp/ml/feature_history.hpp"          // 时序特征环形缓冲 (PIT-safe, BR-1 共用)
 #include "stcpp/ml/sharp_fair_track.hpp"         // sharp fair 时序环 (line movement; velocity/收敛发散)
@@ -302,6 +303,15 @@ struct PaperLoopConfig {
     double lifecycle_k_div{0.5};
     double lifecycle_floor{0.3};
     std::int32_t lifecycle_min_samples{3};
+    // CLV sizing 乘子 (持仓管理 Stage 2, 老板 2026-06-05「CLV 好就实时放大」): 滚动 CLV 均值调 target
+    //   量级, 可 >1 放大 (封顶 max_mult 护栏)。见 control::ComputeClvMultiplier + eval::RollingClv。
+    bool clv_mult_enabled{true};
+    double clv_ref{0.01};
+    double clv_k_amp{0.5};
+    double clv_k_cut{1.0};
+    double clv_max_mult{1.5};
+    double clv_floor{0.3};
+    std::int32_t clv_min_samples{20};
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 减仓 (预测说该减/收敛) 时 best_bid
     //   可成交即平 (仓位随预测回 flat = 收敛兑现), 不死等 reservation_sell「卖高」价。lib 默认关 (契约测试
     //   不变); 生产 daemon opt-in。解「只买不卖持到结算」(reservation_sell 在 fair 上方收敛永不触发)。
@@ -861,6 +871,9 @@ private:
     //   每笔买入成交记 entry; 每 tick 更新 mid; 结算时算 CLV (close mid / 0-1 settle)。
     //   离线评估 only (小蒋前视红线: 绝不回喂决策)。loop_thread_ 单 writer。
     eval::CLVTracker clv_tracker_;
+    // 实时 CLV 滚动环 (Stage2 sizing 用; PIT-safe = 成交刻决策 fair − 成交价; 跨盘口全局)。
+    //   loop_thread_ 单 writer (买入成交记录 + sizing 读 Mean)。
+    eval::RollingClv rolling_clv_;
     eval::PortfolioMetrics portfolio_metrics_;  // Phase 0 项5: 权益曲线 → Sharpe/maxDD/VaR
 
     // ---- 内部实现 ----
