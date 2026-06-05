@@ -736,7 +736,10 @@ BuildResult PaperDaemon::Build() {
     //   → 0 成交。结论: 模型"edge"实为过度自信, 锚定高效市场后即消失 (PM in-play 高效, poly-arb 已证)。
     //   权重只控成交频率不控 edge 符号 → 留 1.0 让其成交+取结算数据 (无哪个权重能把无 alpha 调成盈利)。
     //   stub 永不驱动 (blend 内 kind==Onnx 门); 无 onnx_model_path → stub → 纯 baseline, 安全。
-    cfg_.paper_loop.ml_fair_blend_weight = 1.0;
+    // 2026-06-05 老板「砍掉大模型训练功能」: blend 权重置 0 → ML 彻底不进 fair (配 ml_drive_enabled=false
+    //   双保险)。flags 已砍 (无 onnx_model_path → 不加载真模型; auto-train/watcher gate 在 onnx_path 非空 → 不启)。
+    //   保留量化因子/统计计算 (FeatureHistory/SharpFairTrack/RollingClv 喂观测+Stage2 乘子, 不依赖大模型)。
+    cfg_.paper_loop.ml_fair_blend_weight = 0.0;
     // ML 驱动总闸 (2026-06-03 老板「别那么谨慎, 虚拟盘要看模型真跑」): paper 放开 ML 驱动。
     //   仍受【校准门】保护 (仅 calibrated && conf>0 的模型驱动; 退化/泄漏模型 conf=0 不驱动)。
     //   真钱 live 路径不复用此 (PaperLoop 天然 paper)。生产可经此闸+校准联合控制。
