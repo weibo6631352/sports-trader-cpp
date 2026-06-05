@@ -31,6 +31,7 @@ import {
   STUB_MARKET_MAP, STUB_BOOK_MAP, STUB_SCORE_MAP, STUB_QUOTE_MAP,
   STUB_METRICS_TEXT, STUB_EVENTS, STUB_ACCOUNT,
 } from './stub';
+import { inflateRaw as pakoInflateRaw } from 'pako';
 import { getBaseUrl, postStreamFocus, fetchDetailBatch } from './api';
 import type {
   Healthz, Status, Positions, PnlTimeseries, PnlAttribution,
@@ -679,15 +680,24 @@ function sseWatchdogTick(): void {
 /** 解析一帧信封, 返回内层 data (失败返回 null) */
 function parseEnvelope(raw: string): { mode: string; data: unknown; focusSeq: number | null } | null {
   try {
-    const env = JSON.parse(raw) as { mode?: string; data?: unknown; focus_seq?: number };
-    return { mode: env.mode ?? 'snapshot', data: env.data ?? null, focusSeq: env.focus_seq ?? null };
+    const env = JSON.parse(raw) as { mode?: string; data?: unknown; focus_seq?: number; enc?: string };
+    let data = env.data ?? null;
+    // enc="df" (raw-deflate+base64; 老板「gzip 压缩帧」): atob → bytes → pako.inflateRaw → JSON。
+    //   pako 同步, parseEnvelope 保持同步 (零 ripple)。仅 ?gz=1 连接的大帧才压, 小帧/旧连接走原文。
+    if (env.enc === 'df' && typeof data === 'string') {
+      const bin = atob(data);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      data = JSON.parse(pakoInflateRaw(bytes, { to: 'string' }) as string);
+    }
+    return { mode: env.mode ?? 'snapshot', data, focusSeq: env.focus_seq ?? null };
   } catch { return null; }
 }
 
 function connectSSE(): void {
   if (USE_STUB) { startFallbackPolling(); return; }  // stub 模式直接轮询(stub 供数)
   let url: string;
-  try { url = `${getBaseUrl()}/api/v1/stream`; } catch { startFallbackPolling(); return; }
+  try { url = `${getBaseUrl()}/api/v1/stream?gz=1`; } catch { startFallbackPolling(); return; }
 
   const es = new EventSource(url);
   _es = es;
@@ -809,7 +819,7 @@ function postHotFocus(conn: HotConn): void {
 
 /** 开一条 hot 连接 (返回 HotConn; cids 由 rebalance 随后赋值, hello 时 postHotFocus 上报)。 */
 function openHotConn(): HotConn {
-  const url = `${getBaseUrl()}/api/v1/stream/hot`;
+  const url = `${getBaseUrl()}/api/v1/stream/hot?gz=1`;
   const es = new EventSource(url);
   const conn: HotConn = {
     es, streamId: null, connected: false, cids: [], focusSeq: 0,

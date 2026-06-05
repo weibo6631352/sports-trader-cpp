@@ -27,6 +27,7 @@
 #include "src/stcpp/debug_api/endpoint_common.hpp"
 #include "src/stcpp/debug_api/endpoint_payloads.hpp"
 #include "src/stcpp/debug_api/json_writer.hpp"
+#include "stcpp/debug_api/frame_compress.hpp"
 #include "src/stcpp/debug_api/server.hpp"
 #include "version_generated.hpp"  // STCPP_GIT_HASH_STR (CMake configure_file 注入)
 
@@ -87,13 +88,20 @@ std::string make_stream_id() {
     return g_boot_nonce + ":" + std::to_string(g_stream_counter.fetch_add(1) + 1);
 }
 
+constexpr std::size_t kCompressMin = 1024;  // 仅压缩 >1KB 帧 (小帧 deflate+base64 反增, 不划算)
+
 // 一帧 SSE 消息: id + event + data(信封)。focus_seq>=0 时信封带 focus_seq (book/quote 版本对账)。
+//   compress=true (客户端 ?gz=1) 且 payload>1KB → data 段改 raw-deflate+base64 字符串 + "enc":"df" 标记
+//   (老板 2026-06-05「gzip 压缩帧」; 每帧独立 Z_FINISH 不缓冲; 跑 httplib 线程非 PaperLoop, ~1帧/s, CPU 可忽略)。
 // 返回 false = 写失败(客户端断开)。frame 超 kMaxFrameBytes 跳过(返 true 继续, 评审防大帧)。
 bool send_frame(httplib::DataSink& sink, const char* channel, const char* mode,
-                const std::string& payload, std::int64_t focus_seq = -1) {
+                const std::string& payload, std::int64_t focus_seq = -1, bool compress = false) {
     const std::uint64_t seq = g_seq.fetch_add(1, std::memory_order_relaxed) + 1;
+    std::string enc;  // 非空 = 压缩成功的 base64
+    if (compress && payload.size() > kCompressMin) enc = deflate_b64(payload);
+    const bool gz = !enc.empty();
     std::string frame;
-    frame.reserve(payload.size() + 160);
+    frame.reserve((gz ? enc.size() : payload.size()) + 192);
     frame += "id: ";
     frame += json::i64(static_cast<std::int64_t>(seq));
     frame += "\nevent: ";
@@ -104,10 +112,19 @@ bool send_frame(httplib::DataSink& sink, const char* channel, const char* mode,
     frame += json::i64(now_epoch_ns());  // 仅 transport 时刻 (R-20: 数据新鲜度在 payload 内 event_ts)
     frame += ",\"mode\":\"";
     frame += mode;
-    if (focus_seq >= 0) { frame += "\",\"focus_seq\":"; frame += json::i64(focus_seq); frame += ",\"data\":"; }
-    else { frame += "\",\"data\":"; }
-    frame += payload;
-    frame += "}\n\n";
+    frame += "\"";
+    if (focus_seq >= 0) { frame += ",\"focus_seq\":"; frame += json::i64(focus_seq); }
+    if (gz) {
+        // base64 字符集 (A-Za-z0-9+/=) 全 JSON-safe, 无需转义。
+        frame += ",\"enc\":\"df\",\"data\":\"";
+        frame += enc;
+        frame += "\"}";
+    } else {
+        frame += ",\"data\":";
+        frame += payload;
+        frame += "}";
+    }
+    frame += "\n\n";
     if (frame.size() > kMaxFrameBytes) {
         std::fprintf(stderr, "[stream] 跳过超大帧 channel=%s size=%zu\n", channel, frame.size());
         return true;  // 跳过该帧但不断连
@@ -137,7 +154,7 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
     svr.set_write_timeout(3, 0);
     svr.set_tcp_nodelay(true);
 
-    svr.Get("/api/v1/stream", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
+    svr.Get("/api/v1/stream", [&hs](const httplib::Request& req, httplib::Response& res) {
         // 连接上限: 超了写一帧 retry(让 EventSource 30s 退避重连, 非裸 503 触发 3s 风暴)。
         if (g_sse_clients.fetch_add(1) >= kMaxSseClients) {
             g_sse_clients.fetch_sub(1);
@@ -145,13 +162,14 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
             res.set_content("retry: 30000\n\n", "text/event-stream; charset=utf-8");
             return;
         }
+        const bool gz = req.has_param("gz");  // ?gz=1 → 大帧 (grid/scores/positions) raw-deflate+base64
         res.set_header("Cache-Control", "no-cache, no-store");
         res.set_header("X-Accel-Buffering", "no");  // 防 nginx/反代缓冲(将来上反代关键)
         res.set_header("Connection", "keep-alive");
 
         res.set_chunked_content_provider(
             "text/event-stream; charset=utf-8",
-            [&hs](std::size_t /*offset*/, httplib::DataSink& sink) -> bool {
+            [&hs, gz](std::size_t /*offset*/, httplib::DataSink& sink) -> bool {
                 const StateProvider& sp = hs.provider();
 
                 // focus 订阅: 本连接生成唯一 stream_id + 注册 FocusState; RAII 在 provider 退出
@@ -230,10 +248,10 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                     snap += '}';
                     if (!send_frame(sink, "status", "snapshot", last_status)) return true;
                     if (!send_frame(sink, "account", "snapshot", last_account)) return true;
-                    if (!send_frame(sink, "events", "snapshot", last_events)) return true;
-                    if (!send_frame(sink, "grid", "snapshot", snap)) return true;
-                    if (!send_frame(sink, "scores", "snapshot", last_scores)) return true;
-                    if (!send_frame(sink, "positions", "snapshot", last_positions)) return true;
+                    if (!send_frame(sink, "events", "snapshot", last_events, -1, gz)) return true;
+                    if (!send_frame(sink, "grid", "snapshot", snap, -1, gz)) return true;
+                    if (!send_frame(sink, "scores", "snapshot", last_scores, -1, gz)) return true;
+                    if (!send_frame(sink, "positions", "snapshot", last_positions, -1, gz)) return true;
                     if (!send_frame(sink, "pnl", "snapshot", last_pnl)) return true;
                     if (!send_frame(sink, "gate", "snapshot", last_gate)) return true;
                     if (!send_frame(sink, "rejects", "full", last_rejects)) return true;
@@ -269,7 +287,7 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                                                std::string cur) -> bool {
                         if (keyframe || cur != last) {
                             last = std::move(cur);
-                            if (!send_frame(sink, ch, mode, last)) return false;
+                            if (!send_frame(sink, ch, mode, last, -1, gz)) return false;  // 大帧(scores/positions)压
                             sent = true;
                         }
                         return true;
@@ -297,7 +315,7 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                             snap += "],\"count\":";
                             snap += json::i64(static_cast<std::int64_t>(gm.size()));
                             snap += '}';
-                            if (!send_frame(sink, "grid", "snapshot", snap)) return true;
+                            if (!send_frame(sink, "grid", "snapshot", snap, -1, gz)) return true;
                             sent = true;
                         } else {
                             std::string changed = "[";
@@ -334,7 +352,7 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
                                 d += ",\"removed\":";
                                 d += removed;
                                 d += '}';
-                                if (!send_frame(sink, "grid", "delta", d)) return true;
+                                if (!send_frame(sink, "grid", "delta", d, -1, gz)) return true;
                                 sent = true;
                             }
                         }
@@ -367,20 +385,21 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
     //   只发用户正盯的盘口 book/quote, 独立 TCP 连接 → 跨洋卡顿与 bulk 物理隔离 (实测各连接独立卡,
     //   不是物理链路一起卡; 多条独立 TCP 各自拥塞窗口 → 总吞吐随连接数涨)。focus 走同一 g_focus_reg,
     //   前端把 focus POST 指向本流的 stream_id (bulk 流不再推 book/quote)。
-    svr.Get("/api/v1/stream/hot", [&hs](const httplib::Request& /*req*/, httplib::Response& res) {
+    svr.Get("/api/v1/stream/hot", [&hs](const httplib::Request& req, httplib::Response& res) {
         if (g_sse_clients.fetch_add(1) >= kMaxSseClients) {
             g_sse_clients.fetch_sub(1);
             res.status = 503;
             res.set_content("retry: 30000\n\n", "text/event-stream; charset=utf-8");
             return;
         }
+        const bool gz = req.has_param("gz");  // ?gz=1 → 大帧 raw-deflate+base64 (老板「gzip 压缩帧」)
         res.set_header("Cache-Control", "no-cache, no-store");
         res.set_header("X-Accel-Buffering", "no");
         res.set_header("Connection", "keep-alive");
 
         res.set_chunked_content_provider(
             "text/event-stream; charset=utf-8",
-            [&hs](std::size_t /*offset*/, httplib::DataSink& sink) -> bool {
+            [&hs, gz](std::size_t /*offset*/, httplib::DataSink& sink) -> bool {
                 const StateProvider& sp = hs.provider();
 
                 // 本连接唯一 stream_id + 注册 FocusState (RAII 退出摘除, 同 bulk 流)
@@ -460,7 +479,7 @@ void register_stream(httplib::Server& svr, const HttpServer& hs) {
 
                     bool sent = false;
                     if (n > 0) {
-                        if (!send_frame(sink, "detail", "snapshot", batched, fseq)) return true;
+                        if (!send_frame(sink, "detail", "snapshot", batched, fseq, gz)) return true;
                         sent = true;
                     }
                     since_send = sent ? 0 : (since_send + 1);

@@ -125,6 +125,11 @@ target_compile_options(stcpp_debug_api PRIVATE
 find_package(Threads REQUIRED)
 target_link_libraries(stcpp_debug_api PUBLIC Threads::Threads)
 
+# zlib: SSE 帧压缩 (frame_compress.hpp raw-deflate; 老板 2026-06-05「gzip 压缩帧」)。
+#   注: HTTPLIB_USE_ZLIB OFF 仍保留 (httplib 流式 gzip 用 Z_NO_FLUSH 会缓冲帧, 不用它; 我们逐帧独立压)。
+find_package(ZLIB REQUIRED)
+target_link_libraries(stcpp_debug_api PUBLIC ZLIB::ZLIB)
+
 # 注: stcpp_paper_server / stcpp_paper_runtime 可运行入口已迁至 src/stcpp/app/
 #     (PaperDaemon 重构, 老郭 §A.1 / 老周架构裁定 B1). debug_api 仅保留契约库,
 #     绝不含 paper_daemon.cpp — 库依赖保持 Threads only, 防 §A.2 "什么都连" 膨胀.
