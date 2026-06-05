@@ -1364,6 +1364,10 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
     //   仅本线程读写 (无锁)。每周期更新 + 算 eligible 集 (grace 滞回内有过 sharp) 发布给 PopulateCatalog。
     std::unordered_map<std::string, std::int64_t> sharp_last_seen;
     constexpr std::int64_t kSharpGraceNs = 180LL * 1'000'000'000;  // 3min 滞回: halftime 赔率挂起不退订
+    // 赔率新鲜度门 (老板 2026-06-05「没赔率源就不订阅该比赛的 PM WSS+149hz」): Goalserve 停更某 event 后
+    //   inplay_bet365_fair 仍冻结 value≥0 → 旧 has_sharp 永真 → 永留 eligible → WSS+轮询永不退订 (实测有盘
+    //   frozen 18min 仍订)。data_source_ts 超此 = 冻结(非活源), 不算 has_sharp → 经 grace 退订两路。
+    constexpr std::int64_t kSharpFreshNs = 90LL * 1'000'000'000;  // 90s 无更新 = 冻结 (GS 活赛每~2-3s 一版)
     while (!st.stop_requested()) {
         // 0. R-6 周期重发现 (间隔到 → 全量重建 catalog + WSS 重订; 在 match 之前, match_inputs 已是新版)。
         if (cfg_.rediscover_interval_sec > 0 &&
@@ -1495,9 +1499,15 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                 //   matched-no-sharp = 匹配上但无赔率 → 记清单 + 不计入可交易。
                 const auto cf = cand_by_id.find(r.inplay_match_id);
                 const debug_api::EventScore* cand = (cf != cand_by_id.end()) ? cf->second : nullptr;
-                const bool has_sharp =
+                const bool odds_present =
                     cand && (cand->inplay_bet365_home_fair >= 0.0 || cand->inplay_bet365_away_fair >= 0.0 ||
                              (in.is_draw && cand->inplay_bet365_draw_fair >= 0.0));
+                // 赔率须【新鲜】才算活源 (老板「没赔率源不订阅」): value≥0 但 data_source_ts 陈旧 = 冻结。
+                //   ts 未知(≤0)保守视为新鲜 (不误退订); 仅【已知且 >90s 老】判冻结 → 不刷新 sharp_last_seen → 退订。
+                const bool odds_fresh =
+                    cand && (cand->ts.data_source_ts_ns <= 0 ||
+                             refresh_now_ns - cand->ts.data_source_ts_ns < kSharpFreshNs);
+                const bool has_sharp = odds_present && odds_fresh;
                 if (is_final) {
                     // 完赛: 立即掉出 eligible (即便 feed 仍挂冻结赔率); 下轮 RediscoverOnce 退订 WSS + 轮询。
                     //   只在【转移瞬间】(原在 eligible, 此刻被 erase 掉) 打一行可追溯日志 (§7); 后续刷新
