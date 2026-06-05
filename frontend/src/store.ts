@@ -132,12 +132,15 @@ export function setDetailInterest(condIds: string[]): void {
   if (next.length === detailInterest.size && next.every((c) => detailInterest.has(c))) return;
   detailInterest.clear();
   for (const c of next) detailInterest.add(c);
+  // 半卡看门狗基准: 非空→起计(已有则保留), 空→清 0 (无 focus 时不查半卡)。
+  _focusActiveSinceMs = next.length > 0 ? (_focusActiveSinceMs || Date.now()) : 0;
   maybePostFocus();  // SSE: 告知服务端推这些盘口的全档 book/quote
 }
 
 /** 追加单个关注盘口并立即拉一次 detail (展开/选中即见数据, 不等下一轮 5s) */
 export function addDetailInterest(condId: string): void {
   if (!condId) return;
+  if (detailInterest.size === 0) _focusActiveSinceMs = Date.now();  // 首个 focus 起计 (半卡看门狗基准)
   detailInterest.add(condId);
   // 首屏兜底 (评审: 必选): 展开瞬间优先级 REST 即时拉一次, ~200ms 出数据; SSE 随后接管增量。
   void fetchDetailFor([condId], /*priority=*/true);
@@ -546,8 +549,13 @@ let _fallbackActive = false;
 //   readyState=OPEN 但帧停, 不触发 onerror/CLOSED) → 前端静默停滞且永不重连 (旧逻辑仅 CLOSED 才重连)。
 //   实测: 服务端重启时所有已开 tab 的 SSE 连接半死, 订单簿新鲜度一路 climbing, reload 才恢复。
 //   看门狗: 任何帧 (含 heartbeat) 刷新 _lastSseFrameMs; 超 SSE_STALE_MS 无帧 → 强制重连 → 自愈。
-const SSE_STALE_MS = 12_000;
-let _lastSseFrameMs = 0;
+const SSE_STALE_MS = 12_000;        // 任何帧停超此 = 全断
+const FOCUS_STALE_MS = 18_000;      // 展开盘有 focus 却超此收不到任何 book/quote 帧 = 半卡 (服务端 warmup 典型)
+let _lastSseFrameMs = 0;            // 最近【任何】帧到达时刻 (全断检测)
+let _lastFocusFrameMs = 0;          // 最近【book/quote】帧到达时刻 (半卡检测; 基于帧到达非 data_source_ts —
+                                    //   静市场 book 不变但服务端每 tick 必推, data_source_ts 老属正常, 不该误判)
+let _focusActiveSinceMs = 0;        // detailInterest 变非空的时刻 (0 = 无 focus); 半卡看门狗基准
+let _lastReconnectMs = 0;           // 最近重连时刻 (重连后给新连接 FOCUS_STALE_MS 宽限, 防重连风暴)
 let _sseWatchdogStarted = false;
 
 /** SSE 死 → 启动 fast 轮询回退 (幂等) */
@@ -578,21 +586,38 @@ function stopFallbackPolling(): void {
   _fallbackTimers = [];
 }
 
-/** 强制重连 SSE (半死连接自愈): 关旧 ES → 重置 → 新建。新连接 hello 会重置 _sseConnected + 重订 focus。 */
+/** 强制重连 SSE (半死/半卡连接自愈): 关旧 ES → 重置 → 新建。新连接 hello 会重置 _sseConnected + 重订 focus。 */
 function reconnectSSE(reason: string): void {
   console.warn(`[stcpp] SSE ${reason} → 强制重连`);
   try { _es?.close(); } catch { /* noop */ }
   _sseConnected = false;
-  _lastSseFrameMs = Date.now();  // 给新连接 hello 窗口, 避免立即再判死
+  const t = Date.now();
+  _lastSseFrameMs = t;     // 给新连接 hello 窗口, 避免立即再判死
+  _lastReconnectMs = t;    // 半卡看门狗: 重连后给新连接 FOCUS_STALE_MS 宽限, 防风暴
   connectSSE();
 }
 
-/** 看门狗 tick (5s): SSE 应活 (已连 + 未回退) 但超 SSE_STALE_MS 无任何帧 = 半死 → 强制重连。
- *  健康连接每 1-5s 有帧 (status/grid/scores/heartbeat) → _lastSseFrameMs 常新, 不误触。 */
+/** 看门狗 tick (5s): 两类卡死自愈 (老板 2026-06-05「根治」)。健康连接每 1-2s 有 book/quote 帧 → 不误触。
+ *  ① 全断: 任何帧 (grid/status) 都停超 SSE_STALE_MS。
+ *  ② 半卡: 全局帧在来但 focus 的 book/quote 不来 (服务端 warmup / 连接半死典型) — 展开盘有 focus 却超
+ *     FOCUS_STALE_MS 收不到任何 book/quote 帧。判据用【帧到达】非 data_source_ts (静市场 book 不变但
+ *     服务端每 tick 必推帧, data_source_ts 老属正常, 不该误判 → 否则会无谓重连健康的静市场)。 */
 function sseWatchdogTick(): void {
-  if (USE_STUB || _fallbackActive || !_sseConnected || _lastSseFrameMs === 0) return;
-  const silent = Date.now() - _lastSseFrameMs;
-  if (silent > SSE_STALE_MS) reconnectSSE(`静默 ${Math.round(silent / 1000)}s (半死)`);
+  if (USE_STUB || _fallbackActive || !_sseConnected) return;
+  const now = Date.now();
+  // ① 全断
+  if (_lastSseFrameMs > 0 && now - _lastSseFrameMs > SSE_STALE_MS) {
+    reconnectSSE(`静默 ${Math.round((now - _lastSseFrameMs) / 1000)}s (全断)`);
+    return;
+  }
+  // ② 半卡 (focus book/quote 推送死)
+  if (detailInterest.size > 0) {
+    const ref = Math.max(_focusActiveSinceMs, _lastReconnectMs);          // 何时开始期待 focus 帧
+    const lastFocus = Math.max(_lastFocusFrameMs, _lastReconnectMs);      // 最近 focus 帧 (重连给宽限)
+    if (now - ref > FOCUS_STALE_MS && now - lastFocus > FOCUS_STALE_MS) {
+      reconnectSSE(`focus book/quote ${Math.round((now - lastFocus) / 1000)}s 无帧 (半卡)`);
+    }
+  }
 }
 
 /** 解析一帧信封, 返回内层 data (失败返回 null) */
@@ -679,6 +704,7 @@ function connectSSE(): void {
     const cid = bk?.condition_id;
     if (!cid || !detailInterest.has(cid)) return;
     if (!bk || bk.found !== true) return;  // found:false 不覆盖 (无 token0; 也别把已有簿冲成 null)
+    _lastFocusFrameMs = Date.now();  // focus book 帧到达 (半卡看门狗存活信号)
     setState(produce((s) => {
       s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
       s.conditionCache[cid].book = bk;
@@ -690,6 +716,7 @@ function connectSSE(): void {
     const cid = qt?.market_id;
     if (!cid || !detailInterest.has(cid)) return;
     if (!qt || qt.found !== true) return;
+    _lastFocusFrameMs = Date.now();  // focus quote 帧到达 (半卡看门狗存活信号)
     setState(produce((s) => {
       s.conditionCache[cid] ??= { market: null, book: null, quote: null, score: null, summary: null };
       s.conditionCache[cid].quote = qt;
