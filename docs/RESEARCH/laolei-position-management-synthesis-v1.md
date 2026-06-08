@@ -96,9 +96,10 @@ Polymarket 体育二元盘口(YES/NO outcome token, 不能持负余额, 净空�
 
 **P1 — 需 paper 验证/评审(动交易行为, 回测=实盘同逻辑 BR-1 + maxDD≤15% 实测背书):**
 - 相关性折扣 Kelly(gross 加权版, 非计数 N)。
-- A-S 库存 skew 项(**先解 predictive_unwind 优先级冲突 = 决策点 2**)。
-- 毒性/OFI 接执行三档(cfg 默认关, paper 背书后开; OFI_30s 预算好传入守 R-12)。
-- 生命周期衰减乘子 clamp[0,1](描述统计, paper 验抖动/换手率下降)。
+- ~~A-S 库存 skew 项~~ → **审定 SKIP**(2026-06-09 小袁 microstructure 设计裁决, commit b245e266): 我们范式里 target 控制器 gap=target−current 就是 A-S 库存机制(锚 sharp target 比 A-S 锚 flat=0 更对); 锚 flat 双重计数+撞自身 alpha; 生产 predictive_unwind 令卖侧绕开 reservation_sell → A-S 仅作用买侧已被 死区+lifecycle+exec_margin 三重覆盖; 卖侧 A-S skew=抢跑 sharp 反向违 2026-06-05 裁决; 教科书量纲下 ~0.02¢ 可忽略。决策入 `position_controller.hpp` 注。
+- **毒性/OFI 接执行**(cfg 默认关, paper 背书后开): ✅ **已落地软档**(commit b245e266): 动态 `exec_margin` = k_tox·|OFI|/depth + k_vol·σ²·τ 叠进 reservation required_margin(毒簿/高波动→更被动)。硬档「OFI/BidAbsence 超阈→冻结加仓」延后(软 margin 不足再补)。
+- ✅ p(1−p) 死区缩放(防费磨损, commit b245e266): `ComputeRebalanceDeadband` BR-1 纯函数, 默认关。
+- 生命周期衰减乘子 clamp[0,1](描述统计, paper 验抖动/换手率下降)。 ✅ 已落地(commit 50af8431)。
 
 **P2 — 需老板拍板/结构件:**
 - DD→target 乘子 m(与 daily 熔断口径合并 + hysteresis + 区分"不加"vs"砍现仓" = 决策点 1)。
