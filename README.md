@@ -23,8 +23,7 @@ Polymarket 体育市场量化交易系统 — C++ ground-up.
 - [`CLAUDE.md`](CLAUDE.md) — **公司运营手册**（红线 / 单元 / 协作规范）
 - [`AGENT.md`](AGENT.md) — agent 班底索引（含 persona 名）
 - [`docs/INDEX.md`](docs/INDEX.md) — 全部文档 SSOT 入口
-- [`docs/SPRINTS/sprint-01-final.md`](docs/SPRINTS/sprint-01-final.md) — Sprint-1 总结
-- [`docs/SPRINTS/sprint-02.md`](docs/SPRINTS/sprint-02.md) — Sprint-2 backlog
+- [`docs/SPRINTS/sprint-03-backlog.md`](docs/SPRINTS/sprint-03-backlog.md) — 当前 Sprint backlog
 - [`docs/OKR/2026-Q2-Q3-startup-season.md`](docs/OKR/2026-Q2-Q3-startup-season.md) — 起步季 OKR
 - `.claude/agents/*.md` — 每个 agent 完整文档（Claude Code sub-agent 规范）
 - `.env.example` — 配置 schema（实际 `.env` 不入 git）

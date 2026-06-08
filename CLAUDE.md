@@ -15,7 +15,7 @@
 - Polymarket gamma / clob / data REST + WSS
 - Goalserve inplay / livescore / pregame
 
-**部署：** 跨洋链路（高延迟 + 带宽紧），主节点就近数据中心。
+**部署：** 主节点就近 Polymarket（**低延迟，非跨洋**）。实测 2026-06-03：网络 RTT 到 CLOB 3-6ms，warm 持久连接下单往返 ~14ms（冷连接/首字节 28-35ms 含 TLS+处理）。→ 撤单可跑赢逆向选择（同地做市商体质），做市可行。注：此前"跨洋高延迟"表述 + 老姜 latency doc 的 200ms RTT 是冷连接/全程口径误判，已纠正。
 
 ---
 
@@ -124,7 +124,7 @@
 > **背景：** 红线审计发现真红线地基稳，但「编号治理」是软肋 —— 撞过两次「约束咬人」（ML-R2 被转述成「paper 恒 advisory 不产 fill」阻塞 MVP；size 改 micro 后 caps/bankroll/book_depth 单位失配把 caps 红线静默架空）。根都不在红线条文，在「语义在文档间漂移没人守边界」。
 
 1. **红线/R-XX 引用必粘原文，禁转述。** 引用任何红线或 R-XX 约束，必须链原文出处 + 粘定义原话，不许凭记忆转述（ML-R2 教训：转述一层就走样成阻塞正当目标的伪约束）。
-2. **固化 D3（advisory 语义）：** 「advisory」= 不自动路由 live，**≠** 不产生 paper 成交。paper 成交是 paper 模式的目的 + MVP 验收项。ML-R2 的契约载体是 `QuoteFeatures.advisory` 标志，不是「禁止 paper fill」。（详见 docs/MEETINGS/2026-05-30-m1-route-review.md D3）
+2. **固化 D3（advisory 语义）：** 「advisory」= 不自动路由 live，**≠** 不产生 paper 成交。paper 成交是 paper 模式的目的 + MVP 验收项。ML-R2 的契约载体是 `QuoteFeatures.advisory` 标志，不是「禁止 paper fill」。
 3. **ABI/字段单位变更必触发下游审计（补 R-4 配套）：** 任何字段重命名/单位变更（如 `size_usdc → size_pUSD_micro`）必须 audit 全部比较点/消费点的单位一致性，否则会「静默架空」依赖该字段的红线（caps/exposure/bankroll）。这类变更走 R-4（schema 静默变更红线）。
 4. **R-NN 命名空间歧义（backlog，派小米）：** 全库 `R-\d` 被三套体系同号异义混用（§8 红线 R-12=WSS / RM 拒单码 R-12=EDGE_NEGATED / 风险登记 R-12=另一回事）。拆命名空间：红线 `RL-` / 拒单码 `RJ-` / 风险项 `RR-`，消 ML-R2 式误传导土壤。
 5. **加性/已通知/非重大 carve-out（2026-05-31 GM 红线复评立，[ADR](docs/ADR/2026-05-31-redline-application-carveout.md)）：** §8 红线 #4 触发词是「**静默**变更」、#5 是「**重大**变更」。**纯加性变更（struct 末尾新增字段，无重命名/单位/语义变更）+ 已在 PR/commit 通知下游 + 非重大 → 不触发 R-4 全审计 / 不需架构评审会签**，走普通 PR review（G-FREEZE-W「只增不改名」本就是低仪式路径）。R-4 全审计仅针对**重命名 / 单位变更 / 语义变更**（原始风险：静默架空 caps/exposure/bankroll）。误把加性 plumbing 当 R-4/重大套会签 = §8.1 自身要消的「约束咬人」。
@@ -282,7 +282,7 @@ docs/
 - 区域 **eu-west-2 (伦敦)** | 实例 `i-0048c3718099c5f0c` | Amazon Linux 2023 | **4 vCPU / 15 GiB / 128 GB**
 - 登录 `ec2-user` | 公网 IP 见 `~/stcpp-ops/server.env` 的 `HOST` (动态, 见下)
 - 安全组 `sg-0a72766a2079079a4` | 仓库已克隆在 `/home/ec2-user/sports-trader-cpp`
-- **白名单已生效** (实测 Goalserve inplay 返 200 非 403; Polymarket CLOB ~31ms) → 采集真数据可跑
+- **白名单已生效** (实测 Goalserve inplay 返 200 非 403; Polymarket CLOB 网络 RTT 3-6ms / warm 往返 ~14ms / 冷首字节 ~31ms — 低延迟非跨洋, 详见 §1 + docs/RESEARCH/polymarket-mechanics-verified-2026-06-03.md) → 采集真数据可跑
 
 **连接工具在仓库外 `~/stcpp-ops/`** (私钥绝不进 git — §8 红线):
 ```
