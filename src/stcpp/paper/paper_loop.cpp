@@ -1186,6 +1186,21 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             rolling_clv_.Mean(), static_cast<std::int32_t>(rolling_clv_.Count()), clv_cfg);
         target_mag *= clv_mult;
     }
+    // 相关性折扣乘子 (持仓管理 Stage 2 §4.1 规模层): 同赛事【其他】盘已有敞口 (ρ 加权占用 event cap) → 缩本盘
+    //   target 量级 ∈[floor,1], 撞 R6.2c 硬 cap 前提前 taper。existing_event_gross 取 RM 同源 (扣本盘自身 →
+    //   ∂m/∂target_self=0 防自激)。P0: ρ=NaN→rho_default 单一保守值 (per-type ρ 表待 paper 校准)。默认关。
+    double corr_mult = 1.0;
+    if (target_mag > 0.0 && cfg_.corr_mult_enabled) {
+        const double existing_gross =
+            static_cast<double>(rm_.get_event_gross_excl_condition(condition_id)) / 1'000'000.0;
+        const control::CorrelationConfig corr_cfg{cfg_.corr_mult_enabled, cfg_.corr_taper_start,
+                                                  cfg_.corr_floor, cfg_.corr_rho_default};
+        corr_mult = control::ComputeCorrelationMultiplier(
+            control::CorrelationInput{target_mag, existing_gross, cfg_.corr_event_cap_pusd,
+                                      std::numeric_limits<double>::quiet_NaN()},
+            corr_cfg);
+        target_mag *= corr_mult;
+    }
     const double target_signed = is_yes ? target_mag : -target_mag;
 
     // [decision-diag] 定位 sharp→可下单侧 脱节 (老板「为什么有 sharp 的源进不了可下单侧」)。
@@ -1381,33 +1396,46 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     // M3 CLV 尺子: 每 tick 更新本 token 市场 mid (收盘参考价 = 结算前最后值)。离线评估, 不回喂决策。
     clv_tracker_.UpdateMid(token_id, mark_price);
 
-    // 执行层 §4.1 (持仓管理 Stage 2): 动态 exec_margin = 毒性(k_tox·|OFI|/depth) + 波动(k_vol·σ²·τ)。
-    //   逆选保护 — 毒簿(|OFI| 大 / depth 薄)/高波动/远结算时让 reservation 更被动 (买压低 / 卖抬高)。
-    //   |OFI| 只用幅度 (方向归 sharp); 与抽样噪声正交 → 叠进 required_margin。默认 OFF (k=0) → exec_margin=0。
-    //   OFI/RealizedVol 取 condition 级时序环 (市场级毒性/波动属性, 两边共用); depth 取本边 L1。
+    // 执行层 §4.1 (持仓管理 Stage 2): 毒性/波动信号 → ① 动态 exec_margin (软, 压价) ② 毒性冻结加仓 (硬档)。
+    //   逆选保护 — 毒簿(|OFI| 大 / depth 薄)/高波动/远结算时让 reservation 更被动 (买压低 / 卖抬高);
+    //   严重毒性 (|OFI|/depth 或 BidAbsence 超阈) 直接冻结新增加仓 (减仓照常)。|OFI| 只用幅度 (方向归 sharp)。
+    //   exec_margin 与抽样噪声正交 → 叠进 required_margin。默认 OFF → exec_margin=0, 不冻结 (行为等现状)。
+    //   OFI/RealizedVol/BidAbsence 取 condition 级时序环 (市场级毒性/波动属性, 两边共用); depth 取本边 L1。
     double exec_margin = 0.0;
-    if (cfg_.exec_margin_enabled && (cfg_.exec_margin_k_tox > 0.0 || cfg_.exec_margin_k_vol > 0.0)) {
+    bool tox_freeze_adds = false;  // 毒性硬档: true → 加仓侧 target clamp 到 current (force_cross 绕过)
+    const bool need_tox_signal =
+        (cfg_.exec_margin_enabled && (cfg_.exec_margin_k_tox > 0.0 || cfg_.exec_margin_k_vol > 0.0)) ||
+        cfg_.tox_gate_enabled;
+    if (need_tox_signal) {
         const std::int64_t w = cfg_.ts_feature_window_ns;
-        double tox_term = 0.0;
-        double vol_term = 0.0;
         if (const auto th = ts_history_.find(condition_id); th != ts_history_.end()) {
-            if (cfg_.exec_margin_k_tox > 0.0) {
-                const double ofi = th->second.OFI(w);
-                const double depth = std::max(book_depth_l1, cfg_.exec_margin_depth_floor);
-                if (std::isfinite(ofi) && depth > 0.0) {
-                    tox_term = cfg_.exec_margin_k_tox * (std::abs(ofi) / depth);
+            const double depth = std::max(book_depth_l1, cfg_.exec_margin_depth_floor);
+            const double ofi = th->second.OFI(w);
+            const double abs_ofi_over_depth =
+                (std::isfinite(ofi) && depth > 0.0) ? std::abs(ofi) / depth : std::numeric_limits<double>::quiet_NaN();
+            // ① 软 exec_margin (毒性项 + 波动项)。
+            if (cfg_.exec_margin_enabled) {
+                double tox_term = 0.0;
+                double vol_term = 0.0;
+                if (cfg_.exec_margin_k_tox > 0.0 && std::isfinite(abs_ofi_over_depth)) {
+                    tox_term = cfg_.exec_margin_k_tox * abs_ofi_over_depth;
                 }
-            }
-            if (cfg_.exec_margin_k_vol > 0.0) {
-                const double rv = th->second.RealizedVol(w);
-                // ttr NaN (无赛程时钟) → 跳过波动项 (fail-open 到基线, 不凭空加 margin), 与乘子 NaN→无改 一致。
-                if (std::isfinite(rv) && rv > 0.0 && std::isfinite(time_to_res_frac)) {
-                    const double ttr = std::clamp(time_to_res_frac, 0.0, 1.0);
-                    vol_term = cfg_.exec_margin_k_vol * (rv * rv) * ttr;
+                if (cfg_.exec_margin_k_vol > 0.0) {
+                    const double rv = th->second.RealizedVol(w);
+                    // ttr NaN (无赛程时钟) → 跳波动项 (fail-open 到基线, 不凭空加 margin), 与乘子 NaN→无改 一致。
+                    if (std::isfinite(rv) && rv > 0.0 && std::isfinite(time_to_res_frac)) {
+                        const double ttr = std::clamp(time_to_res_frac, 0.0, 1.0);
+                        vol_term = cfg_.exec_margin_k_vol * (rv * rv) * ttr;
+                    }
                 }
+                exec_margin = std::clamp(tox_term + vol_term, 0.0, cfg_.exec_margin_cap);
             }
+            // ② 毒性冻结加仓硬档 (BR-1 纯函数; 默认关 → 恒 false)。
+            tox_freeze_adds = control::ToxicityFreezesAdds(
+                abs_ofi_over_depth, th->second.BidAbsenceFrac(w),
+                control::ToxicityGateConfig{cfg_.tox_gate_enabled, cfg_.tox_gate_ofi_depth_thr,
+                                            cfg_.tox_gate_bid_absence_thr});
         }
-        exec_margin = std::clamp(tox_term + vol_term, 0.0, cfg_.exec_margin_cap);
     }
 
     // reservation 限价界 (小梁 Q-梁-1; BR-1 纯函数)。
@@ -1445,6 +1473,12 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     double dd_target = target_mag;
     if (dd_mult_ < 1.0 && target_mag > current_pusd) {
         dd_target = current_pusd + dd_mult_ * (target_mag - current_pusd);
+    }
+    // 毒性冻结加仓 (§4.1 硬档): 毒簿 → 加仓侧 target clamp 到 current (不增, 减仓照常); force_cross
+    //   (进球/必赢/止损 事件驱动) 绕过。与 DD 限加仓同范式 (只停加仓不砍现仓)。默认关 → tox_freeze_adds=false。
+    if (tox_freeze_adds && !force_cross && dd_target > current_pusd) {
+        dd_target = current_pusd;
+        stats_.tox_freezes.fetch_add(1, std::memory_order_relaxed);
     }
     cin.target_pusd = dd_target;  // 被选边 = Kelly(×乘子, DD 限加仓); 非选边平旧边 = 0
     cin.current_pusd = current_pusd;

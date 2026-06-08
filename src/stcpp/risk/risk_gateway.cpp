@@ -231,6 +231,20 @@ void RiskGateway::set_condition_event(std::string const& cid, std::string const&
     s_->event_gross_usdc[event_id] += cur_abs;  // 计入新 event
 }
 
+// §4.1 相关性折扣乘子: event_gross(本condition所属event) − |本condition敞口| (micro)。R6.2c 同源。
+std::int64_t RiskGateway::get_event_gross_excl_condition(std::string const& cid) const noexcept {
+    std::lock_guard<std::mutex> g(s_->mu);
+    auto ev = s_->condition_event.find(cid);
+    if (ev == s_->condition_event.end()) return 0;  // 未注册 event → 无相关组合
+    auto eg = s_->event_gross_usdc.find(ev->second);
+    if (eg == s_->event_gross_usdc.end()) return 0;
+    std::int64_t cur_abs = 0;
+    auto ce = s_->condition_exposure_usdc.find(cid);
+    if (ce != s_->condition_exposure_usdc.end()) cur_abs = ce->second < 0 ? -ce->second : ce->second;
+    std::int64_t excl = eg->second - cur_abs;  // 扣自身 → 仅"其他同赛事盘"的相关挤占
+    return excl > 0 ? excl : 0;
+}
+
 void RiskGateway::set_outcome_exposure(std::string const& token_id, std::int64_t v) noexcept {
     {
         std::lock_guard<std::mutex> g(s_->mu);

@@ -341,6 +341,20 @@ struct PaperLoopConfig {
     double exec_margin_k_vol{0.0};       // 波动强度 (×RealizedVol²×剩余期限 frac)
     double exec_margin_cap{0.05};        // exec_margin 上限 (prob; 防脏数据把价压穿)
     double exec_margin_depth_floor{50.0};  // depth 下限 (pUSD; 防除以极小 depth 爆炸)
+    //   ③ 毒性冻结加仓 (硬档): |OFI|/depth 或 BidAbsence 超阈 → 暂停新增加仓 (减仓照常)。是 exec_margin
+    //      (软, 压价) 的硬档配套。见 control::ToxicityFreezesAdds。force_cross (进球/必赢) 绕过。
+    bool tox_gate_enabled{false};
+    double tox_gate_ofi_depth_thr{0.0};    // |OFI|/depth ≥ 此 → 冻结 (0 = 该判据关)
+    double tox_gate_bid_absence_thr{1.0};  // BidAbsence frac ≥ 此 → 冻结 (1.0 = 该判据关; e.g. 0.5)
+
+    // 相关性折扣乘子 (§4.1 规模层, 小梁裁决): 同赛事已有敞口 (扣本盘) ρ 加权占用 → 缩本盘 target 量级。
+    //   与 R6.2c 硬 cap 分工: cap=ρ=1 保命墙, 本乘子=ρ 加权提前 taper。见 control::ComputeCorrelationMultiplier。
+    //   默认关 (改交易行为 + ρ 表未校准; 硬 cap 已 backstop)。P0 用单一 rho_default; per-type ρ 表待 paper 校准。
+    bool corr_mult_enabled{false};
+    double corr_taper_start{0.50};
+    double corr_floor{0.30};
+    double corr_rho_default{0.70};
+    double corr_event_cap_pusd{10000.0};  // 须 == RM event_exposure_cap (口径一致, spec Q3); 默认匹配 RM 默认
 
     // 订单簿结构感知止盈 (2026-06-04 老板「买卖要考虑订单簿结构: 一直涨且能卖出去就持仓, 簿结构转向才止盈」):
     //   盈利减仓 (bid≥均入=取利) 时, 若本边订单簿仍【支撑持仓方向】(L1 失衡未明显翻负 或 microprice≥mid =
@@ -426,6 +440,8 @@ struct PaperLoopStats {
     std::atomic<std::uint64_t> fills_missed{0};
     // 目标仓位控制器 (老雷 spec v1): 控制器决定本 tick 不动 (死区/限价不可成交/已达目标)。
     std::atomic<std::uint64_t> orders_held{0};
+    // 执行层 §4.1: 毒性硬档冻结加仓的次数 (观测; 默认关 → 恒 0)。
+    std::atomic<std::uint64_t> tox_freezes{0};
     // slice-3b: 比赛结算时被 realize+平仓的持仓笔数 (winner→1 / loser→0)。
     std::atomic<std::uint64_t> positions_settled{0};
     std::atomic<std::uint64_t> hub_reads_empty{0};

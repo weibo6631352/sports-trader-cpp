@@ -152,6 +152,33 @@ struct DeadbandConfig {
 }
 
 // ---------------------------------------------------------------------------
+// 毒性冻结加仓 (持仓管理 Stage 2 §4.1 执行层, 老板 2026-06-05「OFI/BidAbsence 超阈→暂停新单/冻结加仓」)。
+//   毒簿 (|OFI|/depth 超阈 = 单边流冲击 / BidAbsence 超阈 = 簿一侧塌陷) → 暂停【新增加仓】, 减仓/平仓照常
+//   (泄险优先)。这是 exec_margin (软, 渐进压价) 的【硬档】配套: 严重毒性直接冻结, 不只是压价。BR-1 纯函数。
+//   只判「是否冻结加仓」(bool), 调用方据此把加仓侧 target clamp 到 current (不增不减); 减仓不受影响。
+//   force_cross (进球/必赢事件) 由调用方绕过 (事件驱动合法穿越)。默认 enabled=false → 恒 false (现行为)。
+// ---------------------------------------------------------------------------
+struct ToxicityGateConfig {
+    bool enabled{false};
+    double ofi_depth_thr{0.0};    // |OFI|/depth ≥ 此 → 冻结 (0 = 该判据关, 由 bid_absence 单独判)
+    double bid_absence_thr{1.0};  // BidAbsence frac ≥ 此 → 冻结 (1.0 = 该判据关; e.g. 0.5 = 半窗无 bid)
+};
+
+[[nodiscard]] inline bool ToxicityFreezesAdds(double abs_ofi_over_depth, double bid_absence_frac,
+                                              const ToxicityGateConfig& cfg) noexcept {
+    if (!cfg.enabled) return false;
+    if (cfg.ofi_depth_thr > 0.0 && std::isfinite(abs_ofi_over_depth) &&
+        abs_ofi_over_depth >= cfg.ofi_depth_thr) {
+        return true;
+    }
+    if (cfg.bid_absence_thr < 1.0 && std::isfinite(bid_absence_frac) &&
+        bid_absence_frac >= cfg.bid_absence_thr) {
+        return true;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------------------
 // A-S 库存 skew — 已审定 SKIP (持仓管理 Stage 2 §4.1, 小袁 microstructure 设计裁决 2026-06-09)。
 //   synthesis §4.1 列了「reservation 减 A-S 库存项」, 但微观结构裁决: 我们范式里它【双重计数 + 半边非法 +
 //   数值可忽略】, 不实现:
@@ -344,6 +371,53 @@ struct DrawdownConfig {
     if (dd >= cfg.dd_t2) return cfg.m_t2;
     if (dd >= cfg.dd_t1) return cfg.m_t1;
     return 1.0;
+}
+
+// ============================================================================
+// 相关性折扣乘子 (持仓管理 Stage 2 §4.1 规模层, 小梁 2026-06-09 设计裁决; 老郭 Round2: 按 gross 加权
+//   非计数 N + ρ 静态分桶)。消同赛事 ρ 相关超注 (5 路调研一致挖出的 #1 结构洞)。BR-1 纯函数。
+//
+// 与 R6.2c RM 硬 cap 分工 (spec Q3, 非冗余非双重计数):
+//   · 硬 cap = ρ=1 保命墙 (event_gross 满 → 拒单 EXCEED_EVENT_EXPOSURE);
+//   · 本乘子 = ρ 加权【提前 taper】(占用率 ≥ taper_start 就柔性缩 target, 撞墙前先刹车)。
+//   两者串联作用于信号流不同阶段 (乘子削意图 / gateway 拒成交), 乘子削小 → 到 RM 时 gross 更小 → 更不撞 cap。
+//
+// 防自激 (老郭顾虑 N-自激, spec Q2): existing_event_gross 【排除本 condition 自身】→ ∂m_self/∂target_self=0,
+//   本盘削小不反馈回本盘乘子 (环物理切断); 连续线性无 tier 跳变; 死区 (ComputeRebalanceDeadband) 阻尼二阶收敛环。
+//
+// 架构界线: ∈[floor,1] 不碰符号 (方向归 sharp)、绝不 >1 放大; fail-open (NaN/退化/cap=0 → 1.0)。
+// ============================================================================
+struct CorrelationConfig {
+    bool enabled{false};       // 默认关: 改交易行为 + ρ 表未校准; R6.2c 硬 cap 已 backstop 保命 (spec Q5)
+    double taper_start{0.50};  // ρ 加权占用率 u ≥ 此才开始削 (硬 cap 满在 u_raw=1.0, 留半档减速带)
+    double floor{0.30};        // 乘子下限 (对齐 lifecycle/clv floor)
+    double rho_default{0.70};  // ρ 桶查不到 → 保守偏高先验 (宁可多削)
+};
+
+struct CorrelationInput {
+    double prospective_notional{0.0};  // 本 condition 拟达 |target| (pUSD; 仅判 >0 决定是否参与, 不入公式量级)
+    double existing_event_gross{0.0};  // 该 event 当前 Σ|condition敞口| 【扣除本 condition 自身】(pUSD)
+    double event_cap{0.0};             // event_exposure_cap (pUSD; RM 同源); ≤0 → 乘子退场 fail-open
+    double rho{std::numeric_limits<double>::quiet_NaN()};  // 静态表查得 ρ; NaN → cfg.rho_default
+};
+
+// 返回 ∈ [cfg.floor, 1.0]。u = ρ·existing_gross/cap; u≤taper_start→1; 线性退坡到 floor; 退化→1.0 fail-open。
+[[nodiscard]] inline double ComputeCorrelationMultiplier(const CorrelationInput& in,
+                                                         const CorrelationConfig& cfg) noexcept {
+    if (!cfg.enabled) return 1.0;
+    // fail-open: 本笔无新增 / 该 event 无其他敞口 / cap 禁用 / 非有限 → 不改基线。
+    if (!std::isfinite(in.prospective_notional) || in.prospective_notional <= 0.0) return 1.0;
+    if (!std::isfinite(in.existing_event_gross) || in.existing_event_gross <= 0.0) return 1.0;
+    if (!std::isfinite(in.event_cap) || in.event_cap <= 0.0) return 1.0;
+    const double rho = std::isfinite(in.rho) ? std::clamp(in.rho, 0.0, 1.0) : cfg.rho_default;
+    // ρ 加权"有效事件占用率": 已有同赛事敞口按 ρ 折成相关等价占 cap 比例。
+    const double u = rho * in.existing_event_gross / in.event_cap;
+    const double ts = std::clamp(cfg.taper_start, 0.0, 0.999);
+    if (u <= ts) return 1.0;
+    // 线性段: u∈(ts,1] → m∈[floor,1); u≥1 (cap 满) → floor。
+    const double t = std::clamp((u - ts) / (1.0 - ts), 0.0, 1.0);
+    const double m = 1.0 - (1.0 - cfg.floor) * t;
+    return std::clamp(m, cfg.floor, 1.0);
 }
 
 }  // namespace stcpp::control

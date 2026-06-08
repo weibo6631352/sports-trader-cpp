@@ -418,6 +418,21 @@ TEST_F(RiskGatewayTest, R6_2c_UnregisteredEvent_NoEventCap) {
         << "R6.2c: 未注册 event 的 condition 不应触 event cap";
 }
 
+// §4.1 相关性折扣乘子: get_event_gross_excl_condition = event_gross − |本condition敞口|。
+TEST_F(RiskGatewayTest, EventGrossExclCondition_ReturnsSiblingsOnly) {
+    auto rm = make_local_rm(cfg_);
+    rm->set_condition_event(kMockConditionId, "evt1");
+    rm->set_condition_event("cond_sibling", "evt1");
+    rm->set_condition_exposure("cond_sibling", 2'000);
+    rm->set_condition_exposure(kMockConditionId, 1'500);
+    // event_gross = 2000 + 1500 = 3500; 扣本盘 1500 → 仅兄弟盘 2000。
+    EXPECT_EQ(rm->get_event_gross_excl_condition(kMockConditionId), 2'000);
+    // 兄弟盘视角: 扣自身 2000 → 仅本盘 1500。
+    EXPECT_EQ(rm->get_event_gross_excl_condition("cond_sibling"), 1'500);
+    // 未注册 event → 0。
+    EXPECT_EQ(rm->get_event_gross_excl_condition("cond_unregistered"), 0);
+}
+
 TEST_F(RiskGatewayTest, R09_DAILY_LOSS_HALT) {
     rm_->set_daily_pnl(-6'000 * 1'000'000LL);
     auto d = rm_->evaluate(make_ok_intent());

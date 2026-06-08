@@ -614,3 +614,87 @@ TEST(Deadband, DZ03_NeverNarrowsBelowPct) {
     // guard = 1×(2×0.03×0.25)×1000 = 15 < 0.10×1000=100 → 取 100
     EXPECT_DOUBLE_EQ(ComputeRebalanceDeadband(1000.0, 0.50, 0.03, cfg), 100.0);
 }
+
+// ============================================================================
+// 毒性冻结加仓硬档 (§4.1) — ToxicityFreezesAdds。默认关→false; 超阈→true (冻结新增, 减仓另判)。
+// ============================================================================
+TEST(ToxicityGate, TF01_DisabledNeverFreezes) {
+    ToxicityGateConfig cfg;  // enabled=false
+    cfg.ofi_depth_thr = 0.1;
+    cfg.bid_absence_thr = 0.5;
+    EXPECT_FALSE(ToxicityFreezesAdds(10.0, 1.0, cfg)) << "关 → 恒 false (现行为)";
+}
+TEST(ToxicityGate, TF02_OfiOverDepthThreshold) {
+    ToxicityGateConfig cfg{true, 0.2, 1.0};  // 仅 OFI/depth 判据
+    EXPECT_TRUE(ToxicityFreezesAdds(0.25, 0.0, cfg)) << "|OFI|/depth ≥ 阈 → 冻结";
+    EXPECT_FALSE(ToxicityFreezesAdds(0.15, 0.0, cfg)) << "未超阈 → 不冻结";
+}
+TEST(ToxicityGate, TF03_BidAbsenceThreshold) {
+    ToxicityGateConfig cfg{true, 0.0, 0.5};  // 仅 BidAbsence 判据 (ofi_thr=0 关)
+    EXPECT_TRUE(ToxicityFreezesAdds(99.0, 0.6, cfg)) << "BidAbsence ≥ 阈 → 冻结 (ofi 判据关)";
+    EXPECT_FALSE(ToxicityFreezesAdds(99.0, 0.4, cfg)) << "BidAbsence 未超 + ofi 判据关 → 不冻结";
+}
+TEST(ToxicityGate, TF04_NaNFailOpen) {
+    ToxicityGateConfig cfg{true, 0.2, 0.5};
+    EXPECT_FALSE(ToxicityFreezesAdds(kNaN, kNaN, cfg)) << "脏数据 → 不冻结 (fail-open, 别误挡)";
+}
+
+// ============================================================================
+// 相关性折扣乘子 (§4.1 规模层) — ComputeCorrelationMultiplier。∈[floor,1], gross 加权, fail-open。
+// ============================================================================
+static CorrelationConfig corr_cfg_default() { return CorrelationConfig{true, 0.50, 0.30, 0.70}; }
+
+TEST(CorrelationMultiplier, CM01_DisabledReturnsOne) {
+    CorrelationConfig cfg = corr_cfg_default();
+    cfg.enabled = false;
+    EXPECT_DOUBLE_EQ(ComputeCorrelationMultiplier({500.0, 9000.0, 10000.0, 0.95}, cfg), 1.0);
+}
+TEST(CorrelationMultiplier, CM02_FirstMarketNoDiscount) {
+    auto cfg = corr_cfg_default();
+    // existing_event_gross=0 (赛事第一个盘) → u=0 → 不削
+    EXPECT_DOUBLE_EQ(ComputeCorrelationMultiplier({500.0, 0.0, 10000.0, 0.95}, cfg), 1.0);
+}
+TEST(CorrelationMultiplier, CM03_BelowTaperStart) {
+    auto cfg = corr_cfg_default();
+    // ρ=0.3, gross=5000, cap=10000 → u=0.3×0.5=0.15 < taper_start 0.5 → 不削
+    EXPECT_DOUBLE_EQ(ComputeCorrelationMultiplier({500.0, 5000.0, 10000.0, 0.30}, cfg), 1.0);
+}
+TEST(CorrelationMultiplier, CM04_CapFullHitsFloor) {
+    auto cfg = corr_cfg_default();
+    // ρ=1, gross=cap → u=1.0 → t=1 → m=floor
+    EXPECT_DOUBLE_EQ(ComputeCorrelationMultiplier({500.0, 10000.0, 10000.0, 1.0}, cfg), cfg.floor);
+}
+TEST(CorrelationMultiplier, CM05_MonotoneInOccupancy) {
+    auto cfg = corr_cfg_default();
+    // 占用率越高 → 乘子越小 (单调)
+    const double m_lo = ComputeCorrelationMultiplier({500.0, 6000.0, 10000.0, 1.0}, cfg);  // u=0.6
+    const double m_hi = ComputeCorrelationMultiplier({500.0, 9000.0, 10000.0, 1.0}, cfg);  // u=0.9
+    EXPECT_GT(m_lo, m_hi);
+    EXPECT_LE(m_hi, 1.0);
+    EXPECT_GE(m_hi, cfg.floor);
+}
+TEST(CorrelationMultiplier, CM06_LowerRhoLessDiscount) {
+    auto cfg = corr_cfg_default();
+    const double m_hi_rho = ComputeCorrelationMultiplier({500.0, 8000.0, 10000.0, 0.95}, cfg);
+    const double m_lo_rho = ComputeCorrelationMultiplier({500.0, 8000.0, 10000.0, 0.40}, cfg);
+    EXPECT_LT(m_hi_rho, m_lo_rho) << "高 ρ (强相关) 削更多";
+}
+TEST(CorrelationMultiplier, CM07_FailOpenDegenerate) {
+    auto cfg = corr_cfg_default();
+    EXPECT_DOUBLE_EQ(ComputeCorrelationMultiplier({0.0, 9000.0, 10000.0, 0.95}, cfg), 1.0) << "本笔无新增";
+    EXPECT_DOUBLE_EQ(ComputeCorrelationMultiplier({500.0, 9000.0, 0.0, 0.95}, cfg), 1.0) << "cap=0 禁用";
+    EXPECT_DOUBLE_EQ(ComputeCorrelationMultiplier({500.0, kNaN, 10000.0, 0.95}, cfg), 1.0) << "NaN gross";
+}
+TEST(CorrelationMultiplier, CM08_NoSelfExcitation_ProspectiveSizeIrrelevant) {
+    auto cfg = corr_cfg_default();
+    // 防自激核心: prospective_notional 只判 >0, 不入公式量级 → 本笔大小不改乘子 (∂m/∂target_self=0)。
+    const double m_small = ComputeCorrelationMultiplier({10.0, 8000.0, 10000.0, 0.95}, cfg);
+    const double m_large = ComputeCorrelationMultiplier({9999.0, 8000.0, 10000.0, 0.95}, cfg);
+    EXPECT_DOUBLE_EQ(m_small, m_large) << "本笔 target 大小不反馈回本盘乘子 (环切断)";
+}
+TEST(CorrelationMultiplier, CM09_NaNRhoUsesDefault) {
+    auto cfg = corr_cfg_default();  // rho_default=0.70
+    const double m_nan = ComputeCorrelationMultiplier({500.0, 8000.0, 10000.0, kNaN}, cfg);
+    const double m_explicit = ComputeCorrelationMultiplier({500.0, 8000.0, 10000.0, 0.70}, cfg);
+    EXPECT_DOUBLE_EQ(m_nan, m_explicit) << "ρ NaN → rho_default";
+}

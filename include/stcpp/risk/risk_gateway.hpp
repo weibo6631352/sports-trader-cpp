@@ -364,6 +364,10 @@ public:
     // 持仓管理 Stage 2 P0: 注册 condition→event 映射 (相关性集中度 cap R6.2c 用)。
     //   幂等; event_id 空则跳过。注册后 set_condition_exposure 自动维护 per-event Σ|敞口|。
     void set_condition_event(std::string const& condition_id, std::string const& event_id) noexcept;
+    // 持仓管理 Stage 2 §4.1 (相关性折扣乘子): 读本 condition 所属 event 的 Σ|敞口| 【扣除本 condition 自身】
+    //   (micro pUSD)。= R6.2c 硬 cap 同源 event_gross − |本condition敞口| → soft 乘子与硬 cap 口径一致
+    //   (spec Q3 去重)。condition 未注册 event / 无敞口 → 0。const 锁读 (非 WSS event loop, 不触 R-12)。
+    [[nodiscard]] std::int64_t get_event_gross_excl_condition(std::string const& condition_id) const noexcept;
 
     // A4 (老韩 spec §2): 去 inline — body 移 .cpp 以记 last_fed_ns_ (now_realtime_ns 在 .cpp;
     //   避免给 ABI-locked hpp 加 pit.hpp 依赖)。非热路径 (每 tick 喂一次), out-of-line 开销可忽略。
