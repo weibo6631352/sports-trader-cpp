@@ -511,3 +511,106 @@ TEST(DrawdownMultiplier, DD04_DeepDrop_HoldOnly) {
     if (drop < m) m = drop;
     EXPECT_DOUBLE_EQ(m, 0.0);  // m=0 → 只持不加 (砍仓交保命门)
 }
+
+// ============================================================================
+// 执行层 §4.1 (持仓管理 Stage 2) — exec_margin 逆选保护 + p(1−p) 死区缩放。
+//   全部默认 OFF → 行为等于现状; 开启则更被动 (买压低/卖抬高) / 死区放宽。BR-1 纯函数。
+// ============================================================================
+
+// EM-01: exec_margin 默认 0 → reservation 与不传时逐位相同 (向后兼容, CR01-05 不变)。
+TEST(ExecMargin, EM01_DefaultZero_NoChange) {
+    ReservationInput base;
+    base.fair = 0.50;
+    base.exec_ask = 0.52;
+    base.exec_bid = 0.48;
+    base.fee_coef = 0.03;
+    base.margin_floor = 0.0;
+    base.z = 1.645;
+    base.n_eff = 200;
+    const auto r0 = ComputeReservation(base);  // exec_margin 默认 0
+    base.exec_margin = 0.0;
+    const auto r1 = ComputeReservation(base);
+    EXPECT_DOUBLE_EQ(r0.required_margin, r1.required_margin);
+    EXPECT_DOUBLE_EQ(r0.buy_px, r1.buy_px);
+    EXPECT_DOUBLE_EQ(r0.sell_px, r1.sell_px);
+}
+
+// EM-02: exec_margin>0 → required_margin 加性增大, buy_px 压低 / sell_px 抬高 (更被动, 抗逆选)。
+TEST(ExecMargin, EM02_AddsToMargin_BothSidesMorePassive) {
+    ReservationInput in;
+    in.fair = 0.50;
+    in.exec_ask = 0.52;
+    in.exec_bid = 0.48;
+    in.fee_coef = 0.03;
+    in.margin_floor = 0.0;
+    in.z = 1.645;
+    in.n_eff = 200;
+    const auto r0 = ComputeReservation(in);
+    in.exec_margin = 0.03;
+    const auto r1 = ComputeReservation(in);
+    EXPECT_DOUBLE_EQ(r1.required_margin, r0.required_margin + 0.03) << "加性叠加 (不取大)";
+    EXPECT_LT(r1.buy_px, r0.buy_px) << "买压低 → 更挑剔";
+    EXPECT_GT(r1.sell_px, r0.sell_px) << "卖抬高 → 更挑剔";
+}
+
+// EM-03: noise_free 下 exec_margin 仍生效 (逆选≠抽样噪声, 正交 → sharp 在毒簿仍要保护)。
+TEST(ExecMargin, EM03_AppliesUnderNoiseFree) {
+    ReservationInput in;
+    in.fair = 0.783;
+    in.exec_ask = 0.74;
+    in.exec_bid = 0.70;
+    in.fee_coef = 0.03;
+    in.margin_floor = 0.02;
+    in.noise_free = true;
+    const auto r0 = ComputeReservation(in);
+    EXPECT_DOUBLE_EQ(r0.required_margin, 0.02);  // noise_free: 仅 floor
+    in.exec_margin = 0.015;
+    const auto r1 = ComputeReservation(in);
+    EXPECT_DOUBLE_EQ(r1.required_margin, 0.035) << "floor + exec_margin (noise_free 不吞 exec_margin)";
+}
+
+// EM-04: 负 / 非有限 exec_margin → 视为 0 (fail-open, 绝不抬高买价=追价)。
+TEST(ExecMargin, EM04_NegativeOrNanTreatedAsZero) {
+    ReservationInput in;
+    in.fair = 0.50;
+    in.exec_ask = 0.52;
+    in.exec_bid = 0.48;
+    in.fee_coef = 0.03;
+    in.n_eff = 200;
+    const auto base = ComputeReservation(in);
+    in.exec_margin = -0.05;
+    EXPECT_DOUBLE_EQ(ComputeReservation(in).buy_px, base.buy_px) << "负 exec_margin → 0 (不追价)";
+    in.exec_margin = std::numeric_limits<double>::quiet_NaN();
+    EXPECT_DOUBLE_EQ(ComputeReservation(in).buy_px, base.buy_px) << "NaN → 0 (fail-open)";
+}
+
+// DZ-01: fee_k=0 (默认) → 死区 == max(floor, pct×|target|) 逐位不变 (向后兼容)。
+TEST(Deadband, DZ01_FeeKZero_LegacyBehavior) {
+    DeadbandConfig cfg;  // floor=1, pct=0.10, fee_k=0
+    EXPECT_DOUBLE_EQ(ComputeRebalanceDeadband(500.0, 0.50, 0.03, cfg), 50.0);  // 0.10×500
+    EXPECT_DOUBLE_EQ(ComputeRebalanceDeadband(5.0, 0.50, 0.03, cfg), 1.0);     // floor 主导
+}
+
+// DZ-02: fee_k>0 → p≈0.5 (费最贵) 死区放宽; p 极端 (费小) guard→0 不挡。纯加性 (只放宽)。
+TEST(Deadband, DZ02_PPScaling_WidensWhereFeeExpensive) {
+    DeadbandConfig cfg;
+    cfg.floor_pusd = 1.0;
+    cfg.pct = 0.10;
+    cfg.fee_k = 20.0;  // 放大到可见
+    // p=0.5: pp=0.25, 往返费率=2×0.03×0.25=0.015, guard=20×0.015×1000=300 > 0.10×1000=100 → guard 主导
+    EXPECT_DOUBLE_EQ(ComputeRebalanceDeadband(1000.0, 0.50, 0.03, cfg), 300.0);
+    // p=0.9: pp=0.09, 往返费率=2×0.03×0.09=0.0054, guard=20×0.0054×1000=108 (仍 >100, 但 < p=0.5 的 300)
+    const double dz_extreme = ComputeRebalanceDeadband(1000.0, 0.90, 0.03, cfg);
+    const double dz_mid = ComputeRebalanceDeadband(1000.0, 0.50, 0.03, cfg);
+    EXPECT_LT(dz_extreme, dz_mid) << "p 极端处死区更窄 (费小可细 rebalance)";
+}
+
+// DZ-03: fee_k>0 但 guard < pct 项 → 取 pct 项 (max, 只放宽不收窄)。
+TEST(Deadband, DZ03_NeverNarrowsBelowPct) {
+    DeadbandConfig cfg;
+    cfg.floor_pusd = 1.0;
+    cfg.pct = 0.10;
+    cfg.fee_k = 1.0;  // 小 → guard 远小于 pct 项
+    // guard = 1×(2×0.03×0.25)×1000 = 15 < 0.10×1000=100 → 取 100
+    EXPECT_DOUBLE_EQ(ComputeRebalanceDeadband(1000.0, 0.50, 0.03, cfg), 100.0);
+}

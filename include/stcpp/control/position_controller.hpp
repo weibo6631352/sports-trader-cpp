@@ -83,6 +83,11 @@ struct ReservationInput {
     //   地基)。否则 (score-prior/ML 噪声估计) 仍 max(floor, z×σ)。与 edge_ci 同源判据 (ResolveEdgeCiLower),
     //   消「sizing 说买 / reservation 说噪声不让买」的双标 —— sharp 进不了可下单侧的真因。
     bool noise_free{false};
+    // exec_margin (持仓管理 Stage 2 §4.1 执行层, 老板 2026-06-05): 逆选/波动保护边际, 调用方算好传入。
+    //   = k_tox·|OFI|/depth (毒性: 簿薄/单流猛 → 易被逆选) + k_vol·σ²·τ (波动×剩余期限)。只用【幅度】
+    //   (|OFI|, 不碰方向 — 方向归 sharp)。与抽样噪声 margin 【正交】(逆选≠估计噪声) → 叠加而非取大,
+    //   且 noise_free 下仍生效 (sharp 信号在毒簿里同样要逆选保护)。≥0; 默认 0 = 无 (向后兼容, CR01-05 不变)。
+    double exec_margin{0.0};
 };
 
 struct ReservationPrices {
@@ -104,7 +109,10 @@ struct ReservationPrices {
     const double floor = std::isfinite(in.margin_floor) ? in.margin_floor : 0.0;
     // noise_free: sharp 点估计 / 调模型模式 → 跳过二项 z×σ (对点估计是错模型, 见 ResolveEdgeCiLower),
     //   仅留 margin_floor (半 vig 经济地基, 防保证亏交易)。否则噪声估计仍 max(floor, z×σ)。
-    out.required_margin = in.noise_free ? floor : std::max(floor, in.z * sigma);
+    const double base_margin = in.noise_free ? floor : std::max(floor, in.z * sigma);
+    // 执行层动态 margin (§4.1): 逆选(毒性)+ 波动保护, 与抽样噪声正交 → 加性 (noise_free 下仍叠加)。
+    const double exec_m = (std::isfinite(in.exec_margin) && in.exec_margin > 0.0) ? in.exec_margin : 0.0;
+    out.required_margin = base_margin + exec_m;
     const double coef = std::isfinite(in.fee_coef) ? std::max(0.0, in.fee_coef) : 0.0;
     // fee 锚在各自触价 (买 ask / 卖 bid); 触价非有限则退回 fair 锚 (保守)。
     const double pa = (std::isfinite(in.exec_ask) && in.exec_ask > 0.0 && in.exec_ask < 1.0) ? in.exec_ask : in.fair;
@@ -115,6 +123,45 @@ struct ReservationPrices {
     out.sell_px = in.fair + fee_sell + out.required_margin;
     return out;
 }
+
+// ---------------------------------------------------------------------------
+// rebalance 死区 (持仓管理 Stage 2 §4.1 执行层, 老板 2026-06-05「死区随 p(1−p) 缩放防费磨损」)。
+//   死区 = max(绝对 floor, pct×|target|, fee_churn_guard)。BR-1 纯函数 (回测=实盘共用)。
+//   fee_churn_guard = fee_k × 往返费率 × |target|; 往返费率 = 2·fee_coef·p(1−p)。
+//   p(1−p) 在 p≈0.5 处最大 (费最贵) → guard 自动放宽死区 → 抑制被费吃掉的小额 churn;
+//   p 极端处 (p≈0.9) 费小, guard→0 不挡 → 该处可更细 rebalance。纯加性 (max 第三项, 只放宽不收窄)
+//   → 默认 fee_k=0 时逐位等于原 max(floor, pct×|target|), 向后兼容。
+// ---------------------------------------------------------------------------
+struct DeadbandConfig {
+    double floor_pusd{1.0};  // 绝对下限 (cfg_.min_rebalance_floor_pusd 同源)
+    double pct{0.10};        // |target| 比例项 (现行 0.10)
+    double fee_k{0.0};       // 往返费率倍数 (默认 0 = 关 = 现行为; 开 e.g. 2.0 = 死区 ≥ 2×往返费)
+};
+
+[[nodiscard]] inline double ComputeRebalanceDeadband(double target_mag, double p_fair, double fee_coef,
+                                                     const DeadbandConfig& cfg) noexcept {
+    const double abs_t = std::abs(target_mag);
+    double dz = std::max(cfg.floor_pusd > 0.0 ? cfg.floor_pusd : 0.0, cfg.pct * abs_t);
+    if (cfg.fee_k > 0.0 && std::isfinite(p_fair) && p_fair > 0.0 && p_fair < 1.0 &&
+        std::isfinite(fee_coef) && fee_coef > 0.0) {
+        const double pp = p_fair * (1.0 - p_fair);        // ∈ (0, 0.25]
+        const double rt_fee_frac = 2.0 * fee_coef * pp;   // 往返 (买+卖) 费率
+        dz = std::max(dz, cfg.fee_k * rt_fee_frac * abs_t);
+    }
+    return dz;
+}
+
+// ---------------------------------------------------------------------------
+// A-S 库存 skew — 已审定 SKIP (持仓管理 Stage 2 §4.1, 小袁 microstructure 设计裁决 2026-06-09)。
+//   synthesis §4.1 列了「reservation 减 A-S 库存项」, 但微观结构裁决: 我们范式里它【双重计数 + 半边非法 +
+//   数值可忽略】, 不实现:
+//   ① 目标仓位控制器的 gap=target−current 【就是】A-S 库存机制, 且锚在 sharp target (比 A-S 锚 flat=0 更对);
+//      锚 flat=0 会双重计数且与自身 alpha 打架, 锚 target 则 skew≡gap×正系数 (符号已由控制器定, 无新信息)。
+//   ② 生产 predictive_unwind=true 令卖侧绕开 reservation_sell → A-S 仅作用买侧, 已被死区 + lifecycle 乘子 +
+//      本文件动态 exec_margin 三重覆盖; 卖侧 A-S skew (库存大就主动压价卖) = 抢跑 sharp 反向, 违 2026-06-05 裁决。
+//   ③ A-S 教科书量纲下该项 ~0.02¢ 可忽略; 调大需非物理 γ → 沦为又一个 ad-hoc taper (已有 lifecycle/clv/DD 三个)。
+//   → 执行层「库存→更挑剔→泄回目标」语义由【target 控制器 + 动态 exec_margin + 死区】完整表达。不补 A-S。
+// ---------------------------------------------------------------------------
 
 // Decide — 纯函数: 目标仓位 + 限价 → 控制动作。无副作用。
 //   gap = target − current; 死区内不动; 限价不可成交不动; 否则 买增(gap>0)/卖减(gap<0)。
