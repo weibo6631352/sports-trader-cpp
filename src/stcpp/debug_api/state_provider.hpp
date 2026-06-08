@@ -447,6 +447,8 @@ struct QuoteParams {
     double clv_mult{1.0};             // CLV sizing 乘子 ∈[floor,max] (>1=放大; 全局)
     double rolling_clv_mean{0.0};     // 全局滚动 CLV 均值 (prob; 正=入场优于 fair; json NaN→0, 看 n)
     std::int32_t rolling_clv_n{0};    // 滚动 CLV 样本数 (有效性: <min 则 clv_mult=1)
+    double dd_mult{1.0};              // DD→target 乘子 ∈[0,1] (账户级回撤去险; 全局; §4.1)
+    double corr_mult{1.0};            // 相关性折扣乘子 ∈[floor,1] (同赛事 ρ 加权占用; per-event; §4.1)
 };
 
 // ============================================================

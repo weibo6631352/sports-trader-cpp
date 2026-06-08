@@ -2284,6 +2284,19 @@ void PaperLoop::PublishQuoteSnapshot(
                                                cfg_.clv_k_cut,         cfg_.clv_max_mult, cfg_.clv_floor,
                                                cfg_.clv_min_samples};
         qf.g_clv_mult = control::ComputeClvMultiplier(qf.g_rolling_clv_mean, qf.g_rolling_clv_n, clv_cfg);
+        // DD→target 乘子 (账户级回撤去险; 全局 dd_mult_ 成员, 与 ExecuteControllerSide 同源)。
+        qf.g_dd_mult = dd_mult_;
+        // 相关性折扣乘子 (per-event; 用 RM 同源 event_gross 重算; prospective 用 1.0 占位 — CM 与本笔量级无关)。
+        if (cfg_.corr_mult_enabled) {
+            const double existing_gross =
+                static_cast<double>(rm_.get_event_gross_excl_condition(condition_id)) / 1'000'000.0;
+            const control::CorrelationConfig corr_cfg{cfg_.corr_mult_enabled, cfg_.corr_taper_start,
+                                                      cfg_.corr_floor, cfg_.corr_rho_default};
+            qf.g_corr_mult = control::ComputeCorrelationMultiplier(
+                control::CorrelationInput{1.0, existing_gross, cfg_.corr_event_cap_pusd,
+                                          std::numeric_limits<double>::quiet_NaN()},
+                corr_cfg);
+        }
     }
 
     if (has_real_fair) {

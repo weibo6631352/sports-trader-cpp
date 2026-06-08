@@ -255,6 +255,8 @@ struct QuoteFeatures {
     double g_clv_mult{1.0};         // CLV sizing 乘子 ∈[floor,max] (滚动 CLV 均值调; >1=放大; 全局系统级)
     double g_rolling_clv_mean{std::numeric_limits<double>::quiet_NaN()};  // 全局滚动 CLV 均值 (prob; 正=入场优于 fair)
     std::int32_t g_rolling_clv_n{0};  // 滚动 CLV 样本数 (<min_samples 则 g_clv_mult=1 fail-open)
+    double g_dd_mult{1.0};    // DD→target 乘子 ∈[0,1] (账户级回撤去险; 只压加仓; 全局; §4.1)
+    double g_corr_mult{1.0};  // 相关性折扣乘子 ∈[floor,1] (同赛事 ρ 加权占用 → 提前 taper; per-event; §4.1)
 
     // ---- 有效性标记 (首次 Publish 后为 true) ----
     bool valid{false};

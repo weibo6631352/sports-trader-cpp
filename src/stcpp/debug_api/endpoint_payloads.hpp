@@ -652,6 +652,10 @@ inline std::string quote(const StateProvider& sp, const std::string& condition_i
         b += json::num(q.rolling_clv_mean);
         b += ",\"rolling_clv_n\":";
         b += json::i64(q.rolling_clv_n);
+        b += ",\"dd_mult\":";
+        b += json::num(q.dd_mult);
+        b += ",\"corr_mult\":";
+        b += json::num(q.corr_mult);
     }
     b += '}';
     return b;

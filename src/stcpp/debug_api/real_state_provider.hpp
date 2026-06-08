@@ -878,6 +878,8 @@ private:
         q.clv_mult = qf.g_clv_mult;
         q.rolling_clv_mean = qf.g_rolling_clv_mean;
         q.rolling_clv_n = qf.g_rolling_clv_n;
+        q.dd_mult = qf.g_dd_mult;
+        q.corr_mult = qf.g_corr_mult;
         return q;
     }
 };
