@@ -297,7 +297,9 @@ TEST(PaperDaemon, A2_DaemonProducesPaperFill_IsolatedLedger) {
     auto cfg = OfflineHeadlessCfg();       // Headless + start_live_feeds=false + record_ml=false
     cfg.enable_paper_fills = true;         // A2: 解封成交
     cfg.enable_phase0_gates = false;       // 本测验管线机制 (出成交), 非 Phase0 新门; 新门另有专测
-    cfg.sharp_only_gate = false;           // 本测验管线机制 (score-prior edge 出成交), 非 sharp 策略门; sharp 选盘另有专测
+    cfg.sharp_only_gate = false;           // 本测验管线机制 (端到端出成交), 非 sharp 策略门; sharp 选盘另有专测
+                                           // 注: 成交由【源头 pass eligible 的 bet365 sharp 赔率源】驱动 (下方 es
+                                           // 填 inplay_bet365_*_fair) — 源头 pass 后 score-prior 单独不再出成交。
     cfg.mapping_refresh_sec = 1;           // 快刷
     cfg.paper_loop.tick_interval_ms = 50;  // 快 tick
     cfg.paper_loop.n_effective = 500;      // 紧 CI 让真实 edge 过门 (生产 n_eff 小梁调)
@@ -320,31 +322,59 @@ TEST(PaperDaemon, A2_DaemonProducesPaperFill_IsolatedLedger) {
     es.away_score = 0;
     es.kickoff_ts_sec = 1'000'000;  // == market kickoff (窗口内)
     es.ts.event_ts_ns = now_ns - 3'600'000'000'000LL;
-    es.ts.data_source_ts_ns = now_ns - 1'000'000'000LL;  // fresh
-    es.ts.ingestion_ts_ns = now_ns - 500'000'000LL;
+    es.ts.data_source_ts_ns = now_ns;  // 赔率源新鲜 (Build() 置 sharp_max_staleness_sec=3.0; 2s 跑期内不过期)
+    es.ts.ingestion_ts_ns = now_ns;
     es.ts.as_of_ts_ns = now_ns;
+    // sharp(bet365) in-play de-vig fair: Team A(=home=YES) 领先 → sharp 看好 YES, 比市场更低估。这是
+    //   【源头 pass】(2026-06-04「没赔率源不订阅」+ 2026-06-05「方向真值=赔率源」) 的硬前提 —— 无 bet365
+    //   赔率源的盘永不订阅/不出 fair (score-prior 单独不再驱动成交)。
+    //   值须同时满足 Build() 置的【生产 sharp 门】(test 的 sharp_only_gate=false 被 Build 覆盖回 true):
+    //     · orientation-flip: sharp/市场同向 (非互补) → 取 0.74/0.62 (sum 1.36, 远离 1)。
+    //     · sharp_max_gap=0.15: |sharp−市场| ≤ 0.15 → edge 0.12 (0.74−0.62), 落 [min_edge 0.05, 0.15]。
+    es.inplay_bet365_home_fair = 0.74;  // YES(=home=Team A) 边 de-vig 胜率 (sharp 说低估, edge 0.12)
+    es.inplay_bet365_away_fair = 0.26;
     auto sm = std::make_shared<ScoreMap>();
     (*sm)["gs-e2e"] = es;
     daemon.score_store_for_test()->Publish(std::shared_ptr<const ScoreMap>(sm));
 
-    // 市场低估 YES (mid≈0.19), Team A 领先 → 真 fair > ask → buy YES. fresh ts (防 RM STALE).
+    // 市场 YES≈0.62 (Team A 领先已部分定价), sharp 0.78 更看好 → 真 fair > ask → buy YES. fresh ts (防 RM STALE)。
     OrderBookFeatures f{};
     f.valid = true;
     f.event_ts_ns = now_ns - 3'000'000'000LL;
     f.data_source_ts_ns = now_ns - 2'000'000'000LL;
     f.ingestion_ts_ns = now_ns - 1'000'000'000LL;
     f.as_of_ts_ns = now_ns;
-    f.bids[0].price = 0.18;
+    f.bids[0].price = 0.60;
     f.bids[0].size_usdc = 500.0;
-    f.asks[0].price = 0.20;
+    f.asks[0].price = 0.64;
     f.asks[0].size_usdc = 500.0;
-    f.microprice = 0.19;
-    f.mid = 0.19;
-    f.spread = 0.02;
+    f.microprice = 0.62;
+    f.mid = 0.62;
+    f.spread = 0.04;
     f.imbalance = 0.0;
     f.wss_state = WssConnState::kConnected;
     f.sequence_no = 1;
     daemon.hub_for_test()->Publish("1001", f);  // token0 (YES)
+
+    // NO 边 book (token1, ≈1−YES): 双边 de-vig 干净 (YES 0.62 / NO 0.38 → de-vig YES=0.62)。单边簿会让
+    //   p_market_devig 退化, 误触 orientation-flip 门 (sharp 看似与市场互补) → fair 回退市场 edge 归零。
+    OrderBookFeatures fno{};
+    fno.valid = true;
+    fno.event_ts_ns = now_ns - 3'000'000'000LL;
+    fno.data_source_ts_ns = now_ns - 2'000'000'000LL;
+    fno.ingestion_ts_ns = now_ns - 1'000'000'000LL;
+    fno.as_of_ts_ns = now_ns;
+    fno.bids[0].price = 0.36;
+    fno.bids[0].size_usdc = 500.0;
+    fno.asks[0].price = 0.40;
+    fno.asks[0].size_usdc = 500.0;
+    fno.microprice = 0.38;
+    fno.mid = 0.38;
+    fno.spread = 0.04;
+    fno.imbalance = 0.0;
+    fno.wss_state = WssConnState::kConnected;
+    fno.sequence_no = 1;
+    daemon.hub_for_test()->Publish("1002", fno);  // token1 (NO)
 
     daemon.Start();
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));  // ≥1 刷新周期 + 若干 tick
