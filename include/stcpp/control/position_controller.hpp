@@ -240,8 +240,12 @@ struct ToxicityGateConfig {
         //     原门 best_bid ≥ reservation_sell(fair+margin) 是做市「卖高」价, 市场收敛到 fair 永不触发 → 只能
         //     持到结算 (= alpha 退化成赌博)。买侧已保证 entry ≤ reservation_buy ≤ bid (减仓时市场≥fair) → 不锁亏。
         //   默认 (做市): 维持「卖高」语义。
-        const bool marketable = in.predictive_unwind ? (in.best_bid > 0.0)
-                                                      : (in.best_bid > 0.0 && in.best_bid >= in.reservation_sell_px);
+        //   force_cross (2026-06-09): rel_stop 割损 / fair 大跳(信号反转) / 事件驱动 → 必须 taker 在 best_bid
+        //     成交退出 (不等做市「卖高」, 否则崩盘 loser 的 bid 永远 < reservation_sell → 永不止损 → 持到归零)。
+        //     这是「持赢家(卖高)+砍输家(force_cross taker)」正偏度的卖侧实现; predictive_unwind 关时由它兜底止损。
+        const bool taker_exit = in.predictive_unwind || in.force_cross;
+        const bool marketable = taker_exit ? (in.best_bid > 0.0)
+                                           : (in.best_bid > 0.0 && in.best_bid >= in.reservation_sell_px);
         if (!marketable) {
             a.reason = NoActReason::NotMarketable;
             return a;
@@ -258,7 +262,7 @@ struct ToxicityGateConfig {
         a.act = true;
         a.side = strategy::Side::Sell;
         a.size_pusd = sell_sz;
-        a.limit_price = in.predictive_unwind ? in.best_bid : in.reservation_sell_px;  // 平仓 marketable / 做市卖高
+        a.limit_price = taker_exit ? in.best_bid : in.reservation_sell_px;  // taker 退出(止损/事件) / 做市卖高(持赢家)
         a.is_close = true;  // 减仓 (降敞口 → RM cap 放行)
     }
 
