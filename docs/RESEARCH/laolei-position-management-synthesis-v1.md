@@ -95,9 +95,9 @@ Polymarket 体育二元盘口(YES/NO outcome token, 不能持负余额, 净空�
 - **观测先行不驱动交易**(全上 portfolio_metrics 面板, 维持"绝不回喂决策"): portfolio gross_exposure、ρ 加权事件敞口、|OFI|、**CLV 滚动 50 笔均值**。
 
 **P1 — 需 paper 验证/评审(动交易行为, 回测=实盘同逻辑 BR-1 + maxDD≤15% 实测背书):**
-- 相关性折扣 Kelly(gross 加权版, 非计数 N)。
+- ✅ **相关性折扣 Kelly(gross 加权版, 非计数 N)** 已落地(commit cb72b80c, 小梁 2026-06-09 设计裁决): `ComputeCorrelationMultiplier` —— ρ 加权 event 占用率 `u=ρ·gross_excl_self/cap` 线性 taper ∈[floor,1]。防自激靠【排除本盘自身敞口】(∂m/∂target_self=0)。与 R6.2c 硬 cap 分工: cap=ρ=1 保命墙 / 乘子=ρ 加权提前减速带, 串联不双重计数。RM 加 `get_event_gross_excl_condition` 同源 getter。P0 单一 rho_default=0.70(per-type ρ 静态表待 paper 校准)。**默认关**(改交易行为 + ρ 未校准)。
 - ~~A-S 库存 skew 项~~ → **审定 SKIP**(2026-06-09 小袁 microstructure 设计裁决, commit b245e266): 我们范式里 target 控制器 gap=target−current 就是 A-S 库存机制(锚 sharp target 比 A-S 锚 flat=0 更对); 锚 flat 双重计数+撞自身 alpha; 生产 predictive_unwind 令卖侧绕开 reservation_sell → A-S 仅作用买侧已被 死区+lifecycle+exec_margin 三重覆盖; 卖侧 A-S skew=抢跑 sharp 反向违 2026-06-05 裁决; 教科书量纲下 ~0.02¢ 可忽略。决策入 `position_controller.hpp` 注。
-- **毒性/OFI 接执行**(cfg 默认关, paper 背书后开): ✅ **已落地软档**(commit b245e266): 动态 `exec_margin` = k_tox·|OFI|/depth + k_vol·σ²·τ 叠进 reservation required_margin(毒簿/高波动→更被动)。硬档「OFI/BidAbsence 超阈→冻结加仓」延后(软 margin 不足再补)。
+- **毒性/OFI 接执行**(cfg 默认关, paper 背书后开): ✅ **软档 + 硬档均落地**。软档 = 动态 `exec_margin` = k_tox·|OFI|/depth + k_vol·σ²·τ 叠进 reservation(commit b245e266)。硬档 = `ToxicityFreezesAdds`(commit cb72b80c): |OFI|/depth 或 BidAbsence 超阈 → 冻结新增加仓(减仓照常, force_cross 绕过)。
 - ✅ p(1−p) 死区缩放(防费磨损, commit b245e266): `ComputeRebalanceDeadband` BR-1 纯函数, 默认关。
 - 生命周期衰减乘子 clamp[0,1](描述统计, paper 验抖动/换手率下降)。 ✅ 已落地(commit 50af8431)。
 
