@@ -656,6 +656,23 @@ inline std::string quote(const StateProvider& sp, const std::string& condition_i
         b += json::num(q.dd_mult);
         b += ",\"corr_mult\":";
         b += json::num(q.corr_mult);
+        // 持仓管理决策可视 (老板 2026-06-09「盯盘下面补观测」): 控制器目标 / 保留价 / 持仓 / 决出状态。
+        b += ",\"target_signed_notional\":";
+        b += json::num(q.target_signed_notional);
+        b += ",\"reservation_buy_px\":";
+        b += json::num(q.reservation_buy_px);
+        b += ",\"reservation_sell_px\":";
+        b += json::num(q.reservation_sell_px);
+        b += ",\"required_margin\":";
+        b += json::num(q.required_margin);
+        b += ",\"pos_net_qty\":";
+        b += json::num(q.pos_net_qty);
+        b += ",\"pos_avg_entry\":";
+        b += json::num(q.pos_avg_entry);
+        b += ",\"game_decided_sign\":";
+        b += json::num(q.game_decided_sign);
+        b += ",\"near_end\":";
+        b += json::boolean(q.near_end);
     }
     b += '}';
     return b;

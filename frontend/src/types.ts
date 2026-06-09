@@ -389,6 +389,28 @@ export interface Quote {
   rolling_clv_mean?: number;
   /** 滚动 CLV 样本数 (<min 则 clv_mult=1 fail-open) */
   rolling_clv_n?: number;
+  /** DD→target 乘子 ∈[0,1] (账户级回撤去险; 只压加仓; 全局; §4.1) */
+  dd_mult?: number;
+  /** 相关性折扣乘子 ∈[floor,1] (同赛事 ρ 加权占用; per-event; §4.1) */
+  corr_mult?: number;
+
+  // --- 持仓管理决策可视 (老板 2026-06-09「调试持仓逻辑, 盯盘下面补观测」) ---
+  /** 控制器目标净仓位 (signed pUSD; +多YES −多NO=空YES)。0=不开新仓(只减/平) */
+  target_signed_notional?: number;
+  /** 买入保留价上界 (best_ask≤它才买; 0=无) */
+  reservation_buy_px?: number;
+  /** 卖出保留价下界 (best_bid≥它才卖; 0=无) */
+  reservation_sell_px?: number;
+  /** reservation 安全边际 (CI 半宽与 floor 取大) */
+  required_margin?: number;
+  /** 当前净持仓 (whole pUSD; 正=净多 YES) */
+  pos_net_qty?: number;
+  /** 持仓加权均入价 (YES 边) */
+  pos_avg_entry?: number;
+  /** +1=YES方已决出(必赢)/−1=NO方已决出(YES必输)/0=未决出 → must_win_lock 触发根因 */
+  game_decided_sign?: number;
+  /** 末段 phase_frac>0.85 */
+  near_end?: boolean;
 
   // --- 决策 fair 来源标记 (大模型 provenance model_id/kind/confidence/calibrated/fair_ci/advisory
   //     已砍 2026-06-05「砍掉大模型训练功能」) ---

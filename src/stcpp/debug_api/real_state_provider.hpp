@@ -880,6 +880,15 @@ private:
         q.rolling_clv_n = qf.g_rolling_clv_n;
         q.dd_mult = qf.g_dd_mult;
         q.corr_mult = qf.g_corr_mult;
+        // 持仓管理决策可视 (老板 2026-06-09): target/reservation/持仓/决出状态透传给盯盘。
+        q.target_signed_notional = qf.target_signed_notional;
+        q.reservation_buy_px = qf.reservation_buy_px;
+        q.reservation_sell_px = qf.reservation_sell_px;
+        q.required_margin = qf.required_margin;
+        q.pos_net_qty = qf.pos_net_qty;
+        q.pos_avg_entry = qf.pos_avg_entry;
+        q.game_decided_sign = qf.g_game_decided_sign;
+        q.near_end = qf.g_near_end;
         return q;
     }
 };

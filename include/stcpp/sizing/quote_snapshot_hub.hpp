@@ -258,6 +258,11 @@ struct QuoteFeatures {
     double g_dd_mult{1.0};    // DD→target 乘子 ∈[0,1] (账户级回撤去险; 只压加仓; 全局; §4.1)
     double g_corr_mult{1.0};  // 相关性折扣乘子 ∈[floor,1] (同赛事 ρ 加权占用 → 提前 taper; per-event; §4.1)
 
+    // ---- 决出状态 (观测, 老板 2026-06-09「调试持仓逻辑, 盯盘下面补观测」; 纯加性) ----
+    //   暴露分运动「必输局/必赢局」判定 → 盯盘直接看「为何 must_win_lock 触发/不触发」根因。
+    double g_game_decided_sign{0.0};  // +1=YES方已决出(必赢)/−1=NO方已决出(YES必输)/0=未决出
+    bool g_near_end{false};           // 末段 phase_frac>0.85 (临近末尾必输买入闸用)
+
     // ---- 有效性标记 (首次 Publish 后为 true) ----
     bool valid{false};
 

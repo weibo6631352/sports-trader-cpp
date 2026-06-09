@@ -449,6 +449,16 @@ struct QuoteParams {
     std::int32_t rolling_clv_n{0};    // 滚动 CLV 样本数 (有效性: <min 则 clv_mult=1)
     double dd_mult{1.0};              // DD→target 乘子 ∈[0,1] (账户级回撤去险; 全局; §4.1)
     double corr_mult{1.0};            // 相关性折扣乘子 ∈[floor,1] (同赛事 ρ 加权占用; per-event; §4.1)
+    // ---- 持仓管理决策可视 (老板 2026-06-09「调试持仓逻辑, 盯盘下面补观测」; G-FREEZE-W append-only) ----
+    //   盯盘直接看"控制器把仓位往哪推 / 保留价 vs 市价是否可成交 / 是否已决出该锁利"。
+    double target_signed_notional{0.0};  // 目标净仓位 (signed pUSD; +多YES −多NO=空YES; 控制器目标)
+    double reservation_buy_px{0.0};      // 买入保留价上界 (best_ask≤它才买; 0=无)
+    double reservation_sell_px{0.0};     // 卖出保留价下界 (best_bid≥它才卖; 0=无)
+    double required_margin{0.0};         // reservation 安全边际
+    double pos_net_qty{0.0};             // 当前净持仓 (whole pUSD; 正=净多 YES)
+    double pos_avg_entry{0.0};           // 持仓加权均入价 (YES 边)
+    double game_decided_sign{0.0};       // +1=YES方已决出(必赢)/−1=NO方已决出(YES必输)/0=未决出
+    bool near_end{false};                // 末段 phase_frac>0.85
 };
 
 // ============================================================

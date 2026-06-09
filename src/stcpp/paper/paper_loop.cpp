@@ -1241,7 +1241,8 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     PublishQuoteSnapshot(condition_id, publish_fv, sizing_out, mark_price, edge_ci_lower, feat, has_real_fair,
                          cross_spread, no_token_mid, no_imbalance, devig_ok, joint_as_of_ts_ns, mkt.event_id,
                          mkt.neg_risk_market_id, target_signed, reservation.buy_px, reservation.sell_px,
-                         reservation.required_margin, time_to_resolution_frac, g_time_x_lead, g_fld_signal,
+                         reservation.required_margin, game_decided_sign, near_end,
+                         time_to_resolution_frac, g_time_x_lead, g_fld_signal,
                          g_remaining_sec, g_periods_won_home, g_periods_won_away, sports, game_row, book_row,
                          mkt.no.present ? mkt.no.book.data_source_ts_ns : 0,
                          mkt.no.present ? mkt.no.book.ingestion_ts_ns : 0,
@@ -2231,6 +2232,7 @@ void PaperLoop::PublishQuoteSnapshot(
     double no_microprice, double no_imbalance, bool devig_ok, std::int64_t joint_as_of_ts_ns,
     const std::string& event_id, const std::string& neg_risk_market_id, double target_signed_notional,
     double reservation_buy_px, double reservation_sell_px, double required_margin,
+    double game_decided_sign, bool near_end,
     double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
     std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports,
     const data::feature_store::FeatureStoreGameRow& ml_game_row,
@@ -2298,6 +2300,10 @@ void PaperLoop::PublishQuoteSnapshot(
                 corr_cfg);
         }
     }
+
+    // 决出状态观测 (老板 2026-06-09): 分运动「必输/必赢局」判定 + 末段标志 → 盯盘看 must_win_lock 触发根因。
+    qf.g_game_decided_sign = game_decided_sign;
+    qf.g_near_end = near_end;
 
     if (has_real_fair) {
         // 真实 fair 路径 (M2+ Goalserve 接入后): 输出真实 edge/kelly/notional.
