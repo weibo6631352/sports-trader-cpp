@@ -42,6 +42,7 @@ struct ControlInput {
     double best_ask{0.0};             // 被选边市场 best ask
     double best_bid{0.0};             // 被选边市场 best bid
     double min_rebalance_pusd{1.0};   // 防抖死区 (绝对 pUSD; 小梁 = max(1, 0.1·|target|))
+    double min_order_pusd{0.0};       // 最小买单门 (老板 2026-06-09「体育 min 5 单」; 0=关): 买单 < 它跳过 (真盘下不进+砍dust churn)
     double per_order_cap_pusd{0.0};   // 单笔上限 (clamp; RM per_order_cap 同源)
     bool allow_short{false};          // v1=false (空头 clamp 0); M2 开
     bool force_cross{false};          // 强制穿越 (小梁 Q-梁-2: |Δfair|>0.02 → 绕死区; 比分大跳不堵)
@@ -232,9 +233,16 @@ struct ToxicityGateConfig {
             a.reason = NoActReason::NotMarketable;
             return a;
         }
+        const double buy_sz = std::min(abs_gap, cap);
+        // 最小买单门 (老板 2026-06-09「体育 min 5 单」): 买单 < min_order_pusd 跳过 —— 真盘 PM 体育 min 5
+        //   下不进 + 砍 dust churn (实测 0.0u/0.1u 碎单污染流水)。卖侧(平仓)不设此门, 允许清掉零头。
+        if (in.min_order_pusd > 0.0 && buy_sz < in.min_order_pusd) {
+            a.reason = NoActReason::BelowThreshold;
+            return a;
+        }
         a.act = true;
         a.side = strategy::Side::Buy;
-        a.size_pusd = std::min(abs_gap, cap);
+        a.size_pusd = buy_sz;
         a.limit_price = in.reservation_buy_px;
         a.is_close = false;
     } else {

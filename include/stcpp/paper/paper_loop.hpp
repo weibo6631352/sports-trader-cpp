@@ -220,6 +220,7 @@ struct PaperLoopConfig {
     double per_order_cap_usdc{10.0};
     double market_exposure_cap_usdc{50.0};
     double per_outcome_cap_usdc{25.0};
+    double min_order_pusd{0.0};       // 最小买单门 (老板 2026-06-09「体育 min 5 单」; 0=关): 买单 < 它跳过
 
     // ---- 目标仓位控制器参数 (老雷 controller spec v1 §11 Step 3; 小梁 Q-梁-1/Q-梁-2) ----
     //   edge_ci_lower_floor: reservation required_margin 下限 (与 RM 同名门同源; 默认 0)。

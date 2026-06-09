@@ -1502,6 +1502,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     cin.best_ask = exec_ask;  // 本边 ask (买入触价 + 限价不追门)
     cin.best_bid = exec_bid;  // 本边 bid (卖出触价 + 限价不追门)
     cin.min_rebalance_pusd = min_rebalance;
+    cin.min_order_pusd = cfg_.min_order_pusd;   // 最小买单门 (老板「体育 min 5 单」)
     cin.per_order_cap_pusd = cfg_.per_order_cap_usdc;
     cin.allow_short = false;       // 空头 clamp 0 (sell-to-open 对二元市场 N/A; 见 spec §11.6)
     cin.force_cross = force_cross;  // 小梁 Q-梁-2: fair 大跳绕死区 (买侧加仓; 含 stop 用于绕死区)

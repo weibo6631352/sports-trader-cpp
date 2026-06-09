@@ -695,6 +695,10 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
         <span class="mono-sub">{Number.isFinite(marketMid()) ? marketMid().toFixed(4) : '—'}</span>
         <span class="q-lbl" style={{ 'margin-left': 'auto' }} title="决策 fair (砍大模型后 = sharp 锚 / score-prior / 市场 de-vig)">fair</span>
         <span class="mono-strong">{Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}</span>
+        <Show when={hasSharp() && Number.isFinite(fairValue()) && Math.abs(fairValue() - sharpFair()) > 0.03}>
+          <span class="mono-sub" style={{ color: '#ff5252', 'font-weight': 700, 'font-size': '9px', 'margin-left': '4px' }}
+            title="决策 fair 偏离 sharp >3点 = ResolveFair 此刻没用 sharp(走了 score-prior/市场 de-vig) → sharp 被判无效(无 bet365 odds / orientation 翻转 / 陈旧>3s)。这是「低估 YES → 卖太便宜/不持赢家」的根。">⚠源非sharp</span>
+        </Show>
       </div>
 
       {/* edge / Kelly — 砍大模型后由 sharp fair vs 市场驱动 (不再 gated on 模型), paper 期仅建议 */}

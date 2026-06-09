@@ -691,6 +691,7 @@ BuildResult PaperDaemon::Build() {
     //   bankroll 上仅用 1% 资金/单, 比 Kelly(λ0.35, 5% edge≈$79/单) throttle 8x → +$200 累积极慢。
     //   实测 26 笔 sharp 成交全捕获正 edge (中位 5.3%, 0 笔买在 fair 上方) → 边真实, 放大有据。
     //   放大让 Kelly 主导 (λ0.35 仍是真风控); per-market ≤12% bankroll (守北极星 DD≤15%)。R-11 纯 paper。
+    cfg_.paper_loop.min_order_pusd = 5.0;             // 最小买单 (老板 2026-06-09「体育 min 5 单」): 砍 0.0u/0.1u dust churn + 贴真盘
     cfg_.paper_loop.per_order_cap_usdc = 50.0;        // was 10 (5% bankroll/单)
     cfg_.paper_loop.per_outcome_cap_usdc = 100.0;     // was 25
     cfg_.paper_loop.market_exposure_cap_usdc = 120.0; // was 50 (12% bankroll/市场)
