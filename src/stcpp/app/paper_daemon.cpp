@@ -741,7 +741,11 @@ BuildResult PaperDaemon::Build() {
     cfg_.paper_loop.sharp_max_staleness_sec = 3.0;
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 生产开 —— 减仓随预测回 flat (收敛兑现),
     //   解「只买不卖持到结算」。lib 默认关 (契约/管线测试不变)。
-    cfg_.paper_loop.predictive_unwind = true;
+    // 2026-06-09 关掉 (FLB 盈利策略): FLB 是【结算级】偏差 (favorite 相对真胜率被低估) → 必须【持有到收敛/结算】
+    //   才吃到完整 edge; 早平 (predictive_unwind) 只吃到一小段价漂移 (+0.16) 却付买卖双边费 (0.24) → 净负。
+    //   关掉后 favorite 赢家持到 reservation_sell 可成交(近 1.0 高位卖)或结算(赎回不收费), 只付入场单边费 +
+    //   吃完整收敛 (+0.35/share); rel_stop(25%) 砍崩盘输家 → 正偏度 (让赢家 run, 砍输家) + 71% 胜率 = 强 +EV。
+    cfg_.paper_loop.predictive_unwind = false;
     // 入场价感知平仓 (2026-06-04 老板「别稍微亏本就卖, 要考虑持仓买卖价格」): 卖价低于均入(锁亏)时,
     //   仅当 sharp fair 真跌破均入超 5 分 (信号反转=止损) 才卖, 否则持有等回归/结算。治 predictive_unwind
     //   在小回撤里 churn 卖出实现亏损。取利平仓不受限。
