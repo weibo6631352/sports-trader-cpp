@@ -38,6 +38,19 @@ inline const char* fair_src_name(std::int8_t code) {
     }
 }
 
+// 候选 fair 全集 JSON (前端列出所有源 + 标记 fair_src 正在用的; -1 = 该源对此盘不适用)。
+inline void append_fair_cands(std::string& b, const QuoteParams& q) {
+    b += ",\"fair_cands\":{\"devig\":";
+    b += json::num(q.fair_cand_devig);
+    b += ",\"sharp\":";
+    b += json::num(q.fair_cand_sharp);
+    b += ",\"score_prior\":";
+    b += json::num(q.fair_cand_score_prior);
+    b += ",\"derivative\":";
+    b += json::num(q.fair_cand_derivative);
+    b += "}";
+}
+
 // ---- status (= GET /status) ----
 // as_of_ns: >=0 → 输出顶层 as_of_ts (REST 传 now); <0 → 省略 (SSE: 信封已带 transport ts)
 inline std::string status(const HttpServer& hs, std::int64_t as_of_ns = -1) {
@@ -351,6 +364,7 @@ inline std::string grid_market_obj(const StateProvider& sp, const std::string& c
         o += ",\"fair_src\":\"";
         o += fair_src_name(q.fair_src);
         o += "\"";
+        append_fair_cands(o, q);
         o += ",\"market_mid\":";
         o += json::num(q.market_mid);
         o += ",\"edge_bps\":";
@@ -624,6 +638,7 @@ inline std::string quote(const StateProvider& sp, const std::string& condition_i
         b += ",\"fair_src\":\"";
         b += fair_src_name(q.fair_src);
         b += "\"";
+        append_fair_cands(b, q);
         b += ",\"market_mid\":";
         b += json::num(q.market_mid);
         b += ",\"edge_bps\":";

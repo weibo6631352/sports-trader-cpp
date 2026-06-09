@@ -86,6 +86,12 @@ struct QuoteFeatures {
     // fair_src: 决策 fair 真实选源码 (POD, 保 trivially-copyable lock-free 双缓冲): 0市场devig/1派生/2sharp/
     //   3score-prior/4ml = FairSrc enum 序。序列化时映回字符串。观测「fair 到底用了什么源」。
     std::int8_t fair_src{0};
+    // 候选 fair 全集 (观测: 显示所有源的值 + 在 fair_src 标记正在用的, 而非只露决出值「乱切」)。
+    //   = ResolveFair 真实看到的输入 (含 market_implied 屏蔽: 屏蔽=-1)。-1 = 该源对此盘不适用。
+    double fair_cand_devig{-1.0};        // 市场 de-vig YES (默认锚; 与 market_mid=mark 不同)
+    double fair_cand_sharp{-1.0};        // bet365 in-play de-vig (sharp 候选; <0 = 无/被屏蔽)
+    double fair_cand_score_prior{-1.0};  // score-prior × 市场 置信加权 blend (有真比分才有候选)
+    double fair_cand_derivative{-1.0};   // 衍生盘专属定价 (totals/spreads; <0 = 非衍生盘)
     // market_mid: book microprice (best_bid + best_ask) / 2 附近
     double market_mid{0.0};
     // edge_bps: net edge = |fair_value - market_mid| × 10000 (bps)

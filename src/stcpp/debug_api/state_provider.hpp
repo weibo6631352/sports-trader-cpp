@@ -414,6 +414,11 @@ struct QuoteParams {
     std::string market_id;
     double fair_value{0.0};          // 决策 fair = ResolveFair 输出 p_fair (sharp 优先; 非估计器中间值)
     std::int8_t fair_src{0};         // 决策 fair 选源: 0市场devig/1派生/2sharp/3score-prior/4ml (FairSrc 序)
+    // 候选 fair 全集 (前端列出所有源 + 在 fair_src 标记正在用的; -1 = 该源对此盘不适用)
+    double fair_cand_devig{-1.0};
+    double fair_cand_sharp{-1.0};
+    double fair_cand_score_prior{-1.0};
+    double fair_cand_derivative{-1.0};
     double market_mid{0.0};          // book mid (microprice)
     double edge_bps{0.0};            // net edge in basis points
     double kelly_fraction{0.0};      // Kelly 仓位比例 (SizingCalculator 真实计算)

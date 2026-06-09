@@ -789,6 +789,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     double fair_sharp_yes = -1.0;
     double fair_score_prior = 0.5;
     double fair_prior_conf = 0.0;
+    FairCandidates fair_cands;  // 候选 fair 全集 (ResolveFair 块内从 fin 捕获; 显示所有源 + 标记决出)
     // 3a 时序: 结算临近度 (老板 2026-05-31, feature-first; 体育免新数据源 — 从 Goalserve 时钟派生)。
     //   = clamp(1 − time_frac, 0, 1); terminal → 0 (结算已定); 无真 fair/无时钟 → NaN。喂模型 +
     //   与 bid_absence_frac 组合 = 「临近结算 ∧ 卖不出」归零陷阱信号 (模型学, 不硬门)。
@@ -924,6 +925,13 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             fin.prior_conf = 0.0;
             fin.has_real_fair = false;
         }
+        // 候选 fair 全集快照 (观测「显示所有源 + 标记正在用的」): 取 ResolveFair 实际看到的 fin
+        //   (含 market_implied 屏蔽: 屏蔽后 sharp=-1 / derivative=nullopt → 候选记 -1=不适用)。
+        fair_cands.market_devig = fin.p_market_devig;
+        fair_cands.sharp = (fin.sharp_yes >= 0.0 && fin.sharp_yes <= 1.0) ? fin.sharp_yes : -1.0;
+        fair_cands.derivative = fin.derivative_p_yes.value_or(-1.0);
+        fair_cands.score_prior = fin.has_real_fair
+            ? pricing::blend_prob(fin.score_prior_yes, fin.p_market_devig, fin.prior_conf) : -1.0;
         const auto fr = pricing::ResolveFair(fin);
         p_fair = fr.p_fair;
         fair_src_dbg = fr.src;  // [diag] 真实选源 (sharp_inplay / score_prior_blend / ...)
@@ -1267,7 +1275,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                          reservation.required_margin, game_decided_sign, near_end,
                          time_to_resolution_frac, g_time_x_lead, g_fld_signal,
                          g_remaining_sec, g_periods_won_home, g_periods_won_away, sports, game_row, book_row,
-                         p_fair, static_cast<std::int8_t>(fair_src_dbg),  // 真·决策 fair + 选源 (供显示)
+                         p_fair, static_cast<std::int8_t>(fair_src_dbg), fair_cands,  // 决策 fair + 选源 + 候选全集 (显示)
                          mkt.no.present ? mkt.no.book.data_source_ts_ns : 0,
                          mkt.no.present ? mkt.no.book.ingestion_ts_ns : 0,
                          mkt.no.present ? &mkt.no.book : nullptr);  // v0.8 NO book 5档深度
@@ -2304,7 +2312,7 @@ void PaperLoop::PublishQuoteSnapshot(
     std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports,
     const data::feature_store::FeatureStoreGameRow& ml_game_row,
     [[maybe_unused]] const data::feature_store::FeatureStoreBookRow& ml_book_row, double decision_fair,
-    std::int8_t fair_src_code, std::int64_t no_book_ds_ts,
+    std::int8_t fair_src_code, const FairCandidates& fair_cands, std::int64_t no_book_ds_ts,
     std::int64_t no_book_ing_ts, const polymarket::clob_wss::OrderBookFeatures* no_book_full) noexcept {
     sizing::QuoteFeatures qf{};
     PopulateFeatureColumns(qf, condition_id, fv_result, mark_price, feat, cross_spread, no_microprice,
@@ -2318,6 +2326,11 @@ void PaperLoop::PublishQuoteSnapshot(
     //   qf.fair_value/fair_src 仅供显示 (sizing/RM 走独立 p_fair_selected, 不受影响)。
     qf.fair_value = decision_fair;
     qf.fair_src = fair_src_code;
+    // 候选 fair 全集 (显示所有源 + fair_src 标记正在用的, 治「乱切」观感)
+    qf.fair_cand_devig = fair_cands.market_devig;
+    qf.fair_cand_sharp = fair_cands.sharp;
+    qf.fair_cand_score_prior = fair_cands.score_prior;
+    qf.fair_cand_derivative = fair_cands.derivative;
     // GS sharp 赔率版本时刻 (2026-06-05 老板「赔率延迟放合适位置」): now−它 = 驱动 sharp fair 的 inplay 赔率多旧。
     qf.sharp_data_source_ts_ns = ml_game_row.data_source_ts_ns;
 

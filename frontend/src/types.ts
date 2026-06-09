@@ -354,6 +354,8 @@ export interface Quote {
   fair_value: number;
   /** 决策 fair 实际选用的来源 (后端 fair_src 直读, 非前端反推): sharp/derivative/score_prior/market_devig/ml */
   fair_src?: string;
+  /** 候选 fair 全集 (列出所有源 + 在 fair_src 标记正在用的; -1 = 该源对此盘不适用) */
+  fair_cands?: { devig: number; sharp: number; score_prior: number; derivative: number };
   market_mid: number;
   edge_bps: number;
   kelly_fraction: number;

@@ -391,6 +391,18 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
   const srcFrozen  = () => hasSharp() && fairSrc() !== 'sharp' && fairSrc() !== 'derivative';
   const srcColor   = () => fairSrc() === 'sharp' ? '#4caf50' : fairSrc() === 'derivative' ? '#64b5f6'
                           : srcFrozen() ? '#ff5252' : '#9e9e9e';
+  // 候选 fair 全集 (2026-06-10 老板「所有 fair 都显示, 正在用哪个标记, 而非乱切」): 列出 ResolveFair
+  //   看到的每个源的值 + 在 fair_src 标记决出的。各源值本身不跳, 跳的只是「正在用哪个」。-1=该源不适用。
+  const candList = () => {
+    const c = q().fair_cands; if (!c) return [] as { label: string; val: number; active: boolean }[];
+    const s = fairSrc();
+    return [
+      { label: '派生',       val: Number(c.derivative),  active: s === 'derivative' },
+      { label: 'sharp',      val: Number(c.sharp),       active: s === 'sharp' },
+      { label: 'score-prior',val: Number(c.score_prior), active: s === 'score_prior' },
+      { label: '市场de-vig', val: Number(c.devig),       active: s === 'market_devig' },
+    ].filter(r => Number.isFinite(r.val) && r.val >= 0);
+  };
 
   return (
     <div class="v8-expand-panel">
@@ -439,6 +451,23 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
             title="sharp 赔率现在有, 但决策没用它(回退 score-prior/市场 de-vig) → sharp 被判无效(orientation 翻转 / 陈旧>3s)。引擎冻结持仓等 sharp 回来。这是「低估 YES → 卖太便宜/不持赢家」的根。">⚠掉档</span>
         </Show>
       </div>
+
+      {/* 候选 fair 全集 (老板「所有 fair 都显示, 正在用哪个标记, 而非乱切」): 各源值不跳, 只「正在用」会切 */}
+      <Show when={candList().length > 0}>
+        <div class="v8-q-block" style={{ 'margin-top': '2px', padding: '3px 6px', background: 'rgba(255,255,255,0.02)', 'border-radius': '3px' }}>
+          <span class="q-lbl" title="ResolveFair 看到的全部候选 fair 源 + 各自的值; ✓=此刻决策正在用的 (优先级 派生>sharp>score-prior>市场de-vig)。各源值本身不乱跳, 切的只是「正在用哪个」。-1=该源对此盘不适用故不列。">候选 fair · ✓决出</span>
+          <For each={candList()}>
+            {(r) => (
+              <div style={{ display: 'flex', 'align-items': 'center', gap: '8px', 'padding-left': '4px',
+                            color: r.active ? '#4caf50' : '#8a8a8a', 'font-weight': r.active ? 700 : 400 }}>
+                <span class="mono-sub" style={{ 'min-width': '78px', color: 'inherit' }}>{r.label}</span>
+                <span class="mono-strong" style={{ color: 'inherit' }}>{r.val.toFixed(4)}</span>
+                <Show when={r.active}><span class="mono-sub" style={{ color: '#4caf50', 'font-weight': 700 }}>✓ 正在用</span></Show>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
 
       {/* edge / Kelly — 砍大模型后由 sharp fair vs 市场驱动 (不再 gated on 模型), paper 期仅建议 */}
       <div class="v8-q-row">

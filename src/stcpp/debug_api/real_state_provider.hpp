@@ -851,6 +851,10 @@ private:
 
         q.fair_value = qf.fair_value;
         q.fair_src = qf.fair_src;
+        q.fair_cand_devig = qf.fair_cand_devig;
+        q.fair_cand_sharp = qf.fair_cand_sharp;
+        q.fair_cand_score_prior = qf.fair_cand_score_prior;
+        q.fair_cand_derivative = qf.fair_cand_derivative;
         q.market_mid = qf.market_mid;
         q.edge_bps = qf.edge_bps;
         q.kelly_fraction = qf.kelly_fraction;

@@ -202,6 +202,16 @@ struct SportsFeatures {
     double bm_inplay_fair{std::numeric_limits<double>::quiet_NaN()};  // inplay bet365 de-vig fair
 };
 
+// 候选 fair 全集快照 (观测: 显示所有源 + 标记正在用的, 而非只露决出值)。
+//   TickOne 从 ResolveFair 的 FairInputs 捕获 (含 market_implied 屏蔽), 传 PublishQuoteSnapshot → qf。
+//   -1 = 该源对此盘不适用 (无 sharp odds / 非衍生盘 / 无真比分)。
+struct FairCandidates {
+    double market_devig{-1.0};
+    double sharp{-1.0};
+    double score_prior{-1.0};
+    double derivative{-1.0};
+};
+
 // ---------------------------------------------------------------------------
 // PaperLoopConfig — 运行参数
 // ---------------------------------------------------------------------------
@@ -987,6 +997,7 @@ private:
                               const data::feature_store::FeatureStoreGameRow& ml_game_row,
                               const data::feature_store::FeatureStoreBookRow& ml_book_row,
                               double decision_fair, std::int8_t fair_src_code,
+                              const FairCandidates& fair_cands,
                               std::int64_t no_book_ds_ts, std::int64_t no_book_ing_ts,
                               const polymarket::clob_wss::OrderBookFeatures* no_book_full = nullptr) noexcept;
 
