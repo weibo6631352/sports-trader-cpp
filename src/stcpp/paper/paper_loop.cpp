@@ -1696,6 +1696,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
             const double sold_qty = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
             sell_realized = (fill.fill_price - pos_before->avg_entry_price) * sold_qty;
             cum_realized_pnl_pusd_ += sell_realized;
+            cum_realized_by_market_[condition_id] += sell_realized;  // 逐盘累计 (对账修: 平仓不丢 realized)
         }
     }
 
@@ -1785,6 +1786,7 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
     const double avg = pos_opt->avg_entry_price;
     // realize PnL = (结算值 − 加权入场价) × qty (qty signed; v1 long → 正)。
     cum_realized_pnl_pusd_ += (settle_price - avg) * qty;
+    cum_realized_by_market_[condition_id] += (settle_price - avg) * qty;  // 逐盘累计 (对账修: 结算也入逐盘)
 
     // 平仓: apply_fill 负 delta 到 0 (settle_price 作 fill_price; 平仓 avg 归零, R-11 paper)。
     risk::FillEvent ev;
@@ -1863,18 +1865,21 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
     // 未实现 PnL = (mark - avg_entry) * net_qty
     const double pnl_unrealized = (mark_price - avg_entry) * net_qty;
     // 已实现 PnL: 简化 M1 只跟 fill.fill_size_usdc × (fill.fill_price - best_ask)
-    // 真实 realized 在平仓时产生; M1 买入阶段 realized = 0
-    const double pnl_realized = 0.0;
+    // 逐盘已实现 (老板 2026-06-09 对账修): 用持久累计 cum_realized_by_market_ (sell+settle 都加), 非硬编码 0。
+    //   原硬编码 0 → 逐盘 net_pnl 永丢 realized → 平仓后和成交流水 fills 对不上 (顶栏早改 account 口径修了, 逐盘漏)。
+    const double pnl_realized = cum_realized_by_market_[condition_id];
     // A1: fill_size_usdc micro → /1e6 转 pUSD 算 fee (unit-contract-ok: micro→pUSD)
     // R-fee-2: fee 系数 per-market (gamma feeSchedule.rate), 与 RM/sizing 同源 FeeCoefFor(condition).
     //   未填 → kDefaultFeeCoef(0.03), 与旧 sizing::kSportsTakerFeeRate 逐位不变。
-    const double pnl_fee = (static_cast<double>(fill.fill_size_usdc) / 1'000'000.0) *
+    const double pnl_fee_this = (static_cast<double>(fill.fill_size_usdc) / 1'000'000.0) *
                            FeeCoefFor(condition_id) * fill.fill_price * (1.0 - fill.fill_price);
     const double pnl_gross = pnl_realized + pnl_unrealized;
 
     // A5 (老韩 spec §4): 累计已付 fee (单调加, whole pUSD)。FeedRiskGateway 的 DD 喂数读它
     //   (daily_pnl = 时点净 MtM − cum_fee)。loop_thread_ 单 writer, 无需 atomic。
-    cum_fee_pusd_ += pnl_fee;
+    cum_fee_pusd_ += pnl_fee_this;
+    cum_fee_by_market_[condition_id] += pnl_fee_this;            // 逐盘累计费 (对账修)
+    const double pnl_fee = cum_fee_by_market_[condition_id];     // lf 逐盘 net = 累计realized + 浮盈 − 累计fee
 
     risk::LedgerFeatures lf{};
     // R-20: 4 ts 透传 (data_source_ts_ns 来自 feat, 禁本地 now() 替代)

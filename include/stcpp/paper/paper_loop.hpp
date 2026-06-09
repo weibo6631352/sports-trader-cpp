@@ -860,6 +860,13 @@ private:
     //   loop_thread_ 单 writer (ExecuteControllerSide 读+写)。冷却窗内禁新开/加仓买入 (打断 churn rebuy 循环)。
     std::unordered_map<std::string, std::int64_t> last_reduce_ns_;
 
+    // ---- 逐盘累计已实现/费 (老板 2026-06-09「前端观测做到位, 交易订单对得上 PnL」): condition_id → 累计 ----
+    //   修对账 bug: PublishLedgerSnapshot 原硬编码 pnl_realized=0 + pnl_fee 只本笔 → 逐盘 net_pnl 平仓后丢
+    //   realized (顶栏早改 account 口径修了, 逐盘漏)。这里持久累计 (sell + settle 都加), 喂 ledger_hub 逐盘快照。
+    //   loop_thread_ 单 writer。account 级 cum_realized_pnl_pusd_ 不变 (权威总账)。
+    std::unordered_map<std::string, double> cum_realized_by_market_;
+    std::unordered_map<std::string, double> cum_fee_by_market_;
+
     // ---- 时序特征环形缓冲 (老板 2026-05-31): condition_id → YES-canonical 微价时序 ----
     //   PIT-safe / BR-1 共用; loop_thread_ 单 writer (TickOne push + PublishQuoteSnapshot 读)。
     //   每 condition 一个定长 ring; 派生微价变化率 + realized vol 进 QuoteFeatures (训练捕获 + 观测)。
