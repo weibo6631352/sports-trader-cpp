@@ -347,7 +347,21 @@ void PaperLoop::TickAll() {
                                ? 365.25 * 24.0 * 3600.0 * 1000.0 / static_cast<double>(cfg_.tick_interval_ms)
                                : 0.0;
         const auto rep = portfolio_metrics_.report(ppy);
-        pub.sharpe = rep.sharpe;
+        // Sharpe 改用【逐笔已实现收益】(金融小梁 P1-C): 原 rep.sharpe 建在 per-tick 权益 MtM ×√7944 ≈ −239 垃圾
+        //   (per-tick MtM 高度自相关, 非真实交易收益)。改 mean/std of trade_returns_ = per-trade Sharpe (非垃圾)。
+        //   annualizer=1 (年化口径待金融 ADR — paper 交易频率不稳, 年化无意义)。样本 <2 报 0。
+        double sh = 0.0;
+        if (trade_returns_.size() >= 2) {
+            double m = 0.0;
+            for (const double r : trade_returns_) m += r;
+            m /= static_cast<double>(trade_returns_.size());
+            double v = 0.0;
+            for (const double r : trade_returns_) v += (r - m) * (r - m);
+            v /= static_cast<double>(trade_returns_.size() - 1);
+            const double sd = std::sqrt(v);
+            if (sd > 1.0e-9) sh = m / sd;
+        }
+        pub.sharpe = sh;
         pub.max_drawdown = rep.max_drawdown;
         std::lock_guard<std::mutex> lk(acct_pub_mu_);
         published_equity_ = pub;
@@ -1708,6 +1722,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
             sell_realized = (fill.fill_price - pos_before->avg_entry_price) * sold_qty;
             cum_realized_pnl_pusd_ += sell_realized;
             cum_realized_by_market_[condition_id] += sell_realized;  // 逐盘累计 (对账修: 平仓不丢 realized)
+            trade_returns_.push_back((fill.fill_price - pos_before->avg_entry_price) / pos_before->avg_entry_price);  // 逐笔收益 (Sharpe口径)
+            if (trade_returns_.size() > 5000) trade_returns_.erase(trade_returns_.begin(), trade_returns_.begin() + 2500);
         }
     }
 
@@ -1799,6 +1815,10 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
     // realize PnL = (结算值 − 加权入场价) × qty (qty signed; v1 long → 正)。
     cum_realized_pnl_pusd_ += (settle_price - avg) * qty;
     cum_realized_by_market_[condition_id] += (settle_price - avg) * qty;  // 逐盘累计 (对账修: 结算也入逐盘)
+    if (avg > 0.0) {  // 逐笔收益 (Sharpe口径)
+        trade_returns_.push_back((settle_price - avg) / avg);
+        if (trade_returns_.size() > 5000) trade_returns_.erase(trade_returns_.begin(), trade_returns_.begin() + 2500);
+    }
 
     // 平仓: apply_fill 负 delta 到 0 (settle_price 作 fill_price; 平仓 avg 归零, R-11 paper)。
     risk::FillEvent ev;

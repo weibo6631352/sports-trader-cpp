@@ -869,6 +869,11 @@ private:
     std::unordered_map<std::string, double> cum_realized_by_market_;
     std::unordered_map<std::string, double> cum_fee_by_market_;
 
+    // ---- 逐笔收益序列 (金融小梁 P1-C: 修 Sharpe −239 垃圾口径): 每次平仓/结算 push r=已实现/名义本金 ----
+    //   原 Sharpe 建在 per-tick 权益 MtM 抖动上 ×√7944 → 无金融意义。改建在逐笔已实现收益上 (mean/std)。
+    //   loop_thread_ 单 writer。年化口径待金融 ADR (paper 交易频率不稳, per-trade Sharpe 已非垃圾可解读)。
+    std::vector<double> trade_returns_;
+
     // ---- 时序特征环形缓冲 (老板 2026-05-31): condition_id → YES-canonical 微价时序 ----
     //   PIT-safe / BR-1 共用; loop_thread_ 单 writer (TickOne push + PublishQuoteSnapshot 读)。
     //   每 condition 一个定长 ring; 派生微价变化率 + realized vol 进 QuoteFeatures (训练捕获 + 观测)。
