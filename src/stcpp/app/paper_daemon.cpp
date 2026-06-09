@@ -773,10 +773,11 @@ BuildResult PaperDaemon::Build() {
     //   新仓 (近必输 longshot 下侧到 0 远大于 edge, −EV)。实测灾难性亏损全是买崩盘 underdog (fair 0.11 买 0.08 →
     //   崩到 0.03, 单笔 −0.87/−2.00); game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug)。
     //   用模型 fair 非市场价地板 (老板「用模型不用价格地板」)。减仓/平仓/must_win 不受限。
-    // 2026-06-09 升 0.15→0.50 (55 笔实测裁决): directional 胜率仅 49% (略低于随机=系统性买便宜【输方】underdog),
-    //   亏损 3.2× 盈利, −0.38/笔(−0.27 超 fee=逆选漂移)。改【只买被低估的赢面侧】(被选边 fair≥0.5=favorite),
-    //   试 favorite-longshot bias (赔率市场结构性低估 favorite) —— 提胜率 >50% 是 directional 唯一可能的真 edge。
-    cfg_.paper_loop.min_open_fair = 0.50;
+    // 2026-06-09 升 0.50→0.65 (实测+前端裁决): FLB edge 真实但只在【强 favorite】上 —— proven +8 那波 28 closes
+    //   71% 胜率, 入场 fair 全 0.68-0.91; 而弱 favorite (0.50-0.65, 如 Kyoka 0.533 决胜盘) 是 coin-flip, 在决胜段
+    //   崩盘亏 (前端实见 −$8 持仓 + 早先 0.625 亏 −2.1)。升到 0.65 只抓强 favorite = 提胜率 + 降崩盘风险 (不放大
+    //   仓位, 纯提质量, 老板「抓真机会+不放大风险」)。若机会太少再降 0.60。
+    cfg_.paper_loop.min_open_fair = 0.65;
     // 再入场冷却 (2026-06-09 老板「查明真正原因」, 数据驱动): 同盘减仓/平仓后 30s 内禁 rebuy。根因: 手续费=头号
     //   成本 (实测 fee 4.4 > realized 亏 3.7), 源自 buy→卖光→rebuy 反复 4+ 往返 (每往返付双边费)。冷却打断循环;
     //   force_cross (进球/必赢/止损) 绕过, 保留对真机会反应。
