@@ -135,9 +135,10 @@ struct SizingOutput {
 // follow-up: W6 校准后随 λ_eff × model_conf 一并评审是否入 RM
 inline constexpr double kMaxBankrollFraction = 0.10;  // 单注 ≤ 10% bankroll
 
-// λ_base (老板 2026-06-01 直接定 0.35; 原 0.25 quarter Kelly)。paper 灰度: 直接跑看真实 maxDD
-//   (paper 非真钱, 红线只卡真钱开闸)。真钱开闸前需拿 paper 实测 maxDD≤15% 找老韩 RM 联签。
-inline constexpr double kLambdaBase = 0.35;
+// λ_base: 2026-06-09 专家组(金融小梁)裁决 0.35→0.25 —— edge 真伪未由 CLV 确认期间的 estimation-risk
+//   haircut: Kelly 增长率对 edge 估计极敏感, 高估会致负增长。验证期(降阈试 2-5% bucket)用小仓限噪声损失
+//   (老板「不放大风险」)。CLV 实测确认 edge≥4% 后再回 0.35。原 0.35(老板 2026-06-01); 更原 0.25 quarter。
+inline constexpr double kLambdaBase = 0.25;
 
 // fee 率同源常量 (与 RM risk_gateway.cpp kSportsTakerFeeRate 同值; 防自定义漂移)
 // 若此常量与 RM 同 TU 共享则引用同一 header (老周/老沈 跨 TU 提公共 header 时更新)

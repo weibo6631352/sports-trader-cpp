@@ -734,10 +734,11 @@ BuildResult PaperDaemon::Build() {
     // sharp 驱动门 (2026-06-04): 生产 daemon 默认开 (cfg_.sharp_only_gate 默认 true) —— 仅高置信
     //   sharp(bet365) 信号产单, 其余源回退市场 (edge 归零)。管线机制测试可置 false (走 score-prior 出成交)。
     cfg_.paper_loop.sharp_only_gate = cfg_.sharp_only_gate;
-    // 2026-06-09 老板「重点是发现抓住机会, 不放大风险」: 检测阈 0.05→0.04 多抓机会 —— 被低估 4-5% 的热门
-    //   currently 被拒, 但持有到结算 + 止损下仍强 +EV (71% 胜率主导)。同仓位规模, 不放大风险, 只提机会捕获率。
-    //   win rate 监控: 若 <65% 说明 4% 信号噪声多 → 回 0.05; 守住 ~70% 则机会更多。
-    cfg_.paper_loop.sharp_only_min_edge = 0.04;
+    // 2026-06-09 验证实验 (专家组「降阈+by-bucket测CLV」+老板「持续优化迭代」): 0.04→0.025。决策诊断实测
+    //   当前市场 favorite 被低估幅度多在 1-3%, 全 <4% → 0 交易(无法验证)。降到 0.025 抓 2.5%+ 偏离恢复交易量,
+    //   配 λ haircut 0.25(小仓限噪声损失)。【验证假设】2.5-5% bucket 是否 +EV (by-(fair−fill_px)分桶看胜率/净)。
+    //   42 万回测只验过 ≥5%(77%); <5% 待实测。某桶 -EV(博彩老张警告的逆选噪声)→ 提阈回该桶上沿。
+    cfg_.paper_loop.sharp_only_min_edge = 0.025;
     // sharp 偏离上界 (2026-06-04 老板「这个差的太多了」): >15pt 的 sharp-市场 gap 判为滞后/错配假信号,
     //   不产单 (实测快变盘 CS2/网球 sharp 滞后 2.3s 造 20-26pt 假 gap → 逆市场正确移动下单必亏)。
     cfg_.paper_loop.sharp_max_gap = 0.15;
