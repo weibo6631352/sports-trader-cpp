@@ -311,14 +311,27 @@ public:
         attr.gas = 0.0;
         attr.slippage = 0.0;
         attr.spread = 0.0;
-        // per_market 分盘明细仍读 ledger_hub (分盘归因; 顶层已由 account 校准, 不再 sum 它)。
+        // per_market 分盘明细: realized+fee 取 ledger_hub (权威账本), **unrealized 取 live MTM**
+        //   (positions_fn_ → positions_mtm() 实时 microprice)。2026-06-10 老姜微观结构定位「误导金钱」bug:
+        //   旧版 pnl_net()=realized+【成交刻冻结的 unrealized】−fee, 该 unrealized 只在下一笔成交才重写,
+        //   导致分盘 PnL(−$0.64) 与顶层 account live 口径(+$0.81)同屏矛盾 (差 = (live−frozen)microprice×qty)。
+        //   改用 live unrealized → 分盘与顶栏/瀑布自洽。realized/fee 仍取账本 (真值)。
+        std::unordered_map<std::string, double> live_unrealized;  // market_id → Σ live pnl_unrealized
+        if (positions_fn_) {
+            for (const auto& h : positions_fn_()) {
+                live_unrealized[h.market_id] += h.pnl_unrealized;
+            }
+        }
         if (ledger_hub_ != nullptr) {
             for (const auto& [cond_id, _] : token_map_) {
                 const auto opt = ledger_hub_->Read(cond_id);
                 if (!opt.has_value() || !opt->valid) continue;
                 PnlPerMarket pm;
                 pm.market_id = cond_id;
-                pm.net_pnl = opt->pnl_net();
+                const auto it_lu = live_unrealized.find(cond_id);
+                const double unreal =
+                    (it_lu != live_unrealized.end()) ? it_lu->second : opt->pnl_unrealized;
+                pm.net_pnl = opt->pnl_realized + unreal - opt->pnl_fee;
                 attr.per_market.push_back(std::move(pm));
             }
         }
@@ -591,6 +604,12 @@ public:
             row.size = r.size_usdc;
             row.price = r.price;
             row.rejected_ts_ns = r.rejected_ts_ns;
+            // sub_reason: INVALID_INTENT 细分码 → 稳定字符串 (2026-06-10 观测缺口修复).
+            //   仅非 NONE(0) 时填, 让前端拒单表能区分 BOOK_TS_ZERO / TS_V2_STALE / ... 各根因.
+            if (r.sub_reason_code != 0) {
+                row.sub_reason = risk::to_string(
+                    static_cast<risk::InvalidIntentSubReason>(r.sub_reason_code));
+            }
             out.push_back(std::move(row));
         }
         return out;

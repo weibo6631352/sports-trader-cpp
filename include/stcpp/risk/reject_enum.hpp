@@ -100,6 +100,31 @@ enum class InvalidIntentSubReason : std::uint8_t {
         16,  // metadata 或 builder: 非 ^0x[0-9a-f]{64}$ 66chars [R3.9/R3.10] ← 从 14 移到 16
 };
 
+// InvalidIntentSubReason → 稳定字符串 (观测端点 /api/v1/risk/rejects 暴露; 2026-06-10 小郑/老姜
+//   观测缺口修复: INVALID_INTENT 之前只见 reason_code 不见细分码, 无法自诊断拒单根因).
+[[nodiscard]] constexpr const char* to_string(InvalidIntentSubReason s) noexcept {
+    switch (s) {
+        case InvalidIntentSubReason::NONE:                    return "NONE";
+        case InvalidIntentSubReason::BOOK_TS_ZERO:            return "BOOK_TS_ZERO";
+        case InvalidIntentSubReason::BOOK_TS_STALE:           return "BOOK_TS_STALE";
+        case InvalidIntentSubReason::NAN_OR_INF:              return "NAN_OR_INF";
+        case InvalidIntentSubReason::NEGATIVE:                return "NEGATIVE";
+        case InvalidIntentSubReason::ILLEGAL_TICK:            return "ILLEGAL_TICK";
+        case InvalidIntentSubReason::TS_ORDER_VIOLATED:       return "TS_ORDER_VIOLATED";
+        case InvalidIntentSubReason::TS_FUTURE:               return "TS_FUTURE";
+        case InvalidIntentSubReason::TS_UNKNOWN_SRC:          return "TS_UNKNOWN_SRC";
+        case InvalidIntentSubReason::MISSING_TOKEN_ID:        return "MISSING_TOKEN_ID";
+        case InvalidIntentSubReason::MISSING_CONDITION_ID:    return "MISSING_CONDITION_ID";
+        case InvalidIntentSubReason::INVALID_TOKEN_ID_FORMAT: return "INVALID_TOKEN_ID_FORMAT";
+        case InvalidIntentSubReason::BOOK_TOKEN_ID_MISMATCH:  return "BOOK_TOKEN_ID_MISMATCH";
+        case InvalidIntentSubReason::TS_V2_MISSING:           return "TS_V2_MISSING";
+        case InvalidIntentSubReason::TS_V2_STALE:             return "TS_V2_STALE";
+        case InvalidIntentSubReason::TS_V2_FUTURE:            return "TS_V2_FUTURE";
+        case InvalidIntentSubReason::INVALID_BYTES32_FORMAT:  return "INVALID_BYTES32_FORMAT";
+    }
+    return "NONE";
+}
+
 struct RejectDetail {
     RejectCode code;
     InvalidIntentSubReason sub_reason{InvalidIntentSubReason::NONE};

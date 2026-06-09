@@ -200,6 +200,7 @@ struct RiskRejectRow {
     double size{0.0};        // 被拒订单 size (USDC 名义)
     double price{0.0};       // 被拒订单报价
     std::int64_t rejected_ts_ns{0};
+    std::string sub_reason;  // INVALID_INTENT 细分码 (空=不适用; 2026-06-10 观测缺口修复)
 };
 
 // ============================================================

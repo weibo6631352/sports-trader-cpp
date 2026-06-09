@@ -98,6 +98,26 @@ export const REJECT_REASON_ZH: Record<string, string> = {
   RISK_LIMIT_EXCEEDED:         '风控额度超限',
 };
 
+// INVALID_INTENT 细分码 (后端 /api/v1/risk/rejects sub_reason; 2026-06-10 观测缺口修复)
+export const REJECT_SUB_REASON_ZH: Record<string, string> = {
+  BOOK_TS_ZERO:            '订单簿时间戳为0(数据未热)',
+  BOOK_TS_STALE:           '订单簿陈旧>60s',
+  NAN_OR_INF:              '数值NaN/Inf',
+  NEGATIVE:                '负值/越界(价格/数量/深度)',
+  ILLEGAL_TICK:            'tick非法(非0.001/0.01)',
+  TS_ORDER_VIOLATED:       '4时间戳链顺序违规',
+  TS_FUTURE:               '时间戳在未来',
+  TS_UNKNOWN_SRC:          '必填字段空(feature/signal id)',
+  MISSING_TOKEN_ID:        'token_id缺失',
+  MISSING_CONDITION_ID:    'condition_id缺失',
+  INVALID_TOKEN_ID_FORMAT: 'token_id格式非法',
+  BOOK_TOKEN_ID_MISMATCH:  '簿token与intent不一致',
+  TS_V2_MISSING:           'timestamp_ms为0',
+  TS_V2_STALE:             'timestamp_ms陈旧>60s',
+  TS_V2_FUTURE:            'timestamp_ms未来>5s',
+  INVALID_BYTES32_FORMAT:  'metadata/builder格式非法',
+};
+
 export const SIDE_ZH: Record<string, string> = { BUY: '买', SELL: '卖' };
 
 /** 从 condition_id 尾缀推断盘口类型中文名 */

@@ -97,6 +97,11 @@ struct RejectRow {
 
     // rejected_ts_ns: 拒单时刻 epoch ns (R-20: 来自 RiskDecision.decision_ts_ns)
     std::int64_t rejected_ts_ns{0};
+
+    // sub_reason_code: INVALID_INTENT 细分码 (InvalidIntentSubReason 的 uint8 值; 0=NONE).
+    //   仅 reason_code==INVALID_INTENT 时有意义 (老韩 invariant: 其余 code ⟹ NONE).
+    //   2026-06-10 观测缺口修复: 让 /api/v1/risk/rejects 能自诊断 INVALID_INTENT 根因.
+    std::uint8_t sub_reason_code{0};
 };
 
 // 编译期安全守护
@@ -234,6 +239,9 @@ template <typename OI, typename RD>
 
     // rejected_ts_ns (R-20: 来自 decision.decision_ts_ns)
     row.rejected_ts_ns = decision.decision_ts_ns;
+
+    // sub_reason_code: INVALID_INTENT 细分码投影 (2026-06-10 观测缺口修复).
+    row.sub_reason_code = static_cast<std::uint8_t>(decision.sub_reason);
 
     return row;
 }

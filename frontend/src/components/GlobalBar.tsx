@@ -71,7 +71,8 @@ export function GlobalBar() {
     const match = m.match(/stcpp_data_staleness_ms_max[^\n]*\s+([\d.]+)/);
     if (!match) return null;
     const ms = Number(match[1]);
-    const cls = ms < 100 ? 'stale-dim' : ms < 1000 ? 'stale-warn-text' : 'stale-err-text';
+    // 2026-06-10 对齐后端 sharp_max_staleness_sec=5.0s: Goalserve 正常锯齿 2-3.5s 不标红 (旧 1000ms 假报警)。
+    const cls = ms < 2000 ? 'stale-dim' : ms < 5000 ? 'stale-warn-text' : 'stale-err-text';
     return { text: `${ms.toFixed(0)} ms`, cls };
   };
 

@@ -328,6 +328,10 @@ inline std::string rejects(const StateProvider& sp, std::int64_t as_of_ns = -1) 
         b += json::num(r.price);
         b += ",\"rejected_ts\":";
         b += json::i64(r.rejected_ts_ns);
+        if (!r.sub_reason.empty()) {  // INVALID_INTENT 细分码 (2026-06-10 观测缺口修复)
+            b += ",\"sub_reason\":";
+            b += json::str(r.sub_reason);
+        }
         b += '}';
     }
     b += "]}";

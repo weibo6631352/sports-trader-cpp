@@ -165,6 +165,7 @@ export interface RiskReject {
   size: number;
   price: number;
   rejected_ts: number;
+  sub_reason?: string;  // INVALID_INTENT 细分码 (后端 2026-06-10 暴露; 仅 INVALID_INTENT 时有值)
 }
 
 export interface RiskRejects {

@@ -53,7 +53,7 @@ import { StatusDot, boolToDot } from './ui/StatusDot';
 import { StalenessHeatCell } from './ui/StalenessHeatCell';
 import { PipelineHealth } from './ui/PipelineHealth';
 import type { RiskReject } from '../types';
-import { REJECT_REASON_ZH, SIDE_ZH } from '../i18n';
+import { REJECT_REASON_ZH, REJECT_SUB_REASON_ZH, SIDE_ZH } from '../i18n';
 
 // ============================================================
 // Metrics 解析
@@ -368,15 +368,17 @@ function DataQualitySection() {
   const driftBps     = () => parseMetricVal(m(), 'stcpp_price_drift_bps');
 
   const stalenessColor = (): 'success' | 'warning' | 'error' | 'inherit' => {
+    // 2026-06-10 对齐后端 sharp_max_staleness_sec=5.0s (commit ee464bbf): Goalserve 正常锯齿
+    //   2-3.5s 不该标红 (旧 2000ms 阈值假报警)。<2s绿 / 2-5s黄(正常延迟) / >5s红(真陈旧=触门回退)。
     const v = stalenessMax();
     if (v == null) return 'inherit';
-    if (v < 500)  return 'success';
-    if (v < 2000) return 'warning';
+    if (v < 2000) return 'success';
+    if (v < 5000) return 'warning';
     return 'error';
   };
   const stalenessPct = () => {
     const v = stalenessMax();
-    return v != null ? Math.min(v / 2000, 1) * 100 : 0;
+    return v != null ? Math.min(v / 5000, 1) * 100 : 0;
   };
 
   const sampleBook = () => {
@@ -440,7 +442,7 @@ function DataQualitySection() {
         {/* staleness LinearProgress */}
         <Box sx={{ mb: 2 }}>
           <Typography variant="caption" sx={{ color: 'text.secondary', mb: 0.5, display: 'block' }}>
-            staleness 可视化 (相对 2000ms)
+            staleness 可视化 (&lt;2s绿 / 2-5s黄=Goalserve正常锯齿 / &gt;5s红=真陈旧触门)
           </Typography>
           <LinearProgress
             variant="determinate"
@@ -678,6 +680,7 @@ function RejectSection() {
                       <TableCell sx={{ fontSize: '10px', fontWeight: 700, py: 0.75 }}>时间</TableCell>
                       <TableCell sx={{ fontSize: '10px', fontWeight: 700, py: 0.75 }}>market_id</TableCell>
                       <TableCell sx={{ fontSize: '10px', fontWeight: 700, py: 0.75 }}>reason_code</TableCell>
+                      <TableCell sx={{ fontSize: '10px', fontWeight: 700, py: 0.75 }}>子原因</TableCell>
                       <TableCell sx={{ fontSize: '10px', fontWeight: 700, py: 0.75 }}>方向</TableCell>
                       <TableCell sx={{ fontSize: '10px', fontWeight: 700, py: 0.75, textAlign: 'right' }}>数量</TableCell>
                       <TableCell sx={{ fontSize: '10px', fontWeight: 700, py: 0.75, textAlign: 'right' }}>价格</TableCell>
@@ -701,6 +704,9 @@ function RejectSection() {
                               variant="outlined"
                               sx={{ fontSize: '9px', height: '16px' }}
                             />
+                          </TableCell>
+                          <TableCell sx={{ fontSize: '10px', py: 0.5, color: 'text.secondary' }}>
+                            {r.sub_reason ? (REJECT_SUB_REASON_ZH[r.sub_reason] ?? r.sub_reason) : '—'}
                           </TableCell>
                           <TableCell sx={{ fontFamily: 'monospace', fontSize: '10px', py: 0.5 }}>
                             {SIDE_ZH[r.side] ?? r.side}
