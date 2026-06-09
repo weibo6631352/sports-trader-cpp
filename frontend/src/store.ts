@@ -305,20 +305,22 @@ export async function refreshFills(): Promise<void> {
   // 累积 per-market: 全局环 churn 很快(模型驱动 100+笔/30s), 这里按盘留住成交历史 →
   //   盯盘展开任一盘(含已平仓 flat)都能看到它"多少价买的/卖的"。dedup + 每盘留 40 笔, 最新在前。
   const keyOf = (f: Fill) => `${f.as_of_ts}|${f.side}|${f.outcome}|${f.price}|${f.size_usdc}`;
-  const byM: Record<string, Fill[]> = { ...state.fillsByMarket };
   const touched = new Set<string>();
   for (const f of data.fills) touched.add(f.market_id);
-  for (const m of touched) {
-    const existing = byM[m] ?? [];
-    const seen = new Set(existing.map(keyOf));
-    const merged = existing.slice();
-    for (const f of data.fills) {
-      if (f.market_id === m && !seen.has(keyOf(f))) merged.push(f);
+  // produce patch 只动 touched 盘 (架构师 A4/B-9: 原 setState({fillsByMarket: 全量新对象}) 每5s 炸所有
+  //   展开盘 MarketFills 重渲染, 即便那盘成交没变)。produce 只标记被改的 market key → 只重渲染变了的那盘。
+  setState(produce((s) => {
+    for (const m of touched) {
+      const existing = s.fillsByMarket[m] ?? [];
+      const seen = new Set(existing.map(keyOf));
+      const merged = existing.slice();
+      for (const f of data.fills) {
+        if (f.market_id === m && !seen.has(keyOf(f))) merged.push(f);
+      }
+      merged.sort((a, b) => b.as_of_ts - a.as_of_ts);
+      s.fillsByMarket[m] = merged.slice(0, 40);
     }
-    merged.sort((a, b) => b.as_of_ts - a.as_of_ts);
-    byM[m] = merged.slice(0, 40);
-  }
-  setState({ fillsByMarket: byM });
+  }));
 }
 
 export async function refreshMappingStatus(): Promise<void> {
@@ -697,7 +699,7 @@ function parseEnvelope(raw: string): { mode: string; data: unknown; focusSeq: nu
 function connectSSE(): void {
   if (USE_STUB) { startFallbackPolling(); return; }  // stub 模式直接轮询(stub 供数)
   let url: string;
-  try { url = `${getBaseUrl()}/api/v1/stream?gz=1`; } catch { startFallbackPolling(); return; }
+  try { url = `${getBaseUrl()}/api/v1/stream`; } catch { startFallbackPolling(); return; }
 
   const es = new EventSource(url);
   _es = es;
@@ -819,7 +821,7 @@ function postHotFocus(conn: HotConn): void {
 
 /** 开一条 hot 连接 (返回 HotConn; cids 由 rebalance 随后赋值, hello 时 postHotFocus 上报)。 */
 function openHotConn(): HotConn {
-  const url = `${getBaseUrl()}/api/v1/stream/hot?gz=1`;
+  const url = `${getBaseUrl()}/api/v1/stream/hot`;
   const es = new EventSource(url);
   const conn: HotConn = {
     es, streamId: null, connected: false, cids: [], focusSeq: 0,
