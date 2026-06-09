@@ -1344,7 +1344,12 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (cfg_.rel_stop_pct > 0.0) {
         const auto pos_sel = position_ledger_.get_position(token_id);
         const double avg_e = (pos_sel && pos_sel->avg_entry_price > 0.0) ? pos_sel->avg_entry_price : 0.0;
-        if (avg_e > 0.0 && std::isfinite(mark_price) && mark_price < avg_e * (1.0 - cfg_.rel_stop_pct)) {
+        // 2026-06-09 (老姜裁决 + 实测 −5.80 灾难单配套): rel_stop 必须 sharp fair 也确认反转才割 —— 单看 mark 跌
+        //   会被【退化簿 bid 塌陷】误触发 (mark=best_bid 塌到 0.0129, 但 sharp fair 仍 0.79 = 信号没反转 → 把好仓
+        //   以 0.0129 甩卖 −5.80)。加 fair 门: 仅 p_fair_selected 也跌破均入−loss_cut_fair_band (= loss_cut 同阈, 真信号
+        //   反转) 才 force_stop taker 割; fair 仍看好(价格噪声/簿塌)→ 不割, 持有 (配套执行层 bid_not_degenerate 双保险)。
+        if (avg_e > 0.0 && std::isfinite(mark_price) && mark_price < avg_e * (1.0 - cfg_.rel_stop_pct)
+            && p_fair_selected < avg_e - cfg_.loss_cut_fair_band) {
             sel_target = 0.0;       // 强制平仓目标
             sel_force_stop = true;  // 绕 loss_cut HOLD
         }

@@ -248,7 +248,13 @@ struct ToxicityGateConfig {
         //     fair 噪声跳(|Δfair|>0.02)绕死区, 若它触发 taker 退出会把赢家在 coin-flip 点卖掉(实测胜率 71%→50%
         //     + churn 放血)。解耦后: 赢家持到 reservation_sell(卖高/近收敛)或结算; 只有真崩盘(rel_stop)才 taker 割。
         const bool taker_exit = in.predictive_unwind || in.force_stop;
-        const bool marketable = taker_exit ? (in.best_bid > 0.0)
+        // 执行护栏 (2026-06-09 老雷 + 老姜/小梁裁决, 配套实测 −5.80 灾难单): taker 退出绝不砸进【退化簿】——
+        //   best_bid 远低于 fair(≈reservation_buy_px, =fair−fee−margin) = 簿塌陷(MM 撤盘/feed 陈旧), 砸卖 = 白送仓位
+        //   (实测: fair 0.79 的 NO 被以 best_bid 0.0129 止损甩卖, realized −5.80)。bid 距 fair 超 kMaxTakerSlip → 不卖,
+        //   持有等簿恢复/真决出。真崩盘 loser: fair 也低 → reservation_buy 也低 → bid 仍 ≥ reservation_buy−slip → 正常割损放行。
+        constexpr double kMaxTakerSlip = 0.15;
+        const bool bid_not_degenerate = in.best_bid >= in.reservation_buy_px - kMaxTakerSlip;
+        const bool marketable = taker_exit ? (in.best_bid > 0.0 && bid_not_degenerate)
                                            : (in.best_bid > 0.0 && in.best_bid >= in.reservation_sell_px);
         if (!marketable) {
             a.reason = NoActReason::NotMarketable;

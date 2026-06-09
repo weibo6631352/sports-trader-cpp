@@ -738,7 +738,8 @@ BuildResult PaperDaemon::Build() {
     //   当前市场 favorite 被低估幅度多在 1-3%, 全 <4% → 0 交易(无法验证)。降到 0.025 抓 2.5%+ 偏离恢复交易量,
     //   配 λ haircut 0.25(小仓限噪声损失)。【验证假设】2.5-5% bucket 是否 +EV (by-(fair−fill_px)分桶看胜率/净)。
     //   42 万回测只验过 ≥5%(77%); <5% 待实测。某桶 -EV(博彩老张警告的逆选噪声)→ 提阈回该桶上沿。
-    cfg_.paper_loop.sharp_only_min_edge = 0.025;
+    // 2026-06-09 策略会 (老姜): 收紧入场, 0.025→0.03 (多点 cushion 抗 fair 漂移; 老姜「先 0.03 别一步到 0.04 starve」).
+    cfg_.paper_loop.sharp_only_min_edge = 0.03;
     // sharp 偏离上界 (2026-06-04 老板「这个差的太多了」): >15pt 的 sharp-市场 gap 判为滞后/错配假信号,
     //   不产单 (实测快变盘 CS2/网球 sharp 滞后 2.3s 造 20-26pt 假 gap → 逆市场正确移动下单必亏)。
     cfg_.paper_loop.sharp_max_gap = 0.15;
@@ -779,7 +780,12 @@ BuildResult PaperDaemon::Build() {
     //   专家组(小程量化信号): edge 本质=【sharp 偏离 + high-fair 滤噪】非"强 favorite 专属"; 弱 favorite 之前亏
     //   是【早平 churn】害的(已改持有到结算), 非 fair 太低。0.50 挡明显冷门/longshot(高噪声区), 放行 favorite +
     //   近均势 → 恢复交易量以便测 CLV 验真 edge。真伪由 CLV(p−c)定, 不靠 fair 阈猜。
-    cfg_.paper_loop.min_open_fair = 0.50;
+    // 2026-06-09 策略会收紧入场 0.50→0.58 (老姜+老板「收紧入场」): 实测 68% 亏损是 fair 场内反转, 更强 favorite
+    //   起点有更多 cushion 才反转不到 underdog。0.58 在 0.50(工作)与 0.65(starve 0 交易)之间, 保留交易量。
+    cfg_.paper_loop.min_open_fair = 0.58;
+    // 2026-06-09 风控老韩: 开同赛事相关性 taper (现 default false) —— 多 favorite=N倍押"热门赢"同向暴露, 冷门日齐崩;
+    //   taper 零成本(只柔性缩量级不碰方向, fail-open), 是比反向腿对冲更对的组合层护栏。
+    cfg_.paper_loop.corr_mult_enabled = true;
     // 再入场冷却 (2026-06-09 老板「查明真正原因」, 数据驱动): 同盘减仓/平仓后 30s 内禁 rebuy。根因: 手续费=头号
     //   成本 (实测 fee 4.4 > realized 亏 3.7), 源自 buy→卖光→rebuy 反复 4+ 往返 (每往返付双边费)。冷却打断循环;
     //   force_cross (进球/必赢/止损) 绕过, 保留对真机会反应。
