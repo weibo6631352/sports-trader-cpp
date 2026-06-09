@@ -532,6 +532,7 @@ public:
         //   供前端模型诊断 (声称 edge = fair−price; 模型偏差 = fair−mark; 看是否反指标/系统偏高)。
         double fair{0.0};              // 成交刻模型对【被交易边】的 fair (= p_fair_side, FILL 日志同源)
         double mark{0.0};              // 成交刻市场 mark price
+        double fee{0.0};               // 本笔手续费 (老板 2026-06-09「手续费逐笔体现」): size×fee_coef×p×(1−p)
     };
     // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
     [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200,

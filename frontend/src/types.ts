@@ -76,6 +76,7 @@ export interface Fill {
   cum_realized: number;  // 成交后累计已实现
   fair: number;          // 成交刻模型 fair (被交易边) — 模型诊断: 声称 edge=fair−price
   mark: number;          // 成交刻市场 mark — 模型诊断: 模型偏差=fair−mark
+  fee: number;           // 本笔手续费 (老板「逐笔体现」): size×fee_coef×p×(1−p)
   as_of_ts: number;
 }
 

@@ -885,6 +885,7 @@ BuildResult PaperDaemon::Build() {
             v.cum_realized = r.cum_realized;
             v.fair = r.fair;
             v.mark = r.mark;
+            v.fee = r.fee;   // 逐笔费 (老板「手续费逐笔体现」)
             out.push_back(std::move(v));
         }
         return out;

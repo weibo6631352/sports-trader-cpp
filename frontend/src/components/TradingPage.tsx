@@ -463,6 +463,7 @@ function MarketFills(props: { conditionId: string }) {
   const sellsAll = () => rows().filter((f) => f.side === 'sell');
   const sumU = (a: Fill[]) => a.reduce((s, f) => s + f.size_usdc, 0);
   const totalReal = () => sellsAll().reduce((s, f) => s + f.realized, 0);
+  const totalFee = () => rows().reduce((s, f) => s + (f.fee ?? 0), 0);  // 本盘累计费 (逐笔加总, 对账用)
   const buysFair = () => rows().filter((f) => f.side === 'buy' && f.fair > 0);
   const avgClaim = () => { const b = buysFair(); return b.length ? b.reduce((s, f) => s + (f.fair - f.price), 0) / b.length : NaN; };
   const claimEdge = (f: Fill) => f.side === 'buy' ? f.fair - f.price : f.price - f.fair;
@@ -473,7 +474,8 @@ function MarketFills(props: { conditionId: string }) {
       <div class="v8-pos-row" style={{ gap: '10px', 'font-size': '11px' }}>
         <span style={{ color: '#42a5f5', 'font-weight': 700 }}>买 {buysAll().length}笔 · {sumU(buysAll()).toFixed(1)}u</span>
         <span style={{ color: '#ffa726', 'font-weight': 700 }}>卖 {sellsAll().length}笔 · {sumU(sellsAll()).toFixed(1)}u</span>
-        <span class={`${totalReal() >= 0 ? 'pnl-pos' : 'pnl-neg'}`} style={{ 'margin-left': 'auto', 'font-weight': 700 }}>
+        <span class="mono-sub" style={{ 'margin-left': 'auto', color: '#c97' }} title="本盘累计手续费 (逐笔加总)">费 {totalFee().toFixed(2)}</span>
+        <span class={`${totalReal() >= 0 ? 'pnl-pos' : 'pnl-neg'}`} style={{ 'font-weight': 700 }}>
           已实现 {totalReal() >= 0 ? '+' : ''}{totalReal().toFixed(2)}
         </span>
       </div>
@@ -496,6 +498,7 @@ function MarketFills(props: { conditionId: string }) {
               </span>
               <span class="mono-sub" style={{ 'font-weight': 700, width: '52px', 'text-align': 'right' }} title="本笔数量(单位)">{f.size_usdc.toFixed(1)}u</span>
               <span class="mono-sub" style={{ width: '54px', 'text-align': 'right' }} title="成交价">@{f.price.toFixed(3)}</span>
+              <span class="mono-sub" style={{ color: '#c97', 'font-size': '10px', width: '46px', 'text-align': 'right' }} title="本笔手续费 (老板「逐笔体现」)">费{(f.fee ?? 0).toFixed(3)}</span>
               <span class="mono-sub" style={{ color: f.fair > 0 && Math.abs(claimEdge(f)) > 0.05 ? '#f44336' : '#777', 'font-size': '10px', width: '34px', 'text-align': 'right' }}
                 title="模型声称 edge (点)">{f.fair > 0 ? `${claimEdge(f) >= 0 ? '+' : ''}${(claimEdge(f) * 100).toFixed(0)}pt` : ''}</span>
               <span class={`mono-sub ${f.side === 'sell' ? (f.realized >= 0 ? 'pnl-pos' : 'pnl-neg') : ''}`} style={{ 'margin-left': 'auto' }} title="本笔已实现(卖出才有)">

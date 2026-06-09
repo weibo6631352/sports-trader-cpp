@@ -1749,6 +1749,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         fr.cum_realized = cum_realized_pnl_pusd_;
         fr.fair = p_fair_side;  // 模型对被交易边的 fair (FILL 日志 fair= 同源) — 前端算声称 edge
         fr.mark = mark_price;   // 成交刻市场 mark — 前端算模型偏差 fair−mark
+        fr.fee = fr.size_usdc * FeeCoefFor(condition_id) * fill.fill_price * (1.0 - fill.fill_price);  // 逐笔费 (老板「逐笔体现」)
         std::lock_guard<std::mutex> lk(fills_mu_);
         fills_ring_.push_back(std::move(fr));
         if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
