@@ -777,44 +777,9 @@ BuildResult PaperDaemon::Build() {
     //   仍保: devig_ok + sizing Step5(净正) + RM cap 链 (仓位上限) + R-11 纯 VirtualFill 不碰真钱。
     cfg_.paper_loop.paper_no_edge_gates = cfg_.enable_paper_fills;
 
-    // ---- 持仓管理 Stage 2 执行层/规模层验证旋钮 (env 可配, 2026-06-09) ----
-    //   §4.1 exec_margin / p(1−p) 死区 / 毒性冻结 / 相关性折扣 全部默认 OFF (struct 默认 = 现状)。
-    //   验证阶段经 env 分组开关 + 标定系数, 无需重编译 (start_paper.sh 设 env)。env 未设 → 保持 OFF。
-    //   真钱不涉 (R-11 paper); 改的是 paper 内 sizing/reservation, 默认不变行为。
-    {
-        auto env_d = [](const char* k, double def) {
-            const char* v = std::getenv(k);
-            return (v != nullptr && v[0] != '\0') ? std::atof(v) : def;
-        };
-        auto env_b = [](const char* k, bool def) {
-            const char* v = std::getenv(k);
-            return (v != nullptr && v[0] != '\0') ? (std::atoi(v) != 0) : def;
-        };
-        auto& pl = cfg_.paper_loop;
-        pl.deadband_fee_k = env_d("STCPP_DEADBAND_FEE_K", pl.deadband_fee_k);
-        pl.exec_margin_enabled = env_b("STCPP_EXEC_MARGIN", pl.exec_margin_enabled);
-        pl.exec_margin_k_tox = env_d("STCPP_EXEC_MARGIN_K_TOX", pl.exec_margin_k_tox);
-        pl.exec_margin_k_vol = env_d("STCPP_EXEC_MARGIN_K_VOL", pl.exec_margin_k_vol);
-        pl.exec_margin_cap = env_d("STCPP_EXEC_MARGIN_CAP", pl.exec_margin_cap);
-        pl.tox_gate_enabled = env_b("STCPP_TOX_GATE", pl.tox_gate_enabled);
-        pl.tox_gate_ofi_depth_thr = env_d("STCPP_TOX_OFI_DEPTH_THR", pl.tox_gate_ofi_depth_thr);
-        pl.tox_gate_bid_absence_thr = env_d("STCPP_TOX_BID_ABSENCE_THR", pl.tox_gate_bid_absence_thr);
-        pl.corr_mult_enabled = env_b("STCPP_CORR_MULT", pl.corr_mult_enabled);
-        pl.corr_taper_start = env_d("STCPP_CORR_TAPER_START", pl.corr_taper_start);
-        pl.corr_floor = env_d("STCPP_CORR_FLOOR", pl.corr_floor);
-        pl.corr_rho_default = env_d("STCPP_CORR_RHO_DEFAULT", pl.corr_rho_default);
-        pl.corr_event_cap_pusd = env_d("STCPP_CORR_EVENT_CAP_PUSD", pl.corr_event_cap_pusd);
-        if (pl.deadband_fee_k > 0.0 || pl.exec_margin_enabled || pl.tox_gate_enabled || pl.corr_mult_enabled) {
-            std::fprintf(stderr,
-                         "[paper_daemon] Stage2 验证旋钮: deadband_fee_k=%.2f exec_margin=%d(tox=%.3f "
-                         "vol=%.3f cap=%.3f) tox_gate=%d(ofi=%.3f absence=%.2f) corr=%d(taper=%.2f "
-                         "floor=%.2f rho=%.2f cap=%.0f)\n",
-                         pl.deadband_fee_k, pl.exec_margin_enabled ? 1 : 0, pl.exec_margin_k_tox,
-                         pl.exec_margin_k_vol, pl.exec_margin_cap, pl.tox_gate_enabled ? 1 : 0,
-                         pl.tox_gate_ofi_depth_thr, pl.tox_gate_bid_absence_thr, pl.corr_mult_enabled ? 1 : 0,
-                         pl.corr_taper_start, pl.corr_floor, pl.corr_rho_default, pl.corr_event_cap_pusd);
-        }
-    }
+    // 持仓管理 Stage 2 §4.1 乘子 (死区/exec_margin/毒性冻结/相关性折扣) 全部默认 OFF (struct 默认 = 现状)。
+    //   验证某组 = 在 position_controller.hpp/paper_loop.hpp 把该组默认翻 true + 重编译 (策略系数不进配置层,
+    //   老板 2026-06-09「不增加使用人员心智负担」)。验证流程见 docs/RUNBOOKS/posmgmt-stage2-validation-plan.md。
 
     paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
