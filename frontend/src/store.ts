@@ -809,7 +809,9 @@ function handleHotDetail(conn: HotConn, d: unknown): void {
     }
   }));
   for (const p of sharpPts) pushSharpTrend(p.cid, p.sharp, p.mid, t);
-  rebuildGroups();
+  // 行级订阅根治 (架构师 A1): hot 帧只写 conditionCache, 行组件直接响应式读它 (book/quote/summary) →
+  //   不再每帧 rebuildGroups 重建整树 (126ms×几十帧/s = 主线程占满卡死的根)。结构变 (events/grid/
+  //   positions/pnl/rejects/scores) 才 rebuildGroups。这是 450ms 节流的根治: 既无延迟又无整树开销。
 }
 
 /** 上报某条 hot 连接的 shard 给服务端 (focus POST)。 */

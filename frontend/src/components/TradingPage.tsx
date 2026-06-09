@@ -149,9 +149,11 @@ function stalenessClass(ms: number | null): string {
 function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onClick: () => void }) {
   const c = () => props.cond;
   const condId = () => c().conditionId;
-  const book = () => c().book;
-  const quote = () => c().quote;
-  const summary = () => c().summary;  // /grid 顶档摘要 (折叠态全市场 2s 批量供)
+  // 行级订阅 (架构师 A1 根治): book/quote/summary 直接响应式读 conditionCache, 不走 c() 树快照 →
+  //   hot 帧写 conditionCache 只重渲染这一行 (不再每帧重建整树 126ms)。c() 树只管结构 + posRows/pnl(低频)。
+  const book = () => state.conditionCache[condId()]?.book ?? null;
+  const quote = () => state.conditionCache[condId()]?.quote ?? null;
+  const summary = () => state.conditionCache[condId()]?.summary ?? null;  // /grid 顶档摘要
   const posRows = () => c().posRows;
 
   const fin = (v: number | null | undefined): number | null =>
@@ -993,11 +995,11 @@ function MarketExpandArea(props: { cond: ConditionData }) {
   const c = () => props.cond;
   return (
     <div class="v8-expand-area">
-      <ExpandBookPanel book={c().book} conditionId={c().conditionId} />
+      <ExpandBookPanel book={state.conditionCache[c().conditionId]?.book ?? null} conditionId={c().conditionId} />
       {/* 架构师 B-1: 父层 <Show> 守门 → ExpandQuotePanel 永远以非空 quote 挂载 (修 SolidJS early-return 致 quote
           首次 null 后响应式订阅不建立、永停"量化未接入"的反应性 bug)。quote 由 null→非空时 <Show> 重挂子组件。 */}
-      <Show when={c().quote} fallback={<div class="v8-expand-panel"><div class="v8-panel-title">量化 / 盘口</div><span class="mono-sub v8-dim" style={{ 'font-style': 'italic' }}>量化未接入 (等 quote)</span></div>}>
-        <ExpandQuotePanel quote={c().quote} conditionId={c().conditionId} />
+      <Show when={state.conditionCache[c().conditionId]?.quote} fallback={<div class="v8-expand-panel"><div class="v8-panel-title">量化 / 盘口</div><span class="mono-sub v8-dim" style={{ 'font-style': 'italic' }}>量化未接入 (等 quote)</span></div>}>
+        <ExpandQuotePanel quote={state.conditionCache[c().conditionId]?.quote ?? null} conditionId={c().conditionId} />
       </Show>
       <ExpandPosPanel posRows={c().posRows} rejectRows={c().rejectRows} perMarketPnl={c().perMarketPnl} conditionId={c().conditionId} />
     </div>
