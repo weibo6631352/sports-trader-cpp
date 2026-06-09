@@ -187,20 +187,23 @@ function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onCli
     if (posRows().length === 0) return null;
     const p = posRows()[0];
     const qty = Math.abs(Number(p.net_qty));
-    return `${p.outcome} ${(qty / 1000).toFixed(1)}k`;
+    // 修 0.0k bug (dogfood P1-1): net_qty 单位是 shares(~39u), /1000 截成 0.0k 一眼误判无仓。上千才用 k。
+    return `${p.outcome} ${qty >= 1000 ? (qty / 1000).toFixed(1) + 'k' : qty.toFixed(0) + 'u'}`;
   };
 
-  // 浮盈
+  // 本盘 net PnL (含已实现) —— 修「positions.pnl_realized 硬编码 0 → 折叠行丢已实现 (金融实测亏损低估73%)」:
+  //   改用逐盘权威 perMarketPnl (= ledger_hub 累计realized + 浮盈 − 费, 上轮已修对); 无则降级仅浮盈。
   const pnlTotal = () => {
+    const pm = c().perMarketPnl;
+    if (pm != null) return pm;
     if (posRows().length === 0) return null;
-    const v = posRows().reduce((acc, p) => acc + Number(p.pnl_realized) + Number(p.pnl_unrealized), 0);
-    return v;
+    return posRows().reduce((acc, p) => acc + Number(p.pnl_unrealized), 0);
   };
   const pnlFmt = () => {
     const v = pnlTotal();
     if (v == null) return null;
-    if (v >= 0) return `+$${v.toFixed(1)}`;
-    return `($${Math.abs(v).toFixed(1)})`;
+    if (Math.abs(v) < 0.01) return '$0.0';                       // 浮点残差当 0 (架构师 B-5)
+    return `${v >= 0 ? '+' : '−'}$${Math.abs(v).toFixed(1)}`;    // 统一 −$X 红 (去会计括号, UX Bug3)
   };
 
   // 拒单数
@@ -956,7 +959,11 @@ function MarketExpandArea(props: { cond: ConditionData }) {
   return (
     <div class="v8-expand-area">
       <ExpandBookPanel book={c().book} conditionId={c().conditionId} />
-      <ExpandQuotePanel quote={c().quote} conditionId={c().conditionId} />
+      {/* 架构师 B-1: 父层 <Show> 守门 → ExpandQuotePanel 永远以非空 quote 挂载 (修 SolidJS early-return 致 quote
+          首次 null 后响应式订阅不建立、永停"量化未接入"的反应性 bug)。quote 由 null→非空时 <Show> 重挂子组件。 */}
+      <Show when={c().quote} fallback={<div class="v8-expand-panel"><div class="v8-panel-title">量化 / 盘口</div><span class="mono-sub v8-dim" style={{ 'font-style': 'italic' }}>量化未接入 (等 quote)</span></div>}>
+        <ExpandQuotePanel quote={c().quote} conditionId={c().conditionId} />
+      </Show>
       <ExpandPosPanel posRows={c().posRows} rejectRows={c().rejectRows} perMarketPnl={c().perMarketPnl} conditionId={c().conditionId} />
     </div>
   );
@@ -1347,7 +1354,13 @@ function GlobalHealthBar() {
   const wssOk = () => state.status?.wss_connected?.clob === true;
   const signals = () => state.status?.signals_active_count ?? 0;
   const positions = () => state.positions?.positions?.filter((p) => Math.abs(Number(p.net_qty)) > 0) ?? [];
-  const floatPnl = () => positions().reduce((a, p) => a + Number(p.pnl_realized) + Number(p.pnl_unrealized), 0);
+  // 全局 net PnL —— 修「positions.pnl_realized 硬编码 0 → 健康栏亏损低估 73% (金融 P1-B)」: 用 account 权威口径
+  //   net_pnl (= equity − bankroll, 含已实现+浮盈−费), 不再逐盘加总(平仓盘已不在 positions 列表 → 结构性丢已实现)。
+  const floatPnl = () => {
+    const a = (state.account as any)?.account;
+    if (a && Number.isFinite(Number(a.net_pnl))) return Number(a.net_pnl);
+    return positions().reduce((s, p) => s + Number(p.pnl_unrealized), 0);
+  };
   const mktName = (cid: string) => state.conditionCache[cid]?.summary?.title || cid.slice(0, 8);
 
   // 异常扫描 (全局可算): 后端/WSS 断 + 持仓 sharp 反向 + 持仓发散 + 资金不足拒单。
@@ -1394,8 +1407,8 @@ function GlobalHealthBar() {
         <span class="v8-health-sep">·</span>
         <span class="mono-sub" title="活跃信号数">信号 {signals()}</span>
         <span class="v8-health-sep">·</span>
-        <span class="mono-sub" title="有持仓盘口数 + 合计浮盈亏">
-          持仓 {positions().length} · 浮盈 <b class={floatPnl() >= 0 ? 'pnl-pos' : 'pnl-neg'}>{floatPnl() >= 0 ? '+' : ''}${floatPnl().toFixed(1)}</b>
+        <span class="mono-sub" title="持仓盘口数 + 账户净盈亏 (account.net_pnl 权威口径: 已实现+浮盈−费, = equity−bankroll)">
+          持仓 {positions().length} · 净 <b class={floatPnl() >= 0 ? 'pnl-pos' : 'pnl-neg'}>{floatPnl() >= 0 ? '+' : '−'}${Math.abs(floatPnl()).toFixed(1)}</b>
         </span>
         <span class="v8-health-spacer" />
         <Show when={anomalies().length > 0} fallback={<span class="v8-health-ok">✓ 无异常</span>}>
