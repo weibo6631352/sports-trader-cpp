@@ -16,13 +16,13 @@ import { StatusBar } from './components/StatusBar';
 import { TradingPage } from './components/TradingPage';
 import { OpsPage } from './components/OpsPage';
 import { AnalyticsPage } from './components/AnalyticsPage';
-import { MarketDetailPage } from './components/MarketDetailPage';
 
+// 市场详情页已下线 (老板 2026-06-09「市场详情页面不要了, 以防再把功能误给市场详情页面; 主要关注盯盘页面」)。
+//   所有持仓/决策观测统一收口到盯盘页 (TradingPage), 单一信息源, 避免功能漂移到别处。
 const TABS = [
   { key: 'trading',   label: '盯盘 Trading' },
   { key: 'ops',       label: 'Ops 观测' },
   { key: 'analytics', label: 'PnL 分析' },
-  { key: 'market',    label: '市场详情' },
 ] as const;
 
 type TabKey = typeof TABS[number]['key'];
@@ -76,9 +76,6 @@ export function App() {
       </Show>
       <Show when={activeTab() === 'analytics'}>
         <AnalyticsPage />
-      </Show>
-      <Show when={activeTab() === 'market'}>
-        <MarketDetailPage />
       </Show>
     </div>
   );

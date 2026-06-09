@@ -793,6 +793,38 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
   const ageSecFor = (oc: string) => { const p = posFor(oc); if (!p) return NaN; const seen = posSeenAt(p.market_id, oc); return seen ? Math.max(0, (uiNow() - seen) / 1000) : NaN; };
   const ageText = (s: number) => !Number.isFinite(s) ? '—' : s < 60 ? `${Math.round(s)}s` : s < 3600 ? `${Math.floor(s / 60)}min` : `${(s / 3600).toFixed(1)}h`;
   const heldSides = () => ['YES', 'NO'].filter((oc) => { const p = posFor(oc); return p != null && Math.abs(num(p.net_qty)) > 0; });
+
+  // ---- 决策诊断 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 决出状态 / 保留价可成交 / 为何无成交 ----
+  //   决出状态 = must_win_lock 触发根因; 保留价 vs 市价 = 限价是否可成交; churn 往返 = 手续费放血。
+  const decided = () => { const q = quote(); return q ? num(q.game_decided_sign) : 0; };
+  const decidedText = () => decided() > 0 ? 'YES 方必赢 (应锁利)'
+    : decided() < 0 ? 'NO 方必赢 (YES 必输)' : '未决出';
+  const decidedCls = () => decided() > 0 ? 'v8-edge-pos' : decided() < 0 ? 'v8-edge-neg' : 'v8-dim';
+  // 控制器目标净仓 (post-乘子 signed; 0=只减不开新仓)。
+  const tgtSigned = () => { const q = quote(); return q ? num(q.target_signed_notional) : NaN; };
+  // 保留价 vs 本盘 token0(YES) 市价 → 可成交判定。
+  const t0book = () => state.conditionCache[props.conditionId]?.book?.token0 ?? null;
+  const resBuy = () => { const q = quote(); return q ? num(q.reservation_buy_px) : NaN; };
+  const resSell = () => { const q = quote(); return q ? num(q.reservation_sell_px) : NaN; };
+  const bAsk = () => { const b = t0book(); return b ? num(b.best_ask) : NaN; };
+  const bBid = () => { const b = t0book(); return b ? num(b.best_bid) : NaN; };
+  const buyable = () => Number.isFinite(resBuy()) && resBuy() > 0 && Number.isFinite(bAsk()) && bAsk() > 0 && bAsk() <= resBuy();
+  const sellable = () => Number.isFinite(resSell()) && resSell() > 0 && Number.isFinite(bBid()) && bBid() > 0 && bBid() >= resSell();
+  // 本盘 churn: 累积 fills 买/卖笔数 → 往返次数 (≥2 = 反复进出付双边费 = 手续费放血风险)。
+  const mktFills = () => state.fillsByMarket[props.conditionId] ?? [];
+  const nBuyF = () => mktFills().filter((f) => f.side === 'buy').length;
+  const nSellF = () => mktFills().filter((f) => f.side === 'sell').length;
+  const roundTrips = () => Math.min(nBuyF(), nSellF());
+  // 「为何此刻无成交」推断 (decision-diag 前端版)。
+  const noFillReason = () => {
+    const q = quote();
+    if (!q) return '无 quote';
+    if (q.devig_ok === false) return 'de-vig 失败 (无市场锚 fail-closed)';
+    if (Number.isFinite(tgtSigned()) && Math.abs(tgtSigned()) < 1e-9 && decided() === 0) return 'target=0 且未决出 → 无开仓信号 (sharp edge 不足/被门挡)';
+    if (Number.isFinite(tgtSigned()) && tgtSigned() > 0 && !buyable()) return '有 target 但 ask>买保留价 → 限价不追 (等回落)';
+    if (decided() > 0 && !buyable()) return '已决出该锁利但 ask 已收敛 → 无套利空间';
+    return '满足成交条件 (应有 intent)';
+  };
   return (
     <div class="v8-expand-panel">
       <div class="v8-panel-title">
@@ -845,6 +877,42 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
             <span class={`mono-strong ${(props.perMarketPnl ?? 0) >= 0 ? 'pnl-pos' : 'pnl-neg'}`}>{fmtUsdc(props.perMarketPnl ?? 0)}</span>
           </div>
         </Show>
+      </Show>
+
+      {/* 决策诊断 (老板 2026-06-09「查明真正原因」): 决出状态 / 保留价可成交 / churn / 为何无成交。
+          始终显示 (含无持仓时) → 一眼看出"为何这盘不开/不平/不锁利"。 */}
+      <Show when={quote()}>
+        <div class="v8-decision-diag" style={{ 'margin-top': '6px', 'border-top': '1px dashed #373737', 'padding-top': '6px' }}>
+          <div class="v8-pos-explain" title="game_decided_sign: 分运动比分+阶段判定该盘是否已决出 → 驱动 must_win_lock 锁利。未决出=不锁利。">
+            <span class="q-lbl" style={{ width: '52px' }}>决出</span>
+            <span class={`mono-sub ${decidedCls()}`} style={{ 'font-weight': 700 }}>{decidedText()}</span>
+            <Show when={quote()?.near_end}>
+              <span class="mono-sub" style={{ color: '#ffb74d', 'margin-left': '6px' }}>· 末段&gt;85%</span>
+            </Show>
+            <span class="mono-sub v8-dim" style={{ 'margin-left': 'auto' }} title="控制器目标净仓 (post-乘子 signed; 0=只减不开)">
+              目标 {Number.isFinite(tgtSigned()) ? `${tgtSigned() >= 0 ? '+' : ''}${tgtSigned().toFixed(1)}u` : '—'}
+            </span>
+          </div>
+          <div class="v8-pos-explain" title="保留价 = fair∓(费+margin) 限价界; 买: ask≤买保留价才成交 / 卖: bid≥卖保留价才成交。限价不追内生防churn。">
+            <span class="q-lbl" style={{ width: '52px' }}>可成交</span>
+            <span class={`mono-sub ${buyable() ? 'v8-edge-pos' : 'v8-dim'}`}>
+              买保留 {Number.isFinite(resBuy()) ? resBuy().toFixed(3) : '—'} vs ask {Number.isFinite(bAsk()) ? bAsk().toFixed(3) : '—'} {buyable() ? '✓可买' : '✗不追'}
+            </span>
+            <span class={`mono-sub ${sellable() ? 'v8-edge-pos' : 'v8-dim'}`} style={{ 'margin-left': '8px' }}>
+              卖保留 {Number.isFinite(resSell()) ? resSell().toFixed(3) : '—'} vs bid {Number.isFinite(bBid()) ? bBid().toFixed(3) : '—'} {sellable() ? '✓可卖' : '✗持有'}
+            </span>
+          </div>
+          <div class="v8-pos-explain" title="往返 = min(买笔, 卖笔); ≥2 = 反复进出, 每次往返付双边手续费 → 手续费放血 (账户级 fee 可吃掉毛利)。">
+            <span class="q-lbl" style={{ width: '52px' }}>churn</span>
+            <span class={`mono-sub ${roundTrips() >= 2 ? 'v8-edge-neg' : 'v8-dim'}`} style={{ 'font-weight': roundTrips() >= 2 ? 700 : 400 }}>
+              往返 {roundTrips()} (买{nBuyF()}/卖{nSellF()}){roundTrips() >= 2 ? ' · 手续费放血风险' : ''}
+            </span>
+          </div>
+          <div class="v8-pos-explain" title="前端综合推断当前无成交的主因 (服务端 decision-diag 的盯盘版)。">
+            <span class="q-lbl" style={{ width: '52px' }}>诊断</span>
+            <span class="mono-sub" style={{ color: '#bbb' }}>{noFillReason()}</span>
+          </div>
+        </div>
       </Show>
 
       {/* 成交 — 与订单簿/量化 AI 同 2s 节拍刷新 (走同一个 fetchDetailFor), 7 行对齐 */}
