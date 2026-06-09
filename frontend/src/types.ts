@@ -352,6 +352,8 @@ export interface Quote {
 
   // --- 真实 sizing 字段 ---
   fair_value: number;
+  /** 决策 fair 实际选用的来源 (后端 fair_src 直读, 非前端反推): sharp/derivative/score_prior/market_devig/ml */
+  fair_src?: string;
   market_mid: number;
   edge_bps: number;
   kelly_fraction: number;

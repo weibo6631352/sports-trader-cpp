@@ -80,8 +80,12 @@ struct QuoteFeatures {
     std::int64_t as_of_ts_ns{0};  // 快照发布时刻 (策略线程填入)
 
     // ---- 核心量化字段 (对应 QuoteParams 主字段) ----
-    // fair_value: de-vig fair prob ∈ (0, 1) (来自 FairValueEstimator)
+    // fair_value: 决策 fair prob ∈ (0,1) = ResolveFair 输出 p_fair (2026-06-10 修: 原误填 fv_result.p_yes()
+    //   = FairValueEstimator 中间估计, 与真·决策 fair 不符 → 显示误导 + ⚠源非sharp 误报)。
     double fair_value{0.0};
+    // fair_src: 决策 fair 真实选源码 (POD, 保 trivially-copyable lock-free 双缓冲): 0市场devig/1派生/2sharp/
+    //   3score-prior/4ml = FairSrc enum 序。序列化时映回字符串。观测「fair 到底用了什么源」。
+    std::int8_t fair_src{0};
     // market_mid: book microprice (best_bid + best_ask) / 2 附近
     double market_mid{0.0};
     // edge_bps: net edge = |fair_value - market_mid| × 10000 (bps)

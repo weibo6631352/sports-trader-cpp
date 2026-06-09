@@ -850,6 +850,7 @@ private:
         q.as_of_ts_ns = qf.as_of_ts_ns;
 
         q.fair_value = qf.fair_value;
+        q.fair_src = qf.fair_src;
         q.market_mid = qf.market_mid;
         q.edge_bps = qf.edge_bps;
         q.kelly_fraction = qf.kelly_fraction;

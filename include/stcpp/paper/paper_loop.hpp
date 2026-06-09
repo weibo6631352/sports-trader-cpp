@@ -986,6 +986,7 @@ private:
                               const SportsFeatures& sports,
                               const data::feature_store::FeatureStoreGameRow& ml_game_row,
                               const data::feature_store::FeatureStoreBookRow& ml_book_row,
+                              double decision_fair, std::int8_t fair_src_code,
                               std::int64_t no_book_ds_ts, std::int64_t no_book_ing_ts,
                               const polymarket::clob_wss::OrderBookFeatures* no_book_full = nullptr) noexcept;
 

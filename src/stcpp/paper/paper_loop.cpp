@@ -1267,6 +1267,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                          reservation.required_margin, game_decided_sign, near_end,
                          time_to_resolution_frac, g_time_x_lead, g_fld_signal,
                          g_remaining_sec, g_periods_won_home, g_periods_won_away, sports, game_row, book_row,
+                         p_fair, static_cast<std::int8_t>(fair_src_dbg),  // 真·决策 fair + 选源 (供显示)
                          mkt.no.present ? mkt.no.book.data_source_ts_ns : 0,
                          mkt.no.present ? mkt.no.book.ingestion_ts_ns : 0,
                          mkt.no.present ? &mkt.no.book : nullptr);  // v0.8 NO book 5档深度
@@ -2108,7 +2109,8 @@ void PaperLoop::PopulateFeatureColumns(
         qf.x_arb_free_edge = lock;  // >0 = 当前存在无风险锁定空间 (套利或锁损)
     }
 
-    // fair_value: 始终输出 (fv_result.p_yes()), 但 predict_ok=false 时消费方不可据此决策.
+    // fair_value: 此函数填【估计器特征】(fv_result.p_yes(), 训练捕获用)。【真·决策 fair (p_fair) + fair_src
+    //   覆盖在 TickOne PopulateFeatureColumns 调用后】(2026-06-10 修: 显示需决策 fair 非估计器, 见调用点)。
     qf.fair_value = fv_result.p_yes();
     // YES-canonical mark (feat=YES book; blend 与 capture 同源, BR-1 — 不用选边后 mark, 否则 NO 边偏)。
     const double yes_mark = std::isfinite(feat.microprice) ? feat.microprice : feat.mid;
@@ -2301,7 +2303,8 @@ void PaperLoop::PublishQuoteSnapshot(
     double time_to_resolution_frac, double g_time_x_lead, double g_fld_signal, double g_remaining_sec,
     std::int32_t g_periods_won_home, std::int32_t g_periods_won_away, const SportsFeatures& sports,
     const data::feature_store::FeatureStoreGameRow& ml_game_row,
-    [[maybe_unused]] const data::feature_store::FeatureStoreBookRow& ml_book_row, std::int64_t no_book_ds_ts,
+    [[maybe_unused]] const data::feature_store::FeatureStoreBookRow& ml_book_row, double decision_fair,
+    std::int8_t fair_src_code, std::int64_t no_book_ds_ts,
     std::int64_t no_book_ing_ts, const polymarket::clob_wss::OrderBookFeatures* no_book_full) noexcept {
     sizing::QuoteFeatures qf{};
     PopulateFeatureColumns(qf, condition_id, fv_result, mark_price, feat, cross_spread, no_microprice,
@@ -2309,6 +2312,12 @@ void PaperLoop::PublishQuoteSnapshot(
                            time_to_resolution_frac, g_time_x_lead, g_fld_signal, g_remaining_sec,
                            g_periods_won_home, g_periods_won_away, sports, no_book_ds_ts, no_book_ing_ts,
                            no_book_full);
+    // 显示用【真·决策 fair】覆盖估计器值 (2026-06-10 修「fair 到底用什么」: PopulateFeatureColumns 填的
+    //   qf.fair_value=fv_result.p_yes() 是 score-prior 估计器中间值, 与决策 fair 不符 → 前端"fair 0.59 vs
+    //   sharp 0.97"假象 + ⚠源非sharp 误报。决策真用 p_fair (ResolveFair: sharp 优先)。覆盖成决策值 + 暴露选源。
+    //   qf.fair_value/fair_src 仅供显示 (sizing/RM 走独立 p_fair_selected, 不受影响)。
+    qf.fair_value = decision_fair;
+    qf.fair_src = fair_src_code;
     // GS sharp 赔率版本时刻 (2026-06-05 老板「赔率延迟放合适位置」): now−它 = 驱动 sharp fair 的 inplay 赔率多旧。
     qf.sharp_data_source_ts_ns = ml_game_row.data_source_ts_ns;
 

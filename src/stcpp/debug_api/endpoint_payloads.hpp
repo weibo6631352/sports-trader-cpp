@@ -26,6 +26,18 @@
 
 namespace stcpp::debug_api::payload {
 
+// 决策 fair 选源码 → 人读串 (QuoteParams.fair_src; FairSrc 序: 0市场devig/1派生/2sharp/3score-prior/4ml)。
+//   前端「fair 到底用什么」直读, 不再靠 fair_value vs sharp_fair 反推 (反推会误报)。
+inline const char* fair_src_name(std::int8_t code) {
+    switch (code) {
+        case 1: return "derivative";
+        case 2: return "sharp";
+        case 3: return "score_prior";
+        case 4: return "ml";
+        default: return "market_devig";
+    }
+}
+
 // ---- status (= GET /status) ----
 // as_of_ns: >=0 → 输出顶层 as_of_ts (REST 传 now); <0 → 省略 (SSE: 信封已带 transport ts)
 inline std::string status(const HttpServer& hs, std::int64_t as_of_ns = -1) {
@@ -336,6 +348,9 @@ inline std::string grid_market_obj(const StateProvider& sp, const std::string& c
     if (q.found) {
         o += ",\"fair\":";
         o += json::num(q.fair_value);
+        o += ",\"fair_src\":\"";
+        o += fair_src_name(q.fair_src);
+        o += "\"";
         o += ",\"market_mid\":";
         o += json::num(q.market_mid);
         o += ",\"edge_bps\":";
@@ -606,6 +621,9 @@ inline std::string quote(const StateProvider& sp, const std::string& condition_i
     if (q.found) {
         b += ",\"fair_value\":";
         b += json::num(q.fair_value);
+        b += ",\"fair_src\":\"";
+        b += fair_src_name(q.fair_src);
+        b += "\"";
         b += ",\"market_mid\":";
         b += json::num(q.market_mid);
         b += ",\"edge_bps\":";

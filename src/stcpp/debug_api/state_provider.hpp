@@ -412,7 +412,8 @@ struct EventScore {
 struct QuoteParams {
     bool found{false};
     std::string market_id;
-    double fair_value{0.0};          // de-vig fair prob
+    double fair_value{0.0};          // 决策 fair = ResolveFair 输出 p_fair (sharp 优先; 非估计器中间值)
+    std::int8_t fair_src{0};         // 决策 fair 选源: 0市场devig/1派生/2sharp/3score-prior/4ml (FairSrc 序)
     double market_mid{0.0};          // book mid (microprice)
     double edge_bps{0.0};            // net edge in basis points
     double kelly_fraction{0.0};      // Kelly 仓位比例 (SizingCalculator 真实计算)

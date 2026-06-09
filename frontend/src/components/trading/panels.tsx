@@ -380,9 +380,17 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
   const hasMult    = () => Number.isFinite(lifeMult()) && Number.isFinite(clvMult());
   const rClvMean   = () => Number(q().rolling_clv_mean);
   const rClvN      = () => Number(q().rolling_clv_n ?? 0);
-  // sharp 冻结状态 (操盘手老彭: 要区分"实时/冻结等待/无信号"): fair 没跟 sharp(偏离>3点) = sharp 掉档,
-  //   引擎冻结持仓等 sharp 回来 (不是没信号, 是在等)。配后端 sharp-dropout 冻结逻辑。
-  const srcFrozen  = () => hasSharp() && Number.isFinite(fairValue()) && Math.abs(fairValue() - sharpFair()) > 0.03;
+  // 决策 fair 选源 (2026-06-10: 后端 fair_src 直读, 不再靠 fair vs sharp 反推 —— 反推会误报「源非sharp」,
+  //   因为旧版 fair_value 显示的是 score-prior 估计器中间值而非决策值。现 fair_value=决策值, fair_src=真实选源)。
+  const fairSrc    = () => String(q().fair_src ?? '');
+  const srcLabel   = () => ({ sharp: 'sharp', derivative: '派生', score_prior: 'score-prior',
+                              market_devig: '市场de-vig', ml: 'ml' } as Record<string, string>)[fairSrc()] || '—';
+  // sharp 掉档: sharp 赔率【现在有】(hasSharp) 但决策没用它, 回退到 score-prior/市场 de-vig。
+  //   = 引擎冻结持仓等 sharp 回来 (操盘手老彭「区分实时/冻结/无信号」) + 「卖飞赢家」根。
+  //   派生(derivative)是合法定价 (totals 等), 不算掉档不告警; 无 sharp 源的市场 hasSharp=false 也不告警。
+  const srcFrozen  = () => hasSharp() && fairSrc() !== 'sharp' && fairSrc() !== 'derivative';
+  const srcColor   = () => fairSrc() === 'sharp' ? '#4caf50' : fairSrc() === 'derivative' ? '#64b5f6'
+                          : srcFrozen() ? '#ff5252' : '#9e9e9e';
 
   return (
     <div class="v8-expand-panel">
@@ -421,11 +429,14 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
       <div class="v8-q-row">
         <span class="q-lbl">市场</span>
         <span class="mono-sub">{Number.isFinite(marketMid()) ? marketMid().toFixed(4) : '—'}</span>
-        <span class="q-lbl" style={{ 'margin-left': 'auto' }} title="决策 fair (砍大模型后 = sharp 锚 / score-prior / 市场 de-vig)">fair</span>
+        <span class="q-lbl" style={{ 'margin-left': 'auto' }} title="决策 fair = ResolveFair 输出 (p_fair)。来源见右侧「源:」标签 (后端 fair_src 直读)。">fair</span>
         <span class="mono-strong">{Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}</span>
-        <Show when={hasSharp() && Number.isFinite(fairValue()) && Math.abs(fairValue() - sharpFair()) > 0.03}>
+        {/* 源:X — 决策 fair 实际选用的来源 (直接回答「fair 到底用什么」; 后端 fair_src, 非反推) */}
+        <span class="mono-sub" style={{ color: srcColor(), 'font-weight': 700, 'font-size': '10px', 'margin-left': '4px' }}
+          title="决策 fair 实际选用来源 (后端 fair_src 直读): sharp=bet365 in-play de-vig(最优) / 派生=衍生盘合法定价 / score-prior=比分先验(sharp 不可用时回退) / 市场de-vig=纯市场价。绿=sharp, 蓝=派生, 红=sharp 掉档回退。">源:{srcLabel()}</span>
+        <Show when={srcFrozen()}>
           <span class="mono-sub" style={{ color: '#ff5252', 'font-weight': 700, 'font-size': '9px', 'margin-left': '4px' }}
-            title="决策 fair 偏离 sharp >3点 = ResolveFair 此刻没用 sharp(走了 score-prior/市场 de-vig) → sharp 被判无效(无 bet365 odds / orientation 翻转 / 陈旧>3s)。这是「低估 YES → 卖太便宜/不持赢家」的根。">⚠源非sharp</span>
+            title="sharp 赔率现在有, 但决策没用它(回退 score-prior/市场 de-vig) → sharp 被判无效(orientation 翻转 / 陈旧>3s)。引擎冻结持仓等 sharp 回来。这是「低估 YES → 卖太便宜/不持赢家」的根。">⚠掉档</span>
         </Show>
       </div>
 
