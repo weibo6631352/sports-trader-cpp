@@ -470,6 +470,15 @@ function MarketFills(props: { conditionId: string }) {
   const buysFair = () => rows().filter((f) => f.side === 'buy' && f.fair > 0);
   const avgClaim = () => { const b = buysFair(); return b.length ? b.reduce((s, f) => s + (f.fair - f.price), 0) / b.length : NaN; };
   const claimEdge = (f: Fill) => f.side === 'buy' ? f.fair - f.price : f.price - f.fair;
+  // 兑现指标 (金融小梁/操盘手: operator 判策略好坏的最小集 — 入场声称之外, 看实现的胜率/EV/费拖累)。
+  const closes = () => sellsAll().filter((f) => Math.abs(f.size_usdc) > 0.01);     // 实质平仓 (滤 dust)
+  const winsN = () => closes().filter((f) => f.realized > 0).length;
+  const lossN = () => closes().filter((f) => f.realized < 0).length;
+  const winRate = () => { const n = winsN() + lossN(); return n ? winsN() / n : NaN; };
+  const avgWin = () => { const w = closes().filter((f) => f.realized > 0); return w.length ? w.reduce((s, f) => s + f.realized, 0) / w.length : 0; };
+  const avgLoss = () => { const l = closes().filter((f) => f.realized < 0); return l.length ? Math.abs(l.reduce((s, f) => s + f.realized, 0) / l.length) : 0; };
+  const evTrade = () => { const wr = winRate(); return Number.isFinite(wr) ? wr * avgWin() - (1 - wr) * avgLoss() : NaN; };  // 单笔EV(费前gross)
+  const feeDrag = () => { const g = Math.abs(totalReal()); return g > 0.01 ? totalFee() / g : NaN; };                        // 费/|毛已实现|
   return (
     <>
       <div class="v8-reject-title">成交</div>
@@ -482,6 +491,14 @@ function MarketFills(props: { conditionId: string }) {
           已实现 {totalReal() >= 0 ? '+' : ''}{totalReal().toFixed(2)}
         </span>
       </div>
+      {/* 兑现指标 (金融/操盘手): 胜率 / 单笔EV(费前) / 费拖累 — operator 判这盘策略行不行的最小集 */}
+      <Show when={closes().length >= 1}>
+        <div class="mono-sub" style={{ 'font-size': '10px', display: 'flex', gap: '8px', 'margin-bottom': '2px' }}>
+          <span title="平仓胜率 = 盈利平仓笔 / 总平仓笔 (实质平仓, 滤 dust)">胜率 {Number.isFinite(winRate()) ? (winRate() * 100).toFixed(0) + '%' : '—'} ({winsN()}/{closes().length})</span>
+          <span class={evTrade() >= 0 ? 'pnl-pos' : 'pnl-neg'} title="单笔EV(费前) = 胜率×均盈 − 败率×均亏; <0 = 负期望策略">EV {Number.isFinite(evTrade()) ? (evTrade() >= 0 ? '+' : '') + evTrade().toFixed(3) : '—'}</span>
+          <span class={feeDrag() > 0.5 ? 'pnl-neg' : ''} style={{ 'margin-left': 'auto', 'font-weight': feeDrag() > 0.5 ? 700 : 400 }} title="费拖累 = 累计费 / |毛已实现|; >50% = churn 吃光 edge (头号成本)">费拖累 {Number.isFinite(feeDrag()) ? (feeDrag() * 100).toFixed(0) + '%' : '—'}</span>
+        </div>
+      </Show>
       <Show when={Number.isFinite(avgClaim())}>
         <div class="mono-sub" style={{ color: avgClaim() > 0.05 ? '#f44336' : '#888', 'font-size': '10px', 'margin-bottom': '2px' }}
           title="本盘买入时模型平均声称便宜多少 (>5点=模型对此盘系统性高估)">
@@ -628,7 +645,7 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
   const edgeBps    = () => Number(q().edge_bps);
   const kelly      = () => Number(q().kelly_fraction);
   const notional   = () => Number(q().suggested_notional);
-  const edgePos    = () => fairValue() >= marketMid();
+  const edgePos    = () => Number.isFinite(marketMid()) && marketMid() > 0 && fairValue() >= marketMid();  // NaN护栏: market_mid=0 不算正edge(架构师 B-7)
   const edgePct    = () => Math.min(Math.abs(edgeBps()) / 100, 1) * 100;
   const kellyPos   = () => Number.isFinite(kelly()) && kelly() > 0;
   // 可观测: fair 来源 / 数据管道 (老板 2026-06-02: 把后台可观测搬到前端大模型下面)
@@ -660,6 +677,9 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
   const hasMult    = () => Number.isFinite(lifeMult()) && Number.isFinite(clvMult());
   const rClvMean   = () => Number(q().rolling_clv_mean);
   const rClvN      = () => Number(q().rolling_clv_n ?? 0);
+  // sharp 冻结状态 (操盘手老彭: 要区分"实时/冻结等待/无信号"): fair 没跟 sharp(偏离>3点) = sharp 掉档,
+  //   引擎冻结持仓等 sharp 回来 (不是没信号, 是在等)。配后端 sharp-dropout 冻结逻辑。
+  const srcFrozen  = () => hasSharp() && Number.isFinite(fairValue()) && Math.abs(fairValue() - sharpFair()) > 0.03;
 
   return (
     <div class="v8-expand-panel">
@@ -678,7 +698,9 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
           <span class={`mono-sub${sharpDev() >= 0 ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
             {fmtBps(sharpDev() * 10000)}
           </span>
-          <span class="mono-sub" style={{ 'color': '#4caf50' }}>← 决策 fair</span>
+          <Show when={srcFrozen()} fallback={<span class="mono-sub" style={{ 'color': '#4caf50' }}>← 决策 fair</span>}>
+            <span class="mono-sub" style={{ 'color': '#ffb74d', 'font-weight': 700 }} title="sharp 掉档 (fair 已不用它, 走了 score-prior), 引擎冻结持仓等 sharp 回来/结算 —— 不是没信号, 是在等。">⏸ 冻结·等sharp</span>
+          </Show>
           {/* GS sharp 赔率延迟: now − Goalserve 赔率版本时刻 (Goalserve 每~2-3s 出一版+落后bet365~2.3s, 3s内属正常) */}
           <Show when={Number.isFinite(sharpAgeS())}>
             <span class="mono-sub" style={{ 'margin-left': 'auto', 'font-weight': '700', color: sharpAgeColor() }}
@@ -825,14 +847,25 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
   const nBuyF = () => mktFills().filter((f) => f.side === 'buy').length;
   const nSellF = () => mktFills().filter((f) => f.side === 'sell').length;
   const roundTrips = () => Math.min(nBuyF(), nSellF());
-  // 「为何此刻无成交」推断 (decision-diag 前端版)。
+  // sharp 冻结检测 (操盘手老彭): fair 偏离 sharp >3点 = sharp 掉档, 引擎冻结持仓等回来。
+  const qSharp = () => { const q = quote(); return q ? num(q.sharp_fair ?? -1) : -1; };
+  const qFair  = () => { const q = quote(); return q ? num(q.fair_value) : NaN; };
+  const frozen = () => qSharp() > 0 && qSharp() < 1 && Number.isFinite(qFair()) && Math.abs(qFair() - qSharp()) > 0.03;
+  // 「为何此刻无成交」推断 (decision-diag 前端版)。区分【有仓不追】vs【无仓不开】(dogfood/操盘手: 别一句话糊弄)。
   const noFillReason = () => {
     const q = quote();
     if (!q) return '无 quote';
     if (q.devig_ok === false) return 'de-vig 失败 (无市场锚 fail-closed)';
-    if (Number.isFinite(tgtSigned()) && Math.abs(tgtSigned()) < 1e-9 && decided() === 0) return 'target=0 且未决出 → 无开仓信号 (sharp edge 不足/被门挡)';
+    const held = heldSides().length > 0;
+    if (Number.isFinite(tgtSigned()) && Math.abs(tgtSigned()) < 1e-9 && decided() === 0) {
+      if (held) return frozen()
+        ? '持仓冻结中 (sharp 掉档 → 不按降级信号减/平, 等 sharp 回来/结算)'
+        : '已持仓, target=0 → sharp edge 不支持加仓 (持有等收敛/结算, 非卡死)';
+      return '无持仓 + target=0 → 无开仓信号 (sharp edge 不足/被门挡)';
+    }
     if (Number.isFinite(tgtSigned()) && tgtSigned() > 0 && !buyable()) return '有 target 但 ask>买保留价 → 限价不追 (等回落)';
     if (decided() > 0 && !buyable()) return '已决出该锁利但 ask 已收敛 → 无套利空间';
+    if (resSell() > 1.0 || resBuy() < 0) return '⚠ 保留价逃出[0,1] (fair 非 sharp 导致) → 当前不可成交';
     return '满足成交条件 (应有 intent)';
   };
   return (
@@ -910,6 +943,8 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
             </span>
             <span class={`mono-sub ${sellable() ? 'v8-edge-pos' : 'v8-dim'}`} style={{ 'margin-left': '8px' }}>
               卖保留 {Number.isFinite(resSell()) ? resSell().toFixed(3) : '—'} vs bid {Number.isFinite(bBid()) ? bBid().toFixed(3) : '—'} {sellable() ? '✓可卖' : '✗持有'}
+              <Show when={resSell() > 1.0}><span style={{ color: '#ff5252', 'font-weight': 700, 'margin-left': '4px' }} title="卖保留价 >1 = 逃出概率空间 (fair 非 sharp 把它推过 1) → 任何 bid 都不可能 ≥ 它 → 静默不可卖。dogfood P1-3。">⚠&gt;1</span></Show>
+              <Show when={!sellable() && Number.isFinite(resSell()) && resSell() <= 1.0 && Number.isFinite(bBid())}><span class="mono-sub v8-dim" style={{ 'margin-left': '4px' }} title="差多少点 bid 才会触发减仓">(需 bid↑{((resSell() - bBid()) * 100).toFixed(0)}点)</span></Show>
             </span>
           </div>
           <div class="v8-pos-explain" title="往返 = min(买笔, 卖笔); ≥2 = 反复进出, 每次往返付双边手续费 → 手续费放血 (账户级 fee 可吃掉毛利)。">
@@ -1369,27 +1404,31 @@ function GlobalHealthBar() {
     const out: Array<{ sev: 'err' | 'warn'; text: string }> = [];
     if (state.healthz && !backendOk()) out.push({ sev: 'err', text: '后端离线 · 数据停更' });
     if (state.status && !wssOk()) out.push({ sev: 'err', text: '订单簿 WSS 断连 · 价可能过期' });
+    const divergeSeen = new Set<string>();  // 发散是 per-market, 同盘 YES+NO 两条 position 别重复告警 (架构师 B-4)
     for (const p of positions()) {
       const cid = p.market_id;
-      const sy = state.conditionCache[cid]?.summary?.sharp;  // YES sharp
+      // 优先 quote.sharp_fair (展开按需拉, 更鲜) 回退 summary.sharp (grid 2s 批量) — 防漏报错向仓 (dogfood#5/操盘手Bug4)
+      const sq = state.conditionCache[cid]?.quote;
+      const qSh = Number(sq?.sharp_fair ?? -1);
+      const sy = (qSh > 0 && qSh < 1) ? qSh : state.conditionCache[cid]?.summary?.sharp;  // YES sharp
       const entry = Number(p.avg_entry_price);
       if (sy != null && sy > 0 && sy < 1 && Number.isFinite(entry)) {
         const sSide = p.outcome === 'YES' ? sy : 1 - sy;        // 本边 sharp
         const dist = sSide - entry;                              // <0 = sharp 已跌破入场 = 持仓亏向
         if (dist < -0.02) out.push({ sev: 'warn', text: `${mktName(cid)} ${p.outcome} · sharp 已反向 ${(dist * 100).toFixed(1)}点` });
       }
-      // 发散告警: 优先服务端 conv_rate (SharpFairTrack, 持久权威), 回退前端自攒环。
-      const sq = state.conditionCache[cid]?.quote;
+      // 发散告警 (per-market, 去重): 优先服务端 conv_rate (SharpFairTrack, 持久权威), 回退前端自攒环。
+      if (divergeSeen.has(cid)) continue;
       const srvN = Number(sq?.sharp_samples ?? 0);
       const srvC = Number(sq?.sharp_conv_rate ?? Number.NaN);
       if (srvN >= 2 && Number.isFinite(srvC)) {
-        if (srvC > 1e-4) out.push({ sev: 'warn', text: `${mktName(cid)} · 持仓发散中 (市场远离 sharp)` });
+        if (srvC > 1e-4) { out.push({ sev: 'warn', text: `${mktName(cid)} · 持仓发散中 (市场远离 sharp)` }); divergeSeen.add(cid); }
       } else {
         const ring = getSharpTrend(cid);
         if (ring.length >= 3) {
           const now = ring[ring.length - 1], past = ring[Math.max(0, ring.length - 6)];
           const gNow = Math.abs(now.sharp - now.mid), gPast = Math.abs(past.sharp - past.mid);
-          if (gNow > gPast * 1.3 && gNow > 0.01) out.push({ sev: 'warn', text: `${mktName(cid)} · 持仓发散中 (市场远离 sharp)` });
+          if (gNow > gPast * 1.3 && gNow > 0.01) { out.push({ sev: 'warn', text: `${mktName(cid)} · 持仓发散中 (市场远离 sharp)` }); divergeSeen.add(cid); }
         }
       }
     }
@@ -1447,13 +1486,6 @@ export function TradingPage() {
     const w = wssStatus();
     if (!w) return false; // 后端未连接时 StatusBar 已有"后端离线"提示，不重复
     return !w.clob; // 仅 clob 断 = 真订单簿断连 (报警有意义)
-  };
-  const wssPartialDown = () => {
-    const w = wssStatus();
-    if (!w) return false;
-    const vals = [w.clob]; // 仅 clob 计入 (user_channel 未用, 不误报)
-    const downCount = vals.filter((v) => !v).length;
-    return downCount > 0 && downCount < 1; // clob 单通道无"部分断"概念 → 恒 false
   };
 
   // P1 空态: 是否有成交 (判断显示 PnL 语境)
@@ -1549,14 +1581,6 @@ export function TradingPage() {
           sx={{ borderRadius: 0, py: 0.5, px: 2, fontSize: '13px', fontWeight: 600 }}
         >
           WSS 全部断连 · 订单簿数据可能已过期 · 请检查网络或 /status
-        </Alert>
-      </Show>
-      <Show when={wssPartialDown()}>
-        <Alert
-          severity="warning"
-          sx={{ borderRadius: 0, py: 0.5, px: 2, fontSize: '13px' }}
-        >
-          WSS 部分断连 · 部分市场数据可能已过期
         </Alert>
       </Show>
 
