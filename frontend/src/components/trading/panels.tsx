@@ -394,13 +394,17 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
   // 候选 fair 全集 (2026-06-10 老板「所有 fair 都显示, 正在用哪个标记, 而非乱切」): 列出 ResolveFair
   //   看到的每个源的值 + 在 fair_src 标记决出的。各源值本身不跳, 跳的只是「正在用哪个」。-1=该源不适用。
   const candList = () => {
-    const c = q().fair_cands; if (!c) return [] as { label: string; val: number; active: boolean }[];
+    const c = q().fair_cands;
+    if (!c) return [] as { label: string; val: number; active: boolean; frozen: boolean }[];
     const s = fairSrc();
+    // sharp 掉档冻结: sharp 候选有值但决策回退到 score-prior/市场 (非派生) → 引擎冻结等 sharp 回来。
+    //   挂在 sharp 候选行 (老板「显示在候选 fair 对应行」), 不再占第一行。
+    const sharpFrozen = Number(c.sharp) >= 0 && (s === 'score_prior' || s === 'market_devig');
     return [
-      { label: '派生',       val: Number(c.derivative),  active: s === 'derivative' },
-      { label: 'sharp',      val: Number(c.sharp),       active: s === 'sharp' },
-      { label: 'score-prior',val: Number(c.score_prior), active: s === 'score_prior' },
-      { label: '市场de-vig', val: Number(c.devig),       active: s === 'market_devig' },
+      { label: '派生',       val: Number(c.derivative),  active: s === 'derivative',  frozen: false },
+      { label: 'sharp',      val: Number(c.sharp),       active: s === 'sharp',        frozen: sharpFrozen },
+      { label: 'score-prior',val: Number(c.score_prior), active: s === 'score_prior',  frozen: false },
+      { label: '市场de-vig', val: Number(c.devig),       active: s === 'market_devig', frozen: false },
     ].filter(r => Number.isFinite(r.val) && r.val >= 0);
   };
 
@@ -421,8 +425,9 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
           <span class={`mono-sub${sharpDev() >= 0 ? ' edge-pos' : ' edge-neg'}`} style={{ 'font-weight': '700' }}>
             {fmtBps(sharpDev() * 10000)}
           </span>
-          <Show when={srcFrozen()} fallback={<span class="mono-sub" style={{ 'color': '#4caf50' }}>← 决策 fair</span>}>
-            <span class="mono-sub" style={{ 'color': '#ffb74d', 'font-weight': 700 }} title="sharp 掉档 (fair 已不用它, 走了 score-prior), 引擎冻结持仓等 sharp 回来/结算 —— 不是没信号, 是在等。">⏸ 冻结·等sharp</span>
+          {/* sharp 是否为决出源 (冻结/掉档标记已挪到下方候选 fair 的 sharp 行 — 老板 2026-06-10) */}
+          <Show when={fairSrc() === 'sharp'}>
+            <span class="mono-sub" style={{ 'color': '#4caf50' }}>← 决策 fair</span>
           </Show>
           {/* GS sharp 赔率延迟: now − Goalserve 赔率版本时刻 (Goalserve 每~2-3s 出一版+落后bet365~2.3s, 3s内属正常) */}
           <Show when={Number.isFinite(sharpAgeS())}>
@@ -445,11 +450,7 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
         <span class="mono-strong">{Number.isFinite(fairValue()) ? fairValue().toFixed(4) : '—'}</span>
         {/* 源:X — 决策 fair 实际选用的来源 (直接回答「fair 到底用什么」; 后端 fair_src, 非反推) */}
         <span class="mono-sub" style={{ color: srcColor(), 'font-weight': 700, 'font-size': '10px', 'margin-left': '4px' }}
-          title="决策 fair 实际选用来源 (后端 fair_src 直读): sharp=bet365 in-play de-vig(最优) / 派生=衍生盘合法定价 / score-prior=比分先验(sharp 不可用时回退) / 市场de-vig=纯市场价。绿=sharp, 蓝=派生, 红=sharp 掉档回退。">源:{srcLabel()}</span>
-        <Show when={srcFrozen()}>
-          <span class="mono-sub" style={{ color: '#ff5252', 'font-weight': 700, 'font-size': '9px', 'margin-left': '4px' }}
-            title="sharp 赔率现在有, 但决策没用它(回退 score-prior/市场 de-vig) → sharp 被判无效(orientation 翻转 / 陈旧>3s)。引擎冻结持仓等 sharp 回来。这是「低估 YES → 卖太便宜/不持赢家」的根。">⚠掉档</span>
-        </Show>
+          title="决策 fair 实际选用来源 (后端 fair_src 直读): sharp=bet365 in-play de-vig(最优) / 派生=衍生盘合法定价 / score-prior=比分先验(sharp 不可用时回退) / 市场de-vig=纯市场价。绿=sharp, 蓝=派生, 红=sharp 掉档回退(详见下方候选 fair 的 sharp 行)。">源:{srcLabel()}</span>
       </div>
 
       {/* 候选 fair 全集 (老板「所有 fair 都显示, 正在用哪个标记, 而非乱切」): 各源值不跳, 只「正在用」会切 */}
@@ -463,6 +464,10 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
                 <span class="mono-sub" style={{ 'min-width': '78px', color: 'inherit' }}>{r.label}</span>
                 <span class="mono-strong" style={{ color: 'inherit' }}>{r.val.toFixed(4)}</span>
                 <Show when={r.active}><span class="mono-sub" style={{ color: '#4caf50', 'font-weight': 700 }}>✓ 正在用</span></Show>
+                <Show when={r.frozen}>
+                  <span class="mono-sub" style={{ color: '#ffb74d', 'font-weight': 700 }}
+                    title="sharp 赔率现在有值, 但被判无效(orientation 翻转 / 陈旧>3s)未被决策采用 → 引擎冻结持仓等 sharp 回来, 不按当前回退源贱卖赢家。这是「卖飞赢家」的防线。">⏸ 冻结·等回</span>
+                </Show>
               </div>
             )}
           </For>
