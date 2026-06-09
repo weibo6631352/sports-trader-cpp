@@ -1155,6 +1155,15 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const bool tradeable_fair = has_real_fair || cfg_.paper_no_edge_gates;
     double target_mag =
         (tradeable_fair && sizing_out.valid && devig_ok && net_ev_ok) ? sizing_out.suggested_notional : 0.0;
+    // 必输方开仓护栏 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」, 数据驱动): 被选边【模型 fair】太低 = 模型
+    //   自己认为该边胜率极低 (近必输 longshot) → 不开新仓 (target=0; 减仓/平仓/must_win 不受限)。
+    //   根因: 实测灾难性亏损全是「买便宜必输方→结算归零」(如网球 down-a-set underdog fair=0.11 买 0.08 → 崩到
+    //   0.03, 单笔 −0.87/−2.00); 而分运动 game_decided 必输保护对 tennis best-of-3 永不触发 (set 差+phase 边界
+    //   bug: set1/3 set 差恒 0, set2 phase 恰=0.5 不 >0.5)。用【模型 fair】(非市场价地板, 老板「用模型」) 当护栏:
+    //   下侧 (到 0) 远大于 edge 的低 fair longshot 永远 −EV, 不该开。default 0=关 (lib/契约不变); daemon 置 0.15。
+    if (cfg_.min_open_fair > 0.0 && p_fair_selected < cfg_.min_open_fair) {
+        target_mag = 0.0;  // 模型认定近必输方 → 只减不开 (longshot 崩盘护栏)
+    }
     // edge-生命周期乘子 (持仓管理 Stage 2, 老板 2026-06-05「sharp 速度/收敛接进决策」): 用本盘 sharp 时序
     //   状态 (Vol 稳定性 + ConvergenceRate 发散谨慎) 缩 target 【量级】∈[floor,1], 抑制噪声驱动过度交易。
     //   PIT-safe: 查 sharp_history_ 已有样本 (本 tick push 在 PublishQuoteSnapshot, 在此之后)。

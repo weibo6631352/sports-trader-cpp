@@ -388,6 +388,12 @@ struct PaperLoopConfig {
     //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.25 (mark 跌 25% 即止损)。
     double rel_stop_pct{0.0};
 
+    // 必输方开仓护栏 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 被选边【模型 fair】< 此值 → 不开新仓
+    //   (近必输 longshot 下侧到 0 远大于 edge, 永远 −EV)。用模型 fair 非市场价地板 (老板「用模型」)。减仓/
+    //   平仓/must_win 不受限。修「game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug) → 买崩盘
+    //   underdog 单笔 −0.87/−2.00」。0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.15。
+    double min_open_fair{0.0};
+
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)
