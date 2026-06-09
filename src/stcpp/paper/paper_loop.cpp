@@ -1554,6 +1554,17 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         }
     }
 
+    // ---- 再入场冷却闸 (2026-06-09 老板「调试持仓逻辑, 查明真正原因」: 手续费=头号成本, 根因=churn rebuy) --
+    //   同 token 减仓/平仓后冷却窗内禁止【新开/加仓买入】→ 打断 buy→卖光→rebuy 反复往返 (实测同盘 4+ 往返, 每
+    //   往返付双边费)。减仓/平仓 (Sell) 不受限; force_cross (进球/必赢/止损 事件驱动) 绕过, 保留对真机会反应。
+    if (cfg_.reentry_cooldown_ns > 0 && action.side == strategy::Side::Buy && !force_cross) {
+        const auto it = last_reduce_ns_.find(token_id);
+        if (it != last_reduce_ns_.end() && (NowNs() - it->second) < cfg_.reentry_cooldown_ns) {
+            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+            return;  // 冷却中: 不 rebuy (churn 护栏)
+        }
+    }
+
     // ---- 必输局保护 (2026-06-04 老板「别买 0.2 以下必输局被套结算」) -------------------------
     //   开新仓买入价 < min_buy_price = 市场实时把该边定为近必输 (时间+比分已定) → 不买 (避免结算归零被套)。
     //   用 exec_ask (真市场价, 非陈旧 sharp) 判, 对无时钟运动 (CS2/网球) 同样鲁棒。减仓/平仓不受限。
@@ -1672,6 +1683,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     //   取 apply_fill 【前】的 avg_entry (减仓不改 avg, 但前置取更稳)。
     double sell_realized = 0.0;
     if (intent.side == strategy::Side::Sell) {
+        // 再入场冷却 (老板 2026-06-09): 记本 token 减仓/平仓刻 → 冷却窗内禁 rebuy (打断 churn)。
+        last_reduce_ns_[token_id] = as_of_now;
         const auto pos_before = position_ledger_.get_position(token_id);
         if (pos_before && pos_before->avg_entry_price > 0.0) {
             const double sold_qty = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;

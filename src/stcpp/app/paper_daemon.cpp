@@ -767,6 +767,10 @@ BuildResult PaperDaemon::Build() {
     //   崩到 0.03, 单笔 −0.87/−2.00); game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug)。
     //   用模型 fair 非市场价地板 (老板「用模型不用价格地板」)。减仓/平仓/must_win 不受限。
     cfg_.paper_loop.min_open_fair = 0.15;
+    // 再入场冷却 (2026-06-09 老板「查明真正原因」, 数据驱动): 同盘减仓/平仓后 30s 内禁 rebuy。根因: 手续费=头号
+    //   成本 (实测 fee 4.4 > realized 亏 3.7), 源自 buy→卖光→rebuy 反复 4+ 往返 (每往返付双边费)。冷却打断循环;
+    //   force_cross (进球/必赢/止损) 绕过, 保留对真机会反应。
+    cfg_.paper_loop.reentry_cooldown_ns = 30'000'000'000LL;  // 30s
     // 决策节拍 (2026-06-04 老板「三源都触发决策没」): 500ms→100ms。三源(WSS/149hz poll/赔率)写共享态,
     //   决策每 tick 读最新; 500ms 把 149hz 新鲜簿+簿结构反应硬卡住 → 簿转向止盈/不被吃单反应慢, 小赢大亏。
     //   降到 100ms: 决策 10×/s 采样新鲜簿; 48 盘×10/s 对 4 核轻松, 新加簿结构+入场价闸防过度交易。

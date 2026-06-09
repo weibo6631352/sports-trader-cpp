@@ -394,6 +394,13 @@ struct PaperLoopConfig {
     //   underdog 单笔 −0.87/−2.00」。0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.15。
     double min_open_fair{0.0};
 
+    // 再入场冷却 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 同一 token 减仓/平仓后, 冷却窗内禁止
+    //   【新开/加仓买入】(减仓/平仓/must_win/force_cross 不受限)。根因: 实测同盘 buy→卖光→rebuy 反复 4+ 往返
+    //   (pattern BB SSS BB SSSS BB...), 每往返付双边费 → 手续费成为头号成本 (fee 4.4 > realized 亏 3.7)。
+    //   churn 源自噪声 fair/价在 100ms tick 上反复触发开/平。冷却打断 rebuy 循环, 保留对真实新机会的反应
+    //   (force_cross/must_win 绕过)。0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 30s。
+    std::int64_t reentry_cooldown_ns{0};
+
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)
@@ -848,6 +855,10 @@ private:
     // ---- 强制穿越状态 (小梁 Q-梁-2): condition_id → 上 tick YES-canonical p_fair ----
     //   loop_thread_ 单 writer (TickOne 读+写), 无需锁。本 tick |p_fair − last| > 阈 → force_cross。
     std::unordered_map<std::string, double> last_p_fair_;
+
+    // ---- 再入场冷却 (老板 2026-06-09): token_id → 上次减仓/平仓的 NowNs() ----
+    //   loop_thread_ 单 writer (ExecuteControllerSide 读+写)。冷却窗内禁新开/加仓买入 (打断 churn rebuy 循环)。
+    std::unordered_map<std::string, std::int64_t> last_reduce_ns_;
 
     // ---- 时序特征环形缓冲 (老板 2026-05-31): condition_id → YES-canonical 微价时序 ----
     //   PIT-safe / BR-1 共用; loop_thread_ 单 writer (TickOne push + PublishQuoteSnapshot 读)。
