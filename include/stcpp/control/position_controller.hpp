@@ -45,6 +45,9 @@ struct ControlInput {
     double per_order_cap_pusd{0.0};   // 单笔上限 (clamp; RM per_order_cap 同源)
     bool allow_short{false};          // v1=false (空头 clamp 0); M2 开
     bool force_cross{false};          // 强制穿越 (小梁 Q-梁-2: |Δfair|>0.02 → 绕死区; 比分大跳不堵)
+    // 止损强平 (2026-06-09 老姜微观结构裁决): 仅 rel_stop 触发 → 卖侧 taker 在 best_bid 退出。与 force_cross
+    //   解耦 —— force_cross(fair 噪声跳)绝不触发 taker 退出(否则把赢家在 coin-flip 点 churn 出去, 实测 71%→50%)。
+    bool force_stop{false};
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 减仓 (target<current, 预测说该减/flat)
     //   时, 不要求 best_bid ≥ reservation_sell(fair+margin, 做市「卖高」价 → 收敛到 fair 永不触发 → 持到结算),
     //   改 best_bid 可成交即平 (仓位随预测回 flat = 收敛兑现)。≤false (默认) = 原做市卖高语义 (契约测试不变);
@@ -240,10 +243,11 @@ struct ToxicityGateConfig {
         //     原门 best_bid ≥ reservation_sell(fair+margin) 是做市「卖高」价, 市场收敛到 fair 永不触发 → 只能
         //     持到结算 (= alpha 退化成赌博)。买侧已保证 entry ≤ reservation_buy ≤ bid (减仓时市场≥fair) → 不锁亏。
         //   默认 (做市): 维持「卖高」语义。
-        //   force_cross (2026-06-09): rel_stop 割损 / fair 大跳(信号反转) / 事件驱动 → 必须 taker 在 best_bid
-        //     成交退出 (不等做市「卖高」, 否则崩盘 loser 的 bid 永远 < reservation_sell → 永不止损 → 持到归零)。
-        //     这是「持赢家(卖高)+砍输家(force_cross taker)」正偏度的卖侧实现; predictive_unwind 关时由它兜底止损。
-        const bool taker_exit = in.predictive_unwind || in.force_cross;
+        //   taker 退出 (2026-06-09 老姜微观结构裁决): 仅 rel_stop(force_stop) 或 predictive_unwind 触发 →
+        //     taker 在 best_bid 成交退出 (崩盘 loser 割损 / 收敛兑现)。【不含 force_cross】—— force_cross 是
+        //     fair 噪声跳(|Δfair|>0.02)绕死区, 若它触发 taker 退出会把赢家在 coin-flip 点卖掉(实测胜率 71%→50%
+        //     + churn 放血)。解耦后: 赢家持到 reservation_sell(卖高/近收敛)或结算; 只有真崩盘(rel_stop)才 taker 割。
+        const bool taker_exit = in.predictive_unwind || in.force_stop;
         const bool marketable = taker_exit ? (in.best_bid > 0.0)
                                            : (in.best_bid > 0.0 && in.best_bid >= in.reservation_sell_px);
         if (!marketable) {

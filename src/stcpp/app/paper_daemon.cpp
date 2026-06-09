@@ -745,10 +745,11 @@ BuildResult PaperDaemon::Build() {
     cfg_.paper_loop.sharp_max_staleness_sec = 3.0;
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 生产开 —— 减仓随预测回 flat (收敛兑现),
     //   解「只买不卖持到结算」。lib 默认关 (契约/管线测试不变)。
-    // 2026-06-09 实测裁决: 关 predictive_unwind + force_cross taker 退出 把胜率从 71%→50% (force_cross 在每个
-    //   |Δfair|>0.02 触发 taker 退出 → 随机在 coin-flip 点把赢家 churn 出去 + fee 放血)。改回开 —— predictive_unwind
-    //   = 「target<current(edge 收敛) → bid 卖」捕获收敛 = 71% 胜率 (proven +8 那波)。fee 由 180s 冷却治 (砍 rebuy)。
-    cfg_.paper_loop.predictive_unwind = true;
+    // 2026-06-09 专家组裁决 (微观结构老姜+金融小梁): 早平结构性死 (往返费 0.24>毛 edge 0.16/笔)。改【持有到
+    //   结算】—— 单边费 + 吃完整收敛 (favorite→1.0 = +0.30/share), 净 EV +0.15/share。关 predictive_unwind →
+    //   赢家持到 reservation_sell(卖高)或结算; rel_stop(force_stop)taker 割崩盘输家。配套 force_cross/force_stop
+    //   解耦修复 (position_controller.hpp): force_cross 噪声跳不再触发 taker 退出 → 不 churn 赢家 (上轮 71%→50% 根因)。
+    cfg_.paper_loop.predictive_unwind = false;
     // 入场价感知平仓 (2026-06-04 老板「别稍微亏本就卖, 要考虑持仓买卖价格」): 卖价低于均入(锁亏)时,
     //   仅当 sharp fair 真跌破均入超 5 分 (信号反转=止损) 才卖, 否则持有等回归/结算。治 predictive_unwind
     //   在小回撤里 churn 卖出实现亏损。取利平仓不受限。
@@ -773,11 +774,11 @@ BuildResult PaperDaemon::Build() {
     //   新仓 (近必输 longshot 下侧到 0 远大于 edge, −EV)。实测灾难性亏损全是买崩盘 underdog (fair 0.11 买 0.08 →
     //   崩到 0.03, 单笔 −0.87/−2.00); game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug)。
     //   用模型 fair 非市场价地板 (老板「用模型不用价格地板」)。减仓/平仓/must_win 不受限。
-    // 2026-06-09 升 0.50→0.65 (实测+前端裁决): FLB edge 真实但只在【强 favorite】上 —— proven +8 那波 28 closes
-    //   71% 胜率, 入场 fair 全 0.68-0.91; 而弱 favorite (0.50-0.65, 如 Kyoka 0.533 决胜盘) 是 coin-flip, 在决胜段
-    //   崩盘亏 (前端实见 −$8 持仓 + 早先 0.625 亏 −2.1)。升到 0.65 只抓强 favorite = 提胜率 + 降崩盘风险 (不放大
-    //   仓位, 纯提质量, 老板「抓真机会+不放大风险」)。若机会太少再降 0.60。
-    cfg_.paper_loop.min_open_fair = 0.65;
+    // 2026-06-09 降 0.65→0.50 (专家组裁决 + 老板「陷入无交易尴尬」): 0.65 太严 → 0 交易, 连验证都做不了。
+    //   专家组(小程量化信号): edge 本质=【sharp 偏离 + high-fair 滤噪】非"强 favorite 专属"; 弱 favorite 之前亏
+    //   是【早平 churn】害的(已改持有到结算), 非 fair 太低。0.50 挡明显冷门/longshot(高噪声区), 放行 favorite +
+    //   近均势 → 恢复交易量以便测 CLV 验真 edge。真伪由 CLV(p−c)定, 不靠 fair 阈猜。
+    cfg_.paper_loop.min_open_fair = 0.50;
     // 再入场冷却 (2026-06-09 老板「查明真正原因」, 数据驱动): 同盘减仓/平仓后 30s 内禁 rebuy。根因: 手续费=头号
     //   成本 (实测 fee 4.4 > realized 亏 3.7), 源自 buy→卖光→rebuy 反复 4+ 往返 (每往返付双边费)。冷却打断循环;
     //   force_cross (进球/必赢/止损) 绕过, 保留对真机会反应。
