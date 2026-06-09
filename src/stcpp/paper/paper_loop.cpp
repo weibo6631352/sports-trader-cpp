@@ -1338,6 +1338,16 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
     }
 
+    // sharp 掉档冻结持仓 (老板 2026-06-09「修 sharp-dropout 卖飞」): 仓在 sharp 有效时开 (favorite, ~71% 赢),
+    //   中途 sharp 掉出 → ResolveFair 塌到 score-prior/市场 de-vig → Kelly target→0 → 贱卖赢家 (实测 fair 0.64≪
+    //   sharp 0.88 把 0.79 仓卖飞)。修: 【未决出 + fair 非 sharp(信号降级)】→ 冻结现仓 (sel_target=现仓, 不按降级
+    //   信号开/加/减/平), 等 sharp 回来重评 / 结算。game_decided(比分驱动, 不依赖 sharp) 在上面已处理决出方, 不在此覆盖。
+    if (game_decided_sign == 0.0 && !fair_is_sharp) {
+        const auto pos_frz = position_ledger_.get_position(token_id);
+        const double cur_qty = pos_frz ? std::abs(static_cast<double>(pos_frz->size_usdc) / 1'000'000.0) : 0.0;
+        if (cur_qty > 0.0) sel_target = cur_qty;   // 冻结: sharp 是真值源, 降级时不拿 score-prior 噪声减/平赢家
+    }
+
     // 相对止损 (2026-06-05 老板「亏大就割」): 被选边持仓 mark 跌破均入价 ×(1−rel_stop_pct) → 强平
     //   (sel_target=0 让控制器产平仓卖单 + force_stop 绕过 loss_cut 的 HOLD)。predictive_unwind 下 best_bid>0 即可成交。
     bool sel_force_stop = false;
@@ -1349,7 +1359,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         //   以 0.0129 甩卖 −5.80)。加 fair 门: 仅 p_fair_selected 也跌破均入−loss_cut_fair_band (= loss_cut 同阈, 真信号
         //   反转) 才 force_stop taker 割; fair 仍看好(价格噪声/簿塌)→ 不割, 持有 (配套执行层 bid_not_degenerate 双保险)。
         if (avg_e > 0.0 && std::isfinite(mark_price) && mark_price < avg_e * (1.0 - cfg_.rel_stop_pct)
-            && p_fair_selected < avg_e - cfg_.loss_cut_fair_band) {
+            && fair_is_sharp && p_fair_selected < avg_e - cfg_.loss_cut_fair_band) {  // fair_is_sharp: 降级 fair 不触发(防卖飞)
             sel_target = 0.0;       // 强制平仓目标
             sel_force_stop = true;  // 绕 loss_cut HOLD
         }
