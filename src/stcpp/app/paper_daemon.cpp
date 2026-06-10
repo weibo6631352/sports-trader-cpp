@@ -792,9 +792,10 @@ BuildResult PaperDaemon::Build() {
     //   专家组(小程量化信号): edge 本质=【sharp 偏离 + high-fair 滤噪】非"强 favorite 专属"; 弱 favorite 之前亏
     //   是【早平 churn】害的(已改持有到结算), 非 fair 太低。0.50 挡明显冷门/longshot(高噪声区), 放行 favorite +
     //   近均势 → 恢复交易量以便测 CLV 验真 edge。真伪由 CLV(p−c)定, 不靠 fair 阈猜。
-    // 2026-06-09 策略会收紧入场 0.50→0.58 (老姜+老板「收紧入场」): 实测 68% 亏损是 fair 场内反转, 更强 favorite
-    //   起点有更多 cushion 才反转不到 underdog。0.58 在 0.50(工作)与 0.65(starve 0 交易)之间, 保留交易量。
-    cfg_.paper_loop.min_open_fair = 0.58;
+    // 2026-06-09 策略会收紧入场 0.50→0.58; 2026-06-10 老板「0.65 吧, 再低赢面太小」收紧到 0.65 —— 只买赢面≥65%
+    //   的强 favorite, 再低(<0.65)赢面太小不进。更强 favorite 有更多 cushion, fair 场内反转不到 underdog 概率小。
+    //   注: 历史 0.65 曾 starve(0 交易, 市场少时); 现 261 市场盘子大 + 仓位砍半, 应有量。量太少则松。
+    cfg_.paper_loop.min_open_fair = 0.65;
     // 2026-06-09 风控老韩: 开同赛事相关性 taper (现 default false) —— 多 favorite=N倍押"热门赢"同向暴露, 冷门日齐崩;
     //   taper 零成本(只柔性缩量级不碰方向, fail-open), 是比反向腿对冲更对的组合层护栏。
     cfg_.paper_loop.corr_mult_enabled = true;
