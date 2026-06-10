@@ -1362,9 +1362,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   控制器只减不开 (不买进必输局结算归零被套)。各运动用各自比分单位+阶段阈值 (tennis/esports 盘图差,
     //   clock 运动时间+分差), 修「统一 |diff|≥3 对 tennis/esports 永不触发」。
     double sel_target = target_mag;
+    const char* sel_reason = "kelly_reduce";  // 卖出原因 (老板「出现卖出就检查是否合理」): 默认 Kelly 减仓; 各 force 点覆盖
     if (game_decided_sign != 0.0) {
         const bool sel_is_loser = (is_yes && game_decided_sign < 0.0) || (!is_yes && game_decided_sign > 0.0);
-        if (sel_is_loser) sel_target = 0.0;  // 该运动已决出, 被选边是落后必输方 → 不开仓
+        if (sel_is_loser) { sel_target = 0.0; sel_reason = "game_decided"; }  // 该运动已决出, 被选边必输方 → 平
     }
 
     // 必赢锁利买入 (2026-06-05 老板「必赢的, 只要除去买和卖手续费有利润就买」): 已决出且被选边是【赢方】→
@@ -1407,6 +1408,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                        cfg_.frozen_hard_stop_pct, kFrozenStopMaxSpread)) {
             sel_target = 0.0;
             sel_force_stop = true;  // 冻结期灾难止损: 截尾损, 绕 loss_cut HOLD
+            sel_reason = "frozen_hard";
         }
     }
 
@@ -1448,6 +1450,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                          side_vel, cfg_.vel_exit_thr, book_turning_down)) {  // 赢面没/崩/簿砸/门关 → 割
                 sel_target = 0.0;            // 强制平仓目标
                 sel_force_stop = true;       // 绕 loss_cut HOLD
+                sel_reason = "rel_stop";     // 赢面没了/崩/簿砸 → 割
             }
             // else: 赢面还在(fair>floor) + sharp 稳 + 簿没砸 → 持有, 不割肉 (老板「赢面还很大卖了可惜」+「订单簿方向也得考虑」)
         }
@@ -1467,6 +1470,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                 if (std::isfinite(side_vel) && side_vel < -cfg_.vel_exit_thr) {
                     sel_target = 0.0;
                     sel_force_stop = true;  // velocity 急转 → 盈利仓立即止盈 (下行保护)
+                    sel_reason = "vel_exit";
                 }
             }
         }
@@ -1509,6 +1513,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     }
 
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
+    last_sell_reason_[token_id] = sel_reason;  // 卖出原因 (老板「出现卖出就检查是否合理」): ApplyFill 对卖出回读填 FillRow
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
                           force_cross || sel_force_stop || sel_force_winbuy, n_eff_dyn, margin_floor_dyn,
@@ -1526,18 +1531,55 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
         if (other_held) {
             const auto& other_feat = other.book;
-            // 平旧边走卖出 → 深度看 bid 侧 (best_bid_size); 无效则 fallback 1000 pUSD。
-            const double other_depth =
-                (std::isfinite(other_feat.best_bid_size()) && other_feat.best_bid_size() > 0.0)
-                    ? other_feat.best_bid_size()
-                    : 1000.0;
-            // 非选边 fair = 1 − 被选边 fair (de-vig 互余, YES/NO 对称)。target=0 → 仅平仓。
-            ExecuteControllerSide(condition_id, other_token,
-                                  is_yes ? strategy::Outcome::No : strategy::Outcome::Yes, other_feat,
-                                  other_depth, 1.0 - p_fair_selected, /*target_mag=*/0.0,
-                                  FeeCoefFor(condition_id), force_cross, n_eff_dyn, margin_floor_dyn,
-                                  reservation_noise_free, /*force_stop=*/false, /*near_end=*/false,
-                                  time_to_resolution_frac);
+            // M2-a 赢面门 (2026-06-10 老板「还是割肉了」): 切换选边平旧边是裸割路径 (不过赢面门)。旧边若【仍赢面
+            //   (other_fair>floor) + 亏损区 + sharp 没崩 + 旧边簿没砸】→ 不割肉, 持有 (与被选边 v2 同判据)。
+            //   旧边 fair = 1 − 被选边 fair; 旧边 velocity/簿取旧边。守卫: 比赛进行中 + fair 可靠。
+            const double other_fair = 1.0 - p_fair_selected;
+            bool skip_m2a_close = false;
+            if (game_decided_sign == 0.0 && fair_is_sharp && cfg_.hold_if_winning_floor > 0.0
+                && other_fair > cfg_.hold_if_winning_floor) {
+                const auto pos_o = position_ledger_.get_position(other_token);
+                const double avg_o = (pos_o && pos_o->avg_entry_price > 0.0) ? pos_o->avg_entry_price : 0.0;
+                const double other_mark =
+                    std::isfinite(other_feat.microprice) ? other_feat.microprice : other_feat.mid;
+                if (avg_o > 0.0 && std::isfinite(other_mark) && other_mark < avg_o) {  // 旧边亏损区
+                    double ov = 0.0;  // 旧边 velocity (旧边 is_yes = !is_yes)
+                    if (const auto sho = sharp_history_.find(condition_id);
+                        sho != sharp_history_.end() &&
+                        sho->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+                        const double vy = sho->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+                        ov = (!is_yes) ? vy : -vy;
+                    }
+                    bool obd = false;  // 旧边簿在砸
+                    const double obsz = other_feat.best_bid_size();
+                    const double oasz = other_feat.best_ask_size();
+                    if (std::isfinite(obsz) && std::isfinite(oasz) && obsz + oasz > 0.0) {
+                        const double oimb = (obsz - oasz) / (obsz + oasz);
+                        const double omc = std::isfinite(other_feat.microprice) ? other_feat.microprice
+                                                                                : other_feat.mid;
+                        obd = (oimb < -cfg_.book_exit_imb_thr) && (omc < other_feat.mid);
+                    }
+                    if (RelStopShouldHoldWinner(other_fair, cfg_.hold_if_winning_floor, ov,
+                                                cfg_.vel_exit_thr, obd)) {
+                        skip_m2a_close = true;  // 旧边还赢面+稳 → 不割肉, 持有
+                    }
+                }
+            }
+            if (!skip_m2a_close) {
+                // 平旧边走卖出 → 深度看 bid 侧 (best_bid_size); 无效则 fallback 1000 pUSD。
+                const double other_depth =
+                    (std::isfinite(other_feat.best_bid_size()) && other_feat.best_bid_size() > 0.0)
+                        ? other_feat.best_bid_size()
+                        : 1000.0;
+                last_sell_reason_[other_token] = "m2a_switch";  // 卖出原因: 切换选边平旧边
+                // 非选边 fair = 1 − 被选边 fair (de-vig 互余, YES/NO 对称)。target=0 → 仅平仓。
+                ExecuteControllerSide(condition_id, other_token,
+                                      is_yes ? strategy::Outcome::No : strategy::Outcome::Yes, other_feat,
+                                      other_depth, 1.0 - p_fair_selected, /*target_mag=*/0.0,
+                                      FeeCoefFor(condition_id), force_cross, n_eff_dyn, margin_floor_dyn,
+                                      reservation_noise_free, /*force_stop=*/false, /*near_end=*/false,
+                                      time_to_resolution_frac);
+            }
         }
     }
 }
@@ -1946,6 +1988,10 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         fr.fair = p_fair_side;  // 模型对被交易边的 fair (FILL 日志 fair= 同源) — 前端算声称 edge
         fr.mark = mark_price;   // 成交刻市场 mark — 前端算模型偏差 fair−mark
         fr.fee = fr.size_usdc * FeeCoefFor(condition_id) * fill.fill_price * (1.0 - fill.fill_price);  // 逐笔费 (老板「逐笔体现」)
+        if (!fr.is_buy) {  // 卖出原因 (老板「出现卖出就检查是否合理」): 回读本 tick 主逻辑写的决出原因
+            const auto rit = last_sell_reason_.find(token_id);
+            fr.exit_reason = (rit != last_sell_reason_.end()) ? rit->second : "kelly_reduce";
+        }
         std::lock_guard<std::mutex> lk(fills_mu_);
         fills_ring_.push_back(std::move(fr));
         if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();

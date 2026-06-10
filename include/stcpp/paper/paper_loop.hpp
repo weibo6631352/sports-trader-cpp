@@ -611,6 +611,8 @@ public:
         double fair{0.0};              // 成交刻模型对【被交易边】的 fair (= p_fair_side, FILL 日志同源)
         double mark{0.0};              // 成交刻市场 mark price
         double fee{0.0};               // 本笔手续费 (老板 2026-06-09「手续费逐笔体现」): size×fee_coef×p×(1−p)
+        std::string exit_reason;       // 卖出原因 (2026-06-10 老板「出现卖出就检查是否合理」): rel_stop/vel_exit/
+                                       //   frozen_hard/game_decided/kelly_reduce/winprob_cut/m2a_switch (买入空)
     };
     // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
     [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200,
@@ -941,6 +943,9 @@ private:
     // ---- rebuy fair 改善门 (老姜 2026-06-10): token_id → 上次减仓/平仓时的均入价 (参考价) ----
     //   rebuy 要求被选边 fair ≥ 此参考价 + rebuy_edge_premium (fair 没真提升不二次建仓; 治 churn + 防撞崩盘)。
     std::unordered_map<std::string, double> last_reduce_ref_price_;
+    // ---- 卖出原因 (2026-06-10 老板「出现卖出就检查是否合理」): token_id → 本 tick 决出的卖出原因 ----
+    //   主逻辑在 ExecuteControllerSide 前写; ApplyFill 对卖出成交回读填 FillRow.exit_reason。loop_thread_ 单 writer。
+    std::unordered_map<std::string, std::string> last_sell_reason_;
 
     // ---- 逐盘累计已实现/费 (老板 2026-06-09「前端观测做到位, 交易订单对得上 PnL」): condition_id → 累计 ----
     //   修对账 bug: PublishLedgerSnapshot 原硬编码 pnl_realized=0 + pnl_fee 只本笔 → 逐盘 net_pnl 平仓后丢

@@ -914,6 +914,7 @@ BuildResult PaperDaemon::Build() {
             v.fair = r.fair;
             v.mark = r.mark;
             v.fee = r.fee;   // 逐笔费 (老板「手续费逐笔体现」)
+            v.exit_reason = r.exit_reason;  // 卖出原因 (老板「出现卖出就检查是否合理」)
             out.push_back(std::move(v));
         }
         return out;
