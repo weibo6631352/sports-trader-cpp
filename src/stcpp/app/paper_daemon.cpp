@@ -419,13 +419,10 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
     //   语义不明(追加 vs 替换), 老李评审疑其催掉连接(recv_loop_ended 次因)。初次订阅(OnConnected)
     //   不变(known-good 老格式)。
     std::unordered_set<std::string> old_tokens(all_token_ids_.begin(), all_token_ids_.end());
-    // 防孤儿结算 (2026-06-10 老板「我们结算的没有遗漏吧」): 重建前快照旧 catalog 表, 重建后把【仍有持仓但掉出
-    //   discovery (只留 live+≤1h, 已结束比赛被过滤)】的市场补回 —— 否则其 token_map_ 条目被丢弃 → TickOne(结算路)
-    //   + SettlementPoller(resolution 路) 两路皆断 → 孤儿仓永不结算 (= CLV=0 根因)。持仓清零(结算后)即自然不再补回。
-    const auto old_token_map = token_map_;
-    const auto old_market_catalog = market_catalog_;
-    const auto old_cat_map = market_cat_map_;
     // 全量重建 (老郭): 清 6 表 → PopulateCatalog 重填 (含队名提取/cat/fee/parent/all_token_ids_)。
+    // NOTE 2026-06-10: 防孤儿结算的「保留有持仓市场」改动已回退 (疑致 GP fault 崩溃 — 往 token_map_ 补条目但未同步
+    //   event_infos_/market_match_inputs_/all_token_ids_ 造成表间不一致, 下游踩空)。CLV=0 孤儿问题待安全重做
+    //   (需全表一致 + 单测), 见 [[orphan-settle-entry-leadlag-2026-06-10]]。
     token_map_.clear();
     market_catalog_.clear();
     market_cat_map_.clear();
@@ -433,21 +430,6 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
     event_infos_.clear();
     all_token_ids_.clear();
     PopulateCatalog(events);
-    // 补回有持仓的已结束市场 (留 catalog + SettlementPoller 至结算; 不补 all_token_ids_ → 不重订 book, 仅需结算)。
-    if (paper_loop_) {
-        for (const auto& cid : paper_loop_->HeldConditions()) {
-            if (token_map_.count(cid)) continue;  // 仍在 discovery, 无需补
-            const auto oit = old_token_map.find(cid);
-            if (oit == old_token_map.end()) continue;  // 旧集也无 (异常) → 跳过
-            token_map_[cid] = oit->second;
-            if (const auto mc = old_market_catalog.find(cid); mc != old_market_catalog.end()) {
-                market_catalog_[cid] = mc->second;
-            }
-            if (const auto cc = old_cat_map.find(cid); cc != old_cat_map.end()) {
-                market_cat_map_[cid] = cc->second;
-            }
-        }
-    }
     // 发布: PaperLoop catalog (RCU 原子 swap) + RSP (meta_mu_ 守护) + WSS 全量重订。
     if (paper_loop_) {
         paper_loop_->SetPaperCatalog(BuildPaperCatalog());
@@ -799,7 +781,7 @@ BuildResult PaperDaemon::Build() {
     cfg_.paper_loop.rel_stop_pct = 0.25;
     // 赢面门 0.5 (2026-06-10 老板「止损时还赢面就卖了可惜」): rel_stop 触发后, 若被选边 fair 仍 > 0.5 (这边仍被看好)
     //   且 fair 没在崩 → 不割肉持有 (入场价是沉没成本, 前向 EV=fair>卖价 ⟹ 持有更优); 仅 fair≤0.5(赢面没了)或 fair 在崩才割。
-    cfg_.paper_loop.hold_if_winning_floor = 0.5;
+    cfg_.paper_loop.hold_if_winning_floor = 0.46;  // 2026-06-10 老板「割肉离场设置 46」: 赢面跌破 0.46 才割(比 0.5 更扛)
     // 必输方开仓护栏 (2026-06-09 老板「调试持仓逻辑, 查明真正原因」, 数据驱动): 被选边模型 fair < 0.15 → 不开
     //   新仓 (近必输 longshot 下侧到 0 远大于 edge, −EV)。实测灾难性亏损全是买崩盘 underdog (fair 0.11 买 0.08 →
     //   崩到 0.03, 单笔 −0.87/−2.00); game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug)。
