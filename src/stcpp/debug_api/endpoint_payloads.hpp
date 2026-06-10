@@ -117,6 +117,14 @@ inline std::string account(const StateProvider& sp) {
     b += json::str(a.kelly_bankroll_basis);
     b += ",\"open_positions\":";
     b += json::i64(a.open_positions);
+    b += ",\"clv_close_mean\":";    // CLV 验真 edge 金标准 (正=入场打败收盘线=edge真)
+    b += json::num(a.clv_close_mean);
+    b += ",\"clv_settle_mean\":";
+    b += json::num(a.clv_settle_mean);
+    b += ",\"clv_positive_rate\":";
+    b += json::num(a.clv_positive_rate);
+    b += ",\"clv_n\":";
+    b += json::i64(a.clv_n);
     b += "}}";
     return b;
 }

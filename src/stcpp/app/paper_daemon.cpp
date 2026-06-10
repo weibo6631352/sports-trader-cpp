@@ -872,6 +872,12 @@ BuildResult PaperDaemon::Build() {
         a.kelly_bankroll = eq.equity_bid;  // 实际喂 SizingCalculator 的 bankroll (best_bid 保守动态净值)
         a.kelly_bankroll_basis = "equity_conservative(best_bid, 动态)";
         a.open_positions = eq.open_positions;
+        // CLV 验真 edge (2026-06-10 暴露 CLVTracker 金标准): clv_close_mean>0 = 入场打败收盘线 = edge 真。
+        const auto clv = paper_loop_->clv_report();
+        a.clv_close_mean = clv.clv_close_mean;
+        a.clv_settle_mean = clv.clv_settle_mean;
+        a.clv_positive_rate = clv.clv_close_positive_rate;
+        a.clv_n = static_cast<std::int64_t>(clv.n_fills);
         a.as_of_ts_ns = eq.as_of_ts_ns;
         a.has_data = true;
         return a;

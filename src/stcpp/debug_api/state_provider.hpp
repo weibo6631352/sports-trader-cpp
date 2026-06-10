@@ -184,6 +184,12 @@ struct AccountSnapshot {
     double kelly_bankroll{0.0};     // 实际喂凯利的 bankroll (= equity_conservative)
     std::string kelly_bankroll_basis;  // 口径说明 (e.g. "equity_conservative(best_bid, 动态)")
     int open_positions{0};
+    // CLV 验真入场 edge (2026-06-10 暴露 CLVTracker 金标准): clv_close_mean>0 = 入场打败收盘线 = edge 真;
+    //   <0 = 结构性逆选 (追移动靶)。CLV≈EV 近 1:1, ~50 笔即统计显著 (胜负 PnL 要几千笔) = 低方差领先指标。
+    double clv_close_mean{0.0};      // 平均 CLV vs 收盘线 (prob; 低方差; 正=入场优于收盘 mid)
+    double clv_settle_mean{0.0};     // 平均 CLV vs 0/1 结算 (≈ realized)
+    double clv_positive_rate{0.0};   // 入场优于收盘线命中率 ∈[0,1]
+    std::int64_t clv_n{0};           // 已结算计入 CLV 的成交数 (有效性: <~20 噪声大)
     std::int64_t as_of_ts_ns{0};
     bool has_data{false};           // false = paper_loop 未注入 / 无数据 → 前端降级灰显
 };
