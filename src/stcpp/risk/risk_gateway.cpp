@@ -540,7 +540,12 @@ bool RiskGateway::check_market_(OrderIntent const& it, RiskDecision& d) const no
 // 6. position_caps (ADR-004 前移)
 bool RiskGateway::check_position_caps_(OrderIntent const& it, RiskDecision& d) const noexcept {
     // EXCEED_PER_ORDER_CAP (c2: cap 为 MicroPUSD; size 包 from_micro 同型比, 字节级零变)
-    if (domain::MicroPUSD::from_micro(it.size_pUSD_micro) > cfg_.per_order_cap_usdc) {
+    // 2026-06-10c (老韩 H-1 补全): 平仓卖单 (is_close+Sell, 同 DRAIN §2.4 信任路径) 豁免 per-order cap。
+    //   仓位经多笔 ≤cap 买单累积 (实测 49.7 股 > 25u cap), 平仓一笔卖全部被拒 → 死仓出不去 (256 连拒
+    //   重试循环, 冻结硬止损甩卖被自家 cap 卡死)。cap 限的是风险摄入, 减风险单放行; 下游 exposure 检查
+    //   全是 signed delta (卖单自然过) + 反向穿零拒 (超卖翻空被 568 行拦), 此处是唯一漏豁免的 magnitude 检查。
+    if (!(it.is_close && it.side == Side::Sell) &&
+        domain::MicroPUSD::from_micro(it.size_pUSD_micro) > cfg_.per_order_cap_usdc) {
         d.reject = RejectCode::EXCEED_PER_ORDER_CAP;
         return true;
     }

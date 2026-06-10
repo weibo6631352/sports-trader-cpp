@@ -333,6 +333,32 @@ TEST_F(RiskGatewayTest, R07_EXCEED_PER_ORDER_CAP) {
     expect_rejected(d, RejectCode::EXCEED_PER_ORDER_CAP);
 }
 
+// 2026-06-10c (H-1 补全): 平仓卖单超 per-order cap 应放行 (cap 限风险摄入, 减风险单豁免)。
+//   实测: 仓位经多笔 ≤cap 买单累积 49.7 股 > 25u cap, 冻结硬止损甩卖被自家 cap 连拒 256 次死仓出不去。
+TEST_F(RiskGatewayTest, R07b_CloseSellOverPerOrderCap_Passes) {
+    rm_->set_market_exposure(kMockConditionId, 49'500);  // 有持仓 (卖单减仓不穿零)
+    auto it = make_ok_intent();
+    it.side = Side::Sell;
+    it.is_close = true;
+    it.size_pUSD_micro = 20'000;  // 超 per-order cap (同 R07 量级)
+    it.book_depth_l1_usdc = 100'000;
+    auto d = rm_->evaluate(it);
+    EXPECT_NE(d.reject, RejectCode::EXCEED_PER_ORDER_CAP)
+        << "平仓卖单 (is_close+Sell) 不应被 per-order cap 拒 (死仓出不去)";
+}
+
+// 安全反例: 非平仓卖单 (is_close=false) 超 cap 仍拒 (豁免窄门只认 is_close+Sell)。
+TEST_F(RiskGatewayTest, R07c_NonCloseSellOverPerOrderCap_StillRejected) {
+    rm_->set_market_exposure(kMockConditionId, 49'500);
+    auto it = make_ok_intent();
+    it.side = Side::Sell;
+    it.is_close = false;  // 非平仓语义 → 不豁免
+    it.size_pUSD_micro = 20'000;
+    it.book_depth_l1_usdc = 100'000;
+    auto d = rm_->evaluate(it);
+    expect_rejected(d, RejectCode::EXCEED_PER_ORDER_CAP);
+}
+
 TEST_F(RiskGatewayTest, R08_EXCEED_MARKET_EXPOSURE) {
     rm_->set_market_exposure(kMockConditionId, 49'500);
     auto it = make_ok_intent();
