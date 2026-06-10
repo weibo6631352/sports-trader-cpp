@@ -7,7 +7,7 @@
   2026-06-04 (老板「页面初次加载好慢呀」): http.server 不压缩 → 跨洋传 293KB 未压缩 JS = 首屏慢根因。
     加按需 gzip (293KB→~82KB, ~3.5×): 客户端 Accept-Encoding 含 gzip 且文件可压(js/css/html/json/svg)即压。
 
-用法: serve_frontend.py [dist_dir] [port]   (默认 ../frontend/dist  :8081)
+用法: serve_frontend.py [dist_dir] [port]   (默认 ../frontend/dist  :7081)
 """
 import gzip
 import io
@@ -17,7 +17,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DIST = os.path.abspath(sys.argv[1]) if len(sys.argv) > 1 else os.path.join(_HERE, "..", "frontend", "dist")
-PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8081
+PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 7081
 
 # 可压缩扩展名 (文本类; 图片/字体已压不再压)
 _COMPRESSIBLE = (".js", ".mjs", ".css", ".html", ".json", ".svg", ".map", ".txt", ".xml", ".wasm")
