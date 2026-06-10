@@ -1469,6 +1469,15 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
             RediscoverOnce(st);
             last_rediscover = steady_clock::now();
         }
+        // 防孤儿结算 (2026-06-10 老板「安全重做」, CLV=0 真根因): SettlementPoller 除 catalog cid 外, 还轮询【有持仓的
+        //   condition】—— 比赛结束掉出 discovery 的仓不再在 catalog, 但仍需 resolution 才能结算。每周期无条件刷新
+        //   (不受 RediscoverOnce 早退影响)。【只更新 poller cid 集, 不碰 token_map_/catalog —— 避开上次 GP fault 崩溃区】。
+        if (settlement_poller_ && paper_loop_) {
+            std::unordered_set<std::string> poll_set;
+            for (const auto& [cid, _t] : token_map_) poll_set.insert(cid);  // 同线程读 (RediscoverOnce 同线程写)
+            for (const auto& cid : paper_loop_->HeldConditions()) poll_set.insert(cid);  // 线程安全 (shared_lock)
+            settlement_poller_->SetConditionIds(std::vector<std::string>(poll_set.begin(), poll_set.end()));
+        }
         // 1. 取 Goalserve 比分快照 → 候选 EventScore 列表
         std::vector<debug_api::EventScore> candidates;
         if (score_store_ != nullptr) {

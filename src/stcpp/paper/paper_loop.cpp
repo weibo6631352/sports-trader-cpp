@@ -330,6 +330,32 @@ void PaperLoop::TickAll() {
         TickOne(mkt);
     }
 
+    // 孤儿结算兜底 (2026-06-10 老板「安全重做」, CLV=0 真根因): 比赛结束掉出 catalog 的持仓不再被上面 TickOne 结算
+    //   → 孤儿仓永不结算 → CLV 永远 0 (edge 金标准失效)。补 loop 线程扫描: 持仓 cid 不在 catalog(孤儿) + 有【权威
+    //   resolution】(SettlementPoller 现已轮询有持仓的 condition) → 直接 SettleToken 结算。全在 loop_thread (R-12 单
+    //   writer); 只读 resolution/catalog(RCU) + position_ledger(同线程)。【不碰 catalog 重建 token_map_ — 避开上次孤儿
+    //   改动致 GP fault 的崩溃区】。SettleToken 平仓→size 0→下 tick 自动跳过 (无需去重; OnSettle 二次为 no-op)。
+    if (tick_inputs_.catalog != nullptr) {
+        bool any_orphan_settled = false;
+        for (const auto& pv : position_ledger_.get_all_positions()) {  // 返回 copy, 迭代中 SettleToken 改账本安全
+            if (pv.size_usdc == 0) continue;
+            if (tick_inputs_.catalog->find(pv.condition_id) != tick_inputs_.catalog->end()) continue;  // 仍在 catalog
+            const ResolutionEntry* res = ResolutionFor(pv.condition_id);
+            if (res == nullptr || res->status != 2 || res->winner < 0) continue;  // 无权威 resolution → 等
+            const double settle_yes = (res->winner == 1) ? 1.0 : 0.0;  // winner 1=YES / 0=NO
+            const double settle_px =
+                (pv.outcome == strategy::Outcome::Yes) ? settle_yes : (1.0 - settle_yes);
+            const std::int64_t rts = (res->fetched_at_ns > 0) ? res->fetched_at_ns : NowNs();  // R-20 4ts
+            data::feature_store::FeatureStoreGameRow gr{};
+            gr.event_ts_ns = rts;
+            gr.data_source_ts_ns = rts;
+            gr.ingestion_ts_ns = rts;
+            SettleToken(pv.condition_id, pv.token_id, pv.outcome, settle_px, gr);  // 平仓 + realize + CLV OnSettle
+            any_orphan_settled = true;
+        }
+        if (any_orphan_settled) FeedRiskGateway();  // 同 SettleCondition: realize 进 daily_pnl + 敞口归零
+    }
+
     // Phase 0 项5 (联合评审, 小梁): 每 tick 周期采一次组合权益 → Sharpe/maxDD/VaR + 净值曲线 (/api/v1/pnl/timeseries)。
     //   2026-06-10 (老板「净值曲线与 pnl 不一致」): 改用 equity_mark (microprice) —— 与账本展示 net_pnl(=equity_mark
     //   −bankroll) 同口径, 让【净值曲线 == net_pnl 数字】严格一致。原 equity_bid(best_bid 保守) 是给风险指标的口径,
