@@ -330,12 +330,12 @@ void PaperLoop::TickAll() {
         TickOne(mkt);
     }
 
-    // Phase 0 项5 (联合评审, 小梁): 每 tick 周期采一次组合权益 → Sharpe/maxDD/VaR。
-    //   2026-06-01 凯利评审: equity 改用 account_equity().equity_bid (含未实现 MtM, best_bid 保守口径)。
-    //   原口径 bankroll+realized 不含未实现 → maxDD 严重低估 / Sharpe 虚高 (小肖/老李 R-4)。保守 best_bid
-    //   防低估回撤 (风险指标宜保守, 不用 microprice)。R-20: ts 用 NowNs (权益曲线是策略侧时序, 不涉数据源契约)。
-    //   用 tick 入口冻结快照 (与本轮 sizing bankroll 同源同版本)。
-    portfolio_metrics_.RecordEquity(NowNs(), tick_equity_.equity_bid);
+    // Phase 0 项5 (联合评审, 小梁): 每 tick 周期采一次组合权益 → Sharpe/maxDD/VaR + 净值曲线 (/api/v1/pnl/timeseries)。
+    //   2026-06-10 (老板「净值曲线与 pnl 不一致」): 改用 equity_mark (microprice) —— 与账本展示 net_pnl(=equity_mark
+    //   −bankroll) 同口径, 让【净值曲线 == net_pnl 数字】严格一致。原 equity_bid(best_bid 保守) 是给风险指标的口径,
+    //   但曲线借同一序列 → 曲线(bid)系统性低于展示 net_pnl(mark) 差一个 bid-mark 价差 = 老板看到的不一致。统一展示
+    //   口径为 mark (标准 MTM; 凯利 bankroll 另用 realized_equity 不受影响)。R-20: ts 用 NowNs (策略侧时序, 不涉数据源契约)。
+    portfolio_metrics_.RecordEquity(NowNs(), tick_equity_.equity_mark);
 
     // DD→target 乘子更新 (持仓管理 Stage2, 老板「回撤大只停加仓 + hysteresis, 不砍现仓」):
     //   降档立即生效 (回撤加深快去险); 升档需当前回撤比降档阈值再回落 hysteresis_band (黏滞防抖)。
