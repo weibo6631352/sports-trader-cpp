@@ -1535,13 +1535,17 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
         const auto pos_e = position_ledger_.get_position(token_id);
         const double cur_e = pos_e ? std::abs(static_cast<double>(pos_e->size_usdc) / 1'000'000.0) : 0.0;
+        // 赢面门 (2026-06-10 老板「为什么还有 0.45 以上就割肉的」): book 恶化【且赢面没了(fair≤floor)】才割 ——
+        //   fair>floor(这边仍被看好, 默认 0.46) 即使 book 恶化也持有骑到底, 不被 book 噪声把赢面大的仓割飞。
+        //   需 fair_is_sharp (fair 可靠); !fair_is_sharp 由 frozen 分支 + frozen_hard_stop 兜底。
+        const bool win_prob_gone = fair_is_sharp && p_fair_selected <= cfg_.hold_if_winning_floor;
         if (cur_e > 0.0) {
-            if (book_det) {
-                sel_target = 0.0;                  // 订单簿恶化 → 离场 (割/锁)
+            if (book_det && win_prob_gone) {
+                sel_target = 0.0;                  // 订单簿恶化 + 赢面没了 → 割
                 sel_force_stop = true;
                 sel_reason = "book_deteriorate";
             } else if (sel_target < cur_e) {
-                sel_target = cur_e;                // 簿稳 → 持有骑到底 (撤任何止盈/止损/缩仓卖出)
+                sel_target = cur_e;                // 赢面在(fair>floor) or 簿稳 → 持有骑到底 (撤任何止盈/止损/缩仓卖出)
                 sel_force_stop = false;
             }
         }
