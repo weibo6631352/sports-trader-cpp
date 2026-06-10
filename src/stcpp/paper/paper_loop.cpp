@@ -1472,6 +1472,42 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
     }
 
+    // 赢面持有门 v2 (2026-06-10 老板「还是有赢面的情况下卖亏了好多」): 赢面门 v1 只挡 rel_stop, 但 Kelly 减仓 /
+    //   predictive_unwind 这条路仍把【还在赢面(fair>floor)】的仓在【亏损区(mark<入场)】减/平 → 亏卖赢家。
+    //   扩展到所有减仓: 任何 sel_target<现仓 的减仓, 若【亏损区 + 赢面还在 + sharp 没崩 + 本边簿没砸】→ 持有不减
+    //   (predictive_unwind/Kelly 减仓仅在盈利区生效, 不在亏损区把赢家割了)。判据与 rel_stop 同 (RelStopShouldHoldWinner):
+    //   赢面没了(fair≤floor)/sharp 崩/簿砸 仍照常减。force_stop 路已各自决断, 不在此覆盖。
+    if (!sel_force_stop && game_decided_sign == 0.0 && fair_is_sharp  // 守卫: 比赛进行中 + fair 可靠(非降级/score-prior)
+        && cfg_.hold_if_winning_floor > 0.0 && p_fair_selected > cfg_.hold_if_winning_floor) {
+        const auto pos_h = position_ledger_.get_position(token_id);
+        const double cur_h = pos_h ? std::abs(static_cast<double>(pos_h->size_usdc) / 1'000'000.0) : 0.0;
+        const double avg_h = (pos_h && pos_h->avg_entry_price > 0.0) ? pos_h->avg_entry_price : 0.0;
+        const bool reducing = sel_target < cur_h - 1e-9;
+        const bool underwater = avg_h > 0.0 && std::isfinite(mark_price) && mark_price < avg_h;
+        if (cur_h > 0.0 && reducing && underwater) {
+            double v_side = 0.0;  // 不可得 → 0 → 视作未崩 → 偏持有
+            if (const auto shh = sharp_history_.find(condition_id);
+                shh != sharp_history_.end() &&
+                shh->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+                const double vy = shh->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+                v_side = is_yes ? vy : -vy;
+            }
+            bool book_dn = false;
+            const auto& sb = is_yes ? mkt.yes.book : mkt.no.book;  // 本边簿
+            const double bsz = sb.best_bid_size();
+            const double asz = sb.best_ask_size();
+            if (std::isfinite(bsz) && std::isfinite(asz) && bsz + asz > 0.0) {
+                const double imb = (bsz - asz) / (bsz + asz);
+                const double micro_h = std::isfinite(sb.microprice) ? sb.microprice : sb.mid;
+                book_dn = (imb < -cfg_.book_exit_imb_thr) && (micro_h < sb.mid);
+            }
+            if (RelStopShouldHoldWinner(p_fair_selected, cfg_.hold_if_winning_floor,
+                                        v_side, cfg_.vel_exit_thr, book_dn)) {
+                sel_target = cur_h;  // 赢面还在 + 亏损区 → 持有不减 (不亏卖赢家); 仅赢面没/崩/簿砸才减
+            }
+        }
+    }
+
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
