@@ -215,6 +215,36 @@ TEST(EventMatcherSim, IndividualSurnameMatch) {
     EXPECT_TRUE(r.matched);
 }
 
+// 个人项目: 亚洲名【姓在前】(feed "Huang Yujia" vs PM "Yujia Huang") 经共享 token 兜底匹配。
+//   2026-06-10 老板「确定队名没匹配上」: SurnameToken 取最后 token 对亚洲姓-在-前失败 (yujia≠huang)
+//   → ITF 亚洲赛漏配。修: 共享 ≥2 个 ≥3字 token (姓+名都对上) → 同人。
+TEST(EventMatcherSim, IndividualAsianSurnameFirstMatch) {
+    EventMatcher m;
+    EventScore ev;
+    ev.home = "Huang Yujia";  // Goalserve: 姓 名 (中文序)
+    ev.away = "Shi H.";
+    EventMatchInput in;
+    in.sport = "itf";
+    in.team0 = "Yujia Huang";  // Polymarket: 名 姓
+    in.team1 = "Han Shi";
+    const auto r = m.Match(in, {ev});
+    EXPECT_TRUE(r.matched) << "亚洲姓在前应经共享 token 兜底匹配";
+}
+
+// 安全: 仅共享【名】(1 个 token) 不应误配 (防旧 Sandru/Kastakova 共享名 bug 回归)。
+TEST(EventMatcherSim, IndividualSharedGivenNameNoMatch) {
+    EventMatcher m;
+    EventScore ev;
+    ev.home = "Ioana Kastakova";  // 不同人, 仅共享名 Ioana
+    ev.away = "Maria Tatu";
+    EventMatchInput in;
+    in.sport = "itf";
+    in.team0 = "Ioana Sandru";  // 仅共享名, 姓不同
+    in.team1 = "Maria Popescu";
+    const auto r = m.Match(in, {ev});
+    EXPECT_FALSE(r.matched) << "仅共享名(1 token)不应误配";
+}
+
 // ============================================================================
 // TeamSimilarity (overlap coefficient)
 // ============================================================================

@@ -152,9 +152,34 @@ std::string SurnameToken(const std::string& name) {
 //   2026-06-04 老板「名字已知, 要严谨」根治: 旧版任一共享 ≥3 token →1.0, 但【名】(Ioana/Maria/Sara)
 //   也 ≥3 字 → 不同人因共享名假配到无关比赛 (实测 Sandru/Popa 配上 Kastakova/Tatu, sharp 全错)。
 //   改: 只比姓相等。"Daria Khomutsianskaya" vs "Khomutsianskaya D." 姓都=khomutsianskaya→1.0 (语序无关)。
+// 共享 ≥3字 token 数 (语序无关). 2026-06-10 亚洲名姓在前修复用 (NormalizeTeamTokens 已排序去重)。
+std::size_t SharedLongTokens(const std::string& a, const std::string& b) {
+    const std::vector<std::string> ta = EventMatcher::NormalizeTeamTokens(a);
+    const std::vector<std::string> tb = EventMatcher::NormalizeTeamTokens(b);
+    std::size_t shared = 0, i = 0, j = 0;
+    while (i < ta.size() && j < tb.size()) {
+        if (ta[i] == tb[j]) {
+            if (ta[i].size() >= 3) ++shared;
+            ++i;
+            ++j;
+        } else if (ta[i] < tb[j]) {
+            ++i;
+        } else {
+            ++j;
+        }
+    }
+    return shared;
+}
+
 double IndividualSim(const std::string& a, const std::string& b) {
     const std::string sa = SurnameToken(a), sb = SurnameToken(b);
-    if (!sa.empty() && !sb.empty()) return (sa == sb) ? 1.0 : 0.0;  // 严格认姓: 姓不同=不同人
+    if (!sa.empty() && !sb.empty() && sa == sb) return 1.0;  // 姓相等 (西方序): 同人
+    // 2026-06-10 老板「确定队名没匹配上」: 亚洲名【姓在前】(feed "Huang Yujia" vs PM "Yujia Huang")
+    //   → SurnameToken 取最后 token 取错 (yujia≠huang) → ITF 亚洲赛 (Wuning/Maanshan/Tokyo) 漏配。
+    //   安全兜底: 两名共享 ≥2 个 ≥3字 token (姓+名都对上, 仅语序不同) → 同人。只共享 1 token 不算
+    //   (防共享【名】误配, 如 Ioana Sandru vs Ioana Kastakova 旧 bug, line 152-153)。纯加性: 只增匹配。
+    if (SharedLongTokens(a, b) >= 2) return 1.0;
+    if (!sa.empty() && !sb.empty()) return 0.0;  // 姓都解析出且不等且共享<2 → 不同人
     return EventMatcher::TeamSimilarity(a, b);  // 极少数解析不出姓 → 通用兜底
 }
 
