@@ -467,6 +467,18 @@ function AccountSummarySection() {
               <StatCard label="持仓数" value={String(a()!.open_positions)}
                 sub={<span>Sharpe {a()!.sharpe.toFixed(2)}</span>} />
             </Grid>
+            {/* CLV 入场 edge 真伪金标准 (2026-06-10): >0=入场打败收盘线=edge真; <0=结构性逆选; ~50笔统计显著 */}
+            <Grid item xs={12} sm={6}>
+              <StatCard
+                label="入场 CLV · edge 真伪 (金标准)"
+                value={(a()!.clv_n ?? 0) >= 5
+                  ? `${(a()!.clv_close_mean ?? 0) >= 0 ? '+' : ''}${((a()!.clv_close_mean ?? 0) * 100).toFixed(1)}pt`
+                  : '—'}
+                color={(a()!.clv_n ?? 0) < 20 ? 'yellow' : (a()!.clv_close_mean ?? 0) > 0 ? 'green' : 'red'}
+                sub={<span>{(a()!.clv_n ?? 0) >= 5
+                  ? `vs收盘线 · n=${a()!.clv_n} · 优于收盘${((a()!.clv_positive_rate ?? 0) * 100).toFixed(0)}% · 正=edge真/负=逆选`
+                  : `待结算累积 (n=${a()!.clv_n ?? 0}/20 才统计显著)`}</span>} />
+            </Grid>
           </Grid>
           {/* Kelly bankroll 说明条: 让操盘员确认凯利实际喂的是动态净值 (「纸面化」已修) */}
           <Box sx={{ mt: 1.5, p: 1.2, borderRadius: 1, bgcolor: 'rgba(76,175,80,0.08)', border: '1px solid rgba(76,175,80,0.3)' }}>

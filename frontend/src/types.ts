@@ -146,6 +146,11 @@ export interface AccountDetail {
   kelly_bankroll: number;        // 实际喂凯利的 bankroll
   kelly_bankroll_basis: string;  // 口径说明 (动态 vs 静态)
   open_positions: number;
+  // CLV 验真入场 edge (2026-06-10 金标准): >0=入场打败收盘线=edge真; <0=结构性逆选。~50 笔统计显著。
+  clv_close_mean?: number;       // 平均 CLV vs 收盘线 (prob; 低方差领先指标)
+  clv_settle_mean?: number;      // 平均 CLV vs 0/1 结算 (≈realized)
+  clv_positive_rate?: number;    // 入场优于收盘线命中率 ∈[0,1]
+  clv_n?: number;                // 已结算计入 CLV 的成交数 (<~20 噪声大)
 }
 
 export interface Account {
