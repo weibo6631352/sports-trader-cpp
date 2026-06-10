@@ -20,3 +20,9 @@ owner: 老雷 (GM) | last_review: 2026-06-10
 - 13 入 5 出（出全是单一崩盘仓）—— 不是 churn，是止损纪律
 - sharp=48 稳 | orphan 静默 | 结算池 24 resolved（在涨，我们的仓还没轮到结算 → clv_n=0）
 - 判读：浮盈 +7.74 vs 止损 −6.26 = 典型「favorite 回归 + 截断左尾」形态，方向是否 +EV 等 CLV
+
+## 迭代 #7 — 00:11（运行 ~45min）
+
+- 净 **+2.22**（unreal +9.39 继续爬）| real −6.26 不变 | 10min 内无新 fills（13入/5出）
+- **[orphan-diag] 首次触发**：孤儿持仓=2（比赛打完掉出 catalog）、resolved=0、**pending=2** —— 预期中间态（PM resolution 在赛后几分钟~几小时才出）。SettlementPoller 已在轮询其 cid（HeldConditions 并集修复）。**盯：pending 若 >1h 不降 = 结算漏，立刻查**
+- EXCEED 0 / 进程 1 / clv_n=0（两个孤儿 resolve 后应首开张）
