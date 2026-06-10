@@ -972,6 +972,11 @@ private:
     std::unordered_map<std::string, std::string> last_sell_reason_;
     // ---- 孤儿结算诊断节流 (2026-06-10 老板「查消失的盘结算有没有进账户」): 上次打孤儿诊断的 NowNs (30s 节流) ----
     std::int64_t last_orphan_diag_ns_{0};
+    // ---- 三振出局 (老板 2026-06-11 拍板, 治跷跷板循环割肉: 3 个循环盘吃掉 78% realized 亏损) ----
+    //   condition_id → 止损 episode 计数 (force_stop 连续段计 1 次); 满 2 次本场不再开新仓。
+    //   episode set: force_stop 持续多 tick 只计一次, 清除后再触发算新 episode。loop_thread_ 单 writer。
+    std::unordered_map<std::string, int> market_stop_count_;
+    std::unordered_set<std::string> market_stop_episode_;
 
     // ---- 逐盘累计已实现/费 (老板 2026-06-09「前端观测做到位, 交易订单对得上 PnL」): condition_id → 累计 ----
     //   修对账 bug: PublishLedgerSnapshot 原硬编码 pnl_realized=0 + pnl_fee 只本笔 → 逐盘 net_pnl 平仓后丢

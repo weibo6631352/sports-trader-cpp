@@ -1260,6 +1260,16 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (cfg_.min_open_fair > 0.0 && p_fair_selected < cfg_.min_open_fair) {
         target_mag = 0.0;  // 模型认定近必输方 → 只减不开 (longshot 崩盘护栏)
     }
+    // 三振出局 gate (老板 2026-06-11 拍板): 同盘止损满 2 次 → 本场只减不开。首次止损后的再入照常
+    //   (老板「当作新机会」语义保留); 连吃两次打脸 = 拉锯 régime (sharp 自身随比分来回翻, 无信息优势),
+    //   不再循环送钱 (实测 3 个循环盘吃掉 78% realized 亏损, 最狠单盘 6 开 8 平 −16.6u)。
+    constexpr int kMaxStopsPerMarket = 2;
+    if (target_mag > 0.0) {
+        if (const auto ms_it = market_stop_count_.find(condition_id);
+            ms_it != market_stop_count_.end() && ms_it->second >= kMaxStopsPerMarket) {
+            target_mag = 0.0;  // 出局: 不开新仓 (减仓/平仓不受限, 同 min_open_fair 语义)
+        }
+    }
     // edge-生命周期乘子 (持仓管理 Stage 2, 老板 2026-06-05「sharp 速度/收敛接进决策」): 用本盘 sharp 时序
     //   状态 (Vol 稳定性 + ConvergenceRate 发散谨慎) 缩 target 【量级】∈[floor,1], 抑制噪声驱动过度交易。
     //   PIT-safe: 查 sharp_history_ 已有样本 (本 tick push 在 PublishQuoteSnapshot, 在此之后)。
@@ -1608,6 +1618,18 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                 sel_force_stop = false;
             }
         }
+    }
+
+    // 三振出局计数 (老板 2026-06-11): force_stop 连续段 = 1 个止损 episode (drain 多 tick 只计一次);
+    //   清除后再触发算新 episode。frozen_hard / book_deteriorate / rel_stop 全计 (都是被打脸)。
+    if (sel_force_stop) {
+        if (market_stop_episode_.insert(condition_id).second) {
+            const int n = ++market_stop_count_[condition_id];
+            std::fprintf(stderr, "[two-strikes] cond=%.16s... 止损 episode #%d (%s)%s\n", condition_id.c_str(), n,
+                         sel_reason, n >= 2 ? " → 出局, 本场不再开新仓" : "");
+        }
+    } else {
+        market_stop_episode_.erase(condition_id);
     }
 
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
