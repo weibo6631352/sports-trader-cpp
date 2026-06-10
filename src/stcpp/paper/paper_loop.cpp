@@ -1411,6 +1411,25 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             sel_force_stop = true;  // 绕 loss_cut HOLD
         }
     }
+    // velocity 急转盈利区 force-exit (2026-06-10 持仓策略会 老韩 + 老板「两边都要考虑」): 盈利仓 (mark ≥ 均入)
+    //   但被选边 sharp fair 急跌 (velocity < −vel_exit_thr, 样本≥3) → 立即止盈, 不等 mark 跌 25%。补 rel_stop
+    //   只在亏损区生效的下行缺口 —— 赢家从顶部逆转时及时离场。与「骑住赢家」同源 velocity (赢面升骑住/急跌走人)。
+    if (!sel_force_stop && cfg_.vel_exit_thr > 0.0 && fair_is_sharp) {
+        const auto pos_v = position_ledger_.get_position(token_id);
+        const double avg_v = (pos_v && pos_v->avg_entry_price > 0.0) ? pos_v->avg_entry_price : 0.0;
+        if (avg_v > 0.0 && std::isfinite(mark_price) && mark_price >= avg_v) {  // 盈利区
+            if (const auto shv = sharp_history_.find(condition_id);
+                shv != sharp_history_.end() &&
+                shv->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+                const double vel_yes = shv->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+                const double side_vel = is_yes ? vel_yes : -vel_yes;  // 选 NO 取负
+                if (std::isfinite(side_vel) && side_vel < -cfg_.vel_exit_thr) {
+                    sel_target = 0.0;
+                    sel_force_stop = true;  // velocity 急转 → 盈利仓立即止盈 (下行保护)
+                }
+            }
+        }
+    }
 
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
@@ -1607,13 +1626,37 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
             stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
             return;
         }
-        if (action.side == strategy::Side::Sell && action.is_close && !book_down) {
+        if (action.side == strategy::Side::Sell && action.is_close) {
             const auto pos_tp = position_ledger_.get_position(token_id);
             const double avg_e = (pos_tp && pos_tp->avg_entry_price > 0.0) ? pos_tp->avg_entry_price : 0.0;
-            if (avg_e > 0.0 && exec_bid >= avg_e) {
-                // 盈利取利但簿仍支撑 (未转向下行) → 骑住趋势, 不急止盈 (等簿结构转向再卖)。
-                stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
-                return;
+            if (avg_e > 0.0 && exec_bid >= avg_e) {  // 盈利区
+                // velocity 主导离场 (2026-06-10 持仓策略会 + 老板「赢面还很大卖了可惜」「两边都要考虑」):
+                //   离场由【赢面=sharp fair 趋势】驱动, 不由 bid。赢面涨/稳 → 骑住捕获完整收敛; 赢面真降 →
+                //   离场; 近结算 → 锁利。book 失衡仅作快速安全网 (赢面明显在升时忽略 book 噪声, 不卖飞赢家)。
+                //   tp_reversal_vel_thr=0 (lib 默认) → 回退旧 book-only 逻辑 (hold if !book_down), 契约不变。
+                bool sharp_declining = false, sharp_rising = false;
+                if (cfg_.tp_reversal_vel_thr > 0.0) {
+                    if (const auto shv = sharp_history_.find(condition_id);
+                        shv != sharp_history_.end() &&
+                        shv->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+                        const double vel_yes = shv->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+                        if (std::isfinite(vel_yes)) {
+                            const double side_vel =
+                                (outcome == strategy::Outcome::Yes) ? vel_yes : -vel_yes;  // 选 NO 取负
+                            sharp_declining = (side_vel < -cfg_.tp_reversal_vel_thr);  // 赢面在降 → 离场
+                            sharp_rising = (side_vel > 0.0);                            // 赢面在升 → 忽略簿噪声
+                        }
+                    }
+                }
+                const bool near_settle =
+                    (cfg_.near_settle_capture_frac > 0.0 && time_to_res_frac >= 0.0 &&
+                     time_to_res_frac < cfg_.near_settle_capture_frac);
+                // 骑住赢家: 赢面未真降 + 未近结算 + (簿未塌 OR 赢面在升)。
+                if (!sharp_declining && !near_settle && (!book_down || sharp_rising)) {
+                    stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+                    return;  // 赢面还大, 卖了可惜 → 骑住
+                }
+                // 否则放行止盈: 赢面真降 / 近结算锁利 / 簿真塌且赢面未升。
             }
         }
     }

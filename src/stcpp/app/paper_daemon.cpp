@@ -800,6 +800,13 @@ BuildResult PaperDaemon::Build() {
     //   被选边 fair ≥ 上次卖出均入价 + 0.06。治 churn (费拖累 26-27% 头号成本, take-profit 后同等信号又买)
     //   + 防 take-profit 后撞崩盘 rebuy (实测 0x9581dd 卖后 rebuy 崩 −14)。首笔开仓不受限, force_cross 绕过。
     cfg_.paper_loop.rebuy_edge_premium = 0.06;
+    // 离场策略精细化 (2026-06-10 持仓策略会 + 老板「赢面还很大卖了可惜」「两边都要考虑」): 离场由赢面
+    //   (sharp fair 趋势) 驱动非 bid。① 骑住门 0.003: 被选边 fair velocity<−0.003(赢面真降)才放行止盈,
+    //   赢面涨/稳骑住捕获完整收敛。② 急转门 0.015: 盈利仓 fair velocity<−0.015(赢面急跌)立即止盈(下行保护,
+    //   补 rel_stop 太慢)。③ 近结算捕获 0.05: 剩余≤5%时长盈利仓锁利(亏损仓不强割→让其结算无 slippage)。
+    cfg_.paper_loop.tp_reversal_vel_thr = 0.003;
+    cfg_.paper_loop.vel_exit_thr = 0.015;
+    cfg_.paper_loop.near_settle_capture_frac = 0.05;
     // 决策节拍 (2026-06-04 老板「三源都触发决策没」): 500ms→100ms。三源(WSS/149hz poll/赔率)写共享态,
     //   决策每 tick 读最新; 500ms 把 149hz 新鲜簿+簿结构反应硬卡住 → 簿转向止盈/不被吃单反应慢, 小赢大亏。
     //   降到 100ms: 决策 10×/s 采样新鲜簿; 48 盘×10/s 对 4 核轻松, 新加簿结构+入场价闸防过度交易。

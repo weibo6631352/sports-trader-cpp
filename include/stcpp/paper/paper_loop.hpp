@@ -420,6 +420,19 @@ struct PaperLoopConfig {
     //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.06。
     double rebuy_edge_premium{0.0};
 
+    // ---- 离场策略精细化 (2026-06-10 持仓策略会 + 老板「赢面还很大卖了可惜」「两边都要考虑」) ----
+    //   离场由【赢面=sharp fair 趋势】驱动, 不由 bid 价格。骑住赢面涨/稳的赢家捕获完整收敛, 仅赢面真降/
+    //   急跌/近结算才离场。velocity 单位 prob/sec (sharp_fair_track: +升 −降); 样本≥3 才信 (天然 sharp-based)。
+    //   tp_reversal_vel_thr: 骑住门 —— 被选边 fair velocity < −此值 (赢面在降) 才放行止盈; ≥ 则骑住 (赢面稳/升)。
+    //     0 = 关 (lib 默认, 沿用旧 book 逻辑); 生产 0.003 (赢面缓降也骑住, 只真降才离场)。
+    double tp_reversal_vel_thr{0.0};
+    //   vel_exit_thr: 盈利区急转门 (下行保护) —— 盈利仓 fair velocity < −此值 (赢面急跌) → 立即止盈,
+    //     不等 rel_stop −25% (补 rel_stop 只在亏损区太慢)。0 = 关; 生产 0.015。
+    double vel_exit_thr{0.0};
+    //   near_settle_capture_frac: 近结算捕获 —— time_to_res_frac < 此值 时盈利仓强制锁利 (亏损仓不强割,
+    //     让其结算无 slippage)。0 = 关; 生产 0.05 (剩余 ≤5% 时长)。
+    double near_settle_capture_frac{0.0};
+
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)
