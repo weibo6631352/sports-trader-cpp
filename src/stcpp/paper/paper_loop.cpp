@@ -337,11 +337,14 @@ void PaperLoop::TickAll() {
     //   改动致 GP fault 的崩溃区】。SettleToken 平仓→size 0→下 tick 自动跳过 (无需去重; OnSettle 二次为 no-op)。
     if (tick_inputs_.catalog != nullptr) {
         bool any_orphan_settled = false;
+        int orphan_pending = 0, orphan_resolved = 0;  // 诊断: 孤儿持仓(掉出 catalog) 计数 (老板「查结算是否漏」)
         for (const auto& pv : position_ledger_.get_all_positions()) {  // 返回 copy, 迭代中 SettleToken 改账本安全
             if (pv.size_usdc == 0) continue;
             if (tick_inputs_.catalog->find(pv.condition_id) != tick_inputs_.catalog->end()) continue;  // 仍在 catalog
+            ++orphan_pending;  // 持仓但掉出 catalog = 孤儿 (= 消失在持仓界面的盘)
             const ResolutionEntry* res = ResolutionFor(pv.condition_id);
             if (res == nullptr || res->status != 2 || res->winner < 0) continue;  // 无权威 resolution → 等
+            ++orphan_resolved;
             const double settle_yes = (res->winner == 1) ? 1.0 : 0.0;  // winner 1=YES / 0=NO
             const double settle_px =
                 (pv.outcome == strategy::Outcome::Yes) ? settle_yes : (1.0 - settle_yes);
@@ -350,10 +353,24 @@ void PaperLoop::TickAll() {
             gr.event_ts_ns = rts;
             gr.data_source_ts_ns = rts;
             gr.ingestion_ts_ns = rts;
+            std::fprintf(stderr, "[orphan-settle] cond=%.24s outcome=%s settle=%.1f → 结算孤儿仓 (掉出 catalog 的盘)\n",
+                         pv.condition_id.c_str(), (pv.outcome == strategy::Outcome::Yes) ? "YES" : "NO", settle_px);
             SettleToken(pv.condition_id, pv.token_id, pv.outcome, settle_px, gr);  // 平仓 + realize + CLV OnSettle
             any_orphan_settled = true;
         }
         if (any_orphan_settled) FeedRiskGateway();  // 同 SettleCondition: realize 进 daily_pnl + 敞口归零
+        // 诊断 (老板「查消失的盘结算有没有进账户」): 有孤儿持仓未结算时, 节流(每~30s)打一行 —— 暴露
+        //   「持仓掉出 catalog 但还没 resolution → 卡在 limbo」的盘 (= 用户怀疑的泄漏); 若 pending 一直>0 且不降 = 漏。
+        if (orphan_pending > orphan_resolved) {
+            const std::int64_t now_d = NowNs();
+            if (now_d - last_orphan_diag_ns_ > 30'000'000'000LL) {  // 30s 节流
+                last_orphan_diag_ns_ = now_d;
+                std::fprintf(stderr,
+                             "[orphan-diag] 孤儿持仓(掉出catalog)=%d 其中已resolved待结算=%d → pending未resolved=%d "
+                             "(SettlementPoller 应轮询补 resolution; 长期>0 不降 = 结算漏)\n",
+                             orphan_pending, orphan_resolved, orphan_pending - orphan_resolved);
+            }
+        }
     }
 
     // Phase 0 项5 (联合评审, 小梁): 每 tick 周期采一次组合权益 → Sharpe/maxDD/VaR + 净值曲线 (/api/v1/pnl/timeseries)。

@@ -970,6 +970,8 @@ private:
     // ---- 卖出原因 (2026-06-10 老板「出现卖出就检查是否合理」): token_id → 本 tick 决出的卖出原因 ----
     //   主逻辑在 ExecuteControllerSide 前写; ApplyFill 对卖出成交回读填 FillRow.exit_reason。loop_thread_ 单 writer。
     std::unordered_map<std::string, std::string> last_sell_reason_;
+    // ---- 孤儿结算诊断节流 (2026-06-10 老板「查消失的盘结算有没有进账户」): 上次打孤儿诊断的 NowNs (30s 节流) ----
+    std::int64_t last_orphan_diag_ns_{0};
 
     // ---- 逐盘累计已实现/费 (老板 2026-06-09「前端观测做到位, 交易订单对得上 PnL」): condition_id → 累计 ----
     //   修对账 bug: PublishLedgerSnapshot 原硬编码 pnl_realized=0 + pnl_fee 只本笔 → 逐盘 net_pnl 平仓后丢
