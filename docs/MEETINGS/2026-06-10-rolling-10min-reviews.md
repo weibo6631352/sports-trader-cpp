@@ -26,3 +26,11 @@ owner: 老雷 (GM) | last_review: 2026-06-10
 - 净 **+2.22**（unreal +9.39 继续爬）| real −6.26 不变 | 10min 内无新 fills（13入/5出）
 - **[orphan-diag] 首次触发**：孤儿持仓=2（比赛打完掉出 catalog）、resolved=0、**pending=2** —— 预期中间态（PM resolution 在赛后几分钟~几小时才出）。SettlementPoller 已在轮询其 cid（HeldConditions 并集修复）。**盯：pending 若 >1h 不降 = 结算漏，立刻查**
 - EXCEED 0 / 进程 1 / clv_n=0（两个孤儿 resolve 后应首开张）
+
+## 迭代 #8 — 00:22（运行 ~55min）
+
+- 净 +1.20 | real −8.80（新增 3 笔 book_deteriorate 止损）| unreal **+11.34** | 持仓 12
+- 频率 ≈21 笔/h（19入/8出），出场仍 100% book_deteriorate（纪律一致）
+- **orphan pending 2→1**：一个孤儿离开 pending（推测：比赛回到 catalog 或仓被平）；剩 1 个继续盯
+- clv_n=0：PM resolution（UMA）对 ITF 网球出得慢，属平台节奏非我们的漏
+- 形态持续：「截左尾(realized−) + 浮盈右尾(unreal+)」——结算落地前 realized 必然偏负，**勿据此判死策略**，等 settlement 把赢家变现
