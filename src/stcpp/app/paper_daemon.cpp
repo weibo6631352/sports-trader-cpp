@@ -796,13 +796,13 @@ BuildResult PaperDaemon::Build() {
     // 再入场冷却 (2026-06-09 老板「查明真正原因」, 数据驱动): 同盘减仓/平仓后 30s 内禁 rebuy。根因: 手续费=头号
     //   成本 (实测 fee 4.4 > realized 亏 3.7), 源自 buy→卖光→rebuy 反复 4+ 往返 (每往返付双边费)。冷却打断循环;
     //   force_cross (进球/必赢/止损) 绕过, 保留对真机会反应。
-    // 2026-06-09 升 30s→180s: FLB edge 真实robust (胜率 71%, realized +8.9) 但 churn fee(13.0)>realized →
-    //   净亏。fee=头号成本源自反复 rebuy 同盘 favorite。180s 冷却大幅砍 rebuy 往返 → 让 +EV 落到 net。
-    cfg_.paper_loop.reentry_cooldown_ns = 180'000'000'000LL;  // 180s (3min)
-    // rebuy fair 改善门 (2026-06-10 老姜微观结构 + 老板「持仓策略上层设计发力」): 同盘卖出后 rebuy 要求
-    //   被选边 fair ≥ 上次卖出均入价 + 0.06。治 churn (费拖累 26-27% 头号成本, take-profit 后同等信号又买)
-    //   + 防 take-profit 后撞崩盘 rebuy (实测 0x9581dd 卖后 rebuy 崩 −14)。首笔开仓不受限, force_cross 绕过。
-    cfg_.paper_loop.rebuy_edge_premium = 0.06;
+    // 2026-06-10 老板「就当作一次新的机会, 不需要特殊处理」: 关掉两道 rebuy 特殊闸 (冷却 + 改善门)。
+    //   道理 = 根因 vs 症状: 这两道闸是给 churn 打的补丁, 而 churn 根因是【不该卖时卖了又买回 (buy→坏卖→rebuy)】。
+    //   今日 v2 赢面持有门(赢面还在不亏卖)已从根上掐断坏卖循环 → 补丁多余。再入场就走和【全新盘完全一样】的入场门
+    //   (edge 门 + favorite 地板 + 死区), 每次买只看当下有无 edge, 不看历史。金丝雀: 盯 round-trip 计数, 若 churn
+    //   回升则查"为什么在卖"(根因)不再打补丁。代码留 dormant (behind cfg, 默认 0), 心智负担归零。
+    cfg_.paper_loop.reentry_cooldown_ns = 0;   // 关: 再入场无冷却 (当作新机会)
+    cfg_.paper_loop.rebuy_edge_premium = 0.0;  // 关: 再入场无 fair 改善门 (当作新机会)
     // 离场策略精细化 (2026-06-10 持仓策略会 + 老板「赢面还很大卖了可惜」「两边都要考虑」): 离场由赢面
     //   (sharp fair 趋势) 驱动非 bid。① 骑住门 0.003: 被选边 fair velocity<−0.003(赢面真降)才放行止盈,
     //   赢面涨/稳骑住捕获完整收敛。② 急转门 0.015: 盈利仓 fair velocity<−0.015(赢面急跌)立即止盈(下行保护,
