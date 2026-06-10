@@ -1455,13 +1455,16 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             // else: 赢面还在(fair>floor) + sharp 稳 + 簿没砸 → 持有, 不割肉 (老板「赢面还很大卖了可惜」+「订单簿方向也得考虑」)
         }
     }
-    // velocity 急转盈利区 force-exit (2026-06-10 持仓策略会 老韩 + 老板「两边都要考虑」): 盈利仓 (mark ≥ 均入)
-    //   但被选边 sharp fair 急跌 (velocity < −vel_exit_thr, 样本≥3) → 立即止盈, 不等 mark 跌 25%。补 rel_stop
-    //   只在亏损区生效的下行缺口 —— 赢家从顶部逆转时及时离场。与「骑住赢家」同源 velocity (赢面升骑住/急跌走人)。
+    // velocity 急转盈利区 force-exit (2026-06-10 持仓策略会 老韩 + 老板「两边都要考虑」): sharp fair 急跌
+    //   (velocity < −vel_exit_thr, 样本≥3) → 止盈离场。与「骑住赢家」同源 velocity (赢面升骑住/急跌走人)。
+    //   ★老板 2026-06-10「至少是盈利的情况下才能止盈, 不然都要扛一扛」: 真盈利区判据用【卖价 exec_bid ≥ 入场】
+    //   (= 卖出真锁利), 不用 mark(microprice)≥入场 —— 后者会在 mark≥入场但 bid<入场 时把仓亏卖(实测 0.617 入场
+    //   bid0.610 fair0.640 被 vel_exit 亏卖, 三次被老板标「割肉」)。bid<入场 = 亏卖 ≠ 止盈 → 不卖, 扛着等恢复
+    //   (下行由 rel_stop 赢面门在 fair≤floor 时兜)。
     if (!sel_force_stop && cfg_.vel_exit_thr > 0.0 && fair_is_sharp) {
         const auto pos_v = position_ledger_.get_position(token_id);
         const double avg_v = (pos_v && pos_v->avg_entry_price > 0.0) ? pos_v->avg_entry_price : 0.0;
-        if (avg_v > 0.0 && std::isfinite(mark_price) && mark_price >= avg_v) {  // 盈利区
+        if (avg_v > 0.0 && std::isfinite(exec_bid) && exec_bid >= avg_v) {  // 真盈利区: 卖价≥入场 (止盈不亏卖)
             if (const auto shv = sharp_history_.find(condition_id);
                 shv != sharp_history_.end() &&
                 shv->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
@@ -1512,6 +1515,24 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
     }
 
+    // ★★ 扛一扛门 (2026-06-10 老板「至少是盈利的情况下才能止盈, 不然都要扛一扛」+ 三次「割肉」) ——【统一最终铁律】★★
+    //   赢面还在(fair>floor) + fair 可靠 + 比赛进行中 时, 【绝不亏卖】(卖价 exec_bid < 入场 = 亏卖)。任何减仓/止盈/止损
+    //   (vel_exit/rel_stop 崩溃·簿砸逃逸/Kelly 减仓) 若会亏卖赢家 → 一律持有扛着, 撤销 force_stop。覆盖所有卖出路径,
+    //   是 v2 赢面门/rel_stop 赢面门的统一强化版 (它们留崩溃·簿砸逃逸会亏卖, 此门一票否决)。只有【赢面真没了 fair≤floor】
+    //   或【冻结期 sharp 掉档崩盘 (frozen_hard, fair 不可靠走另一分支)】或【game_decided 比分判输】才允许亏卖 —— 那三条不在此路。
+    if (game_decided_sign == 0.0 && fair_is_sharp && cfg_.hold_if_winning_floor > 0.0
+        && p_fair_selected > cfg_.hold_if_winning_floor) {
+        const auto pos_g = position_ledger_.get_position(token_id);
+        const double cur_g = pos_g ? std::abs(static_cast<double>(pos_g->size_usdc) / 1'000'000.0) : 0.0;
+        const double avg_g = (pos_g && pos_g->avg_entry_price > 0.0) ? pos_g->avg_entry_price : 0.0;
+        const bool would_sell = sel_target < cur_g - 1e-9;                                   // 会减仓/平仓
+        const bool would_lose = avg_g > 0.0 && std::isfinite(exec_bid) && exec_bid < avg_g;  // 卖价<入场 = 亏卖
+        if (cur_g > 0.0 && would_sell && would_lose) {
+            sel_target = cur_g;          // 扛一扛: 赢面还在不亏卖, 持有等恢复/赢面真没了再走
+            sel_force_stop = false;      // 撤销 vel_exit/rel_stop 设的 force_stop (它们想亏卖赢家)
+        }
+    }
+
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     last_sell_reason_[token_id] = sel_reason;  // 卖出原因 (老板「出现卖出就检查是否合理」): ApplyFill 对卖出回读填 FillRow
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
@@ -1531,38 +1552,18 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
         if (other_held) {
             const auto& other_feat = other.book;
-            // M2-a 赢面门 (2026-06-10 老板「还是割肉了」): 切换选边平旧边是裸割路径 (不过赢面门)。旧边若【仍赢面
-            //   (other_fair>floor) + 亏损区 + sharp 没崩 + 旧边簿没砸】→ 不割肉, 持有 (与被选边 v2 同判据)。
-            //   旧边 fair = 1 − 被选边 fair; 旧边 velocity/簿取旧边。守卫: 比赛进行中 + fair 可靠。
+            // M2-a 扛一扛门 (2026-06-10 老板「还是割肉了」+「不然都要扛一扛」): 切换选边平旧边是裸割路径。旧边若
+            //   【仍赢面(other_fair>floor) + 会亏卖(旧边 bid < 旧边入场)】→ 不平, 扛着 (与被选边统一铁律同: 赢面在绝不亏卖)。
+            //   旧边 fair = 1 − 被选边 fair。守卫: 比赛进行中 + fair 可靠。赢面真没了(other_fair≤floor)才平。
             const double other_fair = 1.0 - p_fair_selected;
             bool skip_m2a_close = false;
             if (game_decided_sign == 0.0 && fair_is_sharp && cfg_.hold_if_winning_floor > 0.0
                 && other_fair > cfg_.hold_if_winning_floor) {
                 const auto pos_o = position_ledger_.get_position(other_token);
                 const double avg_o = (pos_o && pos_o->avg_entry_price > 0.0) ? pos_o->avg_entry_price : 0.0;
-                const double other_mark =
-                    std::isfinite(other_feat.microprice) ? other_feat.microprice : other_feat.mid;
-                if (avg_o > 0.0 && std::isfinite(other_mark) && other_mark < avg_o) {  // 旧边亏损区
-                    double ov = 0.0;  // 旧边 velocity (旧边 is_yes = !is_yes)
-                    if (const auto sho = sharp_history_.find(condition_id);
-                        sho != sharp_history_.end() &&
-                        sho->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
-                        const double vy = sho->second.Velocity(cfg_.sharp_fair_vel_window_ns);
-                        ov = (!is_yes) ? vy : -vy;
-                    }
-                    bool obd = false;  // 旧边簿在砸
-                    const double obsz = other_feat.best_bid_size();
-                    const double oasz = other_feat.best_ask_size();
-                    if (std::isfinite(obsz) && std::isfinite(oasz) && obsz + oasz > 0.0) {
-                        const double oimb = (obsz - oasz) / (obsz + oasz);
-                        const double omc = std::isfinite(other_feat.microprice) ? other_feat.microprice
-                                                                                : other_feat.mid;
-                        obd = (oimb < -cfg_.book_exit_imb_thr) && (omc < other_feat.mid);
-                    }
-                    if (RelStopShouldHoldWinner(other_fair, cfg_.hold_if_winning_floor, ov,
-                                                cfg_.vel_exit_thr, obd)) {
-                        skip_m2a_close = true;  // 旧边还赢面+稳 → 不割肉, 持有
-                    }
+                const double other_bid = other_feat.best_bid();  // 旧边真卖价
+                if (avg_o > 0.0 && std::isfinite(other_bid) && other_bid < avg_o) {  // 赢面在 + 会亏卖 → 扛着
+                    skip_m2a_close = true;
                 }
             }
             if (!skip_m2a_close) {
