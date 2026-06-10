@@ -2189,20 +2189,24 @@ PaperLoop::AccountEquitySnapshot PaperLoop::account_equity() const noexcept {
         if (qty == 0.0) continue;
         ++s.open_positions;
         if (qty > 0.0) locked_cost += pv.avg_entry_price * qty;
+        // 资金恒等式修复 (2026-06-10 老板「持仓市值加现金与账户净值对不上」): 估值【对所有仓统一覆盖】——
+        //   bid/mark 有效用之, 否则【回退入场价】(无价信息按入场价计 → 该仓 unrealized=0)。原 bug: locked_cost 对
+        //   所有多头无条件计, 但 position_mtm/unrealized 只在 mark 有效时计 (无簿仓 continue 跳过) → 无 mark 仓
+        //   成本进了 cash 扣减、市值没进 position_mtm → 破坏 cash+position_mtm≡equity 恒等式 (实测差 46.59)。
+        double bid_val = pv.avg_entry_price;   // 回退: 无有效 bid → 按入场价 (unrealized_bid 该仓 = 0)
+        double mark_val = pv.avg_entry_price;  // 回退: 无有效 mark → 按入场价 (unrealized_mark 该仓 = 0)
         const auto bk = hub_.Read(pv.token_id);
-        if (!bk.has_value()) continue;
-        if (bk->data_source_ts_ns > s.as_of_ts_ns) s.as_of_ts_ns = bk->data_source_ts_ns;
-        // [follow-up 小肖] staleness gate (stale book→0 浮盈) 改 DD 红线路径行为, 需老韩签字+改 A5 测试,
-        //   另案 (本 commit 保留 FeedRiskGateway 原口径: 任何 valid bid 计入, 不按 book 龄过滤)。
-        const double bid = bk->best_bid();
-        if (std::isfinite(bid) && bid > 0.0 && bid < 1.0) {
-            s.unrealized_bid += (bid - pv.avg_entry_price) * qty;  // 保守清算价 (砸 bid)
+        if (bk.has_value()) {
+            if (bk->data_source_ts_ns > s.as_of_ts_ns) s.as_of_ts_ns = bk->data_source_ts_ns;
+            // [follow-up 小肖] staleness gate (stale book→0 浮盈) 改 DD 红线路径行为, 需老韩签字+改 A5 测试, 另案。
+            const double bid = bk->best_bid();
+            if (std::isfinite(bid) && bid > 0.0 && bid < 1.0) bid_val = bid;     // 保守清算价 (砸 bid)
+            const double mark = bk->microprice;
+            if (std::isfinite(mark) && mark > 0.0 && mark < 1.0) mark_val = mark;  // 展示 (中间价)
         }
-        const double mark = bk->microprice;
-        if (std::isfinite(mark) && mark > 0.0 && mark < 1.0) {
-            s.unrealized_mark += (mark - pv.avg_entry_price) * qty;  // 展示 (中间价)
-            s.position_mtm += mark * qty;                            // 持仓市值 Σ qty×mark
-        }
+        s.unrealized_bid += (bid_val - pv.avg_entry_price) * qty;
+        s.unrealized_mark += (mark_val - pv.avg_entry_price) * qty;
+        s.position_mtm += mark_val * qty;  // 持仓市值: 全仓覆盖 (mark 或回退入场价) → cash+position_mtm≡equity
     }
     s.equity_bid = s.realized_equity + s.unrealized_bid;
     s.equity_mark = s.realized_equity + s.unrealized_mark;
