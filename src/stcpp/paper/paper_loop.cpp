@@ -1608,15 +1608,32 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         //   fair>floor(这边仍被看好, 默认 0.46) 即使 book 恶化也持有骑到底, 不被 book 噪声把赢面大的仓割飞。
         //   需 fair_is_sharp (fair 可靠); !fair_is_sharp 由 frozen 分支 + frozen_hard_stop 兜底。
         const bool win_prob_gone = fair_is_sharp && p_fair_selected <= cfg_.hold_if_winning_floor;
+        // 60s 持续确认 (老板 2026-06-11 拍板, 治「割在 V 底」): 簿恶化+赢面没了 必须【连续持续 ≥60s】才开割。
+        //   反事实实证: 被割盘大面积割后强力反弹 (0xef817c 割 −15.2 后回到入场上方 / 0xd5cb 0.915), 深夜
+        //   ITF 拉锯时段 realized −50/h —— 网球丢分/丢盘的 V 底尖刺在确认窗内回弹 → 计时归零不割;
+        //   真崩盘持续恶化 → 60s (≈网球 2 分) 后照割, 多损几分但免被动量噪声收割。条件清除即重置计时。
+        constexpr std::int64_t kBookDetConfirmNs = 60'000'000'000LL;
         if (cur_e > 0.0) {
             if (book_det && win_prob_gone) {
-                sel_target = 0.0;                  // 订单簿恶化 + 赢面没了 → 割
-                sel_force_stop = true;
-                sel_reason = "book_deteriorate";
-            } else if (sel_target < cur_e) {
-                sel_target = cur_e;                // 赢面在(fair>floor) or 簿稳 → 持有骑到底 (撤任何止盈/止损/缩仓卖出)
-                sel_force_stop = false;
+                auto& det_since = book_det_since_[token_id];
+                if (det_since == 0) det_since = NowNs();
+                if (NowNs() - det_since >= kBookDetConfirmNs) {
+                    sel_target = 0.0;                  // 持续 60s 双条件确认 → 割
+                    sel_force_stop = true;
+                    sel_reason = "book_deteriorate";
+                } else if (sel_target < cur_e) {
+                    sel_target = cur_e;                // 确认窗内: 持有等确认/回弹
+                    sel_force_stop = false;
+                }
+            } else {
+                book_det_since_.erase(token_id);       // 条件清除 → 计时归零 (V 底回弹免割)
+                if (sel_target < cur_e) {
+                    sel_target = cur_e;                // 赢面在(fair>floor) or 簿稳 → 持有骑到底 (撤任何止盈/止损/缩仓卖出)
+                    sel_force_stop = false;
+                }
             }
+        } else {
+            book_det_since_.erase(token_id);           // 无持仓清残留计时 (防下次入场带陈旧计时秒割)
         }
     }
 

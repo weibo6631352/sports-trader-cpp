@@ -977,6 +977,8 @@ private:
     //   episode set: force_stop 持续多 tick 只计一次, 清除后再触发算新 episode。loop_thread_ 单 writer。
     std::unordered_map<std::string, int> market_stop_count_;
     std::unordered_set<std::string> market_stop_episode_;
+    // ---- book_det 60s 持续确认 (老板 2026-06-11 拍板, 治割在 V 底): token_id → 双条件首次成立 NowNs ----
+    std::unordered_map<std::string, std::int64_t> book_det_since_;
 
     // ---- 逐盘累计已实现/费 (老板 2026-06-09「前端观测做到位, 交易订单对得上 PnL」): condition_id → 累计 ----
     //   修对账 bug: PublishLedgerSnapshot 原硬编码 pnl_realized=0 + pnl_fee 只本笔 → 逐盘 net_pnl 平仓后丢
