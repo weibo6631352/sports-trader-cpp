@@ -753,7 +753,10 @@ BuildResult PaperDaemon::Build() {
     //   2026-06-10 老板 3.0→5.0s: 原 3.0 卡在 Goalserve 正常锯齿峰 (每~2s 出一版, 版本年龄常摸到 3.0-3.5s,
     //   实测 odds-stale 全是 age=3.0-3.1s = 正常延迟非停更) → sharp 几乎每个锯齿峰被丢 = 「sharp 冻结老是出现」
     //   根因。门本意抓「feed 真停更」(那是 6s+, 如实测 161s 的死盘)。5.0s 放过 3-3.5s 正常锯齿, 仍拦真停更。
-    cfg_.paper_loop.sharp_max_staleness_sec = 5.0;
+    // 2026-06-10 老板「赔率源 per-sport feed 一直在线」: data_source_ts=单场 last_update(只在变化时前进), 5.0s 仍卡
+    //   在正常静默(实测 age=5.2s 把活比赛回退不决策)。门本意抓真停更(6s+, 死盘 161s)。放宽 60s: 容忍单场长静默,
+    //   只拦真死源。入场质量另由 lead-lag 门(sharp 先动才进)保证, 不靠此 staleness 门。
+    cfg_.paper_loop.sharp_max_staleness_sec = 60.0;  // was 5.0
     // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 生产开 —— 减仓随预测回 flat (收敛兑现),
     //   解「只买不卖持到结算」。lib 默认关 (契约/管线测试不变)。
     // 2026-06-09 专家组裁决 (微观结构老姜+金融小梁): 早平结构性死 (往返费 0.24>毛 edge 0.16/笔)。改【持有到
@@ -1462,7 +1465,11 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
     // 赔率新鲜度门 (老板 2026-06-05「没赔率源就不订阅该比赛的 PM WSS+149hz」): Goalserve 停更某 event 后
     //   inplay_bet365_fair 仍冻结 value≥0 → 旧 has_sharp 永真 → 永留 eligible → WSS+轮询永不退订 (实测有盘
     //   frozen 18min 仍订)。data_source_ts 超此 = 冻结(非活源), 不算 has_sharp → 经 grace 退订两路。
-    constexpr std::int64_t kSharpFreshNs = 90LL * 1'000'000'000;  // 90s 无更新 = 冻结 (GS 活赛每~2-3s 一版)
+    // 2026-06-10 老板「赔率源是 per-sport feed 一直在线, 不是 per-比赛」: data_source_ts = 单场 match last_update
+    //   (只在比分/赔率【变化】时前进), 不是 feed 在线性。一场球比分/赔率几十秒没变(正常静默: 局间/盘间/回合间/无动作)
+    //   → 旧 90s 门误判「冻结」丢源 = 活比赛突然无赔率源 (matched_with_sharp 暴跌 70→1)。放宽到 600s: 容忍长静默,
+    //   只丢真死源 (>10min 无更新 = 多半已完赛, 且完赛由 is_final 单独立即丢)。feed 整体停更由 feed-liveness 兜。
+    constexpr std::int64_t kSharpFreshNs = 600LL * 1'000'000'000;  // 600s (was 90s): 单场 last_update 静默非源死
     while (!st.stop_requested()) {
         // 0. R-6 周期重发现 (间隔到 → 全量重建 catalog + WSS 重订; 在 match 之前, match_inputs 已是新版)。
         if (cfg_.rediscover_interval_sec > 0 &&
