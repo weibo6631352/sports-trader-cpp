@@ -2000,3 +2000,35 @@ TEST_F(PaperLoopTest, TS5_RestResolutionInjection_AuthoritativeSettle) {
     EXPECT_NEAR(loop_->cum_realized_pnl_pusd(), (1.0 - 0.40) * 5.0, 1e-6)
         << "TS5: realized = (1.0 − 0.40) × 5 = 3.0 (winner=YES 按 REST 注入)";
 }
+
+// ---------------------------------------------------------------------------
+// 冻结期硬下行保护 (2026-06-10 持仓策略会 老韩 bug#2 + 老板「下行不够细致 / 两边都要考虑」)
+//   纯判定 FrozenHardStopTriggered: sharp 掉档冻结态下【双边簿确认真崩盘】才割, 退化簿(单边宽价差)不割。
+//   安全性: 调用方仅在 fair_is_sharp==false 进入 → 与 2026-06-09 −5.80 退化簿(sharp 仍有效)签名互斥。
+// ---------------------------------------------------------------------------
+TEST(FrozenHardStop, TriggersOnConfirmedCrash_RejectsDegenerateBook) {
+    constexpr double kPct = 0.40;       // 生产: 跌破均入 ×0.60
+    constexpr double kMaxSpread = 0.10; // 生产: 双边簿紧门
+    const double avg = 0.79;            // favorite 均入
+
+    // ① 真崩盘: mark 0.45 (< 0.79×0.60=0.474) + 双边齐跌簿紧 (bid0.43/ask0.47, 价差0.04≤0.10) → 割
+    EXPECT_TRUE(FrozenHardStopTriggered(avg, /*mark=*/0.45, /*bid=*/0.43, /*ask=*/0.47, kPct, kMaxSpread))
+        << "双边确认的深崩盘必须截尾止损";
+
+    // ② 退化簿 (−5.80 签名): bid 单边塌 0.0129, ask 仍高 0.50 → 价差 0.487 ≫ 0.10 → 不割 (持有, 等结算/sharp 回)
+    EXPECT_FALSE(FrozenHardStopTriggered(avg, /*mark=*/0.0129, /*bid=*/0.0129, /*ask=*/0.50, kPct, kMaxSpread))
+        << "退化簿单边 bid 塌(宽价差)绝不卖飞 (防 −5.80 回归)";
+
+    // ③ 深度阈值: mark 0.60 (> 0.79×0.60=0.474, 没到深跌阈) → 不割 (浅跌不触发, 让 rel_stop/正常逻辑管)
+    EXPECT_FALSE(FrozenHardStopTriggered(avg, /*mark=*/0.60, /*bid=*/0.58, /*ask=*/0.61, kPct, kMaxSpread))
+        << "未跌破深阈 (×0.60) 不触发灾难止损";
+
+    // ④ 关闭 (pct=0): 永不触发
+    EXPECT_FALSE(FrozenHardStopTriggered(avg, 0.10, 0.09, 0.11, /*pct=*/0.0, kMaxSpread))
+        << "frozen_hard_stop_pct=0 → 门关闭";
+
+    // ⑤ 退化输入兜底: bid≤0 / ask≤bid / 非有限 → 不割 (fail-safe, 不在坏簿上动作)
+    EXPECT_FALSE(FrozenHardStopTriggered(avg, 0.45, /*bid=*/0.0, /*ask=*/0.47, kPct, kMaxSpread));
+    EXPECT_FALSE(FrozenHardStopTriggered(avg, 0.45, /*bid=*/0.47, /*ask=*/0.43, kPct, kMaxSpread)); // 交叉簿
+    EXPECT_FALSE(FrozenHardStopTriggered(avg, std::nan(""), 0.43, 0.47, kPct, kMaxSpread));
+}

@@ -807,6 +807,10 @@ BuildResult PaperDaemon::Build() {
     cfg_.paper_loop.tp_reversal_vel_thr = 0.003;
     cfg_.paper_loop.vel_exit_thr = 0.015;
     cfg_.paper_loop.near_settle_capture_frac = 0.05;
+    // ④ 冻结期硬下行保护 0.40 (2026-06-10 持仓策略会 老韩 bug#2 + 老板「下行不够细致/两边都要考虑」): sharp 掉档
+    //   冻结态下 (rel_stop/vel_exit 全失效) favorite 真崩盘只能裸亏到结算 → 补一道不依赖 sharp 的灾难止损: mark
+    //   跌破均入 ×0.60 且双边簿紧(真崩盘非退化簿) → 截尾。仅 fair_is_sharp==false 触发, 与 −5.80 退化簿(sharp 有效)互斥。
+    cfg_.paper_loop.frozen_hard_stop_pct = 0.40;
     // 决策节拍 (2026-06-04 老板「三源都触发决策没」): 500ms→100ms。三源(WSS/149hz poll/赔率)写共享态,
     //   决策每 tick 读最新; 500ms 把 149hz 新鲜簿+簿结构反应硬卡住 → 簿转向止盈/不被吃单反应慢, 小赢大亏。
     //   降到 100ms: 决策 10×/s 采样新鲜簿; 48 盘×10/s 对 4 核轻松, 新加簿结构+入场价闸防过度交易。

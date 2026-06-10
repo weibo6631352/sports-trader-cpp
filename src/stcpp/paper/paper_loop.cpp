@@ -1389,15 +1389,29 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   中途 sharp 掉出 → ResolveFair 塌到 score-prior/市场 de-vig → Kelly target→0 → 贱卖赢家 (实测 fair 0.64≪
     //   sharp 0.88 把 0.79 仓卖飞)。修: 【未决出 + fair 非 sharp(信号降级)】→ 冻结现仓 (sel_target=现仓, 不按降级
     //   信号开/加/减/平), 等 sharp 回来重评 / 结算。game_decided(比分驱动, 不依赖 sharp) 在上面已处理决出方, 不在此覆盖。
+    bool sel_force_stop = false;   // 上移声明: 冻结期硬止损 (下方) 也要置位以绕 loss_cut HOLD
     if (game_decided_sign == 0.0 && !fair_is_sharp) {
         const auto pos_frz = position_ledger_.get_position(token_id);
         const double cur_qty = pos_frz ? std::abs(static_cast<double>(pos_frz->size_usdc) / 1'000'000.0) : 0.0;
+        const double avg_frz = (pos_frz && pos_frz->avg_entry_price > 0.0) ? pos_frz->avg_entry_price : 0.0;
         if (cur_qty > 0.0) sel_target = cur_qty;   // 冻结: sharp 是真值源, 降级时不拿 score-prior 噪声减/平赢家
+        // 冻结期硬下行保护 (2026-06-10 持仓策略会 老韩 bug#2 + 老板「下行不够细致 / 两边都要考虑」): 冻结 ≠ 裸暴露。
+        //   sharp 掉档时 favorite 真崩盘 —— rel_stop / vel_exit 都 gated 在 fair_is_sharp 上 (见下) → 全失效 → 只能裸亏到
+        //   结算。补一道【不依赖 sharp】的灾难止损: mark 跌破均入 ×(1−frozen_hard_stop_pct, 默认 0.40, 远松于 rel_stop 0.25)。
+        //   安全性关键: 本门【仅在 fair_is_sharp==false 时触发】, 而 2026-06-09 −5.80 灾难的签名是【sharp 仍有效(0.79) +
+        //   退化簿(0.0129)】—— 两者互斥, 结构上不可能回归 −5.80。再加【双边簿紧(价差 ≤ kFrozenStopMaxSpread)】门: 退化簿
+        //   是单边 bid 塌 (价差极宽), 真崩盘是双边齐跌 (价差窄) → 只割双边确认的真崩盘, 不碰单边塌的退化簿。
+        constexpr double kFrozenStopMaxSpread = 0.10;  // 簿紧门: 价差 ≤ 此值 = 双边确认真崩盘 (退化单边塌价差极宽)
+        if (cur_qty > 0.0
+            && FrozenHardStopTriggered(avg_frz, mark_price, exec_bid, exec_ask,
+                                       cfg_.frozen_hard_stop_pct, kFrozenStopMaxSpread)) {
+            sel_target = 0.0;
+            sel_force_stop = true;  // 冻结期灾难止损: 截尾损, 绕 loss_cut HOLD
+        }
     }
 
     // 相对止损 (2026-06-05 老板「亏大就割」): 被选边持仓 mark 跌破均入价 ×(1−rel_stop_pct) → 强平
     //   (sel_target=0 让控制器产平仓卖单 + force_stop 绕过 loss_cut 的 HOLD)。predictive_unwind 下 best_bid>0 即可成交。
-    bool sel_force_stop = false;
     if (cfg_.rel_stop_pct > 0.0) {
         const auto pos_sel = position_ledger_.get_position(token_id);
         const double avg_e = (pos_sel && pos_sel->avg_entry_price > 0.0) ? pos_sel->avg_entry_price : 0.0;

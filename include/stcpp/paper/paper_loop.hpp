@@ -60,6 +60,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdint>
 #include <deque>
 #include <limits>
@@ -111,6 +112,22 @@ struct FeatureStoreGameRow;
 }  // namespace stcpp::data::feature_store
 
 namespace stcpp::paper {
+
+// ---------------------------------------------------------------------------
+// FrozenHardStopTriggered (2026-06-10 老韩 bug#2 + 老板「下行不够细致 / 两边都要考虑」)
+//   纯判定: sharp 掉档冻结态下的【双边簿确认真崩盘】灾难止损。调用方保证仅在 fair_is_sharp==false 时进入,
+//   故与 2026-06-09 −5.80 退化簿(sharp 仍有效)签名互斥, 不回归卖飞。本函数只判:
+//     ① mark 深跌破均入 ×(1−stop_pct)  ② 双边簿存在且 ask>bid>0  ③ 价差 ≤ max_spread (簿紧 = 真崩盘非单边退化塌)。
+//   退化簿是单边 bid 塌→价差极宽→被 ③ 拒; 真崩盘双边齐跌→价差窄→放行截尾。纯函数, 单测覆盖。
+// ---------------------------------------------------------------------------
+inline bool FrozenHardStopTriggered(double avg_entry, double mark, double best_bid,
+                                    double best_ask, double stop_pct, double max_spread) {
+    if (!(stop_pct > 0.0) || !(avg_entry > 0.0)) return false;
+    if (!std::isfinite(mark) || !std::isfinite(best_bid) || !std::isfinite(best_ask)) return false;
+    if (!(best_bid > 0.0) || !(best_ask > best_bid)) return false;            // 双边簿存在
+    if (!(mark < avg_entry * (1.0 - stop_pct))) return false;                 // 深跌
+    return (best_ask - best_bid) <= max_spread;                              // 簿紧 = 双边确认真崩盘
+}
 
 // ---------------------------------------------------------------------------
 // EventMapEntry / ConditionEventMap (A1 映射桥消费侧契约)
@@ -432,6 +449,10 @@ struct PaperLoopConfig {
     //   near_settle_capture_frac: 近结算捕获 —— time_to_res_frac < 此值 时盈利仓强制锁利 (亏损仓不强割,
     //     让其结算无 slippage)。0 = 关; 生产 0.05 (剩余 ≤5% 时长)。
     double near_settle_capture_frac{0.0};
+    //   frozen_hard_stop_pct: 冻结期硬下行保护 (2026-06-10 老韩 bug#2 + 老板「下行不够细致」) —— sharp 掉档冻结态下
+    //     (rel_stop/vel_exit 都失效), mark 跌破均入 ×(1−此值) 且【双边簿紧】(真崩盘非退化簿) → 灾难止损截尾。
+    //     仅 fair_is_sharp==false 时触发, 与 −5.80 退化簿(sharp 仍有效)签名互斥, 不回归卖飞。0 = 关; 生产 0.40 (深阈截尾)。
+    double frozen_hard_stop_pct{0.0};
 
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
