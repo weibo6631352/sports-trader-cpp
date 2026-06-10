@@ -13,7 +13,7 @@ import {
 export function GlobalBar() {
   const [settingsOpen, setSettingsOpen] = createSignal(false);
   const [apiBaseInput, setApiBaseInput] = createSignal(
-    localStorage.getItem('stcpp_api_base') ?? 'http://127.0.0.1:8080',
+    localStorage.getItem('stcpp_api_base') ?? 'http://127.0.0.1:7080',
   );
 
   const s = () => state.status ?? ({} as NonNullable<typeof state.status>);
@@ -40,7 +40,7 @@ export function GlobalBar() {
 
   const stateTitle = () => {
     if (!state.status && isEndpointFailing('/status')) {
-      return '后端未连接 · 请检查 8080 或点 ⚙ 改 API Base';
+      return '后端未连接 · 请检查 7080 或点 ⚙ 改 API Base';
     }
     return undefined;
   };
@@ -178,13 +178,13 @@ export function GlobalBar() {
             <label>API Base</label>
             <input
               type="text"
-              placeholder="http://127.0.0.1:8080"
+              placeholder="http://127.0.0.1:7080"
               value={apiBaseInput()}
               onInput={(e) => setApiBaseInput(e.currentTarget.value)}
             />
             <button class="btn-primary" onClick={saveApiBase}>保存并刷新</button>
           </div>
-          <div class="settings-hint">默认 127.0.0.1:8080. 加 ?stub=1 使用 mock 数据.</div>
+          <div class="settings-hint">默认 127.0.0.1:7080. 加 ?stub=1 使用 mock 数据.</div>
         </div>
       </Show>
     </>

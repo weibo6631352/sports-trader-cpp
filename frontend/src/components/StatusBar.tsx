@@ -131,7 +131,7 @@ export function StatusBar() {
           <Typography
             variant="caption"
             class={stateClass()}
-            title={!state.status && isEndpointFailing('/status') ? '后端未连接 · 请检查 8080 或点 ⚙ 改 API Base' : undefined}
+            title={!state.status && isEndpointFailing('/status') ? '后端未连接 · 请检查 7080 或点 ⚙ 改 API Base' : undefined}
             sx={{ fontWeight: 700, fontSize: '11px', whiteSpace: 'nowrap' }}
           >
             {stateText()}
@@ -263,7 +263,7 @@ export function StatusBar() {
           <TextField
             size="small"
             variant="outlined"
-            placeholder="http://127.0.0.1:8080"
+            placeholder="http://127.0.0.1:7080"
             value={apiBaseInput()}
             onInput={(e) => setApiBaseInput((e.currentTarget as HTMLInputElement).value)}
             sx={{ width: 280, '& input': { fontFamily: 'monospace', fontSize: '12px', py: '4px' } }}
@@ -272,7 +272,7 @@ export function StatusBar() {
             保存并刷新
           </Button>
           <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1 }}>
-            默认 127.0.0.1:8080 · 加 ?stub=1 使用 mock 数据
+            默认 127.0.0.1:7080 · 加 ?stub=1 使用 mock 数据
           </Typography>
         </div>
       </Show>

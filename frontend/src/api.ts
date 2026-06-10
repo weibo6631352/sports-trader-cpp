@@ -22,16 +22,17 @@ import type {
 
 // ---------- API base ----------
 
-/** 后端默认地址: 自动连【访问前端的同一主机】的 8080 (云部署: 浏览器从公网 IP 打开 → 连该 IP:8080)。
- *  本地 dev (localhost) 仍连 127.0.0.1:8080。可被 localStorage 覆盖。跨域由后端 CORS 处理。 */
+/** 后端默认地址: 自动连【访问前端的同一主机】的 7080 (云部署: 浏览器从公网 IP 打开 → 连该 IP:7080)。
+ *  本地 dev (localhost) 仍连 127.0.0.1:7080。可被 localStorage 覆盖。跨域由后端 CORS 处理。
+ *  2026-06-10 端口 8080→7080 (老板「有人窥视, 换端口」)。 */
 function defaultApiBase(): string {
   try {
     const h = window.location.hostname;
-    if (h && h !== 'localhost' && h !== '127.0.0.1') return `http://${h}:8080`;
+    if (h && h !== 'localhost' && h !== '127.0.0.1') return `http://${h}:7080`;
   } catch {
     // SSR / 无 window
   }
-  return 'http://127.0.0.1:8080';
+  return 'http://127.0.0.1:7080';
 }
 
 function loadBaseUrl(): string {
