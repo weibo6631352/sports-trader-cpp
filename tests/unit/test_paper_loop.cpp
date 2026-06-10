@@ -1689,7 +1689,7 @@ TEST_F(PaperLoopTest, TC2_Controller_ConvergesToTarget_NoUnboundedAccumulation) 
 //   持有被低估边 → 市场反转令该边 overpriced (另一边变低估) → 选边翻转 → 旧边自动平仓。
 //   验证: 旧边 (YES) 持仓被卖回 (减仓/趋零) + 新边 (NO) 建仓。这是 Step3-5 发现的真实 de-risk 路径。
 // ===========================================================================
-TEST_F(PaperLoopTest, TM2a_SideFlip_ClosesOldSide) {
+TEST_F(PaperLoopTest, TM2a_NoSideFlip_HoldsHeldSide) {  // 2026-06-10 老板「不要切边」: 推翻原切边, 改锁定持有边
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1746,13 +1746,14 @@ TEST_F(PaperLoopTest, TM2a_SideFlip_ClosesOldSide) {
     std::fprintf(stderr, "[M2a] YES: %.4f(p1) → %.4f(final); NO final=%.4f\n", yes_after_p1, yes_final,
                  no_final);
 
-    // 核心: 选边翻转后旧边 (YES) 被平掉 (减仓 → 显著低于 Phase1; 趋零)
-    EXPECT_LT(yes_final, yes_after_p1)
-        << "M2-a: 选边翻转后旧边 YES 应被平仓 (减仓; bid 高 → reservation_sell 可成交)";
-    // 新边 (NO) 建仓 (买被低估的 NO)
-    EXPECT_GT(no_final, 0.0) << "M2-a: 翻转后新被低估边 NO 应建仓";
-    // 旧边不穿零不开空 (H-2): YES 持仓 ≥ 0 (减仓 clamp ≤ 持仓, 绝不变负)
-    EXPECT_GE(yes_final, 0.0) << "M2-a/H-2: 平旧边绝不穿零开空 (long→0, 不反向)";
+    // 不要切边 (2026-06-10 老板「不要切边, 除非对面是赢家, 只买赢面大的」, 推翻原 M2-a 切边行为):
+    //   持有 YES 后, 即使 NO 变被低估 + YES fair 暴跌, 也【锁定 YES 不切 NO】。对面成赢家由 game_decided 兜底
+    //   (本例 0:3 未达 decided 阈, 故不平; 若真 decided 则 game_decided 平输家 YES)。
+    EXPECT_DOUBLE_EQ(no_final, 0.0)
+        << "不要切边: 锁定持有边(YES) → 绝不开对面 NO (放掉赢面仓追对面 = 切边, 老板禁)";
+    EXPECT_GT(yes_final, 0.0)
+        << "不要切边: 持有 YES 锁定不切走 (未 decided → 不平; book 稳 → 不割)";
+    EXPECT_GE(yes_final, 0.0) << "H-2: 绝不穿零开空";
 }
 
 // ===========================================================================

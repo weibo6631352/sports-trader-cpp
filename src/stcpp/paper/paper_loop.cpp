@@ -1031,7 +1031,23 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
 
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
     const DecisionSide decision = SelectSide(p_fair, p_market_devig);
-    const bool is_yes = (decision.outcome == TradedSide::Yes);
+    bool is_yes = (decision.outcome == TradedSide::Yes);
+    // 不要切边 (2026-06-10 老板「不要切边, 除非对面是赢家, 我们只买赢面大的」): 已持有某边 → 锁定决策到【持有边】,
+    //   不因对面有 edge 就切过去 (放掉赢面仓追对面 = 切边, 老板禁)。对面成赢家由 game_decided 兜底 (处理持有边=必输
+    //   方→平仓)。未持仓 → 按 SelectSide(edge 方向)选, min_open_fair(0.58) 保证只开赢面大的一方 (fair≥0.58)。
+    {
+        const auto exp_lock = position_ledger_.get_per_outcome_exposure();
+        const auto yit = exp_lock.find(mkt.yes_token_id);
+        const auto nit = exp_lock.find(mkt.no_token_id);
+        const bool hold_yes = (yit != exp_lock.end() && yit->second != 0);
+        const bool hold_no = (nit != exp_lock.end() && nit->second != 0);
+        if (hold_yes && !hold_no) {
+            is_yes = true;            // 锁 YES (持有 YES, 绝不切 NO)
+        } else if (hold_no && !hold_yes) {
+            is_yes = false;           // 锁 NO
+        }
+        // 两边都持仓 (历史切边残留) → 不锁, 让 M2-a/book 规则自然收敛到单边
+    }
     // Step F: 被选边执行 book / token / ask / depth / 4ts 全切被选边 (老郭 C2 / 老韩 B-6)。
     const SideView& traded = is_yes ? mkt.yes : mkt.no;
     if (!traded.present) {
