@@ -42,10 +42,13 @@ namespace stcpp::data::team_livescore {
 
 // 队制 livescore feed 的差异参数 (cricket vs esports)。
 struct TeamLivescoreSpec {
-    std::string_view sport;        // EventScore.sport ("cricket" / "esports")
-    std::string_view live_status;  // 进行中状态值 ("In Progress" / "Started")
+    std::string_view sport;        // EventScore.sport ("cricket" / "esports" / "baseball")
+    std::string_view live_status;  // 进行中状态值 ("In Progress" / "Started" / "Inning")
     std::string_view score_attr;   // 比分属性名 ("totalscore" / "score")
     std::string_view away_tag;     // 客队标签 ("visitorteam" / "awayteam")
+    // 2026-06-10: baseball/home live status 是变化的 "Inning 1".."Inning 9" → 需前缀匹配 (true);
+    //   cricket/esports 是固定值 → 精确匹配 (false, 默认, 保留原契约)。
+    bool status_is_prefix{false};
 };
 
 namespace detail {
@@ -141,8 +144,10 @@ inline void TeamIn(std::string_view span, std::string_view tag, std::string_view
             continue;
         const std::string_view hdr = span.substr(0, hdr_end);
         const std::string_view status = AttrIn(hdr, "status");
-        if (status != spec.live_status)
-            continue;  // 仅进行中
+        const bool status_ok = spec.status_is_prefix ? status.starts_with(spec.live_status)
+                                                      : (status == spec.live_status);
+        if (!status_ok)
+            continue;  // 仅进行中 (baseball: "Inning N" 前缀; cricket/esports: 精确)
         const std::string_view mid = AttrIn(hdr, "id");
         if (mid.empty())
             continue;

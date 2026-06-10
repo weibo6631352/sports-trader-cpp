@@ -2017,6 +2017,11 @@ void PaperDaemon::RefreshTeamLivescores(std::stop_token st) {
         {"cricket", "cricket/livescore",
          {"cricket", "In Progress", "totalscore", "visitorteam"}},
         {"esports", "esports/home", {"esports", "Started", "score", "awayteam"}},
+        // 2026-06-10 老板「比赛市场无实时比分·数据源未覆盖」: baseball/home 含 US MLB live 局数比分
+        //   (status="Inning N", awayteam/totalscore), 而主 feed inplay-baseball.gz 仅有 bet365 赔率缺详细
+        //   比分 → MLB 盘 /api/v1/score found:false 触发"无实时比分"警告。补此源填 score store + 覆盖。
+        //   status 变化("Inning 1".."Inning 9") → 前缀匹配 (status_is_prefix=true)。
+        {"baseball", "baseball/home", {"baseball", "Inning", "totalscore", "awayteam", true}},
     };
     int throttle = 0;
     while (!st.stop_requested()) {
