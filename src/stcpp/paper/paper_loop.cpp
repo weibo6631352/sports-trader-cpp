@@ -1575,6 +1575,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     cin.current_pusd = current_pusd;
     cin.reservation_buy_px = reservation.buy_px;
     cin.reservation_sell_px = reservation.sell_px;
+    cin.fair = p_fair_side;  // taker 退出护栏锚 fair (2026-06-10 老韩复盘: 锚 reservation_buy 被 vig 偷放宽)
     cin.best_ask = exec_ask;  // 本边 ask (买入触价 + 限价不追门)
     cin.best_bid = exec_bid;  // 本边 bid (卖出触价 + 限价不追门)
     cin.min_rebalance_pusd = min_rebalance;

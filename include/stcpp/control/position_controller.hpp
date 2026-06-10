@@ -39,6 +39,8 @@ struct ControlInput {
     double current_pusd{0.0};         // 当前持仓 (被选边 token 现有 long; v1 ≥0)
     double reservation_buy_px{0.0};   // 买入保留价上界 (best_ask ≤ 它才买; 小梁公式)
     double reservation_sell_px{1.0};  // 卖出保留价下界 (best_bid ≥ 它才卖)
+    double fair{0.5};                 // 被选边 fair prob (p_fair_selected); taker 退出护栏锚 (2026-06-10)
+                                      //   bid_not_degenerate 锚 fair 而非 reservation_buy (后者含 fee+vig 偷放宽容差)
     double best_ask{0.0};             // 被选边市场 best ask
     double best_bid{0.0};             // 被选边市场 best bid
     double min_rebalance_pusd{1.0};   // 防抖死区 (绝对 pUSD; 小梁 = max(1, 0.1·|target|))
@@ -264,9 +266,13 @@ struct ToxicityGateConfig {
         //   如 0.0129)却放过【中等坏】砸卖。实测 0x33d2a04e fair 0.49 仓被 stop 砸卖在 bid 0.38 (距 reservation_buy
         //   ~8.75pt < 15pt → 放行), realized −0.219/share vs 持有到结算 fair-implied −0.109/share = 损失翻倍。
         //   收到 0.05: bid 距 fair 超 ~5pt 即不 taker 卖, 持有到结算 (fair 是真值, 不在 fair 之下贱卖)。真崩盘
-        //   (fair 也塌) reservation_buy 也低, bid 仍在 5pt 容差内 → 正常割损放行不受影响。
+        //   (fair 也塌) bid 仍在 fair−5pt 容差内 → 正常割损放行不受影响 (fair 自适应)。
+        // 2026-06-10 锚点修正 (老韩交易历史复盘): 原锚 reservation_buy_px(=fair−fee−margin) 让 vig/fee 偷偷
+        //   放宽容差 —— 真实容差 = kMaxTakerSlip + fee_buy + 半 vig, 正常体育 vig(0.045) 把 5pt 名义顶成 8pt
+        //   (实测 sell NO @0.40 vs fair 0.48 = 8pt below 放行)。改锚 fair: 5pt 就是真 5pt, 与「不在 fair 之下
+        //   贱卖超 5pt」意图一致, 且天然随 fair 浮动 (真崩盘 fair 低→正常割损照放行, 自适应性不变)。
         constexpr double kMaxTakerSlip = 0.05;
-        const bool bid_not_degenerate = in.best_bid >= in.reservation_buy_px - kMaxTakerSlip;
+        const bool bid_not_degenerate = in.best_bid >= in.fair - kMaxTakerSlip;
         const bool marketable = taker_exit ? (in.best_bid > 0.0 && bid_not_degenerate)
                                            : (in.best_bid > 0.0 && in.best_bid >= in.reservation_sell_px);
         if (!marketable) {
@@ -274,7 +280,10 @@ struct ToxicityGateConfig {
             return a;
         }
         // v1 不开空: 卖出量不超过当前持仓 (current ≥0)。
-        double sell_sz = std::min(abs_gap, cap);
+        // 2026-06-10 force_stop 一次性清仓 (老姜+老韩交易历史复盘, 治碎卖 fee 头号成本): 止损/急转强平走
+        //   taker 砸 bid, 分批无降冲击收益, 纯多付 N 次 fee (实测 0x1ef76b 12 笔碎卖)。force_stop 时绕
+        //   per_order_cap 一次卖全仓 (current); 普通减仓/做市仍受 cap。减仓不增敞口, 绕 cap 安全 (仍经 RM)。
+        double sell_sz = in.force_stop ? abs_gap : std::min(abs_gap, cap);
         if (!in.allow_short) {
             sell_sz = std::min(sell_sz, std::max(0.0, current));
         }
