@@ -1270,6 +1270,24 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             target_mag = 0.0;  // 出局: 不开新仓 (减仓/平仓不受限, 同 min_open_fair 语义)
         }
     }
+    // 赢面稳定窗 (老板 2026-06-11 拍板「入场太早赢面不稳定」): 被选边 sharp 在过去 3min 内必须【全程】
+    //   ≥ min_open_fair 才开新仓 —— 买「稳定的赢面」不买「正在经过 0.65 的钟摆」。实测: 低桶 (0.65-0.75)
+    //   入场中位 5 分钟即被割 = 买在摆动途中。sharp_history 是 YES-canonical: YES 侧看 WindowMin ≥ 门,
+    //   NO 侧看 1−WindowMax ≥ 门。历史未覆盖整窗 (新盘/刚匹配/sharp 断流) → NaN → 不开 (fail-closed:
+    //   等 3 分钟稳定证据)。减仓/平仓不受限 (同 min_open_fair 语义, hold 由下方 sel_target>=cur_e 保护)。
+    if (target_mag > 0.0 && cfg_.min_open_fair > 0.0 && cfg_.open_stable_window_ns > 0) {
+        bool stable = false;
+        if (const auto sh_st = sharp_history_.find(condition_id); sh_st != sharp_history_.end()) {
+            if (is_yes) {
+                const double wmin = sh_st->second.WindowMin(cfg_.open_stable_window_ns);
+                stable = std::isfinite(wmin) && wmin >= cfg_.min_open_fair;
+            } else {
+                const double wmax = sh_st->second.WindowMax(cfg_.open_stable_window_ns);
+                stable = std::isfinite(wmax) && (1.0 - wmax) >= cfg_.min_open_fair;
+            }
+        }
+        if (!stable) target_mag = 0.0;  // 赢面未稳定满窗 → 只减不开
+    }
     // edge-生命周期乘子 (持仓管理 Stage 2, 老板 2026-06-05「sharp 速度/收敛接进决策」): 用本盘 sharp 时序
     //   状态 (Vol 稳定性 + ConvergenceRate 发散谨慎) 缩 target 【量级】∈[floor,1], 抑制噪声驱动过度交易。
     //   PIT-safe: 查 sharp_history_ 已有样本 (本 tick push 在 PublishQuoteSnapshot, 在此之后)。

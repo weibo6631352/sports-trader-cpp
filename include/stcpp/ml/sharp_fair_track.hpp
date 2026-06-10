@@ -39,7 +39,9 @@ namespace stcpp::ml {
 class SharpFairTrack {
  public:
     // feed ~2s/版 → 64 样本覆盖 ~2min 窗口余量 (Velocity/Conv 默认窗 10s ≈ 5 样本)。
-    static constexpr std::size_t kCapacity = 64;
+    // 2026-06-11 64→256 (赢面稳定窗需覆盖 3min: 活跃时段 sharp ~2-3s 一版, 64 样本可能 <3min →
+    //   WindowMin 永远 NaN 把活跃盘永久拒掉)。256×32B×~200 盘 ≈ 1.6MB, 仍定长无堆 (R-12)。
+    static constexpr std::size_t kCapacity = 256;
 
     struct Sample {
         std::int64_t ts_ns{0};  // 上游 sharp 赔率版本时刻 (PIT 锚; 禁 now())
@@ -124,6 +126,16 @@ class SharpFairTrack {
         return l ? std::abs(l->sharp - l->mid) : kNaN();
     }
 
+    // 窗口 sharp 最小/最大 (赢面稳定窗, 老板 2026-06-11「入场太早赢面不稳定」)。
+    //   语义: 过去 window 内 sharp 的极值, 含【窗口起点前最后一个样本】(sharp 阶跃保持: 起点前的值
+    //   在窗口开端仍有效)。无起点前样本 = 历史未覆盖整窗 (新盘/刚匹配) → NaN, 调用方 fail-closed。
+    [[nodiscard]] double WindowMin(std::int64_t window_ns) const noexcept {
+        return window_extreme_(window_ns, /*want_min=*/true);
+    }
+    [[nodiscard]] double WindowMax(std::int64_t window_ns) const noexcept {
+        return window_extreme_(window_ns, /*want_min=*/false);
+    }
+
     void Reset() noexcept {
         head_ = 0;
         count_ = 0;
@@ -132,6 +144,27 @@ class SharpFairTrack {
 
  private:
     static constexpr double kNaN() noexcept { return std::numeric_limits<double>::quiet_NaN(); }
+
+    // 窗口极值实现 (WindowMin/Max 共用): 扫窗口内样本 + 窗口起点前最后一个样本 (阶跃保持)。
+    [[nodiscard]] double window_extreme_(std::int64_t window_ns, bool want_min) const noexcept {
+        if (count_ == 0 || window_ns <= 0) return kNaN();
+        const std::int64_t cutoff = last_ts_ - window_ns;
+        double ext = want_min ? std::numeric_limits<double>::infinity()
+                              : -std::numeric_limits<double>::infinity();
+        std::int64_t pre_ts = -1;
+        double pre_sharp = 0.0;
+        for (std::size_t i = 0; i < count_; ++i) {
+            const Sample& s = at_(i);
+            if (s.ts_ns >= cutoff) {
+                ext = want_min ? std::min(ext, s.sharp) : std::max(ext, s.sharp);
+            } else if (s.ts_ns > pre_ts) {
+                pre_ts = s.ts_ns;
+                pre_sharp = s.sharp;
+            }
+        }
+        if (pre_ts < 0) return kNaN();  // 历史未覆盖整窗 → fail-closed
+        return want_min ? std::min(ext, pre_sharp) : std::max(ext, pre_sharp);
+    }
 
     // 逻辑索引 i (0=最旧, count_-1=最新) → 物理 buf_ 下标。
     [[nodiscard]] const Sample& at_(std::size_t logical) const noexcept {

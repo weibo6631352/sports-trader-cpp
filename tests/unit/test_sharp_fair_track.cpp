@@ -128,3 +128,31 @@ TEST(SharpFairTrack, SFT11_SingleSampleInWindowNaN) {
     // 大窗口含两个 → 有值
     EXPECT_FALSE(std::isnan(t.Velocity(200 * kSec)));
 }
+
+// SFT-12: WindowMin/Max — 窗口极值 + 起点前样本阶跃保持 + 未覆盖整窗 NaN (赢面稳定窗, 2026-06-11)
+TEST(SharpFairTrack, SFT12_WindowMinMax) {
+    SharpFairTrack t;
+    // 0s:0.60(起点前)  5s:0.70  8s:0.66  10s:0.72 (newest); 窗口 6s → cutoff=4s
+    t.Push(kT0 + 0 * kSec, 0.60, 0.60);
+    t.Push(kT0 + 5 * kSec, 0.70, 0.70);
+    t.Push(kT0 + 8 * kSec, 0.66, 0.66);
+    t.Push(kT0 + 10 * kSec, 0.72, 0.72);
+    // 窗口内 {0.70,0.66,0.72}, 起点前最后值 0.60 (阶跃保持入窗) → min=0.60, max=0.72
+    EXPECT_DOUBLE_EQ(t.WindowMin(6 * kSec), 0.60);
+    EXPECT_DOUBLE_EQ(t.WindowMax(6 * kSec), 0.72);
+    // 窗口 20s: 无起点前样本 (最老 0s 在窗口内) → 未覆盖整窗 → NaN (fail-closed)
+    EXPECT_TRUE(std::isnan(t.WindowMin(20 * kSec)));
+    EXPECT_TRUE(std::isnan(t.WindowMax(20 * kSec)));
+    // 空轨迹 → NaN
+    SharpFairTrack e;
+    EXPECT_TRUE(std::isnan(e.WindowMin(6 * kSec)));
+}
+
+// SFT-13: WindowMin — sharp 整窗静默 (窗口内无样本) → 起点前值保持
+TEST(SharpFairTrack, SFT13_WindowMinSilentWindow) {
+    SharpFairTrack t;
+    t.Push(kT0 + 0 * kSec, 0.68, 0.68);
+    t.Push(kT0 + 100 * kSec, 0.68, 0.68);  // last=100s; 窗口 5s → cutoff=95s, 窗口内仅 100s 样本
+    EXPECT_DOUBLE_EQ(t.WindowMin(5 * kSec), 0.68);  // 0s 样本是起点前值
+    EXPECT_DOUBLE_EQ(t.WindowMax(5 * kSec), 0.68);
+}

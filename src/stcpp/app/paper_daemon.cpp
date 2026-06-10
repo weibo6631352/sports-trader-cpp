@@ -735,6 +735,8 @@ BuildResult PaperDaemon::Build() {
     //   lib 默认 false (向后兼容契约测试); 生产 daemon 置 true (可经 enable_phase0_gates 关, 供管线测试)。
     cfg_.paper_loop.dynamic_reservation = cfg_.enable_phase0_gates;
     cfg_.paper_loop.net_ev_gate = cfg_.enable_phase0_gates;
+    // 赢面稳定窗 3min (老板 2026-06-11「入场太早赢面不稳定」拍板): 同随 phase0 gates (A2 等管线测试可关)。
+    cfg_.paper_loop.open_stable_window_ns = cfg_.enable_phase0_gates ? 180'000'000'000LL : 0;
     // 决策源 = 直播源赔率 sharp (老板 2026-06-04「决策源就只用直播源赔率」+ 2026-06-05「砍掉大模型训练功能」):
     //   fair 由 sharp/derivative/score-prior 驱动 (见 pricing::ResolveFair), 无 ONNX blend。
     //   ml_fair_blend_weight/ml_drive_enabled 配置已随大模型一并砍。量化因子/统计

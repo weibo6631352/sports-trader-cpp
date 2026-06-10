@@ -458,6 +458,10 @@ struct PaperLoopConfig {
     //   平仓/must_win 不受限。修「game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug) → 买崩盘
     //   underdog 单笔 −0.87/−2.00」。0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.15。
     double min_open_fair{0.0};
+    // 赢面稳定窗 (老板 2026-06-11「入场太早赢面不稳定」): 开新仓要求被选边 sharp 在过去此窗口内
+    //   【全程】≥ min_open_fair (买稳定赢面, 不买正在经过门槛的钟摆)。0=关 (lib 默认, 契约/管线测试不变);
+    //   生产 daemon 随 enable_phase0_gates 置 180s。
+    std::int64_t open_stable_window_ns{0};
 
     // 再入场冷却 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 同一 token 减仓/平仓后, 冷却窗内禁止
     //   【新开/加仓买入】(减仓/平仓/must_win/force_cross 不受限)。根因: 实测同盘 buy→卖光→rebuy 反复 4+ 往返
