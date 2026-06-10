@@ -187,8 +187,11 @@ function MarketSummaryRow(props: { cond: ConditionData; expanded: boolean; onCli
         {posText() ?? '无持仓'}
       </span>
 
-      {/* 浮盈 */}
-      <span class={`v8-row-pnl${pnlFmt() == null ? ' v8-dim' : pnlTotal()! >= 0 ? ' v8-pnl-pos' : ' v8-pnl-neg'}`}>
+      {/* 本盘盈亏 (= perMarketPnl: 逐盘 realized + 浮盈 − 费; 无持仓时=已实现, 故标"盈亏"非"浮盈") */}
+      <span
+        class={`v8-row-pnl${pnlFmt() == null ? ' v8-dim' : pnlTotal()! >= 0 ? ' v8-pnl-pos' : ' v8-pnl-neg'}`}
+        title="本盘盈亏 = 已实现 + 浮盈 − 费 (无持仓时即已实现贡献)"
+      >
         {pnlFmt() ?? '—'}
       </span>
 
@@ -433,7 +436,7 @@ function EventAccordion(props: { group: EventGroup }) {
           <span class="v8-col-sharp" title="赔率源 sharp + 市场价距 sharp 偏离 (方向真值)">sharp偏离</span>
           <span class="v8-col-edge" title="ML 模型 edge — 不可靠, 仅参考">ML差</span>
           <span class="v8-col-pos">持仓</span>
-          <span class="v8-col-pnl">浮盈</span>
+          <span class="v8-col-pnl" title="本盘盈亏 = 逐盘累计已实现 + 浮盈 − 手续费 (非仅未实现; 无持仓时=已实现, 故平仓盘仍显示贡献)">盈亏</span>
           <span class="v8-col-rej">拒单</span>
           <span class="v8-col-stale">延迟</span>
         </div>
