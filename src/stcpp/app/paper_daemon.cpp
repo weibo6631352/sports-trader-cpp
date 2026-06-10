@@ -706,6 +706,9 @@ BuildResult PaperDaemon::Build() {
     paper_rm_cfg.market_exposure_cap_usdc =
         domain::MicroPUSD::from_pusd(cfg_.paper_loop.market_exposure_cap_usdc);
     paper_rm_cfg.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.paper_loop.per_outcome_cap_usdc);
+    // 2026-06-10 复盘迭代: event 层聚合 cap (同场 ML+Spread+Total 叠仓=隐性 3x 杠杆)。
+    //   RM 基建已在 (set_condition_event + Σ|condition| ρ=1 上界), 此前默认 10000u 实际未生效 → 设 120u (12% bankroll/场)。
+    paper_rm_cfg.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(120.0);
     paper_rm_cfg.bankroll_usdc =
         domain::MicroPUSD::from_pusd(cfg_.paper_loop.bankroll_usdc);  // c2b: 与 cap 对称
     paper_rm_cfg.edge_ci_lower_floor = -1.0;                          // M1 放宽 CI 门
