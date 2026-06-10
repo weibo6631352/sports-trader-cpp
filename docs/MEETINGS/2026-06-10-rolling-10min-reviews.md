@@ -132,3 +132,11 @@ owner: 老雷 (GM) | last_review: 2026-06-10
 - 探针 v3（CLOB winner 字段 + gamma fallback）固化 scripts/analysis/counterfactual_probe.sh
 - 样本小（n=3），攒到 n≥10 再提改线终案（候选：60s 确认保持 / 网球只留硬门 / 确认窗拉长 120s）
 - 当前运行：空窗期 3 fills，60s 确认未实战
+
+## 迭代 #20 — 07:5x ★ 老板问「入场时机」→ 数据答 + 拍板「赢面稳定窗」→ 已部署
+
+- 老板问「入场时机是否也重要? 入场太早赢面不稳定?」→ cut_ledger 分桶实测: **0.65-0.75 桶被割盘中位 5 分钟即被割** = 买在「正在经过 0.65 的钟摆」不是稳定赢面; 0.75-0.85 桶存活中位 51 分钟
+- **老板四选一拍板: 赢面稳定窗**（不动 0.65 门, 但开新仓要求 sharp 过去 3min 全程 ≥0.65; YES 看 WindowMin / NO 看 1−WindowMax; 新盘历史不足 fail-closed 等 3 分钟）
+- 实现: SharpFairTrack +WindowMin/Max（窗口起点前样本阶跃保持）+ kCapacity 64→256（活跃盘 64 样本盖不住 3min）; cfg 默认关, daemon 随 enable_phase0_gates 置 180s（A2 管线测试不破 — 沿 net_ev_gate 模式）
+- commit ab512ffc, 1407/1407 绿, 07:5x 重启激活（空窗期重启零成本）
+- **入场栈现五层**: fair≥0.65 + 净EV(2×fee+slip) + 先动者闸 + 三振出局 + 赢面稳定窗
