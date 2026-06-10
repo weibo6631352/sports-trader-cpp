@@ -796,6 +796,10 @@ BuildResult PaperDaemon::Build() {
     // 2026-06-09 升 30s→180s: FLB edge 真实robust (胜率 71%, realized +8.9) 但 churn fee(13.0)>realized →
     //   净亏。fee=头号成本源自反复 rebuy 同盘 favorite。180s 冷却大幅砍 rebuy 往返 → 让 +EV 落到 net。
     cfg_.paper_loop.reentry_cooldown_ns = 180'000'000'000LL;  // 180s (3min)
+    // rebuy fair 改善门 (2026-06-10 老姜微观结构 + 老板「持仓策略上层设计发力」): 同盘卖出后 rebuy 要求
+    //   被选边 fair ≥ 上次卖出均入价 + 0.06。治 churn (费拖累 26-27% 头号成本, take-profit 后同等信号又买)
+    //   + 防 take-profit 后撞崩盘 rebuy (实测 0x9581dd 卖后 rebuy 崩 −14)。首笔开仓不受限, force_cross 绕过。
+    cfg_.paper_loop.rebuy_edge_premium = 0.06;
     // 决策节拍 (2026-06-04 老板「三源都触发决策没」): 500ms→100ms。三源(WSS/149hz poll/赔率)写共享态,
     //   决策每 tick 读最新; 500ms 把 149hz 新鲜簿+簿结构反应硬卡住 → 簿转向止盈/不被吃单反应慢, 小赢大亏。
     //   降到 100ms: 决策 10×/s 采样新鲜簿; 48 盘×10/s 对 4 核轻松, 新加簿结构+入场价闸防过度交易。

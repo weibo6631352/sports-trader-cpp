@@ -1629,6 +1629,19 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         }
     }
 
+    // ---- rebuy fair 改善门 (老姜 2026-06-10, 老板「持仓策略上层设计发力」) ---------------------
+    //   同盘卖出后 rebuy 要求被选边 fair ≥ 上次卖出均入价 + rebuy_edge_premium。fair 没真提升不二次建仓:
+    //   ① 治 churn — take-profit 卖高后 sharp 稳定 → 同等信号又买 → 反复往返付费 (费拖累 26-27%);
+    //   ② 防撞崩盘 — take-profit 后 fair 走弱时 rebuy (实测 0x9581dd 卖后 rebuy 崩 −14)。首笔开仓 (无
+    //   last_reduce_ref 记录) 不受限; force_cross (进球/必赢) 绕过。趋近「买一次持到结算」FLB 理想形态。
+    if (cfg_.rebuy_edge_premium > 0.0 && action.side == strategy::Side::Buy && !force_cross) {
+        const auto rit = last_reduce_ref_price_.find(token_id);
+        if (rit != last_reduce_ref_price_.end() && p_fair_side < rit->second + cfg_.rebuy_edge_premium) {
+            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+            return;  // fair 未较上次卖出改善 → 不 rebuy
+        }
+    }
+
     // ---- 必输局保护 (2026-06-04 老板「别买 0.2 以下必输局被套结算」) -------------------------
     //   开新仓买入价 < min_buy_price = 市场实时把该边定为近必输 (时间+比分已定) → 不买 (避免结算归零被套)。
     //   用 exec_ask (真市场价, 非陈旧 sharp) 判, 对无时钟运动 (CS2/网球) 同样鲁棒。减仓/平仓不受限。
@@ -1751,6 +1764,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         last_reduce_ns_[token_id] = as_of_now;
         const auto pos_before = position_ledger_.get_position(token_id);
         if (pos_before && pos_before->avg_entry_price > 0.0) {
+            // rebuy fair 改善门 (老姜 2026-06-10): 记上次卖出时的均入价作 rebuy 参考价。
+            last_reduce_ref_price_[token_id] = pos_before->avg_entry_price;
             const double sold_qty = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
             sell_realized = (fill.fill_price - pos_before->avg_entry_price) * sold_qty;
             cum_realized_pnl_pusd_ += sell_realized;

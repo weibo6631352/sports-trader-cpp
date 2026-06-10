@@ -412,6 +412,14 @@ struct PaperLoopConfig {
     //   (force_cross/must_win 绕过)。0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 30s。
     std::int64_t reentry_cooldown_ns{0};
 
+    // rebuy fair 改善门 (2026-06-10 老姜微观结构裁决, 老板「持仓策略上层设计发力」): 同盘减仓/平仓后,
+    //   rebuy 要求被选边 fair 比【上次卖出时的均入价】至少高 rebuy_edge_premium, 否则不 rebuy。
+    //   治两病: ① churn — take-profit 卖高后 sharp 稳定 → 同等信号又买 → 6 往返付费 (费拖累 26-27%);
+    //   ② rebuy 撞崩盘 — take-profit 后 fair 走弱时 rebuy (实测 0x9581dd 卖后 rebuy 崩 −14)。fair 没真
+    //   提升就不二次建仓 → 趋近「买一次持到结算」(FLB 理想形态)。首笔开仓不受限; force_cross 绕过。
+    //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.06。
+    double rebuy_edge_premium{0.0};
+
     // paper_no_edge_gates (老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」):
     //   虚拟盘调模型模式 — 去掉所有 edge 边门, 让模型/sharp/score-prior 的任意正净 edge 都成交:
     //     ① edge_ci_lower 全源走 raw_edge (不扣二项抽样噪声)
@@ -871,6 +879,9 @@ private:
     // ---- 再入场冷却 (老板 2026-06-09): token_id → 上次减仓/平仓的 NowNs() ----
     //   loop_thread_ 单 writer (ExecuteControllerSide 读+写)。冷却窗内禁新开/加仓买入 (打断 churn rebuy 循环)。
     std::unordered_map<std::string, std::int64_t> last_reduce_ns_;
+    // ---- rebuy fair 改善门 (老姜 2026-06-10): token_id → 上次减仓/平仓时的均入价 (参考价) ----
+    //   rebuy 要求被选边 fair ≥ 此参考价 + rebuy_edge_premium (fair 没真提升不二次建仓; 治 churn + 防撞崩盘)。
+    std::unordered_map<std::string, double> last_reduce_ref_price_;
 
     // ---- 逐盘累计已实现/费 (老板 2026-06-09「前端观测做到位, 交易订单对得上 PnL」): condition_id → 累计 ----
     //   修对账 bug: PublishLedgerSnapshot 原硬编码 pnl_realized=0 + pnl_fee 只本笔 → 逐盘 net_pnl 平仓后丢
