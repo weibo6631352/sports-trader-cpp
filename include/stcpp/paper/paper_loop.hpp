@@ -139,6 +139,18 @@ inline bool FrozenHardStopTriggered(double avg_entry, double mark, double best_b
 //   不死等滞后的 fair 跌下来 (订单簿管执行/逆选时点, 不越界判方向 —— 方向仍归 sharp)。
 //   velocity 不可得时传 0 ⟹ 视作未崩 ⟹ 偏持有 (老板偏好: 赢面还在就别卖)。纯函数, 单测覆盖。
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// BookDeteriorating (2026-06-10 老板「止盈不要了 + 只要订单簿先恶化就割肉」) —— 统一离场唯一触发。
+//   本边订单簿恶化 = L1 失衡 < −imb_thr (卖压: bid_sz 远少于 ask_sz) 且 microprice < mid (方向向下)。
+//   订单簿是 PM 实时流的领先信号 —— 恶化即离场(割/锁); 簿稳则持有骑到底(无止盈/无 mark 止损/无 velocity 离场)。
+//   −5.80 退化簿卖飞由执行层 bid_not_degenerate(锚 fair) 防护, 不在此判。纯函数, 单测覆盖。
+// ---------------------------------------------------------------------------
+inline bool BookDeteriorating(double imb, double microprice, double mid, double imb_thr) {
+    if (!(imb_thr > 0.0)) return false;  // 门关 (lib 默认 0) → 永不恶化判定
+    if (!std::isfinite(microprice) || !std::isfinite(mid)) return false;
+    return (imb < -imb_thr) && (microprice < mid);  // 卖压失衡 + 方向向下 = 恶化
+}
+
 inline bool RelStopShouldHoldWinner(double p_fair_selected, double hold_floor,
                                     double side_velocity, double vel_exit_thr,
                                     bool book_turning_down) {

@@ -2077,3 +2077,24 @@ TEST(RelStopWinProbGate, HoldsStillWinningPosition_CutsWhenWinProbGoneOrCollapsi
     // ⑨ 赢面很高(fair 0.85)+sharp 升, 但簿在砸 → 仍割 (簿方向不被高 fair 盖过)
     EXPECT_FALSE(RelStopShouldHoldWinner(0.85, kFloor, /*vel=*/0.02, kVelThr, kBookDown));
 }
+
+// ---------------------------------------------------------------------------
+// 统一离场: 只要订单簿恶化就割 (2026-06-10 老板「止盈不要了 + 只要订单簿先恶化就割肉」)
+//   离场唯一触发 = BookDeteriorating(失衡<−thr 卖压 且 micro<mid 方向向下)。簿稳→持有骑到底。
+// ---------------------------------------------------------------------------
+TEST(BookDeteriorate, ExitOnlyWhenBookTurnsDown) {
+    constexpr double kThr = 0.15;  // 生产 book_exit_imb_thr
+    // ① 恶化: 失衡 −0.30(<−0.15 卖压) + micro 0.48 < mid 0.50 → 离场
+    EXPECT_TRUE(BookDeteriorating(/*imb=*/-0.30, /*micro=*/0.48, /*mid=*/0.50, kThr))
+        << "卖压失衡 + 方向向下 → 离场";
+    // ② 簿稳(失衡轻 −0.05 > −0.15) → 不离场 (持有骑到底)
+    EXPECT_FALSE(BookDeteriorating(-0.05, 0.48, 0.50, kThr));
+    // ③ 失衡大但 micro ≥ mid (方向没向下) → 不离场
+    EXPECT_FALSE(BookDeteriorating(-0.30, 0.51, 0.50, kThr));
+    // ④ 买压(失衡 +0.30) → 不离场
+    EXPECT_FALSE(BookDeteriorating(0.30, 0.52, 0.50, kThr));
+    // ⑤ 门关 (thr=0, lib 默认) → 永不离场判定
+    EXPECT_FALSE(BookDeteriorating(-0.30, 0.48, 0.50, /*thr=*/0.0));
+    // ⑥ 退化输入 (NaN) → 不离场 (fail-safe)
+    EXPECT_FALSE(BookDeteriorating(-0.30, std::nan(""), 0.50, kThr));
+}

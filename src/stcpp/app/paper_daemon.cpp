@@ -778,7 +778,7 @@ BuildResult PaperDaemon::Build() {
     cfg_.paper_loop.must_win_lock_usdc = 50.0;
     // 相对止损 (2026-06-05 老板「亏大就割」): 持仓 mark 跌破均入价 25% → 强平 (绕 fair-based loss_cut 的滞后)。
     //   修「bid 比 fair 跌得快, 等 fair 跌够时簿已 gap 到地板, 割在 −85%」; 把均亏 −0.70 压到 ~−0.25。
-    cfg_.paper_loop.rel_stop_pct = 0.25;
+    cfg_.paper_loop.rel_stop_pct = 0.0;  // 2026-06-10 老板「止盈不要了 + 只要订单簿恶化就割」: 关 mark 止损, 离场纯 book 驱动
     // 赢面门 0.5 (2026-06-10 老板「止损时还赢面就卖了可惜」): rel_stop 触发后, 若被选边 fair 仍 > 0.5 (这边仍被看好)
     //   且 fair 没在崩 → 不割肉持有 (入场价是沉没成本, 前向 EV=fair>卖价 ⟹ 持有更优); 仅 fair≤0.5(赢面没了)或 fair 在崩才割。
     cfg_.paper_loop.hold_if_winning_floor = 0.46;  // 2026-06-10 老板「割肉离场设置 46」: 赢面跌破 0.46 才割(比 0.5 更扛)
@@ -810,9 +810,11 @@ BuildResult PaperDaemon::Build() {
     //   (sharp fair 趋势) 驱动非 bid。① 骑住门 0.003: 被选边 fair velocity<−0.003(赢面真降)才放行止盈,
     //   赢面涨/稳骑住捕获完整收敛。② 急转门 0.015: 盈利仓 fair velocity<−0.015(赢面急跌)立即止盈(下行保护,
     //   补 rel_stop 太慢)。③ 近结算捕获 0.05: 剩余≤5%时长盈利仓锁利(亏损仓不强割→让其结算无 slippage)。
-    cfg_.paper_loop.tp_reversal_vel_thr = 0.003;
-    cfg_.paper_loop.vel_exit_thr = 0.015;
-    cfg_.paper_loop.near_settle_capture_frac = 0.05;
+    // 2026-06-10 老板「止盈不要了(易错过更大盈利) + 只要订单簿先恶化就割肉」: 关掉所有 velocity/近结算 止盈,
+    //   离场唯一靠统一铁律 BookDeteriorating (本边订单簿恶化)。frozen_hard_stop 保留作 sharp 掉档崩盘 backstop。
+    cfg_.paper_loop.tp_reversal_vel_thr = 0.0;       // 关: 无 velocity 骑住门 (book-only 离场)
+    cfg_.paper_loop.vel_exit_thr = 0.0;              // 关: 无 velocity 止盈/急转离场
+    cfg_.paper_loop.near_settle_capture_frac = 0.0;  // 关: 无近结算锁利 (骑到结算)
     // ④ 冻结期硬下行保护 0.40 (2026-06-10 持仓策略会 老韩 bug#2 + 老板「下行不够细致/两边都要考虑」): sharp 掉档
     //   冻结态下 (rel_stop/vel_exit 全失效) favorite 真崩盘只能裸亏到结算 → 补一道不依赖 sharp 的灾难止损: mark
     //   跌破均入 ×0.60 且双边簿紧(真崩盘非退化簿) → 截尾。仅 fair_is_sharp==false 触发, 与 −5.80 退化簿(sharp 有效)互斥。

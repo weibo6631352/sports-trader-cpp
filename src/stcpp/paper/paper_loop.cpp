@@ -1515,21 +1515,35 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
     }
 
-    // ★★ 扛一扛门 (2026-06-10 老板「至少是盈利的情况下才能止盈, 不然都要扛一扛」+ 三次「割肉」) ——【统一最终铁律】★★
-    //   赢面还在(fair>floor) + fair 可靠 + 比赛进行中 时, 【绝不亏卖】(卖价 exec_bid < 入场 = 亏卖)。任何减仓/止盈/止损
-    //   (vel_exit/rel_stop 崩溃·簿砸逃逸/Kelly 减仓) 若会亏卖赢家 → 一律持有扛着, 撤销 force_stop。覆盖所有卖出路径,
-    //   是 v2 赢面门/rel_stop 赢面门的统一强化版 (它们留崩溃·簿砸逃逸会亏卖, 此门一票否决)。只有【赢面真没了 fair≤floor】
-    //   或【冻结期 sharp 掉档崩盘 (frozen_hard, fair 不可靠走另一分支)】或【game_decided 比分判输】才允许亏卖 —— 那三条不在此路。
-    if (game_decided_sign == 0.0 && fair_is_sharp && cfg_.hold_if_winning_floor > 0.0
-        && p_fair_selected > cfg_.hold_if_winning_floor) {
-        const auto pos_g = position_ledger_.get_position(token_id);
-        const double cur_g = pos_g ? std::abs(static_cast<double>(pos_g->size_usdc) / 1'000'000.0) : 0.0;
-        const double avg_g = (pos_g && pos_g->avg_entry_price > 0.0) ? pos_g->avg_entry_price : 0.0;
-        const bool would_sell = sel_target < cur_g - 1e-9;                                   // 会减仓/平仓
-        const bool would_lose = avg_g > 0.0 && std::isfinite(exec_bid) && exec_bid < avg_g;  // 卖价<入场 = 亏卖
-        if (cur_g > 0.0 && would_sell && would_lose) {
-            sel_target = cur_g;          // 扛一扛: 赢面还在不亏卖, 持有等恢复/赢面真没了再走
-            sel_force_stop = false;      // 撤销 vel_exit/rel_stop 设的 force_stop (它们想亏卖赢家)
+    // ★★ 统一离场铁律 (2026-06-10 老板「止盈不要了(易错过更大盈利) + 只要订单簿先恶化就割肉」) ——【一票裁决, 最后】★★
+    //   离场【唯一触发】= 本边订单簿恶化 (BookDeteriorating: 失衡<−imb_thr 卖压 且 microprice<mid 方向向下)。
+    //   簿稳 → 持有骑到底: 撤销任何止盈/mark止损/velocity离场/Kelly缩仓卖出 (全靠"订单簿=PM实时领先信号"定离场)。
+    //   覆盖所有卖出路径 (在所有 exit 块之后, 一票裁决)。game_decided(比分判输)/settlement/frozen(sharp掉档崩盘) 独立
+    //   backstop。−5.80 退化簿卖飞由执行层 bid_not_degenerate(锚 fair) 防护, 不在此判。
+    if (game_decided_sign == 0.0) {
+        const SideView& sel_view = is_yes ? mkt.yes : mkt.no;  // 本边簿
+        bool book_det = false;
+        if (sel_view.present) {
+            const double bsz = sel_view.book.best_bid_size();
+            const double asz = sel_view.book.best_ask_size();
+            if (std::isfinite(bsz) && std::isfinite(asz) && bsz + asz > 0.0) {
+                const double imb = (bsz - asz) / (bsz + asz);
+                const double micro =
+                    std::isfinite(sel_view.book.microprice) ? sel_view.book.microprice : sel_view.book.mid;
+                book_det = BookDeteriorating(imb, micro, sel_view.book.mid, cfg_.book_exit_imb_thr);
+            }
+        }
+        const auto pos_e = position_ledger_.get_position(token_id);
+        const double cur_e = pos_e ? std::abs(static_cast<double>(pos_e->size_usdc) / 1'000'000.0) : 0.0;
+        if (cur_e > 0.0) {
+            if (book_det) {
+                sel_target = 0.0;                  // 订单簿恶化 → 离场 (割/锁)
+                sel_force_stop = true;
+                sel_reason = "book_deteriorate";
+            } else if (sel_target < cur_e) {
+                sel_target = cur_e;                // 簿稳 → 持有骑到底 (撤任何止盈/止损/缩仓卖出)
+                sel_force_stop = false;
+            }
         }
     }
 
@@ -2069,6 +2083,29 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
     ev.ingestion_ts_ns = game_row.ingestion_ts_ns;
     ev.as_of_ts_ns = NowNs();
     position_ledger_.apply_fill(condition_id, token_id, outcome, ev);
+
+    // 成交流水补结算一笔 (2026-06-10 老板「成交流水的累计已实现也与 pnl 对不上」): 结算 realize 此前只进
+    //   cum_realized_pnl_pusd_(账本) 不进 fills_ring_ → 流水 cum_realized 漏结算实现 → 与账本 cum_realized 背离。
+    //   补一笔 settlement 流水 (is_close, price=settle, fee=0, exit_reason=settlement) → 流水 cum_realized 与账本一致。
+    {
+        FillRow fr;
+        fr.as_of_ts_ns = ev.as_of_ts_ns;
+        fr.condition_id = condition_id;
+        fr.is_yes = (outcome == strategy::Outcome::Yes);
+        fr.is_buy = false;          // 结算 = 平仓 realize (非买)
+        fr.is_close = true;
+        fr.price = settle_price;     // 结算值 (1/0/0.5)
+        fr.size_usdc = qty;
+        fr.realized = (settle_price - avg) * qty;
+        fr.cum_realized = cum_realized_pnl_pusd_;  // 已含本笔结算 (与账本同源)
+        fr.fair = settle_price;      // 结算权威 = fair
+        fr.mark = settle_price;
+        fr.fee = 0.0;                // 结算无交易费
+        fr.exit_reason = "settlement";
+        std::lock_guard<std::mutex> lk(fills_mu_);
+        fills_ring_.push_back(std::move(fr));
+        if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
+    }
 
     // (CLV OnSettle 已移到函数顶部, 在无持仓早退前调 — 修提前平仓入场 CLV 漏计。)
 
