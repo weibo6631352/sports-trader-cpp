@@ -1896,7 +1896,13 @@ void PaperLoop::SettleCondition(const std::string& condition_id, const std::stri
 void PaperLoop::SettleToken(const std::string& condition_id, const std::string& token_id,
                             strategy::Outcome outcome, double settle_price,
                             const data::feature_store::FeatureStoreGameRow& game_row) noexcept {
-    // 当前持仓 (signed micro; v1 long-only ≥0)。无仓 → no-op。
+    // M3 CLV 尺子: 结算 → 算该 token 全部建仓成交的 CLV (close mid / 0-1 settle)。离线评估 only。
+    //   【2026-06-10 根因修复】必须在【无持仓早退之前】调 —— 我们大多数仓提前 take-profit/止损平掉, 结算时
+    //   无持仓; 原 OnSettle 在早退之后 → 提前平仓的入场 CLV 永不计 → clv_n 恒 0 (edge 金标准失效)。
+    //   OnSettle 内部检查 fills_[token], 无记录则 no-op (对没交易的 token 安全)。
+    clv_tracker_.OnSettle(token_id, settle_price);
+
+    // 当前持仓 (signed micro; v1 long-only ≥0)。无仓 → 后续 realize/平仓 no-op (CLV 已上面算过)。
     const auto pos_opt = position_ledger_.get_position(token_id);
     if (!pos_opt.has_value() || pos_opt->size_usdc == 0) {
         return;
@@ -1924,8 +1930,7 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
     ev.as_of_ts_ns = NowNs();
     position_ledger_.apply_fill(condition_id, token_id, outcome, ev);
 
-    // M3 CLV 尺子: 结算 → 算该 token 全部建仓成交的 CLV (close mid / 0-1 settle)。离线评估 only。
-    clv_tracker_.OnSettle(token_id, settle_price);
+    // (CLV OnSettle 已移到函数顶部, 在无持仓早退前调 — 修提前平仓入场 CLV 漏计。)
 
     stats_.positions_settled.fetch_add(1, std::memory_order_relaxed);
     std::fprintf(stderr,
