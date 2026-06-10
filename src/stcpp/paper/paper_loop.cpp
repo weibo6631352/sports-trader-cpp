@@ -1743,9 +1743,25 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         const double micro = std::isfinite(side_book.microprice) ? side_book.microprice : mark_price;
         const bool book_down = (imb < -cfg_.book_exit_imb_thr) && (micro < side_book.mid);  // 簿转向下行
         if (action.side == strategy::Side::Buy && book_down) {
-            // 买入时簿正在下行 (卖压起) → 不接下跌的刀, 等簿稳再进。
-            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
-            return;
+            // 入场先动者判别 (2026-06-10 老板「入场看赔率源先动还是订单簿先动」): 簿在往坏方向走时, 区分真假 edge ——
+            //   ① 赔率源(sharp)先动 (本边 fair velocity > 0 = 在升) = 【先手优势】, edge 真 → 即使簿短暂下行也进场;
+            //   ② sharp 没领先 (velocity ≤ 0) + 簿下行 = edge 很可能是【sharp 滞后(2.3s)才产生的假象】(PM 已知价在跌、
+            //      sharp 还没跟上) → 接飞刀必亏 → 挡。这是治 Goalserve 滞后逆选的入场闸 (与"赔率源先动=先手"同源)。
+            bool sharp_led = false;
+            if (const auto shb = sharp_history_.find(condition_id);
+                shb != sharp_history_.end() &&
+                shb->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+                const double vel_yes = shb->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+                if (std::isfinite(vel_yes)) {
+                    const double side_vel = (outcome == strategy::Outcome::Yes) ? vel_yes : -vel_yes;
+                    sharp_led = (side_vel > 0.0);  // 本边 sharp fair 在升 = 赔率源先动 = 先手
+                }
+            }
+            if (!sharp_led) {  // 簿下行 + sharp 没领先 → 假 edge (sharp 滞后) → 不接下跌的刀
+                stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            // sharp 领先 → 先手优势, 放行入场 (即使簿短暂下行)
         }
         if (action.side == strategy::Side::Sell && action.is_close) {
             const auto pos_tp = position_ledger_.get_position(token_id);

@@ -687,6 +687,18 @@ public:
     // tick 间隔 (ms) — 调用方算 periods_per_year (年化 Sharpe) 用。
     [[nodiscard]] std::int64_t tick_interval_ms() const noexcept { return cfg_.tick_interval_ms; }
 
+    // 有持仓 (open) 的 condition 集 (2026-06-10 老板「我们结算的没有遗漏吧」防孤儿结算): 供 daemon 重发现保留。
+    //   比赛结束掉出 discovery (只留 live+≤1h) 的市场若仍有持仓, 必须留在 catalog + SettlementPoller 直到结算,
+    //   否则 token_map_ 重建丢弃它 → TickOne(结算路) + SettlementPoller(resolution 路) 两路皆断 → 孤儿仓永不结算
+    //   (= CLV=0 根因)。线程安全: get_per_condition_exposure 是 shared_lock 读, 可跨线程 (daemon 重发现线程) 调用。
+    [[nodiscard]] std::vector<std::string> HeldConditions() const {
+        std::vector<std::string> out;
+        for (const auto& [cid, sz] : position_ledger_.get_per_condition_exposure()) {
+            if (sz != 0) out.push_back(cid);  // 净敞口非 0 = 仍持仓 = 需保留至结算
+        }
+        return out;
+    }
+
     // A1: 注入真实 Goalserve 比分源 (可空; nullptr → 恒 stub 路径, 行为同 A1 前).
     //   单 writer: 仅主线程在 Start() 前调用一次 (score_store_ 之后只读).
     void SetScoreStore(const data::ScoreSnapshotStore* s) noexcept { score_store_ = s; }

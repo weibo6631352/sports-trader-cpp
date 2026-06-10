@@ -419,6 +419,12 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
     //   语义不明(追加 vs 替换), 老李评审疑其催掉连接(recv_loop_ended 次因)。初次订阅(OnConnected)
     //   不变(known-good 老格式)。
     std::unordered_set<std::string> old_tokens(all_token_ids_.begin(), all_token_ids_.end());
+    // 防孤儿结算 (2026-06-10 老板「我们结算的没有遗漏吧」): 重建前快照旧 catalog 表, 重建后把【仍有持仓但掉出
+    //   discovery (只留 live+≤1h, 已结束比赛被过滤)】的市场补回 —— 否则其 token_map_ 条目被丢弃 → TickOne(结算路)
+    //   + SettlementPoller(resolution 路) 两路皆断 → 孤儿仓永不结算 (= CLV=0 根因)。持仓清零(结算后)即自然不再补回。
+    const auto old_token_map = token_map_;
+    const auto old_market_catalog = market_catalog_;
+    const auto old_cat_map = market_cat_map_;
     // 全量重建 (老郭): 清 6 表 → PopulateCatalog 重填 (含队名提取/cat/fee/parent/all_token_ids_)。
     token_map_.clear();
     market_catalog_.clear();
@@ -427,6 +433,21 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
     event_infos_.clear();
     all_token_ids_.clear();
     PopulateCatalog(events);
+    // 补回有持仓的已结束市场 (留 catalog + SettlementPoller 至结算; 不补 all_token_ids_ → 不重订 book, 仅需结算)。
+    if (paper_loop_) {
+        for (const auto& cid : paper_loop_->HeldConditions()) {
+            if (token_map_.count(cid)) continue;  // 仍在 discovery, 无需补
+            const auto oit = old_token_map.find(cid);
+            if (oit == old_token_map.end()) continue;  // 旧集也无 (异常) → 跳过
+            token_map_[cid] = oit->second;
+            if (const auto mc = old_market_catalog.find(cid); mc != old_market_catalog.end()) {
+                market_catalog_[cid] = mc->second;
+            }
+            if (const auto cc = old_cat_map.find(cid); cc != old_cat_map.end()) {
+                market_cat_map_[cid] = cc->second;
+            }
+        }
+    }
     // 发布: PaperLoop catalog (RCU 原子 swap) + RSP (meta_mu_ 守护) + WSS 全量重订。
     if (paper_loop_) {
         paper_loop_->SetPaperCatalog(BuildPaperCatalog());
