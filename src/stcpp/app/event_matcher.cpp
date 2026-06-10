@@ -171,6 +171,15 @@ std::size_t SharedLongTokens(const std::string& a, const std::string& b) {
     return shared;
 }
 
+// 恰差 1 字符 (同长, 纯替换)。转写变体检测用: Belozertsev↔Bilozertsev (e↔i)。
+bool HammingOne(const std::string& a, const std::string& b) {
+    if (a.size() != b.size()) return false;
+    std::size_t diff = 0;
+    for (std::size_t i = 0; i < a.size(); ++i)
+        if (a[i] != b[i] && ++diff > 1) return false;
+    return diff == 1;
+}
+
 double IndividualSim(const std::string& a, const std::string& b) {
     const std::string sa = SurnameToken(a), sb = SurnameToken(b);
     if (!sa.empty() && !sb.empty() && sa == sb) return 1.0;  // 姓相等 (西方序): 同人
@@ -179,6 +188,10 @@ double IndividualSim(const std::string& a, const std::string& b) {
     //   安全兜底: 两名共享 ≥2 个 ≥3字 token (姓+名都对上, 仅语序不同) → 同人。只共享 1 token 不算
     //   (防共享【名】误配, 如 Ioana Sandru vs Ioana Kastakova 旧 bug, line 152-153)。纯加性: 只增匹配。
     if (SharedLongTokens(a, b) >= 2) return 1.0;
+    // 2026-06-10b 转写变体: GS "Nikita Belozertsev" vs PM "Nikita Bilozertsev" (斯拉夫名拉丁转写
+    //   差一元音) → 姓不等漏配 (实测丢 1 个可交易盘)。窄门: 姓同长 ≥6 且恰差 1 字符 (纯替换;
+    //   同长排除 -ov/-ova 性别后缀增删) + 共享 ≥1 个其他 ≥3字 token (名完全相等锚定) → 同人。纯加性。
+    if (sa.size() >= 6 && HammingOne(sa, sb) && SharedLongTokens(a, b) >= 1) return 1.0;
     if (!sa.empty() && !sb.empty()) return 0.0;  // 姓都解析出且不等且共享<2 → 不同人
     return EventMatcher::TeamSimilarity(a, b);  // 极少数解析不出姓 → 通用兜底
 }

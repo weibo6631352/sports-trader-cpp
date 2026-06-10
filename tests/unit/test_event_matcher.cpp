@@ -245,6 +245,49 @@ TEST(EventMatcherSim, IndividualSharedGivenNameNoMatch) {
     EXPECT_FALSE(r.matched) << "仅共享名(1 token)不应误配";
 }
 
+// 个人项目: 斯拉夫名拉丁转写变体 (姓差一元音) 经 [姓同长恰差1字符 + 名相等锚] 窄门匹配。
+//   2026-06-10b 实测: GS "Belozertsev" vs PM "Bilozertsev" 同一人, 漏配丢 1 可交易盘。
+TEST(EventMatcherSim, IndividualTransliterationVariantMatch) {
+    EventMatcher m;
+    EventScore ev;
+    ev.home = "Nikita Belozertsev";  // Goalserve 转写
+    ev.away = "Adam Jilly";
+    EventMatchInput in;
+    in.sport = "itf";
+    in.team0 = "Nikita Bilozertsev";  // Polymarket 转写 (e→i)
+    in.team1 = "Adam Jilly";
+    const auto r = m.Match(in, {ev});
+    EXPECT_TRUE(r.matched) << "转写变体(姓差1元音+名相等)应匹配";
+}
+
+// 安全: 性别后缀 -ov/-ova (长度不同=增删非替换) 不应过转写窄门 (可能是不同人)。
+TEST(EventMatcherSim, IndividualGenderSuffixNoMatch) {
+    EventMatcher m;
+    EventScore ev;
+    ev.home = "Anna Petrova";
+    ev.away = "Maria Tatu";
+    EventMatchInput in;
+    in.sport = "itf";
+    in.team0 = "Anna Petrov";  // 姓差一个尾缀字符 (长度不同) → 不认
+    in.team1 = "Lucia Bronzetti";
+    const auto r = m.Match(in, {ev});
+    EXPECT_FALSE(r.matched) << "性别后缀增删不应过转写窄门";
+}
+
+// 安全: 姓恰差1字符但【名】不同 (无锚) 不应匹配。
+TEST(EventMatcherSim, IndividualSimilarSurnameNoGivenNameNoMatch) {
+    EventMatcher m;
+    EventScore ev;
+    ev.home = "Marko Belozertsev";
+    ev.away = "Maria Tatu";
+    EventMatchInput in;
+    in.sport = "itf";
+    in.team0 = "Ivan Bilozertsev";  // 姓差1字符但名不同 → 可能不同人
+    in.team1 = "Lucia Bronzetti";
+    const auto r = m.Match(in, {ev});
+    EXPECT_FALSE(r.matched) << "姓近似但名不同不应匹配";
+}
+
 // ============================================================================
 // TeamSimilarity (overlap coefficient)
 // ============================================================================
