@@ -34,3 +34,10 @@ owner: 老雷 (GM) | last_review: 2026-06-10
 - **orphan pending 2→1**：一个孤儿离开 pending（推测：比赛回到 catalog 或仓被平）；剩 1 个继续盯
 - clv_n=0：PM resolution（UMA）对 ITF 网球出得慢，属平台节奏非我们的漏
 - 形态持续：「截左尾(realized−) + 浮盈右尾(unreal+)」——结算落地前 realized 必然偏负，**勿据此判死策略**，等 settlement 把赢家变现
+
+## 迭代 #9 — 00:33（运行 ~65min）
+
+- 净 **+7.97** ↑↑ | unreal **+19.09**（17 仓）| real −8.80 无新止损 | 费 2.32
+- 10min 新入 12 笔（频率 ≈28/h 加速，晚场赛事增多）；出场 0 新增
+- orphan pending=1 稳 | clv_n=0 | EXCEED 0
+- 无动作。净值曲线 +1.2→+8.0，浮盈引擎在转
