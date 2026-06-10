@@ -130,6 +130,27 @@ inline bool FrozenHardStopTriggered(double avg_entry, double mark, double best_b
 }
 
 // ---------------------------------------------------------------------------
+// RelStopShouldHoldWinner (2026-06-10 老板「止损时还赢面就卖了可惜」)
+//   rel_stop 已触发(已跌破入场×(1−rel_stop_pct))后的【赢面门】: 入场价是沉没成本, 该不该割只看 fair(赢面) vs 卖价。
+//   返回 true = 应【持有不割】, 需同时: hold_floor>0 (门开) 且 被选边 fair > hold_floor (这边仍被看好, 前向 EV=fair>卖价)
+//   且 fair 没在崩 (sharp side_velocity ≥ −vel_exit_thr) 且【本边订单簿没在砸】(book_turning_down=false)。
+//   返回 false = 应割: 门关 / 赢面没了(fair≤floor) / 赢面在崩(sharp) / 订单簿在砸(本边卖压, 领先信号)。
+//   两边都考虑 (老板「订单簿方向也得考虑」): sharp fair 滞后 2.3s, 订单簿是 PM 实时流的领先信号 —— 簿在砸则趁能卖时离场,
+//   不死等滞后的 fair 跌下来 (订单簿管执行/逆选时点, 不越界判方向 —— 方向仍归 sharp)。
+//   velocity 不可得时传 0 ⟹ 视作未崩 ⟹ 偏持有 (老板偏好: 赢面还在就别卖)。纯函数, 单测覆盖。
+// ---------------------------------------------------------------------------
+inline bool RelStopShouldHoldWinner(double p_fair_selected, double hold_floor,
+                                    double side_velocity, double vel_exit_thr,
+                                    bool book_turning_down) {
+    if (!(hold_floor > 0.0)) return false;                              // 门关 → 沿用旧割
+    if (!(p_fair_selected > hold_floor)) return false;                  // 赢面没了 → 割
+    if (vel_exit_thr > 0.0 && std::isfinite(side_velocity)
+        && side_velocity < -vel_exit_thr) return false;                 // 赢面在崩 (sharp) → 割
+    if (book_turning_down) return false;                                // 订单簿在砸 (本边卖压领先信号) → 趁能卖离场
+    return true;                                                        // 赢面在 + sharp 稳 + 簿稳 → 持有
+}
+
+// ---------------------------------------------------------------------------
 // EventMapEntry / ConditionEventMap (A1 映射桥消费侧契约)
 //   condition_id → {Goalserve inplay_match_id, orientation}.
 //   由 app 层 (PaperDaemon + EventMatcher) 解析后经 SetEventMapping() 注入 (atomic 热刷).
@@ -415,6 +436,10 @@ struct PaperLoopConfig {
     //   地板, 割也割在 −85%」: 改用 mark 相对入场价的跌幅当触发, 把均亏从 −0.70 压到 ~−0.25。
     //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.25 (mark 跌 25% 即止损)。
     double rel_stop_pct{0.0};
+    // 赢面门 (2026-06-10 老板「止损时还赢面就卖了可惜」): rel_stop 触发后, 若被选边 fair(赢面) 仍 > 此值 (这边仍被
+    //   看好) 且 fair 没在崩 (velocity ≥ −vel_exit_thr) → 不割, 持有。入场价是沉没成本, 前向 EV = fair > 卖价 ⟹ 持有更优;
+    //   仅【fair ≤ 此值 (赢面没了)】或【fair 在崩】才割。0 = 关 (lib 默认, 沿用旧「跌破入场就割」); 生产 daemon 置 0.5。
+    double hold_if_winning_floor{0.0};
 
     // 必输方开仓护栏 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 被选边【模型 fair】< 此值 → 不开新仓
     //   (近必输 longshot 下侧到 0 远大于 edge, 永远 −EV)。用模型 fair 非市场价地板 (老板「用模型」)。减仓/

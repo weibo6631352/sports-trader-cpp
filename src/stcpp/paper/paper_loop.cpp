@@ -1421,8 +1421,35 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         //   反转) 才 force_stop taker 割; fair 仍看好(价格噪声/簿塌)→ 不割, 持有 (配套执行层 bid_not_degenerate 双保险)。
         if (avg_e > 0.0 && std::isfinite(mark_price) && mark_price < avg_e * (1.0 - cfg_.rel_stop_pct)
             && fair_is_sharp && p_fair_selected < avg_e - cfg_.loss_cut_fair_band) {  // fair_is_sharp: 降级 fair 不触发(防卖飞)
-            sel_target = 0.0;       // 强制平仓目标
-            sel_force_stop = true;  // 绕 loss_cut HOLD
+            // 赢面门 (2026-06-10 老板「止损时还赢面就卖了可惜」): 入场价是【沉没成本】, 该不该割只看【fair(赢面) vs 卖价】——
+            //   fair 还 > hold_if_winning_floor(默认 0.5, 这边仍被看好) ⟹ 持有前向 EV = fair > bid = 卖了亏 EV(割肉谬误 + 白付
+            //   价差/费)。故仅【赢面真没了: fair ≤ floor (这边不再被看好)】或【赢面在崩: side velocity < −vel_exit_thr, fair 还会更低】
+            //   才割; fair > floor 且稳 → 持有不割。floor ≤ 0 (lib 默认) ⟹ 门关, 沿用旧「跌破入场×0.75 就割」行为。
+            double side_vel = 0.0;  // velocity 不可得(样本<3)→ 0 → 视作未崩 → 偏持有 (老板: 赢面还在别卖)
+            bool book_turning_down = false;  // 本边订单簿在砸 (领先信号; 老板「订单簿方向也得考虑」)
+            if (cfg_.hold_if_winning_floor > 0.0 && p_fair_selected > cfg_.hold_if_winning_floor) {
+                if (const auto shr = sharp_history_.find(condition_id);
+                    shr != sharp_history_.end() &&
+                    shr->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+                    const double v_yes = shr->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+                    side_vel = is_yes ? v_yes : -v_yes;  // 选 NO 取负
+                }
+                // 本边簿方向 (复用 book_exit 同款归一化失衡门 book_exit_imb_thr, 无需新标定): 失衡<−thr 且 micro<mid = 卖压。
+                const auto& sel_book = is_yes ? mkt.yes.book : mkt.no.book;  // 选边本边簿 (非 YES-canonical)
+                const double bsz = sel_book.best_bid_size();
+                const double asz = sel_book.best_ask_size();
+                if (std::isfinite(bsz) && std::isfinite(asz) && bsz + asz > 0.0) {
+                    const double imb = (bsz - asz) / (bsz + asz);
+                    const double micro = std::isfinite(sel_book.microprice) ? sel_book.microprice : sel_book.mid;
+                    book_turning_down = (imb < -cfg_.book_exit_imb_thr) && (micro < sel_book.mid);
+                }
+            }
+            if (!RelStopShouldHoldWinner(p_fair_selected, cfg_.hold_if_winning_floor,
+                                         side_vel, cfg_.vel_exit_thr, book_turning_down)) {  // 赢面没/崩/簿砸/门关 → 割
+                sel_target = 0.0;            // 强制平仓目标
+                sel_force_stop = true;       // 绕 loss_cut HOLD
+            }
+            // else: 赢面还在(fair>floor) + sharp 稳 + 簿没砸 → 持有, 不割肉 (老板「赢面还很大卖了可惜」+「订单簿方向也得考虑」)
         }
     }
     // velocity 急转盈利区 force-exit (2026-06-10 持仓策略会 老韩 + 老板「两边都要考虑」): 盈利仓 (mark ≥ 均入)

@@ -2032,3 +2032,48 @@ TEST(FrozenHardStop, TriggersOnConfirmedCrash_RejectsDegenerateBook) {
     EXPECT_FALSE(FrozenHardStopTriggered(avg, 0.45, /*bid=*/0.47, /*ask=*/0.43, kPct, kMaxSpread)); // 交叉簿
     EXPECT_FALSE(FrozenHardStopTriggered(avg, std::nan(""), 0.43, 0.47, kPct, kMaxSpread));
 }
+
+// ---------------------------------------------------------------------------
+// 赢面门 (2026-06-10 老板「止损时还赢面就卖了可惜」)
+//   rel_stop 触发后, 入场价是沉没成本 → 该不该割只看 fair(赢面) vs 卖价。
+//   fair>floor(仍被看好)且没在崩 → 持有(前向 EV=fair>卖价); fair≤floor(赢面没)或在崩 → 割。
+// ---------------------------------------------------------------------------
+TEST(RelStopWinProbGate, HoldsStillWinningPosition_CutsWhenWinProbGoneOrCollapsing) {
+    constexpr double kFloor = 0.5;   // 生产: fair>0.5 仍被看好
+    constexpr double kVelThr = 0.015;
+    constexpr bool kBookOk = false;  // 簿没在砸
+    constexpr bool kBookDown = true; // 簿在砸 (本边卖压)
+
+    // ① 赢面还在(fair 0.55 > 0.5)+稳(vel 0)+簿没砸 → 持有 (= −13.75 元凶场景: 0.823 买, fair 跌到 0.55 仍 55% 赢面)
+    EXPECT_TRUE(RelStopShouldHoldWinner(/*fair=*/0.55, kFloor, /*vel=*/0.0, kVelThr, kBookOk))
+        << "fair 0.55 仍被看好+稳+簿稳 → 持有不割肉 (卖了可惜)";
+
+    // ② 赢面还在但 sharp 在崩(vel −0.03 < −0.015) → 割 (fair 还会更低)
+    EXPECT_FALSE(RelStopShouldHoldWinner(0.55, kFloor, /*vel=*/-0.03, kVelThr, kBookOk))
+        << "sharp fair 在崩 → 仍割";
+
+    // ③ 赢面没了(fair 0.45 ≤ 0.5) → 割
+    EXPECT_FALSE(RelStopShouldHoldWinner(0.45, kFloor, /*vel=*/0.0, kVelThr, kBookOk))
+        << "fair≤floor 赢面没了 → 割";
+
+    // ④ 边界: fair == floor → 需严格 > → 割
+    EXPECT_FALSE(RelStopShouldHoldWinner(0.50, kFloor, 0.0, kVelThr, kBookOk));
+
+    // ⑤ 门关 (floor=0, lib 默认) → 永远割 (沿用旧行为, 不破坏契约)
+    EXPECT_FALSE(RelStopShouldHoldWinner(0.80, /*floor=*/0.0, 0.0, kVelThr, kBookOk))
+        << "floor=0 门关 → 沿用旧行为";
+
+    // ⑥ 赢面很大(fair 0.78)+缓升(vel +0.01)+簿稳 → 持有
+    EXPECT_TRUE(RelStopShouldHoldWinner(0.78, kFloor, /*vel=*/0.01, kVelThr, kBookOk));
+
+    // ⑦ velocity 不可得(NaN) + 簿稳 → 视作未崩 → 偏持有
+    EXPECT_TRUE(RelStopShouldHoldWinner(0.60, kFloor, std::nan(""), kVelThr, kBookOk));
+
+    // ⑧ 订单簿在砸 (老板「订单簿方向也得考虑」): 赢面还在(fair 0.60)+sharp 稳(vel 0), 但本边簿在砸 → 割
+    //    (sharp fair 滞后 2.3s, 订单簿是领先信号 → 趁还能卖时离场, 不死等滞后 fair 跌下来)
+    EXPECT_FALSE(RelStopShouldHoldWinner(0.60, kFloor, /*vel=*/0.0, kVelThr, kBookDown))
+        << "赢面+sharp 都还在, 但订单簿在砸 → 仍割 (两边都考虑)";
+
+    // ⑨ 赢面很高(fair 0.85)+sharp 升, 但簿在砸 → 仍割 (簿方向不被高 fair 盖过)
+    EXPECT_FALSE(RelStopShouldHoldWinner(0.85, kFloor, /*vel=*/0.02, kVelThr, kBookDown));
+}

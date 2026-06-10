@@ -776,6 +776,9 @@ BuildResult PaperDaemon::Build() {
     // 相对止损 (2026-06-05 老板「亏大就割」): 持仓 mark 跌破均入价 25% → 强平 (绕 fair-based loss_cut 的滞后)。
     //   修「bid 比 fair 跌得快, 等 fair 跌够时簿已 gap 到地板, 割在 −85%」; 把均亏 −0.70 压到 ~−0.25。
     cfg_.paper_loop.rel_stop_pct = 0.25;
+    // 赢面门 0.5 (2026-06-10 老板「止损时还赢面就卖了可惜」): rel_stop 触发后, 若被选边 fair 仍 > 0.5 (这边仍被看好)
+    //   且 fair 没在崩 → 不割肉持有 (入场价是沉没成本, 前向 EV=fair>卖价 ⟹ 持有更优); 仅 fair≤0.5(赢面没了)或 fair 在崩才割。
+    cfg_.paper_loop.hold_if_winning_floor = 0.5;
     // 必输方开仓护栏 (2026-06-09 老板「调试持仓逻辑, 查明真正原因」, 数据驱动): 被选边模型 fair < 0.15 → 不开
     //   新仓 (近必输 longshot 下侧到 0 远大于 edge, −EV)。实测灾难性亏损全是买崩盘 underdog (fair 0.11 买 0.08 →
     //   崩到 0.03, 单笔 −0.87/−2.00); game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug)。
