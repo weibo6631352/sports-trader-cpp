@@ -260,7 +260,12 @@ struct ToxicityGateConfig {
         //   best_bid 远低于 fair(≈reservation_buy_px, =fair−fee−margin) = 簿塌陷(MM 撤盘/feed 陈旧), 砸卖 = 白送仓位
         //   (实测: fair 0.79 的 NO 被以 best_bid 0.0129 止损甩卖, realized −5.80)。bid 距 fair 超 kMaxTakerSlip → 不卖,
         //   持有等簿恢复/真决出。真崩盘 loser: fair 也低 → reservation_buy 也低 → bid 仍 ≥ reservation_buy−slip → 正常割损放行。
-        constexpr double kMaxTakerSlip = 0.15;
+        // 2026-06-10 收紧 0.15→0.05 (老雷, 实盘 realized −$20 复盘): 0.15(15pt) 太松 —— 只拦灾难性砸卖(>15pt,
+        //   如 0.0129)却放过【中等坏】砸卖。实测 0x33d2a04e fair 0.49 仓被 stop 砸卖在 bid 0.38 (距 reservation_buy
+        //   ~8.75pt < 15pt → 放行), realized −0.219/share vs 持有到结算 fair-implied −0.109/share = 损失翻倍。
+        //   收到 0.05: bid 距 fair 超 ~5pt 即不 taker 卖, 持有到结算 (fair 是真值, 不在 fair 之下贱卖)。真崩盘
+        //   (fair 也塌) reservation_buy 也低, bid 仍在 5pt 容差内 → 正常割损放行不受影响。
+        constexpr double kMaxTakerSlip = 0.05;
         const bool bid_not_degenerate = in.best_bid >= in.reservation_buy_px - kMaxTakerSlip;
         const bool marketable = taker_exit ? (in.best_bid > 0.0 && bid_not_degenerate)
                                            : (in.best_bid > 0.0 && in.best_bid >= in.reservation_sell_px);
