@@ -86,6 +86,21 @@ namespace {
     return TimeStatus::NotStarted;  // pregame / 未知 → fail-closed
 }
 
+// token_id 格式校验 (uint256 string: 非空, ≤77 位, 纯数字). 镜像 RM risk_gateway 的 is_valid_token_id
+//   (SSOT: laoli-w8-polymarket-data-structure-ssot §2.3 §5 T-05). 2026-06-10 老板「修啊」: catalog 预热期
+//   token_id 可能畸形 → paper_loop 提前 fail-closed 不构造 intent, 不让 RM 兜底拒 INVALID_TOKEN_ID_FORMAT.
+[[nodiscard]] bool IsValidTokenId(const std::string& tid) noexcept {
+    if (tid.empty() || tid.size() > 77u) {
+        return false;
+    }
+    for (char c : tid) {
+        if (c < '0' || c > '9') {
+            return false;
+        }
+    }
+    return true;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -1297,6 +1312,15 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   控制器 gap=target−current≤0 → 只可减仓 (撤减仓侧 gate), 绝不开新仓 (留开仓侧 stub→0)。
     //   无持仓时 gap=0 → ZeroGap → 不动 (解封但无真 fair + 无仓 → 零 intent, 红线2 兜底)。
     if (!devig_ok) {
+        return;
+    }
+
+    // ---- token_id 有效性门 (2026-06-10 老板「修啊」) ------------------------
+    // catalog 预热期被选边 token_id 可能畸形 (空/非数字/>77位) → 提前 fail-closed, 不构造 intent
+    //   (否则走完 Step4-6 被 RM 兜底拒 INVALID_TOKEN_ID_FORMAT = 拒单噪声 + 白做功)。真 token_id
+    //   加载后自然恢复交易。放在 quote publish 之后 → 不影响观测 (盘仍显示), 只挡交易 (同 advisory gate 语义)。
+    //   warmup 瞬态: 此刻无持仓, 挡新开/加仓即可; 真 token_id 到位前本就不该有该盘仓位。
+    if (!IsValidTokenId(token_id)) {
         return;
     }
 
