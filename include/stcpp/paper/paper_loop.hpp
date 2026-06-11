@@ -468,6 +468,10 @@ struct PaperLoopConfig {
     // FLB-hold 引擎开关 (老板 2026-06-11 拍板「与现策略并跑」): false=关 (lib 默认, 契约不变);
     //   生产 daemon 置 true。stake/触发档为代码内常数 (kFlb*, 老板「策略系数不进配置层」)。
     bool flb_enabled{false};
+    // 账本持久化路径 (2026-06-11 老板「迭代部署 vs 攒数据」根治): 每 60s 快照持仓+累计+CLV 到此文件
+    //   (tmp+rename 原子写), 启动时 RestoreLedgerSnapshot 恢复 (停机期错过的结算由孤儿 sweep 自动补)。
+    //   空=关 (lib 默认)。paper-only (R-11: 不碰真账本)。
+    std::string ledger_snapshot_path;
 
     // 再入场冷却 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 同一 token 减仓/平仓后, 冷却窗内禁止
     //   【新开/加仓买入】(减仓/平仓/must_win/force_cross 不受限)。根因: 实测同盘 buy→卖光→rebuy 反复 4+ 往返
@@ -604,6 +608,11 @@ public:
     [[nodiscard]] bool is_running() const noexcept { return running_.load(std::memory_order_acquire); }
 
     [[nodiscard]] const PaperLoopStats& stats() const noexcept { return stats_; }
+
+    // ---- 账本持久化 (2026-06-11): Start 前调 Restore (单线程); Save 由 TickAll 60s 节流自动调,
+    //   测试可直接调。恢复内容: 持仓 (apply_fill 重放) + 累计 realized/fee (总+逐盘) + CLV (聚合+pending)。
+    void SaveLedgerSnapshot();
+    void RestoreLedgerSnapshot();
 
     // bench/test seam (老姜性能评审): 同步跑一次 TickAll, 精确测单 tick 延迟 (不经 RunLoop 的 sleep)。
     //   不起 loop_thread_; 调用方负责先注入 catalog + hub book。仅用于 benchmark/单测, 生产走 Start()。
@@ -1005,6 +1014,7 @@ private:
     std::unordered_map<std::string, std::string> last_sell_reason_;
     // ---- 孤儿结算诊断节流 (2026-06-10 老板「查消失的盘结算有没有进账户」): 上次打孤儿诊断的 NowNs (30s 节流) ----
     std::int64_t last_orphan_diag_ns_{0};
+    std::int64_t last_ledger_snapshot_ns_{0};  // 账本快照 60s 节流 (loop_thread_, 2026-06-11 持久化)
     // ---- 三振出局 (老板 2026-06-11 拍板, 治跷跷板循环割肉: 3 个循环盘吃掉 78% realized 亏损) ----
     //   condition_id → 止损 episode 计数 (force_stop 连续段计 1 次); 满 2 次本场不再开新仓。
     //   episode set: force_stop 持续多 tick 只计一次, 清除后再触发算新 episode。loop_thread_ 单 writer。

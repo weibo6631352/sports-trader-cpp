@@ -2172,3 +2172,51 @@ TEST_F(PaperLoopTest, FLB02_DisabledByDefault_NoFill) {
     loop_->TickAllForBench();
     EXPECT_FALSE(position_ledger_->get_position(t.token_id).has_value()) << "flb_enabled=false 不应成交";
 }
+
+// ---------------------------------------------------------------------------
+// 账本持久化 (2026-06-11): Save→新实例 Restore→持仓/累计 round-trip。
+// ---------------------------------------------------------------------------
+TEST_F(PaperLoopTest, LP01_LedgerSnapshotRoundTrip) {
+    const std::string snap = ::testing::TempDir() + "lp01_ledger.tsv";
+    std::remove(snap.c_str());
+    cfg_.flb_enabled = true;
+    cfg_.ledger_snapshot_path = snap;
+    RebuildRmHighCap();
+    loop_ = MakeLoop();
+    rm_->set_state(stcpp::risk::RmState::RUNNING);
+    rm_->set_bankroll(1'000'000'000);
+    loop_->SetPaperCatalog(std::make_shared<paper::PaperCatalog>());
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count();
+    PaperLoop::FlbTrigger t;
+    t.condition_id = "0x000000000000000000000000000000000000000000000000000000001ed6e401";
+    t.token_id = "920000000000000001";
+    t.is_yes = true;
+    t.ask_px = 0.85;
+    t.ask_sz_usdc = 500.0;
+    t.event_ts_ns = now_ns - 3'000'000'000LL;
+    t.data_source_ts_ns = now_ns - 2'000'000'000LL;
+    t.ingestion_ts_ns = now_ns - 1'000'000'000LL;
+    loop_->RequestFlbEntry(t);
+    loop_->TickAllForBench();
+    for (int i = 0; i < 50 && !position_ledger_->get_position(t.token_id).has_value(); ++i) {
+        loop_->RequestFlbEntry(t);
+        loop_->TickAllForBench();
+    }
+    const auto pos_a = position_ledger_->get_position(t.token_id);
+    ASSERT_TRUE(pos_a.has_value());
+    loop_->SaveLedgerSnapshot();
+
+    // 新实例 (模拟重启): 新 ledger + 新 loop, Restore 后持仓一致
+    auto ledger_b = std::make_unique<stcpp::risk::PositionLedger>();
+    PaperLoop loop_b(*hub_, *rm_, *ledger_b, *ledger_hub_, *quote_hub_, rm_snap_.get(), *fv_model_, token_map_,
+                     cfg_);
+    loop_b.RestoreLedgerSnapshot();
+    const auto pos_b = ledger_b->get_position(t.token_id);
+    ASSERT_TRUE(pos_b.has_value()) << "重启恢复应还原持仓";
+    EXPECT_EQ(pos_b->size_usdc, pos_a->size_usdc);
+    EXPECT_NEAR(pos_b->avg_entry_price, pos_a->avg_entry_price, 1e-9);
+    EXPECT_EQ(loop_b.clv_report().n_pending_fills, 1u) << "CLV pending 应恢复";
+    std::remove(snap.c_str());
+}

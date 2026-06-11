@@ -111,6 +111,34 @@ public:
         sum_notional_clv_close_ = 0.0;
     }
 
+    // ---- 账本持久化 (2026-06-11 老板「迭代部署 vs 攒数据」根治): 聚合量导出/恢复 + pending 遍历 ----
+    //   pending fills 经 RecordFill 重放恢复; 已结算聚合经 RestoreAggregates 整体恢复 (重启不丢 clv_n)。
+    struct Aggregates {
+        std::uint64_t n_settled{0};
+        std::uint64_t n_positive_close{0};
+        double sum_clv_close{0.0};
+        double sum_clv_settle{0.0};
+        double sum_notional{0.0};
+        double sum_notional_clv_close{0.0};
+    };
+    [[nodiscard]] Aggregates aggregates() const noexcept {
+        return {n_settled_, n_positive_close_, sum_clv_close_, sum_clv_settle_, sum_notional_, sum_notional_clv_close_};
+    }
+    void RestoreAggregates(const Aggregates& a) noexcept {
+        n_settled_ = a.n_settled;
+        n_positive_close_ = a.n_positive_close;
+        sum_clv_close_ = a.sum_clv_close;
+        sum_clv_settle_ = a.sum_clv_settle;
+        sum_notional_ = a.sum_notional;
+        sum_notional_clv_close_ = a.sum_notional_clv_close;
+    }
+    template <typename F>
+    void ForEachPendingFill(F&& fn) const {
+        for (const auto& [tok, recs] : fills_) {
+            for (const auto& r : recs) fn(tok, r);
+        }
+    }
+
 private:
     std::unordered_map<std::string, std::vector<FillRec>> fills_;  // 未结算成交 (per token)
     std::unordered_map<std::string, double> last_mid_;             // 各 token 最后市场 mid

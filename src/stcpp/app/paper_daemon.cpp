@@ -452,6 +452,7 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
     // 发布: PaperLoop catalog (RCU 原子 swap) + RSP (meta_mu_ 守护) + WSS 全量重订。
     if (paper_loop_) {
         paper_loop_->SetPaperCatalog(BuildPaperCatalog());
+        paper_loop_->RestoreLedgerSnapshot();  // 2026-06-11 持久化: Start 前单线程恢复 (重启不清账本)
     }
     if (real_provider_) {
         real_provider_->set_token_map(token_map_);
@@ -758,6 +759,8 @@ BuildResult PaperDaemon::Build() {
     cfg_.paper_loop.open_stable_window_ns = cfg_.enable_phase0_gates ? 180'000'000'000LL : 0;
     // FLB-hold 引擎 (老板 2026-06-11 拍板「与现策略并跑」): 生产开; 扫描另有 start_live_feeds 闸 (离线测试不扫)。
     cfg_.paper_loop.flb_enabled = true;
+    // 账本持久化 (2026-06-11「迭代部署 vs 攒数据」根治): 60s 快照 + 启动恢复; CWD 相对 (server 在仓库根跑)。
+    cfg_.paper_loop.ledger_snapshot_path = "paper_ledger_snapshot.tsv";
     // 决策源 = 直播源赔率 sharp (老板 2026-06-04「决策源就只用直播源赔率」+ 2026-06-05「砍掉大模型训练功能」):
     //   fair 由 sharp/derivative/score-prior 驱动 (见 pricing::ResolveFair), 无 ONNX blend。
     //   ml_fair_blend_weight/ml_drive_enabled 配置已随大模型一并砍。量化因子/统计

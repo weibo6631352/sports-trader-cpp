@@ -307,6 +307,15 @@ void PaperLoop::TickAll() {
         for (const auto& t : flb_batch) ProcessFlbTrigger(t);
     }
 
+    // ---- 账本快照 60s 节流 (2026-06-11 持久化: 重启不再清零持仓/realized/CLV) ----
+    if (!cfg_.ledger_snapshot_path.empty()) {
+        const std::int64_t snap_now = NowNs();
+        if (snap_now - last_ledger_snapshot_ns_ >= 60'000'000'000LL) {
+            last_ledger_snapshot_ns_ = snap_now;
+            SaveLedgerSnapshot();
+        }
+    }
+
     for (const auto& [cond_id, entry] : *tick_inputs_.catalog) {
         // FLB-hold 触发检测 (老板 2026-06-11「触发型」): book 落 hub 即唤醒本 tick (事件驱动, 亚秒级),
         //   此处对非 sharp moneyline 做首穿越检测。O(1) 早退极快, 不拖累 sharp 主路径。
@@ -2484,6 +2493,111 @@ void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     std::lock_guard<std::mutex> lk(fills_mu_);
     fills_ring_.push_back(std::move(fr));
     if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
+}
+
+// ---------------------------------------------------------------------------
+// 账本持久化 (2026-06-11 老板「迭代部署 vs 攒数据互相残杀」根治)
+//   行式 TSV (无 JSON 依赖): V1 头 / P 持仓 / M 逐盘累计 / C CLV pending / R CLV 聚合。
+//   写: tmp+rename 原子; 读: >24h 陈旧忽略。停机期错过的结算由 SettlementPoller(catalog∪held)
+//   + 孤儿 sweep 自动补账。paper-only (R-11)。
+// ---------------------------------------------------------------------------
+void PaperLoop::SaveLedgerSnapshot() {
+    if (cfg_.ledger_snapshot_path.empty()) return;
+    const std::string tmp = cfg_.ledger_snapshot_path + ".tmp";
+    FILE* fp = std::fopen(tmp.c_str(), "w");
+    if (fp == nullptr) return;
+    std::fprintf(fp, "V1 %lld %.10g %.10g\n", static_cast<long long>(NowNs()), cum_realized_pnl_pusd_,
+                 cum_fee_pusd_);
+    for (const auto& pv : position_ledger_.get_all_positions()) {
+        if (pv.size_usdc == 0) continue;
+        std::fprintf(fp, "P %s %s %d %lld %.10g\n", pv.condition_id.c_str(), pv.token_id.c_str(),
+                     pv.outcome == strategy::Outcome::Yes ? 1 : 0, static_cast<long long>(pv.size_usdc),
+                     pv.avg_entry_price);
+    }
+    for (const auto& [cid, v] : cum_realized_by_market_) {
+        const auto fit = cum_fee_by_market_.find(cid);
+        std::fprintf(fp, "M %s %.10g %.10g\n", cid.c_str(), v, fit != cum_fee_by_market_.end() ? fit->second : 0.0);
+    }
+    clv_tracker_.ForEachPendingFill([fp](const std::string& tok, const eval::CLVTracker::FillRec& r) {
+        std::fprintf(fp, "C %s %.10g %.10g %.10g %lld\n", tok.c_str(), r.entry_price, r.entry_mid, r.size_pusd,
+                     static_cast<long long>(r.entry_ts_ns));
+    });
+    const auto agg = clv_tracker_.aggregates();
+    std::fprintf(fp, "R %llu %llu %.10g %.10g %.10g %.10g\n", static_cast<unsigned long long>(agg.n_settled),
+                 static_cast<unsigned long long>(agg.n_positive_close), agg.sum_clv_close, agg.sum_clv_settle,
+                 agg.sum_notional, agg.sum_notional_clv_close);
+    std::fclose(fp);
+    std::rename(tmp.c_str(), cfg_.ledger_snapshot_path.c_str());
+}
+
+void PaperLoop::RestoreLedgerSnapshot() {
+    if (cfg_.ledger_snapshot_path.empty()) return;
+    FILE* fp = std::fopen(cfg_.ledger_snapshot_path.c_str(), "r");
+    if (fp == nullptr) return;  // 无快照 = 全新开始
+    char line[1024];
+    bool header_ok = false;
+    int n_pos = 0, n_clv = 0;
+    const std::int64_t now = NowNs();
+    while (std::fgets(line, sizeof(line), fp) != nullptr) {
+        if (line[0] == 'V') {
+            long long saved_ns = 0;
+            double cr = 0.0, cf = 0.0;
+            if (std::sscanf(line, "V1 %lld %lf %lf", &saved_ns, &cr, &cf) == 3) {
+                if (now - saved_ns > 24LL * 3600 * 1'000'000'000) break;  // >24h 陈旧忽略
+                cum_realized_pnl_pusd_ = cr;
+                cum_fee_pusd_ = cf;
+                header_ok = true;
+            }
+        } else if (!header_ok) {
+            continue;
+        } else if (line[0] == 'P') {
+            char cid[80] = {0}, tok[90] = {0};
+            int is_yes = 0;
+            long long sz = 0;
+            double avg = 0.0;
+            if (std::sscanf(line, "P %79s %89s %d %lld %lf", cid, tok, &is_yes, &sz, &avg) == 5 && sz != 0) {
+                risk::FillEvent ev;
+                ev.filled_size_micro = sz;
+                ev.fill_price = avg;
+                ev.mode_tag = 0;  // R-11 paper
+                ev.event_ts_ns = ev.data_source_ts_ns = ev.ingestion_ts_ns = now - 1;
+                ev.as_of_ts_ns = now;
+                position_ledger_.apply_fill(cid, tok, is_yes != 0 ? strategy::Outcome::Yes : strategy::Outcome::No,
+                                            ev);
+                ++n_pos;
+            }
+        } else if (line[0] == 'M') {
+            char cid[80] = {0};
+            double r = 0.0, f = 0.0;
+            if (std::sscanf(line, "M %79s %lf %lf", cid, &r, &f) == 3) {
+                cum_realized_by_market_[cid] = r;
+                cum_fee_by_market_[cid] = f;
+            }
+        } else if (line[0] == 'C') {
+            char tok[90] = {0};
+            double px = 0.0, mid = 0.0, szp = 0.0;
+            long long ts2 = 0;
+            if (std::sscanf(line, "C %89s %lf %lf %lf %lld", tok, &px, &mid, &szp, &ts2) == 5) {
+                clv_tracker_.RecordFill(tok, px, mid, szp, ts2);
+                ++n_clv;
+            }
+        } else if (line[0] == 'R') {
+            unsigned long long ns = 0, npc = 0;
+            eval::CLVTracker::Aggregates a;
+            if (std::sscanf(line, "R %llu %llu %lf %lf %lf %lf", &ns, &npc, &a.sum_clv_close, &a.sum_clv_settle,
+                            &a.sum_notional, &a.sum_notional_clv_close) == 6) {
+                a.n_settled = ns;
+                a.n_positive_close = npc;
+                clv_tracker_.RestoreAggregates(a);
+            }
+        }
+    }
+    std::fclose(fp);
+    if (header_ok) {
+        FeedRiskGateway();  // 恢复仓位敞口喂 RM (caps 立即生效)
+        std::fprintf(stderr, "[ledger-restore] 快照恢复: 持仓 %d, CLV pending %d, cum_realized=%.2f (停机期结算由孤儿 sweep 补)\n",
+                     n_pos, n_clv, cum_realized_pnl_pusd_);
+    }
 }
 
 // ---------------------------------------------------------------------------
