@@ -1503,9 +1503,19 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         //   真判死的盘交易在 0.02-0.10; 比分判死还须【市场同意】(被选边市场隐含 ≤0.20) 才甩卖残值,
         //   否则持有让结算裁决 (杀比分计数误判甩赢家, 保留真垃圾时间残值回收)。
         constexpr double kGameDecidedMaxPx = 0.20;
-        if (sel_is_loser && devig_ok && p_devig_selected <= kGameDecidedMaxPx) {
-            sel_target = 0.0;
-            sel_reason = "game_decided";  // 该运动已决出 + 市场确认 → 平残值
+        if (sel_is_loser) {
+            if (devig_ok && p_devig_selected <= kGameDecidedMaxPx) {
+                sel_target = 0.0;
+                sel_reason = "game_decided";  // 该运动已决出 + 市场确认 → 平残值
+            } else {
+                // 市场不确认 (价 >0.20 = 比分判死可能误判/翻盘中) → 【冻结持有】等结算 (2026-06-11
+                //   堵漏: 原版只挡甩卖不冻结 → 仓位漏进普通 Kelly 路径被 kelly_reduce 原价甩 (实测
+                //   20.2u@0.292 −7.26), 所有持有保护都没接住。哲学同 hold-to-settle: 让结算裁决。
+                const auto pos_gd = position_ledger_.get_position(token_id);
+                const double cur_gd =
+                    pos_gd ? std::abs(static_cast<double>(pos_gd->size_usdc) / 1'000'000.0) : 0.0;
+                if (cur_gd > 0.0 && sel_target < cur_gd) sel_target = cur_gd;  // 冻结: 只增不减由后续门管
+            }
         }
     }
 
