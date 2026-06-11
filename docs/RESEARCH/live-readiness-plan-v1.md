@@ -11,9 +11,9 @@ owner: 老雷 (GM) | last_review: 2026-06-12 | 状态: 准备期 (**开闸授权
 | 稳定性 | 7 天零 P0 (崩溃/账错) | 2026-06-11 两起已根治, 计时重启 |
 | 首发引擎 | **sharp** (唯一有实盘结算证据) | FLB 等自己的 100 结算 |
 
-## 二、实盘第一阶段设计 (满足门槛后)
-- **微注影子期 2 周**: $1-2/单 (CLOB min $1), 与 paper 同信号并跑, 对比成交价/滑点/费 → 校准 VirtualMatcher
-- live RM 档 (与 paper 完全分离): per_order $2 / 日损硬熔断 $10 / consec-loss 5 / 总敞口 $50
+## 二、实盘第一阶段设计 (2026-06-12 老板定: **不需要影子系统** — 开闸即实注)
+- 开闸即实注, 注码开闸时老板定 (LiveRiskProfile 数值届时按注码改, 结构已就位)
+- live RM 档 (与 paper 完全分离): 日损硬熔断 / consec-loss halt / CI 门全部重开 (paper 放开的保命门收回)
 - kill switch 三层: LiveOrderGate.Disarm() (秒级) / 进程停 / 钱包划走
 
 ## 三、基建缺口清单 (全部可 disarmed 先建, 不需会签)

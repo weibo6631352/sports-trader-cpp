@@ -899,6 +899,31 @@ BuildResult PaperDaemon::Build() {
     //   × Thread1 Save)。Restore 只许这一处调用。
     paper_loop_->RestoreLedgerSnapshot();
 
+    // ---- live 装配 (2026-06-12 实盘准备「单参数切换」; 仅 live build 编译进) -----------------------
+    //   链: 决策环 → RM → executor 缝 → LiveExecutorAdapter → LiveExecutor → LiveOrderGate
+    //   (默认 disarmed fail-closed) → LiveOrderSubmitter → CLOB。LIVE_ARMED=1 (老板同意后) 才 Arm。
+    if constexpr (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live) {
+        polymarket::LiveCredentials creds;
+        std::string cred_err;
+        if (!polymarket::LiveCredentials::FromEnv(creds, cred_err)) {
+            std::fprintf(stderr, "[live] FATAL: 凭证加载失败: %s\n", cred_err.c_str());
+            std::abort();  // live build 无凭证 = 配置错误, 不静默降级
+        }
+        live_submitter_ = std::make_unique<polymarket::LiveOrderSubmitter>(std::move(creds),
+                                                                           "https://clob.polymarket.com");
+        live_gate_ = std::make_unique<polymarket::LiveOrderGate>(
+            *paper_rm_, [this](const polymarket::LiveOrderRequest& rq) { return live_submitter_->Submit(rq); });
+        live_exec_ = std::make_unique<polymarket::LiveExecutor>(*live_gate_);
+        paper_loop_->SetExecutor(std::make_unique<polymarket::LiveExecutorAdapter>(*live_exec_));
+        const char* armed = std::getenv("LIVE_ARMED");
+        if (armed != nullptr && armed[0] == '1') {
+            live_gate_->Arm();
+            std::fprintf(stderr, "[live] ⚠⚠ LIVE ARMED — 真金白银闸已开 (老板已同意; Disarm=kill) ⚠⚠\n");
+        } else {
+            std::fprintf(stderr, "[live] live build 装配完成, gate=DISARMED (fail-closed; 开闸设 LIVE_ARMED=1)\n");
+        }
+    }
+
     // ---- Step 2d: RealStateProvider (读模型) ----
     risk::RiskConfig rsp_risk_cfg;
     real_provider_ = std::make_unique<debug_api::RealStateProvider>(

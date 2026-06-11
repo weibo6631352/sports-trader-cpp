@@ -599,6 +599,12 @@ public:
     // 析构 — 保证线程已 join
     ~PaperLoop();
 
+    // SetExecutor — executor 缝注入 (2026-06-12 实盘准备: live build 在 Start 前换 LiveExecutorAdapter)。
+    //   仅允许 Start 前调 (单线程装配期); paper build 不调 = VirtualExecutor 默认, 行为零变。
+    void SetExecutor(std::unique_ptr<execution::IOrderExecutor> ex) noexcept {
+        if (!running_.load(std::memory_order_acquire) && ex) executor_ = std::move(ex);
+    }
+
     // Start — 启动 loop_thread_ (幂等)
     void Start();
 

@@ -9,8 +9,8 @@
 
 namespace stcpp::risk {
 
-// 微注影子期档 ($1-2/单, 总敞口 $50): 与 paper 同信号并跑两周, 校准 VirtualMatcher 滑点/费。
-[[nodiscard]] inline RiskConfig LiveShadowRiskProfile() noexcept {
+// 实盘初始档 (2026-06-12 老板「不需要影子系统」: 开闸即实注; 数值开闸时按老板注码改, 结构即保命门重开)。
+[[nodiscard]] inline RiskConfig LiveShadowRiskProfile() noexcept {  // TODO 开闸时更名 LiveRiskProfile + 注码按老板
     RiskConfig c;
     c.per_order_cap_usdc = domain::MicroPUSD::from_pusd(2.0);        // $2/单 (CLOB min $1)
     c.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(4.0);

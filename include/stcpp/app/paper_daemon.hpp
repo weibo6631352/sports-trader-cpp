@@ -45,6 +45,10 @@
 #include <unordered_set>
 #include <vector>
 
+#include "stcpp/polymarket/live/live_order_submitter.hpp"
+#include "stcpp/polymarket/live_executor.hpp"
+#include "stcpp/polymarket/live_executor_adapter.hpp"
+#include "stcpp/polymarket/live_order_gate.hpp"
 #include "stcpp/app/event_matcher.hpp"     // EventMatcher / EventMatchInput (A1 映射桥)
 #include "stcpp/app/market_discovery.hpp"  // DiscoveredEvent
 #include "stcpp/paper/paper_loop.hpp"      // PaperLoop / PaperLoopConfig + paper 栈全套类型
@@ -378,6 +382,10 @@ private:
     // 上次据以构建订阅集的 eligible 快照内容 (仅映射线程读写, 无锁): RediscoverOnce 比对 → 即便市场集
     //   未变, eligible 集变了 (赔率源增删) 也要重订/退订。否则稳定市场集下 bootstrap 全订阅永不收敛。
     std::unordered_set<std::string> last_sub_eligible_;
+    // live 装配件 (2026-06-12 实盘准备; 仅 live build 构造, paper build 恒 null)
+    std::unique_ptr<polymarket::LiveOrderSubmitter> live_submitter_;
+    std::unique_ptr<polymarket::LiveOrderGate> live_gate_;
+    std::unique_ptr<polymarket::LiveExecutor> live_exec_;
 
     // 149hz 主动 book 轮询计划 (2026-06-04 老板「主动查订单簿压限速, 全市场共享 149hz, 按流动性分配」):
     //   (token_id, weight=√liquidity+1) 列表, 仅含有赔率源 (源头 pass 过滤后) 的 token。映射线程写

@@ -76,6 +76,11 @@ struct VirtualOrder {
 
     // SlippageModel 用; caller 注 wall_now_ns
     std::int64_t wall_now_ns{0};
+
+    // live 路由所需 (2026-06-12 实盘准备; 加性 POD, VirtualMatcher 忽略):
+    std::string_view token_id{};  // decimal ERC1155 outcome token (LiveOrderRequest 用)
+    bool is_buy{true};            // BUY/SELL (live maker/taker 金额方向)
+    bool neg_risk{false};         // negRisk 市场 (0xC5d5… exchange 选择)
 };
 
 // VirtualOrderWithBook — Wave 3 Mode A 入参, 携带完整 OrderBookSnapshot

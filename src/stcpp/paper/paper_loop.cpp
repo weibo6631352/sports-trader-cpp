@@ -45,6 +45,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <optional>
@@ -165,11 +166,20 @@ void PaperLoop::Start() {
     //   build-time 锁 + 此运行期交叉校验双保险; 不一致 → abort (R-7 立场: 绝不放行).
     if (!cfg_.advisory_markets_no_intent &&
         stcpp::execution::kCompiledMode != stcpp::execution::ExecutionMode::Paper) {
-        std::fprintf(stderr,
-                     "[paper_loop] FATAL (R-11/R-7): advisory_markets_no_intent=false (解封 paper 成交) "
-                     "仅许 paper mode; kCompiledMode=%s. abort.\n",
-                     std::string(stcpp::execution::ToString(stcpp::execution::kCompiledMode)).c_str());
-        std::abort();
+        // 2026-06-12 实盘准备: live build 发真单是【有意行为】, 须显式 STCPP_LIVE_INTENT_OK=1
+        //   (start_live.sh 设置) 才放行 — 防 live binary 被误当 paper 跑; 无此 env 仍 abort (R-7)。
+        const char* live_ok = std::getenv("STCPP_LIVE_INTENT_OK");
+        if (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live && live_ok != nullptr &&
+            live_ok[0] == '1') {
+            std::fprintf(stderr, "[paper_loop] LIVE 模式意图确认 (STCPP_LIVE_INTENT_OK=1): 决策环将发真实 intent "
+                                 "(成交仍受 LiveOrderGate arm 闸控制)\n");
+        } else {
+            std::fprintf(stderr,
+                         "[paper_loop] FATAL (R-11/R-7): advisory_markets_no_intent=false (解封成交) 仅许 paper "
+                         "mode 或 live+STCPP_LIVE_INTENT_OK=1; kCompiledMode=%s. abort.\n",
+                         std::string(stcpp::execution::ToString(stcpp::execution::kCompiledMode)).c_str());
+            std::abort();
+        }
     }
 
     // 若配置要求, 把 RM 从 SAFE_MODE 切到 RUNNING
@@ -2141,8 +2151,18 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     vord.ingestion_ts_ns = sign_req.ingestion_ts_ns;
     vord.as_of_ts_ns = sign_req.as_of_ts_ns;
     vord.wall_now_ns = NowNs();
+    // live 路由字段 (2026-06-12; paper matcher 忽略): token/方向/negRisk
+    vord.token_id = sign_req.token_id;
+    vord.is_buy = (intent.side == strategy::Side::Buy);
+    if (tick_inputs_.catalog) {
+        if (const auto pit2 = tick_inputs_.catalog->find(condition_id); pit2 != tick_inputs_.catalog->end()) {
+            vord.neg_risk = !pit2->second.parent.neg_risk_market_id.empty();
+        }
+    }
     const execution::VirtualFill fill = executor_->Execute(vord);
-    assert(fill.mode_tag == 0u);  // R-11 (debug build)
+    // R-11/R-7 模式断言 (2026-06-12 live 接线): paper build 必 0, live build 必 1 (编译期定)
+    assert(fill.mode_tag ==
+           (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live ? 1u : 0u));
     if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -2494,8 +2514,17 @@ void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     vord.ingestion_ts_ns = sign_req.ingestion_ts_ns;
     vord.as_of_ts_ns = sign_req.as_of_ts_ns;
     vord.wall_now_ns = as_of_now;
+    vord.token_id = sign_req.token_id;  // live 路由字段 (2026-06-12)
+    vord.is_buy = true;
+    if (tick_inputs_.catalog) {
+        if (const auto pit2 = tick_inputs_.catalog->find(t.condition_id); pit2 != tick_inputs_.catalog->end()) {
+            vord.neg_risk = !pit2->second.parent.neg_risk_market_id.empty();
+        }
+    }
     const execution::VirtualFill fill = executor_->Execute(vord);
-    assert(fill.mode_tag == 0u);  // R-11
+    // R-11/R-7 模式断言 (2026-06-12 live 接线): paper build 必 0, live build 必 1 (编译期定)
+    assert(fill.mode_tag ==
+           (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live ? 1u : 0u));
     if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
         // 概率撮合 miss (Bernoulli) ≠ 永久不可成交: 解除一盘一击标记 → 退避后重试。
