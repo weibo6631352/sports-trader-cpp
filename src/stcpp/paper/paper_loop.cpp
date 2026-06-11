@@ -2527,6 +2527,21 @@ void PaperLoop::SaveLedgerSnapshot() {
     std::fprintf(fp, "R %llu %llu %.10g %.10g %.10g %.10g\n", static_cast<unsigned long long>(agg.n_settled),
                  static_cast<unsigned long long>(agg.n_positive_close), agg.sum_clv_close, agg.sum_clv_settle,
                  agg.sum_notional, agg.sum_notional_clv_close);
+    // F 行: 成交流水环尾 100 条 (2026-06-11 老板「成交 0 笔」: 仓恢复了流水没恢复, 费显 0 误导)。
+    //   空字符串字段写 "-" 占位 (行式解析); 前端流水/费/engine 标签跨重启连续。
+    {
+        std::lock_guard<std::mutex> lk(fills_mu_);
+        const std::size_t start = fills_ring_.size() > 100 ? fills_ring_.size() - 100 : 0;
+        for (std::size_t i = start; i < fills_ring_.size(); ++i) {
+            const auto& r = fills_ring_[i];
+            std::fprintf(fp, "F %lld %s %d %d %d %.10g %.10g %.10g %.10g %.10g %.10g %.10g %s %s\n",
+                         static_cast<long long>(r.as_of_ts_ns), r.condition_id.c_str(), r.is_yes ? 1 : 0,
+                         r.is_buy ? 1 : 0, r.is_close ? 1 : 0, r.price, r.size_usdc, r.realized,
+                         r.cum_realized, r.fair, r.mark, r.fee,
+                         r.exit_reason.empty() ? "-" : r.exit_reason.c_str(),
+                         r.engine.empty() ? "-" : r.engine.c_str());
+        }
+    }
     std::fclose(fp);
     std::rename(tmp.c_str(), cfg_.ledger_snapshot_path.c_str());
 }
@@ -2581,6 +2596,32 @@ void PaperLoop::RestoreLedgerSnapshot() {
             if (std::sscanf(line, "C %89s %lf %lf %lf %lld", tok, &px, &mid, &szp, &ts2) == 5) {
                 clv_tracker_.RecordFill(tok, px, mid, szp, ts2);
                 ++n_clv;
+            }
+        } else if (line[0] == 'F') {
+            long long ts3 = 0;
+            char cid[80] = {0}, exitr[40] = {0}, eng[20] = {0};
+            int iy = 0, ib = 0, ic = 0;
+            double px = 0, szu = 0, rl = 0, crl = 0, fa = 0, mk = 0, fe = 0;
+            if (std::sscanf(line, "F %lld %79s %d %d %d %lf %lf %lf %lf %lf %lf %lf %39s %19s", &ts3, cid, &iy,
+                            &ib, &ic, &px, &szu, &rl, &crl, &fa, &mk, &fe, exitr, eng) == 14) {
+                FillRow fr;
+                fr.as_of_ts_ns = ts3;
+                fr.condition_id = cid;
+                fr.is_yes = iy != 0;
+                fr.is_buy = ib != 0;
+                fr.is_close = ic != 0;
+                fr.price = px;
+                fr.size_usdc = szu;
+                fr.realized = rl;
+                fr.cum_realized = crl;
+                fr.fair = fa;
+                fr.mark = mk;
+                fr.fee = fe;
+                fr.exit_reason = (exitr[0] == '-' && exitr[1] == 0) ? "" : exitr;
+                fr.engine = (eng[0] == '-' && eng[1] == 0) ? "" : eng;
+                std::lock_guard<std::mutex> lk(fills_mu_);
+                fills_ring_.push_back(std::move(fr));
+                if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
             }
         } else if (line[0] == 'R') {
             unsigned long long ns = 0, npc = 0;

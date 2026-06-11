@@ -558,6 +558,10 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
   const posFor = (oc: string) => props.posRows.find((p) => p.outcome === oc) ?? null;
   const held = (oc: string) => { const p = posFor(oc); return p ? num(p.net_qty) : 0; };
   const val = (oc: string) => { const p = posFor(oc); return p ? num(p.net_qty) * num(p.mark_price) : 0; };
+  const unrl = (oc: string) => { const p = posFor(oc); return p ? num(p.pnl_unrealized) : 0; };  // 浮盈 (2026-06-11 老板「估值±号看着像盈亏」)
+  const posStatus = (oc: string) => { const p = posFor(oc); return p?.status ?? 'live'; };
+  const statusTxt = (st: string) => st === 'settling_won' ? '🏁赢定·等结算' : st === 'settling_lost' ? '🏁输定·等结算' : st === 'settling' ? '🏁终局·等结算' : '';
+  const statusColor = (st: string) => st === 'settling_won' ? '#4caf50' : st === 'settling_lost' ? '#e57373' : '#c8924a';
   const want = (oc: string) => { const t = target(); return (oc === 'YES') === favoredYes() ? (Number.isFinite(t) ? t : 0) : 0; };
   const u = (v: number) => (Number.isFinite(v) && v !== 0 ? `${v >= 0 ? '' : ''}${v.toFixed(1)}u` : '—');
   const hasPos = () => props.posRows.length > 0 || (Number.isFinite(target()) && target() > 0);
@@ -633,7 +637,7 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
           <span style={{ width: '32px' }}>边</span>
           <span style={{ width: '64px', 'text-align': 'right' }} title="控制器凯利目标仓位">希望持</span>
           <span style={{ width: '64px', 'text-align': 'right' }} title="账本当前实际持仓">实际持</span>
-          <span style={{ 'margin-left': 'auto' }} title="实际持仓 × 标记价">估值</span>
+          <span style={{ 'margin-left': 'auto' }} title="市值 = 实际持仓 × 标记价; 括号内为浮盈 (mark − 入场) × 持仓">市值 (浮盈)</span>
         </div>
         <For each={['YES', 'NO']}>
           {(oc) => (
@@ -641,7 +645,17 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
               <Chip label={oc} size="small" variant="outlined" sx={{ fontSize: '9px', height: '16px', fontWeight: 700, width: '32px' }} />
               <span class="mono-sub" style={{ width: '64px', 'text-align': 'right', color: want(oc) > 0 ? '#42a5f5' : '#666' }}>{u(want(oc))}</span>
               <span class="mono-sub" style={{ width: '64px', 'text-align': 'right', 'font-weight': 700 }}>{u(held(oc))}</span>
-              <span class="mono-sub" style={{ 'margin-left': 'auto', color: '#bbb' }}>{val(oc) !== 0 ? fmtUsdc(val(oc)) : '—'}</span>
+              <span class="mono-sub" style={{ 'margin-left': 'auto', color: '#bbb' }}>
+                <Show when={statusTxt(posStatus(oc))}>
+                  <span style={{ color: statusColor(posStatus(oc)), 'font-size': '9px', 'margin-right': '4px' }}>{statusTxt(posStatus(oc))}</span>
+                </Show>
+                {val(oc) !== 0 ? `$${val(oc).toFixed(2)}` : '—'}
+                <Show when={held(oc) !== 0}>
+                  <span class={unrl(oc) >= 0 ? 'pnl-pos' : 'pnl-neg'} style={{ 'margin-left': '4px', 'font-weight': 700 }}>
+                    ({unrl(oc) >= 0 ? '+' : ''}{unrl(oc).toFixed(2)})
+                  </span>
+                </Show>
+              </span>
             </div>
           )}
         </For>
