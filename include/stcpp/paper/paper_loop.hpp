@@ -1021,6 +1021,15 @@ private:
     // ---- 孤儿结算诊断节流 (2026-06-10 老板「查消失的盘结算有没有进账户」): 上次打孤儿诊断的 NowNs (30s 节流) ----
     std::int64_t last_orphan_diag_ns_{0};
     std::int64_t last_ledger_snapshot_ns_{0};  // 账本快照 60s 节流 (loop_thread_, 2026-06-11 持久化)
+    // FLB 漏斗计数器 (2026-06-11 老板「进场怎么那么少, 是不是机会被错过」): 每道门拦截计数,
+    //   loop_thread_ 写, 5min 节流 dump [flb-funnel] 后清零。看清 30 个带内盘没进的真实卡点。
+    struct FlbFunnel {
+        std::int64_t not_moneyline{0}, sharp_mapped{0}, not_inplay{0}, seen{0}, miss_backoff{0};
+        std::int64_t no_book{0}, one_sided{0}, wide_spread{0}, leadch{0}, baseball{0};
+        std::int64_t not_in_band{0}, thin_depth{0}, mom_jump{0}, fired{0};
+    };
+    FlbFunnel flb_funnel_;
+    std::int64_t last_funnel_dump_ns_{0};
     // ---- 三振出局 (老板 2026-06-11 拍板, 治跷跷板循环割肉: 3 个循环盘吃掉 78% realized 亏损) ----
     //   condition_id → 止损 episode 计数 (force_stop 连续段计 1 次); 满 2 次本场不再开新仓。
     //   episode set: force_stop 持续多 tick 只计一次, 清除后再触发算新 episode。loop_thread_ 单 writer。
