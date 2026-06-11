@@ -346,10 +346,10 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             all_token_ids_.push_back(tok_pair.first);
             all_token_ids_.push_back(tok_pair.second);
             ++flb_subscribed;
-            // 2026-06-11 老板「149hz 分配合理不」→ 重构: FLB yes token 低权重进统一 WRR (w=0.4 vs
-            //   sharp √liq+1≈3) → FLB ~4-5s/token (滑点模型只要 <21s), sharp 仍 ~0.7s (远超需求)。
-            //   预算不变只改分配; 替代 15s REST 旁路 (已删, 单机制)。仅 yes (触发只读 yes 簿)。
-            poll_plan.emplace_back(tok_pair.first, 0.4);
+            // 2026-06-11 老板「把 149hz 沾满, 你省什么」: FLB yes token w=2.0 (vs sharp √liq+1≈3)
+            //   → FLB ~1.5s/token (fill_rate≈0.94, Bernoulli miss 大降), sharp ~1s/token (执行仍佳)。
+            //   产能向产出引擎倾斜, 不留冗余。仅 yes (触发只读 yes 簿, NO 簿无人读=浪费)。
+            poll_plan.emplace_back(tok_pair.first, 2.0);
             continue;
         }
         all_token_ids_.push_back(tok_pair.first);
