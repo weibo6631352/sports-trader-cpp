@@ -2223,10 +2223,14 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     const double yb = f.best_bid();
     if (!std::isfinite(ya) || !std::isfinite(yb) || ya <= 0.0 || yb <= 0.0) return;  // 双边齐才触发
     const double spread = ya - yb;
-    // ---- v2 路径状态更新 (动量环 + 领先易主; 触发与否都更新, in-play 全程跟踪) ----
+    // ---- v2 路径状态更新 (动量环 + 领先易主 + 抄底锚; 触发与否都更新, in-play 全程跟踪) ----
     const double mid_now = 0.5 * (ya + yb);
     auto& ps = flb_path_[cond_id];
     {
+        if (!std::isfinite(ps.first_mid)) {  // 抄底锚: 首见 mid (赛前/早期订阅时记录)
+            ps.first_mid = mid_now;
+            ps.first_mid_ns = now_ns_v;
+        }
         const int lead = mid_now > 0.5 ? 1 : (mid_now < 0.5 ? -1 : ps.prev_lead);
         if (lead != 0 && ps.prev_lead != 0 && lead != ps.prev_lead) ++ps.lead_changes;
         if (lead != 0) ps.prev_lead = lead;
@@ -2281,6 +2285,34 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
         t.ask_px = na;                    // 合成 NO 买价 (吃 yes_bid)
         t.ask_sz_usdc = f.best_bid_size();  // 深度 = yes_bid 档量
         fire = true;
+    }
+    // ---- 抄底档 (2026-06-11 老板拍板; 实证 641 盘: 赛前 favorite 首触 0.30-0.40 → +14.5%/u,
+    //   0.50-0.60 → +8.4%/u, 0.40-0.50 死区跳过; 首触完胜 V 确认 → 不设动量/易主门, 接飞刀是设计)。
+    //   锚: 首见 mid 在开赛 +15min 内记录 且该边 ≥0.65 (赛前 favorite 身份)。逐笔验证: 仅 ~20% 盘坑带
+    //   有真量 → 活簿深度门 (≥25u) 自动筛掉吃不进的盘。一盘一击与 0.80 档共用 (先到先得)。
+    if (!fire && std::isfinite(ps.first_mid) && entry.game_start_ts_sec > 0 &&
+        ps.first_mid_ns <= (entry.game_start_ts_sec + 900) * 1'000'000'000LL) {
+        auto in_dip = [](double m) { return (m >= 0.30 && m < 0.40) || (m >= 0.50 && m < 0.60); };
+        constexpr double kDipMaxAsk = 0.63;  // 支付上限: 不为坑带付出带太多
+        if (ps.first_mid >= 0.65 && in_dip(mid_now) && ya <= kDipMaxAsk &&
+            f.best_ask_size() >= kFlbMinDepthUsdc) {
+            t.token_id = entry.tokens.first;   // YES 是赛前 favorite, 砸坑 → 接
+            t.is_yes = true;
+            t.ask_px = ya;
+            t.ask_sz_usdc = f.best_ask_size();
+            t.dip = true;
+            fire = true;
+        } else if (const double no_first = 1.0 - ps.first_mid, no_mid2 = 1.0 - mid_now,
+                   na2 = 1.0 - yb;
+                   no_first >= 0.65 && in_dip(no_mid2) && na2 <= kDipMaxAsk &&
+                   f.best_bid_size() >= kFlbMinDepthUsdc && !entry.tokens.second.empty()) {
+            t.token_id = entry.tokens.second;  // NO 是赛前 favorite
+            t.is_yes = false;
+            t.ask_px = na2;
+            t.ask_sz_usdc = f.best_bid_size();
+            t.dip = true;
+            fire = true;
+        }
     }
     if (!fire) return;
     {
@@ -2431,9 +2463,9 @@ void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     clv_tracker_.RecordFill(t.token_id, fill.fill_price, fill.fill_price,
                             static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.as_of_ts_ns);
 
-    std::fprintf(stderr, "[flb] FILL cond=%.24s... %s %.1fu@%.4f (深度 %.0f)\n", t.condition_id.c_str(),
-                 t.is_yes ? "YES" : "NO", static_cast<double>(fill.fill_size_usdc) / 1'000'000.0,
-                 fill.fill_price, t.ask_sz_usdc);
+    std::fprintf(stderr, "[flb] FILL%s cond=%.24s... %s %.1fu@%.4f (深度 %.0f)\n", t.dip ? "[dip]" : "",
+                 t.condition_id.c_str(), t.is_yes ? "YES" : "NO",
+                 static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.fill_price, t.ask_sz_usdc);
 
     FillRow fr;
     fr.as_of_ts_ns = fill.as_of_ts_ns;
@@ -2448,7 +2480,7 @@ void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     fr.fair = fill.fill_price;  // 无模型 fair (引擎 edge 是统计性的): 声称 edge=0, 诚实
     fr.mark = fill.fill_price;
     fr.fee = fr.size_usdc * FeeCoefFor(t.condition_id) * fill.fill_price * (1.0 - fill.fill_price);
-    fr.engine = "flb";
+    fr.engine = t.dip ? "flb-dip" : "flb";  // 抄底档分账 (2026-06-11)
     std::lock_guard<std::mutex> lk(fills_mu_);
     fills_ring_.push_back(std::move(fr));
     if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();

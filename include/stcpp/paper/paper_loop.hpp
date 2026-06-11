@@ -621,6 +621,7 @@ public:
         bool is_yes{true};
         double ask_px{0.0};          // 触发刻该边可成交买价 (YES=yes_ask; NO=1−yes_bid 合成)
         double ask_sz_usdc{0.0};     // 该价位深度 (撮合模拟用)
+        bool dip{false};             // 抄底档 (2026-06-11): true=赛前 favorite 砸坑首触, 分账 engine="flb-dip"
         std::int64_t event_ts_ns{0};  // R-20 4ts: 来自 REST book timestamp
         std::int64_t data_source_ts_ns{0};
         std::int64_t ingestion_ts_ns{0};
@@ -1030,6 +1031,10 @@ private:
         //   累计 20 次 miss = 该簿结构性吃不进 → 永久放弃 (保持 seen)。
         int miss_count{0};
         std::int64_t last_miss_ns{0};
+        // 抄底锚 (2026-06-11 老板拍板「FLB 加抄底档」): 首见 yes_mid + 时刻 — 赛前/早期首见 ≥0.65 的
+        //   favorite 盘中砸坑 (0.30-0.40/+14.5%, 0.50-0.60/+8.4%, 跳 0.40-0.50 死区) 首触即买。
+        double first_mid{std::numeric_limits<double>::quiet_NaN()};
+        std::int64_t first_mid_ns{0};
     };
     std::unordered_map<std::string, FlbPathState> flb_path_;
     void ProcessFlbTrigger(const FlbTrigger& t);  // loop_thread_ only (TickAll 起始排干调用)
