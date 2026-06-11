@@ -2260,22 +2260,9 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     constexpr std::int32_t kBaseballFamily = 3;  // MLB/棒球排除 (n=26 净 −25%: 领先反转率太高)
     if (entry.cat.market_type_id != 0) { flb_funnel_.not_moneyline.insert(cond_id); return; }  // 只做 moneyline
     if (entry.cat.sport_family_id == kBaseballFamily) { flb_funnel_.baseball.insert(cond_id); return; }  // v2: 棒球排除
-    // sharp 同意门 (2026-06-11 老板拍板「开放地盘」): sharp 映射盘不再整体跳过 —— 33 个簿质量最好的
-    //   盘曾是双引擎死区 (sharp 无 edge 不进 / FLB 不碰地盘)。改为: FLB 可触发, 但要求 sharp 不反对
-    //   (被买边 sharp 胜率 ≥ 支付价 − 0.05; 有真值锚还能防「明知 bet365 fair 0.70 却买 0.85」)。
-    //   sharp 映射但无 sharp 样本 → 保守跳过 (计 sharp_mapped)。
-    const bool flb_sharp_mapped =
-        tick_inputs_.event_map && tick_inputs_.event_map->count(cond_id) != 0;
-    double flb_sharp_yes = std::numeric_limits<double>::quiet_NaN();
-    if (flb_sharp_mapped) {
-        if (const auto shx = sharp_history_.find(cond_id); shx != sharp_history_.end()) {
-            flb_sharp_yes = shx->second.last_sharp();
-        }
-        if (!std::isfinite(flb_sharp_yes)) {
-            flb_funnel_.sharp_mapped.insert(cond_id);
-            return;
-        }
-    }
+    // sharp 映射盘不特殊处理 (2026-06-12 老板「同意门不需要, 不混在一起比较好, 直接进场」):
+    //   FLB 对所有盘统一纯价格规则 —— 更忠实于 593 盘原始研究 (回测本就无 sharp 过滤), 引擎完全
+    //   独立可对比 (engine 标签分账)。曾有过的整体跳过/同意门两版均废。
     const std::int64_t now_ns_v = NowNs();
     const std::int64_t now_sec = now_ns_v / 1'000'000'000LL;
     if (entry.game_start_ts_sec <= 0 || now_sec < entry.game_start_ts_sec) { flb_funnel_.not_inplay.insert(cond_id); return; }  // 未开赛/缺窗口
@@ -2387,14 +2374,6 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
             t.ask_sz_usdc = f.best_bid_size();
             t.dip = true;
             fire = true;
-        }
-    }
-    // sharp 同意门执行 (映射盘): 被买边 sharp 胜率 ≥ 支付价 − 0.05, 否则否决 (计 sharp_mapped)。
-    if (fire && flb_sharp_mapped) {
-        const double side_sharp = t.is_yes ? flb_sharp_yes : (1.0 - flb_sharp_yes);
-        if (side_sharp < t.ask_px - 0.05) {
-            flb_funnel_.sharp_mapped.insert(cond_id);
-            fire = false;
         }
     }
     if (!fire) {
