@@ -220,3 +220,10 @@ owner: 老雷 (GM) | last_review: 2026-06-10
 - 净 −11.76 | real −13.0 (3 割 + 2 game_decided 判死即弃) | unreal +2.4, 8 仓
 - 形态同昨夜: 输家先变现 (割/判死), 赢家排队等结算 → realized 先负是结构性, CLV 等首批结算判
 - 零异常; 19 sharp 入场, FLB 候 0 (mid 口径无穿越)
+
+## 迭代 #33-34 — 15:2x~15:5x ★★ P0 崩溃根治 (deque 竞态)
+
+- iter33 发现进程死 (12:16 segfault) → coredump gdb bt 实证根因: **/pnl/timeseries (前端净值曲线轮询) HTTP 线程无锁遍历 deque × loop 线程 push/pop 重分配 → 悬空指针**。三次崩溃 (6/10 14:53, 6/11 04:16) 同根, 「跑数小时就死」完美解释
+- 修: PortfolioMetrics 全方法挂 mutex (f496a48d); incident 入 docs/INCIDENTS/ (公开失败); backlog: 全 debug_api provider 线程安全审计
+- **意义: 根除反复杀运行清账本的元凶, 系统终于能长跑攒 CLV**
+- iter34 (修复后 21min): 2 sharp 仓, 净 −2.83 MTM, 零异常
