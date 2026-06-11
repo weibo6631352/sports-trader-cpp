@@ -8,9 +8,14 @@
 #  - paper:    stcpp_signer_paper      (.o 含 mock signature + virtual confirm)
 #  - live:     stcpp_signer_live       (M4.5 后实现, 当前 stub)
 #  - backtest: stcpp_signer_backtest   (stub)
-# paper signer 不能出现在 live binary; live signer 不能出现在 paper binary.
+#
+# 2026-06-12 单参数切换 (老板令): live binary 复用 paper_loop 决策链,
+# PaperSigner 在 live 模式只做审计链 mock 签名 (从不上线),
+# 真 EIP-712 签名在 LiveOrderSubmitter (signer v62)。
+# 隔离从「物理不链接」改为「executor seam + R-11 mode_tag 运行时断言 +
+# R-7 FATAL guard (STCPP_LIVE_INTENT_OK)」。backtest 仍不链接此库。
 
-if(STCPP_EXEC_MODE STREQUAL "paper")
+if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "live")
     add_library(stcpp_signer_paper STATIC
         paper/paper_signer.cpp
     )

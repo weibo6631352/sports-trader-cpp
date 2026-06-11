@@ -64,6 +64,15 @@ target_link_libraries(stcpp_paper_app PUBLIC
     stcpp_execution_paper
     stcpp_process_lock         # 程序级防多开 (SingleInstanceLock; paper_server/runtime main 用)
 )
+# 2026-06-12 单参数切换: live 模式装配 LiveCredentials→Submitter→Gate→Executor→Adapter
+# (paper_daemon.cpp `if constexpr (kCompiledMode==Live)` 块)。gate 库本身 mode-agnostic,
+# 但 LiveOrderSubmitter 实现只在 live 模式定义 (stcpp_polymarket_live), 故条件链接。
+if(STCPP_EXEC_MODE STREQUAL "live")
+    target_link_libraries(stcpp_paper_app PUBLIC
+        stcpp_polymarket_live
+        stcpp_polymarket_order_gate
+    )
+endif()
 # OpenSSL link (LiveWssTransport)
 if(OpenSSL_FOUND)
     target_link_libraries(stcpp_paper_app PUBLIC OpenSSL::SSL OpenSSL::Crypto)

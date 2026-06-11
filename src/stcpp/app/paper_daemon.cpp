@@ -763,7 +763,11 @@ BuildResult PaperDaemon::Build() {
     // FLB-hold 引擎 (老板 2026-06-11 拍板「与现策略并跑」): 生产开; 扫描另有 start_live_feeds 闸 (离线测试不扫)。
     cfg_.paper_loop.flb_enabled = true;
     // 账本持久化 (2026-06-11「迭代部署 vs 攒数据」根治): 60s 快照 + 启动恢复; CWD 相对 (server 在仓库根跑)。
-    cfg_.paper_loop.ledger_snapshot_path = "paper_ledger_snapshot.tsv";
+    // live 模式独立文件 (2026-06-12 单参数切换): live 重启绝不能把 paper 仓恢复进真钱账本 (R-11 反向)。
+    cfg_.paper_loop.ledger_snapshot_path =
+        (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live)
+            ? "live_ledger_snapshot.tsv"
+            : "paper_ledger_snapshot.tsv";
     // 决策源 = 直播源赔率 sharp (老板 2026-06-04「决策源就只用直播源赔率」+ 2026-06-05「砍掉大模型训练功能」):
     //   fair 由 sharp/derivative/score-prior 驱动 (见 pricing::ResolveFair), 无 ONNX blend。
     //   ml_fair_blend_weight/ml_drive_enabled 配置已随大模型一并砍。量化因子/统计
