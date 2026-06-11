@@ -296,7 +296,21 @@ void PaperLoop::TickAll() {
     //   多笔成交不驱动 bankroll 抖动 (老韩/小梁); 下 tick 自然吸收本 tick 已实现/未实现变化。
     tick_equity_ = account_equity();
 
+    // ---- FLB-hold 触发排干 (老板 2026-06-11): daemon 扫描线程入队 → 此处 loop_thread_ 串行处理 ----
+    //   走正常 RM→sign→matcher→ledger 全路径 (不绕 RM); 短锁仅 swap 队列 (R-12 友好)。
+    if (cfg_.flb_enabled) {
+        std::vector<FlbTrigger> flb_batch;
+        {
+            std::lock_guard<std::mutex> lk(flb_mu_);
+            flb_batch.swap(flb_pending_);
+        }
+        for (const auto& t : flb_batch) ProcessFlbTrigger(t);
+    }
+
     for (const auto& [cond_id, entry] : *tick_inputs_.catalog) {
+        // FLB-hold 触发检测 (老板 2026-06-11「触发型」): book 落 hub 即唤醒本 tick (事件驱动, 亚秒级),
+        //   此处对非 sharp moneyline 做首穿越检测。O(1) 早退极快, 不拖累 sharp 主路径。
+        if (cfg_.flb_enabled) MaybeFlbTrigger(cond_id, entry);
         const std::string& yes_tok = entry.tokens.first;   // YES token
         const std::string& no_tok = entry.tokens.second;   // NO token
 
@@ -2147,6 +2161,231 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         fills_ring_.push_back(std::move(fr));
         if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
     }
+}
+
+// ---------------------------------------------------------------------------
+// FLB-hold 引擎 (老板 2026-06-11 拍板「与现策略并跑」)
+//   实证 (299 已结算盘): PM 赛中 favorite 系统性低估 2-3pp, 首穿越 0.80 买入持有到结算净 EV +3.3%/u。
+//   纯订单簿触发 (不需 Goalserve), 只做非 sharp 盘; 一盘一击; 永不割 (无 book 订阅 → TickOne 天然跳过,
+//   无任何止损路径触达); 结算复用 SettlementPoller(catalog∪held) + 孤儿 sweep。
+// ---------------------------------------------------------------------------
+void PaperLoop::RequestFlbEntry(const FlbTrigger& t) {
+    std::lock_guard<std::mutex> lk(flb_mu_);
+    if (!flb_seen_.insert(t.condition_id).second) return;  // 一盘一击: 重复 condition 丢弃
+    flb_pending_.push_back(t);
+}
+
+// MaybeFlbTrigger — 触发型检测 (loop_thread_, TickAll 每市场调; 老板 2026-06-11「45s 太久, 要触发型」)。
+//   候选: 非 sharp 映射 (event_map 没有 = 主引擎不碰) + moneyline + in-play 窗口 + 未触发过。
+//   触发: YES ask 或合成 NO 价 (1−yes_bid) 首次 ∈[0.80,0.97] + 簿质量门 (价差≤0.05, L1 深度≥25u —
+//   实证模型按成交史价回测, 薄簿/宽价差实际吃不到那个价, 先用执行质量门挡, 多特征精确模型 v2 等
+//   [flb-feat] 台账攒够再标定)。book 由 WSS 订阅推送 (FLB 宇宙已订, 不进 149hz 轮询)。
+void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEntry& entry) {
+    constexpr double kFlbTrigger = 0.80;
+    constexpr double kFlbMaxPx = 0.97;
+    constexpr double kFlbMaxSpread = 0.05;
+    constexpr double kFlbMinDepthUsdc = 25.0;
+    if (entry.cat.market_type_id != 0) return;  // 只做 moneyline
+    if (tick_inputs_.event_map && tick_inputs_.event_map->count(cond_id) != 0) return;  // sharp 引擎地盘
+    const std::int64_t now_sec = NowNs() / 1'000'000'000LL;
+    if (entry.game_start_ts_sec <= 0 || now_sec < entry.game_start_ts_sec) return;  // 未开赛/缺窗口
+    if (entry.end_ts_sec > 0 && now_sec > entry.end_ts_sec) return;                 // 已出窗口
+    {
+        std::lock_guard<std::mutex> lk(flb_mu_);
+        if (flb_seen_.count(cond_id) != 0) return;  // 一盘一击预检
+    }
+    const auto fopt = hub_.Read(entry.tokens.first);
+    if (!fopt || !fopt->valid) return;
+    const auto& f = *fopt;
+    const double ya = f.best_ask();
+    const double yb = f.best_bid();
+    if (!std::isfinite(ya) || !std::isfinite(yb) || ya <= 0.0 || yb <= 0.0) return;  // 双边齐才触发
+    const double spread = ya - yb;
+    if (spread > kFlbMaxSpread) return;  // 簿质量门: 宽价差实际吃不到回测价
+    FlbTrigger t;
+    t.condition_id = cond_id;
+    t.event_ts_ns = f.event_ts_ns;
+    t.data_source_ts_ns = f.data_source_ts_ns;
+    t.ingestion_ts_ns = f.ingestion_ts_ns;
+    bool fire = false;
+    if (ya >= kFlbTrigger && ya <= kFlbMaxPx && f.best_ask_size() >= kFlbMinDepthUsdc) {
+        t.token_id = entry.tokens.first;
+        t.is_yes = true;
+        t.ask_px = ya;
+        t.ask_sz_usdc = f.best_ask_size();
+        fire = true;
+    } else if (const double na = 1.0 - yb; na >= kFlbTrigger && na <= kFlbMaxPx &&
+                                           f.best_bid_size() >= kFlbMinDepthUsdc &&
+                                           !entry.tokens.second.empty()) {
+        t.token_id = entry.tokens.second;
+        t.is_yes = false;
+        t.ask_px = na;                    // 合成 NO 买价 (吃 yes_bid)
+        t.ask_sz_usdc = f.best_bid_size();  // 深度 = yes_bid 档量
+        fire = true;
+    }
+    if (!fire) return;
+    {
+        std::lock_guard<std::mutex> lk(flb_mu_);
+        if (!flb_seen_.insert(cond_id).second) return;
+    }
+    // 簿特征研究台账 (老板「结合更多订单簿特征→精确概率利润模型」): 触发刻全特征落日志, 攒够样本
+    //   + 结算结果回填 → 标定多特征模型 v2 (价位×价差×深度×失衡×动量 分桶胜率)。
+    std::fprintf(stderr,
+                 "[flb-feat] cond=%.24s... %s px=%.3f spread=%.3f imb=%.3f micro=%.3f mid=%.3f "
+                 "depth_a=%.0f depth_b=%.0f tflow=%.0f tratio=%.2f\n",
+                 cond_id.c_str(), t.is_yes ? "YES" : "NO", t.ask_px, spread, f.imbalance, f.microprice,
+                 f.mid, f.best_ask_size(), f.best_bid_size(), f.trade_signed_vol_5m, f.trade_buy_ratio_5m);
+    ProcessFlbTrigger(t);
+}
+
+bool PaperLoop::FlbSeen(const std::string& condition_id) const {
+    std::lock_guard<std::mutex> lk(flb_mu_);
+    return flb_seen_.count(condition_id) != 0;
+}
+
+void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
+    // 平注 (老板「策略系数不进配置层」— 代码内常数): 多场分散吃 FLB 统计偏差, 无模型 fair 不做 Kelly。
+    constexpr double kFlbStakeUsdc = 15.0;
+    constexpr double kFlbMaxPx = 0.97;  // 价格上限双保险 (扫描端同档): 太贵无肉
+    if (t.ask_px <= 0.0 || t.ask_px > kFlbMaxPx || t.token_id.empty()) return;
+    if (position_ledger_.get_position(t.token_id)) return;  // 已有仓 (理论不达: 非 sharp 盘) → 不叠
+
+    // 4ts 链 (R-20): REST book ts 为上游源; 链不齐 fail-closed。
+    const std::int64_t as_of_now = NowNs();
+    if (t.event_ts_ns <= 0 || t.data_source_ts_ns < t.event_ts_ns ||
+        t.ingestion_ts_ns < t.data_source_ts_ns || as_of_now < t.ingestion_ts_ns) {
+        return;
+    }
+
+    const std::uint64_t intent_id = ++intent_seq_;
+    risk::OrderIntent intent;
+    intent.event_ts_ns = t.event_ts_ns;
+    intent.data_source_ts_ns = t.data_source_ts_ns;
+    intent.ingestion_ts_ns = t.ingestion_ts_ns;
+    intent.as_of_ts_ns = as_of_now;
+    intent.condition_id = t.condition_id;
+    intent.token_id = t.token_id;
+    intent.outcome = t.is_yes ? strategy::Outcome::Yes : strategy::Outcome::No;
+    intent.side = strategy::Side::Buy;
+    intent.is_close = false;
+    intent.strategy_id = "flb-hold-v1";
+    intent.signal_id = "flb-" + std::to_string(intent_id);
+    intent.feature_snapshot_id = "flb-no-snapshot";
+    intent.price = t.ask_px;
+    intent.size_pUSD_micro = static_cast<std::int64_t>(kFlbStakeUsdc * 1'000'000.0);
+    intent.book_depth_l1_usdc = t.ask_sz_usdc * 1'000'000.0;
+    intent.book_snapshot_ts_ns = t.ingestion_ts_ns;
+    intent.tick_size = 0.01;
+    intent.fee_rate_coef = FeeCoefFor(t.condition_id);
+    intent.timestamp_ms = as_of_now / 1'000'000LL;
+    intent.metadata = "0x0000000000000000000000000000000000000000000000000000000000000000";
+    intent.builder = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+    const risk::RiskDecision rd = rm_.evaluate(intent);  // 不绕 RM (§8 红线)
+    if (rd.is_rejected()) {
+        stats_.orders_rejected.fetch_add(1, std::memory_order_relaxed);
+        std::fprintf(stderr, "[flb] RM拒 cond=%.24s... code=%d\n", t.condition_id.c_str(),
+                     static_cast<int>(rd.reject));  // 观测: FLB 被哪道闸拦 (拒单也进 RM rejects 环)
+        return;
+    }
+    stats_.orders_approved.fetch_add(1, std::memory_order_relaxed);
+
+    signer::SignRequest sign_req;
+    sign_req.audit_id = rd.audit_id;
+    sign_req.intent_id = intent_id;
+    sign_req.condition_id = intent.condition_id;
+    sign_req.token_id = intent.token_id;
+    sign_req.price = intent.price;
+    sign_req.size_pUSD_micro = intent.size_pUSD_micro;
+    sign_req.side = static_cast<std::uint8_t>(intent.side);
+    sign_req.timestamp_ms = intent.timestamp_ms;
+    sign_req.metadata = intent.metadata;
+    sign_req.builder = intent.builder;
+    sign_req.event_ts_ns = intent.event_ts_ns;
+    sign_req.data_source_ts_ns = intent.data_source_ts_ns;
+    sign_req.ingestion_ts_ns = intent.ingestion_ts_ns;
+    sign_req.as_of_ts_ns = intent.as_of_ts_ns;
+    const signer::SignResponse sign_resp = psigner_.Sign(sign_req);
+    if (sign_resp.error != signer::SignerError::Ok) {
+        std::fprintf(stderr, "[flb] sign失败 cond=%.24s... err=%d\n", t.condition_id.c_str(),
+                     static_cast<int>(sign_resp.error));
+        return;  // fail-closed
+    }
+
+    execution::VirtualOrder vord;
+    vord.audit_id = sign_req.audit_id;
+    vord.intent_id = sign_req.intent_id;
+    vord.market_id = sign_req.condition_id;
+    vord.outcome = t.is_yes ? "YES" : "NO";
+    vord.size_usdc = kFlbStakeUsdc;
+    vord.quote_price = t.ask_px;
+    vord.book_depth_l1_usdc = t.ask_sz_usdc;
+    vord.tick_size = 0.01;
+    vord.event_ts_ns = sign_req.event_ts_ns;
+    vord.data_source_ts_ns = sign_req.data_source_ts_ns;
+    vord.ingestion_ts_ns = sign_req.ingestion_ts_ns;
+    vord.as_of_ts_ns = sign_req.as_of_ts_ns;
+    vord.wall_now_ns = as_of_now;
+    const execution::VirtualFill fill = executor_->Execute(vord);
+    assert(fill.mode_tag == 0u);  // R-11
+    if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
+        stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
+        std::fprintf(stderr, "[flb] 撮合miss cond=%.24s... reject=%d sz=%lld (解除标记待重试)\n",
+                     t.condition_id.c_str(), static_cast<int>(fill.reject),
+                     static_cast<long long>(fill.fill_size_usdc));
+        // 概率撮合 miss (Bernoulli) ≠ 永久不可成交: 解除一盘一击标记 → 下个 book 事件重试。
+        //   (RM 拒不解除 — caps 类持久拒, 防每 book 事件 spam RM 拒单环。)
+        std::lock_guard<std::mutex> lk(flb_mu_);
+        flb_seen_.erase(t.condition_id);
+        return;
+    }
+    stats_.fills_completed.fetch_add(1, std::memory_order_relaxed);
+
+    risk::FillEvent ev;
+    ev.filled_size_micro = fill.fill_size_usdc;
+    ev.fill_price = fill.fill_price;
+    ev.mode_tag = fill.mode_tag;
+    ev.event_ts_ns = fill.event_ts_ns;
+    ev.data_source_ts_ns = fill.data_source_ts_ns;
+    ev.ingestion_ts_ns = fill.ingestion_ts_ns;
+    ev.as_of_ts_ns = fill.as_of_ts_ns;
+    position_ledger_.apply_fill(t.condition_id, t.token_id, intent.outcome, ev);
+
+    // 账本快照 (合成 side_book 只供 4ts 透传) + RM 敞口喂数。mark = 成交价 (无 mid, 保守)。
+    polymarket::clob_wss::OrderBookFeatures sb{};
+    sb.event_ts_ns = t.event_ts_ns;
+    sb.data_source_ts_ns = t.data_source_ts_ns;
+    sb.ingestion_ts_ns = t.ingestion_ts_ns;
+    sb.as_of_ts_ns = as_of_now;
+    PublishLedgerSnapshot(t.condition_id, fill, /*mark_price=*/fill.fill_price, sb);
+    stats_.ledger_publishes.fetch_add(1, std::memory_order_relaxed);
+    FeedRiskGateway();
+
+    // CLV 尺子: FLB 建仓也记 (结算 CLV 是引擎对比的判官)。
+    clv_tracker_.RecordFill(t.token_id, fill.fill_price, fill.fill_price,
+                            static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.as_of_ts_ns);
+
+    std::fprintf(stderr, "[flb] FILL cond=%.24s... %s %.1fu@%.4f (深度 %.0f)\n", t.condition_id.c_str(),
+                 t.is_yes ? "YES" : "NO", static_cast<double>(fill.fill_size_usdc) / 1'000'000.0,
+                 fill.fill_price, t.ask_sz_usdc);
+
+    FillRow fr;
+    fr.as_of_ts_ns = fill.as_of_ts_ns;
+    fr.condition_id = t.condition_id;
+    fr.is_yes = t.is_yes;
+    fr.is_buy = true;
+    fr.is_close = false;
+    fr.price = fill.fill_price;
+    fr.size_usdc = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
+    fr.realized = 0.0;
+    fr.cum_realized = cum_realized_pnl_pusd_;
+    fr.fair = fill.fill_price;  // 无模型 fair (引擎 edge 是统计性的): 声称 edge=0, 诚实
+    fr.mark = fill.fill_price;
+    fr.fee = fr.size_usdc * FeeCoefFor(t.condition_id) * fill.fill_price * (1.0 - fill.fill_price);
+    fr.engine = "flb";
+    std::lock_guard<std::mutex> lk(fills_mu_);
+    fills_ring_.push_back(std::move(fr));
+    if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
 }
 
 // ---------------------------------------------------------------------------

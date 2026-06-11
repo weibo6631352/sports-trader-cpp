@@ -326,10 +326,27 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
     std::vector<std::pair<std::string, double>> poll_plan;  // 149hz 主动轮询计划 (token, √liq+1 权重)
     poll_plan.reserve(token_map_.size() * 2);
     std::size_t passed_no_source = 0;
+    std::size_t flb_subscribed = 0;
     for (const auto& [cond_id, tok_pair] : token_map_) {
         if (!sharp_snap || sharp_snap->count(cond_id) == 0) {
-            ++passed_no_source;  // 无赔率源 (或 eligible 未就绪) → 源头 pass, 不订阅
-            continue;
+            // FLB-hold 宇宙 (老板 2026-06-11「触发型」): 非 sharp 的 moneyline 也订 WSS (book 事件即触发,
+            //   亚秒级; 替代 45s 扫描轮询)。【只订 WSS 不进 149hz 轮询计划】(轮询预算仍 sharp 专属);
+            //   eligible 未就绪 (sharp_snap null) 时同样不订 (保持「绝不 bootstrap 全订」不变式)。
+            bool flb_take = false;
+            if (sharp_snap && cfg_.paper_loop.flb_enabled) {
+                if (const auto cit = market_cat_map_.find(cond_id);
+                    cit != market_cat_map_.end() && cit->second.market_type_id == 0) {  // moneyline
+                    flb_take = true;
+                }
+            }
+            if (!flb_take) {
+                ++passed_no_source;  // 无赔率源且非 FLB 宇宙 → 源头 pass, 不订阅
+                continue;
+            }
+            all_token_ids_.push_back(tok_pair.first);
+            all_token_ids_.push_back(tok_pair.second);
+            ++flb_subscribed;
+            continue;  // 不进 poll_plan
         }
         all_token_ids_.push_back(tok_pair.first);
         all_token_ids_.push_back(tok_pair.second);
@@ -344,9 +361,9 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
     PublishPollPlan(std::move(poll_plan));  // 发布给 ActiveBookPoller (流动性加权 149hz)
     if (sharp_snap) {
         std::fprintf(stderr,
-                     "[paper_daemon] 源头 pass: 订阅 %zu/%zu market (跳过 %zu 无赔率源), token=%zu\n",
+                     "[paper_daemon] 源头 pass: 订阅 %zu/%zu market (跳过 %zu; 其中 FLB 宇宙 %zu), token=%zu\n",
                      token_map_.size() - passed_no_source, token_map_.size(), passed_no_source,
-                     all_token_ids_.size());
+                     flb_subscribed, all_token_ids_.size());
     }
     // A1: 发布不可变 token 快照 (OnConnected/seed 等并发读方读它, 不碰裸 all_token_ids_ → 消 race)
     PublishTokenSnapshot();
@@ -371,6 +388,8 @@ std::shared_ptr<const paper::PaperCatalog> PaperDaemon::BuildPaperCatalog() cons
         if (const auto mit = market_catalog_.find(cid); mit != market_catalog_.end()) {
             e.fee_coef = mit->second.fee_rate;  // R-fee-2: gamma feeSchedule.rate
             e.parent = paper::ParentRef{mit->second.event_id, mit->second.neg_risk_market_id};
+            e.game_start_ts_sec = mit->second.game_start_ts_sec;  // FLB in-play 窗口 (2026-06-11, 加性)
+            e.end_ts_sec = mit->second.end_ts_sec;
         }
         if (const auto cit = market_cat_map_.find(cid); cit != market_cat_map_.end()) {
             e.cat = cit->second;  // v0.7 类别码 (ML 特征 82-85)
@@ -737,6 +756,8 @@ BuildResult PaperDaemon::Build() {
     cfg_.paper_loop.net_ev_gate = cfg_.enable_phase0_gates;
     // 赢面稳定窗 3min (老板 2026-06-11「入场太早赢面不稳定」拍板): 同随 phase0 gates (A2 等管线测试可关)。
     cfg_.paper_loop.open_stable_window_ns = cfg_.enable_phase0_gates ? 180'000'000'000LL : 0;
+    // FLB-hold 引擎 (老板 2026-06-11 拍板「与现策略并跑」): 生产开; 扫描另有 start_live_feeds 闸 (离线测试不扫)。
+    cfg_.paper_loop.flb_enabled = true;
     // 决策源 = 直播源赔率 sharp (老板 2026-06-04「决策源就只用直播源赔率」+ 2026-06-05「砍掉大模型训练功能」):
     //   fair 由 sharp/derivative/score-prior 驱动 (见 pricing::ResolveFair), 无 ONNX blend。
     //   ml_fair_blend_weight/ml_drive_enabled 配置已随大模型一并砍。量化因子/统计
@@ -931,6 +952,7 @@ BuildResult PaperDaemon::Build() {
             v.mark = r.mark;
             v.fee = r.fee;   // 逐笔费 (老板「手续费逐笔体现」)
             v.exit_reason = r.exit_reason;  // 卖出原因 (老板「出现卖出就检查是否合理」)
+            v.engine = r.engine;  // 引擎标签 (FLB 并跑对比, 2026-06-11)
             out.push_back(std::move(v));
         }
         return out;

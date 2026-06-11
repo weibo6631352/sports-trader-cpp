@@ -217,6 +217,9 @@ struct PaperMarketEntry {
     // 数据新鲜度 (2026-06-01 老板「每个源标时间」): gamma 发现/重建此 catalog 条目的时刻
     //   (300s 重发现 → 此源可达 300s 陈旧)。喂 g_catalog_age_sec, 模型知道 fee/line/类别元数据多老。0=未知。
     std::int64_t discovered_at_ns{0};
+    // 比赛窗口 (2026-06-11 FLB 触发型: in-play 判定; 加性): gamma gameStartTime/endDate → Unix 秒, 0=缺。
+    std::int64_t game_start_ts_sec{0};
+    std::int64_t end_ts_sec{0};
 };
 using PaperCatalog = std::unordered_map<std::string, PaperMarketEntry>;
 
@@ -462,6 +465,9 @@ struct PaperLoopConfig {
     //   【全程】≥ min_open_fair (买稳定赢面, 不买正在经过门槛的钟摆)。0=关 (lib 默认, 契约/管线测试不变);
     //   生产 daemon 随 enable_phase0_gates 置 180s。
     std::int64_t open_stable_window_ns{0};
+    // FLB-hold 引擎开关 (老板 2026-06-11 拍板「与现策略并跑」): false=关 (lib 默认, 契约不变);
+    //   生产 daemon 置 true。stake/触发档为代码内常数 (kFlb*, 老板「策略系数不进配置层」)。
+    bool flb_enabled{false};
 
     // 再入场冷却 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 同一 token 减仓/平仓后, 冷却窗内禁止
     //   【新开/加仓买入】(减仓/平仓/must_win/force_cross 不受限)。根因: 实测同盘 buy→卖光→rebuy 反复 4+ 往返
@@ -603,6 +609,27 @@ public:
     //   不起 loop_thread_; 调用方负责先注入 catalog + hub book。仅用于 benchmark/单测, 生产走 Start()。
     void TickAllForBench() { TickAll(); }
 
+    // ---- FLB-hold 引擎 (老板 2026-06-11 拍板「与现策略并跑」) -------------------------------------
+    //   实证 (299 已结算盘): PM 赛中 favorite 系统性低估 2-3pp, 首穿越 0.80 买入持有到结算净 EV +3.3%/u。
+    //   纯订单簿触发 (不需 Goalserve), 只做【非 sharp】盘 (与主引擎物理隔离不抢地盘); 一盘一击 (首穿越,
+    //   one-shot); 永不割 (无 book_det/止损路径 — 这些盘无 book 订阅 TickOne 天然跳过), 结算链复用
+    //   (SettlementPoller catalog∪held + 孤儿 sweep)。daemon 扫描线程发现触发 → RequestFlbEntry 入队 →
+    //   loop_thread_ 在 TickAll 起始排干, 走正常 RM→sign→VirtualMatcher→ledger 全路径 (不绕 RM 红线)。
+    struct FlbTrigger {
+        std::string condition_id;
+        std::string token_id;        // 被买边 token
+        bool is_yes{true};
+        double ask_px{0.0};          // 触发刻该边可成交买价 (YES=yes_ask; NO=1−yes_bid 合成)
+        double ask_sz_usdc{0.0};     // 该价位深度 (撮合模拟用)
+        std::int64_t event_ts_ns{0};  // R-20 4ts: 来自 REST book timestamp
+        std::int64_t data_source_ts_ns{0};
+        std::int64_t ingestion_ts_ns{0};
+    };
+    // 扫描线程 (daemon) 调用: 入队 + 一盘一击去重 (重复 condition 直接丢)。线程安全 (flb_mu_)。
+    void RequestFlbEntry(const FlbTrigger& t);
+    // 该 condition 是否已触发过 (扫描端预过滤省 book 拉取)。线程安全。
+    [[nodiscard]] bool FlbSeen(const std::string& condition_id) const;
+
     // slice-3b: 累计已实现 PnL (whole pUSD; 含结算)。观测/dashboard/测试 (loop_thread_ 写, 读时近似)。
     [[nodiscard]] double cum_realized_pnl_pusd() const noexcept { return cum_realized_pnl_pusd_; }
     // 累计已付 taker fee (whole pUSD, 绝对值单调)。AccountEquity / 端点 / 测试用 (2026-06-01 凯利评审)。
@@ -629,6 +656,7 @@ public:
         double fee{0.0};               // 本笔手续费 (老板 2026-06-09「手续费逐笔体现」): size×fee_coef×p×(1−p)
         std::string exit_reason;       // 卖出原因 (2026-06-10 老板「出现卖出就检查是否合理」): rel_stop/vel_exit/
                                        //   frozen_hard/game_decided/kelly_reduce/winprob_cut/m2a_switch (买入空)
+        std::string engine;            // 引擎标签 (2026-06-11 FLB 并跑对比): ""=sharp 主引擎 / "flb"=FLB-hold (加性)
     };
     // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
     [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200,
@@ -983,6 +1011,14 @@ private:
     std::unordered_set<std::string> market_stop_episode_;
     // ---- book_det 60s 持续确认 (老板 2026-06-11 拍板, 治割在 V 底): token_id → 双条件首次成立 NowNs ----
     std::unordered_map<std::string, std::int64_t> book_det_since_;
+    // ---- FLB-hold 引擎状态 (老板 2026-06-11): 触发队列 (daemon 扫描线程写 / loop_thread_ 排干) +
+    //   一盘一击去重集 (入队刻即记, 重复 condition 丢弃)。flb_mu_ 保护两者 (扫描端 FlbSeen 预过滤同锁)。
+    mutable std::mutex flb_mu_;
+    std::vector<FlbTrigger> flb_pending_;
+    std::unordered_set<std::string> flb_seen_;
+    void ProcessFlbTrigger(const FlbTrigger& t);  // loop_thread_ only (TickAll 起始排干调用)
+    // 触发型检测 (loop_thread_, TickAll 每市场调; book 落 hub 即唤醒 → 亚秒级, 老板「要触发型」)。
+    void MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEntry& entry);
 
     // ---- 逐盘累计已实现/费 (老板 2026-06-09「前端观测做到位, 交易订单对得上 PnL」): condition_id → 累计 ----
     //   修对账 bug: PublishLedgerSnapshot 原硬编码 pnl_realized=0 + pnl_fee 只本笔 → 逐盘 net_pnl 平仓后丢

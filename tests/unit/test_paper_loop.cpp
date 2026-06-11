@@ -2099,3 +2099,76 @@ TEST(BookDeteriorate, ExitOnlyWhenBookTurnsDown) {
     // ⑥ 退化输入 (NaN) → 不离场 (fail-safe)
     EXPECT_FALSE(BookDeteriorating(-0.30, std::nan(""), 0.50, kThr));
 }
+
+// ---------------------------------------------------------------------------
+// FLB-hold 引擎 (老板 2026-06-11「与现策略并跑」): 触发→RM→撮合→账本全路径 + 一盘一击去重。
+// ---------------------------------------------------------------------------
+
+TEST_F(PaperLoopTest, FLB01_TriggerProducesFillAndDedupes) {
+    cfg_.flb_enabled = true;
+    RebuildRmHighCap();  // 夹具默认 per_order cap=10u < FLB 平注 15u → 抬 cap 测全路径
+    loop_ = MakeLoop();
+    rm_->set_state(stcpp::risk::RmState::RUNNING);  // bench 不走 Start() (set_rm_running 在 Start 里)
+    rm_->set_bankroll(1'000'000'000);               // 1000 pUSD (micro)
+    loop_->SetPaperCatalog(std::make_shared<paper::PaperCatalog>());  // 非空指针 (TickAll 前置门)
+
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count();
+    PaperLoop::FlbTrigger t;
+    t.condition_id = "0x00000000000000000000000000000000000000000000000000000000f1b00001";
+    t.token_id = "910000000000000001";
+    t.is_yes = true;
+    t.ask_px = 0.85;
+    t.ask_sz_usdc = 500.0;
+    t.event_ts_ns = now_ns - 3'000'000'000LL;
+    t.data_source_ts_ns = now_ns - 2'000'000'000LL;
+    t.ingestion_ts_ns = now_ns - 1'000'000'000LL;
+
+    loop_->RequestFlbEntry(t);
+    EXPECT_TRUE(loop_->FlbSeen(t.condition_id)) << "入队即记 (一盘一击)";
+    loop_->TickAllForBench();  // 排干队列 → RM→sign→matcher→ledger
+    // VirtualMatcher 概率撮合 (Bernoulli): miss 会解除标记待重试 → 测试重试至成交 (p_fill 高, 数次内必中)
+    for (int i = 0; i < 50 && !position_ledger_->get_position(t.token_id).has_value(); ++i) {
+        loop_->RequestFlbEntry(t);
+        loop_->TickAllForBench();
+    }
+
+    const auto pos = position_ledger_->get_position(t.token_id);
+    ASSERT_TRUE(pos.has_value()) << "FLB 触发应产生持仓";
+    EXPECT_GT(pos->size_usdc, 0);
+    const auto fills = loop_->RecentFills(10);
+    ASSERT_FALSE(fills.empty());
+    EXPECT_EQ(fills.front().engine, "flb") << "FLB 成交应带引擎标签";
+    EXPECT_TRUE(fills.front().is_buy);
+    EXPECT_FALSE(fills.front().is_close);
+
+    // 一盘一击: 同 condition 再触发被丢弃 (不叠仓)
+    const double sz_before = static_cast<double>(pos->size_usdc);
+    loop_->RequestFlbEntry(t);
+    loop_->TickAllForBench();
+    const auto pos2 = position_ledger_->get_position(t.token_id);
+    ASSERT_TRUE(pos2.has_value());
+    EXPECT_DOUBLE_EQ(static_cast<double>(pos2->size_usdc), sz_before) << "重复触发不应加仓";
+}
+
+TEST_F(PaperLoopTest, FLB02_DisabledByDefault_NoFill) {
+    // cfg_.flb_enabled 默认 false (lib 契约): 触发入队但 TickAll 不处理
+    loop_ = MakeLoop();
+    loop_->SetPaperCatalog(std::make_shared<paper::PaperCatalog>());
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count();
+    PaperLoop::FlbTrigger t;
+    t.condition_id = "0x00000000000000000000000000000000000000000000000000000000f1b00002";
+    t.token_id = "910000000000000002";
+    t.is_yes = true;
+    t.ask_px = 0.85;
+    t.ask_sz_usdc = 500.0;
+    t.event_ts_ns = now_ns - 3'000'000'000LL;
+    t.data_source_ts_ns = now_ns - 2'000'000'000LL;
+    t.ingestion_ts_ns = now_ns - 1'000'000'000LL;
+    loop_->RequestFlbEntry(t);
+    loop_->TickAllForBench();
+    EXPECT_FALSE(position_ledger_->get_position(t.token_id).has_value()) << "flb_enabled=false 不应成交";
+}

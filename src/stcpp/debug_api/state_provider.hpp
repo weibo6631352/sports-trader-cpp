@@ -127,6 +127,7 @@ struct FillView {
     double mark{0.0};        // 成交刻市场 mark — 前端模型诊断: 模型偏差=fair−mark
     double fee{0.0};         // 本笔手续费 (老板 2026-06-09「手续费逐笔体现」): size×fee_coef×p×(1−p)
     std::string exit_reason; // 卖出原因 (2026-06-10 老板「出现卖出就检查是否合理」; 买入空)
+    std::string engine;      // 引擎标签 (2026-06-11 FLB 并跑对比): ""=sharp 主引擎 / "flb" (加性)
 };
 
 // ============================================================
