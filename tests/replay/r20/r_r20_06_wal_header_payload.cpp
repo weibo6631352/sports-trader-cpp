@@ -28,7 +28,7 @@ TEST(R20ReplayWalHeader, R_R20_06_wal_header_payload_ts_match) {
     // 打开 paper_audit WAL
     WalConfig cfg{};
     cfg.kind = WalKind::PaperAudit;
-    cfg.path_prefix = "/var/lib/stcpp/paper/r20_06_wal_header";
+    cfg.path_prefix = "/var/lib/stcpp/engine/r20_06_wal_header";
     auto wres = WalWriter<AuditRecord>::Open(cfg);
     ASSERT_TRUE(wres) << "R-R20-06: WAL open 失败";
     auto writer = std::move(wres).value();

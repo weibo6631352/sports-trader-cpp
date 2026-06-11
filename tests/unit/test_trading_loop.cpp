@@ -1,4 +1,4 @@
-// tests/unit/test_paper_loop.cpp — PaperLoop 单测
+// tests/unit/test_trading_loop.cpp — TradingLoop 单测
 #include <filesystem>
 //
 // Owner: 小肖 (numerical-algorithms, A 系统工程部)
@@ -23,13 +23,13 @@
 //
 // 测试策略:
 //   使用合成 OrderBookSnapshotHub (先 Publish 真实 book 快照),
-//   PaperLoop tick 后读 LedgerSnapshotHub / QuoteSnapshotHub 验证.
-//   PaperLoop 内部有 RM SAFE_MODE → RUNNING 切换 (set_rm_running=true 默认),
+//   TradingLoop tick 后读 LedgerSnapshotHub / QuoteSnapshotHub 验证.
+//   TradingLoop 内部有 RM SAFE_MODE → RUNNING 切换 (set_rm_running=true 默认),
 //   但 RM 的 STALE_DATA 检查会拒掉 M1 合成数据 (book_snapshot_ts 是当前时间).
 //   → 单测将 RiskConfig.edge_ci_lower_floor = -1.0 放宽, 并注意 RM check_stale_data_.
 //   → 为了让 T04 真正产生 fill, 用 VirtualMatcher 固定种子 + 足够大 edge.
 //
-// 注意: PaperLoop 有内部 jthread, 需 sleep 等待 tick.
+// 注意: TradingLoop 有内部 jthread, 需 sleep 等待 tick.
 
 #include <chrono>
 #include <cmath>
@@ -42,7 +42,7 @@
 #include <gtest/gtest.h>
 
 #include "stcpp/data/score_snapshot_store.hpp"  // A1: 真实比分注入
-#include "stcpp/paper/paper_loop.hpp"
+#include "stcpp/engine/trading_loop.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/ledger_snapshot_hub.hpp"
@@ -52,7 +52,7 @@
 #include "stcpp/sizing/quote_snapshot_hub.hpp"
 
 using namespace stcpp;
-using namespace stcpp::paper;
+using namespace stcpp::engine;
 using namespace stcpp::polymarket::clob_wss;
 using namespace stcpp::risk;
 using namespace stcpp::sizing;
@@ -114,7 +114,7 @@ public:
 // 测试夹具
 // ---------------------------------------------------------------------------
 
-class PaperLoopTest : public ::testing::Test {
+class TradingLoopTest : public ::testing::Test {
 protected:
     void SetUp() override {
         hub_ = std::make_unique<OrderBookSnapshotHub>();
@@ -143,7 +143,7 @@ protected:
         // token_map
         token_map_["cond-test-001"] = {"1001", "1002"};
 
-        // PaperLoopConfig
+        // TradingLoopConfig
         cfg_.tick_interval_ms = 50;  // 快速 tick (50ms, 单测友好)
         cfg_.bankroll_usdc = 1000.0;
         cfg_.n_effective = 30;
@@ -158,8 +158,8 @@ protected:
         }
     }
 
-    std::unique_ptr<PaperLoop> MakeLoop() {
-        return std::make_unique<PaperLoop>(*hub_, *rm_, *position_ledger_, *ledger_hub_, *quote_hub_,
+    std::unique_ptr<TradingLoop> MakeLoop() {
+        return std::make_unique<TradingLoop>(*hub_, *rm_, *position_ledger_, *ledger_hub_, *quote_hub_,
                                            rm_snap_.get(), *fv_model_, token_map_, cfg_);
     }
 
@@ -185,15 +185,15 @@ protected:
     std::unique_ptr<RiskGateway> rm_;
     std::unique_ptr<BaselineFairValueModel> fv_model_;
     std::unordered_map<std::string, std::pair<std::string, std::string>> token_map_;
-    PaperLoopConfig cfg_;
-    std::unique_ptr<PaperLoop> loop_;
+    TradingLoopConfig cfg_;
+    std::unique_ptr<TradingLoop> loop_;
 };
 
 // ---------------------------------------------------------------------------
 // T01: 基础生命周期 — Start/Stop 不崩溃
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T01_StartStop) {
+TEST_F(TradingLoopTest, T01_StartStop) {
     loop_ = MakeLoop();
     EXPECT_FALSE(loop_->is_running());
     loop_->Start();
@@ -205,11 +205,11 @@ TEST_F(PaperLoopTest, T01_StartStop) {
 
 // ---------------------------------------------------------------------------
 // T02: R-11 paper 不污染 — VirtualFill.mode_tag == 0
-//   (在 paper_loop.cpp TickOne() 里有 assert(fill.mode_tag == 0u))
+//   (在 trading_loop.cpp TickOne() 里有 assert(fill.mode_tag == 0u))
 //   这里验证 VirtualMatcher 产出的 VirtualFill.mode_tag == 0
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T02_R11_ModePaper) {
+TEST_F(TradingLoopTest, T02_R11_ModePaper) {
     // VirtualMatcher 直接测试 mode_tag
     execution::VirtualMatcher matcher{0xBEEFCAFEULL};
     execution::VirtualOrder ord{};
@@ -238,7 +238,7 @@ TEST_F(PaperLoopTest, T02_R11_ModePaper) {
 // T03: R-20 ts 链 — LedgerFeatures.ts_chain_ok() 通过
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T03_R20_TsChain) {
+TEST_F(TradingLoopTest, T03_R20_TsChain) {
     // 构造 LedgerFeatures 并验证 ts_chain_ok()
     LedgerFeatures lf{};
     lf.event_ts_ns = kEventTs;
@@ -258,11 +258,11 @@ TEST_F(PaperLoopTest, T03_R20_TsChain) {
 
 // ---------------------------------------------------------------------------
 // T04: LedgerSnapshotHub 可见
-//   hub 有有效 book → PaperLoop tick → LedgerSnapshotHub.Publish 发生
+//   hub 有有效 book → TradingLoop tick → LedgerSnapshotHub.Publish 发生
 //   (由于 RM stale_data 检查会拒掉合成 ts, 实际 fill 可能为 0, 但 quote 快照仍发布)
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T04_LedgerHubVisible) {
+TEST_F(TradingLoopTest, T04_LedgerHubVisible) {
     // Publish 合成 book (fair=0.65, ask=0.55 → edge=0.10, 足够大)
     const auto feat = MakeSyntheticBook(0.53, 0.55);
     hub_->Publish("1001", feat);
@@ -276,7 +276,7 @@ TEST_F(PaperLoopTest, T04_LedgerHubVisible) {
 
     // 无论 RM 是否放行, stats.ticks_total > 0
     EXPECT_GT(loop_->stats().ticks_total.load(), static_cast<std::uint64_t>(0))
-        << "PaperLoop should have executed at least one tick";
+        << "TradingLoop should have executed at least one tick";
     // orders_attempted > 0 (book 有数据, 应进入 TickOne)
     EXPECT_GT(loop_->stats().orders_attempted.load(), static_cast<std::uint64_t>(0))
         << "orders_attempted should be > 0 after hub has valid book";
@@ -287,7 +287,7 @@ TEST_F(PaperLoopTest, T04_LedgerHubVisible) {
 //   hub 有有效 book → tick → quote_hub_.Publish → Read() 返回 valid=true
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T05_QuoteHubVisible) {
+TEST_F(TradingLoopTest, T05_QuoteHubVisible) {
     // fair=0.65, ask=0.55 → edge=100bps
     const auto feat = MakeSyntheticBook(0.53, 0.55);
     hub_->Publish("1001", feat);
@@ -319,13 +319,13 @@ TEST_F(PaperLoopTest, T05_QuoteHubVisible) {
 
 // ---------------------------------------------------------------------------
 // T06: ComputeEdgeCiLower 数值稳定性
-//   通过 PaperLoop 白盒 — 验证内部静态函数行为
+//   通过 TradingLoop 白盒 — 验证内部静态函数行为
 //   用测试类暴露 (由于是 private, 直接通过行为验证)
 //
 //   等价测试: 用 FairValueEstimator + SizingCalculator 直接验证 CI gating
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T06_EdgeCiLower_Numerical) {
+TEST_F(TradingLoopTest, T06_EdgeCiLower_Numerical) {
     // NaN p_fair → fail-closed (ci_lower = -1.0 → sizing.valid = false)
     const double nan_val = std::numeric_limits<double>::quiet_NaN();
     EXPECT_TRUE(std::isnan(nan_val));
@@ -378,7 +378,7 @@ TEST_F(PaperLoopTest, T06_EdgeCiLower_Numerical) {
 //   → orders_attempted > 0 but fills_completed = 0 (sizing.valid = false 时不进 RM)
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T07_CiGating_NoOrder) {
+TEST_F(TradingLoopTest, T07_CiGating_NoOrder) {
     // fair=0.51, ask=0.50 → tiny edge → CI gating 拒
     const auto feat = MakeSyntheticBook(0.49, 0.50);
     hub_->Publish("1001", feat);
@@ -403,7 +403,7 @@ TEST_F(PaperLoopTest, T07_CiGating_NoOrder) {
 // T08: Stop 后 is_running() = false
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T08_StopRunning) {
+TEST_F(TradingLoopTest, T08_StopRunning) {
     loop_ = MakeLoop();
     loop_->Start();
     EXPECT_TRUE(loop_->is_running());
@@ -418,7 +418,7 @@ TEST_F(PaperLoopTest, T08_StopRunning) {
 // T09: Stats 计数 — ticks_total 单调递增
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T09_StatsMonotonic) {
+TEST_F(TradingLoopTest, T09_StatsMonotonic) {
     // 无 book 数据 → hub_reads_empty 增加, ticks_total 增加
     loop_ = MakeLoop();
     loop_->Start();
@@ -438,7 +438,7 @@ TEST_F(PaperLoopTest, T09_StatsMonotonic) {
 // T10: R-11 LedgerFeatures.mode = kPaper
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T10_R11_LedgerMode) {
+TEST_F(TradingLoopTest, T10_R11_LedgerMode) {
     LedgerSnapshotHub lhub;
     LedgerFeatures lf{};
     lf.event_ts_ns = kEventTs;
@@ -463,7 +463,7 @@ TEST_F(PaperLoopTest, T10_R11_LedgerMode) {
 // T11: QuoteFeatures R-20 4-ts 链透传 (原 advisory 字段已砍 2026-06-05)
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T11_QuoteTsChain) {
+TEST_F(TradingLoopTest, T11_QuoteTsChain) {
     QuoteSnapshotHub qhub;
     QuoteFeatures qf{};
     qf.event_ts_ns = kEventTs;
@@ -484,7 +484,7 @@ TEST_F(PaperLoopTest, T11_QuoteTsChain) {
 // ---------------------------------------------------------------------------
 // T11c (老板「双边都要有」): 双边 book 都在 → NO 边时序微结构 (no_*) 也被捕获, 不只 YES。
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T11c_NoSideMicrostructure_Captured) {
+TEST_F(TradingLoopTest, T11c_NoSideMicrostructure_Captured) {
     // YES book (token 1001) + NO book (token 1002) 都发布 → 双边 ring 都 push。
     hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));
     hub_->Publish("1002", MakeSyntheticBook(0.45, 0.47));  // NO 边独立 book
@@ -507,7 +507,7 @@ TEST_F(PaperLoopTest, T11c_NoSideMicrostructure_Captured) {
 // ---------------------------------------------------------------------------
 // T11e (Phase 0 联合评审): 项5 组合度量接入 TickAll (权益每周期采样) + 项1-3 门 ON 路径不崩。
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T11e_Phase0_PortfolioMetricsAndGatesWired) {
+TEST_F(TradingLoopTest, T11e_Phase0_PortfolioMetricsAndGatesWired) {
     hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));
     cfg_.dynamic_reservation = true;  // 项1+2 动态 reservation ON
     cfg_.net_ev_gate = true;          // 项3 net-EV 门 ON
@@ -528,7 +528,7 @@ TEST_F(PaperLoopTest, T11e_Phase0_PortfolioMetricsAndGatesWired) {
 // T11d (老板「各边买了多少, 可能两边都买」): 双边持仓 — YES + NO 各自量都进 QuoteFeatures,
 //   不塌成单边/净。旧码 break 在首 token 只取一边丢 NO; 现 per-token 双边读。
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T11d_BothSidePositions_Captured) {
+TEST_F(TradingLoopTest, T11d_BothSidePositions_Captured) {
     hub_->Publish("1001", MakeSyntheticBook(0.53, 0.55));  // YES book 有效 → quote 发布
     // 两边都建仓: YES token 1001 持 100 pUSD, NO token 1002 持 30 pUSD (做市/对冲场景)。
     auto mk_fill = [](double px, double whole_pusd) {
@@ -559,12 +559,12 @@ TEST_F(PaperLoopTest, T11d_BothSidePositions_Captured) {
 }
 
 // ---------------------------------------------------------------------------
-// T12: P0-1 拒单去重 — RmDebugSnapshot ring 不被 paper_loop 二次写入
+// T12: P0-1 拒单去重 — RmDebugSnapshot ring 不被 trading_loop 二次写入
 //
 // 验证方法:
-//   让 PaperLoop 跑若干 tick (不产生 fill, RM 会拒单).
+//   让 TradingLoop 跑若干 tick (不产生 fill, RM 会拒单).
 //   记录 rm_snap_.count() = RM 侧写入总次数.
-//   因为 paper_loop 已不再调用 rm_snap_->push_reject,
+//   因为 trading_loop 已不再调用 rm_snap_->push_reject,
 //   每个 intent 只被 RM::evaluate() 内部 push 一次.
 //   → count() 等于 orders_rejected (1:1, 不翻倍).
 //
@@ -572,7 +572,7 @@ TEST_F(PaperLoopTest, T11d_BothSidePositions_Captured) {
 //   同时 attach g_rm_debug_snapshot 让 RM 内部 push 到 rm_snap_.
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T12_P0_1_RejectNoDuplicate) {
+TEST_F(TradingLoopTest, T12_P0_1_RejectNoDuplicate) {
     // attach 全局 snapshot 指针, 让 RM 内部 push_reject 到 rm_snap_
     attach_rm_debug_snapshot(rm_snap_.get());
 
@@ -597,12 +597,12 @@ TEST_F(PaperLoopTest, T12_P0_1_RejectNoDuplicate) {
     const auto snap_count = rm_snap_->count();
 
     // 核心断言: snap_count == rejected (每个 reject 只写 ring 一次)
-    // 修复前: snap_count == 2 × rejected (paper_loop + RM 各 push 一次)
+    // 修复前: snap_count == 2 × rejected (trading_loop + RM 各 push 一次)
     // 修复后: snap_count == rejected (只有 RM 内部 push)
     if (rejected > 0) {
         EXPECT_EQ(snap_count, rejected)
             << "P0-1: RmDebugSnapshot.count() must equal orders_rejected "
-               "(each reject pushed exactly once by RM, not duplicated by paper_loop). "
+               "(each reject pushed exactly once by RM, not duplicated by trading_loop). "
                "snap_count="
             << snap_count << " rejected=" << rejected;
     }
@@ -633,7 +633,7 @@ TEST_F(PaperLoopTest, T12_P0_1_RejectNoDuplicate) {
 // 验证: time_status==NotStarted → has_real_fair=false → PublishQuoteSnapshot 清零.
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T13_P0_3_FakeFairGate) {
+TEST_F(TradingLoopTest, T13_P0_3_FakeFairGate) {
     // 低价 outright: mid=0.169, stub fair 会被拉到 ~0.434 (edge=0.265)
     // 修复后: quote.edge_bps/kelly/notional/signal 全 0, predict_ok=false
     const auto feat = MakeSyntheticBook(0.16, 0.18);  // bid=0.16, ask=0.18
@@ -680,7 +680,7 @@ TEST_F(PaperLoopTest, T13_P0_3_FakeFairGate) {
 //      quote 仍发布 (供观察), 但 edge/kelly/notional 全为 0 (P0-3 联动)
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, T14_P0_4_AdvisoryGate) {
+TEST_F(TradingLoopTest, T14_P0_4_AdvisoryGate) {
     // 发布有效 book (mid=0.545 — 接近 0.5 的 hockey 市场)
     const auto feat = MakeSyntheticBook(0.53, 0.56);
     hub_->Publish("1001", feat);
@@ -729,7 +729,7 @@ TEST_F(PaperLoopTest, T14_P0_4_AdvisoryGate) {
 //   T13 的镜像: 真实 in-play 比分 → predict_ok=true (vs stub predict_ok=false).
 //   advisory gate 仍 true (默认) → 无成交; 仅验 quote 真 fair 流出 (A1 范围, A2 才解封).
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T15_A1_RealGoalserveScore_PredictOk) {
+TEST_F(TradingLoopTest, T15_A1_RealGoalserveScore_PredictOk) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
     using stcpp::debug_api::EventScore;
@@ -789,7 +789,7 @@ TEST_F(PaperLoopTest, T15_A1_RealGoalserveScore_PredictOk) {
 //   平局 60:60 (score_diff=0 → moneyline p_yes≈0.5), 但半场总分 120 → 节奏外推终场 240 > line 211.5
 //   → 派生 Over 概率≈0.96。fair_value > 0.85 证明走了 totals 定价而非 moneyline。
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T17_TotalsMarket_DerivativePricing) {
+TEST_F(TradingLoopTest, T17_TotalsMarket_DerivativePricing) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
     using stcpp::debug_api::EventScore;
@@ -828,14 +828,14 @@ TEST_F(PaperLoopTest, T17_TotalsMarket_DerivativePricing) {
     loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
     // 注入 totals 元数据: market_type=2 (totals), line=211.5, yes_is_over=true。
     //   R-3: 经统一 PaperCatalog 注入 (tokens + cat 一起; 替代 SetMarketCatByCondition)。
-    stcpp::paper::MarketCat mc;
+    stcpp::engine::MarketCat mc;
     mc.market_type_id = 2;
     mc.line = 211.5;
     mc.yes_is_over = true;
     mc.league_id = 34;
     mc.sport_family_id = 1;
-    auto pc = std::make_shared<stcpp::paper::PaperCatalog>();
-    stcpp::paper::PaperMarketEntry pe;
+    auto pc = std::make_shared<stcpp::engine::PaperCatalog>();
+    stcpp::engine::PaperMarketEntry pe;
     pe.tokens = token_map_["cond-test-001"];
     pe.cat = mc;
     (*pc)["cond-test-001"] = pe;
@@ -856,7 +856,7 @@ TEST_F(PaperLoopTest, T17_TotalsMarket_DerivativePricing) {
 // ---------------------------------------------------------------------------
 // T16: A1 fail-closed — 陈旧比分 (data_source_ts 超 staleness) → 退回 stub
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T16_A1_StaleScore_FailClosedToStub) {
+TEST_F(TradingLoopTest, T16_A1_StaleScore_FailClosedToStub) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
     using stcpp::debug_api::EventScore;
@@ -932,7 +932,7 @@ static stcpp::debug_api::EventScore MakeFreshScore(const std::string& id, int ho
 //   核心: orders_approved>0 (intent 过 gate+RM) + fills>0 (第一笔 paper 成交).
 //   ② (老韩 D4): quote.advisory 仍恒 true (ML-R2 不受解封影响).
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T17_A2_FirstPaperFill_AdvisoryUnlocked) {
+TEST_F(TradingLoopTest, T17_A2_FirstPaperFill_AdvisoryUnlocked) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -978,7 +978,7 @@ TEST_F(PaperLoopTest, T17_A2_FirstPaperFill_AdvisoryUnlocked) {
 // T18: 红线2 (老韩) — advisory 解封但无真实 fair → 仍零 intent (拆 gate ≠ 无脑下单)
 //   has_real_fair gate (Step 4c) 是解封后唯一兜底.
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T18_A2_Unlocked_NoRealFair_StillZeroIntent) {
+TEST_F(TradingLoopTest, T18_A2_Unlocked_NoRealFair_StillZeroIntent) {
     // 有有效 book 但无 score_store / 无映射 → has_real_fair=false
     hub_->Publish("1001", MakeFreshBook(0.28, 0.32));
 
@@ -1000,7 +1000,7 @@ TEST_F(PaperLoopTest, T18_A2_Unlocked_NoRealFair_StillZeroIntent) {
 // ---------------------------------------------------------------------------
 // T19: ④ (老韩) — 极端高 edge (大比分 + 低价) → Kelly notional 被 demo 上限 clamp, 不爆 size
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T19_A2_ExtremeEdge_NotionalClamped) {
+TEST_F(TradingLoopTest, T19_A2_ExtremeEdge_NotionalClamped) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1034,7 +1034,7 @@ TEST_F(PaperLoopTest, T19_A2_ExtremeEdge_NotionalClamped) {
 // ---------------------------------------------------------------------------
 // T20: ③ (老韩) — 真实 fair ≈ 市场 (无真实 edge) → 无假阳性 → 不下单
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T20_A2_FairMatchesMarket_NoFalsePositive) {
+TEST_F(TradingLoopTest, T20_A2_FairMatchesMarket_NoFalsePositive) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1065,7 +1065,7 @@ TEST_F(PaperLoopTest, T20_A2_FairMatchesMarket_NoFalsePositive) {
 // T21: 红线3 (老韩) — PositionLedger::apply_fill 对非 paper fill (mode_tag!=0) 运行期 fail-closed
 //   R-11「不污染真账本」运行期守卫 (release build 也 enforce, 非 debug assert).
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T21_R11_ApplyFill_RejectsNonPaperModeTag) {
+TEST_F(TradingLoopTest, T21_R11_ApplyFill_RejectsNonPaperModeTag) {
     PositionLedger ledger;
     const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                     std::chrono::system_clock::now().time_since_epoch())
@@ -1092,7 +1092,7 @@ TEST_F(PaperLoopTest, T21_R11_ApplyFill_RejectsNonPaperModeTag) {
 // T22: A1.5 真时钟 time_frac 解锁成交 — 接真 clock_sec+sport → time_frac→conf 升,
 //   生产级 n_effective=150 (非 T17 的 500) 即可成交。证明 time_frac 是正期望前置 (小梁)。
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, T22_A15_TimeFrac_UnlocksFillAtProductionNeff) {
+TEST_F(TradingLoopTest, T22_A15_TimeFrac_UnlocksFillAtProductionNeff) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1171,7 +1171,7 @@ risk::OrderIntent MakeP01Intent(const std::string& cid, const std::string& tid, 
 }
 }  // namespace
 
-TEST_F(PaperLoopTest, P0_1_ExposureRedLine_UnitGate) {
+TEST_F(TradingLoopTest, P0_1_ExposureRedLine_UnitGate) {
     const std::string cid = "0xC0NDP01";
     const std::string tid = "9001";  // numeric token_id (uint256 格式合法)
     loop_ = MakeLoop();
@@ -1224,7 +1224,7 @@ bool DdEverFed(RiskGateway& rm, std::string_view key) {
 }  // namespace
 
 // T-A5-1: DD 喂入触发硬 kill + state→HALTED (兼单位门 — 漏 ×1e6 则不触发)
-TEST_F(PaperLoopTest, T_A5_1_DD_HardKill_UnitGate) {
+TEST_F(TradingLoopTest, T_A5_1_DD_HardKill_UnitGate) {
     const std::string cid = "0xDD0001";
     const std::string tid = "8001";
     RebuildRmHighCap(5'000.0);  // 硬 5k
@@ -1256,7 +1256,7 @@ TEST_F(PaperLoopTest, T_A5_1_DD_HardKill_UnitGate) {
 }
 
 // T-A5-2: 软熔断方向 — is_close 平仓放行 (浮亏 ∈ [3k,5k) 软触硬不触)
-TEST_F(PaperLoopTest, T_A5_2_DD_Soft_CloseExempt) {
+TEST_F(TradingLoopTest, T_A5_2_DD_Soft_CloseExempt) {
     const std::string cid = "0xDD0002";
     const std::string tid = "8002";
     RebuildRmHighCap(5'000.0);  // 硬 5k; 软 = 0.03×100k = 3k
@@ -1295,7 +1295,7 @@ TEST_F(PaperLoopTest, T_A5_2_DD_Soft_CloseExempt) {
 
 // T-A5-3: 无双计自愈 — 连喂两次, daily_pnl 覆盖写非累加。判别用软阈值 3k (=0.03×100k bankroll):
 //   单次浮亏 2k < 3k 不触; 若累加成 4k ≥ 3k 则误触 = 双计 bug。
-TEST_F(PaperLoopTest, T_A5_3_DD_NoDoubleCount) {
+TEST_F(TradingLoopTest, T_A5_3_DD_NoDoubleCount) {
     const std::string cid = "0xDD0003";
     const std::string tid = "8003";
     RebuildRmHighCap(5'000.0);  // 硬 5k; 软 = 0.03×100k = 3k (本测有效判别阈)
@@ -1325,7 +1325,7 @@ TEST_F(PaperLoopTest, T_A5_3_DD_NoDoubleCount) {
 }
 
 // T-A5-4: 无效 bid 保守 — 拿不到有效 best_bid 的仓位不臆造浮盈 (MtM 贡献 0)
-TEST_F(PaperLoopTest, T_A5_4_DD_InvalidBid_Conservative) {
+TEST_F(TradingLoopTest, T_A5_4_DD_InvalidBid_Conservative) {
     const std::string cid = "0xDD0004";
     const std::string tid = "8004";
     RebuildRmHighCap(5'000.0);
@@ -1356,7 +1356,7 @@ TEST_F(PaperLoopTest, T_A5_4_DD_InvalidBid_Conservative) {
 }
 
 // T-A5-5: feed-liveness 状态转移 — daily_pnl NEVER FED → ever_fed; consec_loss 仍 NEVER FED (M2 边界)
-TEST_F(PaperLoopTest, T_A5_5_FeedLiveness_Transition) {
+TEST_F(TradingLoopTest, T_A5_5_FeedLiveness_Transition) {
     RebuildRmHighCap(5'000.0);
     loop_ = MakeLoop();
 
@@ -1371,7 +1371,7 @@ TEST_F(PaperLoopTest, T_A5_5_FeedLiveness_Transition) {
 }
 
 // T-A5-6 (老韩 A5 review nit#1): MtM=0 临界 — best_bid==avg_entry 不臆造盈亏 (break-even)
-TEST_F(PaperLoopTest, T_A5_6_DD_BreakEven_ZeroMtM) {
+TEST_F(TradingLoopTest, T_A5_6_DD_BreakEven_ZeroMtM) {
     const std::string cid = "0xDD0006";
     const std::string tid = "8006";
     RebuildRmHighCap(5'000.0);
@@ -1399,7 +1399,7 @@ TEST_F(PaperLoopTest, T_A5_6_DD_BreakEven_ZeroMtM) {
 }
 
 // T-A5-7 (老韩 A5 review nit#1): 多仓位聚合 — daily_pnl = Σ 各仓 MtM (跨 condition/token 求和)
-TEST_F(PaperLoopTest, T_A5_7_DD_MultiPositionAggregation) {
+TEST_F(TradingLoopTest, T_A5_7_DD_MultiPositionAggregation) {
     RebuildRmHighCap(5'000.0);  // 硬 5k; 软 = 0.03×100k = 3k (聚合判别阈)
     loop_ = MakeLoop();
     rm_->set_state(RmState::RUNNING);
@@ -1433,7 +1433,7 @@ TEST_F(PaperLoopTest, T_A5_7_DD_MultiPositionAggregation) {
 
 // Phase B (小梁 spec §2): SelectSide 选边逻辑单测 (de-vig 锚定, 纯函数)
 //   raw_edge_yes = p_fair_yes - p_market_devig; >= 0 → YES 低估买 YES; < 0 → NO 低估买 NO。
-TEST_F(PaperLoopTest, T_PhaseB_SelectSide_DeVigAnchored) {
+TEST_F(TradingLoopTest, T_PhaseB_SelectSide_DeVigAnchored) {
     loop_ = MakeLoop();
     // YES 低估 (模型 fair 0.60 > 市场共识 0.50) → 买 YES
     EXPECT_EQ(loop_->SelectSideForTest(0.60, 0.50).outcome, TradedSide::Yes);
@@ -1448,7 +1448,7 @@ TEST_F(PaperLoopTest, T_PhaseB_SelectSide_DeVigAnchored) {
 // Phase B (小梁 §7 C4 反向-fill): NO 被低估 → 真买 NO 端到端 (解 Phase A 建不起 NO intent)。
 //   soccer 0:3 落后 + 75min (conf~0.52) → 模型 fair_YES 低 (~0.30); 市场仍 ~0.50 (未反映落后) →
 //   raw_edge_yes<0 → 选 NO; n_eff=150 sigma 小 → NO edge 过 CI → 在 NO token(1002) 成交。
-TEST_F(PaperLoopTest, T_PhaseB_BuyNo_EndToEnd) {
+TEST_F(TradingLoopTest, T_PhaseB_BuyNo_EndToEnd) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1492,7 +1492,7 @@ TEST_F(PaperLoopTest, T_PhaseB_BuyNo_EndToEnd) {
 }
 
 // Phase B fail-closed: 选 NO 但 NO book 缺 → 不交易 (防「选 NO 用 YES 价/深度」漏网, 老郭核)。
-TEST_F(PaperLoopTest, T_PhaseB_NoSelected_NoBookAbsent_FailClosed) {
+TEST_F(TradingLoopTest, T_PhaseB_NoSelected_NoBookAbsent_FailClosed) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
     auto es = MakeFreshScore("gs-noabs", 0, 3);  // YES 0:3 落后 → 模型 fair_YES 低 → 倾向选 NO
@@ -1523,7 +1523,7 @@ TEST_F(PaperLoopTest, T_PhaseB_NoSelected_NoBookAbsent_FailClosed) {
 //         市场收敛到 fair (best_bid~0.64) → YES 仓位 MtM 盈利 (买被低估边的正期望兑现)。
 //   注: 实盘真盈利需 A3 (Goalserve live 比分接通); 本测用合成 edge + 收敛 demo 流水线盈利能力
 //       (证整条决策→成交→PnL 链路 operational, A3 一到位即可换 live 数据产真盈利)。
-TEST_F(PaperLoopTest, T_Profit_PipelineProducesProfit) {
+TEST_F(TradingLoopTest, T_Profit_PipelineProducesProfit) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1599,7 +1599,7 @@ TEST_F(PaperLoopTest, T_Profit_PipelineProducesProfit) {
 // TC-1: 限价不追 (老周 Q-周-1) — raw edge 薄 (vig 吃光净 edge) → reservation_buy < best_ask →
 //   控制器判 NotMarketable → 不下单 (orders_held>0, 零成交)。即老 T17 的 2¢ edge 场景被正确拦。
 //   关键: de-vig 共识看似有 edge (sizing 可能 suggested>0), 但**真实付价 raw ask** 越过 reservation。
-TEST_F(PaperLoopTest, TC1_Controller_LimitNotChase_Holds) {
+TEST_F(TradingLoopTest, TC1_Controller_LimitNotChase_Holds) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1641,7 +1641,7 @@ TEST_F(PaperLoopTest, TC1_Controller_LimitNotChase_Holds) {
 // TC-2: 目标仓位收敛 (老板范式核心) — 持续 tick 不再无界累加; 到目标后控制器进死区 hold。
 //   旧一次性 BUY: 每 tick 都下单 → 敞口涨到 cap 才停。新控制器: order=目标−现仓 → 收敛即停。
 //   判据: orders_held>0 (收敛后死区生效) 且 持仓 ≈ target (≤ per_order_cap, 不爆 exposure)。
-TEST_F(PaperLoopTest, TC2_Controller_ConvergesToTarget_NoUnboundedAccumulation) {
+TEST_F(TradingLoopTest, TC2_Controller_ConvergesToTarget_NoUnboundedAccumulation) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1689,7 +1689,7 @@ TEST_F(PaperLoopTest, TC2_Controller_ConvergesToTarget_NoUnboundedAccumulation) 
 //   持有被低估边 → 市场反转令该边 overpriced (另一边变低估) → 选边翻转 → 旧边自动平仓。
 //   验证: 旧边 (YES) 持仓被卖回 (减仓/趋零) + 新边 (NO) 建仓。这是 Step3-5 发现的真实 de-risk 路径。
 // ===========================================================================
-TEST_F(PaperLoopTest, TM2a_NoSideFlip_HoldsHeldSide) {  // 2026-06-10 老板「不要切边」: 推翻原切边, 改锁定持有边
+TEST_F(TradingLoopTest, TM2a_NoSideFlip_HoldsHeldSide) {  // 2026-06-10 老板「不要切边」: 推翻原切边, 改锁定持有边
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1757,10 +1757,10 @@ TEST_F(PaperLoopTest, TM2a_NoSideFlip_HoldsHeldSide) {  // 2026-06-10 老板「�
 }
 
 // ===========================================================================
-// 时序地基 (老板 2026-05-31): ml::FeatureHistory 接入 paper_loop → 微价变化率/realized vol
+// 时序地基 (老板 2026-05-31): ml::FeatureHistory 接入 trading_loop → 微价变化率/realized vol
 //   进 QuoteFeatures。验证: 推进 ts + 变价的 book 序列 → 时序特征端到端 populate (非 NaN)。
 // ===========================================================================
-TEST_F(PaperLoopTest, TS1_TimeSeriesFeatures_Populate) {
+TEST_F(TradingLoopTest, TS1_TimeSeriesFeatures_Populate) {
     // 显式 ds_ts book: data_source_ts 推进 (时序样本去重靠单调门), 价格上行 → ROC>0。
     //   4ts 链有效 + ingestion 新鲜 (RM 不 stale 拒); 仅 quote 路径需通 (ts 特征不受 has_real_fair gate)。
     const std::int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -1810,7 +1810,7 @@ TEST_F(PaperLoopTest, TS1_TimeSeriesFeatures_Populate) {
 
 // TS2 (slice-2 卖不出): observe-always 捕获无 bid tick (旧码 early-return 会审查掉) →
 //   bid_absence_frac > 0。证明「卖不出」被量化成特征 (老板: 模型包含, 非硬门)。
-TEST_F(PaperLoopTest, TS2_ExitLiquidity_CapturesNoBid) {
+TEST_F(TradingLoopTest, TS2_ExitLiquidity_CapturesNoBid) {
     const std::int64_t now = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                  std::chrono::system_clock::now().time_since_epoch())
                                  .count();
@@ -1848,7 +1848,7 @@ TEST_F(PaperLoopTest, TS2_ExitLiquidity_CapturesNoBid) {
 
 // TS3 (slice-3 结算, feature-first): 真时钟 → time_to_resolution_frac 派生 (体育免新数据源) +
 //   resolution_status 从 book 快照流到 quote (字段载体接通, 旧码缺字段载不了)。
-TEST_F(PaperLoopTest, TS3_ResolutionFeatures) {
+TEST_F(TradingLoopTest, TS3_ResolutionFeatures) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1891,7 +1891,7 @@ TEST_F(PaperLoopTest, TS3_ResolutionFeatures) {
 // TS4 (slice-3b 结算 realize): 建 YES 仓 → 比赛 Ended (YES 胜) → 持仓 realize 到 1.0 + 平仓。
 //   验证: 持仓平掉 (账本归零) + realized PnL > 0 (买便宜→结算 1.0) + positions_settled 计数。
 //   现实修复: 此前持仓在账本永远挂着, paper PnL 结算时错 (无 bid → MtM 贡献 0)。
-TEST_F(PaperLoopTest, TS4_Settlement_RealizesAndCloses) {
+TEST_F(TradingLoopTest, TS4_Settlement_RealizesAndCloses) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
@@ -1968,7 +1968,7 @@ TEST_F(PaperLoopTest, TS4_Settlement_RealizesAndCloses) {
 // TS5 (slice-3c REST resolution 注入 → 权威结算): app 层轮询 gamma closed/clob winner →
 //   SetResolutionByCondition 注入 (非 WSS — market 频道不推 resolution)。status=Resolved+winner →
 //   按 winner 权威结算 (全 market type 通用, 不靠 Goalserve 比分)。验证 REST 路径独立触发结算。
-TEST_F(PaperLoopTest, TS5_RestResolutionInjection_AuthoritativeSettle) {
+TEST_F(TradingLoopTest, TS5_RestResolutionInjection_AuthoritativeSettle) {
     // 直接 apply_fill 预建 YES 仓 (avg 0.40, qty 5) — 避免 mid-run 注入 race (Start 前注入)。
     execution::VirtualFill fill{};
     fill.fill_size_usdc = 5'000'000;  // 5 pUSD
@@ -2062,18 +2062,18 @@ TEST(BookDeteriorate, ExitOnlyWhenBookTurnsDown) {
 // FLB-hold 引擎 (老板 2026-06-11「与现策略并跑」): 触发→RM→撮合→账本全路径 + 一盘一击去重。
 // ---------------------------------------------------------------------------
 
-TEST_F(PaperLoopTest, FLB01_TriggerProducesFillAndDedupes) {
+TEST_F(TradingLoopTest, FLB01_TriggerProducesFillAndDedupes) {
     cfg_.flb_enabled = true;
     RebuildRmHighCap();  // 夹具默认 per_order cap=10u < FLB 平注 15u → 抬 cap 测全路径
     loop_ = MakeLoop();
     rm_->set_state(stcpp::risk::RmState::RUNNING);  // bench 不走 Start() (set_rm_running 在 Start 里)
     rm_->set_bankroll(1'000'000'000);               // 1000 pUSD (micro)
-    loop_->SetPaperCatalog(std::make_shared<paper::PaperCatalog>());  // 非空指针 (TickAll 前置门)
+    loop_->SetPaperCatalog(std::make_shared<engine::PaperCatalog>());  // 非空指针 (TickAll 前置门)
 
     const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                             std::chrono::system_clock::now().time_since_epoch())
                             .count();
-    PaperLoop::FlbTrigger t;
+    TradingLoop::FlbTrigger t;
     t.condition_id = "0x00000000000000000000000000000000000000000000000000000000f1b00001";
     t.token_id = "910000000000000001";
     t.is_yes = true;
@@ -2110,14 +2110,14 @@ TEST_F(PaperLoopTest, FLB01_TriggerProducesFillAndDedupes) {
     EXPECT_DOUBLE_EQ(static_cast<double>(pos2->size_usdc), sz_before) << "重复触发不应加仓";
 }
 
-TEST_F(PaperLoopTest, FLB02_DisabledByDefault_NoFill) {
+TEST_F(TradingLoopTest, FLB02_DisabledByDefault_NoFill) {
     // cfg_.flb_enabled 默认 false (lib 契约): 触发入队但 TickAll 不处理
     loop_ = MakeLoop();
-    loop_->SetPaperCatalog(std::make_shared<paper::PaperCatalog>());
+    loop_->SetPaperCatalog(std::make_shared<engine::PaperCatalog>());
     const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                             std::chrono::system_clock::now().time_since_epoch())
                             .count();
-    PaperLoop::FlbTrigger t;
+    TradingLoop::FlbTrigger t;
     t.condition_id = "0x00000000000000000000000000000000000000000000000000000000f1b00002";
     t.token_id = "910000000000000002";
     t.is_yes = true;
@@ -2134,7 +2134,7 @@ TEST_F(PaperLoopTest, FLB02_DisabledByDefault_NoFill) {
 // ---------------------------------------------------------------------------
 // 账本持久化 (2026-06-11): Save→新实例 Restore→持仓/累计 round-trip。
 // ---------------------------------------------------------------------------
-TEST_F(PaperLoopTest, LP01_LedgerSnapshotRoundTrip) {
+TEST_F(TradingLoopTest, LP01_LedgerSnapshotRoundTrip) {
     const std::string snap = ::testing::TempDir() + "lp01_ledger.tsv";
     std::remove(snap.c_str());
     cfg_.flb_enabled = true;
@@ -2143,11 +2143,11 @@ TEST_F(PaperLoopTest, LP01_LedgerSnapshotRoundTrip) {
     loop_ = MakeLoop();
     rm_->set_state(stcpp::risk::RmState::RUNNING);
     rm_->set_bankroll(1'000'000'000);
-    loop_->SetPaperCatalog(std::make_shared<paper::PaperCatalog>());
+    loop_->SetPaperCatalog(std::make_shared<engine::PaperCatalog>());
     const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                             std::chrono::system_clock::now().time_since_epoch())
                             .count();
-    PaperLoop::FlbTrigger t;
+    TradingLoop::FlbTrigger t;
     t.condition_id = "0x000000000000000000000000000000000000000000000000000000001ed6e401";
     t.token_id = "920000000000000001";
     t.is_yes = true;
@@ -2168,7 +2168,7 @@ TEST_F(PaperLoopTest, LP01_LedgerSnapshotRoundTrip) {
 
     // 新实例 (模拟重启): 新 ledger + 新 loop, Restore 后持仓一致
     auto ledger_b = std::make_unique<stcpp::risk::PositionLedger>();
-    PaperLoop loop_b(*hub_, *rm_, *ledger_b, *ledger_hub_, *quote_hub_, rm_snap_.get(), *fv_model_, token_map_,
+    TradingLoop loop_b(*hub_, *rm_, *ledger_b, *ledger_hub_, *quote_hub_, rm_snap_.get(), *fv_model_, token_map_,
                      cfg_);
     loop_b.RestoreLedgerSnapshot();
     const auto pos_b = ledger_b->get_position(t.token_id);

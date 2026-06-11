@@ -89,7 +89,7 @@ TEST(WalRecordHeader, LayoutV2_64B) {
 TEST(WalKind, PathRoots4Class) {
     EXPECT_EQ(PathRootOf(WalKind::RiskAudit),    "/var/lib/stcpp/audit/");
     EXPECT_EQ(PathRootOf(WalKind::Position),     "/var/lib/stcpp/exec/");
-    EXPECT_EQ(PathRootOf(WalKind::PaperAudit),   "/var/lib/stcpp/paper/");
+    EXPECT_EQ(PathRootOf(WalKind::PaperAudit),   "/var/lib/stcpp/engine/");
     EXPECT_EQ(PathRootOf(WalKind::ShadowAudit),  "/var/lib/stcpp/shadow/");
 }
 
@@ -182,14 +182,14 @@ TEST(WalWriterOpenDeathTest, ShadowToPaperAborts) {
     ::testing::FLAGS_gtest_death_test_style = "threadsafe";
     WalConfig cfg{};
     cfg.kind        = WalKind::ShadowAudit;
-    cfg.path_prefix = "/var/lib/stcpp/paper/";   // 错路径
+    cfg.path_prefix = "/var/lib/stcpp/engine/";   // 错路径
     EXPECT_DEATH({ (void)WalWriter<MockRecord>::Open(cfg); }, "");
 }
 
 TEST(WalWriterOpen, NonPow2RingRejected) {
     WalConfig cfg{};
     cfg.kind          = WalKind::PaperAudit;
-    cfg.path_prefix   = "/var/lib/stcpp/paper/x";
+    cfg.path_prefix   = "/var/lib/stcpp/engine/x";
     cfg.ring_capacity = 1000;   // 非 2 的幂
     auto r = WalWriter<MockRecord>::Open(cfg);
     EXPECT_FALSE(r.has_value());

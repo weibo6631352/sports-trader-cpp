@@ -21,7 +21,7 @@
 
 **体感:**
 - 操作员能否 5 分钟内看懂 `--help` 并知道 `--mode=paper` 入口?
-- 配置文件位置 `/etc/stcpp/paper_config.toml` 文档是否有明确说明?
+- 配置文件位置 `/etc/stcpp/engine_config.toml` 文档是否有明确说明?
 
 ---
 

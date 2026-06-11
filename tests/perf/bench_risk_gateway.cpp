@@ -213,7 +213,7 @@ void BM_RiskGateway_Reject_LowFillRate(benchmark::State& state) {
 BENCHMARK(BM_RiskGateway_Reject_LowFillRate);
 
 // ---------- 8. BM_RmFeed: FeedRiskGateway O(N) 喂数基线 (synthesis §3) --------
-// paper_loop FeedRiskGateway 每 tick 把 N 个仓位的 condition/outcome exposure 灌进 RM
+// trading_loop FeedRiskGateway 每 tick 把 N 个仓位的 condition/outcome exposure 灌进 RM
 // (set_condition_exposure + set_outcome_exposure)。每次调用走 s_->mu 锁, 故 O(N) × 锁。
 // 此 bench 量 N 次 set_*_exposure 的纯成本 (不含 ledger 遍历), 给 N 退化基线。
 // MVP N<20 可忽略 (~10-20us/500ms tick); N=500 看锁累积。Range: 1 / 20 / 100 / 500。

@@ -9,9 +9,9 @@
 //     2. RmDebugSnapshot (老沈)       — lock-free ring, risk_rejects()
 //     3. ScoreSnapshotStore (小段)    — live feed 比分快照, score()
 //     4. LedgerSnapshotHub (小石)     — positions()/pnl_attribution() 读 hub 快照
-//        (由 PaperLoop 周期 Publish; 无数据返回空)
+//        (由 TradingLoop 周期 Publish; 无数据返回空)
 //     5. QuoteSnapshotHub (小石)      — quote_params() 读 hub 快照
-//        (由 PaperLoop 周期 Publish; 无数据返回 found=false)
+//        (由 TradingLoop 周期 Publish; 无数据返回 found=false)
 //     6. MarketInfoMap (P1-1 修复)   — gamma 发现时填入真实 MarketInfo catalog
 //        market() 查 catalog 返回 found=true 真实数据 (非硬编码 false)
 //     7. LiveMetricsHooks (P1-2 修复) — 接真实 uptime/rm_reject/fill/staleness/wss
@@ -32,7 +32,7 @@
 //   P1-2: metrics() 接真实值 (LiveMetricsHooks)
 //     uptime_sec     = steady_clock::now() - start_tp_ (启动时刻注入)
 //     rm_reject_total = snap_->count() (RmDebugSnapshot 写入总次数)
-//     fill_total      = *fill_counter_ (PaperLoop stats.fills_completed atomic)
+//     fill_total      = *fill_counter_ (TradingLoop stats.fills_completed atomic)
 //     max_staleness_ms = 遍历 token_map_ → hub_.Read → now - event_ts_ns
 //     wss_clob_connected = wss_transport_->IsConnected() (IWssTransport 接口)
 //   P1-3: book()/book_pair() wss_state 从 wss_transport_->IsConnected() 动态注入
@@ -152,11 +152,11 @@ struct LiveMetricsHooks {
     // nullptr → wss_clob_connected=false, wss_state="UNKNOWN"
     const polymarket::wss::IWssTransport* wss_transport{nullptr};
 
-    // PaperLoop fills_completed (原子计数器, 只读)
+    // TradingLoop fills_completed (原子计数器, 只读)
     // nullptr → fill_total=0 (标注无数据源而非虚报)
     const std::atomic<std::uint64_t>* fill_counter{nullptr};
 
-    // 韧性 watchdog (老郭): PaperLoop last_tick_ts_ns 心跳。观测端比对 now-last_tick 判 loop 存活。
+    // 韧性 watchdog (老郭): TradingLoop last_tick_ts_ns 心跳。观测端比对 now-last_tick 判 loop 存活。
     //   nullptr → 0 (无数据源)。loop 卡死 → 心跳停 → tick_staleness 飙升 → healthz/metrics 告警。
     const std::atomic<std::int64_t>* last_tick_ts{nullptr};
 
@@ -181,9 +181,9 @@ public:
     //   risk_cfg:    RiskConfig (保留参数兼容; 当前实现未使用)
     //   m:           运行模式 (build-time 锁定)
     //   ledger_hub:  LedgerSnapshotHub* (可为 nullptr; nullptr → 空 positions/pnl)
-    //                由 PaperLoop Publish; 无数据返回空
+    //                由 TradingLoop Publish; 无数据返回空
     //   quote_hub:   QuoteSnapshotHub*  (可为 nullptr; nullptr → found=false)
-    //                由 PaperLoop Publish
+    //                由 TradingLoop Publish
     // -------------------------------------------------------------------------
     explicit RealStateProvider(const polymarket::clob_wss::OrderBookSnapshotHub& hub,
                                const risk::RmDebugSnapshot* snap, const data::ScoreSnapshotStore* score_store,
@@ -208,16 +208,16 @@ public:
 
     // (set_feature_vector_hub 已砍 2026-06-05: 大模型特征向量健康端点删)
 
-    // 账户级现金/估值回调 (老雷 2026-06-01 凯利评审): daemon 注入 lambda (捕获 paper_loop_, 经
+    // 账户级现金/估值回调 (老雷 2026-06-01 凯利评审): daemon 注入 lambda (捕获 trading_loop_, 经
     //   published_account_equity() 线程安全拷贝读)。on-demand 求值 → HTTP 线程零陈旧。本头不 include
-    //   paper_loop (热路径写端边界, line 49); 翻译逻辑落 daemon.cpp (该层同时依赖 paper + debug_api)。
+    //   trading_loop (热路径写端边界, line 49); 翻译逻辑落 daemon.cpp (该层同时依赖 paper + debug_api)。
     void set_account_snapshot_fn(std::function<AccountSnapshot()> fn) { account_fn_ = std::move(fn); }
     [[nodiscard]] AccountSnapshot account_snapshot() const override {
         if (account_fn_) return account_fn_();
         return {};  // 未注入 → has_data=false (前端灰显)
     }
 
-    // 成交流水回调 (2026-06-04 老板「看懂买卖价」): daemon 注入 lambda (捕获 paper_loop_, 调 RecentFills(n,market))。
+    // 成交流水回调 (2026-06-04 老板「看懂买卖价」): daemon 注入 lambda (捕获 trading_loop_, 调 RecentFills(n,market))。
     void set_fills_fn(std::function<std::vector<FillView>(const std::string&)> fn) { fills_fn_ = std::move(fn); }
     [[nodiscard]] std::vector<FillView> fills(const std::string& market = "") const override {
         if (fills_fn_) return fills_fn_(market);
@@ -274,16 +274,16 @@ public:
             hv.as_of_ts_ns = lf.as_of_ts_ns;
             out.push_back(std::move(hv));
         }
-        // hub 空 (PaperLoop 尚未 Publish 第一帧) → 空 vector (非 demo)
+        // hub 空 (TradingLoop 尚未 Publish 第一帧) → 空 vector (非 demo)
         return out;
     }
 
-    // 净值时序回调 (2026-06-01 凯利评审 Step3 落地): daemon 注入 lambda (捕获 paper_loop, 调 equity_snapshot
+    // 净值时序回调 (2026-06-01 凯利评审 Step3 落地): daemon 注入 lambda (捕获 trading_loop, 调 equity_snapshot
     //   按 bucket 分桶)。on-demand, 经线程安全拷贝读。本头不 include paper (热路径写端边界, line 49)。
     void set_pnl_timeseries_fn(std::function<std::vector<PnlBucket>(std::int64_t, std::int64_t)> fn) {
         pnl_ts_fn_ = std::move(fn);
     }
-    // [mark-staleness fix 2026-06-05] /api/v1/positions 回调: daemon 注入 lambda (捕获 paper_loop, 调
+    // [mark-staleness fix 2026-06-05] /api/v1/positions 回调: daemon 注入 lambda (捕获 trading_loop, 调
     //   positions_mtm() → per-token live MTM + YES/NO)。注入时 positions() 走它, 不再读冻结的 LedgerSnapshotHub。
     void set_positions_fn(std::function<std::vector<HoldingView>()> fn) { positions_fn_ = std::move(fn); }
     std::vector<PnlBucket> pnl_timeseries(std::int64_t window_sec, std::int64_t bucket_sec) const override {
@@ -347,7 +347,7 @@ public:
     //   subscribed_markets_total  = hub_.token_count() / 2 (双 token 规则)
     //   uptime_sec                = steady_clock::now() - hooks_.start_tp (真实启动时长)
     //   rm_reject_total           = snap_->count()  (RmDebugSnapshot 写入总次数, atomic)
-    //   fill_total                = *hooks_.fill_counter (PaperLoop fills_completed, atomic)
+    //   fill_total                = *hooks_.fill_counter (TradingLoop fills_completed, atomic)
     //   max_staleness_ms          = 遍历 token_map_ → hub_.Read → (now - event_ts_ns) / 1e6
     //   wss_clob_connected        = hooks_.wss_transport->IsConnected() (原子 bool, < 1us)
     //
@@ -376,7 +376,7 @@ public:
             snap.rm_reject_total = static_cast<std::int64_t>(snap_->count());
         }
 
-        // ---- P1-2: fill_total (PaperLoop fills_completed 原子计数) ----
+        // ---- P1-2: fill_total (TradingLoop fills_completed 原子计数) ----
         if (hooks_.fill_counter != nullptr) {
             snap.fill_total = static_cast<std::int64_t>(hooks_.fill_counter->load(std::memory_order_relaxed));
         }
@@ -565,7 +565,7 @@ public:
         return out;
     }
 
-    // ---- quote_params — 读 QuoteSnapshotHub (PaperLoop Publish); 无数据 → found=false ----
+    // ---- quote_params — 读 QuoteSnapshotHub (TradingLoop Publish); 无数据 → found=false ----
     // R-12: hub_.Read() 原子 acquire, 无持锁
     // R-20: as_of_ts_ns 来自 QuoteFeatures.as_of_ts_ns (上游链路)
     // 无数据时不使用 SizingCalculator + demo 输入计算假值 (老板: 只有 live)

@@ -1,6 +1,6 @@
-// tests/unit/test_paper_daemon.cpp — PaperDaemon 装配 + R-11 生命周期回归
+// tests/unit/test_trader_daemon.cpp — TraderDaemon 装配 + R-11 生命周期回归
 //
-// Owner: 老雷 (GM) — PaperDaemon 重构配套 (老韩 R-11 审计要求的新增回归面)
+// Owner: 老雷 (GM) — TraderDaemon 重构配套 (老韩 R-11 审计要求的新增回归面)
 // last_review: 2026-05-30
 //
 // 覆盖 (老韩 INV-1/INV-2 + 小宋 §3 装配测试):
@@ -8,7 +8,7 @@
 //   - R-11 INV-1 detach 生命周期: Build 后全局 hook 非空, Shutdown 后 == nullptr.
 //   - Shutdown 幂等 (重复调不崩, hook 仍 nullptr) — 防 double-stop / UAF.
 //   - Build 幂等; Headless 无 HTTP 但读模型仍装配 (R-11: 同一 Build 写栈).
-//   - Start→Shutdown 线程起停无崩 (offline feeds, paper_loop jthread join).
+//   - Start→Shutdown 线程起停无崩 (offline feeds, trading_loop jthread join).
 
 #include <chrono>
 #include <memory>
@@ -18,7 +18,7 @@
 
 #include <gtest/gtest.h>
 
-#include "stcpp/app/paper_daemon.hpp"
+#include "stcpp/app/trader_daemon.hpp"
 #include "stcpp/data/score_snapshot_store.hpp"                   // A1b 集成: 注入比分
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"  // A2 端到端: 注入 book
 #include "stcpp/risk/rm_debug_snapshot.hpp"
@@ -27,8 +27,8 @@ namespace {
 
 using stcpp::app::DiscoveredEvent;
 using stcpp::app::DiscoveredMarket;
-using stcpp::app::PaperDaemon;
-using stcpp::app::PaperDaemonConfig;
+using stcpp::app::TraderDaemon;
+using stcpp::app::TraderDaemonConfig;
 using stcpp::app::RunMode;
 
 // 构造一个最小注入 markets (1 event / 1 market / 2 token), 跳过真 gamma 发现.
@@ -55,8 +55,8 @@ std::vector<DiscoveredEvent> MakeInjectedMarkets() {
 }
 
 // 离线 headless 配置 (无 HTTP / 无真网络 / 不写 ML 文件).
-PaperDaemonConfig OfflineHeadlessCfg() {
-    PaperDaemonConfig cfg;
+TraderDaemonConfig OfflineHeadlessCfg() {
+    TraderDaemonConfig cfg;
     cfg.mode = RunMode::Headless;
     cfg.start_live_feeds = false;  // 不起 WSS/inplay 真网络
     cfg.record_ml = false;         // 不写 ml_capture 文件
@@ -73,9 +73,9 @@ void ResetGlobalHook() {
 // ---------------------------------------------------------------------------
 // 装配: 注入 markets → Build() 接对组件
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, AssemblyOffline_InjectedMarkets_BuildOk) {
+TEST(TraderDaemon, AssemblyOffline_InjectedMarkets_BuildOk) {
     ResetGlobalHook();
-    PaperDaemon daemon(OfflineHeadlessCfg());
+    TraderDaemon daemon(OfflineHeadlessCfg());
     daemon.InjectMarkets(MakeInjectedMarkets());
 
     const auto br = daemon.Build();
@@ -92,7 +92,7 @@ TEST(PaperDaemon, AssemblyOffline_InjectedMarkets_BuildOk) {
     EXPECT_NE(daemon.quote_hub(), nullptr);
     EXPECT_NE(daemon.ledger_hub(), nullptr);
     EXPECT_NE(daemon.paper_position_ledger(), nullptr);
-    EXPECT_NE(daemon.paper_loop(), nullptr);
+    EXPECT_NE(daemon.trading_loop(), nullptr);
     EXPECT_NE(daemon.state_provider(), nullptr);
     // token_map 含注入的 condition
     ASSERT_TRUE(daemon.token_map().count("0xCONDITION_TEST_001"));
@@ -102,12 +102,12 @@ TEST(PaperDaemon, AssemblyOffline_InjectedMarkets_BuildOk) {
 // ---------------------------------------------------------------------------
 // R-11 INV-1: detach 生命周期 — Build 后 hook 非空, Shutdown 后 nullptr
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, R11_DetachLifecycle_HookNullAfterShutdown) {
+TEST(TraderDaemon, R11_DetachLifecycle_HookNullAfterShutdown) {
     ResetGlobalHook();
     EXPECT_EQ(stcpp::risk::current_rm_debug_snapshot(), nullptr);  // 起点干净
 
     {
-        PaperDaemon daemon(OfflineHeadlessCfg());
+        TraderDaemon daemon(OfflineHeadlessCfg());
         daemon.InjectMarkets(MakeInjectedMarkets());
         ASSERT_TRUE(daemon.Build().ok);
 
@@ -125,9 +125,9 @@ TEST(PaperDaemon, R11_DetachLifecycle_HookNullAfterShutdown) {
 // ---------------------------------------------------------------------------
 // Shutdown 幂等: 重复调不崩, hook 稳定 nullptr
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, Shutdown_Idempotent) {
+TEST(TraderDaemon, Shutdown_Idempotent) {
     ResetGlobalHook();
-    PaperDaemon daemon(OfflineHeadlessCfg());
+    TraderDaemon daemon(OfflineHeadlessCfg());
     daemon.InjectMarkets(MakeInjectedMarkets());
     ASSERT_TRUE(daemon.Build().ok);
 
@@ -140,9 +140,9 @@ TEST(PaperDaemon, Shutdown_Idempotent) {
 // ---------------------------------------------------------------------------
 // Build 幂等: 重复 Build 返回同一结果, 不重复装配
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, Build_Idempotent) {
+TEST(TraderDaemon, Build_Idempotent) {
     ResetGlobalHook();
-    PaperDaemon daemon(OfflineHeadlessCfg());
+    TraderDaemon daemon(OfflineHeadlessCfg());
     daemon.InjectMarkets(MakeInjectedMarkets());
 
     const auto br1 = daemon.Build();
@@ -157,9 +157,9 @@ TEST(PaperDaemon, Build_Idempotent) {
 // ---------------------------------------------------------------------------
 // Headless: 无 HTTP server, 但读模型 (state_provider) 仍装配 (R-11 同一 Build 写栈)
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, Headless_StateProviderBuilt) {
+TEST(TraderDaemon, Headless_StateProviderBuilt) {
     ResetGlobalHook();
-    PaperDaemon daemon(OfflineHeadlessCfg());
+    TraderDaemon daemon(OfflineHeadlessCfg());
     daemon.InjectMarkets(MakeInjectedMarkets());
     ASSERT_TRUE(daemon.Build().ok);
     EXPECT_EQ(daemon.mode(), RunMode::Headless);
@@ -168,26 +168,26 @@ TEST(PaperDaemon, Headless_StateProviderBuilt) {
 }
 
 // ---------------------------------------------------------------------------
-// Start → Shutdown: 线程起停无崩 (offline feeds; paper_loop jthread join)
+// Start → Shutdown: 线程起停无崩 (offline feeds; trading_loop jthread join)
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, StartStop_OfflineFeeds_NoCrash) {
+TEST(TraderDaemon, StartStop_OfflineFeeds_NoCrash) {
     ResetGlobalHook();
-    PaperDaemon daemon(OfflineHeadlessCfg());
+    TraderDaemon daemon(OfflineHeadlessCfg());
     daemon.InjectMarkets(MakeInjectedMarkets());
     ASSERT_TRUE(daemon.Build().ok);
 
-    daemon.Start();  // paper_loop jthread 起 (读空 hub, 无害); 无真网络
+    daemon.Start();  // trading_loop jthread 起 (读空 hub, 无害); 无真网络
     EXPECT_TRUE(daemon.is_started());
-    daemon.Shutdown();  // join paper_loop + detach
+    daemon.Shutdown();  // join trading_loop + detach
     EXPECT_EQ(stcpp::risk::current_rm_debug_snapshot(), nullptr);
 }
 
 // ---------------------------------------------------------------------------
 // A1b: Build 从带队名的 market 捕获 EventMatcher 锚定输入
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, A1b_Build_CapturesMarketMatchInputs) {
+TEST(TraderDaemon, A1b_Build_CapturesMarketMatchInputs) {
     ResetGlobalHook();
-    PaperDaemon daemon(OfflineHeadlessCfg());
+    TraderDaemon daemon(OfflineHeadlessCfg());
     daemon.InjectMarkets(MakeInjectedMarkets());  // market 含 outcome0/1_name
     ASSERT_TRUE(daemon.Build().ok);
     EXPECT_EQ(daemon.market_match_input_count(), 1u)
@@ -196,17 +196,17 @@ TEST(PaperDaemon, A1b_Build_CapturesMarketMatchInputs) {
 }
 
 // ---------------------------------------------------------------------------
-// A1b: 刷新线程匹配真实比分 → 注入 condition→event 映射到 PaperLoop
+// A1b: 刷新线程匹配真实比分 → 注入 condition→event 映射到 TradingLoop
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, A1b_RefreshThread_MatchesScore_SetsMapping) {
+TEST(TraderDaemon, A1b_RefreshThread_MatchesScore_SetsMapping) {
     using stcpp::data::ScoreMap;
     using stcpp::debug_api::EventScore;
 
     ResetGlobalHook();
     auto cfg = OfflineHeadlessCfg();
     cfg.mapping_refresh_sec = 1;           // 快刷
-    cfg.paper_loop.tick_interval_ms = 50;  // 快 tick
-    PaperDaemon daemon(std::move(cfg));
+    cfg.trading_loop.tick_interval_ms = 50;  // 快 tick
+    TraderDaemon daemon(std::move(cfg));
     daemon.InjectMarkets(MakeInjectedMarkets());  // Team A vs Team B, kickoff=1'000'000
     ASSERT_TRUE(daemon.Build().ok);
 
@@ -233,24 +233,24 @@ TEST(PaperDaemon, A1b_RefreshThread_MatchesScore_SetsMapping) {
 
     daemon.Start();
     std::this_thread::sleep_for(std::chrono::milliseconds(1500));  // 等 ≥1 刷新周期
-    const std::size_t mapped = daemon.paper_loop()->event_map_size();
+    const std::size_t mapped = daemon.trading_loop()->event_map_size();
     daemon.Shutdown();
 
     EXPECT_EQ(mapped, 1u) << "A1b: 刷新线程应把 Team A vs Team B 匹配到 Goalserve event → 1 条映射";
 }
 
 // ---------------------------------------------------------------------------
-// A1b fail-closed: 无匹配比分 → 映射为空 (paper_loop 退回 stub)
+// A1b fail-closed: 无匹配比分 → 映射为空 (trading_loop 退回 stub)
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, A1b_RefreshThread_NoMatch_EmptyMapping) {
+TEST(TraderDaemon, A1b_RefreshThread_NoMatch_EmptyMapping) {
     using stcpp::data::ScoreMap;
     using stcpp::debug_api::EventScore;
 
     ResetGlobalHook();
     auto cfg = OfflineHeadlessCfg();
     cfg.mapping_refresh_sec = 1;
-    cfg.paper_loop.tick_interval_ms = 50;
-    PaperDaemon daemon(std::move(cfg));
+    cfg.trading_loop.tick_interval_ms = 50;
+    TraderDaemon daemon(std::move(cfg));
     daemon.InjectMarkets(MakeInjectedMarkets());  // Team A vs Team B
     ASSERT_TRUE(daemon.Build().ok);
 
@@ -275,10 +275,10 @@ TEST(PaperDaemon, A1b_RefreshThread_NoMatch_EmptyMapping) {
 
     daemon.Start();
     std::this_thread::sleep_for(std::chrono::milliseconds(1500));
-    const std::size_t mapped = daemon.paper_loop()->event_map_size();
+    const std::size_t mapped = daemon.trading_loop()->event_map_size();
     daemon.Shutdown();
 
-    EXPECT_EQ(mapped, 0u) << "A1b fail-closed: 队名不匹配 → 0 映射 (paper_loop 退回 stub)";
+    EXPECT_EQ(mapped, 0u) << "A1b fail-closed: 队名不匹配 → 0 映射 (trading_loop 退回 stub)";
 }
 
 // ---------------------------------------------------------------------------
@@ -287,7 +287,7 @@ TEST(PaperDaemon, A1b_RefreshThread_NoMatch_EmptyMapping) {
 //   老韩 R-11「实测隔离」: 第一笔真 fill 后, 仓位只进私有 paper 账本.
 //   (Goalserve 真实数据走同一路径; 此处离线注入证明代码链路成立.)
 // ---------------------------------------------------------------------------
-TEST(PaperDaemon, A2_DaemonProducesPaperFill_IsolatedLedger) {
+TEST(TraderDaemon, A2_DaemonProducesPaperFill_IsolatedLedger) {
     using stcpp::data::ScoreMap;
     using stcpp::debug_api::EventScore;
     using stcpp::polymarket::clob_wss::OrderBookFeatures;
@@ -301,9 +301,9 @@ TEST(PaperDaemon, A2_DaemonProducesPaperFill_IsolatedLedger) {
                                            // 注: 成交由【源头 pass eligible 的 bet365 sharp 赔率源】驱动 (下方 es
                                            // 填 inplay_bet365_*_fair) — 源头 pass 后 score-prior 单独不再出成交。
     cfg.mapping_refresh_sec = 1;           // 快刷
-    cfg.paper_loop.tick_interval_ms = 50;  // 快 tick
-    cfg.paper_loop.n_effective = 500;      // 紧 CI 让真实 edge 过门 (生产 n_eff 小梁调)
-    PaperDaemon daemon(std::move(cfg));
+    cfg.trading_loop.tick_interval_ms = 50;  // 快 tick
+    cfg.trading_loop.n_effective = 500;      // 紧 CI 让真实 edge 过门 (生产 n_eff 小梁调)
+    TraderDaemon daemon(std::move(cfg));
     daemon.InjectMarkets(MakeInjectedMarkets());  // Team A vs Team B, token0="1001", kickoff=1'000'000
     ASSERT_TRUE(daemon.Build().ok);
 
@@ -379,7 +379,7 @@ TEST(PaperDaemon, A2_DaemonProducesPaperFill_IsolatedLedger) {
     daemon.Start();
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));  // ≥1 刷新周期 + 若干 tick
     const auto positions = daemon.paper_position_ledger()->get_all_positions();
-    const auto fills = daemon.paper_loop()->stats().fills_completed.load();
+    const auto fills = daemon.trading_loop()->stats().fills_completed.load();
     daemon.Shutdown();
 
     // A2 端到端: daemon 真产 ≥1 笔 paper 成交, 落隔离 paper 账本

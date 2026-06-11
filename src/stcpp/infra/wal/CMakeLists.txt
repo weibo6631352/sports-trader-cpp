@@ -11,7 +11,7 @@
 #
 # R-7 paper/live 物理隔离:
 #   CMake 通过 STCPP_EXEC_MODE 选择各 WAL 路径:
-#     paper  → STCPP_POSITION_WAL_PREFIX=/var/lib/stcpp/paper/position
+#     paper  → STCPP_POSITION_WAL_PREFIX=/var/lib/stcpp/engine/position
 #              STCPP_INGEST_RAW_WAL_PREFIX=/var/lib/stcpp/ingest/paper
 #     live   → STCPP_POSITION_WAL_PREFIX=/var/lib/stcpp/live/position
 #              STCPP_INGEST_RAW_WAL_PREFIX=/var/lib/stcpp/ingest/live

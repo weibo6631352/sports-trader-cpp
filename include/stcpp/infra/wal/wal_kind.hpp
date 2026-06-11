@@ -32,7 +32,7 @@ inline constexpr std::array<std::pair<WalKind, std::string_view>, kWalKindCount>
     kPathRoots{{
         {WalKind::RiskAudit,    "/var/lib/stcpp/audit/"},
         {WalKind::Position,     "/var/lib/stcpp/exec/"},
-        {WalKind::PaperAudit,   "/var/lib/stcpp/paper/"},
+        {WalKind::PaperAudit,   "/var/lib/stcpp/engine/"},
         {WalKind::ShadowAudit,  "/var/lib/stcpp/shadow/"},
         {WalKind::IngestRaw,    "/var/lib/stcpp/ingest/"},
     }};

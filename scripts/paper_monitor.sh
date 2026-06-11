@@ -13,7 +13,7 @@ for i in $(seq 1 $ITERS); do
   sleep $IVAL
   echo "=== T+$((i*IVAL/60))min $(date -u +%H:%M:%S) ==="
   acct
-  echo "fills=$(grep -c 'paper_loop. FILL' $LOG 2>/dev/null) 极端背离=$(grep -c '极端背离' $LOG 2>/dev/null)"
+  echo "fills=$(grep -c 'trading_loop. FILL' $LOG 2>/dev/null) 极端背离=$(grep -c '极端背离' $LOG 2>/dev/null)"
 done
 echo "=== 最差 10 持仓 (unrealized) ==="
 curl -s --max-time 5 http://localhost:7080/api/v1/positions 2>/dev/null | python3 -c "import json,sys

@@ -11,7 +11,7 @@
 //     立即可发, 前端 pako.inflateRaw 独立解。无流状态、无缓冲。
 //   - 【raw deflate windowBits=-15】: 无 zlib/gzip 头+校验 → 最小; 前端 pako.inflateRaw 对应。
 //   - 【level 1 (最快)】: JSON 重复键, level 1 已 3-4× 压缩; CPU 最小 (老板 CPU 约束)。
-//   - 【运行在 httplib ThreadPool, 非 PaperLoop 交易线程】(server.cpp:88) + 仅 >1KB 帧 + ~1 帧/s
+//   - 【运行在 httplib ThreadPool, 非 TradingLoop 交易线程】(server.cpp:88) + 仅 >1KB 帧 + ~1 帧/s
 //     → CPU 占用可忽略, 不碰交易热路径。
 
 #pragma once

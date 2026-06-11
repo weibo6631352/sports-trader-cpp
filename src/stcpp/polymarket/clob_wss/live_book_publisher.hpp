@@ -82,8 +82,8 @@ public:
         : hub_(hub), subscribed_tokens_(subscribed_tokens), verbose_(verbose) {}
 
     // 事件驱动 hook (2026-06-04 老板「别轮询直接触发」): 每次 hub.Publish 后回调(token_id)。
-    //   PaperLoop 注册 → RequestTick() 即时唤醒决策。WSS io_thread_ + 149hz poll 线程都经此 Publish → 都触发。
-    //   R-12: 回调须极快 (PaperLoop::RequestTick 仅短锁 + cv.notify, <1us); 绝不在此做重活/阻塞 IO。
+    //   TradingLoop 注册 → RequestTick() 即时唤醒决策。WSS io_thread_ + 149hz poll 线程都经此 Publish → 都触发。
+    //   R-12: 回调须极快 (TradingLoop::RequestTick 仅短锁 + cv.notify, <1us); 绝不在此做重活/阻塞 IO。
     void SetOnPublish(std::function<void(const std::string&)> cb) { on_publish_ = std::move(cb); }
 
     // -----------------------------------------------------------------------
@@ -280,7 +280,7 @@ private:
         //   修 (2026-06-02): 原 `have_bid && have_ask` 把单边簿 (临近结算/极端价常见: 只有
         //   25 个买单 @0.999、无卖单) 整本判 invalid 丢弃 → hub 空 → 前端"订单簿未接入"。
         //   下游 TickOne 有自己的 L1 双边价格门 (缺 best_ask/best_bid 直接 fail-closed return,
-        //   不会拿单边乱定价), 且 TickOne 显式要观测「卖不出」单边事件 (paper_loop.cpp:372) ——
+        //   不会拿单边乱定价), 且 TickOne 显式要观测「卖不出」单边事件 (trading_loop.cpp:372) ——
         //   上游一刀切丢弃与该意图矛盾。派生量 (spread/mid/microprice/imbalance) 无双边无意义, 仍只双边算。
         const bool have_bid = std::isfinite(feat.bids[0].price) && feat.bids[0].price > 0.0;
         const bool have_ask = std::isfinite(feat.asks[0].price) && feat.asks[0].price > 0.0;
@@ -316,7 +316,7 @@ private:
         // hub.Publish (even if !valid, so hub knows the token exists with invalid state)
         hub_.Publish(token_id, feat);
         books_published_.fetch_add(1, std::memory_order_relaxed);
-        // 事件驱动: book 落 hub 即通知 PaperLoop 即时决策 (老板「别轮询直接触发」)。R-12: 回调极快。
+        // 事件驱动: book 落 hub 即通知 TradingLoop 即时决策 (老板「别轮询直接触发」)。R-12: 回调极快。
         if (on_publish_) on_publish_(token_id);
 
         if (verbose_) {
@@ -596,7 +596,7 @@ private:
     // Data members
     // -----------------------------------------------------------------------
     OrderBookSnapshotHub& hub_;
-    std::function<void(const std::string&)> on_publish_;  // 事件驱动: Publish 后通知 (PaperLoop::RequestTick)
+    std::function<void(const std::string&)> on_publish_;  // 事件驱动: Publish 后通知 (TradingLoop::RequestTick)
     std::vector<std::string> subscribed_tokens_;
     bool verbose_;
 

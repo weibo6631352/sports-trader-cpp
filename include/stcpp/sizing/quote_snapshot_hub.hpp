@@ -121,7 +121,7 @@ struct QuoteFeatures {
     std::int64_t no_book_ingestion_ts_ns{0};
     // 类别上下文码 (v0.7; 真实 Polymarket 市场结构 → 整数码, app 层算一次, 此处仅搬运)。
     //   映射见 data/market_taxonomy.hpp; categorical level (非 ordinal), unknown=-1。
-    //   paper_loop 从 per-condition map (SetMarketCatByCondition) 查填 → extract_full 抽进 82-85 列。
+    //   trading_loop 从 per-condition map (SetMarketCatByCondition) 查填 → extract_full 抽进 82-85 列。
     std::int32_t cat_asset_class_id{0};    // 0=Sports/1=Crypto/2=Politics/3=Esports (现恒 Sports)
     std::int32_t cat_sport_family_id{-1};  // 粗运动家族 (soccer=0/basket=1/tennis=2/.../-1 unk)
     std::int32_t cat_league_id{-1};        // 细联赛 = Polymarket sport.id (nba=34/bkcba=104; NBA≠CBA)
@@ -251,7 +251,7 @@ struct QuoteFeatures {
     bool predict_ok{false};
 
     // ---- sharp fair 时序 (老板 2026-06-05「方向真值=赔率源 sharp; 盘口趋势/line movement 用一阶导」) ----
-    //   ml::SharpFairTrack 派生 (paper_loop sharp_history_ 环)。全部加性 (§8.1 #5; struct 末尾增,
+    //   ml::SharpFairTrack 派生 (trading_loop sharp_history_ 环)。全部加性 (§8.1 #5; struct 末尾增,
     //   trivially_copyable 保持)。观测先行 — Stage 1 只暴露/观测, 绝不驱动交易决策 (Stage 2 另行设计+回测)。
     //   样本不足/无 sharp → NaN。窗口 = cfg.sharp_fair_vel_window_ns (默认 10s ≈ 5 样本)。
     double g_sharp_velocity{std::numeric_limits<double>::quiet_NaN()};   // sharp 速度 prob/sec (+升 −降; line movement)

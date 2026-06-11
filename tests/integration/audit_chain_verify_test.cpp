@@ -108,7 +108,7 @@ RiskDecisionInput MakeValidCtx(int i, AuditEventType type) {
 auto OpenPaperWriter() {
     WalConfig cfg{};
     cfg.kind        = WalKind::PaperAudit;
-    cfg.path_prefix = "/var/lib/stcpp/paper/audit_chain_verify";
+    cfg.path_prefix = "/var/lib/stcpp/engine/audit_chain_verify";
     return WalWriter<AuditRecord>::Open(cfg);
 }
 

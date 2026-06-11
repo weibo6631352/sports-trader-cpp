@@ -502,7 +502,7 @@ inline std::string scores(const StateProvider& sp, std::int64_t as_of_ns = -1) {
     //   赛点/进度) + sharp_fair(in-play bet365 de-vig, 看板显套利信号: sharp vs PM mid 的差就是机会)。
     const std::vector<EventScore> all = sp.scores_all();
     const std::int64_t now_ns = now_epoch_ns();
-    // 新鲜度上限 (与 paper_loop score_staleness_limit_ns 同 120s): 超此未更新 = 比赛已结束/掉出 feed
+    // 新鲜度上限 (与 trading_loop score_staleness_limit_ns 同 120s): 超此未更新 = 比赛已结束/掉出 feed
     //   (Goalserve 停更 data_source_ts) → 不推, 防前端残留显示"已结束比赛仍进行中" (老板 2026-06-03)。
     constexpr std::int64_t kScoreStaleNs = 120'000'000'000LL;
     std::string b;

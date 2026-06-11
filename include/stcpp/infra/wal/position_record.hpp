@@ -10,7 +10,7 @@
 // 红线:
 //   R-20  4 ts 全程携带: fill_event_ts ≤ fill_ds_ts ≤ fill_ingestion_ts ≤ fill_as_of_ts
 //         时间戳优先用数据源自带, 禁本地 now() 替代上游 ts
-//   R-11  WalKind::Position, paper/live 路径参数化: paper=/var/lib/stcpp/paper/position*.wal
+//   R-11  WalKind::Position, paper/live 路径参数化: paper=/var/lib/stcpp/engine/position*.wal
 //         live=/var/lib/stcpp/live/position*.wal  (PositionLedger caller 负责选路)
 //   ABI   字段顺序/大小锁定 (变更须老韩 + 老周 review + ADR)
 //

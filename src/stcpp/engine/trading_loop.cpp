@@ -1,4 +1,4 @@
-// src/stcpp/paper/paper_loop.cpp — PaperLoop 实现
+// src/stcpp/engine/trading_loop.cpp — TradingLoop 实现
 //
 // Owner: 小肖 (numerical-algorithms, A 系统工程部)
 // last_review: 2026-05-30
@@ -12,11 +12,11 @@
 //
 // P0 整改 (2026-05-30, 小肖, dogfood-remediation):
 //   P0-1 拒单去重: risk_gateway.cpp::evaluate() 内 reject_here() lambda 已经通过
-//         g_rm_debug_snapshot 全局指针调用 push_reject 一次。paper_loop 原来在
+//         g_rm_debug_snapshot 全局指针调用 push_reject 一次。trading_loop 原来在
 //         RM 返回 REJECTED 后又手动调用 rm_snap_->push_reject 一次, 造成每个
 //         reject 被写入两次 (128 唯一 reject 各出现 2 次, 纳秒级 rejected_ts 完全
-//         相同可排除随机重复). 修法: 删除 paper_loop 侧的冗余 push_reject; RM 侧
-//         已唯一地负责写 ring, paper_loop 仅计数 orders_rejected.
+//         相同可排除随机重复). 修法: 删除 trading_loop 侧的冗余 push_reject; RM 侧
+//         已唯一地负责写 ring, trading_loop 仅计数 orders_rejected.
 //         验证: /api/v1/risk/rejects 应返回 128 条 (不再 256 条); count() == 128.
 //
 //   P0-3 fake fair gate: 无真实 Goalserve game_row 时 (time_status==NotStarted,
@@ -34,10 +34,10 @@
 //         过去仍走 Step 5-6 构造 intent 进 RiskGateway::evaluate, 依赖 RM 以
 //         INVALID_INTENT 兜底拒. RM 松动 / 配置变化即真下单 = 红线. 修法: Step 4
 //         (quote publish) 之后立即检查 advisory 标志, advisory=true → 直接 return,
-//         不构造 intent, 不进 RM. RM 不再作 advisory 防线; paper_loop 主动 gate.
+//         不构造 intent, 不进 RM. RM 不再作 advisory 防线; trading_loop 主动 gate.
 //         验证: /api/v1/risk/rejects 中 advisory 市场不应再出现 INVALID_INTENT.
 
-#include "stcpp/paper/paper_loop.hpp"
+#include "stcpp/engine/trading_loop.hpp"
 // (risk/arb_signal.hpp 已砍 2026-06-05: seq_arb 短时套利 advisory 是大模型旁路, 一并删)
 
 #include <algorithm>
@@ -70,7 +70,7 @@
 #include "stcpp/strategy/edge_ci.hpp"  // 单一 ComputeEdgeCiLower (回测-实盘共用)
 #include "stcpp/strategy/signal_iface.hpp"
 
-namespace stcpp::paper {
+namespace stcpp::engine {
 
 namespace {
 
@@ -90,7 +90,7 @@ namespace {
 
 // token_id 格式校验 (uint256 string: 非空, ≤77 位, 纯数字). 镜像 RM risk_gateway 的 is_valid_token_id
 //   (SSOT: laoli-w8-polymarket-data-structure-ssot §2.3 §5 T-05). 2026-06-10 老板「修啊」: catalog 预热期
-//   token_id 可能畸形 → paper_loop 提前 fail-closed 不构造 intent, 不让 RM 兜底拒 INVALID_TOKEN_ID_FORMAT.
+//   token_id 可能畸形 → trading_loop 提前 fail-closed 不构造 intent, 不让 RM 兜底拒 INVALID_TOKEN_ID_FORMAT.
 [[nodiscard]] bool IsValidTokenId(const std::string& tid) noexcept {
     if (tid.empty() || tid.size() > 77u) {
         return false;
@@ -109,12 +109,12 @@ namespace {
 // ctor
 // ---------------------------------------------------------------------------
 
-PaperLoop::PaperLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk::RiskGateway& rm,
+TradingLoop::TradingLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk::RiskGateway& rm,
                      risk::PositionLedger& position_ledger, risk::LedgerSnapshotHub& ledger_hub,
                      sizing::QuoteSnapshotHub& quote_hub, risk::RmDebugSnapshot* rm_snap,
                      const pricing::IFairValueModel& fv_model,
                      std::unordered_map<std::string, std::pair<std::string, std::string>> token_map,
-                     PaperLoopConfig cfg) noexcept
+                     TradingLoopConfig cfg) noexcept
     : hub_(hub),
       rm_(rm),
       position_ledger_(position_ledger),
@@ -149,7 +149,7 @@ PaperLoop::PaperLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk
 // dtor — 保证线程已 join
 // ---------------------------------------------------------------------------
 
-PaperLoop::~PaperLoop() {
+TradingLoop::~TradingLoop() {
     Stop();
 }
 
@@ -157,7 +157,7 @@ PaperLoop::~PaperLoop() {
 // Start / Stop
 // ---------------------------------------------------------------------------
 
-void PaperLoop::Start() {
+void TradingLoop::Start() {
     if (running_.load(std::memory_order_acquire)) {
         return;  // 已启动, 幂等
     }
@@ -172,11 +172,11 @@ void PaperLoop::Start() {
         const char* live_ok = std::getenv("STCPP_LIVE_INTENT_OK");
         if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live && live_ok != nullptr &&
             live_ok[0] == '1') {
-            std::fprintf(stderr, "[paper_loop] LIVE 模式意图确认 (STCPP_LIVE_INTENT_OK=1): 决策环将发真实 intent "
+            std::fprintf(stderr, "[trading_loop] LIVE 模式意图确认 (STCPP_LIVE_INTENT_OK=1): 决策环将发真实 intent "
                                  "(成交仍受 LiveOrderGate arm 闸控制)\n");
         } else {
             std::fprintf(stderr,
-                         "[paper_loop] FATAL (R-11/R-7): advisory_markets_no_intent=false (解封成交) 仅许 paper "
+                         "[trading_loop] FATAL (R-11/R-7): advisory_markets_no_intent=false (解封成交) 仅许 paper "
                          "mode 或 live+STCPP_LIVE_INTENT_OK=1; execution::ExecutionContext::Mode()=%s. abort.\n",
                          std::string(stcpp::execution::ToString(stcpp::execution::ExecutionContext::Mode())).c_str());
             std::abort();
@@ -201,13 +201,13 @@ void PaperLoop::Start() {
     });
 
     std::fprintf(stderr,
-                 "[paper_loop] 启动 paper 交易循环 (tick=%lldms, tokens=%zu, "
+                 "[trading_loop] 启动 paper 交易循环 (tick=%lldms, tokens=%zu, "
                  "bankroll=%.0f pUSD)\n",
                  static_cast<long long>(cfg_.tick_interval_ms),
                  (LoadPaperCatalog() ? LoadPaperCatalog()->size() : 0), cfg_.bankroll_usdc);
 }
 
-void PaperLoop::Stop() noexcept {
+void TradingLoop::Stop() noexcept {
     if (!running_.load(std::memory_order_acquire) && !loop_thread_.joinable()) {
         return;  // 未启动或已停止
     }
@@ -218,7 +218,7 @@ void PaperLoop::Stop() noexcept {
         loop_thread_.join();
     }
     std::fprintf(stderr,
-                 "[paper_loop] 已停止. ticks=%llu approved=%llu fills=%llu "
+                 "[trading_loop] 已停止. ticks=%llu approved=%llu fills=%llu "
                  "ledger_publishes=%llu\n",
                  static_cast<unsigned long long>(stats_.ticks_total.load()),
                  static_cast<unsigned long long>(stats_.orders_approved.load()),
@@ -230,7 +230,7 @@ void PaperLoop::Stop() noexcept {
 // RunLoop — 主循环 (loop_thread_ 内执行)
 // ---------------------------------------------------------------------------
 
-void PaperLoop::RunLoop(std::stop_token st) {
+void TradingLoop::RunLoop(std::stop_token st) {
     using namespace std::chrono_literals;
 
     bool feed_liveness_checked = false;  // A4: 首个 tick 后一次性自检
@@ -250,13 +250,13 @@ void PaperLoop::RunLoop(std::stop_token st) {
             for (auto const& r : rows) {
                 if (!r.ever_fed) {
                     std::fprintf(stderr,
-                                 "[paper_loop] RM feed-liveness: 红线 '%.*s' NEVER FED — "
+                                 "[trading_loop] RM feed-liveness: 红线 '%.*s' NEVER FED — "
                                  "paper daemon 未接通该红线喂数管道 (纸面化, 默认值静默放行风险)\n",
                                  static_cast<int>(r.key.size()), r.key.data());
                     ++never_fed;
                 }
             }
-            std::fprintf(stderr, "[paper_loop] RM feed-liveness 自检: %d/%zu 红线从未被喂\n", never_fed,
+            std::fprintf(stderr, "[trading_loop] RM feed-liveness 自检: %d/%zu 红线从未被喂\n", never_fed,
                          rows.size());
         }
 
@@ -281,7 +281,7 @@ void PaperLoop::RunLoop(std::stop_token st) {
 //   (老板原则 C3: 决策带整盘口; 老周架构: 决策线程栈上组装, 零锁; R-12 不触碰)。
 // ---------------------------------------------------------------------------
 
-void PaperLoop::TickAll() {
+void TradingLoop::TickAll() {
     // A4 (老板「他们相对都是最近刷新的就行」): tick 入口冻结一次比分快照 + 映射, 整轮全子盘口共享同版本。
     //   消除 read-skew: 否则同 event 的 moneyline/spread 各自 Get(), 采集线程中途 swap → 看不同比分版本。
     //   GetSnapshot()/LoadEventMap() 都是只读 RCU 单次 load (不碰 R-12); shared_ptr 持有保活整 tick。
@@ -561,7 +561,7 @@ void PaperLoop::TickAll() {
 //   Phase B (老韩 RM checklist B-1..B-8 绿后): 真双边选边 — 各边算 fair/edge_ci/Kelly f*,
 //     选 f* 大者 (小袁微观选边 + 小梁 Kelly); 含买 NO (token_id=NO token, outcome=No)。
 //   M2: 开放 sell-to-open 空头 (side=Sell, 老韩 condition cap signed-sum 语义重裁 — C1)。
-DecisionSide PaperLoop::SelectSide(double p_fair_yes, double p_market_devig) const noexcept {
+DecisionSide TradingLoop::SelectSide(double p_fair_yes, double p_market_devig) const noexcept {
     // de-vig 锚定 (小梁 spec §1-2): raw_edge_yes 与 raw_edge_no 精确互为相反数 → 不可能两边同正。
     //   选被低估边: raw_edge_yes >= 0 → YES 模型价 > 市场共识 = YES 低估 → 买 YES;
     //               raw_edge_yes < 0  → NO 低估 → 买 NO。下游 sizing/CI gate 定是否真够 edge 下单。
@@ -569,7 +569,7 @@ DecisionSide PaperLoop::SelectSide(double p_fair_yes, double p_market_devig) con
     return DecisionSide{is_yes ? TradedSide::Yes : TradedSide::No, strategy::Side::Buy, 0.0};
 }
 
-void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
+void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     using namespace stcpp::data::feature_store;
 
     // ---- Phase B (小梁 spec §3): fair 始终 YES-canonical → 先算 fair, 再选边 ----
@@ -1323,7 +1323,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     }
 
     // c3 (P0-2 根治): caps 单一真值源 = cfg_ (whole pUSD), from_pusd 转正确 micro。sizing/RM 同源
-    //   同值 (RM 侧 paper_daemon 亦 from_pusd 同源)。sizing 内部 .to_pusd() 回 whole 比 notional。
+    //   同值 (RM 侧 trader_daemon 亦 from_pusd 同源)。sizing 内部 .to_pusd() 回 whole 比 notional。
     //   终结 c2 过渡态的「whole 灌 micro 字段」语义错位 + 双错对消。
     // [2026-06-01 凯利评审 Step2, 老韩] cap 链净值缩放: 回撤时绝对 cap (C1-3) 按净值比例同步砍, 不让 drawdown
     //   中单笔绝对暴露相对放大。scale = clamp(bankroll_for_kelly / initial, 0.5, 1.0)。sizing-only 更严 (不松
@@ -1511,7 +1511,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
 
     // ---- P0-4: advisory gate -----------------------------------------------
     // advisory=true (ML-R2: paper 期所有市场) → 不产生 intent, 不进 RM.
-    // RM 不再作 advisory 防线; paper_loop 在此处主动 gate.
+    // RM 不再作 advisory 防线; trading_loop 在此处主动 gate.
     // 注意: advisory 检查在 quote publish 之后, quote 本身仍发布 (供观察); 但
     //        quote.edge/kelly/notional=0 (has_real_fair=false) 已保证无假信号.
     if (cfg_.advisory_markets_no_intent) {
@@ -1729,7 +1729,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
 //   side_book: 本边 book 快照 (4ts/depth/touch 全取自此, R-20 禁 now() 替代上游)。
 //   p_fair_side: 本边 fair prob (被选边 = p_fair_selected; 非选边 = 1 − p_fair_selected)。
 // ---------------------------------------------------------------------------
-void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std::string& token_id,
+void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const std::string& token_id,
                                       strategy::Outcome outcome,
                                       const polymarket::clob_wss::OrderBookFeatures& side_book,
                                       double book_depth_l1, double p_fair_side, double target_mag,
@@ -1940,7 +1940,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     const risk::RiskDecision rd = rm_.evaluate(intent);
     if (rd.is_rejected()) {
         stats_.orders_rejected.fetch_add(1, std::memory_order_relaxed);
-        // P0-1: RM 内部 reject_here() 已 push_reject 一次; paper_loop 不重复写。
+        // P0-1: RM 内部 reject_here() 已 push_reject 一次; trading_loop 不重复写。
         return;
     }
     stats_.orders_approved.fetch_add(1, std::memory_order_relaxed);
@@ -2050,7 +2050,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     }
 
     std::fprintf(stderr,
-                 "[paper_loop] FILL cond=%.24s... tok=%.16s... side=%s is_close=%d "
+                 "[trading_loop] FILL cond=%.24s... tok=%.16s... side=%s is_close=%d "
                  "fill_sz=%.4f fill_px=%.4f fair=%.4f realized=%.4f\n",
                  condition_id.c_str(), token_id.c_str(),
                  (intent.side == strategy::Side::Buy) ? "BUY" : "SELL", intent.is_close ? 1 : 0,
@@ -2092,7 +2092,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
 //   纯订单簿触发 (不需 Goalserve), 只做非 sharp 盘; 一盘一击; 永不割 (无 book 订阅 → TickOne 天然跳过,
 //   无任何止损路径触达); 结算复用 SettlementPoller(catalog∪held) + 孤儿 sweep。
 // ---------------------------------------------------------------------------
-void PaperLoop::RequestFlbEntry(const FlbTrigger& t) {
+void TradingLoop::RequestFlbEntry(const FlbTrigger& t) {
     std::lock_guard<std::mutex> lk(flb_mu_);
     if (!flb_seen_.insert(t.condition_id).second) return;  // 一盘一击: 重复 condition 丢弃
     flb_pending_.push_back(t);
@@ -2103,7 +2103,7 @@ void PaperLoop::RequestFlbEntry(const FlbTrigger& t) {
 //   触发: YES ask 或合成 NO 价 (1−yes_bid) 首次 ∈[0.80,0.97] + 簿质量门 (价差≤0.05, L1 深度≥25u —
 //   实证模型按成交史价回测, 薄簿/宽价差实际吃不到那个价, 先用执行质量门挡, 多特征精确模型 v2 等
 //   [flb-feat] 台账攒够再标定)。book 由 WSS 订阅推送 (FLB 宇宙已订, 不进 149hz 轮询)。
-void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEntry& entry) {
+void TradingLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEntry& entry) {
     constexpr double kFlbTrigger = 0.77;  // 0.80→0.77 (2026-06-11 晚会小梁: 插值净EV~+2.5%/u, 触发+12-15%; 50笔结算验证后议0.75)
     constexpr double kFlbMaxPx = 0.84;    // 0.97→0.84 (2026-06-12 数据: ≥0.84 入场带出血 [flb 该带 1/1 全输 −21],
                                           //   0.70-0.84 带 flb 6/6 全胜 +22% — 支付价卡在利润带内)
@@ -2257,12 +2257,12 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     ProcessFlbTrigger(t);
 }
 
-bool PaperLoop::FlbSeen(const std::string& condition_id) const {
+bool TradingLoop::FlbSeen(const std::string& condition_id) const {
     std::lock_guard<std::mutex> lk(flb_mu_);
     return flb_seen_.count(condition_id) != 0;
 }
 
-void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
+void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     // 平注 (老板「策略系数不进配置层」— 代码内常数): 多场分散吃 FLB 统计偏差, 无模型 fair 不做 Kelly。
     constexpr double kFlbStakeUsdc = 25.0;  // 15→25 (2026-06-11 老板拍板「FLB 加注」: 走量引擎吞吐 +67%;
                                             //   逐笔验证 52% 带内盘有 ≥30u 真量; = per_order cap, 部署率 ~55% 可控)
@@ -2430,7 +2430,7 @@ void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
 //   写: tmp+rename 原子; 读: >24h 陈旧忽略。停机期错过的结算由 SettlementPoller(catalog∪held)
 //   + 孤儿 sweep 自动补账。paper-only (R-11)。
 // ---------------------------------------------------------------------------
-void PaperLoop::SaveLedgerSnapshot() {
+void TradingLoop::SaveLedgerSnapshot() {
     if (cfg_.ledger_snapshot_path.empty()) return;
     const std::string tmp = cfg_.ledger_snapshot_path + ".tmp";
     FILE* fp = std::fopen(tmp.c_str(), "w");
@@ -2496,7 +2496,7 @@ void PaperLoop::SaveLedgerSnapshot() {
     std::rename(tmp.c_str(), cfg_.ledger_snapshot_path.c_str());
 }
 
-void PaperLoop::RestoreLedgerSnapshot() {
+void TradingLoop::RestoreLedgerSnapshot() {
     if (cfg_.ledger_snapshot_path.empty()) return;
     FILE* fp = std::fopen(cfg_.ledger_snapshot_path.c_str(), "r");
     if (fp == nullptr) return;  // 无快照 = 全新开始
@@ -2628,7 +2628,7 @@ void PaperLoop::RestoreLedgerSnapshot() {
 // realize = (settle − avg_entry) × qty 累加进 cum_realized_pnl_pusd_; apply_fill 负 delta 平仓归零。
 // R-11: paper 账本; R-20: 4ts 用终态比分 ts (禁 now() 替代 data_source)。loop_thread_ 单 writer。
 // ---------------------------------------------------------------------------
-void PaperLoop::SettleCondition(const std::string& condition_id, const std::string& yes_token_id,
+void TradingLoop::SettleCondition(const std::string& condition_id, const std::string& yes_token_id,
                                 const std::string& no_token_id, double settle_yes, double settle_no,
                                 const data::feature_store::FeatureStoreGameRow& game_row) noexcept {
     SettleToken(condition_id, yes_token_id, strategy::Outcome::Yes, settle_yes, game_row);
@@ -2637,7 +2637,7 @@ void PaperLoop::SettleCondition(const std::string& condition_id, const std::stri
     FeedRiskGateway();
 }
 
-void PaperLoop::SettleToken(const std::string& condition_id, const std::string& token_id,
+void TradingLoop::SettleToken(const std::string& condition_id, const std::string& token_id,
                             strategy::Outcome outcome, double settle_price,
                             const data::feature_store::FeatureStoreGameRow& game_row) noexcept {
     // M3 CLV 尺子: 结算 → 算该 token 全部建仓成交的 CLV (close mid / 0-1 settle)。离线评估 only。
@@ -2721,7 +2721,7 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
 
     stats_.positions_settled.fetch_add(1, std::memory_order_relaxed);
     std::fprintf(stderr,
-                 "[paper_loop] SETTLE cond=%.24s... tok=%.16s... settle=%.2f avg=%.4f qty=%.4f "
+                 "[trading_loop] SETTLE cond=%.24s... tok=%.16s... settle=%.2f avg=%.4f qty=%.4f "
                  "realized=%.4f cum_realized=%.4f\n",
                  condition_id.c_str(), token_id.c_str(), settle_price, avg, qty,
                  (settle_price - avg) * qty, cum_realized_pnl_pusd_);
@@ -2735,7 +2735,7 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
 // ---------------------------------------------------------------------------
 
 /*static*/
-double PaperLoop::ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept {
+double TradingLoop::ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, double z) noexcept {
     // 单一实现: stcpp/strategy/edge_ci.hpp (回测-实盘共用同一公式, 消两处漂移; Phase4 阻塞3 修复)。
     return stcpp::strategy::ComputeEdgeCiLower(p_fair, p_ask, n_eff, z);
 }
@@ -2745,7 +2745,7 @@ double PaperLoop::ComputeEdgeCiLower(double p_fair, double p_ask, int n_eff, dou
 // ---------------------------------------------------------------------------
 
 /*static*/
-std::int64_t PaperLoop::NowNs() noexcept {
+std::int64_t TradingLoop::NowNs() noexcept {
     return infra::wal::pit::NowRealtimeNs();
 }
 
@@ -2756,7 +2756,7 @@ std::int64_t PaperLoop::NowNs() noexcept {
 // R-11: mode = kPaper (标记 paper 模式)
 // ---------------------------------------------------------------------------
 
-void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const execution::VirtualFill& fill,
+void TradingLoop::PublishLedgerSnapshot(const std::string& condition_id, const execution::VirtualFill& fill,
                                       double mark_price,
                                       const polymarket::clob_wss::OrderBookFeatures& feat) noexcept {
     // 从 PositionLedger 读最新仓位快照
@@ -2823,7 +2823,7 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
 //   PublishLedgerSnapshot 只在【成交时】发布 → 逐盘面板冻结在入场瞬间 (NO 已 0.999 仍显 −0.06=费);
 //   持有到结算架构下中间无成交 → 冻结数小时。每 tick 用实时 mark 重算重发; 不碰 fee 累计 (那只在
 //   真成交时累加, 此处只读 cum 映射, 用 find 不用 operator[] 防插入)。loop_thread_ only。
-void PaperLoop::RepublishLedgerMark(const std::string& condition_id, const std::string& token_id,
+void TradingLoop::RepublishLedgerMark(const std::string& condition_id, const std::string& token_id,
                                     double mark_price,
                                     const polymarket::clob_wss::OrderBookFeatures& feat) noexcept {
     const auto pos = position_ledger_.get_position(token_id);
@@ -2854,13 +2854,13 @@ void PaperLoop::RepublishLedgerMark(const std::string& condition_id, const std::
 // FeedRiskGateway — P0-1: paper 持仓敞口 → RM (激活 exposure 红线)
 //
 // 背景: RM 的 per_condition / per_outcome exposure cap 逻辑齐全, 但生产此前零喂数
-//   (paper_loop 只 set_bankroll, 从不喂 exposure) → cap 永不咬 = 风控纸面化。
+//   (trading_loop 只 set_bankroll, 从不喂 exposure) → cap 永不咬 = 风控纸面化。
 // 老韩 RM 契约 + 老周架构: loop_thread_ 内 apply_fill 后全量覆盖喂 RM。
 //
 // 🔴 单位门禁 (老周 P0 gate): 仓位账本 size_usdc 存 whole pUSD (apply_fill 把 whole
 //   double cast int64); RM exposure 比 micro (check_position_caps_ from_micro(cur+size_micro))。
 //   故喂前必 × 1e6 (whole → micro)。漏乘 → exposure 红线静默架空 (同 P0-2 单位 bug 同型)。
-//   守护: test_paper_loop P0-1 单位门测试 (fill 越 cap → 必触 EXCEED_CONDITION_EXPOSURE)。
+//   守护: test_trading_loop P0-1 单位门测试 (fill 越 cap → 必触 EXCEED_CONDITION_EXPOSURE)。
 //
 // daily_pnl (DD): A5 (老韩 spec) 已接通 (净 MtM − cum_fee, best_bid 清算; 见下)。A1 ledger PnL
 //   单位根治后, 老郭事前否决前置已清除。
@@ -2870,7 +2870,7 @@ void PaperLoop::RepublishLedgerMark(const std::string& condition_id, const std::
 //   与 RecordEquity / sizing bankroll 此前各算一套)。双口径: best_bid 保守 (凯利/DD) + microprice 展示。
 //   stale book (data_source_ts 超 score_staleness_limit_ns) / 无效 bid → 该仓位 0 浮盈 (保守)。
 //   R-11: 只读 paper position_ledger_ + hub_ 实例, 不碰真账本。
-PaperLoop::AccountEquitySnapshot PaperLoop::account_equity() const noexcept {
+TradingLoop::AccountEquitySnapshot TradingLoop::account_equity() const noexcept {
     AccountEquitySnapshot s;
     s.bankroll_init = cfg_.bankroll_usdc;
     s.cum_realized = cum_realized_pnl_pusd_;
@@ -2928,7 +2928,7 @@ PaperLoop::AccountEquitySnapshot PaperLoop::account_equity() const noexcept {
 // positions_mtm — per-持仓 live MTM (mark-staleness fix 2026-06-05)。与 account_equity() 同源 (hub_.Read
 //   live 簿 microprice), 但 per-token 展开 + 带 YES/NO (PositionView.outcome, 真账本里 side 是 known 的)。
 //   无 live 簿 → mark 回落 avg_entry (unrealized=0, 老韩铁律#2 不臆造浮盈)。已平仓 (qty=0) 不列。仅观测。
-std::vector<PaperLoop::PositionMtm> PaperLoop::positions_mtm() const noexcept {
+std::vector<TradingLoop::PositionMtm> TradingLoop::positions_mtm() const noexcept {
     std::vector<PositionMtm> out;
     for (auto const& pv : position_ledger_.get_all_positions()) {
         // unit-contract-ok: signed micro → whole share (qty); 同 account_equity()
@@ -2969,7 +2969,7 @@ std::vector<PaperLoop::PositionMtm> PaperLoop::positions_mtm() const noexcept {
     return out;
 }
 
-void PaperLoop::FeedRiskGateway() noexcept {
+void TradingLoop::FeedRiskGateway() noexcept {
     // A1 (老郭钳-6): 账本 micro 化后 get_*_exposure 已是 micro, 与 RM exposure 同单位 → 删原 ×1e6
     //   补偿乘 (P0-1 的"whole→micro"对冲乘已无意义)。直喂, 全量覆盖 (PL 真值, 自愈)。
     for (auto const& [cid, micro] : position_ledger_.get_per_condition_exposure()) {
@@ -3007,7 +3007,7 @@ void PaperLoop::FeedRiskGateway() noexcept {
 // PopulateFeatureColumns — 填 QuoteFeatures 观测特征列 (TickOne blend predict + PublishQuoteSnapshot
 //   共用; BR-1: 训练捕获=决策 blend 同一份特征, 杜绝 train-serve skew)。不填决策输出/provenance。
 // ---------------------------------------------------------------------------
-void PaperLoop::PopulateFeatureColumns(
+void TradingLoop::PopulateFeatureColumns(
     sizing::QuoteFeatures& qf, const std::string& condition_id,
     const pricing::FairValueResult& fv_result, double mark_price,
     const polymarket::clob_wss::OrderBookFeatures& feat, double cross_spread, double no_microprice,
@@ -3241,7 +3241,7 @@ void PaperLoop::PopulateFeatureColumns(
     }
 }
 
-void PaperLoop::PublishQuoteSnapshot(
+void TradingLoop::PublishQuoteSnapshot(
     const std::string& condition_id, const pricing::FairValueResult& fv_result,
     const sizing::SizingOutput& sizing_out, double mark_price, double edge_ci_lower,
     const polymarket::clob_wss::OrderBookFeatures& feat, bool has_real_fair, double cross_spread,
@@ -3372,4 +3372,4 @@ void PaperLoop::PublishQuoteSnapshot(
     quote_hub_.Publish(condition_id, qf);
 }
 
-}  // namespace stcpp::paper
+}  // namespace stcpp::engine

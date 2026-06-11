@@ -8,9 +8,9 @@
 //   SafeModeEnter / StrategyDecayed (走专门 emit_*)
 //
 // 注: WalConfig.path_prefix = "/tmp/stcpp-perf/audit_..." (R-11 校验: paper kind 需以
-//      /var/lib/stcpp/paper/ 开头). bench 时把 STCPP_WAL_TEST_PATH_PREFIX_OVERRIDE override
+//      /var/lib/stcpp/engine/ 开头). bench 时把 STCPP_WAL_TEST_PATH_PREFIX_OVERRIDE override
 //      到 tmpfs 是 framework 的事; 当前 wal_writer skeleton 仍允 in-mem ring write, 不真 fsync.
-//      若 framework Open 严校 path prefix → fallback: 用 in-tree path 起 "/var/lib/stcpp/paper/perf_*"
+//      若 framework Open 严校 path prefix → fallback: 用 in-tree path 起 "/var/lib/stcpp/engine/perf_*"
 //      (CI 写权限由 mkdir -p 准备, 见 .github/workflows/perf-regression.yml).
 
 #include <array>
@@ -63,7 +63,7 @@ RiskDecisionInput make_valid_input(AuditEventType type, std::int64_t now) {
 std::unique_ptr<WalWriter<AuditRecord>> open_writer(std::string_view tag) {
     WalConfig cfg{};
     cfg.kind        = WalKind::PaperAudit;
-    cfg.path_prefix = std::string("/var/lib/stcpp/paper/perf_audit_") + std::string(tag);
+    cfg.path_prefix = std::string("/var/lib/stcpp/engine/perf_audit_") + std::string(tag);
     auto r = WalWriter<AuditRecord>::Open(cfg);
     if (!r.has_value()) {
         return nullptr;

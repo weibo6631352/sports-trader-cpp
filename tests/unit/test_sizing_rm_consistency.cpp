@@ -114,7 +114,7 @@ static std::pair<risk::RiskConfig, std::shared_ptr<risk::RiskGateway>> make_rm(
 
     // 设置 RUNNING 状态 (默认 SAFE_MODE)
     gw->set_state(risk::RmState::RUNNING);
-    // c3: RM bankroll 对齐 micro (bankroll 字段仍 int64=c2b; 同 paper_loop 运行期 set_bankroll ×1e6
+    // c3: RM bankroll 对齐 micro (bankroll 字段仍 int64=c2b; 同 trading_loop 运行期 set_bankroll ×1e6
     //   喂法)。否则 size_pUSD_micro(micro) 比 bankroll(raw) 差 1e6 → 误 INSUFFICIENT_BANKROLL。
     gw->set_bankroll(bankroll_usdc * 1'000'000LL);
 

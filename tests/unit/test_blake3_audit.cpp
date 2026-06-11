@@ -65,7 +65,7 @@ static RiskDecisionInput make_input(int i = 0, AuditEventType t = AuditEventType
 static auto open_writer(const char* s) {
     WalConfig c{};
     c.kind = WalKind::PaperAudit;
-    c.path_prefix = std::string("/var/lib/stcpp/paper/") + s;
+    c.path_prefix = std::string("/var/lib/stcpp/engine/") + s;
     return WalWriter<AuditRecord>::Open(c);
 }
 

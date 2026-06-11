@@ -129,10 +129,10 @@ endif()
 # 最小 paper 交易循环: OrderBookSnapshotHub → FairValue → Sizing → RM → PaperSigner
 #   → VirtualMatcher → PositionLedger → LedgerSnapshotHub + QuoteSnapshotHub
 # R-11: paper 不污染真账本; R-12: 独立线程; R-20: 4 ts 全链路透传
-add_subdirectory(src/stcpp/paper)
+add_subdirectory(src/stcpp/engine)
 
-# PaperDaemon 编排层 (老郭 §A.1 / 老周架构裁定 B1)
-# stcpp_paper_app (PaperDaemon + market_discovery) + stcpp_paper_server(http) + stcpp_paper_runtime(headless)
+# TraderDaemon 编排层 (老郭 §A.1 / 老周架构裁定 B1)
+# stcpp_trader_app (TraderDaemon + market_discovery) + stcpp_trader_server(http) + stcpp_paper_runtime(headless)
 # 必须在 debug_api + paper 之后 (app → debug_api/paper 单向依赖).
 if(STCPP_BUILD_DEBUG_API)
     add_subdirectory(src/stcpp/app)

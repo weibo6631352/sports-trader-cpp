@@ -92,7 +92,7 @@ constexpr std::size_t kCompressMin = 1024;  // 仅压缩 >1KB 帧 (小帧 deflat
 
 // 一帧 SSE 消息: id + event + data(信封)。focus_seq>=0 时信封带 focus_seq (book/quote 版本对账)。
 //   compress=true (客户端 ?gz=1) 且 payload>1KB → data 段改 raw-deflate+base64 字符串 + "enc":"df" 标记
-//   (老板 2026-06-05「gzip 压缩帧」; 每帧独立 Z_FINISH 不缓冲; 跑 httplib 线程非 PaperLoop, ~1帧/s, CPU 可忽略)。
+//   (老板 2026-06-05「gzip 压缩帧」; 每帧独立 Z_FINISH 不缓冲; 跑 httplib 线程非 TradingLoop, ~1帧/s, CPU 可忽略)。
 // 返回 false = 写失败(客户端断开)。frame 超 kMaxFrameBytes 跳过(返 true 继续, 评审防大帧)。
 bool send_frame(httplib::DataSink& sink, const char* channel, const char* mode,
                 const std::string& payload, std::int64_t focus_seq = -1, bool compress = false) {

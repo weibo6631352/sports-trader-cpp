@@ -10,7 +10,7 @@
 // 红线:
 //   R-1   PositionLedger.circuit_breaker_state() 是 RM evaluate() 依赖路径 — 不绕过 RM
 //   R-7   paper/live/backtest 物理隔离: path 由 ExecutionMode 参数化 (build-time 决定)
-//         paper  WAL → /var/lib/stcpp/paper/position*.wal
+//         paper  WAL → /var/lib/stcpp/engine/position*.wal
 //         live   WAL → /var/lib/stcpp/live/position*.wal
 //         实现: PositionLedger 构造参数 path_prefix, CMake 注入正确路径
 //   R-11  paper position.wal 严禁出现在 live binary 路径; 由路径前缀硬校验 + CMake guard 保障
@@ -139,7 +139,7 @@ class PositionLedger {
     //
     // path_prefix: WAL 文件路径前缀, 必须以 WalKind::Position 的 PathRootOf 开头
     //   (Open() 内 WalWriter::Open 会做 R-11 硬校验, 不命中 → std::abort).
-    //   paper  例: "/var/lib/stcpp/paper/position"
+    //   paper  例: "/var/lib/stcpp/engine/position"
     //   live   例: "/var/lib/stcpp/live/position"
     //
     // init_bankroll: 启动时初始总资金 (USDC * 1e6); restore_from_wal 后会被 WAL 最新值覆盖.

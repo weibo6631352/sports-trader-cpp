@@ -486,7 +486,7 @@ TEST(DrawdownMultiplier, DD02_Tiers) {
     EXPECT_DOUBLE_EQ(DrawdownTierMultiplier(0.30, cfg), 0.0);
 }
 
-// hysteresis: 模拟 paper_loop 成员逻辑 (drop 用 dd, restore 用 dd+band)。
+// hysteresis: 模拟 trading_loop 成员逻辑 (drop 用 dd, restore 用 dd+band)。
 TEST(DrawdownMultiplier, DD03_Hysteresis_DropImmediate_RestoreSticky) {
     auto cfg = dd_cfg_default();
     double m = 1.0;

@@ -4,7 +4,7 @@
 // Owner: 老雷 (GM) | last_review: 2026-06-02
 //
 // 目的 (bm_slots 管线):
-//   OddsFeedThread (per-sport, getodds 周期轮询) Publish(map) → paper_loop tick 读 GetSnapshot()
+//   OddsFeedThread (per-sport, getodds 周期轮询) Publish(map) → trading_loop tick 读 GetSnapshot()
 //   按 match_id (getodds/pregame 空间) 查跨庄家赔率, 经 bm_slots_fill 定向填 game_row.bm_slots。
 //
 // 读写模型 (同 ScoreSnapshotStore): shared_ptr<const OddsMap> + mutex (持锁仅 shared_ptr 拷贝 ~5ns,

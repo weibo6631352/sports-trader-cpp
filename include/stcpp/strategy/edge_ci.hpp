@@ -3,7 +3,7 @@
 // Owner: GM (老雷) 2026-05-31 — Phase 4 量化阻塞3 修复 (回测-实盘 CI 口径统一)。
 //
 // 红线 §8: 回测与实盘必须用同一数据处理逻辑。本函数是 edge_ci_lower 的**唯一实现**,
-//   paper_loop(实盘语义) 与 backtest event_replayer 共用, 消除两处公式漂移 (老郭 nit#2 跨模块版)。
+//   trading_loop(实盘语义) 与 backtest event_replayer 共用, 消除两处公式漂移 (老郭 nit#2 跨模块版)。
 //
 // 公式: edge_ci_lower = (p_fair - p_ask) - z * sqrt(p_fair*(1-p_fair)/n_eff)
 //   数值不稳 / n_eff<=0 → fail-closed 返 -1.0 (禁下单)。clamp [-1, 1]。
@@ -39,7 +39,7 @@ namespace stcpp::strategy {
 //
 // 修法 (老板拍板「纯 net-EV 门」): sharp 共识源【不扣样本噪声】, edge_ci_lower = raw_edge − sharp_margin。
 //   经济过滤交给下游既有门: sizing 内 slippage 门 (edge_bps ≥ slippage_bps) + fee 门
-//   (net_ci_edge = edge − fee > floor) + paper_loop 外层 net_ev_ok (edge ≥ 2×fee + slippage,
+//   (net_ci_edge = edge − fee > floor) + trading_loop 外层 net_ev_ok (edge ≥ 2×fee + slippage,
 //   体育 fee 0.03 → 中价处约需 ~1.6% 错价才放行)。sharp_margin 默认 0 = 纯 net-EV (margin 由上述门承担)。
 //   非 sharp 源 (score-prior / ML 统计估计) 仍走二项 CI — 它们【确实】是噪声估计, 需抽样惩罚。
 //

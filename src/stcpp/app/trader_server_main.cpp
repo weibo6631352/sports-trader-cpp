@@ -1,20 +1,20 @@
-// src/stcpp/app/paper_server_main.cpp — paper daemon + 运营观测 HTTP 入口 (thin main)
+// src/stcpp/app/trader_server_main.cpp — paper daemon + 运营观测 HTTP 入口 (thin main)
 //
 // (原名 debug_server_main.cpp / stcpp_debug_server —— W9 骨架遗留名, 2026-05-30 改名:
 //  它是 paper daemon 的运营观测 HTTP 服务, 非调试工具. headless 版见 paper_runtime_main.cpp)
 //
-// Owner: 老雷 (GM) — PaperDaemon 重构 (老郭 §A.1): 962 行装配逻辑已抽进
-//   stcpp::app::PaperDaemon (stcpp_paper_app 库). 本 main 退化为 ~80 行:
-//   parse args → 填 PaperDaemonConfig (RunMode::PaperDaemon) → Build → Run.
+// Owner: 老雷 (GM) — TraderDaemon 重构 (老郭 §A.1): 962 行装配逻辑已抽进
+//   stcpp::app::TraderDaemon (stcpp_trader_app 库). 本 main 退化为 ~80 行:
+//   parse args → 填 TraderDaemonConfig (RunMode::TraderDaemon) → Build → Run.
 //
 // last_review: 2026-05-30
 //
-// 角色: RunMode::PaperDaemon —— 带 HTTP 观测端 (= 原 stcpp_paper_server).
+// 角色: RunMode::TraderDaemon —— 带 HTTP 观测端 (= 原 stcpp_trader_server).
 //   live book/event = 真实 Polymarket CLOB WSS + gamma /events
 //   score = 真实 Goalserve inplay feed (soccer/basketball/tennis)
-//   positions/pnl/quote = paper 交易循环驱动 (PaperLoop, 500ms tick)
+//   positions/pnl/quote = paper 交易循环驱动 (TradingLoop, 500ms tick)
 //
-// 红线: R-11 (paper 不污染真账本) / R-12 (后台线程独立) / R-20 (4 ts 透传) 由 PaperDaemon 守护.
+// 红线: R-11 (paper 不污染真账本) / R-12 (后台线程独立) / R-20 (4 ts 透传) 由 TraderDaemon 守护.
 // ToS: 只读公开 book channel + gamma REST, 不下单.
 
 #include <atomic>
@@ -26,14 +26,14 @@
 #include <string>
 #include <utility>
 
-#include "stcpp/app/paper_daemon.hpp"
+#include "stcpp/app/trader_daemon.hpp"
 #include "stcpp/execution/execution_mode.hpp"
 #include "stcpp/infra/process/single_instance.hpp"  // 程序级防多开 (PID+flock)
 
 namespace {
 
 // 信号 → daemon 停止. RequestStop 是 noexcept, 信号上下文安全.
-std::atomic<stcpp::app::PaperDaemon*> g_daemon{nullptr};
+std::atomic<stcpp::app::TraderDaemon*> g_daemon{nullptr};
 
 void handle_signal(int /*sig*/) {
     if (auto* d = g_daemon.load(std::memory_order_acquire)) {
@@ -44,8 +44,8 @@ void handle_signal(int /*sig*/) {
 }  // namespace
 
 int main(int argc, char** argv) {
-    stcpp::app::PaperDaemonConfig cfg;
-    cfg.mode = stcpp::app::RunMode::PaperDaemon;
+    stcpp::app::TraderDaemonConfig cfg;
+    cfg.mode = stcpp::app::RunMode::TraderDaemon;
 
     // 2026-06-12 架构合理化: mode 运行时单参数 (--mode paper|live, 默认 paper)。
     //   单 binary 双模式; live 需三重显式条件 (--mode live + 凭证齐全 + LIVE_ARMED=1)。
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
             cfg.ml_path = argv[++i];
         // (--ml-poll-sec 已砍 2026-06-05: FeatureRecorder 删, ml_poll_sec 无消费方)
         } else if (a == "--no-paper") {
-            cfg.enable_paper_trading = false;  // 仅观测, 不起 PaperLoop
+            cfg.enable_paper_trading = false;  // 仅观测, 不起 TradingLoop
         } else if (a == "--enable-fills") {
             cfg.enable_paper_fills = true;  // P0-3: 默认仅观测, 显式开火
         } else if (a == "--help" || a == "-h") {
@@ -107,18 +107,18 @@ int main(int argc, char** argv) {
             //  --auto-train / --train-python / --train-script / --min-train-samples / --train-window-days /
             //  --model-reload-interval。保留量化因子/统计计算。模型永不加载/训练/驱动 fair。)
             std::printf(
-                "usage: stcpp_paper_server [--port N] [--host ADDR] [--verbose] [--no-paper]\n"
+                "usage: stcpp_trader_server [--port N] [--host ADDR] [--verbose] [--no-paper]\n"
                 "  --port N         listen port (default 8080)\n"
                 "  --host ADDR      bind address (default 127.0.0.1)\n"
                 "  --verbose        extra WSS/parser debug logging\n"
-                "  --no-paper       observe only, do not run PaperLoop\n"
+                "  --no-paper       observe only, do not run TradingLoop\n"
                 "  --enable-fills   解封 paper 成交 (默认仅观测; 保守默认, 显式才开火)\n"
                 "  (大模型训练/ONNX 推理 flags 已砍 2026-06-05; 量化因子/统计计算保留)\n"
                 "\n"
-                "RunMode::PaperDaemon — paper trading loop + HTTP observability API.\n"
+                "RunMode::TraderDaemon — paper trading loop + HTTP observability API.\n"
                 "  live book: gamma /events discovery -> CLOB WSS market channel\n"
                 "  live score: Goalserve inplay (soccer/basketball/tennis)\n"
-                "  positions/pnl/quote: PaperLoop (R-11 isolated, ToS: VirtualFill only)\n"
+                "  positions/pnl/quote: TradingLoop (R-11 isolated, ToS: VirtualFill only)\n"
                 "  (frontend served by Vite dev server, not this process)\n");
             return 0;
         } else {
@@ -142,14 +142,14 @@ int main(int argc, char** argv) {
         return 3;
     }
 
-    stcpp::app::PaperDaemon daemon(std::move(cfg));
+    stcpp::app::TraderDaemon daemon(std::move(cfg));
     g_daemon.store(&daemon, std::memory_order_release);
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
 
     const stcpp::app::BuildResult br = daemon.Build();
     if (!br.ok) {
-        std::fprintf(stderr, "[paper_server] FATAL: PaperDaemon::Build 失败: %s\n", br.error.c_str());
+        std::fprintf(stderr, "[paper_server] FATAL: TraderDaemon::Build 失败: %s\n", br.error.c_str());
         return 1;
     }
 

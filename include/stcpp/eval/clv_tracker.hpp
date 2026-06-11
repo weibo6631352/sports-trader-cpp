@@ -12,7 +12,7 @@
 // 红线 (小蒋, 前视隔离): CLV 需「未来参考价」→ **只能离线评估, 绝禁进特征/实时推理/决策路径**。
 //   本组件只读已观测的成交 + 事后用收盘/结算价算 CLV, 不回喂任何决策。
 //
-// 用法 (paper_loop, loop_thread_ 单 writer):
+// 用法 (trading_loop, loop_thread_ 单 writer):
 //   RecordFill(token, 成交价, 入场mid, size, ts)   — 每笔买入(建仓)成交后
 //   UpdateMid(token, 市场mid)                        — 每 tick (收盘 mid 取最后值)
 //   OnSettle(token, 结算值0/1)                       — 结算时, 算该 token 所有 fills 的 CLV

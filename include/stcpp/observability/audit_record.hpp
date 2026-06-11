@@ -32,7 +32,7 @@
 //   adr_cite:             ADR-027 Enforce-1
 //
 // 红线:
-//   R-11 paper mode → WalKind::PaperAudit (/var/lib/stcpp/paper/), 同进程不出现 RiskAudit symbol
+//   R-11 paper mode → WalKind::PaperAudit (/var/lib/stcpp/engine/), 同进程不出现 RiskAudit symbol
 //        live  mode → WalKind::RiskAudit  (/var/lib/stcpp/audit/)
 //        build-time switch (STCPP_EXEC_MODE), 不动态切.
 //   R-20 4 ts (event / data_source / ingestion / as_of) 全程透传, emit 前必校 PIT

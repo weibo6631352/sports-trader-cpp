@@ -40,7 +40,7 @@ static std::int64_t NowNs() noexcept {
 TEST(AuditChainReplay, R_chain_02_tamper_detected_by_replay_assertion) {
     WalConfig cfg{};
     cfg.kind = WalKind::PaperAudit;
-    cfg.path_prefix = "/var/lib/stcpp/paper/r_chain_02";
+    cfg.path_prefix = "/var/lib/stcpp/engine/r_chain_02";
     auto wres = WalWriter<AuditRecord>::Open(cfg);
     ASSERT_TRUE(wres);
     auto writer = std::move(wres).value();

@@ -111,7 +111,7 @@ target_link_libraries(bench_e2e_latency      PRIVATE
 # ----- 老姜性能评审 P1: TickAll 决策热路径延迟 vs 市场数曲线 (分片决策前置数据) -----
 stcpp_add_perf_bench(bench_tick_one          bench_tick_one.cpp)
 target_link_libraries(bench_tick_one         PRIVATE
-    stcpp_paper_loop
+    stcpp_trading_loop
     stcpp_orderbook_snapshot_hub
     stcpp_risk
     stcpp_ledger_snapshot_hub

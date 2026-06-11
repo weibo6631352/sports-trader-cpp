@@ -35,7 +35,7 @@ TEST(InplayScoreOdds, IOI01_BothParsed) {
     EXPECT_NEAR(fair, ih / sum, 1e-9) << "inplay bet365 单源 de-vig home fair";
     EXPECT_GT(fair, 0.0);
     EXPECT_LT(fair, 1.0);
-    // 双边/三边完整透传 (不丢信息; orientation 翻转在 paper_loop 按 yes_is_home 做)。
+    // 双边/三边完整透传 (不丢信息; orientation 翻转在 trading_loop 按 yes_is_home 做)。
     ASSERT_EQ(pr.inplay_away_fairs.size(), pr.scores.size());
     ASSERT_EQ(pr.inplay_draw_fairs.size(), pr.scores.size());
     EXPECT_NEAR(pr.inplay_away_fairs[0], ia / sum, 1e-9) << "away de-vig fair (双边完整)";

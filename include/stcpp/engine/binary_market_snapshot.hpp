@@ -1,4 +1,4 @@
-// include/stcpp/paper/binary_market_snapshot.hpp — 二元市场双边盘口决策入参 (老周架构 v1)
+// include/stcpp/engine/binary_market_snapshot.hpp — 二元市场双边盘口决策入参 (老周架构 v1)
 //
 // Owner: 老周 (系统工程部主管 + 架构主权) — 实施 docs/RESEARCH/laozhou-binary-dual-side-arch-v1.md
 // last_review: 2026-05-31
@@ -22,7 +22,7 @@
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/strategy/signal_iface.hpp"  // strategy::Side
 
-namespace stcpp::paper {
+namespace stcpp::engine {
 
 // 一侧 (YES 或 NO token) 的快照 + 可用性。决策入参用, 非存储。
 struct SideView {
@@ -63,4 +63,4 @@ struct DecisionSide {
     double conviction{0.0};                    // 选边置信 (小袁/小梁 M2 填; audit/quote 展示)
 };
 
-}  // namespace stcpp::paper
+}  // namespace stcpp::engine

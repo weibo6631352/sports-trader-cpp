@@ -66,7 +66,7 @@ TEST(AuditChainReplay, R_chain_05_golden_head_deterministic_replay) {
     {
         WalConfig cfg{};
         cfg.kind = WalKind::PaperAudit;
-        cfg.path_prefix = "/var/lib/stcpp/paper/r_chain_05_round1";
+        cfg.path_prefix = "/var/lib/stcpp/engine/r_chain_05_round1";
         auto wres = WalWriter<AuditRecord>::Open(cfg);
         ASSERT_TRUE(wres);
         auto writer = std::move(wres).value();
@@ -84,7 +84,7 @@ TEST(AuditChainReplay, R_chain_05_golden_head_deterministic_replay) {
     {
         WalConfig cfg{};
         cfg.kind = WalKind::PaperAudit;
-        cfg.path_prefix = "/var/lib/stcpp/paper/r_chain_05_round2";
+        cfg.path_prefix = "/var/lib/stcpp/engine/r_chain_05_round2";
         auto wres = WalWriter<AuditRecord>::Open(cfg);
         ASSERT_TRUE(wres);
         auto writer = std::move(wres).value();

@@ -86,7 +86,7 @@ TEST(AuditChainReplay, R_chain_03_strategy_decayed_payload_format) {
 TEST(AuditChainReplay, R_chain_03_strategy_decayed_chain_continuity) {
     WalConfig cfg{};
     cfg.kind = WalKind::PaperAudit;
-    cfg.path_prefix = "/var/lib/stcpp/paper/r_chain_03";
+    cfg.path_prefix = "/var/lib/stcpp/engine/r_chain_03";
     auto wres = WalWriter<AuditRecord>::Open(cfg);
     ASSERT_TRUE(wres);
     auto writer = std::move(wres).value();
@@ -151,7 +151,7 @@ TEST(AuditChainReplay, R_chain_04_strategy_unlock_3sig_format) {
 TEST(AuditChainReplay, R_chain_04_strategy_unlock_chain_continuity) {
     WalConfig cfg{};
     cfg.kind = WalKind::PaperAudit;
-    cfg.path_prefix = "/var/lib/stcpp/paper/r_chain_04";
+    cfg.path_prefix = "/var/lib/stcpp/engine/r_chain_04";
     auto wres = WalWriter<AuditRecord>::Open(cfg);
     ASSERT_TRUE(wres);
     auto writer = std::move(wres).value();

@@ -76,7 +76,7 @@ RiskDecisionInput make_valid_input(AuditEventType type = AuditEventType::OrderAp
 static auto OpenWriter() {
     WalConfig cfg{};
     cfg.kind        = WalKind::PaperAudit;
-    cfg.path_prefix = "/var/lib/stcpp/paper/audit_emitter_test";
+    cfg.path_prefix = "/var/lib/stcpp/engine/audit_emitter_test";
     return WalWriter<AuditRecord>::Open(cfg);
 }
 
@@ -375,11 +375,11 @@ TEST(AuditEmitterPool, PublicEmitWithInjectedChain) {
         return WalWriter<AuditRecord>::Open(cfg);
     };
 
-    auto w0 = open_w("/var/lib/stcpp/paper/pool_test_risk");
-    auto w1 = open_w("/var/lib/stcpp/paper/pool_test_signer");
-    auto w2 = open_w("/var/lib/stcpp/paper/pool_test_ml");
-    auto w3 = open_w("/var/lib/stcpp/paper/pool_test_stats");
-    auto w4 = open_w("/var/lib/stcpp/paper/pool_test_strategy");
+    auto w0 = open_w("/var/lib/stcpp/engine/pool_test_risk");
+    auto w1 = open_w("/var/lib/stcpp/engine/pool_test_signer");
+    auto w2 = open_w("/var/lib/stcpp/engine/pool_test_ml");
+    auto w3 = open_w("/var/lib/stcpp/engine/pool_test_stats");
+    auto w4 = open_w("/var/lib/stcpp/engine/pool_test_strategy");
     ASSERT_TRUE(w0 && w1 && w2 && w3 && w4);
 
     AuditEmitterPool pool(

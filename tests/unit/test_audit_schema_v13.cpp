@@ -92,7 +92,7 @@ static RiskDecisionInput make_v13_input(std::string_view token_id = "79394987953
 static auto open_writer(const char* prefix) {
     WalConfig cfg{};
     cfg.kind = WalKind::PaperAudit;
-    cfg.path_prefix = std::string("/var/lib/stcpp/paper/") + prefix;
+    cfg.path_prefix = std::string("/var/lib/stcpp/engine/") + prefix;
     return WalWriter<AuditRecord>::Open(cfg);
 }
 

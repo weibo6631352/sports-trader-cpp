@@ -106,9 +106,9 @@ set(EXTRA_LIBS_test_sizing_rm_consistency stcpp_sizing stcpp_risk)
 set(EXTRA_LIBS_test_ledger_snapshot_hub   stcpp_ledger_snapshot_hub)
 # 小石 QuoteSnapshotHub: per-market double-buffer 量化报价只读快照 (R-12/R-20 + ML provenance)
 set(EXTRA_LIBS_test_quote_snapshot_hub    stcpp_quote_snapshot_hub)
-# 小肖 PaperLoop: 最小 paper 交易循环 (R-11/R-12/R-20; feat/xiaoxiao-paper-loop)
-set(EXTRA_LIBS_test_paper_loop
-    stcpp_paper_loop
+# 小肖 TradingLoop: 最小 paper 交易循环 (R-11/R-12/R-20; feat/xiaoxiao-paper-loop)
+set(EXTRA_LIBS_test_trading_loop
+    stcpp_trading_loop
     stcpp_orderbook_snapshot_hub
     stcpp_risk
     stcpp_ledger_snapshot_hub
@@ -120,7 +120,7 @@ set(EXTRA_LIBS_test_paper_loop
     stcpp_infra_wal
 )
 
-# 回测多输入回放 P2 (红线#3 闭合): ReplayDecisionInputProvider 注入 PaperLoop (= test_paper_loop 同栈 + 比分 store)
+# 回测多输入回放 P2 (红线#3 闭合): ReplayDecisionInputProvider 注入 TradingLoop (= test_trading_loop 同栈 + 比分 store)
 
 # --- 追加 compile_definitions 映射 ---
 # (仅列出 STCPP_EXEC_MODE_* 以外的额外 define)
@@ -132,7 +132,7 @@ set(EXTRA_DEFS_test_single_instance
     STCPP_BUILD_COMMIT="test-build"
 )
 set(EXTRA_DEFS_test_position_ledger
-    STCPP_POSITION_WAL_PREFIX="/var/lib/stcpp/paper/position"
+    STCPP_POSITION_WAL_PREFIX="/var/lib/stcpp/engine/position"
     STCPP_PID_DIR="/tmp/stcpp_test"
     STCPP_BUILD_COMMIT="test-build"
 )
@@ -149,7 +149,7 @@ set(EXTRA_OPTS_test_audit_schema_v14    -Wno-invalid-offsetof)
 # backtest group: -Wno-conversion (size_t → double 统计计算)
 
 # --- DISCOVERY_TIMEOUT 映射 (默认 30) ---
-set(TIMEOUT_test_paper_loop         60)
+set(TIMEOUT_test_trading_loop         60)
 
 # --- LABELS 映射 (默认 "unit") ---
 set(LABELS_test_slippage_model             "unit")
@@ -184,8 +184,8 @@ set(LABELS_test_feature_store_contract     "unit;feature-store;data-contract;adr
 set(LABELS_test_orderbook_adapter          "unit;polymarket;clob-wss;orderbook-adapter;r-20;r-12;v0.1")
 set(LABELS_test_orderbook_snapshot_hub     "unit;polymarket;clob-wss;snapshot-hub;double-buffer;r-12;r-20;v0.1")
 # 小肖 ReplayDriver v0.1
-# 小肖 PaperLoop v0.1 (feat/xiaoxiao-paper-loop, 2026-05-30)
-set(LABELS_test_paper_loop                 "unit;paper;paper-loop;r-11;r-12;r-20;ci-gating;kelly;xiaoxiao")
+# 小肖 TradingLoop v0.1 (feat/xiaoxiao-paper-loop, 2026-05-30)
+set(LABELS_test_trading_loop                 "unit;paper;paper-loop;r-11;r-12;r-20;ci-gating;kelly;xiaoxiao")
 # 小石 LedgerSnapshotHub v0.1
 set(LABELS_test_ledger_snapshot_hub        "unit;risk;ledger;double-buffer;r-11;r-12;r-20;xiaoshi")
 # 小石 QuoteSnapshotHub v0.1
@@ -264,9 +264,9 @@ stcpp_add_unit_test(stcpp_test_unit_risk risk_enum_coverage_test.cpp)
 # 条件编译 target 文件名集合 (用于从 GLOB 中排除, 避免在不满足条件时尝试注册)
 set(_STCPP_CONDITIONAL_SRCS
     test_fill_rate_model_v2.cpp     # paper only
-    test_paper_daemon.cpp           # paper only (links stcpp_paper_app)
-    test_market_discovery.cpp       # paper only (links stcpp_paper_app; 小宋 MD-01..47)
-    test_event_matcher.cpp          # paper only (links stcpp_paper_app; A0 映射桥)
+    test_trader_daemon.cpp           # paper only (links stcpp_trader_app)
+    test_market_discovery.cpp       # paper only (links stcpp_trader_app; 小宋 MD-01..47)
+    test_event_matcher.cpp          # paper only (links stcpp_trader_app; A0 映射桥)
     # deferred / not-yet-buildable stubs (target library not yet implemented):
 )
 
@@ -301,12 +301,12 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
 
     # 老李 W5 Wave 24: PaperPolymarketClient v0.1 (14 接口 paper mock, R-7/R-11/R-20 enforce)
 
-    # 老雷 PaperDaemon 重构 (老郭 §A.1): 装配 + R-11 detach 生命周期回归 (老韩审计要求)
-    set(EXTRA_LIBS_test_paper_daemon
-        stcpp_paper_app
+    # 老雷 TraderDaemon 重构 (老郭 §A.1): 装配 + R-11 detach 生命周期回归 (老韩审计要求)
+    set(EXTRA_LIBS_test_trader_daemon
+        stcpp_trader_app
     )
-    set(LABELS_test_paper_daemon "unit;paper;paper-daemon;r-11;assembly;lifecycle;laolei")
-    stcpp_add_unit_test(test_paper_daemon test_paper_daemon.cpp)
+    set(LABELS_test_trader_daemon "unit;paper;paper-daemon;r-11;assembly;lifecycle;laolei")
+    stcpp_add_unit_test(test_trader_daemon test_trader_daemon.cpp)
 
     # 老孙 W6 Wave 30: signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
 
@@ -317,12 +317,12 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
 
     # 小宋 market_discovery 单测草案 MD-01..47
     # discovery_detail 纯函数 + ParseSports* Parse 层 fixture 测试 (无网络)
-    set(EXTRA_LIBS_test_market_discovery stcpp_paper_app)
+    set(EXTRA_LIBS_test_market_discovery stcpp_trader_app)
     set(LABELS_test_market_discovery "unit;paper;market-discovery;gamma;parse;xiaosong")
     stcpp_add_unit_test(test_market_discovery test_market_discovery.cpp)
 
     # A0 映射桥 EventMatcher (condition_id↔goalserve event, fail-closed)
-    set(EXTRA_LIBS_test_event_matcher stcpp_paper_app)
+    set(EXTRA_LIBS_test_event_matcher stcpp_trader_app)
     set(LABELS_test_event_matcher "unit;paper;event-matcher;a0;mapping;fail-closed;laolei")
     stcpp_add_unit_test(test_event_matcher test_event_matcher.cpp)
 

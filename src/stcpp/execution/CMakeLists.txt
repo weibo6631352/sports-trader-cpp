@@ -5,7 +5,7 @@
 # 红线 R-7: VirtualMatcher 只在 paper binary 里编译.
 # (Live binary 不该有 "虚拟撮合"; backtest 走 SimMatcher 另外的 target, M5 后)
 #
-# 2026-06-12 单参数切换 (老板令): live binary 复用 paper_loop, 默认 executor
+# 2026-06-12 单参数切换 (老板令): live binary 复用 trading_loop, 默认 executor
 # 在 daemon Build 时被 LiveExecutorAdapter 替换 (SetExecutor seam)。
 # VirtualMatcher 在 live 模式可链接但不在下单路径; 隔离靠 R-11 mode_tag
 # 断言 + R-7 FATAL guard (STCPP_LIVE_INTENT_OK), 非物理不链接。

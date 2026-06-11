@@ -201,7 +201,7 @@ struct AccountSnapshot {
     double clv_positive_rate{0.0};   // 入场优于收盘线命中率 ∈[0,1]
     std::int64_t clv_n{0};           // 已结算计入 CLV 的成交数 (有效性: <~20 噪声大)
     std::int64_t as_of_ts_ns{0};
-    bool has_data{false};           // false = paper_loop 未注入 / 无数据 → 前端降级灰显
+    bool has_data{false};           // false = trading_loop 未注入 / 无数据 → 前端降级灰显
 };
 
 // ============================================================
@@ -380,13 +380,13 @@ struct EventScore {
     std::int64_t kickoff_ts_sec{0};
     // inplay bet365 单源 de-vig 三边 fair — Goalserve home/away/draw 视角 (双边完整, 不丢信息)。
     //   InplayFeedThread 从 ParseResult.inplay_{home,away,draw}_fairs 填; -1=无 odds。
-    //   ⚠ orientation: 这是 home/away 视角, 非 Polymarket YES 视角。paper_loop 按 yes_is_home
+    //   ⚠ orientation: 这是 home/away 视角, 非 Polymarket YES 视角。trading_loop 按 yes_is_home
     //   翻成 YES-canonical 才进 game_row/特征 (away=YES 盘口若不翻 = 镜像反, 绝不可混淆)。
     double inplay_bet365_home_fair{-1.0};
     double inplay_bet365_away_fair{-1.0};
     double inplay_bet365_draw_fair{-1.0};
     // A-step-2 分局盘 sharp (2026-06-04 老板「第一局/第二局」, 小田设计; G-FREEZE-W 只增): 当前段 de-vig
-    //   fair (MVP=tennis 当前盘 Set Winner)。home/away 视角 (同全场, paper_loop 按 yes_is_home 翻 YES)。
+    //   fair (MVP=tennis 当前盘 Set Winner)。home/away 视角 (同全场, trading_loop 按 yes_is_home 翻 YES)。
     //   seg_index = 当前段序号 (tennis 当前盘 1-5; 0=不适用); -1.0 = 当前段无 bet365 赔率 (不交易)。
     double inplay_seg_home_fair{-1.0};
     double inplay_seg_away_fair{-1.0};
@@ -406,7 +406,7 @@ struct EventScore {
     // 终态标志 (2026-06-05 老板 a+b: 完赛必退订 WSS+订单簿 API): IsTerminal(rec.status) —
     //   Ended/Retired/Walkover/Abandoned/Cancelled/Postponed/Removed 全为 true。MapStatus 把
     //   Ended→"final" 但其余终态→"pregame"(歧义), 故单看 status 字符串无法区分"完赛"与"未开赛";
-    //   此 bool 由 ToEventScore 在源头按 IsTerminal 填, 供 daemon 判定完赛 → 立即退订 (不经 paper_loop,
+    //   此 bool 由 ToEventScore 在源头按 IsTerminal 填, 供 daemon 判定完赛 → 立即退订 (不经 trading_loop,
     //   不动 has_real_fair: 误判终态仍 status="pregame"→NotStarted→fail-closed 不交易)。G-FREEZE-W 只增。
     bool is_terminal{false};
 };
@@ -623,9 +623,9 @@ public:
     virtual FeatureHealthReport feature_health() const { return {}; }
     // 映射状态 (老雷 2026-06-01 可观测; 默认空 → 未接 daemon push 返回空)。
     virtual MappingStatusReport mapping_status() const { return {}; }
-    // 账户级现金/估值 (老雷 2026-06-01 凯利评审; 默认空 has_data=false → stub/未注入 paper_loop 灰显)。
+    // 账户级现金/估值 (老雷 2026-06-01 凯利评审; 默认空 has_data=false → stub/未注入 trading_loop 灰显)。
     virtual AccountSnapshot account_snapshot() const { return {}; }
-    // 成交流水 (2026-06-04 老板「看懂买卖价」; 默认空 → stub/未注入 paper_loop 返回空)。
+    // 成交流水 (2026-06-04 老板「看懂买卖价」; 默认空 → stub/未注入 trading_loop 返回空)。
     //   market 非空 → 只返该 condition 的成交 (盯盘按盘看, 不受全局环churn丢失)。
     virtual std::vector<FillView> fills(const std::string& market = "") const { (void)market; return {}; }
 

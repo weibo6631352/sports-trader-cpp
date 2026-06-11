@@ -506,7 +506,7 @@ TEST_F(RiskGatewayTest, R13_EDGE_NEGATED_BY_SLIPPAGE) {
 // ---- 市场 -------------------------------------------------------------------
 
 // R14 (MARKET_TYPE_NOT_ENABLED) 已删: 盘口类型 enable gate 是空壳, 2026-05-31 老板令删,
-//   盘口准入移到定价层 (paper_loop 非 moneyline fail-closed)。MARKET_NOT_ACTIVE 仍是真 gate。
+//   盘口准入移到定价层 (trading_loop 非 moneyline fail-closed)。MARKET_NOT_ACTIVE 仍是真 gate。
 
 TEST_F(RiskGatewayTest, R15_MARKET_NOT_ACTIVE) {
     rm_->set_market_active(kMockConditionId, false);

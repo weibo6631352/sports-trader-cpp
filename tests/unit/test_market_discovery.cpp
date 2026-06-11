@@ -10,9 +10,9 @@
 //   §2.4 ParseSportsEvents      MD-40..47 (fixture JSON 喂, 无网络)
 //   额外: ExtractJsonStr 基础用例 + ExtractMarketsArray 覆盖
 //
-// 链接库: stcpp_paper_app (包含 market_discovery.cpp)
+// 链接库: stcpp_trader_app (包含 market_discovery.cpp)
 // 注册: tests/unit/CMakeLists.txt §6 paper-only 块
-//   EXTRA_LIBS_test_market_discovery stcpp_paper_app
+//   EXTRA_LIBS_test_market_discovery stcpp_trader_app
 //   LABELS_test_market_discovery "unit;paper;market-discovery;gamma;parse;xiaosong"
 
 #include <string>

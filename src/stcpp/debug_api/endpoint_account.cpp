@@ -6,7 +6,7 @@
 //   kelly_bankroll_basis: 口径说明字符串, 让操盘员一眼确认「风控纸面化」已修 (动态 vs 静态)。
 //   §3 schema 铁律: 顶层 mode (R-11), as_of_ts epoch_ns int64 (R-20)。
 //
-// 只读: provider 经 daemon 回调读 paper_loop 发布的线程安全权益快照。未注入 → has_data=false (前端灰显)。
+// 只读: provider 经 daemon 回调读 trading_loop 发布的线程安全权益快照。未注入 → has_data=false (前端灰显)。
 
 #include <cstdint>
 #include <string>

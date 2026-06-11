@@ -219,7 +219,7 @@ public:
 // ---------------------------------------------------------------------------
 // 6b. de-vig + 信号融合 纯函数 (P1-8 / P0-3 dogfood-remediation)
 //
-// 这些是无状态 noexcept 纯函数, 供 paper_loop 把 edge 锚在"去 vig 的 fair 概率"
+// 这些是无状态 noexcept 纯函数, 供 trading_loop 把 edge 锚在"去 vig 的 fair 概率"
 // 而非裸 mid/ask (后者含庄家 overround → 系统性偏高 → P1-8 假 edge).
 // 同时给 in-play 真实先验提供置信加权凸组合工具 (P0-3).
 // ---------------------------------------------------------------------------
@@ -308,7 +308,7 @@ public:
 }
 
 // inplay_score_prior_yes: 比分差 + 时钟 → YES 先验 (与 BaselineFairValueModel 同形,
-//   但作为独立纯函数供 paper_loop 直接用, 不经 normalize). is_terminal=true 时
+//   但作为独立纯函数供 trading_loop 直接用, 不经 normalize). is_terminal=true 时
 //   返回确定性近似 (领先→近 1, 落后→近 0, 平→0.5), 不再受时钟影响.
 //   非终态: sigmoid(alpha*diff + beta*diff*time_frac) — time 项耦合 (带符号) score
 //   领先, 故 0:0 恒 0.5, 领先随时间更确定.

@@ -3,7 +3,7 @@
 // Owner: 老雷 (GM) — M1 路线评审会决议 A0 (docs/MEETINGS/2026-05-30-m1-route-review.md)
 // last_review: 2026-05-30
 //
-// 归属: app 编排层 (stcpp_paper_app 库). 消费 EventScore (debug_api) + market 队名/kickoff,
+// 归属: app 编排层 (stcpp_trader_app 库). 消费 EventScore (debug_api) + market 队名/kickoff,
 //   app → debug_api 单向 (老周架构裁定 B1)。
 //
 // 职责: 把 Polymarket gamma market (两队名 outcomes + gameStartTime) 锚定到 Goalserve
@@ -47,7 +47,7 @@ struct EventMatchInput {
     //   仅锚定 (取分源) 不受影响; 影响下游 sharp fair 选哪一边 (老雷 2026-06-01 盈利修复)。
     bool is_draw{false};
     // A-step-2 分局盘 (2026-06-04 老板「第一局/第二局」): 此盘 segment 序号 (tennis 盘号 1-5; 0=全场盘)。
-    //   仅锚定 (取分源) 不受影响; 透传到 EventMapEntry.seg_index, 下游 paper_loop 用当前段 fair。
+    //   仅锚定 (取分源) 不受影响; 透传到 EventMapEntry.seg_index, 下游 trading_loop 用当前段 fair。
     int seg_index{0};
 };
 

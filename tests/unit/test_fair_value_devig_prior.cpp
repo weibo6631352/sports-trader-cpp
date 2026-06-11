@@ -38,7 +38,7 @@ using namespace stcpp::pricing;
 
 constexpr double kTol = 1e-9;
 
-// edge(bps) = |p_fair - p_anchor| * 10000, 复刻 paper_loop 锚定语义.
+// edge(bps) = |p_fair - p_anchor| * 10000, 复刻 trading_loop 锚定语义.
 double edge_bps(double p_fair, double p_anchor) {
     return std::fabs(p_fair - p_anchor) * 10'000.0;
 }
@@ -165,7 +165,7 @@ TEST(FairValueDevigPrior, D08_InplayScorePrior) {
 // ---------------------------------------------------------------------------
 // D09: REGRESSION — Spain outright 0.169, 无真实先验 → fair=de-vig → edge≈0
 //
-// 复刻 paper_loop has_real_fair=false 路径: p_fair = p_market_devig.
+// 复刻 trading_loop has_real_fair=false 路径: p_fair = p_market_devig.
 // 单边 (无 NO book) de-vig 退化为裸 0.169; fair 锚在同一值上 → edge=0.
 // 这就是 P0-3 假阳性 (1076bps) 的根除点.
 // ---------------------------------------------------------------------------
@@ -175,7 +175,7 @@ TEST(FairValueDevigPrior, D09_SpainOutright_NoFalsePositive) {
     ASSERT_TRUE(devig.has_value());
     const double p_market_devig = *devig;
 
-    // has_real_fair=false → p_fair = p_market_devig (paper_loop 锚定语义)
+    // has_real_fair=false → p_fair = p_market_devig (trading_loop 锚定语义)
     const double p_fair = p_market_devig;
 
     EXPECT_NEAR(p_market_devig, 0.169, kTol);
@@ -236,7 +236,7 @@ TEST(FairValueDevigPrior, D12_InPlayLeadBlend) {
 // ============================================================
 
 TEST(FairValueDevigPrior, D13_Devig_NaN) {
-    // paper_loop 单边场景真实传 NaN no_token_mid → 应退化为 yes 边, 不 crash
+    // trading_loop 单边场景真实传 NaN no_token_mid → 应退化为 yes 边, 不 crash
     const double nan = std::numeric_limits<double>::quiet_NaN();
     const auto r = devig_binary(0.62, nan);
     ASSERT_TRUE(r.has_value());

@@ -130,8 +130,8 @@ target_link_libraries(stcpp_debug_api PUBLIC Threads::Threads)
 find_package(ZLIB REQUIRED)
 target_link_libraries(stcpp_debug_api PUBLIC ZLIB::ZLIB)
 
-# 注: stcpp_paper_server / stcpp_paper_runtime 可运行入口已迁至 src/stcpp/app/
-#     (PaperDaemon 重构, 老郭 §A.1 / 老周架构裁定 B1). debug_api 仅保留契约库,
-#     绝不含 paper_daemon.cpp — 库依赖保持 Threads only, 防 §A.2 "什么都连" 膨胀.
+# 注: stcpp_trader_server / stcpp_paper_runtime 可运行入口已迁至 src/stcpp/app/
+#     (TraderDaemon 重构, 老郭 §A.1 / 老周架构裁定 B1). debug_api 仅保留契约库,
+#     绝不含 trader_daemon.cpp — 库依赖保持 Threads only, 防 §A.2 "什么都连" 膨胀.
 
 message(STATUS "stcpp_debug_api: cpp-httplib v0.16.3 (header-only) | mode=${STCPP_EXEC_MODE} | git=${STCPP_GIT_HASH_RAW}")

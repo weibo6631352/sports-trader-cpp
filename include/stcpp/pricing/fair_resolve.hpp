@@ -4,7 +4,7 @@
 //   抽成一处显式声明的纯函数。输入全是已算好的标量, 输出 p_fair + provenance。
 // last_review: 2026-06-01
 //
-// 优先级 (显式钉死, 一处可读 — 原散在 paper_loop TickOne ~571-696 的隐式 if 链):
+// 优先级 (显式钉死, 一处可读 — 原散在 trading_loop TickOne ~571-696 的隐式 if 链):
 //   1. derivative (totals/spreads 专属定价) → 覆盖, 不叠 sharp/score/ML (派生解析模型即该盘 fair)
 //   2. sharp-anchor (Goalserve bet365 in-play de-vig 共识) → 有真比分 + sharp 有效时锚 sharp
 //   3. score-prior blend (FairValueEstimator 先验 × 市场 de-vig, 置信加权) → sharp 无效时回落

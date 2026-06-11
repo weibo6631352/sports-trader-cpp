@@ -12,7 +12,7 @@
 //   PIT (ML-R8): 只 push 已观测样本; ts = 上游 data_source_ts_ns (禁本地 now())。
 //     窗口 [as_of − W, as_of] 只含过去样本 (ring 从不存未来)。as_of = 最新样本 ts。
 //   BR-1: 纯逻辑 / 无 IO / 无锁 / 无 now()。回测按事件序 replay 喂同一组件 → 派生特征逐位一致。
-//     调用方 (paper_loop live / backtest replay) 保证 push-then-read 的事件序; 组件本身无时间观念。
+//     调用方 (trading_loop live / backtest replay) 保证 push-then-read 的事件序; 组件本身无时间观念。
 //   R-12: 定长 ring (kCapacity 上限), 无堆分配 / 无 unbounded 扫描; loop_thread_ 单 writer 无锁。
 //   单调: ts 须单调递增 (事件序); ts ≤ last 的乱序/重复样本跳过 (PIT 保护 + 防停滞 book 灌重复)。
 //

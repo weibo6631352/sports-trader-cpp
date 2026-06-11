@@ -12,7 +12,7 @@
 // 设计 (IO 离决策线程, R-12):
 //   独立线程周期读 ScoreSnapshotStore::GetSnapshot() → 每帧一行 JSONL (整个 ScoreMap 快照)。
 //   去重: 帧内最大 as_of_ts_ns 未推进则跳过 (只在比分数据前进时落帧, 防膨胀)。
-//   replay 侧按 frame_ts_ns 排序重建 ScoreMap, 经 PaperLoop::SetReplayInputs 注入。
+//   replay 侧按 frame_ts_ns 排序重建 ScoreMap, 经 TradingLoop::SetReplayInputs 注入。
 //   输出行: {"frame_ts_ns":N,"n":K,"scores":[{EventScore 全字段+4ts+inplay}, ...]}
 //
 // R-20: 透传 EventScore 自带 4ts (event_ts/data_source_ts/ingestion_ts/as_of_ts), 不用 now() 替代上游 ts。

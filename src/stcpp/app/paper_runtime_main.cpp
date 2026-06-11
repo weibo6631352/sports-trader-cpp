@@ -1,12 +1,12 @@
 // src/stcpp/app/paper_runtime_main.cpp — headless paper 常驻进程入口 (systemd)
 //
-// Owner: 老雷 (GM) — PaperDaemon 重构 (老郭 §A.1): systemd stcpp-paper.service 期待的
-//   /opt/stcpp/bin/paper_runtime. 复用 stcpp::app::PaperDaemon (RunMode::Headless, 无 HTTP).
+// Owner: 老雷 (GM) — TraderDaemon 重构 (老郭 §A.1): systemd stcpp-paper.service 期待的
+//   /opt/stcpp/bin/paper_runtime. 复用 stcpp::app::TraderDaemon (RunMode::Headless, 无 HTTP).
 //
 // last_review: 2026-05-30
 //
 // 角色: RunMode::Headless —— 无 HTTP 观测端, stderr → journald (老吴部署对齐 §3).
-//   全天候跑 PaperLoop + ML 采集; 观测看板由独立 stcpp_paper_server (按需起) 提供.
+//   全天候跑 TradingLoop + ML 采集; 观测看板由独立 stcpp_trader_server (按需起) 提供.
 //
 // R-11 硬 gate (老韩 R-11 审计 G1-G4): main() 第一件事跑 mode 一致性校验.
 //   mode 唯一真相源 = build-time (execution::ExecutionContext::Mode()); PAPER_MODE env 仅做冗余交叉校验.
@@ -23,13 +23,13 @@
 #include <string>
 #include <utility>
 
-#include "stcpp/app/paper_daemon.hpp"
+#include "stcpp/app/trader_daemon.hpp"
 #include "stcpp/execution/execution_mode.hpp"
 #include "stcpp/infra/process/single_instance.hpp"  // 程序级防多开 (PID+flock)
 
 namespace {
 
-std::atomic<stcpp::app::PaperDaemon*> g_daemon{nullptr};
+std::atomic<stcpp::app::TraderDaemon*> g_daemon{nullptr};
 
 void handle_signal(int /*sig*/) {
     if (auto* d = g_daemon.load(std::memory_order_acquire)) {
@@ -91,7 +91,7 @@ int main(int argc, char** argv) {
 
     enforce_paper_mode_gates();  // R-11: 起 daemon 前第一件事
 
-    stcpp::app::PaperDaemonConfig cfg;
+    stcpp::app::TraderDaemonConfig cfg;
     cfg.mode = stcpp::app::RunMode::Headless;
     cfg.exec_mode = stcpp::debug_api::ExecMode::Paper;  // G2 已校验
 
@@ -126,14 +126,14 @@ int main(int argc, char** argv) {
         return 3;
     }
 
-    stcpp::app::PaperDaemon daemon(std::move(cfg));
+    stcpp::app::TraderDaemon daemon(std::move(cfg));
     g_daemon.store(&daemon, std::memory_order_release);
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
 
     const stcpp::app::BuildResult br = daemon.Build();
     if (!br.ok) {
-        std::fprintf(stderr, "[paper_runtime] FATAL: PaperDaemon::Build 失败: %s\n", br.error.c_str());
+        std::fprintf(stderr, "[paper_runtime] FATAL: TraderDaemon::Build 失败: %s\n", br.error.c_str());
         return 1;
     }
     std::printf("[paper_runtime] Build OK: markets=%zu tokens=%zu; 进入 headless 常驻\n", br.market_count,

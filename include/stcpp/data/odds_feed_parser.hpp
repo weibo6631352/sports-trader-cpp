@@ -49,7 +49,7 @@ struct BookResultOdds {
     bool   present = false;  // true = 至少 home+away 就位且 > 1.0
 };
 
-// 一场比赛的跨庄家赛果赔率 (中性: 未按 PM YES/NO 定向; 定向在 paper_loop 按 yes_is_home)。
+// 一场比赛的跨庄家赛果赔率 (中性: 未按 PM YES/NO 定向; 定向在 trading_loop 按 yes_is_home)。
 struct MatchResultOdds {
     std::string  match_id;
     std::string  home_team;

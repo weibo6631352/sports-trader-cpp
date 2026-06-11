@@ -59,7 +59,7 @@ TEST(AuditChainReplay, R_chain_01_20_records_chain_assertion_pass) {
     // Open writer
     WalConfig cfg{};
     cfg.kind = WalKind::PaperAudit;
-    cfg.path_prefix = "/var/lib/stcpp/paper/r_chain_01";
+    cfg.path_prefix = "/var/lib/stcpp/engine/r_chain_01";
     auto wres = WalWriter<AuditRecord>::Open(cfg);
     ASSERT_TRUE(wres);
     auto writer = std::move(wres).value();

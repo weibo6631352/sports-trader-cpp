@@ -636,7 +636,7 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
         // inplay bet365 odds → 单源 de-vig 赛果 fair。**按 sport 选赛果盘 (name allowlist)**,
         //   不再硬编码 soccer market_id="1" (小田: 现网字典 id=1="Home Team Goals" 非赛果, 旧路径
         //   疑似一直错; 且只 soccer 有 → 网球/篮球 sharp fair 全 dead → 非足球零成交根因 2026-06-01)。
-        //   双边/三边完整透传 (home/away/draw); orientation 在 paper_loop 按 yes_is_home 翻 YES-canonical。
+        //   双边/三边完整透传 (home/away/draw); orientation 在 trading_loop 按 yes_is_home 翻 YES-canonical。
         //   从同一 event_block 切 odds 节点 (共享 updated_ts, R-20 守法)。无 odds / 选不到盘 → -1.0 sentinel。
         double home_fair = -1.0, away_fair = -1.0, draw_fair = -1.0;
         double seg_home_fair = -1.0, seg_away_fair = -1.0;  // A-step-2 当前段 fair (-1=无段赔率)

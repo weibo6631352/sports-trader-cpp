@@ -3,7 +3,7 @@
 // 三方评审一致最优先数据: "单 tick 耗时 vs 市场数曲线" (老周) / "TickAll latency budget" (老姜)。
 // 它是后续所有分片/优化决策的前置数据 —— 没这条曲线, 决策线程分片/锁优化都是拍脑袋 (反过度设计)。
 //
-// 测的是: PaperLoop::TickAllForBench() 同步跑一次 (不经 RunLoop sleep), 遍历 N condition × TickOne。
+// 测的是: TradingLoop::TickAllForBench() 同步跑一次 (不经 RunLoop sleep), 遍历 N condition × TickOne。
 //   stub fair 路径 (无 score_store → has_real_fair=false → 无 intent): 测的是 per-condition 基线
 //   (hub Read×2 + de-vig + extract_full×2 + quote/fv publish), 即 ONNX 之外的决策成本。
 //   ⚠ 本 bench 不含 ONNX predict (ml_model_=nullptr) — ONNX 延迟另测 (bench_onnx_predict, 待补)。
@@ -15,7 +15,7 @@
 
 #include <benchmark/benchmark.h>
 
-#include "stcpp/paper/paper_loop.hpp"
+#include "stcpp/engine/trading_loop.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/ledger_snapshot_hub.hpp"
@@ -25,7 +25,7 @@
 #include "stcpp/sizing/quote_snapshot_hub.hpp"
 
 using namespace stcpp;
-using namespace stcpp::paper;
+using namespace stcpp::engine;
 using namespace stcpp::polymarket::clob_wss;
 using namespace stcpp::risk;
 using namespace stcpp::sizing;
@@ -60,7 +60,7 @@ std::int64_t NowNs() {
         .count();
 }
 
-// 构建 N 市场的 PaperLoop (token_map N 项 + hub 各 2 book), 返回 loop (deps 由 out-params 保活)。
+// 构建 N 市场的 TradingLoop (token_map N 项 + hub 各 2 book), 返回 loop (deps 由 out-params 保活)。
 struct LoopHarness {
     std::unique_ptr<OrderBookSnapshotHub> hub;
     std::unique_ptr<LedgerSnapshotHub> ledger_hub;
@@ -69,7 +69,7 @@ struct LoopHarness {
     std::unique_ptr<PositionLedger> ledger;
     std::unique_ptr<RiskGateway> rm;
     std::unique_ptr<BaselineFairValueModel> fv_model;
-    std::unique_ptr<PaperLoop> loop;
+    std::unique_ptr<TradingLoop> loop;
 };
 
 LoopHarness BuildHarness(int n_markets) {
@@ -102,13 +102,13 @@ LoopHarness BuildHarness(int n_markets) {
         h.hub->Publish(no, MakeBook(0.45, 0.50, now));
     }
 
-    PaperLoopConfig cfg;
+    TradingLoopConfig cfg;
     cfg.tick_interval_ms = 50;
     cfg.bankroll_usdc = 1000.0;
     cfg.n_effective = 30;
     cfg.z_90 = 1.645;
     cfg.strategy_id = "bench";
-    h.loop = std::make_unique<PaperLoop>(*h.hub, *h.rm, *h.ledger, *h.ledger_hub, *h.quote_hub,
+    h.loop = std::make_unique<TradingLoop>(*h.hub, *h.rm, *h.ledger, *h.ledger_hub, *h.quote_hub,
                                          h.rm_snap.get(), *h.fv_model, std::move(token_map), cfg);
     return h;
 }

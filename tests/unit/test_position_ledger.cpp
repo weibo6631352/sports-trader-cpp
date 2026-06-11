@@ -383,7 +383,7 @@ TEST(PositionLedger, T4_PitViolation_Rejected) {
 // ===========================================================================
 TEST(PositionLedger, T5_WalKindPhysicalIsolation) {
     // R-11: WalKind::Position PathRootOf = "/var/lib/stcpp/exec/"
-    //   paper path: /var/lib/stcpp/paper/position*.wal
+    //   paper path: /var/lib/stcpp/engine/position*.wal
     //   live  path: /var/lib/stcpp/live/position*.wal
     //   两者 prefix 不同 → WalWriter::Open() path prefix 硬校验保障
     //
@@ -394,7 +394,7 @@ TEST(PositionLedger, T5_WalKindPhysicalIsolation) {
     // paper 期望路径 (CMake 注入 paper 模式时)
     // live  期望路径 (CMake 注入 live 模式时)
     // 两者不相等 (R-7 / R-11 物理隔离)
-    const std::string paper_path = "/var/lib/stcpp/paper/position";
+    const std::string paper_path = "/var/lib/stcpp/engine/position";
     const std::string live_path = "/var/lib/stcpp/live/position";
     EXPECT_NE(paper_path, live_path) << "paper/live position WAL paths must differ (R-7 physical isolation)";
 

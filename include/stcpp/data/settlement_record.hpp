@@ -5,7 +5,7 @@
 //
 // 用途 (CLV 尺子 + 3b 权威结算的数据源):
 //   轮询 clob /markets/{condition_id} → SettlementRecord。检测收盘 (accepting_orders true→false)
-//   + 权威结算 (closed=true + tokens[].winner)。喂 paper_loop SetResolutionByCondition (3b 已接)
+//   + 权威结算 (closed=true + tokens[].winner)。喂 trading_loop SetResolutionByCondition (3b 已接)
 //   + 给 CLV close_fair 参考价。
 //
 // 红线:

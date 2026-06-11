@@ -8,7 +8,7 @@
 //   shared_ptr<const map> + mutex 短锁 swap (Apple libc++ atomic<shared_ptr> 不全)。
 //   R-12: 锁持有 = shared_ptr 拷贝 (~5ns), hash lookup 锁外。
 //
-// join key 在生产侧 (CommentariesParser) 与消费侧 (paper_loop es) 共用 MakeLiveStatsJoinKey,
+// join key 在生产侧 (CommentariesParser) 与消费侧 (trading_loop es) 共用 MakeLiveStatsJoinKey,
 //   保证两端构造一致 (同源 Goalserve 队名; normalize = trim+lower 抗大小写/空白)。
 #pragma once
 

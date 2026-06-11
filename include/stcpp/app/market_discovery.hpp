@@ -1,9 +1,9 @@
 // include/stcpp/app/market_discovery.hpp — Gamma /events + /markets 体育市场发现
 //
-// Owner: 老雷 (GM) — 从 debug_server_main.cpp 抽出 (PaperDaemon 重构, 老郭 §A.1)
+// Owner: 老雷 (GM) — 从 debug_server_main.cpp 抽出 (TraderDaemon 重构, 老郭 §A.1)
 // last_review: 2026-05-30
 //
-// 归属: app 编排层 (stcpp_paper_app 库, 老周架构裁定 B1 — 不进 debug_api 契约库).
+// 归属: app 编排层 (stcpp_trader_app 库, 老周架构裁定 B1 — 不进 debug_api 契约库).
 //   依赖方向 app → debug_api 单向.
 //
 // 职责: 从 Polymarket gamma REST 发现活跃体育 Event/Market/Token, 产出

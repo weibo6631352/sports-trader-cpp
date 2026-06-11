@@ -1,35 +1,35 @@
-// include/stcpp/app/paper_daemon.hpp — PaperDaemon: paper 常驻进程编排层
+// include/stcpp/app/trader_daemon.hpp — TraderDaemon: paper 常驻进程编排层
 //
-// Owner: 老雷 (GM) — PaperDaemon 重构 (老郭 deadcode-review §A.1 配套落地)
+// Owner: 老雷 (GM) — TraderDaemon 重构 (老郭 deadcode-review §A.1 配套落地)
 // last_review: 2026-05-30
 //
-// 归属: app 编排层 (stcpp_paper_app 库). 老周架构裁定 B1:
-//   PaperDaemon 不进 stcpp_debug_api 契约库 (该库现仅 link Threads). 装进库会把
-//   11 个重依赖 (orderbook_hub/risk/paper_loop/pricing/signer/execution/inplay/OpenSSL)
+// 归属: app 编排层 (stcpp_trader_app 库). 老周架构裁定 B1:
+//   TraderDaemon 不进 stcpp_debug_api 契约库 (该库现仅 link Threads). 装进库会把
+//   11 个重依赖 (orderbook_hub/risk/trading_loop/pricing/signer/execution/inplay/OpenSSL)
 //   灌进契约库, 坐实老郭 §A.2 "debug_api 什么都连" 的膨胀. 故新建 thin app 层,
-//   依赖方向 app → debug_api 单向; debug_api 库 source 绝不含 paper_daemon.cpp.
+//   依赖方向 app → debug_api 单向; debug_api 库 source 绝不含 trader_daemon.cpp.
 //
 // 职责: 把 paper daemon 的 8+ 组件装配逻辑从 debug_server_main.cpp 的 main() 函数体
 //   抽出, 用 Build()/Start()/WaitForStop()/Shutdown() 表达 11 步启动序与反序关停.
 //   两个 binary 共用同一份 Build() 写栈:
-//     - stcpp_paper_server  → RunMode::PaperDaemon (带 HTTP 观测端)
+//     - stcpp_trader_server  → RunMode::TraderDaemon (带 HTTP 观测端)
 //     - stcpp_paper_runtime → RunMode::Headless    (无 HTTP, systemd 常驻)
 //
 // 设计 (老周三段式裁定 + 老韩 R-11 硬 gate):
 //   Build()       — 发现 + 装配全部组件, 不起任何线程 (异常安全: 半装配可析构).
-//   Start()       — 按 11 步序起线程 (inplay → WSS → paper_loop → ml → http).
+//   Start()       — 按 11 步序起线程 (inplay → WSS → trading_loop → ml → http).
 //   WaitForStop() — 阻塞至 RequestStop().
-//   Shutdown()    — 反序优雅停 (幂等): server → ml → paper_loop(join) → detach
-//                   → inplay → wss. ~PaperDaemon() 兜底再调 (双保险).
+//   Shutdown()    — 反序优雅停 (幂等): server → ml → trading_loop(join) → detach
+//                   → inplay → wss. ~TraderDaemon() 兜底再调 (双保险).
 //
-// 红线守法 (逐字保持自 debug_server_main.cpp, 不改 PaperLoop 本身):
+// 红线守法 (逐字保持自 debug_server_main.cpp, 不改 TradingLoop 本身):
 //   R-11: paper 不污染真账本 —— paper_position_ledger_ 永远是私有
 //         make_unique<PositionLedger>() (与 live 物理隔离); NullAuditEmitter 不落真 WAL.
 //         **detach_rm_debug_snapshot() 是进程级全局单例 hook (老韩 INV-1 最高危):**
 //         Shutdown 显式 detach + 析构兜底 detach (幂等); 成员声明序保证
-//         paper_rm_snap_ 在 paper_loop_ 之前声明 (→ paper_loop_ 逆序先析构), 杜绝
+//         paper_rm_snap_ 在 trading_loop_ 之前声明 (→ trading_loop_ 逆序先析构), 杜绝
 //         全局 hook 指向已析构 snap 的 UAF.
-//   R-12: 所有后台线程独立 (PaperLoop jthread / InplayFeed / WSS io_thread / HTTP),
+//   R-12: 所有后台线程独立 (TradingLoop jthread / InplayFeed / WSS io_thread / HTTP),
 //         绝不进彼此 event loop. hub Read/Publish 原子无锁.
 //   R-20: 4 时间戳全链路透传 (data_source_ts 来自 hub 快照, 禁本地 now() 替代上游).
 //
@@ -51,7 +51,7 @@
 #include "stcpp/polymarket/live_order_gate.hpp"
 #include "stcpp/app/event_matcher.hpp"     // EventMatcher / EventMatchInput (A1 映射桥)
 #include "stcpp/app/market_discovery.hpp"  // DiscoveredEvent
-#include "stcpp/paper/paper_loop.hpp"      // PaperLoop / PaperLoopConfig + paper 栈全套类型
+#include "stcpp/engine/trading_loop.hpp"      // TradingLoop / TradingLoopConfig + paper 栈全套类型
 
 #include "src/stcpp/debug_api/real_state_provider.hpp"  // RealStateProvider / MarketTokenMap / LiveMetricsHooks / ExecMode / EventInfo
 
@@ -83,19 +83,19 @@ namespace stcpp::app {
 // RunMode — paper daemon 进程角色 (老郭 §A.1.2: 钉死合法集, 不用裸 bool 组合)
 //
 // 老周裁定: 只留两档真实角色 (各有 binary/systemd unit 需要). "只观测不交易" 用
-//   PaperDaemonConfig.enable_paper_trading flag 表达, 不上升为枚举档 (避免过度设计).
+//   TraderDaemonConfig.enable_paper_trading flag 表达, 不上升为枚举档 (避免过度设计).
 //
 // 注意 (R-7 正交): RunMode 是运行期进程角色 (http vs headless), 与 build-time
 //   STCPP_EXEC_MODE (paper/live/backtest, R-7/R-11 真相源) 正交. RunMode 不切交易模式.
 // ---------------------------------------------------------------------------
 enum class RunMode : std::uint8_t {
-    PaperDaemon = 0,  // 带 HTTP 观测端 (= 现 stcpp_paper_server)
+    TraderDaemon = 0,  // 带 HTTP 观测端 (= 现 stcpp_trader_server)
     Headless = 1,     // 无 HTTP, systemd 常驻 (= stcpp_paper_runtime)
 };
 
 [[nodiscard]] constexpr const char* ToString(RunMode m) noexcept {
     switch (m) {
-        case RunMode::PaperDaemon:
+        case RunMode::TraderDaemon:
             return "paper-daemon";
         case RunMode::Headless:
             return "headless";
@@ -104,15 +104,15 @@ enum class RunMode : std::uint8_t {
 }
 
 // ---------------------------------------------------------------------------
-// PaperDaemonConfig — 运行参数
+// TraderDaemonConfig — 运行参数
 // ---------------------------------------------------------------------------
-struct PaperDaemonConfig {
-    RunMode mode{RunMode::PaperDaemon};
+struct TraderDaemonConfig {
+    RunMode mode{RunMode::TraderDaemon};
 
     // build-time 执行模式 (R-7/R-11 真相源; main 持 STCPP_EXEC_MODE 宏注入, app 库不依赖宏)
     debug_api::ExecMode exec_mode{debug_api::ExecMode::Paper};
 
-    // HTTP 观测端 (仅 RunMode::PaperDaemon 生效)
+    // HTTP 观测端 (仅 RunMode::TraderDaemon 生效)
     std::uint16_t port{8080};
     std::string host{"127.0.0.1"};
 
@@ -131,24 +131,24 @@ struct PaperDaemonConfig {
     std::string ml_path{"data/ml_capture/quotes.jsonl"};  // settlement/score 落盘路径基 (record_ml; "ml" 名沿用)
     // (ml_poll_sec [FeatureRecorder 采集间隔] 已砍 2026-06-05: FeatureRecorder 删, settlement/score recorder 自有周期)
 
-    // 仅观测不交易 (老周: 替代 ObserverOnly 枚举档). true=起 PaperLoop (默认).
+    // 仅观测不交易 (老周: 替代 ObserverOnly 枚举档). true=起 TradingLoop (默认).
     bool enable_paper_trading{true};
 
     // A2 (老韩 D3/D4 签字放行): 解封 paper 成交. true → advisory_markets_no_intent=false
     //   (has_real_fair=true 时产生 paper intent → RM → VirtualFill → 写私有 paper ledger).
     //   false → 仅观测 (advisory gate 拦 intent, 零成交). qf.advisory 恒 true 不受影响 (ML-R2).
-    //   收口在此 (老韩红线1): PaperLoopConfig 默认仍 true (backward compat), 仅 daemon 显式翻.
+    //   收口在此 (老韩红线1): TradingLoopConfig 默认仍 true (backward compat), 仅 daemon 显式翻.
     //   **默认 false (P0-3 安全默认, 老郭审查): 生产 daemon 默认仅观测, 显式 --enable-fills 才开火.
     //   价值观 #1/#2 (实盘优先 + 纪律>收益): 解封成交必须运维显式开, 非编译期默认.**
     bool enable_paper_fills{false};
 
     // Phase 0 联合评审 (2026-05-31): 生产开启动态 reservation (n_eff/margin 接时序+vig) + net-EV 门。
-    //   true (生产默认) → daemon 置 PaperLoopConfig.dynamic_reservation/net_ev_gate=true。
+    //   true (生产默认) → daemon 置 TradingLoopConfig.dynamic_reservation/net_ev_gate=true。
     //   false → 用 lib 静态默认 (n=200/static floor; 管线机制测试关掉新门, 单测新门另测)。
     bool enable_phase0_gates{true};
 
     // sharp 驱动门 (2026-06-04 老板「sharp 驱动 + 赔率 edge 线」): 仅高置信 sharp(bet365) 信号产单。
-    //   true (生产默认) → daemon 置 PaperLoopConfig.sharp_only_gate=true (其余源回退市场, edge 归零)。
+    //   true (生产默认) → daemon 置 TradingLoopConfig.sharp_only_gate=true (其余源回退市场, edge 归零)。
     //   false → 通用 fill 管线 (管线机制测试用 score-prior/任意 edge 出成交; sharp 选盘逻辑另有单测)。
     bool sharp_only_gate{true};
 
@@ -177,10 +177,10 @@ struct PaperDaemonConfig {
     int max_events{2000};
     int max_markets_flat{10};
 
-    // PaperLoop 参数 (daemon 默认: 500ms tick, 1K pUSD demo bankroll — 逐字对齐原 main).
-    // 指定初始化器仅覆盖 bankroll, 其余沿用 PaperLoopConfig 在类默认 (tick=500/n_eff=30/
+    // TradingLoop 参数 (daemon 默认: 500ms tick, 1K pUSD demo bankroll — 逐字对齐原 main).
+    // 指定初始化器仅覆盖 bankroll, 其余沿用 TradingLoopConfig 在类默认 (tick=500/n_eff=30/
     // z=1.645/strategy_id="paper-demo-v1"/set_rm_running=true).
-    stcpp::paper::PaperLoopConfig paper_loop{.bankroll_usdc = 1000.0};
+    stcpp::engine::TradingLoopConfig trading_loop{.bankroll_usdc = 1000.0};
 };
 
 // ---------------------------------------------------------------------------
@@ -194,23 +194,23 @@ struct BuildResult {
 };
 
 // ---------------------------------------------------------------------------
-// PaperDaemon — paper 常驻进程编排
+// TraderDaemon — paper 常驻进程编排
 //
 // 生命周期: 构造 → [InjectMarkets()] → Build() → Start() → WaitForStop() → Shutdown().
 //   或便捷: 构造 → [InjectMarkets()] → Build() → Run() (= Start+WaitForStop+Shutdown).
 // 线程安全: Build/Start/Shutdown 由主线程调用 (非热路径). RequestStop() 可信号上下文调.
 // ---------------------------------------------------------------------------
-class PaperDaemon {
+class TraderDaemon {
 public:
-    explicit PaperDaemon(PaperDaemonConfig cfg) noexcept;
+    explicit TraderDaemon(TraderDaemonConfig cfg) noexcept;
 
-    PaperDaemon(const PaperDaemon&) = delete;
-    PaperDaemon& operator=(const PaperDaemon&) = delete;
-    PaperDaemon(PaperDaemon&&) = delete;
-    PaperDaemon& operator=(PaperDaemon&&) = delete;
+    TraderDaemon(const TraderDaemon&) = delete;
+    TraderDaemon& operator=(const TraderDaemon&) = delete;
+    TraderDaemon(TraderDaemon&&) = delete;
+    TraderDaemon& operator=(TraderDaemon&&) = delete;
 
     // 析构 — 兜底调 Shutdown() (R-11 INV-1: 保证 detach 在 paper_rm_snap_ 析构前).
-    ~PaperDaemon();
+    ~TraderDaemon();
 
     // 测试 seam (小宋): Build() 前注入预置 markets, 跳过真 gamma 发现 (离线可测).
     //   不调用则 Build() 走真实 gamma REST 发现.
@@ -249,10 +249,10 @@ public:
     [[nodiscard]] const risk::PositionLedger* paper_position_ledger() const noexcept {
         return paper_position_ledger_.get();
     }
-    [[nodiscard]] const paper::PaperLoop* paper_loop() const noexcept { return paper_loop_.get(); }
+    [[nodiscard]] const engine::TradingLoop* trading_loop() const noexcept { return trading_loop_.get(); }
     // 测试用 (A1b 集成): 向内部 score_store 发布比分 / 读 quote_hub.
     [[nodiscard]] data::ScoreSnapshotStore* score_store_for_test() noexcept { return score_store_.get(); }
-    // 测试用 (A2 端到端): 向内部 book hub 发布合成 book (离线无 WSS 时驱动 paper_loop tick).
+    // 测试用 (A2 端到端): 向内部 book hub 发布合成 book (离线无 WSS 时驱动 trading_loop tick).
     [[nodiscard]] polymarket::clob_wss::OrderBookSnapshotHub* hub_for_test() noexcept { return hub_.get(); }
     [[nodiscard]] const sizing::QuoteSnapshotHub* quote_hub_for_test() const noexcept {
         return quote_hub_.get();
@@ -268,8 +268,8 @@ private:
     // 发现 → token_map_/market_catalog_/event_infos_/all_token_ids_ (gamma 或注入).
     void PopulateCatalog(const std::vector<DiscoveredEvent>& discovered);
     // R-3: 从 token_map_/market_catalog_/market_cat_map_ 构建统一 PaperCatalog (静态元数据)。
-    //   一次原子注入 paper_loop_->SetPaperCatalog; R-6 周期重发现复用 (重建后 swap)。
-    [[nodiscard]] std::shared_ptr<const paper::PaperCatalog> BuildPaperCatalog() const;
+    //   一次原子注入 trading_loop_->SetPaperCatalog; R-6 周期重发现复用 (重建后 swap)。
+    [[nodiscard]] std::shared_ptr<const engine::PaperCatalog> BuildPaperCatalog() const;
     // R-6: 周期重发现一次 — 全量重建 catalog (清+PopulateCatalog) → SetPaperCatalog + RSP 刷新 +
     //   WSS 全量重订。在映射刷新线程跑 (match_inputs 同线程, 无竞争)。返回 true 若市场集变化。
     bool RediscoverOnce(std::stop_token st);
@@ -288,20 +288,20 @@ private:
     void WssWatchdogLoop(std::stop_token st, std::string url);
 
     // A1b: 映射刷新线程主体 — 周期跑 EventMatcher (score_store 快照 × market 元数据)
-    //   → 构建 condition→event 映射 → paper_loop_->SetEventMapping(). Goalserve event
+    //   → 构建 condition→event 映射 → trading_loop_->SetEventMapping(). Goalserve event
     //   动态出现, 故周期重匹配 (非 boot 一次性)。
     void RefreshEventMapping(std::stop_token st);
 
     // M2 结算刷新线程: 周期取 SettlementStore 快照 → 构建 ResolutionEntry map →
-    //   paper_loop_->SetResolutionByCondition() (喂 3b 权威结算 + CLV 收盘信号)。
+    //   trading_loop_->SetResolutionByCondition() (喂 3b 权威结算 + CLV 收盘信号)。
     void RefreshResolution(std::stop_token st);
 
     // live_stats 刷新线程: 周期从 score store 收集活跃 league → poller; LiveStatsStore 快照 →
-    //   paper_loop_->SetLiveStatsByTeams() (喂 5 个 g_*_diff 特征)。
+    //   trading_loop_->SetLiveStatsByTeams() (喂 5 个 g_*_diff 特征)。
     void RefreshLiveStats(std::stop_token st);
 
     // bm_slots 刷新线程: 周期 popen curl getodds (跨庄家赔率) + inplay-mapping (pregame↔inplay id),
-    //   join → OddsMap[inplay_match_id] → paper_loop_->SetOddsByMatchId() (喂 g_bm_* 特征 #5/6/7/16)。
+    //   join → OddsMap[inplay_match_id] → trading_loop_->SetOddsByMatchId() (喂 g_bm_* 特征 #5/6/7/16)。
     void RefreshOdds(std::stop_token st);
 
     // tennis_scores 刷新线程 (覆盖率杠杆 2026-06-03): popen curl tennis_scores/home (全巡回 livescore,
@@ -321,7 +321,7 @@ private:
     //   超阈值 → 从最大采集文件头部截 (删最老数据, recorder 每 poll 重开文件故安全) 释放 disk_prune_free_gb。
     void DiskPrune(std::stop_token st);
 
-    PaperDaemonConfig cfg_;
+    TraderDaemonConfig cfg_;
 
     // ---- 测试注入的 markets (空 → Build 走真发现) ----
     std::vector<DiscoveredEvent> injected_markets_;
@@ -330,7 +330,7 @@ private:
     // ---- 发现结果 (Build 填) ----
     debug_api::MarketTokenMap token_map_;
     debug_api::MarketInfoMap market_catalog_;
-    std::unordered_map<std::string, paper::MarketCat> market_cat_map_;  // v0.7 类别上下文 (ML 特征 82-85)
+    std::unordered_map<std::string, engine::MarketCat> market_cat_map_;  // v0.7 类别上下文 (ML 特征 82-85)
     std::vector<debug_api::EventInfo> event_infos_;
     std::vector<std::string> all_token_ids_;
 
@@ -426,11 +426,11 @@ private:
 
     // =====================================================================
     // 装配组件 —— 声明顺序即析构逆序的逆 (老韩 R-11 INV-1 + 老周钉死1):
-    //   被依赖者先声明 (后析构); paper_rm_snap_ 必在 paper_loop_ 之前;
+    //   被依赖者先声明 (后析构); paper_rm_snap_ 必在 trading_loop_ 之前;
     //   server_/ml_recorder_ 最后声明 (先析构, 先停读端).
     // =====================================================================
 
-    // 基础 hub (被 RealStateProvider/PaperLoop/publisher 引用 → 最先声明, 最后析构)
+    // 基础 hub (被 RealStateProvider/TradingLoop/publisher 引用 → 最先声明, 最后析构)
     std::unique_ptr<polymarket::clob_wss::OrderBookSnapshotHub> hub_;
     std::unique_ptr<data::ScoreSnapshotStore> score_store_;
     std::unique_ptr<risk::LedgerSnapshotHub> ledger_hub_;
@@ -439,7 +439,7 @@ private:
     // paper 账本 (R-11: 私有独立实例)
     std::unique_ptr<risk::PositionLedger> paper_position_ledger_;
 
-    // R-11 INV-1: paper_rm_snap_ 在 paper_loop_ 之前声明 (paper_loop_ 逆序先析构).
+    // R-11 INV-1: paper_rm_snap_ 在 trading_loop_ 之前声明 (trading_loop_ 逆序先析构).
     std::unique_ptr<risk::RmDebugSnapshot> paper_rm_snap_;
 
     // paper RM 栈
@@ -448,8 +448,8 @@ private:
     std::unique_ptr<pricing::BaselineFairValueModel> paper_fv_model_;  // score-prior 统计估计器 (留)
     // (大模型 fair_value_model_ (ml::FairValueModel ONNX) 已砍 2026-06-05「砍掉大模型训练功能」)
 
-    // PaperLoop (用上述全部; 必在 paper_rm_snap_ 之后声明)
-    std::unique_ptr<paper::PaperLoop> paper_loop_;
+    // TradingLoop (用上述全部; 必在 paper_rm_snap_ 之后声明)
+    std::unique_ptr<engine::TradingLoop> trading_loop_;
 
     // feeds & transport
     std::unique_ptr<data::InplayFeedThread> inplay_feed_;
@@ -468,7 +468,7 @@ private:
     std::unique_ptr<data::SettlementRecorder> settlement_recorder_;  // 结算落盘 (回测数据)
     std::unique_ptr<data::ScoreFrameRecorder> score_recorder_;       // 回测 P0: 比分帧落盘 (红线#3 闭合数据前提)
 
-    // HTTP 观测端 (最后声明, 最先析构; 仅 RunMode::PaperDaemon)
+    // HTTP 观测端 (最后声明, 最先析构; 仅 RunMode::TraderDaemon)
     std::unique_ptr<debug_api::HttpServer> server_;
 
     // ---- 状态 ----

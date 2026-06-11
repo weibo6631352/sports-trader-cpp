@@ -75,7 +75,7 @@ struct ParseResult {
 
     // inplay bet365 单源 de-vig 三边胜率 (home/away/draw), 与 scores 1:1 对齐 (index i ↔ scores[i])。
     //   双边/三边完整透传 (不丢信息); -1.0 = 该 event 无 odds (无 odds plan / market 缺)。
-    //   orientation: 这是 Goalserve home/away 视角; caller (paper_loop) 按 yes_is_home 翻成
+    //   orientation: 这是 Goalserve home/away 视角; caller (trading_loop) 按 yes_is_home 翻成
     //   Polymarket YES-canonical (home 视角 ≠ YES 视角, 绝不可直接当 YES 用 — 否则 away=YES 盘口镜像反)。
     std::vector<double> inplay_home_fairs;
     std::vector<double> inplay_away_fairs;

@@ -1,12 +1,12 @@
-// src/stcpp/app/paper_daemon.cpp — PaperDaemon 实现
+// src/stcpp/app/trader_daemon.cpp — TraderDaemon 实现
 //
-// Owner: 老雷 (GM) — PaperDaemon 重构 (老郭 §A.1 配套落地)
+// Owner: 老雷 (GM) — TraderDaemon 重构 (老郭 §A.1 配套落地)
 // last_review: 2026-05-30
 //
 // 逐字搬迁自 debug_server_main.cpp 的 main() 函数体 (Step 1-6), 行为不变.
 // 红线 (R-11 / R-12 / R-20) 见头文件; 关键不变量在下方对应位置加 [R-11] / [R-20] 注.
 
-#include "stcpp/app/paper_daemon.hpp"
+#include "stcpp/app/trader_daemon.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -91,7 +91,7 @@ public:
 }
 
 // 从 PM tennis 分盘盘 gi 解析【盘号】(A-step-2): "Set 2 Winner"→2 / "2nd Set"→2。无 → 0。
-//   只认 1-7 盘。用于 tennis 分盘盘 un-fence + 标 seg_index (下游 paper_loop 用当前段 fair)。
+//   只认 1-7 盘。用于 tennis 分盘盘 un-fence + 标 seg_index (下游 trading_loop 用当前段 fair)。
 [[nodiscard]] int ParseTennisSetIndex(const std::string& gi) noexcept {
     if (gi.empty()) return 0;
     std::string g = gi;
@@ -141,9 +141,9 @@ public:
 // ctor / dtor
 // ---------------------------------------------------------------------------
 
-PaperDaemon::PaperDaemon(PaperDaemonConfig cfg) noexcept : cfg_(std::move(cfg)) {}
+TraderDaemon::TraderDaemon(TraderDaemonConfig cfg) noexcept : cfg_(std::move(cfg)) {}
 
-PaperDaemon::~PaperDaemon() {
+TraderDaemon::~TraderDaemon() {
     // R-11 INV-1 双保险之二: 析构兜底再调 Shutdown (幂等). 保证 detach 在
     // paper_rm_snap_ 析构前发生 (Shutdown 内 detach; 即使调用方漏调 Shutdown).
     Shutdown();
@@ -153,7 +153,7 @@ PaperDaemon::~PaperDaemon() {
 // InjectMarkets — 测试 seam
 // ---------------------------------------------------------------------------
 
-void PaperDaemon::InjectMarkets(std::vector<DiscoveredEvent> markets) {
+void TraderDaemon::InjectMarkets(std::vector<DiscoveredEvent> markets) {
     injected_markets_ = std::move(markets);
     has_injected_ = true;
 }
@@ -163,7 +163,7 @@ void PaperDaemon::InjectMarkets(std::vector<DiscoveredEvent> markets) {
 // (逐字搬迁自 main Step 1 后半段 line 655-714)
 // ---------------------------------------------------------------------------
 
-void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered) {
+void TraderDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered) {
     using debug_api::EventInfo;
     using debug_api::MarketInfo;
     using debug_api::TokenInfo;
@@ -179,7 +179,7 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             const auto bit = ended_event_blacklist_.find(ev.event_id);
             if (bit != ended_event_blacklist_.end() && pop_now_ns < bit->second) continue;
         }
-        std::printf("[paper_daemon]  event: %.40s | slug=%.30s | sport=%s\n", ev.title.c_str(),
+        std::printf("[trader_daemon]  event: %.40s | slug=%.30s | sport=%s\n", ev.title.c_str(),
                     ev.slug.c_str(), ev.sport.c_str());
 
         EventInfo ei;
@@ -199,7 +199,7 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
                 stcpp::data::taxonomy::MarketTypeCode(dm.sports_market_type) != 0) {
                 continue;
             }
-            std::printf("[paper_daemon]    market %.28s... | type=%s | gi=%s\n", dm.condition_id.c_str(),
+            std::printf("[trader_daemon]    market %.28s... | type=%s | gi=%s\n", dm.condition_id.c_str(),
                         dm.sports_market_type.c_str(), dm.group_item_title.c_str());
             token_map_[dm.condition_id] = {dm.token0_id, dm.token1_id};
             ei.condition_ids.push_back(dm.condition_id);
@@ -297,7 +297,7 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             //   联赛 = ev.sport_id (Polymarket sport.id, nba=34/bkcba=104=CBA); 家族 = ev.sport_code 滚动;
             //   盘口 = dm.sports_market_type (已归一)。映射 SSOT: data/market_taxonomy.hpp。
             namespace tax = stcpp::data::taxonomy;
-            paper::MarketCat cat;
+            engine::MarketCat cat;
             cat.asset_class_id = static_cast<std::int32_t>(tax::AssetClass::kSports);  // 现仅发现体育
             cat.sport_family_id = tax::SportFamilyCode(ev.sport_code);
             cat.league_id = (ev.sport_id > 0) ? static_cast<std::int32_t>(ev.sport_id) : -1;
@@ -333,7 +333,7 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
             //   亚秒级; 替代 45s 扫描轮询)。【只订 WSS 不进 149hz 轮询计划】(轮询预算仍 sharp 专属);
             //   eligible 未就绪 (sharp_snap null) 时同样不订 (保持「绝不 bootstrap 全订」不变式)。
             bool flb_take = false;
-            if (sharp_snap && cfg_.paper_loop.flb_enabled) {
+            if (sharp_snap && cfg_.trading_loop.flb_enabled) {
                 if (const auto cit = market_cat_map_.find(cond_id);
                     cit != market_cat_map_.end() && cit->second.market_type_id == 0) {  // moneyline
                     flb_take = true;
@@ -365,7 +365,7 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
     PublishPollPlan(std::move(poll_plan));  // 发布给 ActiveBookPoller (流动性加权 149hz)
     if (sharp_snap) {
         std::fprintf(stderr,
-                     "[paper_daemon] 源头 pass: 订阅 %zu/%zu market (跳过 %zu; 其中 FLB 宇宙 %zu), token=%zu\n",
+                     "[trader_daemon] 源头 pass: 订阅 %zu/%zu market (跳过 %zu; 其中 FLB 宇宙 %zu), token=%zu\n",
                      token_map_.size() - passed_no_source, token_map_.size(), passed_no_source,
                      flb_subscribed, all_token_ids_.size());
     }
@@ -378,20 +378,20 @@ void PaperDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovered
 //   只装【静态元数据】(老周边界铁律): tokens + fee + cat + parent。动态态 (score/resolution/
 //   live_stats) 不并入。一次原子 swap; R-6 周期重发现重建后复用。
 // ---------------------------------------------------------------------------
-std::shared_ptr<const paper::PaperCatalog> PaperDaemon::BuildPaperCatalog() const {
-    auto pc = std::make_shared<paper::PaperCatalog>();
+std::shared_ptr<const engine::PaperCatalog> TraderDaemon::BuildPaperCatalog() const {
+    auto pc = std::make_shared<engine::PaperCatalog>();
     pc->reserve(token_map_.size());
     // 新鲜度锚: 本次 catalog 构建/重发现时刻 (老板「每个源标时间」→ g_catalog_age_sec)。
     const std::int64_t built_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                       std::chrono::system_clock::now().time_since_epoch())
                                       .count();
     for (const auto& [cid, toks] : token_map_) {
-        paper::PaperMarketEntry e;
+        engine::PaperMarketEntry e;
         e.tokens = toks;
         e.discovered_at_ns = built_ns;
         if (const auto mit = market_catalog_.find(cid); mit != market_catalog_.end()) {
             e.fee_coef = mit->second.fee_rate;  // R-fee-2: gamma feeSchedule.rate
-            e.parent = paper::ParentRef{mit->second.event_id, mit->second.neg_risk_market_id};
+            e.parent = engine::ParentRef{mit->second.event_id, mit->second.neg_risk_market_id};
             e.game_start_ts_sec = mit->second.game_start_ts_sec;  // FLB in-play 窗口 (2026-06-11, 加性)
             e.end_ts_sec = mit->second.end_ts_sec;
         }
@@ -408,7 +408,7 @@ std::shared_ptr<const paper::PaperCatalog> PaperDaemon::BuildPaperCatalog() cons
 //   在映射刷新线程跑 (market_match_inputs_ 同线程, 无竞争)。live 比赛滚动, 不周期重发现则跑几小时
 //   后订阅全是死盘。老郭: 全量重订别增量 diff (幂等好测)。集合未变则跳过 (省 republish)。
 // ---------------------------------------------------------------------------
-bool PaperDaemon::RediscoverOnce(std::stop_token st) {
+bool TraderDaemon::RediscoverOnce(std::stop_token st) {
     auto events = DiscoverSportsEvents(cfg_.max_events);
     if (events.empty()) {
         return false;  // 无 live/近赛 → 不动 (保留现集, 让旧盘经 resolution 自然结算; 不抖动到空)
@@ -453,9 +453,9 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
     event_infos_.clear();
     all_token_ids_.clear();
     PopulateCatalog(events);
-    // 发布: PaperLoop catalog (RCU 原子 swap) + RSP (meta_mu_ 守护) + WSS 全量重订。
-    if (paper_loop_) {
-        paper_loop_->SetPaperCatalog(BuildPaperCatalog());
+    // 发布: TradingLoop catalog (RCU 原子 swap) + RSP (meta_mu_ 守护) + WSS 全量重订。
+    if (trading_loop_) {
+        trading_loop_->SetPaperCatalog(BuildPaperCatalog());
     }
     if (real_provider_) {
         real_provider_->set_token_map(token_map_);
@@ -503,7 +503,7 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
             live_transport_->AsyncSendText(R"({"assets_ids":[)" + del_body + R"(],"operation":"unsubscribe"})");
         }
         std::fprintf(stderr,
-                     "[paper_daemon] 周期重发现: 市场集变化 → +%zu 订阅 / -%zu 退订 (增量, 共 %zu market)\n",
+                     "[trader_daemon] 周期重发现: 市场集变化 → +%zu 订阅 / -%zu 退订 (增量, 共 %zu market)\n",
                      n_add, n_del, token_map_.size());
         std::fflush(stderr);
         // 新增盘补 REST seed (修: 仅 operation:subscribe 不够 — 稀疏体育盘短期无 WSS diff 帧 →
@@ -522,7 +522,7 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
 //   非热路径 (Start 一次, 阻塞 ~秒级 popen curl); 失败优雅降级 (回落 WSS-only)。
 //   recv_ts = 本地 now (= ingestion ts, 合法; data_source_ts 取自 REST 响应的 timestamp, 非 now)。
 // ---------------------------------------------------------------------------
-void PaperDaemon::SeedInitialBooksFromRest(std::stop_token st) {
+void TraderDaemon::SeedInitialBooksFromRest(std::stop_token st) {
     // A1: 读不可变 token 快照 (非裸 all_token_ids_ — 该线程与 RediscoverOnce 写并发, 消 race)
     const auto tokens_sp = TokenSnapshot();
     SeedTokensFromRest(*tokens_sp, st);
@@ -533,7 +533,7 @@ void PaperDaemon::SeedInitialBooksFromRest(std::stop_token st) {
 //   SeedInitialBooksFromRest 用全量快照调它; RediscoverOnce 用"新增 token 子集"调它
 //   (修 rediscovery 新增盘漏补 seed → Polymarket 有簿前端却显示未接入)。
 // ---------------------------------------------------------------------------
-void PaperDaemon::SeedTokensFromRest(const std::vector<std::string>& tokens, std::stop_token st) {
+void TraderDaemon::SeedTokensFromRest(const std::vector<std::string>& tokens, std::stop_token st) {
     if (!live_publisher_ || tokens.empty())
         return;
     const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -572,7 +572,7 @@ void PaperDaemon::SeedTokensFromRest(const std::vector<std::string>& tokens, std
             ++chunks_ok;
         }
     }
-    std::printf("[paper_daemon] REST 快照打底: %zu tokens (%zu 批 OK), 累计 books_published=%llu\n",
+    std::printf("[trader_daemon] REST 快照打底: %zu tokens (%zu 批 OK), 累计 books_published=%llu\n",
                 tokens.size(), chunks_ok,
                 static_cast<unsigned long long>(live_publisher_->books_published()));
     std::fflush(stdout);
@@ -587,7 +587,7 @@ void PaperDaemon::SeedTokensFromRest(const std::vector<std::string>& tokens, std
 //       内 join 已死的旧 io_thread 不自 join 死锁), 重连后台重 seed。重订由 OnConnected 回调负责。
 //   R-12: 只读 IsConnected() atomic + AsyncSendText(入队) + AsyncConnect, 不碰 on_text_frame 热路径。
 // ---------------------------------------------------------------------------
-void PaperDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
+void TraderDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
     using namespace std::chrono;
     if (!live_transport_)
         return;
@@ -617,7 +617,7 @@ void PaperDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
                 last_progress = steady_clock::now();
             } else if (steady_clock::now() - last_progress >= kSilentTimeout) {
                 std::fprintf(stderr,
-                             "[paper_daemon] WSS 半死 (≥%llds 无帧响应, 服务端静默), 主动 Close 触发重连\n",
+                             "[trader_daemon] WSS 半死 (≥%llds 无帧响应, 服务端静默), 主动 Close 触发重连\n",
                              static_cast<long long>(duration_cast<seconds>(kSilentTimeout).count()));
                 std::fflush(stderr);
                 live_transport_->Close();  // → 下一轮 IsConnected()==false → 走重连
@@ -625,7 +625,7 @@ void PaperDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
             }
             sleep_steps(10);  // 1s 检查间隔
         } else {
-            std::fprintf(stderr, "[paper_daemon] WSS 断开, %ds 后重连 (idle/网络/半死)...\n", backoff_sec);
+            std::fprintf(stderr, "[trader_daemon] WSS 断开, %ds 后重连 (idle/网络/半死)...\n", backoff_sec);
             std::fflush(stderr);
             sleep_steps(backoff_sec * 10);
             if (st.stop_requested())
@@ -646,43 +646,43 @@ void PaperDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
 // Build — 发现 + 装配 (不起线程). 幂等.
 // ---------------------------------------------------------------------------
 
-BuildResult PaperDaemon::Build() {
+BuildResult TraderDaemon::Build() {
     if (built_) {
         return build_result_;  // 幂等: 返回缓存
     }
 
-    std::printf("[paper_daemon] RunMode=%s exec_mode=%s 启动装配...\n", ToString(cfg_.mode),
+    std::printf("[trader_daemon] RunMode=%s exec_mode=%s 启动装配...\n", ToString(cfg_.mode),
                 debug_api::exec_mode_str(cfg_.exec_mode));
     std::fflush(stdout);
 
     // ---- Step 1: 市场发现 (gamma 或注入) ----
     std::vector<DiscoveredEvent> discovered;
     if (has_injected_) {
-        std::printf("[paper_daemon] 使用注入的 %zu 个 markets (跳过 gamma 发现, 测试 seam)\n",
+        std::printf("[trader_daemon] 使用注入的 %zu 个 markets (跳过 gamma 发现, 测试 seam)\n",
                     injected_markets_.size());
         discovered = injected_markets_;
     } else {
-        std::printf("[paper_daemon] gamma /events 发现活跃体育市场...\n");
+        std::printf("[trader_daemon] gamma /events 发现活跃体育市场...\n");
         std::fflush(stdout);
         discovered = DiscoverSportsEvents(cfg_.max_events);
         // 资源优化 (老板 2026-06-01): 不再回退 /markets 平铺 — 那条路带的是赛季夺冠 outright 期货
         //   (World Cup/NBA 冠军, 几个月后才结算), 订阅它们最浪费 (无 in-play/无比分/book 浅)。
         //   DiscoverSportsEvents 已只留 [live + 开赛≤1h]; 空 = 此刻无近赛, 正确空闲 (省资源)。
         if (discovered.empty()) {
-            std::printf("[paper_daemon] 当前无 live / 开赛≤1h 的赛事 → 不订阅 (省资源, 空闲等近赛)。\n");
+            std::printf("[trader_daemon] 当前无 live / 开赛≤1h 的赛事 → 不订阅 (省资源, 空闲等近赛)。\n");
             std::fflush(stdout);
         }
     }
 
     if (discovered.empty()) {
         std::fprintf(stderr,
-                     "[paper_daemon] WARNING: 无体育市场, hub 将保持空状态 → book 端点 found=false.\n");
+                     "[trader_daemon] WARNING: 无体育市场, hub 将保持空状态 → book 端点 found=false.\n");
     } else {
-        std::printf("[paper_daemon] 发现 %zu 个体育 event:\n", discovered.size());
+        std::printf("[trader_daemon] 发现 %zu 个体育 event:\n", discovered.size());
     }
     PopulateCatalog(discovered);
     if (!market_catalog_.empty()) {
-        std::printf("[paper_daemon] P1-1: MarketInfo catalog 已填充 %zu 条目\n", market_catalog_.size());
+        std::printf("[trader_daemon] P1-1: MarketInfo catalog 已填充 %zu 条目\n", market_catalog_.size());
     }
 
     // ---- Step 2: hub + ScoreSnapshotStore + LedgerSnapshotHub + QuoteSnapshotHub ----
@@ -706,10 +706,10 @@ BuildResult PaperDaemon::Build() {
 
     // paper RiskGateway (paper 专用; 与 live RM 隔离; NullAuditEmitter 不落真 WAL)
     paper_audit_emitter_ = std::make_shared<NullAuditEmitter>();
-    // P0-2 单位统一 (老雷 2026-05-30, 拆 clamp 遮羞布): caps 单一真值源 = cfg_.paper_loop (pUSD)。
+    // P0-2 单位统一 (老雷 2026-05-30, 拆 clamp 遮羞布): caps 单一真值源 = cfg_.trading_loop (pUSD)。
     //   RM check_position_caps_ 直接比 size_pUSD_micro (micro), 故 RM cfg 这里由 pUSD 源 × 1e6 派生;
-    //   sizing 用同一 pUSD 源直接算 (paper_loop.cpp)。两端同源 → sizing notional 自然 ≤ RM cap,
-    //   无需 paper_loop `min(notional,10.0)` clamp (已删)。
+    //   sizing 用同一 pUSD 源直接算 (trading_loop.cpp)。两端同源 → sizing notional 自然 ≤ RM cap,
+    //   无需 trading_loop `min(notional,10.0)` clamp (已删)。
     //   原 main 两处独立硬编码 (sizing RiskConfig{} 10K pUSD vs RM 10 pUSD micro) 差 1000x, 靠 clamp
     //   摁住; advisory gate 长期挡着未爆, A2 第一笔成交才现形, 本次根治。
     risk::RiskConfig paper_rm_cfg;
@@ -717,23 +717,23 @@ BuildResult PaperDaemon::Build() {
     //   bankroll 上仅用 1% 资金/单, 比 Kelly(λ0.35, 5% edge≈$79/单) throttle 8x → +$200 累积极慢。
     //   实测 26 笔 sharp 成交全捕获正 edge (中位 5.3%, 0 笔买在 fair 上方) → 边真实, 放大有据。
     //   放大让 Kelly 主导 (λ0.35 仍是真风控); per-market ≤12% bankroll (守北极星 DD≤15%)。R-11 纯 paper。
-    cfg_.paper_loop.min_order_pusd = 5.0;             // 最小买单 (老板 2026-06-09「体育 min 5 单」): 砍 0.0u/0.1u dust churn + 贴真盘
+    cfg_.trading_loop.min_order_pusd = 5.0;             // 最小买单 (老板 2026-06-09「体育 min 5 单」): 砍 0.0u/0.1u dust churn + 贴真盘
     // 2026-06-10 仓位止血 (老板「你怎么看」+ 实测 −12.14 单笔 blowup: NO 从赢面 0.55 骑到 0.34 + 大仓): caps 砍半
     //   → 单笔 blowup 减半 (−12→−6)。止血非治本 (赛中 −EV 结构性, 治本靠 CLV 判决/转赛前)。不碰离场逻辑。
-    cfg_.paper_loop.per_order_cap_usdc = 25.0;        // was 50 (2.5% bankroll/单)
-    cfg_.paper_loop.per_outcome_cap_usdc = 50.0;      // was 100 (5% bankroll/边)
-    cfg_.paper_loop.market_exposure_cap_usdc = 60.0;  // was 120 (6% bankroll/市场)
-    // c3 (P0-2 根治): RM caps 与 sizing 同源 = cfg_.paper_loop (whole pUSD), 同用 from_pusd 转 micro。
+    cfg_.trading_loop.per_order_cap_usdc = 25.0;        // was 50 (2.5% bankroll/单)
+    cfg_.trading_loop.per_outcome_cap_usdc = 50.0;      // was 100 (5% bankroll/边)
+    cfg_.trading_loop.market_exposure_cap_usdc = 60.0;  // was 120 (6% bankroll/市场)
+    // c3 (P0-2 根治): RM caps 与 sizing 同源 = cfg_.trading_loop (whole pUSD), 同用 from_pusd 转 micro。
     //   RM 直接 micro 比 size_pUSD_micro; sizing 侧 .to_pusd() 回 whole 比 notional。同源同值。
-    paper_rm_cfg.per_order_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.paper_loop.per_order_cap_usdc);
+    paper_rm_cfg.per_order_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_order_cap_usdc);
     paper_rm_cfg.market_exposure_cap_usdc =
-        domain::MicroPUSD::from_pusd(cfg_.paper_loop.market_exposure_cap_usdc);
-    paper_rm_cfg.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.paper_loop.per_outcome_cap_usdc);
+        domain::MicroPUSD::from_pusd(cfg_.trading_loop.market_exposure_cap_usdc);
+    paper_rm_cfg.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_outcome_cap_usdc);
     // 2026-06-10 复盘迭代: event 层聚合 cap (同场 ML+Spread+Total 叠仓=隐性 3x 杠杆)。
     //   RM 基建已在 (set_condition_event + Σ|condition| ρ=1 上界), 此前默认 10000u 实际未生效 → 设 120u (12% bankroll/场)。
     paper_rm_cfg.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(120.0);
     paper_rm_cfg.bankroll_usdc =
-        domain::MicroPUSD::from_pusd(cfg_.paper_loop.bankroll_usdc);  // c2b: 与 cap 对称
+        domain::MicroPUSD::from_pusd(cfg_.trading_loop.bankroll_usdc);  // c2b: 与 cap 对称
     paper_rm_cfg.edge_ci_lower_floor = -1.0;                          // M1 放宽 CI 门
     // 2026-06-04 老板「不要卡他, 让他亏, 看亏的极限」: 解除日损熔断 (-3%软/-5%硬) + consec-loss halt,
     //   让 -EV sharp 策略在 paper 放开亏到 bankroll 见底 (INSUFFICIENT_BANKROLL 才是自然底)。纯观测, R-11 不碰真钱。
@@ -741,30 +741,30 @@ BuildResult PaperDaemon::Build() {
     paper_rm_cfg.daily_loss_hard_pct = 100.0;
     paper_rm_cfg.daily_loss_halt_usdc = domain::MicroPUSD::from_pusd(1.0e9);  // 巨值 → 永不触发
     paper_rm_cfg.consec_loss_halt_count = 1'000'000'000;                       // 连亏门关
-    // 盘口准入已移到定价层 (paper_loop: 非 moneyline 无专属定价 → fail-closed); RM enable_xxx 已删。
+    // 盘口准入已移到定价层 (trading_loop: 非 moneyline 无专属定价 → fail-closed); RM enable_xxx 已删。
     paper_rm_ = std::make_unique<risk::RiskGateway>(paper_rm_cfg, paper_audit_emitter_);
 
     // BaselineFairValueModel (小肖 pricing v0.1; 先验 sigmoid)
     pricing::ScorePriorParams fv_params{0.30, 0.50};
     paper_fv_model_ = std::make_unique<pricing::BaselineFairValueModel>(fv_params, 0.20);
 
-    // ---- Step 2c: PaperLoop (构造, 不 Start) ----
-    // [R-12] PaperLoop 内部 std::jthread, 不进 WSS event loop.
+    // ---- Step 2c: TradingLoop (构造, 不 Start) ----
+    // [R-12] TradingLoop 内部 std::jthread, 不进 WSS event loop.
     // [R-11] paper_position_ledger_ 与 live 物理隔离.
     // A2 (老韩红线1): advisory gate 翻转收口在此. enable_paper_fills=true → 解封 paper 成交;
-    //   PaperLoop::Start() 内有运行期 mode 交叉断言 (非 paper mode + 解封 → abort).
-    cfg_.paper_loop.advisory_markets_no_intent = !cfg_.enable_paper_fills;
+    //   TradingLoop::Start() 内有运行期 mode 交叉断言 (非 paper mode + 解封 → abort).
+    cfg_.trading_loop.advisory_markets_no_intent = !cfg_.enable_paper_fills;
     // Phase 0 联合评审 (2026-05-31): 生产开启动态 reservation (n_eff/margin 接时序+vig) + net-EV 门。
     //   lib 默认 false (向后兼容契约测试); 生产 daemon 置 true (可经 enable_phase0_gates 关, 供管线测试)。
-    cfg_.paper_loop.dynamic_reservation = cfg_.enable_phase0_gates;
-    cfg_.paper_loop.net_ev_gate = cfg_.enable_phase0_gates;
+    cfg_.trading_loop.dynamic_reservation = cfg_.enable_phase0_gates;
+    cfg_.trading_loop.net_ev_gate = cfg_.enable_phase0_gates;
     // 赢面稳定窗 3min (老板 2026-06-11「入场太早赢面不稳定」拍板): 同随 phase0 gates (A2 等管线测试可关)。
-    cfg_.paper_loop.open_stable_window_ns = cfg_.enable_phase0_gates ? 180'000'000'000LL : 0;
+    cfg_.trading_loop.open_stable_window_ns = cfg_.enable_phase0_gates ? 180'000'000'000LL : 0;
     // FLB-hold 引擎 (老板 2026-06-11 拍板「与现策略并跑」): 生产开; 扫描另有 start_live_feeds 闸 (离线测试不扫)。
-    cfg_.paper_loop.flb_enabled = true;
+    cfg_.trading_loop.flb_enabled = true;
     // 账本持久化 (2026-06-11「迭代部署 vs 攒数据」根治): 60s 快照 + 启动恢复; CWD 相对 (server 在仓库根跑)。
     // live 模式独立文件 (2026-06-12 单参数切换): live 重启绝不能把 paper 仓恢复进真钱账本 (R-11 反向)。
-    cfg_.paper_loop.ledger_snapshot_path =
+    cfg_.trading_loop.ledger_snapshot_path =
         (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live)
             ? "live_ledger_snapshot.tsv"
             : "paper_ledger_snapshot.tsv";
@@ -775,16 +775,16 @@ BuildResult PaperDaemon::Build() {
     cfg_.sharp_only_gate = true;   // 仅高置信 sharp 信号 (≥sharp_only_min_edge) 产单
     // sharp 驱动门 (2026-06-04): 生产 daemon 默认开 (cfg_.sharp_only_gate 默认 true) —— 仅高置信
     //   sharp(bet365) 信号产单, 其余源回退市场 (edge 归零)。管线机制测试可置 false (走 score-prior 出成交)。
-    cfg_.paper_loop.sharp_only_gate = cfg_.sharp_only_gate;
+    cfg_.trading_loop.sharp_only_gate = cfg_.sharp_only_gate;
     // 2026-06-09 验证实验 (专家组「降阈+by-bucket测CLV」+老板「持续优化迭代」): 0.04→0.025。决策诊断实测
     //   当前市场 favorite 被低估幅度多在 1-3%, 全 <4% → 0 交易(无法验证)。降到 0.025 抓 2.5%+ 偏离恢复交易量,
     //   配 λ haircut 0.25(小仓限噪声损失)。【验证假设】2.5-5% bucket 是否 +EV (by-(fair−fill_px)分桶看胜率/净)。
     //   42 万回测只验过 ≥5%(77%); <5% 待实测。某桶 -EV(博彩老张警告的逆选噪声)→ 提阈回该桶上沿。
     // 2026-06-09 策略会 (老姜): 收紧入场, 0.025→0.03 (多点 cushion 抗 fair 漂移; 老姜「先 0.03 别一步到 0.04 starve」).
-    cfg_.paper_loop.sharp_only_min_edge = 0.03;
+    cfg_.trading_loop.sharp_only_min_edge = 0.03;
     // sharp 偏离上界 (2026-06-04 老板「这个差的太多了」): >15pt 的 sharp-市场 gap 判为滞后/错配假信号,
     //   不产单 (实测快变盘 CS2/网球 sharp 滞后 2.3s 造 20-26pt 假 gap → 逆市场正确移动下单必亏)。
-    cfg_.paper_loop.sharp_max_gap = 0.15;
+    cfg_.trading_loop.sharp_max_gap = 0.15;
     // 赔率源新鲜度门: sharp feed 版本距决策刻 > 阈值 → 回退市场 (抓 feed 真停更/掉点)。
     //   2026-06-10 老板 3.0→5.0s: 原 3.0 卡在 Goalserve 正常锯齿峰 (每~2s 出一版, 版本年龄常摸到 3.0-3.5s,
     //   实测 odds-stale 全是 age=3.0-3.1s = 正常延迟非停更) → sharp 几乎每个锯齿峰被丢 = 「sharp 冻结老是出现」
@@ -792,27 +792,27 @@ BuildResult PaperDaemon::Build() {
     // 2026-06-10 老板「赔率源 per-sport feed 一直在线」: data_source_ts=单场 last_update(只在变化时前进), 5.0s 仍卡
     //   在正常静默(实测 age=5.2s 把活比赛回退不决策)。门本意抓真停更(6s+, 死盘 161s)。放宽 60s: 容忍单场长静默,
     //   只拦真死源。入场质量另由 lead-lag 门(sharp 先动才进)保证, 不靠此 staleness 门。
-    cfg_.paper_loop.sharp_max_staleness_sec = 60.0;  // was 5.0
+    cfg_.trading_loop.sharp_max_staleness_sec = 60.0;  // was 5.0
     // (predictive_unwind 旋钮 2026-06-12 治理删: 2026-06-09 专家组已裁决早平结构性死 → hold-to-settlement。)
     // 入场价感知平仓 (2026-06-04 老板「别稍微亏本就卖, 要考虑持仓买卖价格」): 卖价低于均入(锁亏)时,
     //   仅当 sharp fair 真跌破均入超 5 分 (信号反转=止损) 才卖, 否则持有等回归/结算。治 predictive_unwind
     //   在小回撤里 churn 卖出实现亏损。取利平仓不受限。
-    cfg_.paper_loop.loss_cut_fair_band = 0.05;
+    cfg_.trading_loop.loss_cut_fair_band = 0.05;
     // 订单簿结构感知 买/卖 (2026-06-04 老板「买卖都要看簿结构, 一直涨能卖就持仓, 簿转向才止盈」):
     //   买不接下跌的刀 (簿下行不进), 盈利骑趋势 (簿支撑不急止盈), 簿结构转向才止盈。持仓管理。
-    cfg_.paper_loop.book_exit_enabled = true;
-    cfg_.paper_loop.book_exit_imb_thr = 0.15;
+    cfg_.trading_loop.book_exit_enabled = true;
+    cfg_.trading_loop.book_exit_imb_thr = 0.15;
     // (min_buy_price 价格地板 2026-06-12 治理删: 2026-06-04 老板已否「不是这样的」恒 0.0 关,
     //  被 min_open_fair 0.65 + near_end 闸取代。)
     // 临近末尾必输买入闸 (2026-06-05 老板「临近末尾必输的那种, 还得禁止买入」): 末段(phase>0.85)+ 本边
     //   exec_ask<0.15 (市场定为近必输) → 不开新仓, 防末段 longshot 结算归零。窄闸, 中前段/非便宜不受限。
-    cfg_.paper_loop.near_end_max_buy_price = 0.15;
+    cfg_.trading_loop.near_end_max_buy_price = 0.15;
     // 必赢锁利买入 (2026-06-05 老板「必赢的, 除去买卖手续费有利润就买」): 决出赢方, (1−ask)−买卖费>0 → 强制
     //   买到此上限锁结算利润 (事件延迟真 edge)。50 = per_order_cap, 保守起步, 受 RM market cap(120) 兜底。
-    cfg_.paper_loop.must_win_lock_usdc = 50.0;
+    cfg_.trading_loop.must_win_lock_usdc = 50.0;
     // (rel_stop_pct / hold_if_winning_floor 旋钮 2026-06-12 治理删: 2026-06-11 hold-to-settlement
     //  架构改革 [反事实 n=5 被割仓 60% 终赢 Δ+54 + CLV 10/10 + FLB 研究三方互证] 判死 mark/fair 基止损,
-    //  铁律已固化进 paper_loop 代码本体。出场 = 结算 + frozen_hard + game_decided 市场确认。)
+    //  铁律已固化进 trading_loop 代码本体。出场 = 结算 + frozen_hard + game_decided 市场确认。)
     // 必输方开仓护栏 (2026-06-09 老板「调试持仓逻辑, 查明真正原因」, 数据驱动): 被选边模型 fair < 0.15 → 不开
     //   新仓 (近必输 longshot 下侧到 0 远大于 edge, −EV)。实测灾难性亏损全是买崩盘 underdog (fair 0.11 买 0.08 →
     //   崩到 0.03, 单笔 −0.87/−2.00); game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug)。
@@ -824,21 +824,21 @@ BuildResult PaperDaemon::Build() {
     // 2026-06-09 策略会收紧入场 0.50→0.58; 2026-06-10 老板「0.65 吧, 再低赢面太小」收紧到 0.65 —— 只买赢面≥65%
     //   的强 favorite, 再低(<0.65)赢面太小不进。更强 favorite 有更多 cushion, fair 场内反转不到 underdog 概率小。
     //   注: 历史 0.65 曾 starve(0 交易, 市场少时); 现 261 市场盘子大 + 仓位砍半, 应有量。量太少则松。
-    cfg_.paper_loop.min_open_fair = 0.65;
+    cfg_.trading_loop.min_open_fair = 0.65;
     // 2026-06-09 风控老韩: 开同赛事相关性 taper (现 default false) —— 多 favorite=N倍押"热门赢"同向暴露, 冷门日齐崩;
     //   taper 零成本(只柔性缩量级不碰方向, fail-open), 是比反向腿对冲更对的组合层护栏。
-    cfg_.paper_loop.corr_mult_enabled = true;
+    cfg_.trading_loop.corr_mult_enabled = true;
     // (reentry_cooldown_ns / rebuy_edge_premium / tp_reversal_vel_thr / vel_exit_thr /
     //  near_settle_capture_frac 旋钮 2026-06-12 治理删: 全是「有卖出才有的病」的补丁,
     //  hold-to-settlement 后无卖出路径; 2026-06-10 老板「当作新机会」已关。git 史可考。)
     // 冻结期硬下行保护 0.40 (2026-06-10 持仓策略会 老韩 bug#2 + 老板「下行不够细致/两边都要考虑」): sharp 掉档
     //   冻结态下 (rel_stop/vel_exit 全失效) favorite 真崩盘只能裸亏到结算 → 补一道不依赖 sharp 的灾难止损: mark
     //   跌破均入 ×0.60 且双边簿紧(真崩盘非退化簿) → 截尾。仅 fair_is_sharp==false 触发, 与 −5.80 退化簿(sharp 有效)互斥。
-    cfg_.paper_loop.frozen_hard_stop_pct = 0.40;
+    cfg_.trading_loop.frozen_hard_stop_pct = 0.40;
     // 决策节拍 (2026-06-04 老板「三源都触发决策没」): 500ms→100ms。三源(WSS/149hz poll/赔率)写共享态,
     //   决策每 tick 读最新; 500ms 把 149hz 新鲜簿+簿结构反应硬卡住 → 簿转向止盈/不被吃单反应慢, 小赢大亏。
     //   降到 100ms: 决策 10×/s 采样新鲜簿; 48 盘×10/s 对 4 核轻松, 新加簿结构+入场价闸防过度交易。
-    cfg_.paper_loop.tick_interval_ms = 100;
+    cfg_.trading_loop.tick_interval_ms = 100;
     // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
     //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关
@@ -848,17 +848,17 @@ BuildResult PaperDaemon::Build() {
     //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关。
     //   仍保: devig_ok + sizing Step5(净正) + RM cap 链 (仓位上限) + R-11 纯 VirtualFill 不碰真钱。
-    cfg_.paper_loop.paper_no_edge_gates = cfg_.enable_paper_fills;
+    cfg_.trading_loop.paper_no_edge_gates = cfg_.enable_paper_fills;
 
     // 持仓管理 Stage 2 §4.1 乘子 (死区/exec_margin/毒性冻结/相关性折扣) 全部默认 OFF (struct 默认 = 现状)。
-    //   验证某组 = 在 position_controller.hpp/paper_loop.hpp 把该组默认翻 true + 重编译 (策略系数不进配置层,
+    //   验证某组 = 在 position_controller.hpp/trading_loop.hpp 把该组默认翻 true + 重编译 (策略系数不进配置层,
     //   老板 2026-06-09「不增加使用人员心智负担」)。验证流程见 docs/RUNBOOKS/posmgmt-stage2-validation-plan.md。
 
-    paper_loop_ = std::make_unique<paper::PaperLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
+    trading_loop_ = std::make_unique<engine::TradingLoop>(*hub_, *paper_rm_, *paper_position_ledger_, *ledger_hub_,
                                                      *quote_hub_, paper_rm_snap_.get(), *paper_fv_model_,
-                                                     token_map_, cfg_.paper_loop);
+                                                     token_map_, cfg_.trading_loop);
     // A1b: 注入真实比分源 (Start 前; 之后 loop_thread_ 只读). 映射由刷新线程 SetEventMapping.
-    paper_loop_->SetScoreStore(score_store_.get());
+    trading_loop_->SetScoreStore(score_store_.get());
 
     // (大模型 ONNX 推理装配已砍 2026-06-05「砍掉大模型训练功能」: 原 make_onnx_fair_value_model /
     //  StubFairValueModel / SetMlModelShared。fair_value 由 paper_fv_model_ baseline (score-prior 统计)
@@ -866,12 +866,12 @@ BuildResult PaperDaemon::Build() {
 
     // R-3 (老周/老郭 评审): per-condition 静态元数据 (token/fee/cat/parent) 统一为 PaperCatalog,
     //   一次原子注入 (替代原 3 个独立 setter)。BuildPaperCatalog 供 R-6 周期重发现复用。
-    paper_loop_->SetPaperCatalog(BuildPaperCatalog());
+    trading_loop_->SetPaperCatalog(BuildPaperCatalog());
     // 账本持久化恢复 (2026-06-11): 必须在【此处 Build 装配段】(Start 前, 单线程) 调 —— P0 教训:
     //   首版误插进 RediscoverOnce (300s 周期, 映射线程) → 运行中反复重放快照 = 持仓/累计反复叠加
     //   (净 PnL 飙到 +$7.4M) + 与 loop 线程 SaveLedgerSnapshot 并发 = segfault (core: Thread31 sscanf
     //   × Thread1 Save)。Restore 只许这一处调用。
-    paper_loop_->RestoreLedgerSnapshot();
+    trading_loop_->RestoreLedgerSnapshot();
 
     // ---- live 装配 (2026-06-12 实盘准备「单参数切换」; 仅 live build 编译进) -----------------------
     //   链: 决策环 → RM → executor 缝 → LiveExecutorAdapter → LiveExecutor → LiveOrderGate
@@ -888,7 +888,7 @@ BuildResult PaperDaemon::Build() {
         live_gate_ = std::make_unique<polymarket::LiveOrderGate>(
             *paper_rm_, [this](const polymarket::LiveOrderRequest& rq) { return live_submitter_->Submit(rq); });
         live_exec_ = std::make_unique<polymarket::LiveExecutor>(*live_gate_);
-        paper_loop_->SetExecutor(std::make_unique<polymarket::LiveExecutorAdapter>(*live_exec_));
+        trading_loop_->SetExecutor(std::make_unique<polymarket::LiveExecutorAdapter>(*live_exec_));
         const char* armed = std::getenv("LIVE_ARMED");
         if (armed != nullptr && armed[0] == '1') {
             live_gate_->Arm();
@@ -907,20 +907,20 @@ BuildResult PaperDaemon::Build() {
     real_provider_->set_events(event_infos_);
     real_provider_->set_market_catalog(market_catalog_);
 
-    // [2026-06-01 凯利评审] /api/v1/account 回调: 翻译 paper_loop 发布的权益快照 → debug_api::AccountSnapshot。
+    // [2026-06-01 凯利评审] /api/v1/account 回调: 翻译 trading_loop 发布的权益快照 → debug_api::AccountSnapshot。
     //   on-demand (HTTP 线程调用) → 经 published_account_equity() 线程安全拷贝, 零陈旧。翻译落此 (本层
     //   同时依赖 paper + debug_api; provider 头不许 include paper, line 49 边界)。
     real_provider_->set_account_snapshot_fn([this]() -> debug_api::AccountSnapshot {
         debug_api::AccountSnapshot a;
-        if (!paper_loop_) return a;  // has_data=false
-        const auto eq = paper_loop_->published_account_equity();
+        if (!trading_loop_) return a;  // has_data=false
+        const auto eq = trading_loop_->published_account_equity();
         a.mode = debug_api::exec_mode_str(cfg_.exec_mode);
         a.bankroll_initial = eq.bankroll_init;
         a.cash_available = eq.cash_available;
         a.deploy_pct = eq.deploy_pct;  // P4 (2026-06-11 晚会)
         // 引擎分账 (2026-06-12)
-        if (paper_loop_) {
-            const auto es = paper_loop_->engine_split();
+        if (trading_loop_) {
+            const auto es = trading_loop_->engine_split();
             if (const auto it = es.find("sharp"); it != es.end()) {
                 a.eng_sharp_realized = it->second.realized;
                 a.eng_sharp_settles = it->second.settles;
@@ -951,7 +951,7 @@ BuildResult PaperDaemon::Build() {
         a.kelly_bankroll_basis = "equity_conservative(best_bid, 动态)";
         a.open_positions = eq.open_positions;
         // CLV 验真 edge (2026-06-10 暴露 CLVTracker 金标准): clv_close_mean>0 = 入场打败收盘线 = edge 真。
-        const auto clv = paper_loop_->clv_report();
+        const auto clv = trading_loop_->clv_report();
         a.clv_close_mean = clv.clv_close_mean;
         a.clv_settle_mean = clv.clv_settle_mean;
         a.clv_positive_rate = clv.clv_close_positive_rate;
@@ -962,14 +962,14 @@ BuildResult PaperDaemon::Build() {
     });
 
     // [2026-06-04 老板「多少价格买的/卖出的都不知道」] /api/v1/fills 成交流水回调:
-    //   paper_loop RecentFills() (定长 ring, mutex 保护) → FillView (前端流水面板)。
+    //   trading_loop RecentFills() (定长 ring, mutex 保护) → FillView (前端流水面板)。
     real_provider_->set_fills_fn([this](const std::string& market) -> std::vector<debug_api::FillView> {
         std::vector<debug_api::FillView> out;
-        if (!paper_loop_) return out;
+        if (!trading_loop_) return out;
         // market 非空 → 按盘取(盯盘按盘看); 空 → 全局最近 (AnalyticsPage 全量日志)。
         // 全局(market 空)取 500 深 — 模型诊断需足量样本算偏差/胜率 (深环 5000 够; 已 gzip 传输)。
-        const auto rows = market.empty() ? paper_loop_->RecentFills(500)
-                                         : paper_loop_->RecentFills(30, market);
+        const auto rows = market.empty() ? trading_loop_->RecentFills(500)
+                                         : trading_loop_->RecentFills(30, market);
         out.reserve(rows.size());
         for (const auto& r : rows) {
             debug_api::FillView v;
@@ -992,12 +992,12 @@ BuildResult PaperDaemon::Build() {
         return out;
     });
 
-    // [mark-staleness fix 2026-06-05] /api/v1/positions 回调: paper_loop positions_mtm() (per-token 真账本
+    // [mark-staleness fix 2026-06-05] /api/v1/positions 回调: trading_loop positions_mtm() (per-token 真账本
     //   + 当前 live 簿, 与 /account 同源) → HoldingView。修旧 LedgerSnapshotHub 路径的陈旧 mark + YES/NO 误标。
     real_provider_->set_positions_fn([this]() -> std::vector<debug_api::HoldingView> {
         std::vector<debug_api::HoldingView> out;
-        if (!paper_loop_) return out;
-        const auto rows = paper_loop_->positions_mtm();
+        if (!trading_loop_) return out;
+        const auto rows = trading_loop_->positions_mtm();
         out.reserve(rows.size());
         for (const auto& p : rows) {
             debug_api::HoldingView hv;
@@ -1015,15 +1015,15 @@ BuildResult PaperDaemon::Build() {
         return out;
     });
 
-    // [2026-06-01 凯利评审 Step3] /api/v1/pnl/timeseries 净值曲线回调: paper_loop equity_snapshot (每 tick
+    // [2026-06-01 凯利评审 Step3] /api/v1/pnl/timeseries 净值曲线回调: trading_loop equity_snapshot (每 tick
     //   等间隔权益样本) 按 bucket_sec 分桶 (按 ts), 每桶取末尾 equity → cum_net_pnl = equity − bankroll_init。
     real_provider_->set_pnl_timeseries_fn(
         [this](std::int64_t window_sec, std::int64_t bucket_sec) -> std::vector<debug_api::PnlBucket> {
             std::vector<debug_api::PnlBucket> out;
-            if (!paper_loop_ || bucket_sec <= 0) return out;
-            const auto series = paper_loop_->equity_snapshot();  // vector<pair<ts_ns, equity>>
+            if (!trading_loop_ || bucket_sec <= 0) return out;
+            const auto series = trading_loop_->equity_snapshot();  // vector<pair<ts_ns, equity>>
             if (series.empty()) return out;
-            const double bankroll_init = paper_loop_->published_account_equity().bankroll_init;
+            const double bankroll_init = trading_loop_->published_account_equity().bankroll_init;
             const std::int64_t bucket_ns = bucket_sec * 1'000'000'000LL;
             const std::int64_t cutoff =
                 (window_sec > 0) ? series.back().first - window_sec * 1'000'000'000LL : 0;
@@ -1048,8 +1048,8 @@ BuildResult PaperDaemon::Build() {
 
     // LiveMetricsHooks (P1-2/P1-3): start_tp + fill_counter; wss_transport 在 Step 4 填.
     metrics_hooks_.start_tp = std::chrono::steady_clock::now();
-    metrics_hooks_.fill_counter = &paper_loop_->stats().fills_completed;
-    metrics_hooks_.last_tick_ts = &paper_loop_->stats().last_tick_ts_ns;  // 韧性 watchdog 心跳
+    metrics_hooks_.fill_counter = &trading_loop_->stats().fills_completed;
+    metrics_hooks_.last_tick_ts = &trading_loop_->stats().last_tick_ts_ns;  // 韧性 watchdog 心跳
     metrics_hooks_.wss_reconnect_counter = &wss_reconnect_total_;  // A4: WSS 看门狗重连计数
     real_provider_->set_live_metrics_hooks(metrics_hooks_);
 
@@ -1148,9 +1148,9 @@ BuildResult PaperDaemon::Build() {
         live_publisher_ = std::make_unique<polymarket::clob_wss::LiveBookPublisher>(*hub_, all_token_ids_, cfg_.verbose);
         // 事件驱动 (2026-06-04 老板「别轮询直接触发」): book 落 hub 即唤醒决策。WSS frame + 149hz poll
         //   都经 publisher → Publish → 此回调 → RequestTick (短锁+notify, R-12 安全, 不阻塞数据线程)。
-        if (paper_loop_) {
+        if (trading_loop_) {
             live_publisher_->SetOnPublish(
-                [this](const std::string& /*token_id*/) { paper_loop_->RequestTick(); });
+                [this](const std::string& /*token_id*/) { trading_loop_->RequestTick(); });
         }
         live_transport_ = std::make_unique<polymarket::clob_wss::LiveWssTransport>(cfg_.verbose);
 
@@ -1169,7 +1169,7 @@ BuildResult PaperDaemon::Build() {
             //     初次订阅 known-good 老格式全量 (重连后亦同; 比赛增删走 RediscoverOnce 增量)。
             const auto tokens_sp = TokenSnapshot();
             const std::vector<std::string>& tokens = *tokens_sp;
-            std::printf("[paper_daemon] WSS CONNECTED, 订阅 %zu tokens...\n", tokens.size());
+            std::printf("[trader_daemon] WSS CONNECTED, 订阅 %zu tokens...\n", tokens.size());
             std::fflush(stdout);
             // CLOB market channel subscribe: {"type":"Market","assets_ids":[...]}
             std::string sub = R"({"type":"Market","assets_ids":[)";
@@ -1187,13 +1187,13 @@ BuildResult PaperDaemon::Build() {
         });
 
         live_transport_->SetOnDisconnected([](std::string_view reason) {
-            std::fprintf(stderr, "[paper_daemon] WSS DISCONNECTED: %s\n", std::string(reason).c_str());
+            std::fprintf(stderr, "[trader_daemon] WSS DISCONNECTED: %s\n", std::string(reason).c_str());
             std::fflush(stderr);
         });
     } else {
         std::fprintf(
             stderr,
-            "[paper_daemon] WARNING: 无 token 可订阅 (发现失败), WSS 未装配, book 回落 found=false.\n");
+            "[trader_daemon] WARNING: 无 token 可订阅 (发现失败), WSS 未装配, book 回落 found=false.\n");
     }
 
     // ---- Step 4c: 结算/比分落盘 (回测等价数据; 大模型特征捕获 FeatureRecorder/FeatureVectorHub/
@@ -1216,8 +1216,8 @@ BuildResult PaperDaemon::Build() {
         }
     }
 
-    // ---- Step 5: HttpServer (仅 RunMode::PaperDaemon; Headless 无 HTTP) ----
-    if (cfg_.mode == RunMode::PaperDaemon) {
+    // ---- Step 5: HttpServer (仅 RunMode::TraderDaemon; Headless 无 HTTP) ----
+    if (cfg_.mode == RunMode::TraderDaemon) {
         server_ = std::make_unique<debug_api::HttpServer>(cfg_.port, real_provider_.get(), cfg_.host.c_str());
     }
 
@@ -1232,9 +1232,9 @@ BuildResult PaperDaemon::Build() {
 // Start — 按序起线程 (幂等)
 // ---------------------------------------------------------------------------
 
-void PaperDaemon::Start() {
+void TraderDaemon::Start() {
     if (!built_) {
-        std::fprintf(stderr, "[paper_daemon] ERROR: Start() 前必须先 Build()\n");
+        std::fprintf(stderr, "[trader_daemon] ERROR: Start() 前必须先 Build()\n");
         return;
     }
     if (started_.exchange(true, std::memory_order_acq_rel)) {
@@ -1244,26 +1244,26 @@ void PaperDaemon::Start() {
     // ---- Step 3 start: InplayFeedThread (Goalserve score feed, 常开) ----
     if (cfg_.start_live_feeds && inplay_feed_) {
         inplay_feed_->Start();
-        std::printf("[paper_daemon] Goalserve InplayFeedThread 启动 (soccer/basketball/tennis/esports/baseball/amfootball/hockey, R-12)\n");
+        std::printf("[trader_daemon] Goalserve InplayFeedThread 启动 (soccer/basketball/tennis/esports/baseball/amfootball/hockey, R-12)\n");
         std::fflush(stdout);
     }
 
     // ---- M2 start: SettlementPoller + 结算刷新线程 (喂 3b 权威结算 + CLV 收盘信号) ----
     if (cfg_.start_live_feeds && settlement_poller_) {
         settlement_poller_->Start();
-        if (cfg_.enable_paper_trading && paper_loop_) {
+        if (cfg_.enable_paper_trading && trading_loop_) {
             settlement_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshResolution(st); });
         }
-        std::printf("[paper_daemon] M2 SettlementPoller + 结算刷新线程启动 (clob /markets 60s 轮询)\n");
+        std::printf("[trader_daemon] M2 SettlementPoller + 结算刷新线程启动 (clob /markets 60s 轮询)\n");
         std::fflush(stdout);
     }
 
     // ---- live_stats start: soccernew/live 刷新线程 (喂 #19-23 g_*_diff 特征) ----
     //   2026-06-02 特征审计: 改用 soccernew/live (覆盖全部直播盘 + 内联 live_stats, 文档 soccer-data-feed.md
     //   §实时统计)。per-league CommentariesPoller (仅顶级联赛 + 标签找错) 已弃用, 不再启动。
-    if (cfg_.start_live_feeds && cfg_.enable_paper_trading && paper_loop_) {
+    if (cfg_.start_live_feeds && cfg_.enable_paper_trading && trading_loop_) {
         live_stats_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshLiveStats(st); });
-        std::printf("[paper_daemon] live_stats 刷新线程启动 (soccernew/live 12s 轮询)\n");
+        std::printf("[trader_daemon] live_stats 刷新线程启动 (soccernew/live 12s 轮询)\n");
         std::fflush(stdout);
     }
 
@@ -1272,12 +1272,12 @@ void PaperDaemon::Start() {
     if (cfg_.start_live_feeds && inplay_feed_) {
         tennis_scores_refresh_thread_ =
             std::jthread([this](std::stop_token st) { RefreshTennisScores(st); });
-        std::printf("[paper_daemon] tennis_scores 补充比分线程启动 (拉高 ITF/Challenger 覆盖, 15s 轮询)\n");
+        std::printf("[trader_daemon] tennis_scores 补充比分线程启动 (拉高 ITF/Challenger 覆盖, 15s 轮询)\n");
         std::fflush(stdout);
         // 队制 livescore 补充源 (cricket/livescore + esports/home) — 填 inplay-cricket 404 的 0 缺口。
         team_livescore_refresh_thread_ =
             std::jthread([this](std::stop_token st) { RefreshTeamLivescores(st); });
-        std::printf("[paper_daemon] 队制 livescore 补充线程启动 (cricket/esports, 30s 轮询)\n");
+        std::printf("[trader_daemon] 队制 livescore 补充线程启动 (cricket/esports, 30s 轮询)\n");
         std::fflush(stdout);
     }
 
@@ -1287,22 +1287,22 @@ void PaperDaemon::Start() {
     //   重开前提: getodds 45MB 跨洋不可行, 待改按场抓 (getodds/match?id=) 或代理侧过滤。
     const char* bm_en = std::getenv("STCPP_ENABLE_BM_SLOTS");
     if (bm_en != nullptr && std::string(bm_en) == "1" && cfg_.start_live_feeds &&
-        cfg_.enable_paper_trading && paper_loop_) {
+        cfg_.enable_paper_trading && trading_loop_) {
         odds_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshOdds(st); });
-        std::printf("[paper_daemon] bm_slots 赔率刷新线程启动 (STCPP_ENABLE_BM_SLOTS=1; getodds 限速+300s)\n");
+        std::printf("[trader_daemon] bm_slots 赔率刷新线程启动 (STCPP_ENABLE_BM_SLOTS=1; getodds 限速+300s)\n");
         std::fflush(stdout);
     } else {
-        std::printf("[paper_daemon] bm_slots 赔率刷新线程【关】(getodds 45MB 吃带宽; 设 STCPP_ENABLE_BM_SLOTS=1 重开)\n");
+        std::printf("[trader_daemon] bm_slots 赔率刷新线程【关】(getodds 45MB 吃带宽; 设 STCPP_ENABLE_BM_SLOTS=1 重开)\n");
         std::fflush(stdout);
     }
 
     // ---- Step 4 start: WSS AsyncConnect ----
     if (cfg_.start_live_feeds && live_transport_) {
         const std::string wss_url = "wss://ws-subscriptions-clob.polymarket.com/ws/market";
-        std::printf("[paper_daemon] 连接 %s ...\n", wss_url.c_str());
+        std::printf("[trader_daemon] 连接 %s ...\n", wss_url.c_str());
         std::fflush(stdout);
         live_transport_->AsyncConnect(wss_url);
-        std::printf("[paper_daemon] WSS io_thread_ 已启动, 等待 book 数据 (通常 1-5s)...\n");
+        std::printf("[trader_daemon] WSS io_thread_ 已启动, 等待 book 数据 (通常 1-5s)...\n");
         std::fflush(stdout);
         // REST 快照打底: 订阅时先拉一次初始 book, 不靠 WSS 推 (修"稳定盘/漏接初始快照永远空")。
         //   后台 jthread (不阻塞 HTTP/loop 启动, ~20s 完成; hub.Publish 线程安全)。WSS delta 随后更新。
@@ -1326,26 +1326,26 @@ void PaperDaemon::Start() {
         // 149hz 主动 book 轮询 (2026-06-04 老板): 热链 GET /book 压官方限速, 流动性加权, 主动补 WSS。
         active_poll_thread_ =
             std::jthread([this](std::stop_token st) { RunActiveBookPoller(st); });
-        std::printf("[paper_daemon] 149hz 主动 book 轮询启动 (热链 /book, 流动性加权, 源头 pass 后 token)\n");
+        std::printf("[trader_daemon] 149hz 主动 book 轮询启动 (热链 /book, 流动性加权, 源头 pass 后 token)\n");
     }
 
-    // ---- Step 4b start: PaperLoop (enable_paper_trading; "仅观测" flag=false 时不起) ----
-    if (cfg_.enable_paper_trading && paper_loop_) {
-        std::printf("[paper_daemon] 启动 paper 交易循环 (PaperLoop, 独立线程, 500ms tick)...\n");
-        std::printf("[paper_daemon] [paper] R-11 隔离: PositionLedger 独立实例 (非 live 账本)\n");
-        std::printf("[paper_daemon] [paper] R-20 透传: data_source_ts_ns 来自 CLOB hub 快照\n");
-        std::printf("[paper_daemon] [paper] ToS: 仅 VirtualFill, 不向 CLOB 下单\n");
+    // ---- Step 4b start: TradingLoop (enable_paper_trading; "仅观测" flag=false 时不起) ----
+    if (cfg_.enable_paper_trading && trading_loop_) {
+        std::printf("[trader_daemon] 启动 paper 交易循环 (TradingLoop, 独立线程, 500ms tick)...\n");
+        std::printf("[trader_daemon] [paper] R-11 隔离: PositionLedger 独立实例 (非 live 账本)\n");
+        std::printf("[trader_daemon] [paper] R-20 透传: data_source_ts_ns 来自 CLOB hub 快照\n");
+        std::printf("[trader_daemon] [paper] ToS: 仅 VirtualFill, 不向 CLOB 下单\n");
         std::fflush(stdout);
-        paper_loop_->Start();
+        trading_loop_->Start();
     }
 
     // ---- Step 4b' start: 映射刷新线程 (A1b; EventMatcher 周期匹配 condition↔goalserve + R-6 周期重发现) ----
     //   起交易 + 有 score_store + 刷新周期>0 即启动。R-6 修: 不再要求 market_match_inputs_ 非空 ——
     //   启动时 0 发现 (大赛空档) 也要起线程, 否则周期重发现永不跑, 卡死在 0 (live 比赛来了也捞不到)。
-    if (cfg_.enable_paper_trading && cfg_.mapping_refresh_sec > 0 && score_store_ && paper_loop_ &&
+    if (cfg_.enable_paper_trading && cfg_.mapping_refresh_sec > 0 && score_store_ && trading_loop_ &&
         (!market_match_inputs_.empty() || cfg_.rediscover_interval_sec > 0)) {
         mapping_refresh_thread_ = std::jthread([this](std::stop_token st) { RefreshEventMapping(st); });
-        std::printf("[paper_daemon] 映射刷新线程启动 (EventMatcher %ds + 周期重发现 %ds, 起始 %zu market)\n",
+        std::printf("[trader_daemon] 映射刷新线程启动 (EventMatcher %ds + 周期重发现 %ds, 起始 %zu market)\n",
                     cfg_.mapping_refresh_sec, cfg_.rediscover_interval_sec, market_match_inputs_.size());
         std::fflush(stdout);
     }
@@ -1356,7 +1356,7 @@ void PaperDaemon::Start() {
     // ---- 采集数据磁盘守护 (老板「超过30g后开始删,一次删5G」) — 默认开 (仅超阈值才动) ----
     if (cfg_.disk_prune_threshold_gb > 0) {
         disk_prune_thread_ = std::jthread([this](std::stop_token st) { DiskPrune(st); });
-        std::printf("[paper_daemon] 磁盘守护线程启动 (>%dGB 删 %dGB, 每 %ds 检查)\n",
+        std::printf("[trader_daemon] 磁盘守护线程启动 (>%dGB 删 %dGB, 每 %ds 检查)\n",
                     cfg_.disk_prune_threshold_gb, cfg_.disk_prune_free_gb, cfg_.disk_prune_interval_sec);
         std::fflush(stdout);
     }
@@ -1364,12 +1364,12 @@ void PaperDaemon::Start() {
     // ---- Step 4c start: 结算/比分 recorder (回测数据; ML 特征 recorder 已砍 2026-06-05) ----
     if (settlement_recorder_) {
         settlement_recorder_->Start();
-        std::printf("[paper_daemon] 结算落盘启动 (SettlementRecorder -> %s.settlements.jsonl, label y)\n",
+        std::printf("[trader_daemon] 结算落盘启动 (SettlementRecorder -> %s.settlements.jsonl, label y)\n",
                     cfg_.ml_path.c_str());
     }
     if (score_recorder_) {
         score_recorder_->Start();
-        std::printf("[paper_daemon] 比分帧落盘启动 (ScoreFrameRecorder -> %s.scores.jsonl, 回测 P0)\n",
+        std::printf("[trader_daemon] 比分帧落盘启动 (ScoreFrameRecorder -> %s.scores.jsonl, 回测 P0)\n",
                     cfg_.ml_path.c_str());
     }
 
@@ -1377,14 +1377,14 @@ void PaperDaemon::Start() {
     if (server_) {
         server_->start();
         if (!server_->is_running()) {
-            std::fprintf(stderr, "[paper_daemon] FATAL: HttpServer 无法在 %s:%u 启动 (端口被占用?)\n",
+            std::fprintf(stderr, "[trader_daemon] FATAL: HttpServer 无法在 %s:%u 启动 (端口被占用?)\n",
                          cfg_.host.c_str(), static_cast<unsigned>(cfg_.port));
         } else {
-            std::printf("[paper_daemon] 观测/调试 API @ http://%s:%u (mode=%s)\n", cfg_.host.c_str(),
+            std::printf("[trader_daemon] 观测/调试 API @ http://%s:%u (mode=%s)\n", cfg_.host.c_str(),
                         static_cast<unsigned>(cfg_.port), debug_api::exec_mode_str(cfg_.exec_mode));
         }
     } else {
-        std::printf("[paper_daemon] Headless 模式: 无 HTTP 观测端 (stderr → journal)\n");
+        std::printf("[trader_daemon] Headless 模式: 无 HTTP 观测端 (stderr → journal)\n");
     }
     std::fflush(stdout);
 }
@@ -1393,36 +1393,36 @@ void PaperDaemon::Start() {
 // WaitForStop / RequestStop
 // ---------------------------------------------------------------------------
 
-void PaperDaemon::WaitForStop() {
+void TraderDaemon::WaitForStop() {
     while (!stop_requested_.load(std::memory_order_acquire)) {
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 }
 
-void PaperDaemon::RequestStop() noexcept {
+void TraderDaemon::RequestStop() noexcept {
     stop_requested_.store(true, std::memory_order_release);
 }
 
 // ---------------------------------------------------------------------------
-// Shutdown — 反序优雅停 (幂等). [R-11 INV-2] 严格序: paper_loop.Stop → detach → 析构.
+// Shutdown — 反序优雅停 (幂等). [R-11 INV-2] 严格序: trading_loop.Stop → detach → 析构.
 // ---------------------------------------------------------------------------
 
-void PaperDaemon::Shutdown() noexcept {
+void TraderDaemon::Shutdown() noexcept {
     if (shutdown_done_.exchange(true, std::memory_order_acq_rel)) {
         return;  // 幂等
     }
 
-    // 0. A1b 映射刷新线程先停 (它 touch paper_loop_ + score_store_, 必在二者析构/停止前 join).
+    // 0. A1b 映射刷新线程先停 (它 touch trading_loop_ + score_store_, 必在二者析构/停止前 join).
     if (mapping_refresh_thread_.joinable()) {
         mapping_refresh_thread_.request_stop();
         mapping_refresh_thread_.join();
     }
-    // 0a. M2 结算刷新线程先停 (它 touch paper_loop_ + settlement_store_, 必在二者前 join).
+    // 0a. M2 结算刷新线程先停 (它 touch trading_loop_ + settlement_store_, 必在二者前 join).
     if (settlement_refresh_thread_.joinable()) {
         settlement_refresh_thread_.request_stop();
         settlement_refresh_thread_.join();
     }
-    // 0a'. live_stats 刷新线程先停 (它 touch paper_loop_ + live_stats_store_ + score_store_ + poller).
+    // 0a'. live_stats 刷新线程先停 (它 touch trading_loop_ + live_stats_store_ + score_store_ + poller).
     if (live_stats_refresh_thread_.joinable()) {
         live_stats_refresh_thread_.request_stop();
         live_stats_refresh_thread_.join();
@@ -1460,12 +1460,12 @@ void PaperDaemon::Shutdown() noexcept {
         score_recorder_->Stop();  // 停读 score_store_ (先于其析构, 同 InplayFeedThread 之前)
     }
 
-    // 3. PaperLoop (先于 hub/ledger/rm 析构; Stop 内含 jthread join)
-    if (paper_loop_) {
-        paper_loop_->Stop();
+    // 3. TradingLoop (先于 hub/ledger/rm 析构; Stop 内含 jthread join)
+    if (trading_loop_) {
+        trading_loop_->Stop();
     }
 
-    // 4. [R-11 INV-1/INV-2] detach 全局 hook —— 必在 paper_loop_ 停后 + paper_rm_snap_ 析构前.
+    // 4. [R-11 INV-1/INV-2] detach 全局 hook —— 必在 trading_loop_ 停后 + paper_rm_snap_ 析构前.
     //    幂等: detach 只在曾 attach 时调一次 (避免清掉非本 daemon 的 hook).
     if (attached_rm_snap_) {
         risk::detach_rm_debug_snapshot();
@@ -1487,11 +1487,11 @@ void PaperDaemon::Shutdown() noexcept {
         live_transport_->Close();
     }
 
-    if (paper_loop_) {
-        std::fprintf(stderr, "[paper_daemon] 已停止. ticks=%llu approved=%llu fills=%llu\n",
-                     static_cast<unsigned long long>(paper_loop_->stats().ticks_total.load()),
-                     static_cast<unsigned long long>(paper_loop_->stats().orders_approved.load()),
-                     static_cast<unsigned long long>(paper_loop_->stats().fills_completed.load()));
+    if (trading_loop_) {
+        std::fprintf(stderr, "[trader_daemon] 已停止. ticks=%llu approved=%llu fills=%llu\n",
+                     static_cast<unsigned long long>(trading_loop_->stats().ticks_total.load()),
+                     static_cast<unsigned long long>(trading_loop_->stats().orders_approved.load()),
+                     static_cast<unsigned long long>(trading_loop_->stats().fills_completed.load()));
     }
 }
 
@@ -1499,9 +1499,9 @@ void PaperDaemon::Shutdown() noexcept {
 // Run — 便捷封装
 // ---------------------------------------------------------------------------
 
-int PaperDaemon::Run() {
+int TraderDaemon::Run() {
     if (!built_) {
-        std::fprintf(stderr, "[paper_daemon] ERROR: Run() 前必须先 Build()\n");
+        std::fprintf(stderr, "[trader_daemon] ERROR: Run() 前必须先 Build()\n");
         return 1;
     }
     Start();
@@ -1513,10 +1513,10 @@ int PaperDaemon::Run() {
 // ---------------------------------------------------------------------------
 // RefreshEventMapping — 映射刷新线程主体 (A1b)
 //   周期: 取 score_store 快照 → 对每个 market 跑 EventMatcher → 构建 condition→event
-//   映射 → paper_loop_->SetEventMapping(). Goalserve event 动态出现, 故周期重匹配.
-//   fail-closed: 未匹配的 condition 不进映射 (paper_loop 退回 stub, has_real_fair=false).
+//   映射 → trading_loop_->SetEventMapping(). Goalserve event 动态出现, 故周期重匹配.
+//   fail-closed: 未匹配的 condition 不进映射 (trading_loop 退回 stub, has_real_fair=false).
 // ---------------------------------------------------------------------------
-void PaperDaemon::RefreshEventMapping(std::stop_token st) {
+void TraderDaemon::RefreshEventMapping(std::stop_token st) {
     using namespace std::chrono;
     // R-6: 周期重发现计时 (本线程跑 → match_inputs 同线程无竞争)。初始化为 now, 首次重发现在一个间隔后。
     auto last_rediscover = steady_clock::now();
@@ -1542,10 +1542,10 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         // 防孤儿结算 (2026-06-10 老板「安全重做」, CLV=0 真根因): SettlementPoller 除 catalog cid 外, 还轮询【有持仓的
         //   condition】—— 比赛结束掉出 discovery 的仓不再在 catalog, 但仍需 resolution 才能结算。每周期无条件刷新
         //   (不受 RediscoverOnce 早退影响)。【只更新 poller cid 集, 不碰 token_map_/catalog —— 避开上次 GP fault 崩溃区】。
-        if (settlement_poller_ && paper_loop_) {
+        if (settlement_poller_ && trading_loop_) {
             std::unordered_set<std::string> poll_set;
             for (const auto& [cid, _t] : token_map_) poll_set.insert(cid);  // 同线程读 (RediscoverOnce 同线程写)
-            for (const auto& cid : paper_loop_->HeldConditions()) poll_set.insert(cid);  // 线程安全 (shared_lock)
+            for (const auto& cid : trading_loop_->HeldConditions()) poll_set.insert(cid);  // 线程安全 (shared_lock)
             settlement_poller_->SetConditionIds(std::vector<std::string>(poll_set.begin(), poll_set.end()));
         }
 
@@ -1567,7 +1567,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         const std::int64_t refresh_now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
                                                 std::chrono::system_clock::now().time_since_epoch())
                                                 .count();
-        auto new_map = std::make_shared<paper::ConditionEventMap>();
+        auto new_map = std::make_shared<engine::ConditionEventMap>();
         std::size_t matched = 0;
         // 结束检测 (2026-06-05 老板 a: 扩到所有终态): status=="final"(Ended) 仅是终态之一; c.is_terminal
         //   覆盖 IsTerminal 全集 (Retired/Walkover/Abandoned/Cancelled/Postponed/Removed —— 这些被
@@ -1688,7 +1688,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                     //   erase 返 0 不再 log (防刷屏)。这是 Fix B 终态即退的活证锚点。
                     if (sharp_last_seen.erase(cond_id) > 0) {
                         std::fprintf(stderr,
-                                     "[paper_daemon] 完赛退订: cond=%.18s.. 终态(is_terminal) → 立即掉出 "
+                                     "[trader_daemon] 完赛退订: cond=%.18s.. 终态(is_terminal) → 立即掉出 "
                                      "eligible (下轮 RediscoverOnce 断 WSS+订单簿轮询)\n",
                                      cond_id.c_str());
                         std::fflush(stderr);
@@ -1723,7 +1723,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
                         ended_event_blacklist_[cit->second.event_id] = refresh_now_ns + kBlacklistTtlNs;
                     }
                 }
-                paper::EventMapEntry entry;
+                engine::EventMapEntry entry;
                 entry.inplay_match_id = r.inplay_match_id;
                 entry.yes_is_home = r.yes_is_home;
                 entry.is_draw = in.is_draw;  // 3-way 平局盘标志透传 → 下游 sharp fair 选 draw
@@ -1746,9 +1746,9 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
         }
         if (do_unmatched_diag) diag_unmatched_dumped = true;  // 未匹配诊断一次即停
 
-        // 3. 推送映射给 PaperLoop (热刷)
-        if (paper_loop_) {
-            paper_loop_->SetEventMapping(std::shared_ptr<const paper::ConditionEventMap>(std::move(new_map)));
+        // 3. 推送映射给 TradingLoop (热刷)
+        if (trading_loop_) {
+            trading_loop_->SetEventMapping(std::shared_ptr<const engine::ConditionEventMap>(std::move(new_map)));
         }
 
         // 3b. 可观测: 构建映射状态报告 (matched 行 + Goalserve live 候选) → push debug_api。
@@ -1788,7 +1788,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
             PublishSharpConditions(std::move(eligible));
         }
         std::fprintf(stderr,
-                     "[paper_daemon] 映射刷新: %zu/%zu market 匹配, sharp-eligible(订阅)=%zu (源头 pass 无赔率源)\n",
+                     "[trader_daemon] 映射刷新: %zu/%zu market 匹配, sharp-eligible(订阅)=%zu (源头 pass 无赔率源)\n",
                      matched, market_match_inputs_.size(), sharp_last_seen.size());
 
         // [COVERAGE-DIAG] 覆盖率门诊断 (2026-06-03, 老板「是不是名字不匹配」):
@@ -1826,7 +1826,7 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
 //   只轮询源头 pass 后有赔率源的 token (poll_plan_snapshot_)。WSS 仍并行推 (此为主动补/压频)。
 //   R-12: 独立线程, 非 WSS event loop。
 // ---------------------------------------------------------------------------
-void PaperDaemon::RunActiveBookPoller(std::stop_token st) noexcept {
+void TraderDaemon::RunActiveBookPoller(std::stop_token st) noexcept {
     using namespace std::chrono;
     if (live_publisher_ == nullptr) return;
     constexpr double kTargetRps = 149.0;
@@ -1904,13 +1904,13 @@ void PaperDaemon::RunActiveBookPoller(std::stop_token st) noexcept {
 //   ResolutionEntry.status = SettlementRecord.resolution_status() (0Open/1Resolving/2Resolved);
 //   .winner = settlement_value (-1/0/1, 语义直对齐)。3b 权威结算 (SettleCondition) 已接, 此线喂数。
 // ---------------------------------------------------------------------------
-void PaperDaemon::RefreshResolution(std::stop_token st) {
+void TraderDaemon::RefreshResolution(std::stop_token st) {
     using namespace std::chrono;
     while (!st.stop_requested()) {
-        if (settlement_store_ && paper_loop_) {
+        if (settlement_store_ && trading_loop_) {
             const auto snap = settlement_store_->GetSnapshot();  // shared_ptr<const SettlementMap>
             if (snap) {
-                std::unordered_map<std::string, paper::ResolutionEntry> res_map;
+                std::unordered_map<std::string, engine::ResolutionEntry> res_map;
                 res_map.reserve(snap->size());
                 std::size_t resolved = 0;
                 // 新鲜度锚: 本次 resolution 刷新时刻 (老板「每个源标时间」→ g_resolution_age_sec)。
@@ -1919,15 +1919,15 @@ void PaperDaemon::RefreshResolution(std::stop_token st) {
                         std::chrono::system_clock::now().time_since_epoch())
                         .count();
                 for (const auto& [cid, rec] : *snap) {
-                    paper::ResolutionEntry e;
+                    engine::ResolutionEntry e;
                     e.status = rec.resolution_status();
                     e.winner = rec.settlement_value;  // -1/0/1 直对齐 ResolutionEntry.winner
                     e.fetched_at_ns = res_fetch_ns;
                     res_map[cid] = e;
                     if (e.status == 2) ++resolved;
                 }
-                paper_loop_->SetResolutionByCondition(std::move(res_map));
-                std::fprintf(stderr, "[paper_daemon] 结算刷新: %zu market (%zu resolved)\n", snap->size(),
+                trading_loop_->SetResolutionByCondition(std::move(res_map));
+                std::fprintf(stderr, "[trader_daemon] 结算刷新: %zu market (%zu resolved)\n", snap->size(),
                              resolved);
             }
         }
@@ -1942,10 +1942,10 @@ void PaperDaemon::RefreshResolution(std::stop_token st) {
 // ---------------------------------------------------------------------------
 // RefreshLiveStats — live_stats 刷新线程主体
 //   每周期: ① 从 score store 收集当前活跃 league_id → 更新 poller 轮询集 (league 仅运行期才知);
-//           ② live_stats_store 快照 → paper_loop_->SetLiveStatsByTeams (join_key→LiveStatsFields)。
+//           ② live_stats_store 快照 → trading_loop_->SetLiveStatsByTeams (join_key→LiveStatsFields)。
 //   poller 自身线程负责 fetch/parse; 本线程只做 league 收集 + 快照转交。喂 5 个 g_*_diff 特征。
 // ---------------------------------------------------------------------------
-void PaperDaemon::RefreshLiveStats(std::stop_token st) {
+void TraderDaemon::RefreshLiveStats(std::stop_token st) {
     using namespace std::chrono;
     // 2026-06-02 特征审计 #19-23: 改用 soccernew/live (后台验证: 真实 live_stats 在此, 含
     //   ICorner/IDangerousAttacks/IOnTarget/IPosession/IRedCard KV)。替换失效的 per-league
@@ -1957,7 +1957,7 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
     // 2026-06-02 实测教训 (老板「自己验证」): soccernew/live 与 inplay feed 的 league_id 与队名
     //   **两者都不同空间** ("China U20" vs "China PR Youth"; Asean U19 2417 vs 1362) → 原 (league,队名)
     //   join 两端永不匹配 (真 bug 非覆盖)。改用 inplay-mapping 桥 (与 bm_slots 同): soccernew match id
-    //   (pregame) → inplay_match_id → paper_loop 按 inplay_match_id join。
+    //   (pregame) → inplay_match_id → trading_loop 按 inplay_match_id join。
     auto fetch = [&gs_proxy](const std::string& url) -> std::string {
         std::string cmd = "curl -s --max-time 15 ";
         if (!gs_proxy.empty()) {
@@ -1979,19 +1979,19 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
         return out;
     };
     while (!st.stop_requested()) {
-        if (!gs_key.empty() && paper_loop_ != nullptr) {
+        if (!gs_key.empty() && trading_loop_ != nullptr) {
             const std::string live_xml = fetch("https://www.goalserve.com/getfeed/" + gs_key + "/soccernew/live");
             data::livescore::LiveStatsMap by_pregame;  // 键 = soccernew match id (pregame)
             if (!live_xml.empty())
                 data::livescore::CommentariesParser::ParseSoccernewLiveInto(by_pregame, live_xml);
             if (!by_pregame.empty()) {
-                // inplay-mapping: pregame_match_id → inplay_match_id (桥到 paper_loop join key)
+                // inplay-mapping: pregame_match_id → inplay_match_id (桥到 trading_loop join key)
                 const std::string map_xml =
                     fetch("https://www.goalserve.com/getfeed/" + gs_key + "/soccernew/inplay-mapping");
                 std::unordered_map<std::string, std::string> pre2inp;
                 for (auto& [pre, inp] : data::goalserve::ParseInplayMappingXml(map_xml))
                     pre2inp.emplace(std::move(pre), std::move(inp));
-                data::livescore::LiveStatsMap by_inplay;  // 键 = inplay_match_id (= paper_loop es.event_id)
+                data::livescore::LiveStatsMap by_inplay;  // 键 = inplay_match_id (= trading_loop es.event_id)
                 const std::int64_t as_of_ns = duration_cast<nanoseconds>(
                                                   system_clock::now().time_since_epoch())
                                                   .count();
@@ -2003,7 +2003,7 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
                     by_inplay[it->second] = stats;
                 }
                 const std::size_t n = by_inplay.size();
-                paper_loop_->SetLiveStatsByTeams(std::move(by_inplay));
+                trading_loop_->SetLiveStatsByTeams(std::move(by_inplay));
                 static int ls_log_throttle = 0;
                 if ((ls_log_throttle++ % 5) == 0)  // 每 60s 一行
                     std::fprintf(stderr,
@@ -2023,7 +2023,7 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
 // ---------------------------------------------------------------------------
 // RefreshOdds — bm_slots 跨庄家赔率刷新 (特征审计 #5/6/7/16; 2026-06-02)。
 //   周期 popen curl getodds (HTTPS, HTTP 500 但 body 有效) + inplay-mapping (pregame↔inplay id),
-//   join → OddsMap[inplay_match_id] → paper_loop_->SetOddsByMatchId()。
+//   join → OddsMap[inplay_match_id] → trading_loop_->SetOddsByMatchId()。
 //   R-12: 独立 jthread, popen 阻塞 IO 在本线程, 不进 WSS event loop。key 在 URL → https+proxy 保护。
 //   cat/slug 来自 enum (无注入)。getodds 覆盖 in-play (Agent C 实测); 无 mapping 的盘 (非直播) 跳过。
 // ---------------------------------------------------------------------------
@@ -2033,7 +2033,7 @@ void PaperDaemon::RefreshLiveStats(std::stop_token st) {
 //   → EventMatcher 配 PM ITF 盘。tennis_scores ~194KB (远小于 getodds 45MB, 无 WSS 带宽风险)。
 //   无 bet365 赔率 → 这些场走 score-prior fair (无 sharp 锚), 但覆盖率↑+比分特征。
 // ---------------------------------------------------------------------------
-void PaperDaemon::RefreshTennisScores(std::stop_token st) {
+void TraderDaemon::RefreshTennisScores(std::stop_token st) {
     using namespace std::chrono;
     const char* gs_key_env = std::getenv("GOALSERVE_API_KEY");
     const std::string gs_key = gs_key_env ? gs_key_env : "";
@@ -2093,7 +2093,7 @@ void PaperDaemon::RefreshTennisScores(std::stop_token st) {
 //   feed 小 (cricket ~320KB / esports ~45KB, www 端点不限速) → 30s 轮询, 无 WSS 带宽风险。
 //   无 bet365 赔率 → 走 score-prior fair; cricket 定价模型另立 (本期只为覆盖 + 比分特征)。
 // ---------------------------------------------------------------------------
-void PaperDaemon::RefreshTeamLivescores(std::stop_token st) {
+void TraderDaemon::RefreshTeamLivescores(std::stop_token st) {
     using namespace std::chrono;
     const char* gs_key_env = std::getenv("GOALSERVE_API_KEY");
     const std::string gs_key = gs_key_env ? gs_key_env : "";
@@ -2167,7 +2167,7 @@ void PaperDaemon::RefreshTeamLivescores(std::stop_token st) {
     }
 }
 
-void PaperDaemon::RefreshOdds(std::stop_token st) {
+void TraderDaemon::RefreshOdds(std::stop_token st) {
     using namespace std::chrono;
     namespace gs = data::goalserve;
     const char* gs_key_env = std::getenv("GOALSERVE_API_KEY");
@@ -2211,7 +2211,7 @@ void PaperDaemon::RefreshOdds(std::stop_token st) {
     };
 
     while (!st.stop_requested()) {
-        if (!gs_key.empty() && paper_loop_ != nullptr) {
+        if (!gs_key.empty() && trading_loop_ != nullptr) {
             data::OddsMap merged;
             std::size_t sports_with_odds = 0;
             for (const gs::GoalserveSport sp : kOddsSports) {
@@ -2252,7 +2252,7 @@ void PaperDaemon::RefreshOdds(std::stop_token st) {
                     return;
             }
             const std::size_t n = merged.size();
-            paper_loop_->SetOddsByMatchId(std::move(merged));
+            trading_loop_->SetOddsByMatchId(std::move(merged));
             // 常开 (每 90s 一行, 低噪声): bm_slots 可观测性 — join 到几场跨庄家赔率。
             std::fprintf(stderr, "[odds] bm_slots 刷新: %zu 场跨庄家赔率注入 (%zu/6 sport 有 getodds)\n", n,
                          sports_with_odds);
@@ -2269,7 +2269,7 @@ void PaperDaemon::RefreshOdds(std::stop_token st) {
 //   释放 disk_prune_free_gb。安全: recorder 每 poll 重开文件 (ofstream app), 故 rename 替换不冲突
 //   (最多丢一个 poll 周期的写入, 训练数据可容忍)。排除 <100MB 小文件 (settlements 标签等不动)。
 // ---------------------------------------------------------------------------
-void PaperDaemon::DiskPrune(std::stop_token st) {
+void TraderDaemon::DiskPrune(std::stop_token st) {
     using namespace std::chrono;
     namespace fs = std::filesystem;
     if (cfg_.disk_prune_threshold_gb <= 0) return;

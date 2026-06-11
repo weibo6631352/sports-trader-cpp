@@ -1,4 +1,4 @@
-// include/stcpp/paper/paper_loop.hpp — PaperLoop: 最小 paper 交易循环
+// include/stcpp/engine/trading_loop.hpp — TradingLoop: 最小 paper 交易循环
 //
 // Owner: 小肖 (numerical-algorithms, A 系统工程部)
 // last_review: 2026-05-30
@@ -19,11 +19,11 @@
 //     6. RiskGateway::evaluate → Decision
 //     7. APPROVED: PaperSigner::Sign → VirtualMatcher::MatchWithBook → PositionLedger::apply_fill
 //     8. apply_fill Ok: LedgerSnapshotHub::Publish (positions/pnl 快照)
-//     9. REJECTED: 仅计数 (P0-1: RM 内部已 push_reject 一次, paper_loop 不再重复 push)
+//     9. REJECTED: 仅计数 (P0-1: RM 内部已 push_reject 一次, trading_loop 不再重复 push)
 //
 // P0 整改 (2026-05-30, 小肖, dogfood-remediation):
 //   P0-1 拒单去重: RM::evaluate() 内 reject_here() lambda 已通过 g_rm_debug_snapshot
-//         全局指针调用 push_reject 一次. paper_loop 删除冗余的 rm_snap_->push_reject.
+//         全局指针调用 push_reject 一次. trading_loop 删除冗余的 rm_snap_->push_reject.
 //         验证: /api/v1/risk/rejects count 从 256→128 (唯一 128 不再翻倍).
 //   P0-3 fake fair gate: has_real_fair=false (time_status==NotStarted, M1 stub) 时
 //         PublishQuoteSnapshot 清零 edge_bps/kelly/suggested_notional/signal/predict_ok.
@@ -36,8 +36,8 @@
 //     - VirtualFill.mode_tag == 0 (硬填 paper 标记, VirtualMatcher 内部保证)
 //     - PositionLedger 独立实例 (由调用方构建, 与 live 路径隔离)
 //     - PaperSigner.audit_wal_kind = PaperAudit (signer 内部保证)
-//     - PaperLoop 仅产出快照 (LedgerSnapshotHub / QuoteSnapshotHub), 不写真账本
-//   R-12: PaperLoop 独立线程 (std::jthread), 不进 WSS event loop
+//     - TradingLoop 仅产出快照 (LedgerSnapshotHub / QuoteSnapshotHub), 不写真账本
+//   R-12: TradingLoop 独立线程 (std::jthread), 不进 WSS event loop
 //     - hub_.Read() 原子只读, 不阻塞 WSS io_thread_
 //     - LedgerSnapshotHub::Publish / QuoteSnapshotHub::Publish 均 noexcept
 //     - 线程 sleep_for tick_interval_ms, 不 spinlock
@@ -47,7 +47,7 @@
 //     - as_of_ts_ns = NowNs() (信号评估时刻, >= ingestion_ts_ns)
 //     - LedgerFeatures / QuoteFeatures 4 ts 来自 fill/feat 链路透传
 //
-// 注意 (ToS): PaperLoop 仅产生 paper 虚拟成交 (VirtualFill), 不向 Polymarket CLOB 下单.
+// 注意 (ToS): TradingLoop 仅产生 paper 虚拟成交 (VirtualFill), 不向 Polymarket CLOB 下单.
 //   所有 OrderIntent 均经 PaperSigner (mock, 不上链), 不调用 live REST API.
 //
 // 线程安全:
@@ -89,7 +89,7 @@
 //  feature_vector_hub / model_feature_spec。保留上面两个纯统计因子环。)
 #include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
-#include "stcpp/paper/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
+#include "stcpp/engine/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/ledger_snapshot_hub.hpp"
@@ -101,7 +101,7 @@
 #include "stcpp/sizing/sizing_calculator.hpp"
 
 // A1: ScoreSnapshotStore 前向声明 (实体在 stcpp_data_score_store; .cpp 内 include).
-//   PaperLoop 仅持 const 指针 + 调 Get(), 头文件不拉 score_store 重型依赖.
+//   TradingLoop 仅持 const 指针 + 调 Get(), 头文件不拉 score_store 重型依赖.
 namespace stcpp::data {
 class ScoreSnapshotStore;
 }  // namespace stcpp::data
@@ -111,7 +111,7 @@ namespace stcpp::data::feature_store {
 struct FeatureStoreGameRow;
 }  // namespace stcpp::data::feature_store
 
-namespace stcpp::paper {
+namespace stcpp::engine {
 
 // ---------------------------------------------------------------------------
 // FrozenHardStopTriggered (2026-06-10 老韩 bug#2 + 老板「下行不够细致 / 两边都要考虑」)
@@ -146,7 +146,7 @@ inline bool BookDeteriorating(double imb, double microprice, double mid, double 
 // ---------------------------------------------------------------------------
 // EventMapEntry / ConditionEventMap (A1 映射桥消费侧契约)
 //   condition_id → {Goalserve inplay_match_id, orientation}.
-//   由 app 层 (PaperDaemon + EventMatcher) 解析后经 SetEventMapping() 注入 (atomic 热刷).
+//   由 app 层 (TraderDaemon + EventMatcher) 解析后经 SetEventMapping() 注入 (atomic 热刷).
 //   yes_is_home: market YES token 对应 EventScore 的 home(true)/away(false). 见 EventMatcher 注释.
 // ---------------------------------------------------------------------------
 struct EventMapEntry {
@@ -158,7 +158,7 @@ struct EventMapEntry {
     double match_confidence{0.0};    // EventMatcher team_score (双队 overlap 和; 越高越确信)
     std::int64_t match_as_of_ns{0};  // 映射上次刷新时刻 (本地 now; 数据新鲜度观测, 绝不守门)
     // A-step-2 分局盘 (2026-06-04 老板「第一局/第二局」): 此盘的 segment 序号 (tennis 当前盘号 1-5;
-    //   0 = 全场盘)。>0 时 paper_loop 用 EventScore.inplay_seg_* (且 seg_index==当前段) 替全场 sharp fair;
+    //   0 = 全场盘)。>0 时 trading_loop 用 EventScore.inplay_seg_* (且 seg_index==当前段) 替全场 sharp fair;
     //   段号不符/无段赔率 → fail-closed 无 fair (绝不回退全场, 修 A-step-1 之前事故)。
     int seg_index{0};
 };
@@ -247,9 +247,9 @@ struct FairCandidates {
 };
 
 // ---------------------------------------------------------------------------
-// PaperLoopConfig — 运行参数
+// TradingLoopConfig — 运行参数
 // ---------------------------------------------------------------------------
-struct PaperLoopConfig {
+struct TradingLoopConfig {
     // 每次 tick 间隔 (ms). 默认 500ms 适合 debug 观测.
     std::int64_t tick_interval_ms{500};
 
@@ -257,9 +257,9 @@ struct PaperLoopConfig {
     double bankroll_usdc{100'000.0};
 
     // 风控 caps (pUSD, 单一真值源). P0-2 单位统一 (老雷 2026-05-30, 拆 clamp 遮羞布):
-    //   sizing 直接用 (pUSD); paper_daemon 装配 RM 时 × 1e6 转 micro (RM 比 size_pUSD_micro)。
+    //   sizing 直接用 (pUSD); trader_daemon 装配 RM 时 × 1e6 转 micro (RM 比 size_pUSD_micro)。
     //   消除原「sizing 用 RiskConfig{} 默认 10K pUSD vs RM 10 pUSD(micro)」1000x 失配 +
-    //   paper_loop `min(notional, 10.0)` clamp 遮羞布 (失配被它摁住没爆, 非真修复)。
+    //   trading_loop `min(notional, 10.0)` clamp 遮羞布 (失配被它摁住没爆, 非真修复)。
     //   两端同源同语义 → 无需 clamp: sizing 自然受 per_order_cap 约束, ×1e6 后必 ≤ RM cap。
     double per_order_cap_usdc{10.0};
     double market_exposure_cap_usdc{50.0};
@@ -471,9 +471,9 @@ struct PaperLoopConfig {
 };
 
 // ---------------------------------------------------------------------------
-// PaperLoopStats — 可观测计数器 (atomic, 只增)
+// TradingLoopStats — 可观测计数器 (atomic, 只增)
 // ---------------------------------------------------------------------------
-struct PaperLoopStats {
+struct TradingLoopStats {
     std::atomic<std::uint64_t> ticks_total{0};
     // R-6/老郭 韧性: loop_thread_ 每 tick 末更新心跳 (epoch_ns)。观测端 (healthz/metrics) 比对
     //   now-last_tick 超阈 → loop 卡死告警 (老郭: loop 单点无存活监控, 卡死=静默停摆无人知)。
@@ -492,15 +492,15 @@ struct PaperLoopStats {
     std::atomic<std::uint64_t> quote_publishes{0};
     std::atomic<std::uint64_t> ledger_publishes{0};
 
-    PaperLoopStats() = default;
-    PaperLoopStats(const PaperLoopStats&) = delete;
-    PaperLoopStats& operator=(const PaperLoopStats&) = delete;
+    TradingLoopStats() = default;
+    TradingLoopStats(const TradingLoopStats&) = delete;
+    TradingLoopStats& operator=(const TradingLoopStats&) = delete;
 };
 
 // ---------------------------------------------------------------------------
-// PaperLoop — 最小 paper 交易循环
+// TradingLoop — 最小 paper 交易循环
 // ---------------------------------------------------------------------------
-class PaperLoop {
+class TradingLoop {
 public:
     // 构造 — 注入依赖, 不启动线程
     //   hub:              OrderBookSnapshotHub (只读, live book 快照)
@@ -509,22 +509,22 @@ public:
     //   ledger_hub:       LedgerSnapshotHub (写: Publish)
     //   quote_hub:        QuoteSnapshotHub (写: Publish)
     //   rm_snap:          RmDebugSnapshot* (可 nullptr; P0-1: 读用, 写由 RM 内部唯一负责)
-    //   fv_model:         IFairValueModel (只读; 调用方保证生命周期 >= PaperLoop)
+    //   fv_model:         IFairValueModel (只读; 调用方保证生命周期 >= TradingLoop)
     //   token_map:        condition_id → (token0_id YES, token1_id NO)
-    explicit PaperLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk::RiskGateway& rm,
+    explicit TradingLoop(const polymarket::clob_wss::OrderBookSnapshotHub& hub, risk::RiskGateway& rm,
                        risk::PositionLedger& position_ledger, risk::LedgerSnapshotHub& ledger_hub,
                        sizing::QuoteSnapshotHub& quote_hub, risk::RmDebugSnapshot* rm_snap,
                        const pricing::IFairValueModel& fv_model,
                        std::unordered_map<std::string, std::pair<std::string, std::string>> token_map,
-                       PaperLoopConfig cfg = {}) noexcept;
+                       TradingLoopConfig cfg = {}) noexcept;
 
-    PaperLoop(const PaperLoop&) = delete;
-    PaperLoop& operator=(const PaperLoop&) = delete;
-    PaperLoop(PaperLoop&&) = delete;
-    PaperLoop& operator=(PaperLoop&&) = delete;
+    TradingLoop(const TradingLoop&) = delete;
+    TradingLoop& operator=(const TradingLoop&) = delete;
+    TradingLoop(TradingLoop&&) = delete;
+    TradingLoop& operator=(TradingLoop&&) = delete;
 
     // 析构 — 保证线程已 join
-    ~PaperLoop();
+    ~TradingLoop();
 
     // SetExecutor — executor 缝注入 (2026-06-12 实盘准备: live build 在 Start 前换 LiveExecutorAdapter)。
     //   仅允许 Start 前调 (单线程装配期); paper build 不调 = VirtualExecutor 默认, 行为零变。
@@ -540,7 +540,7 @@ public:
 
     [[nodiscard]] bool is_running() const noexcept { return running_.load(std::memory_order_acquire); }
 
-    [[nodiscard]] const PaperLoopStats& stats() const noexcept { return stats_; }
+    [[nodiscard]] const TradingLoopStats& stats() const noexcept { return stats_; }
 
     // ---- 账本持久化 (2026-06-11): Start 前调 Restore (单线程); Save 由 TickAll 60s 节流自动调,
     //   测试可直接调。恢复内容: 持仓 (apply_fill 重放) + 累计 realized/fee (总+逐盘) + CLV (聚合+pending)。
@@ -797,7 +797,7 @@ private:
     risk::LedgerSnapshotHub& ledger_hub_;
     sizing::QuoteSnapshotHub& quote_hub_;
     // P0-1: rm_snap_ 字段保留供外部通过 attach_rm_debug_snapshot() 读取 ring snapshot.
-    // paper_loop 不再调用 push_reject (RM 内部已唯一负责), 但字段生命周期管理仍属 paper_loop.
+    // trading_loop 不再调用 push_reject (RM 内部已唯一负责), 但字段生命周期管理仍属 trading_loop.
     // 当前只写不读 (P0-1 后 push_reject 移到 RM); ctor 内 (void)rm_snap_ 抑制 clang
     // -Wunused-private-field (gcc 不认指针成员上的 [[maybe_unused]], 故不用属性, 改 (void) 引用)。
     risk::RmDebugSnapshot* rm_snap_;
@@ -823,7 +823,7 @@ private:
     static constexpr double kDefaultFeeCoef = 0.03;  // 体育保守 (= RM kSportsTakerFeeRate); 查不到默认
     mutable std::mutex catalog_mu_;
     std::shared_ptr<const PaperCatalog> catalog_;
-    PaperLoopConfig cfg_;
+    TradingLoopConfig cfg_;
 
     // [P1] TickAll 入口冻结的 5 输入聚合 (原 tick_catalog_/tick_resolution_/tick_live_stats_/
     //   tick_event_map_/tick_score_snap_ 五个散成员合一; 见 DecisionInputSnapshot)。
@@ -944,7 +944,7 @@ private:
     bool tick_pending_{false};
 
     // ---- 统计 ----
-    mutable PaperLoopStats stats_;
+    mutable TradingLoopStats stats_;
 
     // ---- intent_id 单调递增 (loop_thread_ 单写) ----
     std::uint64_t intent_seq_{0};
@@ -1170,4 +1170,4 @@ private:
                                 const polymarket::clob_wss::OrderBookFeatures* no_book_full = nullptr) noexcept;
 };
 
-}  // namespace stcpp::paper
+}  // namespace stcpp::engine

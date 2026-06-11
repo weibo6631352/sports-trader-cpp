@@ -1,6 +1,6 @@
 // src/stcpp/app/market_discovery.cpp — Gamma 体育市场发现实现
 //
-// Owner: 老雷 (GM) — 从 debug_server_main.cpp 抽出 (PaperDaemon 重构, 老郭 §A.1)
+// Owner: 老雷 (GM) — 从 debug_server_main.cpp 抽出 (TraderDaemon 重构, 老郭 §A.1)
 // last_review: 2026-05-30
 //
 // 逐字搬迁自 debug_server_main.cpp 匿名 namespace, 解析逻辑行为不变.
