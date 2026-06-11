@@ -49,7 +49,11 @@ Testing/
 __pycache__/
 *.pyc
 frontend/dist/
+frontend/node_modules/
 .browser_test/
 models/bench_fair.onnx
 experiments/laolei-bm-slots/smoke
 paper_ledger_snapshot.tsv*
+live_ledger_snapshot.tsv*
+.cache/
+.claude/scheduled_tasks.lock
