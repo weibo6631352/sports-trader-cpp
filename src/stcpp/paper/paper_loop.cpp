@@ -2203,6 +2203,12 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
         std::lock_guard<std::mutex> lk(flb_mu_);
         if (flb_seen_.count(cond_id) != 0) return;  // 一盘一击预检
     }
+    // miss 退避 (2026-06-11): 上次撮合 miss 后 60s 内不重触发 (防 tick 频率空转刷屏)。
+    if (const auto pit = flb_path_.find(cond_id);
+        pit != flb_path_.end() && pit->second.last_miss_ns > 0 &&
+        now_ns_v - pit->second.last_miss_ns < 60'000'000'000LL) {
+        return;
+    }
     const auto fopt = hub_.Read(entry.tokens.first);
     if (!fopt || !fopt->valid) return;
     const auto& f = *fopt;
@@ -2374,13 +2380,19 @@ void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     assert(fill.mode_tag == 0u);  // R-11
     if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
-        std::fprintf(stderr, "[flb] 撮合miss cond=%.24s... reject=%d sz=%lld (解除标记待重试)\n",
-                     t.condition_id.c_str(), static_cast<int>(fill.reject),
-                     static_cast<long long>(fill.fill_size_usdc));
-        // 概率撮合 miss (Bernoulli) ≠ 永久不可成交: 解除一盘一击标记 → 下个 book 事件重试。
-        //   (RM 拒不解除 — caps 类持久拒, 防每 book 事件 spam RM 拒单环。)
-        std::lock_guard<std::mutex> lk(flb_mu_);
-        flb_seen_.erase(t.condition_id);
+        // 概率撮合 miss (Bernoulli) ≠ 永久不可成交: 解除一盘一击标记 → 退避后重试。
+        //   退避 (2026-06-11 实测单盘 tick 频率空转 721 次): last_miss_ns 由 MaybeFlbTrigger 检查 60s;
+        //   累计 ≥20 次 = 该簿结构性吃不进 (薄簿/模型恒拒) → 保持 seen 永久放弃。
+        auto& ps_miss = flb_path_[t.condition_id];
+        ++ps_miss.miss_count;
+        ps_miss.last_miss_ns = as_of_now;
+        const bool give_up = ps_miss.miss_count >= 20;
+        std::fprintf(stderr, "[flb] 撮合miss cond=%.24s... reject=%d 第%d次%s\n", t.condition_id.c_str(),
+                     static_cast<int>(fill.reject), ps_miss.miss_count, give_up ? " → 永久放弃" : "");
+        if (!give_up) {
+            std::lock_guard<std::mutex> lk(flb_mu_);
+            flb_seen_.erase(t.condition_id);
+        }
         return;
     }
     stats_.fills_completed.fetch_add(1, std::memory_order_relaxed);

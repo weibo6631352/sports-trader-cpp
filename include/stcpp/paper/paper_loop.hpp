@@ -1026,6 +1026,10 @@ private:
         std::int64_t last_sample_ns{0};
         int lead_changes{0};
         int prev_lead{0};  // +1 yes 领先 / −1 no 领先 / 0 未知
+        // 撮合 miss 退避 (2026-06-11: 单盘 tick 频率空转 721 次重试刷屏): miss 后 60s 不重触发;
+        //   累计 20 次 miss = 该簿结构性吃不进 → 永久放弃 (保持 seen)。
+        int miss_count{0};
+        std::int64_t last_miss_ns{0};
     };
     std::unordered_map<std::string, FlbPathState> flb_path_;
     void ProcessFlbTrigger(const FlbTrigger& t);  // loop_thread_ only (TickAll 起始排干调用)
