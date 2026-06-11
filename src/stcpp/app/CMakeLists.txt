@@ -43,11 +43,7 @@ target_include_directories(stcpp_paper_app PUBLIC
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(stcpp_paper_app PUBLIC cxx_std_20)
-# per-mode 宏 (kCompiledMode 用; paper_runtime G1 static_assert 依赖) + EXEC_MODE_STR
-target_compile_definitions(stcpp_paper_app PUBLIC
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    STCPP_EXEC_MODE_STR="${STCPP_EXEC_MODE}"
-)
+# (2026-06-12 运行时 mode: per-mode 编译宏删除 — mode 由 main --mode 参数 Init。)
 target_link_libraries(stcpp_paper_app PUBLIC
     stcpp_debug_api            # app → debug_api 单向 (RealStateProvider/HttpServer/live_*)
     stcpp_orderbook_snapshot_hub
@@ -64,15 +60,12 @@ target_link_libraries(stcpp_paper_app PUBLIC
     stcpp_execution_paper
     stcpp_process_lock         # 程序级防多开 (SingleInstanceLock; paper_server/runtime main 用)
 )
-# 2026-06-12 单参数切换: live 模式装配 LiveCredentials→Submitter→Gate→Executor→Adapter
-# (paper_daemon.cpp `if constexpr (kCompiledMode==Live)` 块)。gate 库本身 mode-agnostic,
-# 但 LiveOrderSubmitter 实现只在 live 模式定义 (stcpp_polymarket_live), 故条件链接。
-if(STCPP_EXEC_MODE STREQUAL "live")
-    target_link_libraries(stcpp_paper_app PUBLIC
-        stcpp_polymarket_live
-        stcpp_polymarket_order_gate
-    )
-endif()
+# 2026-06-12 运行时单参数: live 装配链 (Submitter→Gate→Executor→Adapter) 永远编译+链接,
+# 运行时 mode==Live 才装配; 下单仍需 凭证齐全 + LIVE_ARMED=1 + LiveOrderGate fail-closed。
+target_link_libraries(stcpp_paper_app PUBLIC
+    stcpp_polymarket_live
+    stcpp_polymarket_order_gate
+)
 # OpenSSL link (LiveWssTransport)
 if(OpenSSL_FOUND)
     target_link_libraries(stcpp_paper_app PUBLIC OpenSSL::SSL OpenSSL::Crypto)
@@ -125,4 +118,4 @@ target_compile_options(stcpp_paper_runtime PRIVATE
 # 部署: install 到 bin/ → provision.sh 用 cmake --install (老吴对齐 §2, T4)
 install(TARGETS stcpp_paper_runtime RUNTIME DESTINATION bin)
 
-message(STATUS "stcpp_paper_app: PaperDaemon 编排层 | paper_server(http) + paper_runtime(headless) | mode=${STCPP_EXEC_MODE}")
+message(STATUS "stcpp_paper_app: PaperDaemon 编排层 | paper_server(http) + paper_runtime(headless)")

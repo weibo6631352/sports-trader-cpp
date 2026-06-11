@@ -52,21 +52,15 @@ namespace stcpp::infra::wal {
 // IngestRawWriterConfig
 // ---------------------------------------------------------------------------
 struct IngestRawWriterConfig {
-    // Tier 1 full payload WAL 路径前缀
-    // build-time: STCPP_INGEST_RAW_WAL_PREFIX (R-11 CMake assert 含 paper 或 live)
-    // 默认值从宏注入; 单测可覆盖
-#ifdef STCPP_INGEST_RAW_WAL_PREFIX
-    const char* tier1_path_prefix = STCPP_INGEST_RAW_WAL_PREFIX;
-#else
-    const char* tier1_path_prefix = "/var/lib/stcpp/ingest/paper";  // fallback (paper default)
-#endif
-
-    // Tier 2 minimal counter WAL 路径前缀 (与 tier1 同根, 加 /counter 子目录)
-#ifdef STCPP_INGEST_RAW_WAL_PREFIX
-    const char* tier2_path_prefix = STCPP_INGEST_RAW_WAL_PREFIX "/counter";
-#else
+    // 2026-06-12 运行时 mode: 路径前缀按 ExecutionContext::Mode() 运行时选 (R-11 paper/live 分目录)。
+    //   默认 paper 安全侧; 单测可覆盖。
+    const char* tier1_path_prefix = "/var/lib/stcpp/ingest/paper";
     const char* tier2_path_prefix = "/var/lib/stcpp/ingest/paper/counter";
-#endif
+
+    // 按运行时 mode 取默认前缀 (调用方装配时用; R-11: live 路径必含 "live")。
+    [[nodiscard]] static const char* DefaultTier1ForMode(bool is_live) noexcept {
+        return is_live ? "/var/lib/stcpp/ingest/live" : "/var/lib/stcpp/ingest/paper";
+    }
 
     // Tier 1 SPSC ring 容量 (2^n, 16 KB payload × 16384 = 256 MB 峰值; 实际不全占)
     std::size_t tier1_ring_capacity = 16384;

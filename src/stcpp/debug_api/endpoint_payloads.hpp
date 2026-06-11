@@ -14,6 +14,7 @@
 
 #pragma once
 
+#include "stcpp/execution/execution_mode.hpp"
 #include <chrono>
 #include <cstdint>
 #include <string>
@@ -62,7 +63,7 @@ inline std::string status(const HttpServer& hs, std::int64_t as_of_ns = -1) {
     std::string b;
     b.reserve(512);
     b += R"({"state":"RUNNING","mode":")";
-    b += STCPP_EXEC_MODE_STR;
+    b += std::string(stcpp::execution::ToString(stcpp::execution::ExecutionContext::Mode()));
     b += R"(","wss_connected":{"clob":)";
     b += json::boolean(m.wss_clob_connected);
     b += R"(,"user_channel":)";

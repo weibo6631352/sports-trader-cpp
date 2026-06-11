@@ -19,9 +19,10 @@
 // 编译期常量来源:
 //   STCPP_VERSION_STR      — configure_file 从 project() VERSION 注入
 //   STCPP_GIT_HASH_STR     — configure_file 从 git rev-parse --short HEAD 注入
-//   STCPP_EXEC_MODE_STR    — compile definition 从 STCPP_EXEC_MODE 注入
+//   std::string(stcpp::execution::ToString(stcpp::execution::ExecutionContext::Mode()))    — compile definition 从 STCPP_EXEC_MODE 注入
 //   build_time             — __DATE__ + " " + __TIME__ (编译期宏, 不违反 R-20)
 
+#include "stcpp/execution/execution_mode.hpp"
 #include "src/stcpp/debug_api/server.hpp"
 
 // version_generated.hpp: 由 CMake configure_file 生成在 ${CMAKE_CURRENT_BINARY_DIR}
@@ -60,7 +61,7 @@ void register_version(httplib::Server& svr)
         body += R"(","git_hash":")";
         body += STCPP_GIT_HASH_STR;
         body += R"(","build_mode":")";
-        body += STCPP_EXEC_MODE_STR;          // compile definition
+        body += std::string(stcpp::execution::ToString(stcpp::execution::ExecutionContext::Mode()));          // compile definition
         body += R"(","build_time":")";
         body += k_build_time;
         body += R"(","cpp_standard":"C++20","as_of_ts":)";

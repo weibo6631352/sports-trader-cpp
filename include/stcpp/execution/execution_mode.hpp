@@ -38,18 +38,10 @@ enum class ExecutionMode : std::uint8_t {
     return "unknown";
 }
 
-// 编译期默认 mode (CMake -DSTCPP_EXEC_MODE_PAPER=1 注入).
-// 三 macro 互斥, 顶层 CMakeLists.txt 只设一个.
-#if defined(STCPP_EXEC_MODE_live) || defined(STCPP_EXEC_MODE_LIVE)
-inline constexpr ExecutionMode kCompiledMode = ExecutionMode::Live;
-#elif defined(STCPP_EXEC_MODE_paper) || defined(STCPP_EXEC_MODE_PAPER)
-inline constexpr ExecutionMode kCompiledMode = ExecutionMode::Paper;
-#elif defined(STCPP_EXEC_MODE_backtest) || defined(STCPP_EXEC_MODE_BACKTEST)
-inline constexpr ExecutionMode kCompiledMode = ExecutionMode::Backtest;
-#else
-// 缺省 paper (跑单测时 CMake 已传 STCPP_EXEC_MODE_paper=1; 兜底防爆)
-inline constexpr ExecutionMode kCompiledMode = ExecutionMode::Paper;
-#endif
+// 2026-06-12 架构合理化 (老板「虚拟盘和实盘几乎是两份代码」→「全改」): 编译期 execution::ExecutionContext::Mode()
+// 删除, mode 改【运行时】由 main 入口 --mode 参数一次 Init (默认 paper)。单 binary 双模式:
+// 1205 测试护住的就是上线的同一个 binary, 构建漂移物理消失。R-7「不可中途切换」语义保留
+// (Init 双调 abort); live 仍需 凭证齐全 + LIVE_ARMED + 老板口令 三重闸。
 
 // ExecutionContext: 进程级 singleton, 只携带 mode 标识 + 起始 ns (audit chain).
 // Init() 双调 → abort (R-7 防 runtime 切换).
@@ -69,15 +61,15 @@ class ExecutionContext {
         return initialized_.load(std::memory_order_acquire);
     }
 
-    // 单测专用 reset (生产代码勿调; 用 _internal_ 命名 + only-test 释义)
+    // 单测专用 reset (生产代码勿调)
     static void ResetForTesting() noexcept {
         initialized_.store(false, std::memory_order_release);
-        mode_ = kCompiledMode;
+        mode_ = ExecutionMode::Paper;
     }
 
  private:
     static inline std::atomic<bool> initialized_{false};
-    static inline ExecutionMode     mode_{kCompiledMode};
+    static inline ExecutionMode     mode_{ExecutionMode::Paper};  // 默认 paper (未 Init = 测试/安全侧)
 };
 
 }  // namespace stcpp::execution

@@ -41,28 +41,53 @@ void handle_signal(int /*sig*/) {
     }
 }
 
-// build-time STCPP_EXEC_MODE_STR → ExecMode (R-7 真相源).
-stcpp::debug_api::ExecMode mode_from_build() noexcept {
-    using stcpp::debug_api::ExecMode;
-    if (std::strcmp(STCPP_EXEC_MODE_STR, "live") == 0) {
-        return ExecMode::Live;
-    }
-    if (std::strcmp(STCPP_EXEC_MODE_STR, "backtest") == 0) {
-        return ExecMode::Backtest;
-    }
-    return ExecMode::Paper;
-}
-
 }  // namespace
 
 int main(int argc, char** argv) {
     stcpp::app::PaperDaemonConfig cfg;
     cfg.mode = stcpp::app::RunMode::PaperDaemon;
-    cfg.exec_mode = mode_from_build();
+
+    // 2026-06-12 架构合理化: mode 运行时单参数 (--mode paper|live, 默认 paper)。
+    //   单 binary 双模式; live 需三重显式条件 (--mode live + 凭证齐全 + LIVE_ARMED=1)。
+    stcpp::execution::ExecutionMode exec_mode = stcpp::execution::ExecutionMode::Paper;
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], "--mode") == 0 && i + 1 < argc) {
+            const char* m = argv[i + 1];
+            if (std::strcmp(m, "live") == 0) {
+                exec_mode = stcpp::execution::ExecutionMode::Live;
+            } else if (std::strcmp(m, "paper") != 0) {
+                std::fprintf(stderr, "[paper_server] FATAL: --mode 只接受 paper|live (got: %s)\n", m);
+                return 2;
+            }
+        }
+    }
+    // R-11 一致性闸: PAPER_MODE=1 环境 (systemd 固化) 与 --mode live 互斥 → 拒启动。
+    // live fail-fast: 凭证四件套入口即查 (不等装配 — 缺凭证的 live 进程一秒都不该跑)。
+    if (exec_mode == stcpp::execution::ExecutionMode::Live) {
+        const char* pm = std::getenv("PAPER_MODE");
+        if (pm != nullptr && std::strcmp(pm, "1") == 0) {
+            std::fprintf(stderr, "[paper_server] FATAL (R-11): PAPER_MODE=1 与 --mode live 冲突. abort.\n");
+            return 2;
+        }
+        for (const char* k : {"POLYMARKET_API_KEY", "POLYMARKET_SECRET", "POLYMARKET_PASSPHRASE",
+                              "POLYMARKET_PRIVATE_KEY"}) {
+            const char* v = std::getenv(k);
+            if (v == nullptr || v[0] == '\0') {
+                std::fprintf(stderr, "[paper_server] FATAL (live fail-fast): 缺凭证 %s. abort.\n", k);
+                return 2;
+            }
+        }
+    }
+    stcpp::execution::ExecutionContext::Init(exec_mode);
+    cfg.exec_mode = (exec_mode == stcpp::execution::ExecutionMode::Live)
+                        ? stcpp::debug_api::ExecMode::Live
+                        : stcpp::debug_api::ExecMode::Paper;
 
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
-        if (a == "--port" && i + 1 < argc) {
+        if (a == "--mode" && i + 1 < argc) {
+            ++i;  // 已在上方预解析
+        } else if (a == "--port" && i + 1 < argc) {
             cfg.port = static_cast<std::uint16_t>(std::stoi(argv[++i]));
         } else if (a == "--host" && i + 1 < argc) {
             cfg.host = argv[++i];

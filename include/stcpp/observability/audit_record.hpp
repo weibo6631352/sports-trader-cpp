@@ -51,6 +51,7 @@
 #include <span>
 #include <string_view>
 
+#include "stcpp/execution/execution_mode.hpp"
 #include "stcpp/infra/wal/wal_kind.hpp"
 #include "stcpp/risk/reject_enum.hpp"
 
@@ -286,23 +287,15 @@ struct AuditRecord {
 
 static_assert(sizeof(AuditRecord) <= 65535, "AuditRecord v1.4 单条 ≤ u16 LEN (framework 约束)");
 
-// ---------- R-11 build-time WAL kind ------------------------------------
-//
-// 同进程不混 paper / live audit. CI 已硬约束 STCPP_EXEC_MODE ∈ {live, paper, backtest}.
-// backtest 不 emit audit (走 mock), 这里 fallback PaperAudit (沙箱).
+// ---------- R-11 WAL kind (2026-06-12 运行时 mode 化; 名字保留 ForBuild 兼容调用方) ----
 
-[[nodiscard]] constexpr stcpp::infra::wal::WalKind AuditWalKindForBuild() noexcept {
-#if defined(STCPP_EXEC_MODE_live)
-    return stcpp::infra::wal::WalKind::RiskAudit;
-#elif defined(STCPP_EXEC_MODE_paper) || defined(STCPP_EXEC_MODE_backtest)
-    return stcpp::infra::wal::WalKind::PaperAudit;
-#else
-    // 缺定义视作 paper (开发期默认, CI 必 -D 之一)
-    return stcpp::infra::wal::WalKind::PaperAudit;
-#endif
+[[nodiscard]] inline stcpp::infra::wal::WalKind AuditWalKindForBuild() noexcept {
+    return stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live
+               ? stcpp::infra::wal::WalKind::RiskAudit
+               : stcpp::infra::wal::WalKind::PaperAudit;
 }
 
-[[nodiscard]] constexpr std::string_view AuditWalPathRootForBuild() noexcept {
+[[nodiscard]] inline std::string_view AuditWalPathRootForBuild() noexcept {
     return stcpp::infra::wal::PathRootOf(AuditWalKindForBuild());
 }
 

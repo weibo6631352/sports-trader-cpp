@@ -33,8 +33,8 @@ protected:
     void SetUp() override {
         integration::PaperE2EFixture::SetUp();
         // spec §5.4: paper mode 防串
-        ASSERT_EQ(stcpp::execution::kCompiledMode, stcpp::execution::ExecutionMode::Paper)
-            << "replay: kCompiledMode 必须 Paper";
+        ASSERT_EQ(stcpp::execution::ExecutionContext::Mode(), stcpp::execution::ExecutionMode::Paper)
+            << "replay: execution::ExecutionContext::Mode() 必须 Paper";
         ASSERT_EQ(stcpp::observability::AuditWalKindForBuild(), WalKind::PaperAudit)
             << "replay: AuditWalKindForBuild 必须 PaperAudit";
     }

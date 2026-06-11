@@ -130,8 +130,8 @@ TEST_F(PaperE2EFixture, T4_R7_signer_mode_is_paper) {
 
 // ---- T5: build-time mode 锁定 paper (R-7) -----------------------------------
 TEST(R11PollutionStandalone, T5_R7_compile_time_mode_paper) {
-    // execution_mode.hpp: STCPP_EXEC_MODE_paper 注入 → kCompiledMode == Paper
-    EXPECT_EQ(stcpp::execution::kCompiledMode, ExecutionMode::Paper)
+    // execution_mode.hpp: STCPP_EXEC_MODE_paper 注入 → execution::ExecutionContext::Mode() == Paper
+    EXPECT_EQ(stcpp::execution::ExecutionContext::Mode(), ExecutionMode::Paper)
         << "R-7: build-time mode 必 paper (CMake STCPP_EXEC_MODE=paper)";
     // AuditWalKindForBuild(): paper → PaperAudit
     EXPECT_EQ(stcpp::observability::AuditWalKindForBuild(), WalKind::PaperAudit)

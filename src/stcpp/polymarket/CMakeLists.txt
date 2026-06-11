@@ -17,30 +17,26 @@
 #  2026-06-12 治理删: W5 旧规划层, 零链接消费者。paper 撮合走 execution/VirtualMatcher,
 #  live 下单走 live_order_submitter (直连 CLOB), IPmClient 抽象从未落地。)
 
-if(STCPP_EXEC_MODE STREQUAL "live")
-    find_package(CURL REQUIRED)
-    add_library(stcpp_polymarket_live STATIC
-        live/live_order_submitter.cpp   # GM 2026-05-31 Phase 3: 实盘下单器 (实盘验证)
-    )
-    target_include_directories(stcpp_polymarket_live
-        PUBLIC ${CMAKE_SOURCE_DIR}/include
-    )
-    target_compile_features(stcpp_polymarket_live PUBLIC cxx_std_20)
-    target_compile_definitions(stcpp_polymarket_live PRIVATE
-        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    )
-    # Phase 3: 签名(eip712+secp256k1) + wire(body/HMAC) + libcurl POST 串成下单器。
-    target_link_libraries(stcpp_polymarket_live
-        PUBLIC  stcpp_infra_wal
-                stcpp_crypto_eip712
-                stcpp_crypto_secp256k1
-                stcpp_polymarket_clob_wire
-        PRIVATE CURL::libcurl
-    )
-    # Phase 3 真网验证 CLI (live only)
-    add_executable(stcpp_live_order_cli live/live_order_cli.cpp)
-    target_link_libraries(stcpp_live_order_cli PRIVATE stcpp_polymarket_live CURL::libcurl)
-endif()
+# 2026-06-12 运行时 mode: live 下单器全 mode 构建 (单 binary; 装配由运行时 mode 决定)。
+find_package(CURL REQUIRED)
+add_library(stcpp_polymarket_live STATIC
+    live/live_order_submitter.cpp   # GM 2026-05-31 Phase 3: 实盘下单器 (实盘验证)
+)
+target_include_directories(stcpp_polymarket_live
+    PUBLIC ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(stcpp_polymarket_live PUBLIC cxx_std_20)
+# Phase 3: 签名(eip712+secp256k1) + wire(body/HMAC) + libcurl POST 串成下单器。
+target_link_libraries(stcpp_polymarket_live
+    PUBLIC  stcpp_infra_wal
+            stcpp_crypto_eip712
+            stcpp_crypto_secp256k1
+            stcpp_polymarket_clob_wire
+    PRIVATE CURL::libcurl
+)
+# Phase 3 真网验证 CLI
+add_executable(stcpp_live_order_cli live/live_order_cli.cpp)
+target_link_libraries(stcpp_live_order_cli PRIVATE stcpp_polymarket_live CURL::libcurl)
 
 # 小冯 W5 Wave 24 (W5-D-02): PM sports-api WSS subscriber v0.1 — paper + live 共享 (read-only)
 #   第 5 host wss://sports-api.polymarket.com/ws 公开免鉴权 (R-33 流程红线触发的新发现).

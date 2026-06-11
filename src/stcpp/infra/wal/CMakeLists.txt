@@ -23,9 +23,7 @@
 # ---------------------------------------------------------------------------
 # 0. STCPP_EXEC_MODE 全局默认
 # ---------------------------------------------------------------------------
-if(NOT DEFINED STCPP_EXEC_MODE)
-    set(STCPP_EXEC_MODE "paper")
-endif()
+# (2026-06-12 运行时 mode: STCPP_EXEC_MODE CMake 变量已废。)
 
 # ---------------------------------------------------------------------------
 # 1. stcpp_infra_wal — WAL framework (header-only + wal_writer.cpp)
@@ -49,43 +47,7 @@ target_compile_features(stcpp_infra_wal PUBLIC cxx_std_20)
 # R-7 build-time guard: 根据 STCPP_EXEC_MODE 选择 WAL 路径前缀
 # ---------------------------------------------------------------------------
 
-if(STCPP_EXEC_MODE STREQUAL "paper")
-    set(STCPP_POSITION_WAL_PREFIX "/var/lib/stcpp/paper/position")
-elseif(STCPP_EXEC_MODE STREQUAL "live")
-    set(STCPP_POSITION_WAL_PREFIX "/var/lib/stcpp/live/position")
-elseif(STCPP_EXEC_MODE STREQUAL "backtest")
-    set(STCPP_POSITION_WAL_PREFIX "/var/lib/stcpp/paper/position")
-else()
-    message(FATAL_ERROR
-        "stcpp_position_ledger: unknown STCPP_EXEC_MODE='${STCPP_EXEC_MODE}'. "
-        "Must be paper / live / backtest.")
-endif()
-
-# R-11 build-time 硬校验:
-#   paper/backtest build: path 必须含 "paper" (不能指向 live)
-#   live build:           path 必须含 "live"  (不能指向 paper)
-if(STCPP_EXEC_MODE STREQUAL "live")
-    string(FIND "${STCPP_POSITION_WAL_PREFIX}" "live" _pos_live_idx)
-    if(_pos_live_idx EQUAL -1)
-        message(FATAL_ERROR
-            "R-11 GUARD: live build position WAL prefix must contain 'live'. "
-            "Got: ${STCPP_POSITION_WAL_PREFIX}")
-    endif()
-    string(FIND "${STCPP_POSITION_WAL_PREFIX}" "paper" _pos_paper_idx)
-    if(NOT _pos_paper_idx EQUAL -1)
-        message(FATAL_ERROR
-            "R-11 GUARD: live build position WAL prefix must NOT contain 'paper'. "
-            "Got: ${STCPP_POSITION_WAL_PREFIX}")
-    endif()
-else()
-    # paper / backtest
-    string(FIND "${STCPP_POSITION_WAL_PREFIX}" "paper" _pos_paper_idx2)
-    if(_pos_paper_idx2 EQUAL -1)
-        message(FATAL_ERROR
-            "R-11 GUARD: paper/backtest build position WAL prefix must contain 'paper'. "
-            "Got: ${STCPP_POSITION_WAL_PREFIX}")
-    endif()
-endif()
+# (STCPP_POSITION_WAL_PREFIX CMake 块 2026-06-12 删: 零代码消费者的死配置。)
 
 add_library(stcpp_position_ledger STATIC
     position_ledger.cpp
@@ -101,11 +63,6 @@ target_link_libraries(stcpp_position_ledger
 
 target_compile_features(stcpp_position_ledger PUBLIC cxx_std_20)
 
-# R-7 build-time 路径宏注入
-target_compile_definitions(stcpp_position_ledger PUBLIC
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    STCPP_POSITION_WAL_PREFIX="${STCPP_POSITION_WAL_PREFIX}"
-)
 
 # ---------------------------------------------------------------------------
 # 3. stcpp_ingest_raw_writer — IngestRaw WAL writer (小冯 W6 Wave 29, DS-01)
@@ -115,15 +72,8 @@ target_compile_definitions(stcpp_position_ledger PUBLIC
 # R-11 path guard: 路径含 "ingest"; paper 含 "paper", live 含 "live"
 # ---------------------------------------------------------------------------
 
-if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "backtest")
-    set(STCPP_INGEST_RAW_WAL_PREFIX "/var/lib/stcpp/ingest/paper")
-elseif(STCPP_EXEC_MODE STREQUAL "live")
-    set(STCPP_INGEST_RAW_WAL_PREFIX "/var/lib/stcpp/ingest/live")
-else()
-    message(FATAL_ERROR
-        "stcpp_ingest_raw_writer: unknown STCPP_EXEC_MODE='${STCPP_EXEC_MODE}'. "
-        "Must be paper / live / backtest.")
-endif()
+# (ingest prefix 2026-06-12 运行时化: 默认 paper 在 header, live 由装配方按运行时 mode 选。)
+set(STCPP_INGEST_RAW_WAL_PREFIX "/var/lib/stcpp/ingest/paper")
 
 # R-11 硬校验: 路径必须含 "ingest"
 string(FIND "${STCPP_INGEST_RAW_WAL_PREFIX}" "ingest" _ingest_idx)

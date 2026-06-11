@@ -9,7 +9,7 @@
 //   全天候跑 PaperLoop + ML 采集; 观测看板由独立 stcpp_paper_server (按需起) 提供.
 //
 // R-11 硬 gate (老韩 R-11 审计 G1-G4): main() 第一件事跑 mode 一致性校验.
-//   mode 唯一真相源 = build-time (kCompiledMode); PAPER_MODE env 仅做冗余交叉校验.
+//   mode 唯一真相源 = build-time (execution::ExecutionContext::Mode()); PAPER_MODE env 仅做冗余交叉校验.
 //   任一不一致 → abort (绝不允许 env 运行期切 live).
 //
 // ToS: 仅 paper 虚拟成交 (VirtualFill), 不向 Polymarket CLOB 下单.
@@ -52,28 +52,14 @@ void print_usage() {
 }
 
 // ---------------------------------------------------------------------------
-// R-11 硬 gate (老韩 G1-G4): build-time mode = 真相源, PAPER_MODE env = 冗余交叉校验.
-//   G1 编译期: 本 binary 只许 paper mode 编译 (static_assert).
-//   G2 运行期: STCPP_EXEC_MODE_STR 与 kCompiledMode 一致.
-//   G3 运行期: PAPER_MODE env 必须 == "1" (缺失/!=1 → abort).
-//   G4 运行期: ExecutionContext::Init(Paper) 单次 (双调内部 abort).
+// R-11 硬 gate (老韩 G1-G4; 2026-06-12 运行时 mode 化):
+//   G1 入口锁: paper_runtime 是 paper 专用 headless 入口, 固定 Init(Paper), 无 --mode。
+//   G3 运行期: PAPER_MODE env 必须 == "1" (缺失/!=1 → abort)。
+//   G4 运行期: ExecutionContext::Init(Paper) 单次 (双调内部 abort)。
 // ---------------------------------------------------------------------------
 void enforce_paper_mode_gates() {
     using stcpp::execution::ExecutionContext;
     using stcpp::execution::ExecutionMode;
-
-    // G1: 编译期锁 —— paper_runtime 绝不在 live/backtest binary 中编译.
-    static_assert(stcpp::execution::kCompiledMode == ExecutionMode::Paper,
-                  "paper_runtime 只许 paper mode 编译 (R-11/R-7); 检查 -DSTCPP_EXEC_MODE=paper");
-
-    // G2: build-time 字符串与 kCompiledMode 一致 (双注入源交叉校验).
-    if (std::strcmp(STCPP_EXEC_MODE_STR, "paper") != 0) {
-        std::fprintf(stderr,
-                     "[paper_runtime] FATAL (R-11 G2): STCPP_EXEC_MODE_STR=\"%s\" != \"paper\". "
-                     "build-time mode 不一致, abort.\n",
-                     STCPP_EXEC_MODE_STR);
-        std::abort();
-    }
 
     // G3: PAPER_MODE env 硬校验 (systemd unit Environment=PAPER_MODE=1; 缺失 → abort).
     const char* paper_env = std::getenv("PAPER_MODE");
@@ -85,10 +71,10 @@ void enforce_paper_mode_gates() {
         std::abort();
     }
 
-    // G4: ExecutionContext 单次 Init (R-7: 双调 → 内部 abort).
+    // G1+G4: paper 专用入口, ExecutionContext 单次 Init(Paper) (R-7: 双调 → 内部 abort).
     ExecutionContext::Init(ExecutionMode::Paper);
 
-    std::printf("[paper_runtime] R-11 gates PASS: build-time=paper, PAPER_MODE=1, ExecutionContext=paper\n");
+    std::printf("[paper_runtime] R-11 gates PASS: mode=paper(入口固定), PAPER_MODE=1\n");
     std::fflush(stdout);
 }
 

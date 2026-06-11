@@ -10,7 +10,7 @@
 # VirtualMatcher 在 live 模式可链接但不在下单路径; 隔离靠 R-11 mode_tag
 # 断言 + R-7 FATAL guard (STCPP_LIVE_INTENT_OK), 非物理不链接。
 
-if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "live")
+# (2026-06-12 运行时 mode: 无条件构建 — 单 binary。)
     add_library(stcpp_execution_paper STATIC
         virtual_matcher.cpp
     )
@@ -18,9 +18,6 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "live")
         PUBLIC ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(stcpp_execution_paper PUBLIC cxx_std_20)
-    target_compile_definitions(stcpp_execution_paper PRIVATE
-        STCPP_EXEC_MODE_paper=1
-    )
     # Wave 3: MatchWithBook() 依赖 stcpp_microstructure (FillRateModel::compute_from_clob_book)
     target_link_libraries(stcpp_execution_paper PUBLIC
         stcpp_infra_wal
@@ -33,4 +30,3 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "live")
     target_compile_options(stcpp_execution_paper PRIVATE
         -Wno-double-promotion
     )
-endif()

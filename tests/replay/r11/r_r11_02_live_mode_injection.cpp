@@ -31,7 +31,7 @@ class RR1102Fixture : public integration::PaperE2EFixture {
 protected:
     void SetUp() override {
         integration::PaperE2EFixture::SetUp();
-        ASSERT_EQ(stcpp::execution::kCompiledMode, stcpp::execution::ExecutionMode::Paper);
+        ASSERT_EQ(stcpp::execution::ExecutionContext::Mode(), stcpp::execution::ExecutionMode::Paper);
         ASSERT_EQ(stcpp::observability::AuditWalKindForBuild(), WalKind::PaperAudit);
     }
 };

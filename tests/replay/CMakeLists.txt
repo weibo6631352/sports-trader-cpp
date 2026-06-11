@@ -4,7 +4,7 @@
 # 关联: docs/RESEARCH/xiaosong-chaos-replay-framework-spec-v1.md §2 §4.3
 #
 # 仅在 paper build 启用 (replay 是 paper runtime version upgrade gate)
-# spec §5.4: ReplayDriver::Init() 强制校验 kCompiledMode == Paper
+# spec §5.4: ReplayDriver::Init() 强制校验 execution::ExecutionContext::Mode() == Paper
 #
 # CTest 标签:
 #   replay_gate         → R-R11-01~04 + R-R20-01~07 + R-chain-01~05

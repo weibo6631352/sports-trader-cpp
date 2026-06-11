@@ -10,6 +10,7 @@
 // 纯 API server: 不托管前端静态资源。前端走独立 Vite dev server, 跨域调 API;
 //   CORS 头由 register_handlers() 统一注入 (Access-Control-Allow-Origin: *)。
 
+#include "stcpp/execution/execution_mode.hpp"
 #include "src/stcpp/debug_api/server.hpp"
 
 #include <chrono>
@@ -51,15 +52,11 @@ void register_stream(httplib::Server& svr, const HttpServer& hs);
 
 namespace stcpp::debug_api {
 
-// 编译期 mode 字符串 → ExecMode (stub provider 缺省 mode, R-11)
+// 运行时 mode → ExecMode (stub provider 缺省 mode, R-11; 2026-06-12 运行时化)
 static ExecMode mode_from_build() noexcept {
-    if (std::strcmp(STCPP_EXEC_MODE_STR, "live") == 0) {
-        return ExecMode::Live;
-    }
-    if (std::strcmp(STCPP_EXEC_MODE_STR, "backtest") == 0) {
-        return ExecMode::Backtest;
-    }
-    return ExecMode::Paper;
+    return stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live
+               ? ExecMode::Live
+               : ExecMode::Paper;
 }
 
 HttpServer::HttpServer(uint16_t port, const StateProvider* provider, const char* bind_addr)

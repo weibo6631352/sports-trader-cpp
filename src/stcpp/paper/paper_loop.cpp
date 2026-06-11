@@ -56,7 +56,7 @@
 #include "stcpp/data/inplay_odds_parser.hpp"    // ToYesCanonical (inplay 赔率 orientation 翻转)
 #include "stcpp/data/live_stats_parser.hpp"     // FillLiveStats (live_stats 采集 hop join)
 #include "stcpp/data/score_snapshot_store.hpp"  // A1: ScoreSnapshotStore::Get(inplay_match_id)
-#include "stcpp/execution/execution_mode.hpp"   // A2 红线1: kCompiledMode 运行期 mode 断言
+#include "stcpp/execution/execution_mode.hpp"   // A2 红线1: execution::ExecutionContext::Mode() 运行期 mode 断言
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
@@ -166,19 +166,19 @@ void PaperLoop::Start() {
     //   仅许 build-time paper mode. 防 advisory_markets_no_intent=false 误带进 live/backtest binary.
     //   build-time 锁 + 此运行期交叉校验双保险; 不一致 → abort (R-7 立场: 绝不放行).
     if (!cfg_.advisory_markets_no_intent &&
-        stcpp::execution::kCompiledMode != stcpp::execution::ExecutionMode::Paper) {
+        stcpp::execution::ExecutionContext::Mode() != stcpp::execution::ExecutionMode::Paper) {
         // 2026-06-12 实盘准备: live build 发真单是【有意行为】, 须显式 STCPP_LIVE_INTENT_OK=1
         //   (start_live.sh 设置) 才放行 — 防 live binary 被误当 paper 跑; 无此 env 仍 abort (R-7)。
         const char* live_ok = std::getenv("STCPP_LIVE_INTENT_OK");
-        if (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live && live_ok != nullptr &&
+        if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live && live_ok != nullptr &&
             live_ok[0] == '1') {
             std::fprintf(stderr, "[paper_loop] LIVE 模式意图确认 (STCPP_LIVE_INTENT_OK=1): 决策环将发真实 intent "
                                  "(成交仍受 LiveOrderGate arm 闸控制)\n");
         } else {
             std::fprintf(stderr,
                          "[paper_loop] FATAL (R-11/R-7): advisory_markets_no_intent=false (解封成交) 仅许 paper "
-                         "mode 或 live+STCPP_LIVE_INTENT_OK=1; kCompiledMode=%s. abort.\n",
-                         std::string(stcpp::execution::ToString(stcpp::execution::kCompiledMode)).c_str());
+                         "mode 或 live+STCPP_LIVE_INTENT_OK=1; execution::ExecutionContext::Mode()=%s. abort.\n",
+                         std::string(stcpp::execution::ToString(stcpp::execution::ExecutionContext::Mode())).c_str());
             std::abort();
         }
     }
@@ -1979,7 +1979,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     const execution::VirtualFill fill = executor_->Execute(vord);
     // R-11/R-7 模式断言 (2026-06-12 live 接线): paper build 必 0, live build 必 1 (编译期定)
     assert(fill.mode_tag ==
-           (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live ? 1u : 0u));
+           (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live ? 1u : 0u));
     if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
         return;
@@ -2342,7 +2342,7 @@ void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     const execution::VirtualFill fill = executor_->Execute(vord);
     // R-11/R-7 模式断言 (2026-06-12 live 接线): paper build 必 0, live build 必 1 (编译期定)
     assert(fill.mode_tag ==
-           (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live ? 1u : 0u));
+           (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live ? 1u : 0u));
     if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
         // 概率撮合 miss (Bernoulli) ≠ 永久不可成交: 解除一盘一击标记 → 退避后重试。

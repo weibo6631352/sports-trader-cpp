@@ -12,18 +12,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# ExecutionMode build-time switch (ADR gm-signoff-paper-trade R-7 + R-11)
-# 三 mode 同进程不允许动态切换 — build-time 二选一
-# (backtest 模式 2026-06-12 老板裁决删: 模型假设源自同批历史数据, 回测=in-sample 假象;
-#  验证 = 脚本验数据 + paper walk-forward [生产二进制跑实时数据, 天然 out-of-sample]。)
-set(STCPP_EXEC_MODE "paper" CACHE STRING "Execution mode: live / paper")
-set_property(CACHE STCPP_EXEC_MODE PROPERTY STRINGS live paper)
-
-if(NOT STCPP_EXEC_MODE MATCHES "^(live|paper)$")
-    message(FATAL_ERROR "STCPP_EXEC_MODE must be one of: live / paper (got: ${STCPP_EXEC_MODE})")
-endif()
-
-message(STATUS "stcpp build: STCPP_EXEC_MODE = ${STCPP_EXEC_MODE}")
+# ExecutionMode (2026-06-12 架构合理化, 老板「全改」): 编译期 STCPP_EXEC_MODE 删除 —
+# 单 binary, mode 由运行时 --mode paper|live 参数决定 (默认 paper)。R-7「不可中途切换」
+# 由 ExecutionContext::Init 单次锁保留; live 仍需 凭证+LIVE_ARMED+老板口令 三重闸。
+# (backtest 模式 2026-06-12 老板裁决删: 回测=in-sample 假象。)
 
 # 编译选项 (老高 v1 §8 + 老何 footgun)
 # Wave 75 fix: -Wnon-virtual-dtor / -Wold-style-cast / -Wcast-align 仅 C++ 有效

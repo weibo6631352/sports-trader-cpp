@@ -1,4 +1,4 @@
-// include/stcpp/polymarket/live_executor_adapter.hpp — IOrderExecutor 缝上的 live 适配
+// include/stcpp/execution/live_executor_adapter.hpp — IOrderExecutor 缝上的 live 适配
 //
 // owner: 老雷 (GM) | last_review: 2026-06-12 (实盘准备 v1 缺口 #5: 单参数切换核心件)
 // 链: paper_loop executor_ 缝 (VirtualOrder) → 本适配 → LiveExecutor (LiveOrderGate fail-closed

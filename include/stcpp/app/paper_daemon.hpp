@@ -47,7 +47,7 @@
 
 #include "stcpp/polymarket/live/live_order_submitter.hpp"
 #include "stcpp/polymarket/live_executor.hpp"
-#include "stcpp/polymarket/live_executor_adapter.hpp"
+#include "stcpp/execution/live_executor_adapter.hpp"
 #include "stcpp/polymarket/live_order_gate.hpp"
 #include "stcpp/app/event_matcher.hpp"     // EventMatcher / EventMatchInput (A1 映射桥)
 #include "stcpp/app/market_discovery.hpp"  // DiscoveredEvent

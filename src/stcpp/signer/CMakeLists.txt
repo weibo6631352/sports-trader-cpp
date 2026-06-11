@@ -15,7 +15,7 @@
 # 隔离从「物理不链接」改为「executor seam + R-11 mode_tag 运行时断言 +
 # R-7 FATAL guard (STCPP_LIVE_INTENT_OK)」。backtest 仍不链接此库。
 
-if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "live")
+# (2026-06-12 运行时 mode: 无条件构建 — 单 binary。)
     add_library(stcpp_signer_paper STATIC
         paper/paper_signer.cpp
     )
@@ -23,12 +23,8 @@ if(STCPP_EXEC_MODE STREQUAL "paper" OR STCPP_EXEC_MODE STREQUAL "live")
         PUBLIC ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(stcpp_signer_paper PUBLIC cxx_std_20)
-    target_compile_definitions(stcpp_signer_paper PRIVATE
-        STCPP_EXEC_MODE_paper=1
-    )
     # paper signer 只依赖 WAL framework (拿 WalKind 标签) + numerical (header-only Slippage)
     target_link_libraries(stcpp_signer_paper PUBLIC stcpp_infra_wal)
-endif()
 
 # Live / Backtest deferred (M4.5+, 当前不实现 — 派单约束)
 # if(STCPP_EXEC_MODE STREQUAL "live")

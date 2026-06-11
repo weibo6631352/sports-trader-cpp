@@ -765,7 +765,7 @@ BuildResult PaperDaemon::Build() {
     // 账本持久化 (2026-06-11「迭代部署 vs 攒数据」根治): 60s 快照 + 启动恢复; CWD 相对 (server 在仓库根跑)。
     // live 模式独立文件 (2026-06-12 单参数切换): live 重启绝不能把 paper 仓恢复进真钱账本 (R-11 反向)。
     cfg_.paper_loop.ledger_snapshot_path =
-        (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live)
+        (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live)
             ? "live_ledger_snapshot.tsv"
             : "paper_ledger_snapshot.tsv";
     // 决策源 = 直播源赔率 sharp (老板 2026-06-04「决策源就只用直播源赔率」+ 2026-06-05「砍掉大模型训练功能」):
@@ -876,7 +876,7 @@ BuildResult PaperDaemon::Build() {
     // ---- live 装配 (2026-06-12 实盘准备「单参数切换」; 仅 live build 编译进) -----------------------
     //   链: 决策环 → RM → executor 缝 → LiveExecutorAdapter → LiveExecutor → LiveOrderGate
     //   (默认 disarmed fail-closed) → LiveOrderSubmitter → CLOB。LIVE_ARMED=1 (老板同意后) 才 Arm。
-    if constexpr (stcpp::execution::kCompiledMode == stcpp::execution::ExecutionMode::Live) {
+    if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
         polymarket::LiveCredentials creds;
         std::string cred_err;
         if (!polymarket::LiveCredentials::FromEnv(creds, cred_err)) {

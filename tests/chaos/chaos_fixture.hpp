@@ -13,7 +13,7 @@
 //
 // spec §5.4 paper mode 防串:
 //   ChaosE2EFixture::SetUp() 强制校验:
-//     ASSERT kCompiledMode == ExecutionMode::Paper
+//     ASSERT execution::ExecutionContext::Mode() == ExecutionMode::Paper
 //     ASSERT AuditWalKindForBuild() == WalKind::PaperAudit
 //
 // 红线: R-11 / R-12 / R-20 全程 enforce
@@ -115,7 +115,7 @@ protected:
         integration::PaperE2EFixture::SetUp();
 
         // spec §5.4: paper mode 防串 — 两条强制断言
-        ASSERT_EQ(execution::kCompiledMode, execution::ExecutionMode::Paper)
+        ASSERT_EQ(execution::ExecutionContext::Mode(), execution::ExecutionMode::Paper)
             << "chaos: build-time mode 必须 Paper (STCPP_EXEC_MODE=paper)";
         ASSERT_EQ(observability::AuditWalKindForBuild(), infra::wal::WalKind::PaperAudit)
             << "chaos: AuditWalKindForBuild 必须 PaperAudit (R-11 build-time)";
