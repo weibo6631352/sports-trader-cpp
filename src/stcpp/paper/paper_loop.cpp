@@ -2926,13 +2926,29 @@ PaperLoop::AccountEquitySnapshot PaperLoop::account_equity() const noexcept {
         double bid_val = pv.avg_entry_price;   // 回退: 无有效 bid → 按入场价 (unrealized_bid 该仓 = 0)
         double mark_val = pv.avg_entry_price;  // 回退: 无有效 mark → 按入场价 (unrealized_mark 该仓 = 0)
         const auto bk = hub_.Read(pv.token_id);
+        bool have_mark = false;
         if (bk.has_value()) {
             if (bk->data_source_ts_ns > s.as_of_ts_ns) s.as_of_ts_ns = bk->data_source_ts_ns;
             // [follow-up 小肖] staleness gate (stale book→0 浮盈) 改 DD 红线路径行为, 需老韩签字+改 A5 测试, 另案。
             const double bid = bk->best_bid();
             if (std::isfinite(bid) && bid > 0.0 && bid < 1.0) bid_val = bid;     // 保守清算价 (砸 bid)
             const double mark = bk->microprice;
-            if (std::isfinite(mark) && mark > 0.0 && mark < 1.0) mark_val = mark;  // 展示 (中间价)
+            if (std::isfinite(mark) && mark > 0.0 && mark < 1.0) {
+                mark_val = mark;  // 展示 (中间价)
+                have_mark = true;
+            }
+        }
+        // 终局仓估值统一 (2026-06-11 老板「算算账亏在哪」审计): 死簿仓回退成本价会把赢定仓浮盈记 0
+        //   (实测 6 个 settling_won 被低估 ~+3.0, 总账与 positions 端口径背离 2.96)。统一用 CLV 末次
+        //   观测 mid (与 positions_mtm 同口径); 双向更准 (输定仓按成本记同样高估权益)。bid 口径同享
+        //   (终局死簿无 bid, 末次 mid 是最佳清算估计)。
+        if (!have_mark) {
+            const double lm = clv_tracker_.last_mid_for(pv.token_id);
+            if (std::isfinite(lm) && lm > 0.0 && lm < 1.0) {
+                mark_val = lm;
+                const double cur_bid = bk.has_value() ? bk->best_bid() : std::numeric_limits<double>::quiet_NaN();
+                if (!(std::isfinite(cur_bid) && cur_bid > 0.0)) bid_val = lm;
+            }
         }
         s.unrealized_bid += (bid_val - pv.avg_entry_price) * qty;
         s.unrealized_mark += (mark_val - pv.avg_entry_price) * qty;
