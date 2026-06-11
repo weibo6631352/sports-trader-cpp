@@ -227,3 +227,8 @@ owner: 老雷 (GM) | last_review: 2026-06-10
 - 修: PortfolioMetrics 全方法挂 mutex (f496a48d); incident 入 docs/INCIDENTS/ (公开失败); backlog: 全 debug_api provider 线程安全审计
 - **意义: 根除反复杀运行清账本的元凶, 系统终于能长跑攒 CLV**
 - iter34 (修复后 21min): 2 sharp 仓, 净 −2.83 MTM, 零异常
+
+## 迭代 #35 — 16:2x
+
+- 净 −8.96 (全 unreal, 3 仓逆行中) | 无出场触发 (fair 未穿 0.46 / 簿未持续恶化) — 按设计持有
+- 系统稳定 47min (崩溃修后最长无故障段); 盯下轮出场路径是否正确接管
