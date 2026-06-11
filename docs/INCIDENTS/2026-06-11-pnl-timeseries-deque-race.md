@@ -25,3 +25,14 @@ max_drawdown/equity_snapshot)。paper loop ~1Hz tick 非热路径, 锁 μs 级; 
 2. coredumpctl 是利器: systemd-coredump 默认开, 一条 gdb bt 直接定位 — 以后先查 core 再猜
 3. 观测端点 (前端轮询) 与决策线程共享的每一个容器都要过线程安全审计 — 派 backlog: 全 debug_api
    provider lambda 审计 (fills_ring_ 有 mutex ✓, ledger/quote hub SWMR ✓, 其余逐个查)
+
+## 附录: 同日第二起 P0 — Restore 误插 RediscoverOnce (持久化上线日两课)
+
+- 07:42 UTC segfault + 净 PnL 假飙 +$7,414,611 (老板发现)。core thread-apply-all-bt 抓现行:
+  Thread31 RestoreLedgerSnapshot(sscanf) × Thread1 SaveLedgerSnapshot 并发。
+- 根因: 接线脚本 replace(...,1) 把 Restore 插进 RediscoverOnce (300s 周期/映射线程) 而非 Build
+  装配段 → 运行中反复重放快照 = 持仓/累计叠加 (+$7.4M) + 并发竞态崩溃。
+- 修 (191398a2): Restore 移回 Build (Start 前单线程, 唯一合法调用点, 注释立规); 污染快照清除。
+- 教训: ① 脚本化 replace 接线必须人工核对落点函数 (两处同名调用点 = 高危) ② 新状态机加「唯一
+  调用点」注释立规 ③ 监控失职: 崩溃 15min 后老板先发现 → 已挂 60s 存活监控 (本地, 报警不自动拉起
+  — 老板 2026-06-11 确认「不要自动拉起, 挂了就查根源」)
