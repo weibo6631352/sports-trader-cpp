@@ -2644,8 +2644,8 @@ void TradingLoop::RestoreLedgerSnapshot() {
                 fr.exit_reason = (exitr[0] == '-' && exitr[1] == 0) ? "" : exitr;
                 fr.engine = (eng[0] == '-' && eng[1] == 0) ? "" : eng;
                 std::lock_guard<std::mutex> lk(fills_mu_);
-        JournalFill(fr);
-    fills_ring_.push_back(std::move(fr));
+                // (恢复路径不写 journal — 这些是历史行, journal 在原始成交时已写过; 防重启重复)
+                fills_ring_.push_back(std::move(fr));
                 if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
             }
         } else if (line[0] == 'R') {
