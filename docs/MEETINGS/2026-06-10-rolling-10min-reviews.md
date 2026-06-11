@@ -291,3 +291,11 @@ owner: 老雷 (GM) | last_review: 2026-06-10
 - 老板抓 bug: NO 仓市场已 0.999 (赢定) 逐盘面板仍显 −0.06 (=入场费) — 逐盘快照只在成交时发布,
   持有到结算架构下冻结数小时。修: RepublishLedgerMark 每 tick 实时 mark 重发 (aa04a8cb)
 - **持久化首战告捷**: [ledger-restore] 持仓 5 + CLV pending 6 原样穿越重启, cash 945 对账 ✓
+
+## 迭代 #43 — 20:5x 持仓状态标上线 (老板「状态能标一下/盯盘不知道盈亏」)
+
+- 后端: positions_mtm +status (live/settling_won/settling_lost/settling) + 终局盘 CLV 末次 mid 估值;
+  CLVTracker 全方法挂锁 (第三处同族竞态预防根治)
+- 前端: 持仓行 🏁赢定·等结算(绿)/输定(红)/终局(橙) 徽章; dist 已推真实服务目录 (frontend/dist)
+- 持久化再验证: 9 仓 + 12 CLV pending 穿越重启 ✓
+- 已知残项: last_mid 不在快照里 → 重启后终局盘估值暂回成本价 (下批改: 快照加 L 行)
