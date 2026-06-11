@@ -313,12 +313,34 @@ void TradingLoop::JournalFill(const FillRow& fr) {
                  "{\"ts\":%lld,\"cond\":\"%s\",\"yes\":%d,\"buy\":%d,\"close\":%d,\"px\":%.6f,"
                  "\"qty\":%.4f,\"realized\":%.4f,\"fair\":%.4f,\"mark\":%.4f,\"fee\":%.5f,"
                  "\"exit\":\"%s\",\"engine\":\"%s\","
-                 "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f}\n",
+                 "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f",
                  static_cast<long long>(fr.as_of_ts_ns), fr.condition_id.c_str(), fr.is_yes ? 1 : 0,
                  fr.is_buy ? 1 : 0, fr.is_close ? 1 : 0, fr.price, fr.size_usdc, fr.realized, fr.fair,
                  fr.mark, fr.fee, fr.exit_reason.c_str(), fr.engine.c_str(),
                  fam, static_cast<int>(cat.league_id), mt,
                  std::isfinite(cat.line) ? cat.line : -1.0);
+    // 研究级上下文 (2026-06-13 老板「订单簿指标/流动性都落, 以后优化都参照」): 有值才写 (NaN 省略)。
+    auto emit_d = [jf](const char* k, double v) {
+        if (std::isfinite(v)) std::fprintf(jf, ",\"%s\":%.6g", k, v);
+    };
+    emit_d("bk_spread", fr.bk_spread);
+    emit_d("bk_bid_sz", fr.bk_bid_sz);
+    emit_d("bk_ask_sz", fr.bk_ask_sz);
+    emit_d("bk_imb", fr.bk_imb);
+    emit_d("bk_micro_mid", fr.bk_micro_mid);
+    emit_d("bk_age_ms", fr.bk_age_ms);
+    emit_d("ofi", fr.q_ofi);
+    emit_d("rvol", fr.q_rvol);
+    emit_d("mom5", fr.q_mom5);
+    emit_d("sh_fair", fr.sh_fair);
+    emit_d("sh_vel", fr.sh_vel);
+    emit_d("deploy", fr.deploy_pct);
+    emit_d("vol24h", cat.volume_24h);
+    emit_d("liq", cat.liquidity);
+    emit_d("hold_sec", fr.hold_sec);
+    emit_d("mae", fr.mae);
+    emit_d("mfe", fr.mfe);
+    std::fprintf(jf, "}\n");
     std::fclose(jf);
 }
 
@@ -2150,6 +2172,39 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
         fr.fair = p_fair_side;  // 模型对被交易边的 fair (FILL 日志 fair= 同源) — 前端算声称 edge
         fr.mark = mark_price;   // 成交刻市场 mark — 前端算模型偏差 fair−mark
         fr.fee = fr.size_usdc * FeeCoefFor(condition_id) * fill.fill_price * (1.0 - fill.fill_price);  // 逐笔费 (老板「逐笔体现」)
+        // 研究级上下文 (2026-06-13 老板「订单簿指标也要落」): 成交刻簿快照 + 因子 + sharp + 部署率。
+        fr.bk_spread = side_book.best_ask() - side_book.best_bid();
+        fr.bk_bid_sz = side_book.best_bid_size();
+        fr.bk_ask_sz = side_book.best_ask_size();
+        {
+            const double bs = side_book.best_bid_size(), as_ = side_book.best_ask_size();
+            if (std::isfinite(bs) && std::isfinite(as_) && bs + as_ > 0.0) fr.bk_imb = (bs - as_) / (bs + as_);
+        }
+        if (std::isfinite(side_book.microprice) && std::isfinite(side_book.mid))
+            fr.bk_micro_mid = side_book.microprice - side_book.mid;
+        if (side_book.as_of_ts_ns > 0)
+            fr.bk_age_ms = static_cast<double>(fill.as_of_ts_ns - side_book.as_of_ts_ns) / 1e6;
+        if (const auto th = ts_history_.find(condition_id); th != ts_history_.end()) {
+            const std::int64_t w = cfg_.ts_feature_window_ns;
+            fr.q_ofi = th->second.OFI(w);
+            fr.q_rvol = th->second.RealizedVol(w);
+            fr.q_mom5 = th->second.RateOfChangePerSec(300'000'000'000LL);
+        }
+        if (const auto shj = sharp_history_.find(condition_id);
+            shj != sharp_history_.end() && shj->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+            fr.sh_fair = shj->second.last_sharp();
+            fr.sh_vel = shj->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+        }
+        fr.deploy_pct = tick_equity_.deploy_pct;
+        // 持有路径: 买入开始追踪 (结算行回填 hold/MAE/MFE)
+        if (fr.is_buy) {
+            auto& pp = pos_path_[token_id];
+            if (pp.entry_ns == 0) { pp.entry_ns = fill.as_of_ts_ns; pp.entry_px = fill.fill_price; }
+            if (std::isfinite(mark_price)) {
+                pp.min_mid = std::min(pp.min_mid, mark_price);
+                pp.max_mid = std::max(pp.max_mid, mark_price);
+            }
+        }
         if (!fr.is_buy) {  // 卖出原因 (老板「出现卖出就检查是否合理」): 回读本 tick 主逻辑写的决出原因
             const auto rit = last_sell_reason_.find(token_id);
             fr.exit_reason = (rit != last_sell_reason_.end()) ? rit->second : "kelly_reduce";
@@ -2463,6 +2518,13 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     fr.mark = fill.fill_price;
     fr.fee = fr.size_usdc * FeeCoefFor(t.condition_id) * fill.fill_price * (1.0 - fill.fill_price);
     fr.engine = "flb";
+    // 研究级上下文 (2026-06-13): FLB 触发携带的簿信息 + 部署率 + 持有路径起点。
+    fr.bk_ask_sz = t.ask_sz_usdc;
+    fr.deploy_pct = tick_equity_.deploy_pct;
+    {
+        auto& pp = pos_path_[t.token_id];
+        if (pp.entry_ns == 0) { pp.entry_ns = fr.as_of_ts_ns; pp.entry_px = fill.fill_price; }
+    }
     engine_by_token_.emplace(t.token_id, "flb");  // 引擎归因 (2026-06-12)
     std::lock_guard<std::mutex> lk(fills_mu_);
     JournalFill(fr);
@@ -2730,6 +2792,14 @@ void TradingLoop::SettleToken(const std::string& condition_id, const std::string
         fr.mark = settle_price;
         fr.fee = 0.0;                // 结算无交易费
         fr.exit_reason = "settlement";
+        // 持有路径回填 (2026-06-13 研究级落盘: 结算行带 hold/MAE/MFE — 出场研究金料)
+        if (const auto ppit = pos_path_.find(token_id); ppit != pos_path_.end()) {
+            const auto& pp = ppit->second;
+            if (pp.entry_ns > 0) fr.hold_sec = static_cast<double>(fr.as_of_ts_ns - pp.entry_ns) / 1e9;
+            if (std::isfinite(pp.min_mid) && pp.entry_px > 0.0) fr.mae = pp.entry_px - pp.min_mid;
+            if (std::isfinite(pp.max_mid) && pp.entry_px > 0.0) fr.mfe = pp.max_mid - pp.entry_px;
+            pos_path_.erase(ppit);
+        }
         std::lock_guard<std::mutex> lk(fills_mu_);
         JournalFill(fr);
     fills_ring_.push_back(std::move(fr));

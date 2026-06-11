@@ -614,6 +614,23 @@ public:
         double fee{0.0};               // 本笔手续费 (老板 2026-06-09「手续费逐笔体现」): size×fee_coef×p×(1−p)
         std::string exit_reason;       // 卖出原因 (2026-06-10 老板「出现卖出就检查是否合理」): rel_stop/vel_exit/
                                        //   frozen_hard/game_decided/kelly_reduce/winprob_cut/m2a_switch (买入空)
+        // ---- 研究级落盘上下文 (2026-06-13 老板「买入和结算时的订单簿指标都要落」) ----
+        //   买/卖行: 成交刻簿快照 + 量化因子 + sharp 上下文; 结算行: 持有路径 (hold/MAE/MFE)。
+        double bk_spread{std::numeric_limits<double>::quiet_NaN()};      // best_ask−best_bid
+        double bk_bid_sz{std::numeric_limits<double>::quiet_NaN()};      // L1 bid 量 (usdc)
+        double bk_ask_sz{std::numeric_limits<double>::quiet_NaN()};      // L1 ask 量
+        double bk_imb{std::numeric_limits<double>::quiet_NaN()};         // (b−a)/(b+a)
+        double bk_micro_mid{std::numeric_limits<double>::quiet_NaN()};   // microprice−mid (方向压力)
+        double bk_age_ms{std::numeric_limits<double>::quiet_NaN()};      // 簿龄 (now−as_of)
+        double q_ofi{std::numeric_limits<double>::quiet_NaN()};          // OFI(30s)
+        double q_rvol{std::numeric_limits<double>::quiet_NaN()};         // RealizedVol(30s)
+        double q_mom5{std::numeric_limits<double>::quiet_NaN()};         // mid 5min 动量
+        double sh_fair{std::numeric_limits<double>::quiet_NaN()};        // sharp fair (YES-canon)
+        double sh_vel{std::numeric_limits<double>::quiet_NaN()};         // sharp velocity (10s)
+        double deploy_pct{std::numeric_limits<double>::quiet_NaN()};     // 成交刻部署率
+        double hold_sec{std::numeric_limits<double>::quiet_NaN()};       // 结算行: 持有秒
+        double mae{std::numeric_limits<double>::quiet_NaN()};            // 持有期最大不利偏移 (entry−min_mid)
+        double mfe{std::numeric_limits<double>::quiet_NaN()};            // 持有期最大有利偏移 (max_mid−entry)
         std::string engine;            // 引擎标签 (2026-06-11 FLB 并跑对比): ""=sharp 主引擎 / "flb"=FLB-hold (加性)
     };
     // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
@@ -983,6 +1000,15 @@ private:
     std::int64_t last_deploy_warn_ns_{0};   // P4 部署率告警 5min 节流
     // 引擎归因 (2026-06-12 老板「能区分开就行」): token → engine ("sharp"/"flb"), 入场时记,
     //   结算/平仓按真实引擎分账 (废 flb_seen_ 猜测)。loop_thread_ 写; 快照 E 行持久化。
+    // 持有路径追踪 (2026-06-13 研究级落盘): token → {入场ns, 持有期 min/max mid}。
+    //   买入建, RepublishLedgerMark 逐 tick 更, 结算行消费后删。loop_thread_ 单写。
+    struct PosPath {
+        std::int64_t entry_ns{0};
+        double entry_px{0.0};
+        double min_mid{std::numeric_limits<double>::infinity()};
+        double max_mid{-std::numeric_limits<double>::infinity()};
+    };
+    std::unordered_map<std::string, PosPath> pos_path_;
     std::unordered_map<std::string, std::string> engine_by_token_;
     struct EngineBook {
         double realized{0.0};
