@@ -2379,7 +2379,8 @@ bool PaperLoop::FlbSeen(const std::string& condition_id) const {
 
 void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     // 平注 (老板「策略系数不进配置层」— 代码内常数): 多场分散吃 FLB 统计偏差, 无模型 fair 不做 Kelly。
-    constexpr double kFlbStakeUsdc = 15.0;
+    constexpr double kFlbStakeUsdc = 25.0;  // 15→25 (2026-06-11 老板拍板「FLB 加注」: 走量引擎吞吐 +67%;
+                                            //   逐笔验证 52% 带内盘有 ≥30u 真量; = per_order cap, 部署率 ~55% 可控)
     constexpr double kFlbMaxPx = 0.97;  // 价格上限双保险 (扫描端同档): 太贵无肉
     if (t.ask_px <= 0.0 || t.ask_px > kFlbMaxPx || t.token_id.empty()) return;
     if (position_ledger_.get_position(t.token_id)) return;  // 已有仓 (理论不达: 非 sharp 盘) → 不叠
