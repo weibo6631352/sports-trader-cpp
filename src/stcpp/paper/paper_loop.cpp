@@ -2251,9 +2251,12 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     t.event_ts_ns = f.event_ts_ns;
     t.data_source_ts_ns = f.data_source_ts_ns;
     t.ingestion_ts_ns = f.ingestion_ts_ns;
+    // 穿越判据 = 边 mid (2026-06-11 修假穿越: 回测口径是 mid/成交价穿越; 旧码用可成交价判 → 宽价差簿
+    //   被价差顶过 0.80 系统性提前假触发, 实测 NO「px=0.800」时 yes mid=0.22 即 NO 真 mid 仅 0.78)。
+    //   支付仍用 ask (可成交价), 上限 kFlbMaxPx 卡在支付价。
     bool fire = false;
     double mom5 = 0.0;  // 边向 5min 动量 (v2 跳升门; NaN 历史 → 0 = 无证据放行)
-    if (ya >= kFlbTrigger && ya <= kFlbMaxPx && f.best_ask_size() >= kFlbMinDepthUsdc) {
+    if (mid_now >= kFlbTrigger && ya <= kFlbMaxPx && f.best_ask_size() >= kFlbMinDepthUsdc) {
         mom5 = std::isfinite(mid_5m_ago) ? (mid_now - mid_5m_ago) : 0.0;  // YES 边向
         if (mom5 > kFlbMaxMom5) return;  // v2 跳升门: gap 追入 −EV, 不标记 seen → 稳了重触发
         t.token_id = entry.tokens.first;
@@ -2261,9 +2264,9 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
         t.ask_px = ya;
         t.ask_sz_usdc = f.best_ask_size();
         fire = true;
-    } else if (const double na = 1.0 - yb; na >= kFlbTrigger && na <= kFlbMaxPx &&
-                                           f.best_bid_size() >= kFlbMinDepthUsdc &&
-                                           !entry.tokens.second.empty()) {
+    } else if (const double no_mid = 1.0 - mid_now, na = 1.0 - yb;
+               no_mid >= kFlbTrigger && na <= kFlbMaxPx && f.best_bid_size() >= kFlbMinDepthUsdc &&
+               !entry.tokens.second.empty()) {
         mom5 = std::isfinite(mid_5m_ago) ? (mid_5m_ago - mid_now) : 0.0;  // NO 边向 (yes 跌 = no 升)
         if (mom5 > kFlbMaxMom5) return;  // v2 跳升门
         t.token_id = entry.tokens.second;
