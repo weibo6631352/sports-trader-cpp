@@ -986,6 +986,7 @@ BuildResult PaperDaemon::Build() {
             hv.pnl_realized = 0.0;  // 开仓期 realized=0 (平仓时落 cum_realized; 已平仓 qty=0 不列)
             hv.pnl_unrealized = p.pnl_unrealized;
             hv.as_of_ts_ns = p.as_of_ts_ns;
+            hv.status = p.status;  // 状态标 (2026-06-11)
             out.push_back(std::move(hv));
         }
         return out;

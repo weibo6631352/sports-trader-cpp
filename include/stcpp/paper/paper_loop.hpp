@@ -728,6 +728,9 @@ public:
         double mark{0.0};
         double pnl_unrealized{0.0};
         std::int64_t as_of_ts_ns{0};
+        // 状态标 (2026-06-11 老板「状态能标一下吗」): live=活簿实时 / settling_won=终局赢定等结算 /
+        //   settling_lost=终局输定 / settling=终局未明。终局盘无活簿时 mark 用 CLV 末次观测 mid 估值。
+        std::string status{"live"};
     };
     [[nodiscard]] std::vector<PositionMtm> positions_mtm() const noexcept;
 

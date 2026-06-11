@@ -54,6 +54,7 @@ export interface Position {
   mark_price: number;
   pnl_realized: number;
   pnl_unrealized: number;
+  status?: string; // 状态标 (2026-06-11): live / settling_won / settling_lost / settling
   as_of_ts: number;
 }
 

@@ -2886,11 +2886,25 @@ std::vector<PaperLoop::PositionMtm> PaperLoop::positions_mtm() const noexcept {
         p.avg_entry = pv.avg_entry_price;
         double mark = pv.avg_entry_price;  // fallback: 无 live 簿 → 成本价 (unrealized=0)
         std::int64_t as_of = pv.last_update_ts;
+        bool live_book = false;
         const auto bk = hub_.Read(pv.token_id);
         if (bk.has_value()) {
             const double m = bk->microprice;
-            if (std::isfinite(m) && m > 0.0 && m < 1.0) mark = m;  // 当前 live 中价 (展示口径同 account)
+            if (std::isfinite(m) && m > 0.0 && m < 1.0) {
+                mark = m;  // 当前 live 中价 (展示口径同 account)
+                live_book = true;
+            }
             if (bk->data_source_ts_ns > 0) as_of = bk->data_source_ts_ns;  // R-20: 簿版本时刻, 禁 now()
+        }
+        // 状态标 + 终局估值 (2026-06-11 老板「状态能标一下/盯盘不知道盈亏」): 终局盘 (比赛打完掉出
+        //   catalog/簿撤) 无活簿 → 用 CLV 末次观测 mid 估值 (NO 已 0.999 的赢仓显真实浮盈, 不再显 0),
+        //   状态按估值分赢定/输定/未明 (前端着色)。
+        if (live_book) {
+            p.status = "live";
+        } else {
+            const double lm = clv_tracker_.last_mid_for(pv.token_id);
+            if (std::isfinite(lm)) mark = lm;
+            p.status = mark >= 0.90 ? "settling_won" : (mark <= 0.10 ? "settling_lost" : "settling");
         }
         p.mark = mark;
         p.pnl_unrealized = (mark - pv.avg_entry_price) * qty;

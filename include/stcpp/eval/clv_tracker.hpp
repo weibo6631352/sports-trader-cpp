@@ -20,6 +20,8 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
+#include <mutex>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -50,18 +52,30 @@ public:
     void RecordFill(const std::string& token_id, double entry_price, double entry_mid, double size_pusd,
                     std::int64_t entry_ts_ns) noexcept {
         if (!(entry_price > 0.0) || !(size_pusd > 0.0)) return;  // 脏样本拒
+        std::lock_guard<std::mutex> lk(mu_);  // 2026-06-11: HTTP 线程读 (last_mid_for/report) 并发保护
         fills_[token_id].push_back(FillRec{entry_price, entry_mid, size_pusd, entry_ts_ns});
         ++n_pending_;
     }
 
     // 每 tick 更新该 token 市场 mid (收盘参考价 = 结算前最后一次 mid)。
     void UpdateMid(const std::string& token_id, double market_mid) noexcept {
-        if (market_mid > 0.0 && market_mid < 1.0) last_mid_[token_id] = market_mid;
+        if (market_mid > 0.0 && market_mid < 1.0) {
+            std::lock_guard<std::mutex> lk(mu_);
+            last_mid_[token_id] = market_mid;
+        }
+    }
+
+    // 末次观测 mid (2026-06-11 老板「盯盘页面也不知道盈亏」): 终局盘无活簿时的估值锚。NaN=无记录。线程安全。
+    [[nodiscard]] double last_mid_for(const std::string& token_id) const noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
+        const auto it = last_mid_.find(token_id);
+        return it != last_mid_.end() ? it->second : std::numeric_limits<double>::quiet_NaN();
     }
 
     // 结算: settle_value = 该 token 结算值 (winner=1.0 / loser=0.0)。
     //   算该 token 全部 pending fills 的 CLV (close + settle), 累加聚合, 清该 token。
     void OnSettle(const std::string& token_id, double settle_value) noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
         auto it = fills_.find(token_id);
         if (it == fills_.end()) return;
         // 收盘参考价: 结算前最后 mid; 无记录则回退结算值 (退化)。
@@ -84,6 +98,7 @@ public:
     }
 
     [[nodiscard]] Report report() const noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
         Report r;
         r.n_fills = n_settled_;
         r.n_pending_fills = n_pending_;
@@ -100,6 +115,7 @@ public:
     }
 
     void Reset() noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
         fills_.clear();
         last_mid_.clear();
         n_settled_ = 0;
@@ -122,9 +138,11 @@ public:
         double sum_notional_clv_close{0.0};
     };
     [[nodiscard]] Aggregates aggregates() const noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
         return {n_settled_, n_positive_close_, sum_clv_close_, sum_clv_settle_, sum_notional_, sum_notional_clv_close_};
     }
     void RestoreAggregates(const Aggregates& a) noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
         n_settled_ = a.n_settled;
         n_positive_close_ = a.n_positive_close;
         sum_clv_close_ = a.sum_clv_close;
@@ -134,12 +152,14 @@ public:
     }
     template <typename F>
     void ForEachPendingFill(F&& fn) const {
+        std::lock_guard<std::mutex> lk(mu_);
         for (const auto& [tok, recs] : fills_) {
             for (const auto& r : recs) fn(tok, r);
         }
     }
 
 private:
+    mutable std::mutex mu_;  // 2026-06-11: loop 写 × HTTP 读 (report/last_mid_for) 并发保护 (同 PortfolioMetrics 教训)
     std::unordered_map<std::string, std::vector<FillRec>> fills_;  // 未结算成交 (per token)
     std::unordered_map<std::string, double> last_mid_;             // 各 token 最后市场 mid
     std::uint64_t n_settled_{0};

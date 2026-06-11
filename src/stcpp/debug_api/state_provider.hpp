@@ -109,6 +109,8 @@ struct HoldingView {
     double pnl_realized{0.0};
     double pnl_unrealized{0.0};
     std::int64_t as_of_ts_ns{0};
+    // 状态标 (2026-06-11 老板「状态能标一下吗」, 加性): live / settling_won / settling_lost / settling
+    std::string status{"live"};
 };
 
 // ============================================================

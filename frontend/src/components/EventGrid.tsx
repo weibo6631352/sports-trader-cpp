@@ -496,9 +496,18 @@ function CondPos(props: { posRows: Position[]; perMarketPnl: number | null }) {
             const pnlTotal = () => Number(p.pnl_realized) + Number(p.pnl_unrealized);
             const pnlCls = () => (pnlTotal() >= 0 ? 'pnl-pos' : 'pnl-neg');
             const qtySign = () => (netQty() >= 0 ? '+' : '');
+            // 状态标 (2026-06-11 老板「状态能标一下吗」): 终局盘等结算时着色提示, 不再误读为亏损
+            const statusBadge = () => {
+              switch (p.status) {
+                case 'settling_won': return <span style={{ color: '#4caf50', 'font-size': '9px' }}>🏁赢定·等结算</span>;
+                case 'settling_lost': return <span style={{ color: '#e57373', 'font-size': '9px' }}>🏁输定·等结算</span>;
+                case 'settling': return <span style={{ color: '#c8924a', 'font-size': '9px' }}>🏁终局·等结算</span>;
+                default: return null;
+              }
+            };
             return (
               <div class="cond-pos-row">
-                <span class="cond-pos-outcome">{p.outcome ?? '—'}</span>
+                <span class="cond-pos-outcome">{p.outcome ?? '—'} {statusBadge()}</span>
                 <span class="cond-pos-qty mono-sub">
                   {qtySign()}{netQty().toLocaleString()}u
                 </span>
