@@ -79,6 +79,7 @@ export interface Fill {
   mark: number;          // 成交刻市场 mark — 模型诊断: 模型偏差=fair−mark
   fee: number;           // 本笔手续费 (老板「逐笔体现」): size×fee_coef×p×(1−p)
   as_of_ts: number;
+  exit_reason?: string; // 卖出原因/settlement (2026-06-11)
 }
 
 export interface Fills {
