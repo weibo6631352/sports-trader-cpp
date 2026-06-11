@@ -613,6 +613,9 @@ public:
     //   测试可直接调。恢复内容: 持仓 (apply_fill 重放) + 累计 realized/fee (总+逐盘) + CLV (聚合+pending)。
     void SaveLedgerSnapshot();
     void RestoreLedgerSnapshot();
+    // 逐盘 PnL 实时 MTM 重发 (2026-06-11): 每 tick 用实时 mark 重发 LedgerFeatures (不碰 fee 累计)。
+    void RepublishLedgerMark(const std::string& condition_id, const std::string& token_id, double mark_price,
+                             const polymarket::clob_wss::OrderBookFeatures& feat) noexcept;
 
     // bench/test seam (老姜性能评审): 同步跑一次 TickAll, 精确测单 tick 延迟 (不经 RunLoop 的 sleep)。
     //   不起 loop_thread_; 调用方负责先注入 catalog + hub book。仅用于 benchmark/单测, 生产走 Start()。

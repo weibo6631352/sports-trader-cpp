@@ -1773,6 +1773,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
 
     // M3 CLV 尺子: 每 tick 更新本 token 市场 mid (收盘参考价 = 结算前最后值)。离线评估, 不回喂决策。
     clv_tracker_.UpdateMid(token_id, mark_price);
+    RepublishLedgerMark(condition_id, token_id, mark_price, side_book);  // 逐盘 PnL 实时 MTM (2026-06-11)
 
     // 执行层 §4.1 (持仓管理 Stage 2): 毒性/波动信号 → ① 动态 exec_margin (软, 压价) ② 毒性冻结加仓 (硬档)。
     //   逆选保护 — 毒簿(|OFI| 大 / depth 薄)/高波动/远结算时让 reservation 更被动 (买压低 / 卖抬高);
@@ -2777,6 +2778,37 @@ void PaperLoop::PublishLedgerSnapshot(const std::string& condition_id, const exe
     lf.mode = risk::ExecutionModeTag::kPaper;
     lf.valid = true;
 
+    ledger_hub_.Publish(condition_id, lf);
+}
+
+// RepublishLedgerMark — 逐盘 PnL 实时 MTM 重发 (2026-06-11 老板「这种咋还算赔钱啊」):
+//   PublishLedgerSnapshot 只在【成交时】发布 → 逐盘面板冻结在入场瞬间 (NO 已 0.999 仍显 −0.06=费);
+//   持有到结算架构下中间无成交 → 冻结数小时。每 tick 用实时 mark 重算重发; 不碰 fee 累计 (那只在
+//   真成交时累加, 此处只读 cum 映射, 用 find 不用 operator[] 防插入)。loop_thread_ only。
+void PaperLoop::RepublishLedgerMark(const std::string& condition_id, const std::string& token_id,
+                                    double mark_price,
+                                    const polymarket::clob_wss::OrderBookFeatures& feat) noexcept {
+    const auto pos = position_ledger_.get_position(token_id);
+    if (!pos.has_value() || pos->size_usdc == 0) return;
+    if (!(mark_price > 0.0) || !std::isfinite(mark_price)) return;
+    const double net_qty = static_cast<double>(pos->size_usdc) / 1'000'000.0;
+    const double avg_entry = pos->avg_entry_price;
+    risk::LedgerFeatures lf{};
+    lf.event_ts_ns = feat.event_ts_ns;
+    lf.data_source_ts_ns = feat.data_source_ts_ns;
+    lf.ingestion_ts_ns = feat.ingestion_ts_ns;
+    lf.as_of_ts_ns = NowNs();
+    lf.net_qty = net_qty;
+    lf.avg_entry_price = avg_entry;
+    lf.mark_price = mark_price;
+    const auto rit = cum_realized_by_market_.find(condition_id);
+    const auto fit = cum_fee_by_market_.find(condition_id);
+    lf.pnl_realized = rit != cum_realized_by_market_.end() ? rit->second : 0.0;
+    lf.pnl_unrealized = (mark_price - avg_entry) * net_qty;
+    lf.pnl_fee = fit != cum_fee_by_market_.end() ? fit->second : 0.0;
+    lf.pnl_gross = lf.pnl_realized + lf.pnl_unrealized;
+    lf.mode = risk::ExecutionModeTag::kPaper;
+    lf.valid = true;
     ledger_hub_.Publish(condition_id, lf);
 }
 
