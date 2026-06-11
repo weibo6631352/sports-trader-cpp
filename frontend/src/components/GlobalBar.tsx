@@ -56,6 +56,16 @@ export function GlobalBar() {
   const realizedPnl = () => { const a = acct(); return a ? a.cum_realized_pnl : null; };
   const unrealizedPnl = () => { const a = acct(); return a ? a.cum_unrealized_pnl : null; };
   const equityVal = () => { const a = acct(); return a ? a.equity : null; };
+  const feePaid = () => { const a = acct(); return a ? a.cum_fee_paid : null; };
+  // 赢定排队 (2026-06-11 老板「一眼看明白盈亏」): settling_won 仓结算后将变现 Σ(1−入场)×qty
+  const settlePipeline = () => {
+    const rows = state.positions?.positions ?? [];
+    let s2 = 0; let n = 0;
+    for (const r of rows as { status?: string; avg_entry_price: number; net_qty: number }[]) {
+      if (r.status === 'settling_won') { s2 += (1 - Number(r.avg_entry_price)) * Number(r.net_qty); n += 1; }
+    }
+    return n > 0 ? { n, sum: s2 } : null;
+  };
   const pnlCls = (v: number | null) => (v == null ? '' : v >= 0 ? 'pnl-pos' : 'pnl-neg');
 
   const p99Text = () => {
@@ -120,6 +130,16 @@ export function GlobalBar() {
         <span class={`top-pnl ${pnlCls(realizedPnl())}`}>
           {realizedPnl() != null ? (realizedPnl()! >= 0 ? '+' : '') + fmtUsdc(realizedPnl()) : '—'}
         </span>
+        <span class="top-sep">|</span>
+        <span class="top-label" title="累计手续费 (taker fee)">费</span>
+        <span class="top-pnl" style={{ color: '#999' }}>
+          {feePaid() != null ? '−' + fmtUsdc(feePaid()) : '—'}
+        </span>
+        <Show when={settlePipeline()}>
+          <span class="top-sep">|</span>
+          <span class="top-label" title="赢定等结算的仓: 结算后将变现的利润 (结算爆发管道)">🏁排队</span>
+          <span class="top-pnl pnl-pos">+{fmtUsdc(settlePipeline()!.sum)} ({settlePipeline()!.n}仓)</span>
+        </Show>
         <span class="top-sep">|</span>
         <span class="top-label" title="当前持仓未平仓的账面盈亏">浮盈</span>
         <span class={`top-pnl ${pnlCls(unrealizedPnl())}`}>
