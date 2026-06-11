@@ -1,6 +1,6 @@
 # 实盘准备计划 v1 (2026-06-12)
 
-owner: 老雷 (GM) | last_review: 2026-06-12 | 状态: 准备期 (开闸需老韩 RM + 小白安全会签, §8.1)
+owner: 老雷 (GM) | last_review: 2026-06-12 | 状态: 准备期 (**开闸授权 = 老板一句话同意**, 2026-06-12 老板定: 不搞会签流程; §8.1 人签门即此)
 
 ## 一、晋升标准 (paper → live, 数据门槛)
 | 维度 | 门槛 | 现状 |
@@ -29,5 +29,14 @@ owner: 老雷 (GM) | last_review: 2026-06-12 | 状态: 准备期 (开闸需老�
 
 ## 四、风险红线重申
 - paper 期关闭的日损熔断/连亏 halt **在 live 档全部重开且更紧**
-- Arm() 仅人工 + 双签; 任何自动 Arm = P0
+- Arm() 仅在老板明确同意后由 GM 执行 (单参数切换); 任何自动/未授权 Arm = P0
 - live 首日仅 sharp 引擎 + 白名单 5 盘 + 总敞口 $50
+
+## 五、切换设计 (2026-06-12 老板定: 「真钱和虚拟盘就一个参数切换的事」)
+- 目标形态: `start_paper.sh` ↔ `start_live.sh` 单脚本切换 — 同一套信号/引擎代码, 差异仅:
+  ① 编译模式 binary (live build, R-7/R-11 编译期锁保留 — paper binary 物理无闸是地基不拆)
+  ② RM 档: LiveShadowRiskProfile (已建)
+  ③ executor: VirtualExecutor → LiveExecutorAdapter (缺口#5, 待接线)
+  ④ 账本: live PositionLedger + WAL (缺口#1)
+  ⑤ LIVE_ARMED=1 环境变量 → Arm() (仅老板同意后设置)
+- 下一步工程: 接线 #5 LiveExecutorAdapter + #1 live 账本 → 凑齐「一个参数」的全部内涵
