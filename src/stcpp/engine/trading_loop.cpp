@@ -283,13 +283,42 @@ void TradingLoop::JournalFill(const FillRow& fr) {
     FILE* jf = std::fopen(live ? "data/ml_capture/live_fills_journal.jsonl"
                                : "data/ml_capture/fills_journal.jsonl", "a");
     if (jf == nullptr) return;  // 目录不存在等 — 不阻塞交易
+    // 分析维度直出 (老板 2026-06-13「落盘直接划分析: 类型/赛事/盘口」): 后续按
+    //   sport×league×mkt_type 切片研究开箱即用, 不再依赖事后 join。
+    const MarketCat cat = MarketCatFor(fr.condition_id);
+    const char* fam = "unknown";
+    switch (cat.sport_family_id) {
+        case 0: fam = "soccer"; break;
+        case 1: fam = "basketball"; break;
+        case 2: fam = "tennis"; break;
+        case 3: fam = "baseball"; break;
+        case 4: fam = "hockey"; break;
+        case 5: fam = "amfootball"; break;
+        case 6: fam = "esports"; break;
+        case 7: fam = "mma"; break;
+        case 8: fam = "cricket"; break;
+        default: break;
+    }
+    const char* mt = "unknown";
+    switch (cat.market_type_id) {
+        case 0: mt = "moneyline"; break;
+        case 1: mt = "spread"; break;
+        case 2: mt = "totals"; break;
+        case 3: mt = "outright"; break;
+        case 4: mt = "prop"; break;
+        case 5: mt = "series"; break;
+        default: break;
+    }
     std::fprintf(jf,
                  "{\"ts\":%lld,\"cond\":\"%s\",\"yes\":%d,\"buy\":%d,\"close\":%d,\"px\":%.6f,"
                  "\"qty\":%.4f,\"realized\":%.4f,\"fair\":%.4f,\"mark\":%.4f,\"fee\":%.5f,"
-                 "\"exit\":\"%s\",\"engine\":\"%s\"}\n",
+                 "\"exit\":\"%s\",\"engine\":\"%s\","
+                 "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f}\n",
                  static_cast<long long>(fr.as_of_ts_ns), fr.condition_id.c_str(), fr.is_yes ? 1 : 0,
                  fr.is_buy ? 1 : 0, fr.is_close ? 1 : 0, fr.price, fr.size_usdc, fr.realized, fr.fair,
-                 fr.mark, fr.fee, fr.exit_reason.c_str(), fr.engine.c_str());
+                 fr.mark, fr.fee, fr.exit_reason.c_str(), fr.engine.c_str(),
+                 fam, static_cast<int>(cat.league_id), mt,
+                 std::isfinite(cat.line) ? cat.line : -1.0);
     std::fclose(jf);
 }
 
