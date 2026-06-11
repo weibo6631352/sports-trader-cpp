@@ -130,16 +130,6 @@ inline bool FrozenHardStopTriggered(double avg_entry, double mark, double best_b
 }
 
 // ---------------------------------------------------------------------------
-// RelStopShouldHoldWinner (2026-06-10 老板「止损时还赢面就卖了可惜」)
-//   rel_stop 已触发(已跌破入场×(1−rel_stop_pct))后的【赢面门】: 入场价是沉没成本, 该不该割只看 fair(赢面) vs 卖价。
-//   返回 true = 应【持有不割】, 需同时: hold_floor>0 (门开) 且 被选边 fair > hold_floor (这边仍被看好, 前向 EV=fair>卖价)
-//   且 fair 没在崩 (sharp side_velocity ≥ −vel_exit_thr) 且【本边订单簿没在砸】(book_turning_down=false)。
-//   返回 false = 应割: 门关 / 赢面没了(fair≤floor) / 赢面在崩(sharp) / 订单簿在砸(本边卖压, 领先信号)。
-//   两边都考虑 (老板「订单簿方向也得考虑」): sharp fair 滞后 2.3s, 订单簿是 PM 实时流的领先信号 —— 簿在砸则趁能卖时离场,
-//   不死等滞后的 fair 跌下来 (订单簿管执行/逆选时点, 不越界判方向 —— 方向仍归 sharp)。
-//   velocity 不可得时传 0 ⟹ 视作未崩 ⟹ 偏持有 (老板偏好: 赢面还在就别卖)。纯函数, 单测覆盖。
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
 // BookDeteriorating (2026-06-10 老板「止盈不要了 + 只要订单簿先恶化就割肉」) —— 统一离场唯一触发。
 //   本边订单簿恶化 = L1 失衡 < −imb_thr (卖压: bid_sz 远少于 ask_sz) 且 microprice < mid (方向向下)。
 //   订单簿是 PM 实时流的领先信号 —— 恶化即离场(割/锁); 簿稳则持有骑到底(无止盈/无 mark 止损/无 velocity 离场)。
@@ -151,16 +141,7 @@ inline bool BookDeteriorating(double imb, double microprice, double mid, double 
     return (imb < -imb_thr) && (microprice < mid);  // 卖压失衡 + 方向向下 = 恶化
 }
 
-inline bool RelStopShouldHoldWinner(double p_fair_selected, double hold_floor,
-                                    double side_velocity, double vel_exit_thr,
-                                    bool book_turning_down) {
-    if (!(hold_floor > 0.0)) return false;                              // 门关 → 沿用旧割
-    if (!(p_fair_selected > hold_floor)) return false;                  // 赢面没了 → 割
-    if (vel_exit_thr > 0.0 && std::isfinite(side_velocity)
-        && side_velocity < -vel_exit_thr) return false;                 // 赢面在崩 (sharp) → 割
-    if (book_turning_down) return false;                                // 订单簿在砸 (本边卖压领先信号) → 趁能卖离场
-    return true;                                                        // 赢面在 + sharp 稳 + 簿稳 → 持有
-}
+// (RelStopShouldHoldWinner 2026-06-12 治理删: rel_stop/赢面门机器随 hold-to-settlement 整体下线。)
 
 // ---------------------------------------------------------------------------
 // EventMapEntry / ConditionEventMap (A1 映射桥消费侧契约)
@@ -376,10 +357,8 @@ struct PaperLoopConfig {
     double dd_m_t1{0.5};
     double dd_m_t2{0.25};
     double dd_hysteresis_band{0.02};
-    // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 减仓 (预测说该减/收敛) 时 best_bid
-    //   可成交即平 (仓位随预测回 flat = 收敛兑现), 不死等 reservation_sell「卖高」价。lib 默认关 (契约测试
-    //   不变); 生产 daemon opt-in。解「只买不卖持到结算」(reservation_sell 在 fair 上方收敛永不触发)。
-    bool predictive_unwind{false};
+    // (predictive_unwind 旋钮 2026-06-12 治理删: 生产恒 false; hold-to-settlement 后「随预测回 flat」
+    //  与「持到结算」直接矛盾。控制器侧能力+单测保留 (ControlInputs.predictive_unwind 默认 false)。)
 
     // 入场价感知平仓 (2026-06-04 老板「把持仓决策做好, 别稍微亏本就卖, 根本不考虑持仓买卖价格」):
     //   减仓卖单若 bid < 均入价 = 锁亏。仅当本边 fair 跌破均入超此 band (信号真反转 = 该止损) 才放行卖;
@@ -437,15 +416,8 @@ struct PaperLoopConfig {
     //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 50 (= per_order_cap, 保守起步; 受 RM market cap 约束)。
     double must_win_lock_usdc{0.0};
 
-    // 相对止损 (2026-06-05 老板「亏大就割」): 持仓 mark(microprice) 跌破均入价 ×(1−rel_stop_pct) → 强制平仓
-    //   (sel_target=0 + 绕 loss_cut HOLD)。修「bid 比 fair 跌得快, fair-based loss_cut 等 fair 跌够时簿早 gap 到
-    //   地板, 割也割在 −85%」: 改用 mark 相对入场价的跌幅当触发, 把均亏从 −0.70 压到 ~−0.25。
-    //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.25 (mark 跌 25% 即止损)。
-    double rel_stop_pct{0.0};
-    // 赢面门 (2026-06-10 老板「止损时还赢面就卖了可惜」): rel_stop 触发后, 若被选边 fair(赢面) 仍 > 此值 (这边仍被
-    //   看好) 且 fair 没在崩 (velocity ≥ −vel_exit_thr) → 不割, 持有。入场价是沉没成本, 前向 EV = fair > 卖价 ⟹ 持有更优;
-    //   仅【fair ≤ 此值 (赢面没了)】或【fair 在崩】才割。0 = 关 (lib 默认, 沿用旧「跌破入场就割」); 生产 daemon 置 0.5。
-    double hold_if_winning_floor{0.0};
+    // (rel_stop_pct / hold_if_winning_floor 2026-06-12 治理删: 2026-06-11 hold-to-settlement 反事实
+    //  判死 mark/fair 基止损 (n=5 被割仓 60% 终赢 Δ+54), 生产恒 0 关。git 史可考。)
 
     // 必输方开仓护栏 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 被选边【模型 fair】< 此值 → 不开新仓
     //   (近必输 longshot 下侧到 0 远大于 edge, 永远 −EV)。用模型 fair 非市场价地板 (老板「用模型」)。减仓/
@@ -464,35 +436,12 @@ struct PaperLoopConfig {
     //   空=关 (lib 默认)。paper-only (R-11: 不碰真账本)。
     std::string ledger_snapshot_path{};
 
-    // 再入场冷却 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 同一 token 减仓/平仓后, 冷却窗内禁止
-    //   【新开/加仓买入】(减仓/平仓/must_win/force_cross 不受限)。根因: 实测同盘 buy→卖光→rebuy 反复 4+ 往返
-    //   (pattern BB SSS BB SSSS BB...), 每往返付双边费 → 手续费成为头号成本 (fee 4.4 > realized 亏 3.7)。
-    //   churn 源自噪声 fair/价在 100ms tick 上反复触发开/平。冷却打断 rebuy 循环, 保留对真实新机会的反应
-    //   (force_cross/must_win 绕过)。0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 30s。
-    std::int64_t reentry_cooldown_ns{0};
+    // (reentry_cooldown_ns / rebuy_edge_premium / tp_reversal_vel_thr / vel_exit_thr /
+    //  near_settle_capture_frac 2026-06-12 治理删: 全为「有卖出才有的病」(churn/rebuy/止盈时机),
+    //  hold-to-settlement 后无卖出路径, 生产恒 0 关。git 史可考。)
 
-    // rebuy fair 改善门 (2026-06-10 老姜微观结构裁决, 老板「持仓策略上层设计发力」): 同盘减仓/平仓后,
-    //   rebuy 要求被选边 fair 比【上次卖出时的均入价】至少高 rebuy_edge_premium, 否则不 rebuy。
-    //   治两病: ① churn — take-profit 卖高后 sharp 稳定 → 同等信号又买 → 6 往返付费 (费拖累 26-27%);
-    //   ② rebuy 撞崩盘 — take-profit 后 fair 走弱时 rebuy (实测 0x9581dd 卖后 rebuy 崩 −14)。fair 没真
-    //   提升就不二次建仓 → 趋近「买一次持到结算」(FLB 理想形态)。首笔开仓不受限; force_cross 绕过。
-    //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.06。
-    double rebuy_edge_premium{0.0};
-
-    // ---- 离场策略精细化 (2026-06-10 持仓策略会 + 老板「赢面还很大卖了可惜」「两边都要考虑」) ----
-    //   离场由【赢面=sharp fair 趋势】驱动, 不由 bid 价格。骑住赢面涨/稳的赢家捕获完整收敛, 仅赢面真降/
-    //   急跌/近结算才离场。velocity 单位 prob/sec (sharp_fair_track: +升 −降); 样本≥3 才信 (天然 sharp-based)。
-    //   tp_reversal_vel_thr: 骑住门 —— 被选边 fair velocity < −此值 (赢面在降) 才放行止盈; ≥ 则骑住 (赢面稳/升)。
-    //     0 = 关 (lib 默认, 沿用旧 book 逻辑); 生产 0.003 (赢面缓降也骑住, 只真降才离场)。
-    double tp_reversal_vel_thr{0.0};
-    //   vel_exit_thr: 盈利区急转门 (下行保护) —— 盈利仓 fair velocity < −此值 (赢面急跌) → 立即止盈,
-    //     不等 rel_stop −25% (补 rel_stop 只在亏损区太慢)。0 = 关; 生产 0.015。
-    double vel_exit_thr{0.0};
-    //   near_settle_capture_frac: 近结算捕获 —— time_to_res_frac < 此值 时盈利仓强制锁利 (亏损仓不强割,
-    //     让其结算无 slippage)。0 = 关; 生产 0.05 (剩余 ≤5% 时长)。
-    double near_settle_capture_frac{0.0};
-    //   frozen_hard_stop_pct: 冻结期硬下行保护 (2026-06-10 老韩 bug#2 + 老板「下行不够细致」) —— sharp 掉档冻结态下
-    //     (rel_stop/vel_exit 都失效), mark 跌破均入 ×(1−此值) 且【双边簿紧】(真崩盘非退化簿) → 灾难止损截尾。
+    //   frozen_hard_stop_pct: 冻结期硬下行保护 (2026-06-10 老韩 bug#2 + 老板「下行不够细致」) —— sharp 掉档冻结态下,
+    //     mark 跌破均入 ×(1−此值) 且【双边簿紧】(真崩盘非退化簿) → 灾难止损截尾。hold-to-settlement 三出口之一。
     //     仅 fair_is_sharp==false 时触发, 与 −5.80 退化簿(sharp 仍有效)签名互斥, 不回归卖飞。0 = 关; 生产 0.40 (深阈截尾)。
     double frozen_hard_stop_pct{0.0};
 
@@ -1020,12 +969,6 @@ private:
     //   loop_thread_ 单 writer (TickOne 读+写), 无需锁。本 tick |p_fair − last| > 阈 → force_cross。
     std::unordered_map<std::string, double> last_p_fair_;
 
-    // ---- 再入场冷却 (老板 2026-06-09): token_id → 上次减仓/平仓的 NowNs() ----
-    //   loop_thread_ 单 writer (ExecuteControllerSide 读+写)。冷却窗内禁新开/加仓买入 (打断 churn rebuy 循环)。
-    std::unordered_map<std::string, std::int64_t> last_reduce_ns_;
-    // ---- rebuy fair 改善门 (老姜 2026-06-10): token_id → 上次减仓/平仓时的均入价 (参考价) ----
-    //   rebuy 要求被选边 fair ≥ 此参考价 + rebuy_edge_premium (fair 没真提升不二次建仓; 治 churn + 防撞崩盘)。
-    std::unordered_map<std::string, double> last_reduce_ref_price_;
     // ---- 卖出原因 (2026-06-10 老板「出现卖出就检查是否合理」): token_id → 本 tick 决出的卖出原因 ----
     //   主逻辑在 ExecuteControllerSide 前写; ApplyFill 对卖出成交回读填 FillRow.exit_reason。loop_thread_ 单 writer。
     std::unordered_map<std::string, std::string> last_sell_reason_;
@@ -1059,8 +1002,6 @@ private:
     //   episode set: force_stop 持续多 tick 只计一次, 清除后再触发算新 episode。loop_thread_ 单 writer。
     std::unordered_map<std::string, int> market_stop_count_;
     std::unordered_set<std::string> market_stop_episode_;
-    // ---- book_det 60s 持续确认 (老板 2026-06-11 拍板, 治割在 V 底): token_id → 双条件首次成立 NowNs ----
-    std::unordered_map<std::string, std::int64_t> book_det_since_;
     // ---- FLB-hold 引擎状态 (老板 2026-06-11): 触发队列 (daemon 扫描线程写 / loop_thread_ 排干) +
     //   一盘一击去重集 (入队刻即记, 重复 condition 丢弃)。flb_mu_ 保护两者 (扫描端 FlbSeen 预过滤同锁)。
     mutable std::mutex flb_mu_;

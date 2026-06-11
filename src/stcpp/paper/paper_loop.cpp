@@ -1590,159 +1590,21 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
     }
 
-    // 相对止损 (2026-06-05 老板「亏大就割」): 被选边持仓 mark 跌破均入价 ×(1−rel_stop_pct) → 强平
-    //   (sel_target=0 让控制器产平仓卖单 + force_stop 绕过 loss_cut 的 HOLD)。predictive_unwind 下 best_bid>0 即可成交。
-    if (cfg_.rel_stop_pct > 0.0) {
-        const auto pos_sel = position_ledger_.get_position(token_id);
-        const double avg_e = (pos_sel && pos_sel->avg_entry_price > 0.0) ? pos_sel->avg_entry_price : 0.0;
-        // 2026-06-09 (老姜裁决 + 实测 −5.80 灾难单配套): rel_stop 必须 sharp fair 也确认反转才割 —— 单看 mark 跌
-        //   会被【退化簿 bid 塌陷】误触发 (mark=best_bid 塌到 0.0129, 但 sharp fair 仍 0.79 = 信号没反转 → 把好仓
-        //   以 0.0129 甩卖 −5.80)。加 fair 门: 仅 p_fair_selected 也跌破均入−loss_cut_fair_band (= loss_cut 同阈, 真信号
-        //   反转) 才 force_stop taker 割; fair 仍看好(价格噪声/簿塌)→ 不割, 持有 (配套执行层 bid_not_degenerate 双保险)。
-        if (avg_e > 0.0 && std::isfinite(mark_price) && mark_price < avg_e * (1.0 - cfg_.rel_stop_pct)
-            && fair_is_sharp && p_fair_selected < avg_e - cfg_.loss_cut_fair_band) {  // fair_is_sharp: 降级 fair 不触发(防卖飞)
-            // 赢面门 (2026-06-10 老板「止损时还赢面就卖了可惜」): 入场价是【沉没成本】, 该不该割只看【fair(赢面) vs 卖价】——
-            //   fair 还 > hold_if_winning_floor(默认 0.5, 这边仍被看好) ⟹ 持有前向 EV = fair > bid = 卖了亏 EV(割肉谬误 + 白付
-            //   价差/费)。故仅【赢面真没了: fair ≤ floor (这边不再被看好)】或【赢面在崩: side velocity < −vel_exit_thr, fair 还会更低】
-            //   才割; fair > floor 且稳 → 持有不割。floor ≤ 0 (lib 默认) ⟹ 门关, 沿用旧「跌破入场×0.75 就割」行为。
-            double side_vel = 0.0;  // velocity 不可得(样本<3)→ 0 → 视作未崩 → 偏持有 (老板: 赢面还在别卖)
-            bool book_turning_down = false;  // 本边订单簿在砸 (领先信号; 老板「订单簿方向也得考虑」)
-            if (cfg_.hold_if_winning_floor > 0.0 && p_fair_selected > cfg_.hold_if_winning_floor) {
-                if (const auto shr = sharp_history_.find(condition_id);
-                    shr != sharp_history_.end() &&
-                    shr->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
-                    const double v_yes = shr->second.Velocity(cfg_.sharp_fair_vel_window_ns);
-                    side_vel = is_yes ? v_yes : -v_yes;  // 选 NO 取负
-                }
-                // 本边簿方向 (复用 book_exit 同款归一化失衡门 book_exit_imb_thr, 无需新标定): 失衡<−thr 且 micro<mid = 卖压。
-                const auto& sel_book = is_yes ? mkt.yes.book : mkt.no.book;  // 选边本边簿 (非 YES-canonical)
-                const double bsz = sel_book.best_bid_size();
-                const double asz = sel_book.best_ask_size();
-                if (std::isfinite(bsz) && std::isfinite(asz) && bsz + asz > 0.0) {
-                    const double imb = (bsz - asz) / (bsz + asz);
-                    const double micro = std::isfinite(sel_book.microprice) ? sel_book.microprice : sel_book.mid;
-                    book_turning_down = (imb < -cfg_.book_exit_imb_thr) && (micro < sel_book.mid);
-                }
-            }
-            if (!RelStopShouldHoldWinner(p_fair_selected, cfg_.hold_if_winning_floor,
-                                         side_vel, cfg_.vel_exit_thr, book_turning_down)) {  // 赢面没/崩/簿砸/门关 → 割
-                sel_target = 0.0;            // 强制平仓目标
-                sel_force_stop = true;       // 绕 loss_cut HOLD
-                sel_reason = "rel_stop";     // 赢面没了/崩/簿砸 → 割
-            }
-            // else: 赢面还在(fair>floor) + sharp 稳 + 簿没砸 → 持有, 不割肉 (老板「赢面还很大卖了可惜」+「订单簿方向也得考虑」)
-        }
-    }
-    // velocity 急转盈利区 force-exit (2026-06-10 持仓策略会 老韩 + 老板「两边都要考虑」): sharp fair 急跌
-    //   (velocity < −vel_exit_thr, 样本≥3) → 止盈离场。与「骑住赢家」同源 velocity (赢面升骑住/急跌走人)。
-    //   ★老板 2026-06-10「至少是盈利的情况下才能止盈, 不然都要扛一扛」: 真盈利区判据用【卖价 exec_bid ≥ 入场】
-    //   (= 卖出真锁利), 不用 mark(microprice)≥入场 —— 后者会在 mark≥入场但 bid<入场 时把仓亏卖(实测 0.617 入场
-    //   bid0.610 fair0.640 被 vel_exit 亏卖, 三次被老板标「割肉」)。bid<入场 = 亏卖 ≠ 止盈 → 不卖, 扛着等恢复
-    //   (下行由 rel_stop 赢面门在 fair≤floor 时兜)。
-    if (!sel_force_stop && cfg_.vel_exit_thr > 0.0 && fair_is_sharp) {
-        const auto pos_v = position_ledger_.get_position(token_id);
-        const double avg_v = (pos_v && pos_v->avg_entry_price > 0.0) ? pos_v->avg_entry_price : 0.0;
-        if (avg_v > 0.0 && std::isfinite(exec_bid) && exec_bid >= avg_v) {  // 真盈利区: 卖价≥入场 (止盈不亏卖)
-            if (const auto shv = sharp_history_.find(condition_id);
-                shv != sharp_history_.end() &&
-                shv->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
-                const double vel_yes = shv->second.Velocity(cfg_.sharp_fair_vel_window_ns);
-                const double side_vel = is_yes ? vel_yes : -vel_yes;  // 选 NO 取负
-                if (std::isfinite(side_vel) && side_vel < -cfg_.vel_exit_thr) {
-                    sel_target = 0.0;
-                    sel_force_stop = true;  // velocity 急转 → 盈利仓立即止盈 (下行保护)
-                    sel_reason = "vel_exit";
-                }
-            }
-        }
-    }
+    // (fair/mark 基止损全家桶 2026-06-12 治理删: rel_stop / vel_exit / 赢面持有门 v2 / book_det 割肉 ——
+    //  2026-06-11 hold-to-settlement 反事实判死「任何 mark/fair 基止损都在收割自己」(n=5 被割仓 60% 终赢
+    //  Δ+54), 生产参数全 0 关闭数日, 实测 500 fill 0 卖出。出场只剩: 结算 + frozen_hard + game_decided
+    //  市场确认。git 史可考。)
 
-    // 赢面持有门 v2 (2026-06-10 老板「还是有赢面的情况下卖亏了好多」): 赢面门 v1 只挡 rel_stop, 但 Kelly 减仓 /
-    //   predictive_unwind 这条路仍把【还在赢面(fair>floor)】的仓在【亏损区(mark<入场)】减/平 → 亏卖赢家。
-    //   扩展到所有减仓: 任何 sel_target<现仓 的减仓, 若【亏损区 + 赢面还在 + sharp 没崩 + 本边簿没砸】→ 持有不减
-    //   (predictive_unwind/Kelly 减仓仅在盈利区生效, 不在亏损区把赢家割了)。判据与 rel_stop 同 (RelStopShouldHoldWinner):
-    //   赢面没了(fair≤floor)/sharp 崩/簿砸 仍照常减。force_stop 路已各自决断, 不在此覆盖。
-    if (!sel_force_stop && game_decided_sign == 0.0 && fair_is_sharp  // 守卫: 比赛进行中 + fair 可靠(非降级/score-prior)
-        && cfg_.hold_if_winning_floor > 0.0 && p_fair_selected > cfg_.hold_if_winning_floor) {
-        const auto pos_h = position_ledger_.get_position(token_id);
-        const double cur_h = pos_h ? std::abs(static_cast<double>(pos_h->size_usdc) / 1'000'000.0) : 0.0;
-        const double avg_h = (pos_h && pos_h->avg_entry_price > 0.0) ? pos_h->avg_entry_price : 0.0;
-        const bool reducing = sel_target < cur_h - 1e-9;
-        const bool underwater = avg_h > 0.0 && std::isfinite(mark_price) && mark_price < avg_h;
-        if (cur_h > 0.0 && reducing && underwater) {
-            double v_side = 0.0;  // 不可得 → 0 → 视作未崩 → 偏持有
-            if (const auto shh = sharp_history_.find(condition_id);
-                shh != sharp_history_.end() &&
-                shh->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
-                const double vy = shh->second.Velocity(cfg_.sharp_fair_vel_window_ns);
-                v_side = is_yes ? vy : -vy;
-            }
-            bool book_dn = false;
-            const auto& sb = is_yes ? mkt.yes.book : mkt.no.book;  // 本边簿
-            const double bsz = sb.best_bid_size();
-            const double asz = sb.best_ask_size();
-            if (std::isfinite(bsz) && std::isfinite(asz) && bsz + asz > 0.0) {
-                const double imb = (bsz - asz) / (bsz + asz);
-                const double micro_h = std::isfinite(sb.microprice) ? sb.microprice : sb.mid;
-                book_dn = (imb < -cfg_.book_exit_imb_thr) && (micro_h < sb.mid);
-            }
-            if (RelStopShouldHoldWinner(p_fair_selected, cfg_.hold_if_winning_floor,
-                                        v_side, cfg_.vel_exit_thr, book_dn)) {
-                sel_target = cur_h;  // 赢面还在 + 亏损区 → 持有不减 (不亏卖赢家); 仅赢面没/崩/簿砸才减
-            }
-        }
-    }
-
-    // ★★ 统一离场铁律 (2026-06-10 老板「止盈不要了(易错过更大盈利) + 只要订单簿先恶化就割肉」) ——【一票裁决, 最后】★★
-    //   离场【唯一触发】= 本边订单簿恶化 (BookDeteriorating: 失衡<−imb_thr 卖压 且 microprice<mid 方向向下)。
-    //   簿稳 → 持有骑到底: 撤销任何止盈/mark止损/velocity离场/Kelly缩仓卖出 (全靠"订单簿=PM实时领先信号"定离场)。
-    //   覆盖所有卖出路径 (在所有 exit 块之后, 一票裁决)。game_decided(比分判输)/settlement/frozen(sharp掉档崩盘) 独立
-    //   backstop。−5.80 退化簿卖飞由执行层 bid_not_degenerate(锚 fair) 防护, 不在此判。
-    if (game_decided_sign == 0.0) {
-        const SideView& sel_view = is_yes ? mkt.yes : mkt.no;  // 本边簿
-        bool book_det = false;
-        if (sel_view.present) {
-            const double bsz = sel_view.book.best_bid_size();
-            const double asz = sel_view.book.best_ask_size();
-            if (std::isfinite(bsz) && std::isfinite(asz) && bsz + asz > 0.0) {
-                const double imb = (bsz - asz) / (bsz + asz);
-                const double micro =
-                    std::isfinite(sel_view.book.microprice) ? sel_view.book.microprice : sel_view.book.mid;
-                book_det = BookDeteriorating(imb, micro, sel_view.book.mid, cfg_.book_exit_imb_thr);
-            }
-        }
+    // ★★ 持有到结算铁律 (2026-06-11 老板拍板 hold-to-settlement) ——【一票裁决, 最后】★★
+    //   比赛进行中: 撤销任何止盈/缩仓卖出 (Kelly 缩仓等), 持有骑到结算。
+    //   独立 backstop 不受此覆盖: ① frozen_hard (sharp 掉档+双边簿确认真崩盘, sel_force_stop=true,
+    //   灾难逃生门 —— 2026-06-12 治理修复: 旧版此处把 force_stop 一并撤销, frozen_hard 结构性不可达)
+    //   ② game_decided (sign≠0 本块不进) ③ settlement (SettleToken 不经此)。
+    if (game_decided_sign == 0.0 && !sel_force_stop) {
         const auto pos_e = position_ledger_.get_position(token_id);
         const double cur_e = pos_e ? std::abs(static_cast<double>(pos_e->size_usdc) / 1'000'000.0) : 0.0;
-        // 赢面门 (2026-06-10 老板「为什么还有 0.45 以上就割肉的」): book 恶化【且赢面没了(fair≤floor)】才割 ——
-        //   fair>floor(这边仍被看好, 默认 0.46) 即使 book 恶化也持有骑到底, 不被 book 噪声把赢面大的仓割飞。
-        //   需 fair_is_sharp (fair 可靠); !fair_is_sharp 由 frozen 分支 + frozen_hard_stop 兜底。
-        const bool win_prob_gone = fair_is_sharp && p_fair_selected <= cfg_.hold_if_winning_floor;
-        // 60s 持续确认 (老板 2026-06-11 拍板, 治「割在 V 底」): 簿恶化+赢面没了 必须【连续持续 ≥60s】才开割。
-        //   反事实实证: 被割盘大面积割后强力反弹 (0xef817c 割 −15.2 后回到入场上方 / 0xd5cb 0.915), 深夜
-        //   ITF 拉锯时段 realized −50/h —— 网球丢分/丢盘的 V 底尖刺在确认窗内回弹 → 计时归零不割;
-        //   真崩盘持续恶化 → 60s (≈网球 2 分) 后照割, 多损几分但免被动量噪声收割。条件清除即重置计时。
-        constexpr std::int64_t kBookDetConfirmNs = 60'000'000'000LL;
-        if (cur_e > 0.0) {
-            if (book_det && win_prob_gone) {
-                auto& det_since = book_det_since_[token_id];
-                if (det_since == 0) det_since = NowNs();
-                if (NowNs() - det_since >= kBookDetConfirmNs) {
-                    sel_target = 0.0;                  // 持续 60s 双条件确认 → 割
-                    sel_force_stop = true;
-                    sel_reason = "book_deteriorate";
-                } else if (sel_target < cur_e) {
-                    sel_target = cur_e;                // 确认窗内: 持有等确认/回弹
-                    sel_force_stop = false;
-                }
-            } else {
-                book_det_since_.erase(token_id);       // 条件清除 → 计时归零 (V 底回弹免割)
-                if (sel_target < cur_e) {
-                    sel_target = cur_e;                // 赢面在(fair>floor) or 簿稳 → 持有骑到底 (撤任何止盈/止损/缩仓卖出)
-                    sel_force_stop = false;
-                }
-            }
-        } else {
-            book_det_since_.erase(token_id);           // 无持仓清残留计时 (防下次入场带陈旧计时秒割)
+        if (cur_e > 0.0 && sel_target < cur_e) {
+            sel_target = cur_e;  // 持有骑到结算 (撤任何止盈/缩仓卖出)
         }
     }
 
@@ -1777,17 +1639,15 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         }
         if (other_held) {
             const auto& other_feat = other.book;
-            // M2-a 扛一扛门 (2026-06-10 老板「还是割肉了」+「不然都要扛一扛」): 切换选边平旧边是裸割路径。旧边若
-            //   【仍赢面(other_fair>floor) + 会亏卖(旧边 bid < 旧边入场)】→ 不平, 扛着 (与被选边统一铁律同: 赢面在绝不亏卖)。
-            //   旧边 fair = 1 − 被选边 fair。守卫: 比赛进行中 + fair 可靠。赢面真没了(other_fair≤floor)才平。
-            const double other_fair = 1.0 - p_fair_selected;
+            // M2-a 扛一扛门 (2026-06-10 老板「还是割肉了」+「不然都要扛一扛」): 切换选边平旧边是裸割路径。
+            //   2026-06-12 治理简化 (随 hold_if_winning_floor 旋钮删除): hold-to-settlement 语义 ——
+            //   比赛进行中 + 会亏卖(旧边 bid < 旧边入场) → 一律不平, 扛到结算; 盈利平仓照常放行。
             bool skip_m2a_close = false;
-            if (game_decided_sign == 0.0 && fair_is_sharp && cfg_.hold_if_winning_floor > 0.0
-                && other_fair > cfg_.hold_if_winning_floor) {
+            if (game_decided_sign == 0.0) {
                 const auto pos_o = position_ledger_.get_position(other_token);
                 const double avg_o = (pos_o && pos_o->avg_entry_price > 0.0) ? pos_o->avg_entry_price : 0.0;
                 const double other_bid = other_feat.best_bid();  // 旧边真卖价
-                if (avg_o > 0.0 && std::isfinite(other_bid) && other_bid < avg_o) {  // 赢面在 + 会亏卖 → 扛着
+                if (avg_o > 0.0 && std::isfinite(other_bid) && other_bid < avg_o) {  // 会亏卖 → 扛着
                     skip_m2a_close = true;
                 }
             }
@@ -1929,8 +1789,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     cin.per_order_cap_pusd = cfg_.per_order_cap_usdc;
     cin.allow_short = false;       // 空头 clamp 0 (sell-to-open 对二元市场 N/A; 见 spec §11.6)
     cin.force_cross = force_cross;  // 小梁 Q-梁-2: fair 大跳绕死区 (买侧加仓; 含 stop 用于绕死区)
-    cin.force_stop = force_stop;    // 老姜 2026-06-09: 仅 rel_stop 触发卖侧 taker 退出 (与 force_cross 解耦防 churn)
-    cin.predictive_unwind = cfg_.predictive_unwind;  // 老板「双边预测的双边仓位管理」: 减仓随预测回 flat
+    cin.force_stop = force_stop;    // 老姜 2026-06-09: 仅灾难止损触发卖侧 taker 退出 (与 force_cross 解耦防 churn)
+    // (cin.predictive_unwind 恒默认 false — cfg 旋钮 2026-06-12 治理删, 控制器能力+单测保留)
 
     const control::ControlAction action = control::Decide(cin);
     if (!action.act) {
@@ -1993,60 +1853,19 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
             const auto pos_tp = position_ledger_.get_position(token_id);
             const double avg_e = (pos_tp && pos_tp->avg_entry_price > 0.0) ? pos_tp->avg_entry_price : 0.0;
             if (avg_e > 0.0 && exec_bid >= avg_e) {  // 盈利区
-                // velocity 主导离场 (2026-06-10 持仓策略会 + 老板「赢面还很大卖了可惜」「两边都要考虑」):
-                //   离场由【赢面=sharp fair 趋势】驱动, 不由 bid。赢面涨/稳 → 骑住捕获完整收敛; 赢面真降 →
-                //   离场; 近结算 → 锁利。book 失衡仅作快速安全网 (赢面明显在升时忽略 book 噪声, 不卖飞赢家)。
-                //   tp_reversal_vel_thr=0 (lib 默认) → 回退旧 book-only 逻辑 (hold if !book_down), 契约不变。
-                bool sharp_declining = false, sharp_rising = false;
-                if (cfg_.tp_reversal_vel_thr > 0.0) {
-                    if (const auto shv = sharp_history_.find(condition_id);
-                        shv != sharp_history_.end() &&
-                        shv->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
-                        const double vel_yes = shv->second.Velocity(cfg_.sharp_fair_vel_window_ns);
-                        if (std::isfinite(vel_yes)) {
-                            const double side_vel =
-                                (outcome == strategy::Outcome::Yes) ? vel_yes : -vel_yes;  // 选 NO 取负
-                            sharp_declining = (side_vel < -cfg_.tp_reversal_vel_thr);  // 赢面在降 → 离场
-                            sharp_rising = (side_vel > 0.0);                            // 赢面在升 → 忽略簿噪声
-                        }
-                    }
-                }
-                const bool near_settle =
-                    (cfg_.near_settle_capture_frac > 0.0 && time_to_res_frac >= 0.0 &&
-                     time_to_res_frac < cfg_.near_settle_capture_frac);
-                // 骑住赢家: 赢面未真降 + 未近结算 + (簿未塌 OR 赢面在升)。
-                if (!sharp_declining && !near_settle && (!book_down || sharp_rising)) {
+                // 骑住赢家 (2026-06-10 老板「一直涨能卖就持仓, 簿转向才止盈」): 簿仍支撑 → 不急止盈。
+                //   (tp_reversal_vel_thr/near_settle_capture_frac 旋钮 2026-06-12 治理删 — 生产恒 0 =
+                //    本 book-only 行为即生产语义; hold-to-settlement 下盈利减仓本就被铁律撤销。)
+                if (!book_down) {
                     stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
-                    return;  // 赢面还大, 卖了可惜 → 骑住
+                    return;  // 簿仍支撑 → 骑住
                 }
-                // 否则放行止盈: 赢面真降 / 近结算锁利 / 簿真塌且赢面未升。
             }
         }
     }
 
-    // ---- 再入场冷却闸 (2026-06-09 老板「调试持仓逻辑, 查明真正原因」: 手续费=头号成本, 根因=churn rebuy) --
-    //   同 token 减仓/平仓后冷却窗内禁止【新开/加仓买入】→ 打断 buy→卖光→rebuy 反复往返 (实测同盘 4+ 往返, 每
-    //   往返付双边费)。减仓/平仓 (Sell) 不受限; force_cross (进球/必赢/止损 事件驱动) 绕过, 保留对真机会反应。
-    if (cfg_.reentry_cooldown_ns > 0 && action.side == strategy::Side::Buy && !force_cross) {
-        const auto it = last_reduce_ns_.find(token_id);
-        if (it != last_reduce_ns_.end() && (NowNs() - it->second) < cfg_.reentry_cooldown_ns) {
-            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
-            return;  // 冷却中: 不 rebuy (churn 护栏)
-        }
-    }
-
-    // ---- rebuy fair 改善门 (老姜 2026-06-10, 老板「持仓策略上层设计发力」) ---------------------
-    //   同盘卖出后 rebuy 要求被选边 fair ≥ 上次卖出均入价 + rebuy_edge_premium。fair 没真提升不二次建仓:
-    //   ① 治 churn — take-profit 卖高后 sharp 稳定 → 同等信号又买 → 反复往返付费 (费拖累 26-27%);
-    //   ② 防撞崩盘 — take-profit 后 fair 走弱时 rebuy (实测 0x9581dd 卖后 rebuy 崩 −14)。首笔开仓 (无
-    //   last_reduce_ref 记录) 不受限; force_cross (进球/必赢) 绕过。趋近「买一次持到结算」FLB 理想形态。
-    if (cfg_.rebuy_edge_premium > 0.0 && action.side == strategy::Side::Buy && !force_cross) {
-        const auto rit = last_reduce_ref_price_.find(token_id);
-        if (rit != last_reduce_ref_price_.end() && p_fair_side < rit->second + cfg_.rebuy_edge_premium) {
-            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
-            return;  // fair 未较上次卖出改善 → 不 rebuy
-        }
-    }
+    // (再入场冷却闸 reentry_cooldown_ns + rebuy fair 改善门 rebuy_edge_premium 2026-06-12 治理删:
+    //  生产恒 0 关; hold-to-settlement 后无卖出→无 rebuy churn 路径, 防的病已不存在。git 史可考。)
 
     // (min_buy_price 必输局保护 2026-06-12 治理删: 生产恒 0.0, 被 min_open_fair + near_end 闸取代。)
 
@@ -2170,12 +1989,8 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     //   取 apply_fill 【前】的 avg_entry (减仓不改 avg, 但前置取更稳)。
     double sell_realized = 0.0;
     if (intent.side == strategy::Side::Sell) {
-        // 再入场冷却 (老板 2026-06-09): 记本 token 减仓/平仓刻 → 冷却窗内禁 rebuy (打断 churn)。
-        last_reduce_ns_[token_id] = as_of_now;
         const auto pos_before = position_ledger_.get_position(token_id);
         if (pos_before && pos_before->avg_entry_price > 0.0) {
-            // rebuy fair 改善门 (老姜 2026-06-10): 记上次卖出时的均入价作 rebuy 参考价。
-            last_reduce_ref_price_[token_id] = pos_before->avg_entry_price;
             const double sold_qty = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
             sell_realized = (fill.fill_price - pos_before->avg_entry_price) * sold_qty;
             cum_realized_pnl_pusd_ += sell_realized;

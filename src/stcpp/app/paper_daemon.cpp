@@ -793,13 +793,7 @@ BuildResult PaperDaemon::Build() {
     //   在正常静默(实测 age=5.2s 把活比赛回退不决策)。门本意抓真停更(6s+, 死盘 161s)。放宽 60s: 容忍单场长静默,
     //   只拦真死源。入场质量另由 lead-lag 门(sharp 先动才进)保证, 不靠此 staleness 门。
     cfg_.paper_loop.sharp_max_staleness_sec = 60.0;  // was 5.0
-    // 预测驱动平仓 (2026-06-04 老板「双边预测给出的双边仓位管理」): 生产开 —— 减仓随预测回 flat (收敛兑现),
-    //   解「只买不卖持到结算」。lib 默认关 (契约/管线测试不变)。
-    // 2026-06-09 专家组裁决 (微观结构老姜+金融小梁): 早平结构性死 (往返费 0.24>毛 edge 0.16/笔)。改【持有到
-    //   结算】—— 单边费 + 吃完整收敛 (favorite→1.0 = +0.30/share), 净 EV +0.15/share。关 predictive_unwind →
-    //   赢家持到 reservation_sell(卖高)或结算; rel_stop(force_stop)taker 割崩盘输家。配套 force_cross/force_stop
-    //   解耦修复 (position_controller.hpp): force_cross 噪声跳不再触发 taker 退出 → 不 churn 赢家 (上轮 71%→50% 根因)。
-    cfg_.paper_loop.predictive_unwind = false;
+    // (predictive_unwind 旋钮 2026-06-12 治理删: 2026-06-09 专家组已裁决早平结构性死 → hold-to-settlement。)
     // 入场价感知平仓 (2026-06-04 老板「别稍微亏本就卖, 要考虑持仓买卖价格」): 卖价低于均入(锁亏)时,
     //   仅当 sharp fair 真跌破均入超 5 分 (信号反转=止损) 才卖, 否则持有等回归/结算。治 predictive_unwind
     //   在小回撤里 churn 卖出实现亏损。取利平仓不受限。
@@ -816,16 +810,9 @@ BuildResult PaperDaemon::Build() {
     // 必赢锁利买入 (2026-06-05 老板「必赢的, 除去买卖手续费有利润就买」): 决出赢方, (1−ask)−买卖费>0 → 强制
     //   买到此上限锁结算利润 (事件延迟真 edge)。50 = per_order_cap, 保守起步, 受 RM market cap(120) 兜底。
     cfg_.paper_loop.must_win_lock_usdc = 50.0;
-    // 相对止损 (2026-06-05 老板「亏大就割」): 持仓 mark 跌破均入价 25% → 强平 (绕 fair-based loss_cut 的滞后)。
-    //   修「bid 比 fair 跌得快, 等 fair 跌够时簿已 gap 到地板, 割在 −85%」; 把均亏 −0.70 压到 ~−0.25。
-    cfg_.paper_loop.rel_stop_pct = 0.0;  // 2026-06-10 老板「止盈不要了 + 只要订单簿恶化就割」: 关 mark 止损, 离场纯 book 驱动
-    // 赢面门 0.5 (2026-06-10 老板「止损时还赢面就卖了可惜」): rel_stop 触发后, 若被选边 fair 仍 > 0.5 (这边仍被看好)
-    //   且 fair 没在崩 → 不割肉持有 (入场价是沉没成本, 前向 EV=fair>卖价 ⟹ 持有更优); 仅 fair≤0.5(赢面没了)或 fair 在崩才割。
-    // 2026-06-11 架构改革 (老板「数据验证后可推翻架构」+ 反事实终局 n=5: 被割仓 60% 终赢, Δ(不割−割)=+54;
-    //   与 CLV 10/10 + FLB 研究 hold-to-settle +2~3.3%/u 三方互证): sharp 引擎转【持有到结算】——
-    //   floor=0 → win_prob_gone 永 false → book_det 割肉路永不触发 (60s 确认版亦停用), 与 FLB 引擎哲学统一。
-    //   保留: frozen_hard (灾难线, 极少触发) + game_decided (已加市场确认 ≤0.20) + 结算。回滚 = 改回 0.46。
-    cfg_.paper_loop.hold_if_winning_floor = 0.0;  // was 0.46 (2026-06-10 老板「割肉离场设置 46」)
+    // (rel_stop_pct / hold_if_winning_floor 旋钮 2026-06-12 治理删: 2026-06-11 hold-to-settlement
+    //  架构改革 [反事实 n=5 被割仓 60% 终赢 Δ+54 + CLV 10/10 + FLB 研究三方互证] 判死 mark/fair 基止损,
+    //  铁律已固化进 paper_loop 代码本体。出场 = 结算 + frozen_hard + game_decided 市场确认。)
     // 必输方开仓护栏 (2026-06-09 老板「调试持仓逻辑, 查明真正原因」, 数据驱动): 被选边模型 fair < 0.15 → 不开
     //   新仓 (近必输 longshot 下侧到 0 远大于 edge, −EV)。实测灾难性亏损全是买崩盘 underdog (fair 0.11 买 0.08 →
     //   崩到 0.03, 单笔 −0.87/−2.00); game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug)。
@@ -841,26 +828,10 @@ BuildResult PaperDaemon::Build() {
     // 2026-06-09 风控老韩: 开同赛事相关性 taper (现 default false) —— 多 favorite=N倍押"热门赢"同向暴露, 冷门日齐崩;
     //   taper 零成本(只柔性缩量级不碰方向, fail-open), 是比反向腿对冲更对的组合层护栏。
     cfg_.paper_loop.corr_mult_enabled = true;
-    // 再入场冷却 (2026-06-09 老板「查明真正原因」, 数据驱动): 同盘减仓/平仓后 30s 内禁 rebuy。根因: 手续费=头号
-    //   成本 (实测 fee 4.4 > realized 亏 3.7), 源自 buy→卖光→rebuy 反复 4+ 往返 (每往返付双边费)。冷却打断循环;
-    //   force_cross (进球/必赢/止损) 绕过, 保留对真机会反应。
-    // 2026-06-10 老板「就当作一次新的机会, 不需要特殊处理」: 关掉两道 rebuy 特殊闸 (冷却 + 改善门)。
-    //   道理 = 根因 vs 症状: 这两道闸是给 churn 打的补丁, 而 churn 根因是【不该卖时卖了又买回 (buy→坏卖→rebuy)】。
-    //   今日 v2 赢面持有门(赢面还在不亏卖)已从根上掐断坏卖循环 → 补丁多余。再入场就走和【全新盘完全一样】的入场门
-    //   (edge 门 + favorite 地板 + 死区), 每次买只看当下有无 edge, 不看历史。金丝雀: 盯 round-trip 计数, 若 churn
-    //   回升则查"为什么在卖"(根因)不再打补丁。代码留 dormant (behind cfg, 默认 0), 心智负担归零。
-    cfg_.paper_loop.reentry_cooldown_ns = 0;   // 关: 再入场无冷却 (当作新机会)
-    cfg_.paper_loop.rebuy_edge_premium = 0.0;  // 关: 再入场无 fair 改善门 (当作新机会)
-    // 离场策略精细化 (2026-06-10 持仓策略会 + 老板「赢面还很大卖了可惜」「两边都要考虑」): 离场由赢面
-    //   (sharp fair 趋势) 驱动非 bid。① 骑住门 0.003: 被选边 fair velocity<−0.003(赢面真降)才放行止盈,
-    //   赢面涨/稳骑住捕获完整收敛。② 急转门 0.015: 盈利仓 fair velocity<−0.015(赢面急跌)立即止盈(下行保护,
-    //   补 rel_stop 太慢)。③ 近结算捕获 0.05: 剩余≤5%时长盈利仓锁利(亏损仓不强割→让其结算无 slippage)。
-    // 2026-06-10 老板「止盈不要了(易错过更大盈利) + 只要订单簿先恶化就割肉」: 关掉所有 velocity/近结算 止盈,
-    //   离场唯一靠统一铁律 BookDeteriorating (本边订单簿恶化)。frozen_hard_stop 保留作 sharp 掉档崩盘 backstop。
-    cfg_.paper_loop.tp_reversal_vel_thr = 0.0;       // 关: 无 velocity 骑住门 (book-only 离场)
-    cfg_.paper_loop.vel_exit_thr = 0.0;              // 关: 无 velocity 止盈/急转离场
-    cfg_.paper_loop.near_settle_capture_frac = 0.0;  // 关: 无近结算锁利 (骑到结算)
-    // ④ 冻结期硬下行保护 0.40 (2026-06-10 持仓策略会 老韩 bug#2 + 老板「下行不够细致/两边都要考虑」): sharp 掉档
+    // (reentry_cooldown_ns / rebuy_edge_premium / tp_reversal_vel_thr / vel_exit_thr /
+    //  near_settle_capture_frac 旋钮 2026-06-12 治理删: 全是「有卖出才有的病」的补丁,
+    //  hold-to-settlement 后无卖出路径; 2026-06-10 老板「当作新机会」已关。git 史可考。)
+    // 冻结期硬下行保护 0.40 (2026-06-10 持仓策略会 老韩 bug#2 + 老板「下行不够细致/两边都要考虑」): sharp 掉档
     //   冻结态下 (rel_stop/vel_exit 全失效) favorite 真崩盘只能裸亏到结算 → 补一道不依赖 sharp 的灾难止损: mark
     //   跌破均入 ×0.60 且双边簿紧(真崩盘非退化簿) → 截尾。仅 fair_is_sharp==false 触发, 与 −5.80 退化簿(sharp 有效)互斥。
     cfg_.paper_loop.frozen_hard_stop_pct = 0.40;
