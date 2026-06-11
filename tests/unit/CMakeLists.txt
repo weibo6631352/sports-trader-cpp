@@ -78,11 +78,6 @@ set(EXTRA_LIBS_test_audit_schema_v14    stcpp_observability_audit)
 set(EXTRA_LIBS_test_position_ledger_w76 stcpp_risk)
 set(EXTRA_LIBS_test_goalserve_adapter   stcpp_data_contract)
 set(EXTRA_LIBS_test_fair_value_estimator stcpp_pricing)
-set(EXTRA_LIBS_test_backtest_types      stcpp_backtest)
-set(EXTRA_LIBS_test_backtest_walk_forward stcpp_backtest)
-set(EXTRA_LIBS_test_backtest_metrics    stcpp_backtest)
-set(EXTRA_LIBS_test_backtest_stats      stcpp_backtest)
-set(EXTRA_LIBS_test_backtest_event_replayer stcpp_backtest stcpp_microstructure)
 set(EXTRA_LIBS_test_feature_store_contract stcpp_data_contract)
 set(EXTRA_LIBS_test_orderbook_adapter   stcpp_polymarket_clob_wss)
 set(EXTRA_LIBS_test_orderbook_snapshot_hub stcpp_orderbook_snapshot_hub)
@@ -108,7 +103,6 @@ set(EXTRA_LIBS_test_commentaries_parser   stcpp_data_live_stats_parser)
 set(EXTRA_LIBS_test_sizing_calculator     stcpp_sizing stcpp_risk)
 set(EXTRA_LIBS_test_sizing_rm_consistency stcpp_sizing stcpp_risk)
 # 小肖 ReplayDriver: replay→hub→Read 端对端路径验证
-set(EXTRA_LIBS_test_replay_driver         stcpp_backtest stcpp_orderbook_snapshot_hub)
 # 小石 LedgerSnapshotHub: per-market double-buffer 持仓/PnL 只读快照 (R-11/R-12/R-20)
 set(EXTRA_LIBS_test_ledger_snapshot_hub   stcpp_ledger_snapshot_hub)
 # 小石 QuoteSnapshotHub: per-market double-buffer 量化报价只读快照 (R-12/R-20 + ML provenance)
@@ -128,22 +122,6 @@ set(EXTRA_LIBS_test_paper_loop
 )
 
 # 回测多输入回放 P2 (红线#3 闭合): ReplayDecisionInputProvider 注入 PaperLoop (= test_paper_loop 同栈 + 比分 store)
-set(EXTRA_LIBS_test_replay_decision_input_provider
-    stcpp_paper_loop
-    stcpp_orderbook_snapshot_hub
-    stcpp_risk
-    stcpp_ledger_snapshot_hub
-    stcpp_quote_snapshot_hub
-    stcpp_pricing
-    stcpp_sizing
-    stcpp_signer_paper
-    stcpp_execution_paper
-    stcpp_infra_wal
-    stcpp_data_inplay_parser
-    stcpp_data_score_store
-)
-set(TIMEOUT_test_replay_decision_input_provider 60)
-set(LABELS_test_replay_decision_input_provider "unit;paper;backtest;r-11;r-20;replay-equivalence;xiaojiang")
 
 # --- 追加 compile_definitions 映射 ---
 # (仅列出 STCPP_EXEC_MODE_* 以外的额外 define)
@@ -170,16 +148,9 @@ set(EXTRA_OPTS_test_blake3_audit        -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_audit_schema_v13    -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_audit_schema_v14    -Wno-invalid-offsetof)
 # backtest group: -Wno-conversion (size_t → double 统计计算)
-set(EXTRA_OPTS_test_backtest_types          -Wno-conversion)
-set(EXTRA_OPTS_test_backtest_walk_forward   -Wno-conversion)
-set(EXTRA_OPTS_test_backtest_metrics        -Wno-conversion)
-set(EXTRA_OPTS_test_backtest_stats          -Wno-conversion)
-set(EXTRA_OPTS_test_backtest_event_replayer -Wno-conversion)
 
 # --- DISCOVERY_TIMEOUT 映射 (默认 30) ---
 set(TIMEOUT_test_spsc_queue         60)
-set(TIMEOUT_test_backtest_metrics   60)
-set(TIMEOUT_test_replay_driver      60)
 set(TIMEOUT_test_paper_loop         60)
 
 # --- LABELS 映射 (默认 "unit") ---
@@ -212,16 +183,10 @@ set(LABELS_test_audit_schema_v14           "unit;audit;schema-v14;timestamp_ms;m
 set(LABELS_test_position_ledger_w76        "unit;risk;position-ledger;state-machine;adr027;wave76;w9")
 set(LABELS_test_goalserve_adapter          "unit;goalserve;adapter;vendor-agnostic;adr-037")
 set(LABELS_test_fair_value_estimator       "unit;pricing;fair-value;numerical;adr-037")
-set(LABELS_test_backtest_types             "unit;backtest;types;r20;pit;backtest-v0.2")
-set(LABELS_test_backtest_walk_forward      "unit;backtest;walk-forward;guard;purged-kfold;backtest-v0.2")
-set(LABELS_test_backtest_metrics           "unit;backtest;metrics;sharpe;mdd;bootstrap;backtest-v0.2")
-set(LABELS_test_backtest_stats             "unit;backtest;stats;bonferroni;dsr;overfitting;backtest-v0.2")
-set(LABELS_test_backtest_event_replayer    "unit;backtest;event-replayer;ledger;fill-rate;br1;br5;backtest-v0.2")
 set(LABELS_test_feature_store_contract     "unit;feature-store;data-contract;adr-037;vendor-agnostic;pit")
 set(LABELS_test_orderbook_adapter          "unit;polymarket;clob-wss;orderbook-adapter;r-20;r-12;v0.1")
 set(LABELS_test_orderbook_snapshot_hub     "unit;polymarket;clob-wss;snapshot-hub;double-buffer;r-12;r-20;v0.1")
 # 小肖 ReplayDriver v0.1
-set(LABELS_test_replay_driver              "unit;backtest;replay-driver;r-12;r-20;synthetic;historical;e2e")
 # 小肖 PaperLoop v0.1 (feat/xiaoxiao-paper-loop, 2026-05-30)
 set(LABELS_test_paper_loop                 "unit;paper;paper-loop;r-11;r-12;r-20;ci-gating;kelly;xiaoxiao")
 # 小石 LedgerSnapshotHub v0.1

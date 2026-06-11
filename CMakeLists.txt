@@ -14,11 +14,13 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ExecutionMode build-time switch (ADR gm-signoff-paper-trade R-7 + R-11)
 # 三 mode 同进程不允许动态切换 — build-time 二选一
-set(STCPP_EXEC_MODE "paper" CACHE STRING "Execution mode: live / paper / backtest")
-set_property(CACHE STCPP_EXEC_MODE PROPERTY STRINGS live paper backtest)
+# (backtest 模式 2026-06-12 老板裁决删: 模型假设源自同批历史数据, 回测=in-sample 假象;
+#  验证 = 脚本验数据 + paper walk-forward [生产二进制跑实时数据, 天然 out-of-sample]。)
+set(STCPP_EXEC_MODE "paper" CACHE STRING "Execution mode: live / paper")
+set_property(CACHE STCPP_EXEC_MODE PROPERTY STRINGS live paper)
 
-if(NOT STCPP_EXEC_MODE MATCHES "^(live|paper|backtest)$")
-    message(FATAL_ERROR "STCPP_EXEC_MODE must be one of: live / paper / backtest (got: ${STCPP_EXEC_MODE})")
+if(NOT STCPP_EXEC_MODE MATCHES "^(live|paper)$")
+    message(FATAL_ERROR "STCPP_EXEC_MODE must be one of: live / paper (got: ${STCPP_EXEC_MODE})")
 endif()
 
 message(STATUS "stcpp build: STCPP_EXEC_MODE = ${STCPP_EXEC_MODE}")
@@ -128,11 +130,9 @@ if(STCPP_BUILD_DEBUG_API)
     add_subdirectory(src/stcpp/debug_api)
 endif()
 
-# Sprint backtest framework v0.2 (小蒋 quant-backtest, W10+ skeleton)
+# (src/stcpp/backtest 2026-06-12 删, 理由见顶部 STCPP_EXEC_MODE 注)
 # BR-1: 复用 stcpp_microstructure (FillRateModel::compute_from_clob_book)
 # BR-5: 复用小肖 slippage model v1 (header-only, 无额外 link)
-# R-7:  paper / backtest 共用 (mode-agnostic)
-add_subdirectory(src/stcpp/backtest)
 
 # feat/xiaoxiao-paper-loop (小肖 paper runtime integration, 2026-05-30)
 # 最小 paper 交易循环: OrderBookSnapshotHub → FairValue → Sizing → RM → PaperSigner
@@ -147,4 +147,4 @@ if(STCPP_BUILD_DEBUG_API)
     add_subdirectory(src/stcpp/app)
 endif()
 
-message(STATUS "stcpp project scaffold (Sprint-3 W9 W2 + backtest v0.2). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1 + debug-api v0.1 + fair-value-estimator v0.1 + backtest framework v0.2.")
+message(STATUS "stcpp project scaffold (Sprint-3 W9 W2). paper engine v0.1 + 7-gate evaluator v1 + microstructure v0.1 + ml data hook v0.1 + polymarket client v0.1 + single-instance-lock v0.1 + debug-api v0.1 + fair-value-estimator v0.1.")

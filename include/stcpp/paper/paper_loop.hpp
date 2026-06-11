@@ -775,9 +775,7 @@ public:
         std::shared_ptr<const data::livescore::LiveStatsMap> live_stats;  // #4 g_*_diff 微观
         std::shared_ptr<const data::OddsMap> odds;  // bm_slots: inplay_match_id→跨庄家赔率 (g_bm_*)
     };
-    // 回放注入: 非 nullptr → TickAll 用注入帧替代 store 读 (小蒋 P2 回测 harness 用)。owner = 调用方;
-    //   指针生命周期须覆盖 loop 运行期。live 路径恒 nullptr → 行为逐位不变。
-    void SetReplayInputs(const DecisionInputSnapshot* s) noexcept { replay_inputs_ = s; }
+    // (SetReplayInputs 回放注入缝 2026-06-12 老板裁决删: 回测=in-sample 假象, 验证=脚本+paper。)
 
     // (大模型注入方法已砍 2026-06-05「砍掉大模型训练功能」: SetMlModel/SetMlModelShared/SetSeqArbModel/
     //  SetSeqArbModelShared/SetFeatureVectorHub。fair 不再有 ONNX 推理 blend; 量化因子直填 qf。)
@@ -843,7 +841,6 @@ private:
     // [P1] TickAll 入口冻结的 5 输入聚合 (原 tick_catalog_/tick_resolution_/tick_live_stats_/
     //   tick_event_map_/tick_score_snap_ 五个散成员合一; 见 DecisionInputSnapshot)。
     DecisionInputSnapshot tick_inputs_;
-    const DecisionInputSnapshot* replay_inputs_{nullptr};  // 非空 → TickAll 用注入帧 (小蒋 P2); live 恒 null
     // [2026-06-01 凯利评审] tick 入口冻结一次账户权益 → 整轮所有子盘口 sizing 用同版本 bankroll
     //   (消 read-skew + 防同 tick 内多笔成交驱动 bankroll 抖动; 老韩/小梁「tick 级冻结快照」)。
     AccountEquitySnapshot tick_equity_{};

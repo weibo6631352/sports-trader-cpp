@@ -285,19 +285,14 @@ void PaperLoop::TickAll() {
     // A4 (老板「他们相对都是最近刷新的就行」): tick 入口冻结一次比分快照 + 映射, 整轮全子盘口共享同版本。
     //   消除 read-skew: 否则同 event 的 moneyline/spread 各自 Get(), 采集线程中途 swap → 看不同比分版本。
     //   GetSnapshot()/LoadEventMap() 都是只读 RCU 单次 load (不碰 R-12); shared_ptr 持有保活整 tick。
-    // [P1 backtest-equivalence] 6 决策输入里 5 个(非 book)在此聚合冻结成 tick_inputs_; book 第 6 输入
-    //   走 hub_ (已可经 ReplayDriver 注入, 这正是当前唯一可回放的 1/6)。replay_inputs_ 非空 → 用注入历史帧
-    //   替代 store 读 (小蒋 P2 回测 harness 闭合红线#3); live 路径 replay_inputs_ 恒 null → 行为逐位不变。
-    if (replay_inputs_ != nullptr) {
-        tick_inputs_ = *replay_inputs_;
-    } else {
-        tick_inputs_.event_map = LoadEventMap();
-        tick_inputs_.score = (score_store_ != nullptr) ? score_store_->GetSnapshot() : nullptr;
-        tick_inputs_.catalog = LoadPaperCatalog();  // RCU 快照: 周期重发现中途 swap, 整 tick 持有同版本
-        tick_inputs_.resolution = LoadResolution();   // [R-1] 刷新线程 30s swap, 整 tick 冻结同版本 (消 UB)
-        tick_inputs_.live_stats = LoadLiveStats();    // [R-1] 同上
-        tick_inputs_.odds = LoadOdds();               // bm_slots: 跨庄家赔率 (inplay_match_id 键), [R-1] 同上
-    }
+    // (回测 replay 注入缝 2026-06-12 老板裁决删: 模型假设源自同批历史数据, 回测=in-sample 假象;
+    //  验证 = 脚本验数据 + paper walk-forward。tick_inputs_ 聚合冻结本身保留 — 消 read-skew 是生产需要。)
+    tick_inputs_.event_map = LoadEventMap();
+    tick_inputs_.score = (score_store_ != nullptr) ? score_store_->GetSnapshot() : nullptr;
+    tick_inputs_.catalog = LoadPaperCatalog();  // RCU 快照: 周期重发现中途 swap, 整 tick 持有同版本
+    tick_inputs_.resolution = LoadResolution();   // [R-1] 刷新线程 30s swap, 整 tick 冻结同版本 (消 UB)
+    tick_inputs_.live_stats = LoadLiveStats();    // [R-1] 同上
+    tick_inputs_.odds = LoadOdds();               // bm_slots: 跨庄家赔率 (inplay_match_id 键), [R-1] 同上
     if (tick_inputs_.catalog == nullptr) {
         return;  // 未注入 (理论不达; ctor 必置)
     }
