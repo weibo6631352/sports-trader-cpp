@@ -452,7 +452,6 @@ bool PaperDaemon::RediscoverOnce(std::stop_token st) {
     // 发布: PaperLoop catalog (RCU 原子 swap) + RSP (meta_mu_ 守护) + WSS 全量重订。
     if (paper_loop_) {
         paper_loop_->SetPaperCatalog(BuildPaperCatalog());
-        paper_loop_->RestoreLedgerSnapshot();  // 2026-06-11 持久化: Start 前单线程恢复 (重启不清账本)
     }
     if (real_provider_) {
         real_provider_->set_token_map(token_map_);
@@ -890,6 +889,11 @@ BuildResult PaperDaemon::Build() {
     // R-3 (老周/老郭 评审): per-condition 静态元数据 (token/fee/cat/parent) 统一为 PaperCatalog,
     //   一次原子注入 (替代原 3 个独立 setter)。BuildPaperCatalog 供 R-6 周期重发现复用。
     paper_loop_->SetPaperCatalog(BuildPaperCatalog());
+    // 账本持久化恢复 (2026-06-11): 必须在【此处 Build 装配段】(Start 前, 单线程) 调 —— P0 教训:
+    //   首版误插进 RediscoverOnce (300s 周期, 映射线程) → 运行中反复重放快照 = 持仓/累计反复叠加
+    //   (净 PnL 飙到 +$7.4M) + 与 loop 线程 SaveLedgerSnapshot 并发 = segfault (core: Thread31 sscanf
+    //   × Thread1 Save)。Restore 只许这一处调用。
+    paper_loop_->RestoreLedgerSnapshot();
 
     // ---- Step 2d: RealStateProvider (读模型) ----
     risk::RiskConfig rsp_risk_cfg;
