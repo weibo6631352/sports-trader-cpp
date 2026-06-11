@@ -319,3 +319,8 @@ owner: 老雷 (GM) | last_review: 2026-06-10
 - FLB 簿保鲜: 映射线程 15s 批量 POST /books (~120 yes token = 3 批 0.2 req/s) → SeedFromRestBooks
   进主 hub → 簿龄 ≤15s → fill_rate≈0.6 过地板; seed 触发 tick = 仍触发型; 不动模型不绕 RM
 - 待办决策 (供老板): sharp 地盘 27 个双引擎死区盘是否开放给 FLB (sharp-同意门), 等保鲜效果先
+
+## 迭代 #46 — 22:2x ★★★ 簿保鲜疏通确认: 全系统今日最佳
+
+- FLB 成交率 ~5%→40%+ (4成交/6miss/2拒 vs 1/12/5) | 21 仓 (恢复9+双引擎新进12) | **clv_n=2 跨重启累积开张** | real +0.90 首正
+- 双引擎齐转 (sharp 8 + flb 7), 持久化 + 保鲜 + 触发型全链路打通
