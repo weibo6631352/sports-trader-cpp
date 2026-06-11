@@ -312,7 +312,10 @@ void TraderDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovere
                                  ev.sport_code.c_str(), static_cast<long long>(ev.sport_id),
                                  ev.title.c_str());
                 }
-                if (kEsportsLeagueBlocklist.count(ev.sport_id) > 0) {
+                // 标题联赛名精确封禁 (实测电竞事件标题自带联赛, e.g. "... - Esports World Cup"):
+                //   EMEA Masters = 研究诊断的出血二三线 (3 场全败 −62.1)。id 名单作第二通道。
+                const bool title_blocked = ev.title.find("EMEA Masters") != std::string::npos;
+                if (title_blocked || kEsportsLeagueBlocklist.count(ev.sport_id) > 0) {
                     market_catalog_.erase(dm.condition_id);  // 出血联赛: 不订阅/不报价/不触发 FLB
                     continue;
                 }
