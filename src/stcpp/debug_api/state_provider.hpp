@@ -176,6 +176,7 @@ struct AccountSnapshot {
     std::string mode;               // "paper" / "live" / "backtest"
     double bankroll_initial{0.0};   // 起始虚拟本金
     double cash_available{0.0};     // MVP 近似可动用资金 (不含锁定保证金)
+    double deploy_pct{0.0};         // P4 部署率 (2026-06-11 晚会)
     double position_mtm{0.0};       // 持仓市值 (microprice 展示口径; = Σ qty×mark)
     double equity_mark{0.0};        // 展示净值 = cash + microprice MtM
     double equity_conservative{0.0};// 保守净值 = cash + best_bid MtM (= kelly_bankroll)

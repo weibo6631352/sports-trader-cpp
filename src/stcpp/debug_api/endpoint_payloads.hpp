@@ -91,6 +91,8 @@ inline std::string account(const StateProvider& sp) {
     b += json::num(a.bankroll_initial);
     b += ",\"cash_available\":";
     b += json::num(a.cash_available);
+    b += ",\"deploy_pct\":";
+    b += json::num(a.deploy_pct);
     b += ",\"position_mtm\":";
     b += json::num(a.position_mtm);
     b += ",\"equity\":";

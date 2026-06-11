@@ -918,6 +918,7 @@ BuildResult PaperDaemon::Build() {
         a.mode = debug_api::exec_mode_str(cfg_.exec_mode);
         a.bankroll_initial = eq.bankroll_init;
         a.cash_available = eq.cash_available;
+        a.deploy_pct = eq.deploy_pct;  // P4 (2026-06-11 晚会)
         a.position_mtm = eq.position_mtm;
         a.equity_mark = eq.equity_mark;
         a.equity_conservative = eq.equity_bid;

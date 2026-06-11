@@ -307,6 +307,27 @@ void PaperLoop::TickAll() {
         for (const auto& t : flb_batch) ProcessFlbTrigger(t);
     }
 
+    // P4 部署率 WARN (2026-06-11 晚会): >85% 软告警 (不硬停, 持有到结算下高部署=相关性暴露)
+    if (tick_equity_.deploy_pct > 0.85 && NowNs() - last_deploy_warn_ns_ > 300'000'000'000LL) {
+        last_deploy_warn_ns_ = NowNs();
+        std::fprintf(stderr, "[deploy-warn] 部署率 %.0f%% > 85%% (open=%zu)\n", tick_equity_.deploy_pct * 100.0,
+                     static_cast<std::size_t>(tick_equity_.open_positions));
+    }
+
+    // ---- P5 日级 PnL 滚账 (2026-06-11 晚会): UTC 日界打一行, grep 即得逐日成绩 ----
+    {
+        const std::int64_t day_now = NowNs() / 86'400'000'000'000LL;
+        if (last_daily_close_day_ == 0) {
+            last_daily_close_day_ = day_now;
+        } else if (day_now != last_daily_close_day_) {
+            last_daily_close_day_ = day_now;
+            std::fprintf(stderr, "[daily-close] realized=%+.2f fee=%.2f equity_mark=%.2f open_pos=%zu clv_n=%llu\n",
+                         cum_realized_pnl_pusd_, cum_fee_pusd_, tick_equity_.equity_mark,
+                         static_cast<std::size_t>(tick_equity_.open_positions),
+                         static_cast<unsigned long long>(clv_tracker_.report().n_fills));
+        }
+    }
+
     // ---- FLB 漏斗 5min dump (2026-06-11 老板「机会被错过?」) ----
     if (cfg_.flb_enabled) {
         const std::int64_t fn_now = NowNs();
@@ -314,16 +335,13 @@ void PaperLoop::TickAll() {
             last_funnel_dump_ns_ = fn_now;
             const auto& f = flb_funnel_;
             std::fprintf(stderr,
-                         "[flb-funnel] 5min: fired=%lld | 带内但深度薄=%lld 不在带=%lld | 跳升=%lld 拉锯=%lld "
-                         "宽价差=%lld 单边簿=%lld 无簿=%lld | seen=%lld 退避=%lld | sharp地盘=%lld 棒球=%lld "
-                         "非ML=%lld 非进行中=%lld\n",
-                         static_cast<long long>(f.fired), static_cast<long long>(f.thin_depth),
-                         static_cast<long long>(f.not_in_band), static_cast<long long>(f.mom_jump),
-                         static_cast<long long>(f.leadch), static_cast<long long>(f.wide_spread),
-                         static_cast<long long>(f.one_sided), static_cast<long long>(f.no_book),
-                         static_cast<long long>(f.seen), static_cast<long long>(f.miss_backoff),
-                         static_cast<long long>(f.sharp_mapped), static_cast<long long>(f.baseball),
-                         static_cast<long long>(f.not_moneyline), static_cast<long long>(f.not_inplay));
+                         "[flb-funnel] 5min(distinct盘): fired=%zu | 带内深度薄=%zu 不在带=%zu | 跳升=%zu "
+                         "拉锯=%zu 宽价差=%zu 单边簿=%zu 无簿=%zu | seen=%zu 退避=%zu | sharp地盘=%zu "
+                         "棒球=%zu 非ML=%zu 非进行中=%zu\n",
+                         f.fired.size(), f.thin_depth.size(), f.not_in_band.size(), f.mom_jump.size(),
+                         f.leadch.size(), f.wide_spread.size(), f.one_sided.size(), f.no_book.size(),
+                         f.seen.size(), f.miss_backoff.size(), f.sharp_mapped.size(), f.baseball.size(),
+                         f.not_moneyline.size(), f.not_inplay.size());
             flb_funnel_ = FlbFunnel{};
         }
     }
@@ -2232,7 +2250,7 @@ void PaperLoop::RequestFlbEntry(const FlbTrigger& t) {
 //   实证模型按成交史价回测, 薄簿/宽价差实际吃不到那个价, 先用执行质量门挡, 多特征精确模型 v2 等
 //   [flb-feat] 台账攒够再标定)。book 由 WSS 订阅推送 (FLB 宇宙已订, 不进 149hz 轮询)。
 void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEntry& entry) {
-    constexpr double kFlbTrigger = 0.80;
+    constexpr double kFlbTrigger = 0.77;  // 0.80→0.77 (2026-06-11 晚会小梁: 插值净EV~+2.5%/u, 触发+12-15%; 50笔结算验证后议0.75)
     constexpr double kFlbMaxPx = 0.97;
     constexpr double kFlbMaxSpread = 0.05;
     constexpr double kFlbMinDepthUsdc = 25.0;
@@ -2240,30 +2258,30 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     constexpr double kFlbMaxMom5 = 0.10;   // 跳升过滤: 5min 边向动量 > +0.10 = gap 追入 (−1.5%), 等稳再触发
     constexpr int kFlbMaxLeadChanges = 3;  // 拉锯过滤: 领先易主 ≥3 次 = 跷跷板局 (−3.5%), 出局
     constexpr std::int32_t kBaseballFamily = 3;  // MLB/棒球排除 (n=26 净 −25%: 领先反转率太高)
-    if (entry.cat.market_type_id != 0) { ++flb_funnel_.not_moneyline; return; }  // 只做 moneyline
-    if (entry.cat.sport_family_id == kBaseballFamily) { ++flb_funnel_.baseball; return; }  // v2: 棒球排除
-    if (tick_inputs_.event_map && tick_inputs_.event_map->count(cond_id) != 0) { ++flb_funnel_.sharp_mapped; return; }  // sharp 引擎地盘
+    if (entry.cat.market_type_id != 0) { flb_funnel_.not_moneyline.insert(cond_id); return; }  // 只做 moneyline
+    if (entry.cat.sport_family_id == kBaseballFamily) { flb_funnel_.baseball.insert(cond_id); return; }  // v2: 棒球排除
+    if (tick_inputs_.event_map && tick_inputs_.event_map->count(cond_id) != 0) { flb_funnel_.sharp_mapped.insert(cond_id); return; }  // sharp 引擎地盘
     const std::int64_t now_ns_v = NowNs();
     const std::int64_t now_sec = now_ns_v / 1'000'000'000LL;
-    if (entry.game_start_ts_sec <= 0 || now_sec < entry.game_start_ts_sec) { ++flb_funnel_.not_inplay; return; }  // 未开赛/缺窗口
-    if (entry.end_ts_sec > 0 && now_sec > entry.end_ts_sec) { ++flb_funnel_.not_inplay; return; }  // 已出窗口
+    if (entry.game_start_ts_sec <= 0 || now_sec < entry.game_start_ts_sec) { flb_funnel_.not_inplay.insert(cond_id); return; }  // 未开赛/缺窗口
+    if (entry.end_ts_sec > 0 && now_sec > entry.end_ts_sec) { flb_funnel_.not_inplay.insert(cond_id); return; }  // 已出窗口
     {
         std::lock_guard<std::mutex> lk(flb_mu_);
-        if (flb_seen_.count(cond_id) != 0) { ++flb_funnel_.seen; return; }  // 一盘一击预检
+        if (flb_seen_.count(cond_id) != 0) { flb_funnel_.seen.insert(cond_id); return; }  // 一盘一击预检
     }
     // miss 退避 (2026-06-11): 上次撮合 miss 后 60s 内不重触发 (防 tick 频率空转刷屏)。
     if (const auto pit = flb_path_.find(cond_id);
         pit != flb_path_.end() && pit->second.last_miss_ns > 0 &&
         now_ns_v - pit->second.last_miss_ns < 60'000'000'000LL) {
-        ++flb_funnel_.miss_backoff;
+        flb_funnel_.miss_backoff.insert(cond_id);
         return;
     }
     const auto fopt = hub_.Read(entry.tokens.first);
-    if (!fopt || !fopt->valid) { ++flb_funnel_.no_book; return; }
+    if (!fopt || !fopt->valid) { flb_funnel_.no_book.insert(cond_id); return; }
     const auto& f = *fopt;
     const double ya = f.best_ask();
     const double yb = f.best_bid();
-    if (!std::isfinite(ya) || !std::isfinite(yb) || ya <= 0.0 || yb <= 0.0) { ++flb_funnel_.one_sided; return; }  // 双边齐才触发
+    if (!std::isfinite(ya) || !std::isfinite(yb) || ya <= 0.0 || yb <= 0.0) { flb_funnel_.one_sided.insert(cond_id); return; }  // 双边齐才触发
     const double spread = ya - yb;
     // ---- v2 路径状态更新 (动量环 + 领先易主 + 抄底锚; 触发与否都更新, in-play 全程跟踪) ----
     const double mid_now = 0.5 * (ya + yb);
@@ -2283,8 +2301,8 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
             ps.last_sample_ns = now_ns_v;
         }
     }
-    if (spread > kFlbMaxSpread) { ++flb_funnel_.wide_spread; return; }  // 簿质量门
-    if (ps.lead_changes >= kFlbMaxLeadChanges) { ++flb_funnel_.leadch; return; }  // v2 拉锯门
+    if (spread > kFlbMaxSpread) { flb_funnel_.wide_spread.insert(cond_id); return; }  // 簿质量门
+    if (ps.lead_changes >= kFlbMaxLeadChanges) { flb_funnel_.leadch.insert(cond_id); return; }  // v2 拉锯门
     // v2 动量门输入 (2026-06-11 老板「纯订单簿分支只要进行中就好了」→ 证据制, 不再 5min 黑窗):
     //   取「距今 ≥4.5min 的最新样本」算 5min 边向动量; 历史不足 → NaN = 无跳升证据 → 放行
     //   (原版 fail-closed 每次重启全员 5min 进不了场)。
@@ -2311,7 +2329,7 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     double mom5 = 0.0;  // 边向 5min 动量 (v2 跳升门; NaN 历史 → 0 = 无证据放行)
     if (mid_now >= kFlbTrigger && ya <= kFlbMaxPx && f.best_ask_size() >= kFlbMinDepthUsdc) {
         mom5 = std::isfinite(mid_5m_ago) ? (mid_now - mid_5m_ago) : 0.0;  // YES 边向
-        if (mom5 > kFlbMaxMom5) { ++flb_funnel_.mom_jump; return; }  // v2 跳升门 (不标 seen 稳了重试)
+        if (mom5 > kFlbMaxMom5) { flb_funnel_.mom_jump.insert(cond_id); return; }  // v2 跳升门 (不标 seen 稳了重试)
         t.token_id = entry.tokens.first;
         t.is_yes = true;
         t.ask_px = ya;
@@ -2321,7 +2339,7 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
                no_mid >= kFlbTrigger && na <= kFlbMaxPx && f.best_bid_size() >= kFlbMinDepthUsdc &&
                !entry.tokens.second.empty()) {
         mom5 = std::isfinite(mid_5m_ago) ? (mid_5m_ago - mid_now) : 0.0;  // NO 边向 (yes 跌 = no 升)
-        if (mom5 > kFlbMaxMom5) { ++flb_funnel_.mom_jump; return; }  // v2 跳升门
+        if (mom5 > kFlbMaxMom5) { flb_funnel_.mom_jump.insert(cond_id); return; }  // v2 跳升门
         t.token_id = entry.tokens.second;
         t.is_yes = false;
         t.ask_px = na;                    // 合成 NO 买价 (吃 yes_bid)
@@ -2363,10 +2381,10 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
                              ((mid_now >= 0.30 && mid_now < 0.40) || (mid_now >= 0.50 && mid_now < 0.60) ||
                               (1.0 - mid_now >= 0.30 && 1.0 - mid_now < 0.40) ||
                               (1.0 - mid_now >= 0.50 && 1.0 - mid_now < 0.60));
-        if (in_band) ++flb_funnel_.thin_depth; else ++flb_funnel_.not_in_band;
+        if (in_band) flb_funnel_.thin_depth.insert(cond_id); else flb_funnel_.not_in_band.insert(cond_id);
         return;
     }
-    ++flb_funnel_.fired;
+    flb_funnel_.fired.insert(cond_id);
     {
         std::lock_guard<std::mutex> lk(flb_mu_);
         if (!flb_seen_.insert(cond_id).second) return;
@@ -2747,6 +2765,17 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
     // realize PnL = (结算值 − 加权入场价) × qty (qty signed; v1 long → 正)。
     cum_realized_pnl_pusd_ += (settle_price - avg) * qty;
     cum_realized_by_market_[condition_id] += (settle_price - avg) * qty;  // 逐盘累计 (对账修: 结算也入逐盘)
+    // P3 损耗率观测 (2026-06-11 晚会): 每笔结算 WIN/LOSE + engine 猜测 (flb_seen_ 含 cid → flb 系)
+    {
+        const char* eng3 = "sharp";
+        {
+            std::lock_guard<std::mutex> lk3(flb_mu_);
+            if (flb_seen_.count(condition_id) != 0) eng3 = "flb";
+        }
+        std::fprintf(stderr, "[settle] %s engine=%s realized=%+.2f entry=%.3f qty=%.1f cond=%.16s\n",
+                     settle_price >= 0.5 ? "WIN" : "LOSE", eng3, (settle_price - avg) * qty, avg, qty,
+                     condition_id.c_str());
+    }
     if (avg > 0.0) {  // 逐笔收益 (Sharpe口径)
         trade_returns_.push_back((settle_price - avg) / avg);
         if (trade_returns_.size() > 5000) trade_returns_.erase(trade_returns_.begin(), trade_returns_.begin() + 2500);
@@ -2991,6 +3020,7 @@ PaperLoop::AccountEquitySnapshot PaperLoop::account_equity() const noexcept {
     s.equity_bid = s.realized_equity + s.unrealized_bid;
     s.equity_mark = s.realized_equity + s.unrealized_mark;
     s.cash_available = cfg_.bankroll_usdc - locked_cost + cum_realized_pnl_pusd_ - cum_fee_pusd_;
+    s.deploy_pct = cfg_.bankroll_usdc > 0.0 ? locked_cost / cfg_.bankroll_usdc : 0.0;  // P4 部署率 (2026-06-11 晚会)
     return s;
 }
 
