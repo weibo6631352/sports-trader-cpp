@@ -2,16 +2,18 @@
 #include <cmath>
 #include <gtest/gtest.h>
 
+#include <memory>
+
 #include "stcpp/eval/portfolio_metrics.hpp"
 
 using stcpp::eval::PortfolioMetrics;
 
 namespace {
-PortfolioMetrics MakeCurve(std::initializer_list<double> eq) {
-    PortfolioMetrics m(1000, /*ppy=*/0.0);
+std::unique_ptr<PortfolioMetrics> MakeCurve(std::initializer_list<double> eq) {
+    auto m = std::make_unique<PortfolioMetrics>(1000, /*ppy=*/0.0);  // 2026-06-11: +mutex 后不可拷贝
     std::int64_t t = 1'000;
     for (double e : eq) {
-        m.RecordEquity(t, e);
+        m->RecordEquity(t, e);
         t += 1'000'000'000LL;  // 1s 等间隔
     }
     return m;
@@ -21,7 +23,7 @@ PortfolioMetrics MakeCurve(std::initializer_list<double> eq) {
 // PM01: 已知曲线 → total_return / maxDD / VaR 数值正确
 TEST(PortfolioMetrics, PM01_KnownCurve) {
     auto m = MakeCurve({100, 110, 105, 120, 90, 130});
-    const auto r = m.report(/*ppy=*/1.0);  // ppy=1 → sharpe = mean/std (不年化)
+    const auto r = m->report(/*ppy=*/1.0);  // ppy=1 → sharpe = mean/std (不年化)
     EXPECT_EQ(r.samples, 6u);
     EXPECT_NEAR(r.total_return, 0.30, 1e-9);          // (130−100)/100
     EXPECT_NEAR(r.max_drawdown, 0.25, 1e-9);          // 峰 120 → 谷 90 = 25%
@@ -37,7 +39,7 @@ TEST(PortfolioMetrics, PM01_KnownCurve) {
 // PM02: 单调上升 → 零回撤
 TEST(PortfolioMetrics, PM02_MonotonicNoDrawdown) {
     auto m = MakeCurve({100, 101, 103, 108, 120});
-    const auto r = m.report(1.0);
+    const auto r = m->report(1.0);
     EXPECT_NEAR(r.max_drawdown, 0.0, 1e-12) << "单调上升无回撤";
     EXPECT_GT(r.total_return, 0.0);
     EXPECT_GT(r.sharpe, 0.0);
@@ -46,7 +48,7 @@ TEST(PortfolioMetrics, PM02_MonotonicNoDrawdown) {
 // PM03: 样本不足 (<2 收益) → Sharpe/VaR = 0, 不崩
 TEST(PortfolioMetrics, PM03_InsufficientSamples) {
     auto m = MakeCurve({100});
-    const auto r = m.report(1.0);
+    const auto r = m->report(1.0);
     EXPECT_EQ(r.samples, 1u);
     EXPECT_DOUBLE_EQ(r.sharpe, 0.0);
     EXPECT_DOUBLE_EQ(r.var_95, 0.0);
@@ -56,8 +58,8 @@ TEST(PortfolioMetrics, PM03_InsufficientSamples) {
 // PM04: 年化因子放大 Sharpe (sqrt(ppy))
 TEST(PortfolioMetrics, PM04_Annualization) {
     auto m = MakeCurve({100, 101, 102, 103, 104});
-    const double s1 = m.report(1.0).sharpe;
-    const double s4 = m.report(4.0).sharpe;
+    const double s1 = m->report(1.0).sharpe;
+    const double s4 = m->report(4.0).sharpe;
     EXPECT_NEAR(s4, s1 * 2.0, 1e-6) << "sqrt(4)=2 → Sharpe 翻倍";
 }
 

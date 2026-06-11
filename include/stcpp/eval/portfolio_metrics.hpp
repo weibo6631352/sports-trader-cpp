@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <mutex>
 #include <vector>
 
 namespace stcpp::eval {
@@ -37,6 +38,7 @@ public:
     // RecordEquity — 周期采样权益 (单 writer)。ts 仅留作未来按时间归一; 当前按等间隔样本处理。
     void RecordEquity(std::int64_t ts_ns, double equity) noexcept {
         if (!std::isfinite(equity)) return;
+        std::lock_guard<std::mutex> lk(mu_);  // 2026-06-11 崩溃修: HTTP 线程并发读 deque (见下)
         equity_.push_back(equity);
         ts_.push_back(ts_ns);
         while (equity_.size() > cap_) {
@@ -54,6 +56,7 @@ public:
     // 当前回撤 (峰到【当前】权益跌幅占比 ∈[0,1]; DD-aware 去险用, 区别于 max_drawdown 历史最大)。
     //   空 / peak≤0 → 0。持仓管理 Stage2: 喂 DD→target 乘子 (老板「只停加仓不砍现仓」)。
     [[nodiscard]] double current_drawdown() const noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
         if (equity_.empty() || peak_ <= 0.0) return 0.0;
         const double dd = (peak_ - equity_.back()) / peak_;
         return dd > 0.0 ? dd : 0.0;
@@ -61,6 +64,7 @@ public:
 
     // periods_per_year: 年化因子 (e.g. 采样间隔 1s → 31.5M; 1tick/500ms → ~63M)。0 = 用构造值。
     [[nodiscard]] Report report(double periods_per_year = 0.0) const noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
         Report r;
         r.samples = equity_.size();
         if (equity_.empty()) return r;
@@ -100,12 +104,22 @@ public:
         return r;
     }
 
-    [[nodiscard]] std::size_t sample_count() const noexcept { return equity_.size(); }
-    [[nodiscard]] double max_drawdown() const noexcept { return max_dd_; }
+    [[nodiscard]] std::size_t sample_count() const noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
+        return equity_.size();
+    }
+    [[nodiscard]] double max_drawdown() const noexcept {
+        std::lock_guard<std::mutex> lk(mu_);
+        return max_dd_;
+    }
 
     // equity_snapshot — 暴露 (ts_ns, equity) 时序拷贝 (2026-06-01 凯利评审: pnl_timeseries 落地)。
-    //   单 writer (loop_thread_ RecordEquity) / 读时拷贝 (debug_api HTTP 线程); 等间隔样本, 调用方按 ts 分桶。
+    //   ⚠ 2026-06-11 P0 崩溃修: 原版「单 writer/读时拷贝」无锁 —— HTTP 线程 (/pnl/timeseries 净值曲线
+    //   轮询) 遍历 deque 时 loop 线程 push_back/pop_front 重分配块表 → 悬空指针 segfault (coredump
+    //   bt#0=pnl_timeseries lambda, 三次崩溃同根: 6/10 14:53 + 6/11 04:16 UTC)。全方法挂 mu_ (paper
+    //   loop ~1Hz tick 非热路径, 锁μs级; R-12 红线针对 WSS loop 不适用此处)。
     [[nodiscard]] std::vector<std::pair<std::int64_t, double>> equity_snapshot() const {
+        std::lock_guard<std::mutex> lk(mu_);
         std::vector<std::pair<std::int64_t, double>> out;
         out.reserve(equity_.size());
         for (std::size_t i = 0; i < equity_.size(); ++i) out.emplace_back(ts_[i], equity_[i]);
@@ -126,6 +140,7 @@ private:
 
     std::size_t cap_;
     double periods_per_year_;
+    mutable std::mutex mu_;  // 2026-06-11: loop 线程写 / HTTP 线程读 (pnl_timeseries/healthz) 并发保护
     std::deque<double> equity_;
     std::deque<std::int64_t> ts_;
     double peak_{0.0};
