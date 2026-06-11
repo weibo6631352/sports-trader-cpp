@@ -561,7 +561,7 @@ function FillsLogSection() {
                       </TableCell>
                       <TableCell>
                         <span style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700 }}>
-                          {f.side === 'buy' ? '买入' : (f.is_close ? '卖出(平)' : '卖出')}
+                          {f.side === 'buy' ? '买入' : f.exit_reason === 'settlement' ? '🏁结算' : (f.is_close ? '卖出(平)' : '卖出')}
                         </span>
                         <span style={{ color: '#888', 'margin-left': '6px', 'font-size': '11px' }}>{f.outcome}</span>
                       </TableCell>

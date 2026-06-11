@@ -217,7 +217,7 @@ function MarketFills(props: { conditionId: string }) {
             <div class="v8-pos-row" title={fmtTs(f.as_of_ts)} style={{ gap: '6px' }}>
               <span class="mono-sub" style={{ color: '#888', 'font-size': '10px', width: '54px' }}>{fmtTs(f.as_of_ts).slice(-8)}</span>
               <span class="mono-sub" style={{ color: f.side === 'buy' ? '#42a5f5' : '#ffa726', 'font-weight': 700, width: '46px' }}>
-                {f.side === 'buy' ? '买' : (f.is_close ? '卖平' : '卖')}{f.outcome}
+                {f.side === 'buy' ? '买' : f.exit_reason === 'settlement' ? '🏁结算' : (f.is_close ? '卖平' : '卖')}{f.outcome}
               </span>
               <span class="mono-sub" style={{ 'font-weight': 700, width: '52px', 'text-align': 'right' }} title="本笔数量(单位)">{f.size_usdc.toFixed(1)}u</span>
               <span class="mono-sub" style={{ width: '54px', 'text-align': 'right' }} title="成交价">@{f.price.toFixed(3)}</span>
