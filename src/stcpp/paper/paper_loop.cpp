@@ -2560,6 +2560,10 @@ void PaperLoop::SaveLedgerSnapshot() {
     std::fprintf(fp, "R %llu %llu %.10g %.10g %.10g %.10g\n", static_cast<unsigned long long>(agg.n_settled),
                  static_cast<unsigned long long>(agg.n_positive_close), agg.sum_clv_close, agg.sum_clv_settle,
                  agg.sum_notional, agg.sum_notional_clv_close);
+    // L 行: CLV 末次观测 mid (终局仓估值锚; 无此行重启后赢定仓浮盈回退 0)。
+    clv_tracker_.ForEachLastMid([fp](const std::string& tok, double mid) {
+        std::fprintf(fp, "L %s %.10g\n", tok.c_str(), mid);
+    });
     // F 行: 成交流水环尾 100 条 (2026-06-11 老板「成交 0 笔」: 仓恢复了流水没恢复, 费显 0 误导)。
     //   空字符串字段写 "-" 占位 (行式解析); 前端流水/费/engine 标签跨重启连续。
     {
@@ -2630,6 +2634,10 @@ void PaperLoop::RestoreLedgerSnapshot() {
                 clv_tracker_.RecordFill(tok, px, mid, szp, ts2);
                 ++n_clv;
             }
+        } else if (line[0] == 'L') {
+            char tok[90] = {0};
+            double mid = 0.0;
+            if (std::sscanf(line, "L %89s %lf", tok, &mid) == 2) clv_tracker_.UpdateMid(tok, mid);
         } else if (line[0] == 'F') {
             long long ts3 = 0;
             char cid[80] = {0}, exitr[40] = {0}, eng[20] = {0};

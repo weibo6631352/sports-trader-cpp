@@ -157,6 +157,11 @@ public:
             for (const auto& r : recs) fn(tok, r);
         }
     }
+    template <typename F>
+    void ForEachLastMid(F&& fn) const {  // 持久化 L 行 (终局仓估值锚跨重启, 2026-06-11)
+        std::lock_guard<std::mutex> lk(mu_);
+        for (const auto& [tok, mid] : last_mid_) fn(tok, mid);
+    }
 
 private:
     mutable std::mutex mu_;  // 2026-06-11: loop 写 × HTTP 读 (report/last_mid_for) 并发保护 (同 PortfolioMetrics 教训)
