@@ -1,0 +1,13 @@
+0x2005d16a: window 30h  fills=13126  tokens touched=703  analyzing top 60 by $
+
+==============================================================================
+0x2005d16a84ceefa912d4e380cd32e7ff827875ea
+------------------------------------------------------------------------------
+  tokens resolved/analyzed=60  token win-rate=62%  $analyzed=$832,340
+  (A) REALIZED EDGE to settlement (size-wtd) = +0.72 c/share   -> per $1 staked nets $+0.007
+  (B) CAUSAL forward reversion +5min (size-wtd) = +2.62 c/share
+  (B) CAUSAL forward reversion +30min (size-wtd) = +3.64 c/share
+  (B') BASELINE +30min drift (random entry, same tokens, $-wtd) = +0.56 c/share
+       -> TIMING ALPHA = their+30min − baseline = +3.08 c/share  (REAL dip-timing (capturable w/ fast exec))
+  (D) fill vs market consensus (mean px over their active span, $-wtd) = -0.85 c cheaper  (>0 = bought below consensus = timing edge)
+  (C) dip-buying: 42% of $ in LOWER half of game price range

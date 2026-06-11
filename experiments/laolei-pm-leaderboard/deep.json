@@ -1,0 +1,119 @@
+[
+ {
+  "name": "swisstony",
+  "wallet": "0x204f72f35326db932158cba6adff0b9a1da95e14",
+  "n_trades_all": 2823,
+  "n_redeem_all": 172,
+  "n_split": 5,
+  "n_trades_30d": 2823,
+  "n_redeem_30d": 172,
+  "distinct_mkts_30d": 249,
+  "buy30": 2823,
+  "sell30": 0,
+  "vol30": 198005.493247,
+  "med_trade": 8.33047,
+  "avg_trade": 70.14009679312788,
+  "catusd": {
+   "Baseball/MLB": 91515.33281499999,
+   "Other": 45429.62042299995,
+   "Tennis": 17423.54185799999,
+   "Soccer": 16952.915853999995,
+   "Basketball/NBA": 14808.800932000015,
+   "Hockey/NHL": 11875.281364999997
+  },
+  "price_buckets_cnt": {
+   "longshot<.15": 263,
+   ".15-.40": 703,
+   "coinflip .40-.60": 886,
+   ".60-.85": 739,
+   "fav .85-.97": 213,
+   "chalk>.97": 19
+  },
+  "price_buckets_usd": {
+   "longshot<.15": 2988,
+   ".15-.40": 31733,
+   "coinflip .40-.60": 56374,
+   ".60-.85": 63910,
+   "fav .85-.97": 28136,
+   "chalk>.97": 14864
+  },
+  "open_positions": 500,
+  "open_value": 677738.4815999999,
+  "open_unreal_pnl": 24523.3019,
+  "negrisk_pos": 165,
+  "top_positions": [
+   {
+    "title": "Will Cura\u00e7ao win on 2026-06-14?",
+    "outcome": "No",
+    "px": 0.9769,
+    "cur": 0.9785,
+    "val": 59646,
+    "pnl": 92,
+    "end": "2026-06-14"
+   },
+   {
+    "title": "Will Germany win on 2026-06-14?",
+    "outcome": "Yes",
+    "px": 0.9349,
+    "cur": 0.9385,
+    "val": 29227,
+    "pnl": 110,
+    "end": "2026-06-14"
+   },
+   {
+    "title": "Will Netherlands win on 2026-06-14?",
+    "outcome": "Yes",
+    "px": 0.4703,
+    "cur": 0.465,
+    "val": 22431,
+    "pnl": -258,
+    "end": "2026-06-14"
+   },
+   {
+    "title": "Will South Africa win on 2026-06-11?",
+    "outcome": "No",
+    "px": 0.8868,
+    "cur": 0.895,
+    "val": 19149,
+    "pnl": 174,
+    "end": "2026-06-11"
+   },
+   {
+    "title": "Will Qatar win on 2026-06-13?",
+    "outcome": "No",
+    "px": 0.9262,
+    "cur": 0.9365,
+    "val": 17062,
+    "pnl": 188,
+    "end": "2026-06-13"
+   },
+   {
+    "title": "Will Saudi Arabia win on 2026-06-15?",
+    "outcome": "No",
+    "px": 0.8772,
+    "cur": 0.885,
+    "val": 15769,
+    "pnl": 137,
+    "end": "2026-06-15"
+   },
+   {
+    "title": "Will United States win on 2026-06-12?",
+    "outcome": "No",
+    "px": 0.5042,
+    "cur": 0.505,
+    "val": 14213,
+    "pnl": 20,
+    "end": "2026-06-13"
+   },
+   {
+    "title": "Will Korea Republic win on 2026-06-11?",
+    "outcome": "No",
+    "px": 0.6339,
+    "cur": 0.645,
+    "val": 11691,
+    "pnl": 200,
+    "end": "2026-06-12"
+   }
+  ]
+ }
+]

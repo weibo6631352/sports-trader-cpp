@@ -1,0 +1,10 @@
+0x2005d16a: window 30h  fills=13126  tokens touched=703  analyzing top 60 by $
+
+==============================================================================
+0x2005d16a84ceefa912d4e380cd32e7ff827875ea
+------------------------------------------------------------------------------
+  tokens resolved/analyzed=60  token win-rate=62%  $analyzed=$832,340
+  (A) REALIZED EDGE to settlement (size-wtd) = +0.72 c/share   -> per $1 staked nets $+0.007
+  (B) CAUSAL forward reversion +5min (size-wtd) = +2.62 c/share (>0 = price rose after their buy = they bought a transient dip)
+  (B) CAUSAL forward reversion +30min (size-wtd) = +3.64 c/share (>0 = price rose after their buy = they bought a transient dip)
+  (C) dip-buying: 42% of $ bought in LOWER half of the game's price range
