@@ -1016,6 +1016,18 @@ private:
     mutable std::mutex flb_mu_;
     std::vector<FlbTrigger> flb_pending_;
     std::unordered_set<std::string> flb_seen_;
+    // FLB v2 路径状态 (多特征研究 2026-06-11, n=593: 跳升追入 −1.5% vs 缓升 +3.8%; 拉锯3+易主 −3.5%):
+    //   per-condition yes_mid 采样环 (30s 格, 16 槽 ≈ 8min) → 5min 动量; 领先易主计数 (mid 穿 0.5)。
+    //   loop_thread_ only (MaybeFlbTrigger 更新), 无锁。
+    struct FlbPathState {
+        std::array<std::pair<std::int64_t, double>, 16> ring{};  // (ts_ns, yes_mid)
+        std::size_t ring_n{0};
+        std::size_t ring_head{0};
+        std::int64_t last_sample_ns{0};
+        int lead_changes{0};
+        int prev_lead{0};  // +1 yes 领先 / −1 no 领先 / 0 未知
+    };
+    std::unordered_map<std::string, FlbPathState> flb_path_;
     void ProcessFlbTrigger(const FlbTrigger& t);  // loop_thread_ only (TickAll 起始排干调用)
     // 触发型检测 (loop_thread_, TickAll 每市场调; book 落 hub 即唤醒 → 亚秒级, 老板「要触发型」)。
     void MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEntry& entry);

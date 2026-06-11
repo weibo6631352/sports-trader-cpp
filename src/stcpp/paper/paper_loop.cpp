@@ -2185,9 +2185,15 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     constexpr double kFlbMaxPx = 0.97;
     constexpr double kFlbMaxSpread = 0.05;
     constexpr double kFlbMinDepthUsdc = 25.0;
+    // v2 路径门 (多特征研究 2026-06-11, 593 触发实证):
+    constexpr double kFlbMaxMom5 = 0.10;   // 跳升过滤: 5min 边向动量 > +0.10 = gap 追入 (−1.5%), 等稳再触发
+    constexpr int kFlbMaxLeadChanges = 3;  // 拉锯过滤: 领先易主 ≥3 次 = 跷跷板局 (−3.5%), 出局
+    constexpr std::int32_t kBaseballFamily = 3;  // MLB/棒球排除 (n=26 净 −25%: 领先反转率太高)
     if (entry.cat.market_type_id != 0) return;  // 只做 moneyline
+    if (entry.cat.sport_family_id == kBaseballFamily) return;  // v2: 棒球排除
     if (tick_inputs_.event_map && tick_inputs_.event_map->count(cond_id) != 0) return;  // sharp 引擎地盘
-    const std::int64_t now_sec = NowNs() / 1'000'000'000LL;
+    const std::int64_t now_ns_v = NowNs();
+    const std::int64_t now_sec = now_ns_v / 1'000'000'000LL;
     if (entry.game_start_ts_sec <= 0 || now_sec < entry.game_start_ts_sec) return;  // 未开赛/缺窗口
     if (entry.end_ts_sec > 0 && now_sec > entry.end_ts_sec) return;                 // 已出窗口
     {
@@ -2201,14 +2207,46 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     const double yb = f.best_bid();
     if (!std::isfinite(ya) || !std::isfinite(yb) || ya <= 0.0 || yb <= 0.0) return;  // 双边齐才触发
     const double spread = ya - yb;
+    // ---- v2 路径状态更新 (动量环 + 领先易主; 触发与否都更新, in-play 全程跟踪) ----
+    const double mid_now = 0.5 * (ya + yb);
+    auto& ps = flb_path_[cond_id];
+    {
+        const int lead = mid_now > 0.5 ? 1 : (mid_now < 0.5 ? -1 : ps.prev_lead);
+        if (lead != 0 && ps.prev_lead != 0 && lead != ps.prev_lead) ++ps.lead_changes;
+        if (lead != 0) ps.prev_lead = lead;
+        if (now_ns_v - ps.last_sample_ns >= 30'000'000'000LL) {  // 30s 采样格
+            ps.ring[ps.ring_head] = {now_ns_v, mid_now};
+            ps.ring_head = (ps.ring_head + 1) % ps.ring.size();
+            if (ps.ring_n < ps.ring.size()) ++ps.ring_n;
+            ps.last_sample_ns = now_ns_v;
+        }
+    }
     if (spread > kFlbMaxSpread) return;  // 簿质量门: 宽价差实际吃不到回测价
+    if (ps.lead_changes >= kFlbMaxLeadChanges) return;  // v2 拉锯门: 跷跷板局出局
+    // v2 动量门输入: 取「距今 ≥4.5min 的最新样本」算 5min 边向动量; 历史不足 → fail-closed (新订阅
+    //   盘观察 ~5min 再有触发资格, 与稳定窗哲学一致, 也躲开「开赛即 gap 入场」)。
+    double mid_5m_ago = std::numeric_limits<double>::quiet_NaN();
+    {
+        std::int64_t best_ts = -1;
+        for (std::size_t i = 0; i < ps.ring_n; ++i) {
+            const auto& s = ps.ring[i];
+            if (s.first > 0 && now_ns_v - s.first >= 270'000'000'000LL && s.first > best_ts) {
+                best_ts = s.first;
+                mid_5m_ago = s.second;
+            }
+        }
+        if (best_ts < 0) return;  // 历史不足 5min → 不触发
+    }
     FlbTrigger t;
     t.condition_id = cond_id;
     t.event_ts_ns = f.event_ts_ns;
     t.data_source_ts_ns = f.data_source_ts_ns;
     t.ingestion_ts_ns = f.ingestion_ts_ns;
     bool fire = false;
+    double mom5 = 0.0;  // 边向 5min 动量 (v2 跳升门)
     if (ya >= kFlbTrigger && ya <= kFlbMaxPx && f.best_ask_size() >= kFlbMinDepthUsdc) {
+        mom5 = mid_now - mid_5m_ago;  // YES 边向
+        if (mom5 > kFlbMaxMom5) return;  // v2 跳升门: gap 追入 −EV, 不标记 seen → 稳了重触发
         t.token_id = entry.tokens.first;
         t.is_yes = true;
         t.ask_px = ya;
@@ -2217,6 +2255,8 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     } else if (const double na = 1.0 - yb; na >= kFlbTrigger && na <= kFlbMaxPx &&
                                            f.best_bid_size() >= kFlbMinDepthUsdc &&
                                            !entry.tokens.second.empty()) {
+        mom5 = mid_5m_ago - mid_now;  // NO 边向 (yes 跌 = no 升)
+        if (mom5 > kFlbMaxMom5) return;  // v2 跳升门
         t.token_id = entry.tokens.second;
         t.is_yes = false;
         t.ask_px = na;                    // 合成 NO 买价 (吃 yes_bid)
@@ -2232,9 +2272,10 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     //   + 结算结果回填 → 标定多特征模型 v2 (价位×价差×深度×失衡×动量 分桶胜率)。
     std::fprintf(stderr,
                  "[flb-feat] cond=%.24s... %s px=%.3f spread=%.3f imb=%.3f micro=%.3f mid=%.3f "
-                 "depth_a=%.0f depth_b=%.0f tflow=%.0f tratio=%.2f\n",
+                 "depth_a=%.0f depth_b=%.0f tflow=%.0f tratio=%.2f mom5=%+.3f leadch=%d\n",
                  cond_id.c_str(), t.is_yes ? "YES" : "NO", t.ask_px, spread, f.imbalance, f.microprice,
-                 f.mid, f.best_ask_size(), f.best_bid_size(), f.trade_signed_vol_5m, f.trade_buy_ratio_5m);
+                 f.mid, f.best_ask_size(), f.best_bid_size(), f.trade_signed_vol_5m, f.trade_buy_ratio_5m,
+                 mom5, ps.lead_changes);
     ProcessFlbTrigger(t);
 }
 
