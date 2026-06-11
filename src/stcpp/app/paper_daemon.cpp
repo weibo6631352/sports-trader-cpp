@@ -812,7 +812,11 @@ BuildResult PaperDaemon::Build() {
     cfg_.paper_loop.rel_stop_pct = 0.0;  // 2026-06-10 老板「止盈不要了 + 只要订单簿恶化就割」: 关 mark 止损, 离场纯 book 驱动
     // 赢面门 0.5 (2026-06-10 老板「止损时还赢面就卖了可惜」): rel_stop 触发后, 若被选边 fair 仍 > 0.5 (这边仍被看好)
     //   且 fair 没在崩 → 不割肉持有 (入场价是沉没成本, 前向 EV=fair>卖价 ⟹ 持有更优); 仅 fair≤0.5(赢面没了)或 fair 在崩才割。
-    cfg_.paper_loop.hold_if_winning_floor = 0.46;  // 2026-06-10 老板「割肉离场设置 46」: 赢面跌破 0.46 才割(比 0.5 更扛)
+    // 2026-06-11 架构改革 (老板「数据验证后可推翻架构」+ 反事实终局 n=5: 被割仓 60% 终赢, Δ(不割−割)=+54;
+    //   与 CLV 10/10 + FLB 研究 hold-to-settle +2~3.3%/u 三方互证): sharp 引擎转【持有到结算】——
+    //   floor=0 → win_prob_gone 永 false → book_det 割肉路永不触发 (60s 确认版亦停用), 与 FLB 引擎哲学统一。
+    //   保留: frozen_hard (灾难线, 极少触发) + game_decided (已加市场确认 ≤0.20) + 结算。回滚 = 改回 0.46。
+    cfg_.paper_loop.hold_if_winning_floor = 0.0;  // was 0.46 (2026-06-10 老板「割肉离场设置 46」)
     // 必输方开仓护栏 (2026-06-09 老板「调试持仓逻辑, 查明真正原因」, 数据驱动): 被选边模型 fair < 0.15 → 不开
     //   新仓 (近必输 longshot 下侧到 0 远大于 edge, −EV)。实测灾难性亏损全是买崩盘 underdog (fair 0.11 买 0.08 →
     //   崩到 0.03, 单笔 −0.87/−2.00); game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug)。

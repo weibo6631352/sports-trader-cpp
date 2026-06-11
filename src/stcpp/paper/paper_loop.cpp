@@ -1469,7 +1469,14 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const char* sel_reason = "kelly_reduce";  // 卖出原因 (老板「出现卖出就检查是否合理」): 默认 Kelly 减仓; 各 force 点覆盖
     if (game_decided_sign != 0.0) {
         const bool sel_is_loser = (is_yes && game_decided_sign < 0.0) || (!is_yes && game_decided_sign > 0.0);
-        if (sel_is_loser) { sel_target = 0.0; sel_reason = "game_decided"; }  // 该运动已决出, 被选边必输方 → 平
+        // 市场确认门 (2026-06-11 反事实实证: 0xc811 比分判死甩卖时市场仍价 0.42, 终局我方赢, 误判 −14.17):
+        //   真判死的盘交易在 0.02-0.10; 比分判死还须【市场同意】(被选边市场隐含 ≤0.20) 才甩卖残值,
+        //   否则持有让结算裁决 (杀比分计数误判甩赢家, 保留真垃圾时间残值回收)。
+        constexpr double kGameDecidedMaxPx = 0.20;
+        if (sel_is_loser && devig_ok && p_devig_selected <= kGameDecidedMaxPx) {
+            sel_target = 0.0;
+            sel_reason = "game_decided";  // 该运动已决出 + 市场确认 → 平残值
+        }
     }
 
     // 必赢锁利买入 (2026-06-05 老板「必赢的, 只要除去买和卖手续费有利润就买」): 已决出且被选边是【赢方】→
