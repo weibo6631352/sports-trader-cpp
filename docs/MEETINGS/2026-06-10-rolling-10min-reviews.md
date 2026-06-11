@@ -306,3 +306,16 @@ owner: 老雷 (GM) | last_review: 2026-06-10
 - ① 「估值+\$13.64」= 市值带+号被读成盈利 → 改「市值 (浮盈)」双显彩色 ② 持仓行终局状态徽章
 - ③ 成交流水环入快照 (F 行尾100): 恢复仓「成交0笔费0.00」误导根治, 跨重启连续 (本次为首跨, 下次重启起生效)
 - 持久化三连验证: 9 仓 + 12 CLV pending 又一次穿越 ✓
+
+## 迭代 #45 — 22:0x ★★ 「进场少」漏斗追因 → FLB 簿保鲜根治 (老板全权委托「分析数据定方案, 目的盈利」)
+
+### 漏斗追因链
+1. 晚场潮供给充足: 120 in-play 有簿, 30 个在 0.80-0.97 带, 53 个在坑带
+2. sharp 引擎: 80 诊断样本 55 个 edge 在 longshot 边 (正确拦), 仅 2 盘 favorite-edge 在进 — 按设计
+3. **FLB 真凶**: 23 触发 → 5 RM拒(LOW_FILL_RATE) + 12 Bernoulli miss + 仅 1 成交。根因 = FLB 宇宙
+   不在 149hz 轮询, 安静盘簿龄 >21s 跌破 SlippageModel fill-rate 地板 (T_half 30s/floor 0.5)。
+   sharp 盘有轮询簿常新从不撞墙 — 与 odds staleness 同构第三课:「安静 ≠ 死」但模型按死算
+### 修 (d6332182)
+- FLB 簿保鲜: 映射线程 15s 批量 POST /books (~120 yes token = 3 批 0.2 req/s) → SeedFromRestBooks
+  进主 hub → 簿龄 ≤15s → fill_rate≈0.6 过地板; seed 触发 tick = 仍触发型; 不动模型不绕 RM
+- 待办决策 (供老板): sharp 地盘 27 个双引擎死区盘是否开放给 FLB (sharp-同意门), 等保鲜效果先
