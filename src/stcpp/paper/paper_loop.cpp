@@ -1884,6 +1884,19 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         return;
     }
 
+    // ---- 高价带买入闸 (2026-06-12 老板「分析数据样本盈利最大化」, 数据驱动) ----------------
+    //   实测 41 结算分带: 0.70-0.84 入场带 = 利润引擎 (21 笔 ~95% 胜, +23%/笔);
+    //   ≥0.84 带 = 出血点 (15 笔, sharp 79% 胜 vs BE 87%, 合计 −49 — 0.85-0.90 桶 62% 胜 −27%/笔)。
+    //   favorite 不对称在高价带惩罚最狠 (输 = 全额 −0.86×qty, 赢只 +0.14×qty), 校准误差零容忍;
+    //   且 deploy 94% 资金稀缺, 高价带每一元都在挤占 +23% 带的仓位。
+    //   豁免: force_cross (进球事件/必赢锁利 — 实测 0.90+ 锁利 5/5 全胜, 是另一性质的事件 edge)。
+    //   减仓/平仓不受限。50 笔新结算后复评 (代码常数, 老板「策略系数不进配置层」)。
+    constexpr double kMaxOpenAsk = 0.84;
+    if (action.side == strategy::Side::Buy && !force_cross && exec_ask > kMaxOpenAsk) {
+        stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+        return;  // 高价带 −EV (数据实证) → 不买; 资金让位给 0.70-0.84 带
+    }
+
     // ---- Step 5: 构造 OrderIntent v0.6 (按控制器动作: side/size/is_close/限价) -----
     const std::int64_t as_of_now = NowNs();
     // 校验 4 ts 链 (R-20: 数据源 = 被交易 token 的 hub 快照, 禁 now() 替代)。
@@ -2092,7 +2105,8 @@ void PaperLoop::RequestFlbEntry(const FlbTrigger& t) {
 //   [flb-feat] 台账攒够再标定)。book 由 WSS 订阅推送 (FLB 宇宙已订, 不进 149hz 轮询)。
 void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEntry& entry) {
     constexpr double kFlbTrigger = 0.77;  // 0.80→0.77 (2026-06-11 晚会小梁: 插值净EV~+2.5%/u, 触发+12-15%; 50笔结算验证后议0.75)
-    constexpr double kFlbMaxPx = 0.97;
+    constexpr double kFlbMaxPx = 0.84;    // 0.97→0.84 (2026-06-12 数据: ≥0.84 入场带出血 [flb 该带 1/1 全输 −21],
+                                          //   0.70-0.84 带 flb 6/6 全胜 +22% — 支付价卡在利润带内)
     constexpr double kFlbMaxSpread = 0.05;
     constexpr double kFlbMinDepthUsdc = 25.0;
     // v2 路径门 (多特征研究 2026-06-11, 593 触发实证):
