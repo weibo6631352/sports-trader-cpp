@@ -45,6 +45,7 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
