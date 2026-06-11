@@ -975,6 +975,17 @@ private:
     // ---- 孤儿结算诊断节流 (2026-06-10 老板「查消失的盘结算有没有进账户」): 上次打孤儿诊断的 NowNs (30s 节流) ----
     std::int64_t last_orphan_diag_ns_{0};
     std::int64_t last_ledger_snapshot_ns_{0};  // 账本快照 60s 节流 (loop_thread_, 2026-06-11 持久化)
+    // ---- CLV 失效熔断 (2026-06-12 治理「能利用的利用起来」: CLVTracker 反哺入场) ----
+    //   CLV(close口径)正率是入场质量金标准 (实测健康期 82.8%, n=122)。正率跌破 70% (样本≥30) =
+    //   模型失效信号 (赔率源断/匹配错/延迟恶化) → 熔断新开仓 (减仓/平仓/结算不受限), 恢复自动解除。
+    //   loop_thread_ 单线程读写; 30s 节流刷新。CLV 聚合随快照持久化 → 重启后熔断态自愈。
+    bool clv_breaker_{false};
+    std::int64_t last_clv_breaker_check_ns_{0};
+    // ---- GateEvaluator 记分牌 (2026-06-12 治理: stats G1-G7 统计门接 daily-close) ----
+    //   逐笔已实现 PnL (卖出+结算两路 append, loop_thread_ 单写; 与 trade_returns_ 同 5000 上限折半)。
+    std::vector<double> gate_trade_pnl_;
+    std::int64_t first_trade_ts_ns_{0};
+    std::int64_t last_trade_ts_ns_{0};
     // FLB 漏斗计数器 (2026-06-11 老板「进场怎么那么少, 是不是机会被错过」): 每道门拦截计数,
     //   loop_thread_ 写, 5min 节流 dump [flb-funnel] 后清零。看清 30 个带内盘没进的真实卡点。
     // P1 (2026-06-11 晚会): per-tick 计数膨胀 51 万级不可读 → 改 per-市场去重 (5min 窗 distinct cond)。

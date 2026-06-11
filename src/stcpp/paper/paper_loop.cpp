@@ -60,6 +60,7 @@
 #include "stcpp/infra/wal/pit.hpp"
 #include "stcpp/microstructure/fill_rate_model.hpp"
 #include "stcpp/microstructure/orderbook.hpp"
+#include "stcpp/stats/gate_evaluator.hpp"  // 2026-06-12 治理: G1-G7 记分牌接 daily-close
 #include "stcpp/pricing/derivative_fair_value.hpp"
 #include "stcpp/pricing/tennis_fair_value.hpp"  // 网球 totals/spreads (games/sets 制; 老板「全盘口接入」)
 #include "stcpp/pricing/esports_fair_value.hpp"  // 电竞 maps totals/spreads (best-of-N 枚举)
@@ -317,6 +318,26 @@ void PaperLoop::TickAll() {
         for (const auto& t : flb_batch) ProcessFlbTrigger(t);
     }
 
+    // ---- CLV 失效熔断状态刷新 (2026-06-12 治理: CLVTracker 反哺入场, 30s 节流) ----
+    //   正率<70% (样本≥30) = 模型失效 (赔率源断/匹配错/延迟恶化) → 熔断新开仓; 恢复自动解除。
+    {
+        constexpr std::uint64_t kClvBreakerMinN = 30;
+        constexpr double kClvBreakerRate = 0.70;
+        const std::int64_t cb_now = NowNs();
+        if (cb_now - last_clv_breaker_check_ns_ >= 30'000'000'000LL) {
+            last_clv_breaker_check_ns_ = cb_now;
+            const auto cr = clv_tracker_.report();
+            const bool trip = cr.n_fills >= kClvBreakerMinN && cr.clv_close_positive_rate < kClvBreakerRate;
+            if (trip != clv_breaker_) {
+                clv_breaker_ = trip;
+                std::fprintf(stderr, "[clv-breaker] %s — CLV正率 %.1f%% (n=%llu, 阈 70%%/30): %s\n",
+                             trip ? "熔断ON" : "恢复OFF", cr.clv_close_positive_rate * 100.0,
+                             static_cast<unsigned long long>(cr.n_fills),
+                             trip ? "停新开仓 (减仓/平仓/结算照常)" : "恢复新开仓");
+            }
+        }
+    }
+
     // P4 部署率 WARN (2026-06-11 晚会): >85% 软告警 (不硬停, 持有到结算下高部署=相关性暴露)
     if (tick_equity_.deploy_pct > 0.85 && NowNs() - last_deploy_warn_ns_ > 300'000'000'000LL) {
         last_deploy_warn_ns_ = NowNs();
@@ -335,6 +356,36 @@ void PaperLoop::TickAll() {
                          cum_realized_pnl_pusd_, cum_fee_pusd_, tick_equity_.equity_mark,
                          static_cast<std::size_t>(tick_equity_.open_positions),
                          static_cast<unsigned long long>(clv_tracker_.report().n_fills));
+            // GateEvaluator 记分牌 (2026-06-12 治理「能利用的利用起来」: stats G1-G7 写完零调用 → 接上)。
+            //   paper→live 晋升的统计证据, 每日界打一版。G7 (vs random baseline) 无基线数据 → n/a;
+            //   G3 RM 失效=0 (无已知失效); G4 uptime 为进程内口径 (重启不可见, 看 systemd/监控)。
+            if (gate_trade_pnl_.size() >= 2) {
+                stats::GateMetrics gm;
+                gm.window_start_ts_ns = first_trade_ts_ns_;
+                gm.window_end_ts_ns = last_trade_ts_ns_;
+                gm.ingestion_completed_ts_ns = NowNs();
+                gm.as_of_ts_ns = gm.ingestion_completed_ts_ns;
+                gm.per_trade_pnl_usdc = gate_trade_pnl_;
+                gm.equity_curve_usdc.reserve(gate_trade_pnl_.size());
+                double eq = cfg_.bankroll_usdc;
+                for (const double p : gate_trade_pnl_) {
+                    eq += p;
+                    gm.equity_curve_usdc.push_back(eq);
+                }
+                gm.per_trade_return.reserve(gate_trade_pnl_.size());
+                for (const double p : gate_trade_pnl_) {
+                    gm.per_trade_return.push_back(p / cfg_.bankroll_usdc);  // 对账本的逐笔收益 (Sharpe 基)
+                }
+                gm.rm_failure_count = 0;
+                gm.uptime_seconds = static_cast<double>(gm.window_end_ts_ns - gm.window_start_ts_ns) / 1e9;
+                gm.total_window_seconds = gm.uptime_seconds;
+                const auto outcome = stats::GateEvaluator::EvaluateAll(gm);
+                for (const auto& g : outcome.per_gate) {
+                    std::fprintf(stderr, "[gate-eval] G%d %s actual=%.4f thr=%.4f n=%zu%s%s\n",
+                                 static_cast<int>(g.id), g.pass ? "PASS" : "fail", g.actual, g.threshold,
+                                 g.sample_size, g.note.empty() ? "" : " note=", g.note.c_str());
+                }
+            }
         }
     }
 
@@ -1331,6 +1382,12 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (cfg_.min_open_fair > 0.0 && p_fair_selected < cfg_.min_open_fair) {
         target_mag = 0.0;  // 模型认定近必输方 → 只减不开 (longshot 崩盘护栏)
     }
+    // CLV 失效熔断 (2026-06-12 治理): CLV 正率<70% (TickAll 30s 刷新) = 入场质量系统性坏掉
+    //   (赔率源断/匹配错/延迟恶化) → sharp 引擎停新开仓直到恢复。减仓/平仓/结算/FLB 路不受限
+    //   (FLB 论点是纯订单簿穿越, 不由 sharp CLV 裁决)。
+    if (target_mag > 0.0 && clv_breaker_) {
+        target_mag = 0.0;
+    }
     // 三振出局 gate (老板 2026-06-11 拍板): 同盘止损满 2 次 → 本场只减不开。首次止损后的再入照常
     //   (老板「当作新机会」语义保留); 连吃两次打脸 = 拉锯 régime (sharp 自身随比分来回翻, 无信息优势),
     //   不再循环送钱 (实测 3 个循环盘吃掉 78% realized 亏损, 最狠单盘 6 开 8 平 −16.6u)。
@@ -1997,6 +2054,11 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
             cum_realized_by_market_[condition_id] += sell_realized;  // 逐盘累计 (对账修: 平仓不丢 realized)
             trade_returns_.push_back((fill.fill_price - pos_before->avg_entry_price) / pos_before->avg_entry_price);  // 逐笔收益 (Sharpe口径)
             if (trade_returns_.size() > 5000) trade_returns_.erase(trade_returns_.begin(), trade_returns_.begin() + 2500);
+            // GateEvaluator 记分牌 (2026-06-12 治理): 逐笔已实现 PnL 序列 (G1/G5/G6 输入)
+            gate_trade_pnl_.push_back(sell_realized);
+            if (gate_trade_pnl_.size() > 5000) gate_trade_pnl_.erase(gate_trade_pnl_.begin(), gate_trade_pnl_.begin() + 2500);
+            if (first_trade_ts_ns_ == 0) first_trade_ts_ns_ = as_of_now;
+            last_trade_ts_ns_ = as_of_now;
         }
     }
 
@@ -2651,6 +2713,11 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
     if (avg > 0.0) {  // 逐笔收益 (Sharpe口径)
         trade_returns_.push_back((settle_price - avg) / avg);
         if (trade_returns_.size() > 5000) trade_returns_.erase(trade_returns_.begin(), trade_returns_.begin() + 2500);
+        // GateEvaluator 记分牌 (2026-06-12 治理): 结算路逐笔 PnL (与卖出路同序列)
+        gate_trade_pnl_.push_back((settle_price - avg) * qty);
+        if (gate_trade_pnl_.size() > 5000) gate_trade_pnl_.erase(gate_trade_pnl_.begin(), gate_trade_pnl_.begin() + 2500);
+        if (first_trade_ts_ns_ == 0) first_trade_ts_ns_ = NowNs();
+        last_trade_ts_ns_ = NowNs();
     }
 
     // 平仓: apply_fill 负 delta 到 0 (settle_price 作 fill_price; 平仓 avg 归零, R-11 paper)。
