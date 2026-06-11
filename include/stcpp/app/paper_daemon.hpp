@@ -287,6 +287,11 @@ private:
     //   → 构建 condition→event 映射 → paper_loop_->SetEventMapping(). Goalserve event
     //   动态出现, 故周期重匹配 (非 boot 一次性)。
     void RefreshEventMapping(std::stop_token st);
+    // FLB 簿保鲜 (2026-06-11 老板「机会被错过」根治): FLB 宇宙 (非 sharp moneyline) 不在 149hz 轮询,
+    //   安静盘 WSS 几分钟不推 → 簿龄 >21s 跌破 SlippageModel fill-rate 地板 → RM 全拒 (实测 23 触发
+    //   仅 1 成交)。每 15s 批量 POST /books 刷 yes token 簿 → SeedFromRestBooks 进主 hub (≈0.2 req/s,
+    //   slot 已分配无溢出); seed 触发 OnPublish→RequestTick 仍是触发型。映射线程调用。
+    void FlbBookRefresh();
 
     // M2 结算刷新线程: 周期取 SettlementStore 快照 → 构建 ResolutionEntry map →
     //   paper_loop_->SetResolutionByCondition() (喂 3b 权威结算 + CLV 收盘信号)。
@@ -378,6 +383,7 @@ private:
     // 上次据以构建订阅集的 eligible 快照内容 (仅映射线程读写, 无锁): RediscoverOnce 比对 → 即便市场集
     //   未变, eligible 集变了 (赔率源增删) 也要重订/退订。否则稳定市场集下 bootstrap 全订阅永不收敛。
     std::unordered_set<std::string> last_sub_eligible_;
+    std::int64_t last_flb_refresh_ns_{0};  // FLB 簿保鲜 15s 节流 (映射线程)
 
     // 149hz 主动 book 轮询计划 (2026-06-04 老板「主动查订单簿压限速, 全市场共享 149hz, 按流动性分配」):
     //   (token_id, weight=√liquidity+1) 列表, 仅含有赔率源 (源头 pass 过滤后) 的 token。映射线程写

@@ -1493,6 +1493,49 @@ int PaperDaemon::Run() {
 //   映射 → paper_loop_->SetEventMapping(). Goalserve event 动态出现, 故周期重匹配.
 //   fail-closed: 未匹配的 condition 不进映射 (paper_loop 退回 stub, has_real_fair=false).
 // ---------------------------------------------------------------------------
+void PaperDaemon::FlbBookRefresh() {
+    if (!live_publisher_) return;
+    std::vector<std::string> toks;
+    toks.reserve(160);
+    for (const auto& [cid, tp] : token_map_) {
+        if (last_sub_eligible_.count(cid) != 0) continue;  // sharp 盘有 149hz 轮询, 不用刷
+        if (const auto cit = market_cat_map_.find(cid);
+            cit == market_cat_map_.end() || cit->second.market_type_id != 0) {
+            continue;  // 只刷 moneyline (FLB 宇宙)
+        }
+        if (!tp.first.empty()) toks.push_back(tp.first);  // yes token (触发只读 yes 簿)
+        if (toks.size() >= 150) break;
+    }
+    if (toks.empty()) return;
+    const std::int64_t now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                    std::chrono::system_clock::now().time_since_epoch())
+                                    .count();
+    constexpr std::size_t kChunk = 50;
+    for (std::size_t i = 0; i < toks.size(); i += kChunk) {
+        const std::size_t end = std::min(i + kChunk, toks.size());
+        std::string body = "[";
+        for (std::size_t j = i; j < end; ++j) {
+            if (j > i) body += ',';
+            body += "{\"token_id\":\"";
+            body += toks[j];  // uint256 十进制, 无 shell 特殊字符
+            body += "\"}";
+        }
+        body += "]";
+        const std::string cmd =
+            "curl -s --max-time 10 -X POST 'https://clob.polymarket.com/books' "
+            "-H 'Content-Type: application/json' --data '" +
+            body + "' 2>/dev/null";
+        std::string resp;
+        if (FILE* p = ::popen(cmd.c_str(), "r")) {
+            char buf[8192];
+            std::size_t n = 0;
+            while ((n = ::fread(buf, 1, sizeof(buf), p)) > 0) resp.append(buf, n);
+            ::pclose(p);
+        }
+        if (!resp.empty() && resp.front() == '[') live_publisher_->SeedFromRestBooks(resp, now_ns);
+    }
+}
+
 void PaperDaemon::RefreshEventMapping(std::stop_token st) {
     using namespace std::chrono;
     // R-6: 周期重发现计时 (本线程跑 → match_inputs 同线程无竞争)。初始化为 now, 首次重发现在一个间隔后。
@@ -1524,6 +1567,15 @@ void PaperDaemon::RefreshEventMapping(std::stop_token st) {
             for (const auto& [cid, _t] : token_map_) poll_set.insert(cid);  // 同线程读 (RediscoverOnce 同线程写)
             for (const auto& cid : paper_loop_->HeldConditions()) poll_set.insert(cid);  // 线程安全 (shared_lock)
             settlement_poller_->SetConditionIds(std::vector<std::string>(poll_set.begin(), poll_set.end()));
+        }
+        // FLB 簿保鲜 15s (2026-06-11): 安静盘簿龄 >21s 被 SlippageModel 拒 → 批量 REST 刷新。
+        if (cfg_.paper_loop.flb_enabled && cfg_.start_live_feeds) {
+            const auto fb_now =
+                duration_cast<nanoseconds>(steady_clock::now().time_since_epoch()).count();
+            if (fb_now - last_flb_refresh_ns_ >= 15'000'000'000LL) {
+                last_flb_refresh_ns_ = fb_now;
+                FlbBookRefresh();
+            }
         }
         // 1. 取 Goalserve 比分快照 → 候选 EventScore 列表
         std::vector<debug_api::EventScore> candidates;
