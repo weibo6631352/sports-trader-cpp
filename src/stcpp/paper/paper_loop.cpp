@@ -1289,18 +1289,21 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   入场中位 5 分钟即被割 = 买在摆动途中。sharp_history 是 YES-canonical: YES 侧看 WindowMin ≥ 门,
     //   NO 侧看 1−WindowMax ≥ 门。历史未覆盖整窗 (新盘/刚匹配/sharp 断流) → NaN → 不开 (fail-closed:
     //   等 3 分钟稳定证据)。减仓/平仓不受限 (同 min_open_fair 语义, hold 由下方 sel_target>=cur_e 保护)。
+    // 2026-06-11 老板「进场条件只要进行中+有赔率源」: 稳定窗改【证据制】—— 窗口历史不全 (重启后/新盘/
+    //   sharp 稀疏) 不再 fail-closed 黑窗 (原版每次重启全员 3min 进不了场), 只有【实际观测到】窗口内
+    //   sharp 跌破过门槛 (= 钟摆证据) 才拦。
     if (target_mag > 0.0 && cfg_.min_open_fair > 0.0 && cfg_.open_stable_window_ns > 0) {
-        bool stable = false;
+        bool unstable_evidence = false;
         if (const auto sh_st = sharp_history_.find(condition_id); sh_st != sharp_history_.end()) {
             if (is_yes) {
-                const double wmin = sh_st->second.WindowMin(cfg_.open_stable_window_ns);
-                stable = std::isfinite(wmin) && wmin >= cfg_.min_open_fair;
+                const double wmin = sh_st->second.WindowMinSeen(cfg_.open_stable_window_ns);
+                unstable_evidence = std::isfinite(wmin) && wmin < cfg_.min_open_fair;
             } else {
-                const double wmax = sh_st->second.WindowMax(cfg_.open_stable_window_ns);
-                stable = std::isfinite(wmax) && (1.0 - wmax) >= cfg_.min_open_fair;
+                const double wmax = sh_st->second.WindowMaxSeen(cfg_.open_stable_window_ns);
+                unstable_evidence = std::isfinite(wmax) && (1.0 - wmax) < cfg_.min_open_fair;
             }
         }
-        if (!stable) target_mag = 0.0;  // 赢面未稳定满窗 → 只减不开
+        if (unstable_evidence) target_mag = 0.0;  // 窗口内实证跌破过门槛 (钟摆) → 只减不开
     }
     // edge-生命周期乘子 (持仓管理 Stage 2, 老板 2026-06-05「sharp 速度/收敛接进决策」): 用本盘 sharp 时序
     //   状态 (Vol 稳定性 + ConvergenceRate 发散谨慎) 缩 target 【量级】∈[floor,1], 抑制噪声驱动过度交易。
@@ -2223,8 +2226,9 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     }
     if (spread > kFlbMaxSpread) return;  // 簿质量门: 宽价差实际吃不到回测价
     if (ps.lead_changes >= kFlbMaxLeadChanges) return;  // v2 拉锯门: 跷跷板局出局
-    // v2 动量门输入: 取「距今 ≥4.5min 的最新样本」算 5min 边向动量; 历史不足 → fail-closed (新订阅
-    //   盘观察 ~5min 再有触发资格, 与稳定窗哲学一致, 也躲开「开赛即 gap 入场」)。
+    // v2 动量门输入 (2026-06-11 老板「纯订单簿分支只要进行中就好了」→ 证据制, 不再 5min 黑窗):
+    //   取「距今 ≥4.5min 的最新样本」算 5min 边向动量; 历史不足 → NaN = 无跳升证据 → 放行
+    //   (原版 fail-closed 每次重启全员 5min 进不了场)。
     double mid_5m_ago = std::numeric_limits<double>::quiet_NaN();
     {
         std::int64_t best_ts = -1;
@@ -2235,7 +2239,6 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
                 mid_5m_ago = s.second;
             }
         }
-        if (best_ts < 0) return;  // 历史不足 5min → 不触发
     }
     FlbTrigger t;
     t.condition_id = cond_id;
@@ -2243,9 +2246,9 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     t.data_source_ts_ns = f.data_source_ts_ns;
     t.ingestion_ts_ns = f.ingestion_ts_ns;
     bool fire = false;
-    double mom5 = 0.0;  // 边向 5min 动量 (v2 跳升门)
+    double mom5 = 0.0;  // 边向 5min 动量 (v2 跳升门; NaN 历史 → 0 = 无证据放行)
     if (ya >= kFlbTrigger && ya <= kFlbMaxPx && f.best_ask_size() >= kFlbMinDepthUsdc) {
-        mom5 = mid_now - mid_5m_ago;  // YES 边向
+        mom5 = std::isfinite(mid_5m_ago) ? (mid_now - mid_5m_ago) : 0.0;  // YES 边向
         if (mom5 > kFlbMaxMom5) return;  // v2 跳升门: gap 追入 −EV, 不标记 seen → 稳了重触发
         t.token_id = entry.tokens.first;
         t.is_yes = true;
@@ -2255,7 +2258,7 @@ void PaperLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEnt
     } else if (const double na = 1.0 - yb; na >= kFlbTrigger && na <= kFlbMaxPx &&
                                            f.best_bid_size() >= kFlbMinDepthUsdc &&
                                            !entry.tokens.second.empty()) {
-        mom5 = mid_5m_ago - mid_now;  // NO 边向 (yes 跌 = no 升)
+        mom5 = std::isfinite(mid_5m_ago) ? (mid_5m_ago - mid_now) : 0.0;  // NO 边向 (yes 跌 = no 升)
         if (mom5 > kFlbMaxMom5) return;  // v2 跳升门
         t.token_id = entry.tokens.second;
         t.is_yes = false;

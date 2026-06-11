@@ -135,6 +135,15 @@ class SharpFairTrack {
     [[nodiscard]] double WindowMax(std::int64_t window_ns) const noexcept {
         return window_extreme_(window_ns, /*want_min=*/false);
     }
+    // 观测版 (2026-06-11 老板「进场只要进行中+有赔率源」→ 稳定窗证据制): 不要求覆盖整窗 —— 对窗口内
+    //   【已有】样本取极值 (含起点前阶跃保持样本若有); 完全无样本才 NaN。用于「有跌破证据才拦」语义
+    //   (覆盖版 WindowMin 的 NaN 会把部分历史里的真实跌破也藏掉)。
+    [[nodiscard]] double WindowMinSeen(std::int64_t window_ns) const noexcept {
+        return window_extreme_seen_(window_ns, /*want_min=*/true);
+    }
+    [[nodiscard]] double WindowMaxSeen(std::int64_t window_ns) const noexcept {
+        return window_extreme_seen_(window_ns, /*want_min=*/false);
+    }
 
     void Reset() noexcept {
         head_ = 0;
@@ -164,6 +173,32 @@ class SharpFairTrack {
         }
         if (pre_ts < 0) return kNaN();  // 历史未覆盖整窗 → fail-closed
         return want_min ? std::min(ext, pre_sharp) : std::max(ext, pre_sharp);
+    }
+
+    // 观测版: 不要求覆盖 —— 窗口内已有样本 (+ 起点前阶跃保持样本若有) 的极值; 零样本才 NaN。
+    [[nodiscard]] double window_extreme_seen_(std::int64_t window_ns, bool want_min) const noexcept {
+        if (count_ == 0 || window_ns <= 0) return kNaN();
+        const std::int64_t cutoff = last_ts_ - window_ns;
+        double ext = want_min ? std::numeric_limits<double>::infinity()
+                              : -std::numeric_limits<double>::infinity();
+        bool any = false;
+        std::int64_t pre_ts = -1;
+        double pre_sharp = 0.0;
+        for (std::size_t i = 0; i < count_; ++i) {
+            const Sample& s = at_(i);
+            if (s.ts_ns >= cutoff) {
+                ext = want_min ? std::min(ext, s.sharp) : std::max(ext, s.sharp);
+                any = true;
+            } else if (s.ts_ns > pre_ts) {
+                pre_ts = s.ts_ns;
+                pre_sharp = s.sharp;
+            }
+        }
+        if (pre_ts >= 0) {
+            ext = want_min ? std::min(ext, pre_sharp) : std::max(ext, pre_sharp);
+            any = true;
+        }
+        return any ? ext : kNaN();
     }
 
     // 逻辑索引 i (0=最旧, count_-1=最新) → 物理 buf_ 下标。
