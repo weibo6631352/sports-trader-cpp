@@ -300,6 +300,14 @@ void TraderDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovere
             engine::MarketCat cat;
             cat.asset_class_id = static_cast<std::int32_t>(tax::AssetClass::kSports);  // 现仅发现体育
             cat.sport_family_id = tax::SportFamilyCode(ev.sport_code);
+            // 电竞出血联赛下架 (老板 2026-06-13 修正「不是彻底断掉, 是诊断的二三线亏损断掉」;
+            //   依据: 分运动研究 — 亏损 100% 集中 LoL (EMEA Masters 等二三线, −8.3pp 负偏离,
+            //   Partizan 同场叠仓 −48.4); 一线 LoL 同样零正样本 → lol 整码先停, cs2/dota 等保留。
+            //   后续联赛级数据诊断到谁, 名单加谁。不进 catalog = 不订阅/不报价/不触发 FLB。
+            if (cat.sport_family_id == 6 && ev.sport_code == "lol") {
+                market_catalog_.erase(dm.condition_id);  // 上面已 emplace, 撤回
+                continue;
+            }
             cat.league_id = (ev.sport_id > 0) ? static_cast<std::int32_t>(ev.sport_id) : -1;
             cat.market_type_id = tax::MarketTypeCode(dm.sports_market_type);
             cat.line = dm.line;  // totals/spreads 线值 → 派生定价
@@ -731,7 +739,9 @@ BuildResult TraderDaemon::Build() {
     paper_rm_cfg.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_outcome_cap_usdc);
     // 2026-06-10 复盘迭代: event 层聚合 cap (同场 ML+Spread+Total 叠仓=隐性 3x 杠杆)。
     //   RM 基建已在 (set_condition_event + Σ|condition| ρ=1 上界), 此前默认 10000u 实际未生效 → 设 120u (12% bankroll/场)。
-    paper_rm_cfg.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(120.0);
+    // 同事件相关簇硬上限 120→60 (2026-06-13 分运动研究: Partizan BO3+G1+G2 三市场同源叠仓
+    //   同输 −48.4 — corr taper 是软乘子没咬住; 60 = 单市场 cap 同额 → 同一事件最多一份市场额度)。
+    paper_rm_cfg.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(60.0);
     paper_rm_cfg.bankroll_usdc =
         domain::MicroPUSD::from_pusd(cfg_.trading_loop.bankroll_usdc);  // c2b: 与 cap 对称
     paper_rm_cfg.edge_ci_lower_floor = -1.0;                          // M1 放宽 CI 门

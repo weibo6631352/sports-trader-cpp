@@ -1104,6 +1104,9 @@ private:
     // [D-阶段1/2] 业务流分段 (2026-06-12 老板「c d 都改彻底」): TickOne 阶段化抽取, 行为逐位不变。
     void ResolveGameContext(const std::string& condition_id, stcpp::data::feature_store::FeatureStoreGameRow& game_row,
                             bool& map_is_draw);
+    // 成交流水持久化 (2026-06-13 分运动研究 C5: 环容量 2.6h 断档卡死所有研究统计力):
+    //   每笔 FillRow 追加一行 JSON 到 data/ml_capture/fills_journal.jsonl (append-only, 跨重启)。
+    void JournalFill(const FillRow& fr);
     bool TrySettleResolved(const std::string& condition_id, const BinaryMarketSnapshot& mkt,
                            const stcpp::data::feature_store::FeatureStoreGameRow& game_row);
 

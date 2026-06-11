@@ -276,6 +276,23 @@ void TradingLoop::RunLoop(std::stop_token st) {
     }
 }
 
+
+// 成交流水持久化 (2026-06-13 C5): append-only JSONL, loop_thread_ 单写, 每笔 fopen/fclose (非热路径)。
+void TradingLoop::JournalFill(const FillRow& fr) {
+    const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
+    FILE* jf = std::fopen(live ? "data/ml_capture/live_fills_journal.jsonl"
+                               : "data/ml_capture/fills_journal.jsonl", "a");
+    if (jf == nullptr) return;  // 目录不存在等 — 不阻塞交易
+    std::fprintf(jf,
+                 "{\"ts\":%lld,\"cond\":\"%s\",\"yes\":%d,\"buy\":%d,\"close\":%d,\"px\":%.6f,"
+                 "\"qty\":%.4f,\"realized\":%.4f,\"fair\":%.4f,\"mark\":%.4f,\"fee\":%.5f,"
+                 "\"exit\":\"%s\",\"engine\":\"%s\"}\n",
+                 static_cast<long long>(fr.as_of_ts_ns), fr.condition_id.c_str(), fr.is_yes ? 1 : 0,
+                 fr.is_buy ? 1 : 0, fr.is_close ? 1 : 0, fr.price, fr.size_usdc, fr.realized, fr.fair,
+                 fr.mark, fr.fee, fr.exit_reason.c_str(), fr.engine.c_str());
+    std::fclose(jf);
+}
+
 // ---------------------------------------------------------------------------
 // TickAll — 遍历所有 condition, 双边读 (YES book + NO book) 组 BinaryMarketSnapshot 进决策
 //   (老板原则 C3: 决策带整盘口; 老周架构: 决策线程栈上组装, 零锁; R-12 不触碰)。
@@ -2109,7 +2126,8 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
             fr.exit_reason = (rit != last_sell_reason_.end()) ? rit->second : "kelly_reduce";
         }
         std::lock_guard<std::mutex> lk(fills_mu_);
-        fills_ring_.push_back(std::move(fr));
+        JournalFill(fr);
+    fills_ring_.push_back(std::move(fr));
         if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
     }
 }
@@ -2448,6 +2466,7 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     fr.engine = t.dip ? "flb-dip" : "flb";  // 抄底档分账 (2026-06-11)
     engine_by_token_.emplace(t.token_id, t.dip ? "flb-dip" : "flb");  // 引擎归因 (2026-06-12)
     std::lock_guard<std::mutex> lk(fills_mu_);
+    JournalFill(fr);
     fills_ring_.push_back(std::move(fr));
     if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
 }
@@ -2625,7 +2644,8 @@ void TradingLoop::RestoreLedgerSnapshot() {
                 fr.exit_reason = (exitr[0] == '-' && exitr[1] == 0) ? "" : exitr;
                 fr.engine = (eng[0] == '-' && eng[1] == 0) ? "" : eng;
                 std::lock_guard<std::mutex> lk(fills_mu_);
-                fills_ring_.push_back(std::move(fr));
+        JournalFill(fr);
+    fills_ring_.push_back(std::move(fr));
                 if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
             }
         } else if (line[0] == 'R') {
@@ -2741,7 +2761,8 @@ void TradingLoop::SettleToken(const std::string& condition_id, const std::string
         fr.fee = 0.0;                // 结算无交易费
         fr.exit_reason = "settlement";
         std::lock_guard<std::mutex> lk(fills_mu_);
-        fills_ring_.push_back(std::move(fr));
+        JournalFill(fr);
+    fills_ring_.push_back(std::move(fr));
         if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
     }
 
