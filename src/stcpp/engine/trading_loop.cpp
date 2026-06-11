@@ -2219,10 +2219,6 @@ void TradingLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketE
     const double mid_now = 0.5 * (ya + yb);
     auto& ps = flb_path_[cond_id];
     {
-        if (!std::isfinite(ps.first_mid)) {  // 抄底锚: 首见 mid (赛前/早期订阅时记录)
-            ps.first_mid = mid_now;
-            ps.first_mid_ns = now_ns_v;
-        }
         const int lead = mid_now > 0.5 ? 1 : (mid_now < 0.5 ? -1 : ps.prev_lead);
         if (lead != 0 && ps.prev_lead != 0 && lead != ps.prev_lead) ++ps.lead_changes;
         if (lead != 0) ps.prev_lead = lead;
@@ -2278,34 +2274,8 @@ void TradingLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketE
         t.ask_sz_usdc = f.best_bid_size();  // 深度 = yes_bid 档量
         fire = true;
     }
-    // ---- 抄底档 (2026-06-11 老板拍板; 实证 641 盘: 赛前 favorite 首触 0.30-0.40 → +14.5%/u,
-    //   0.50-0.60 → +8.4%/u, 0.40-0.50 死区跳过; 首触完胜 V 确认 → 不设动量/易主门, 接飞刀是设计)。
-    //   锚: 首见 mid 在开赛 +15min 内记录 且该边 ≥0.65 (赛前 favorite 身份)。逐笔验证: 仅 ~20% 盘坑带
-    //   有真量 → 活簿深度门 (≥25u) 自动筛掉吃不进的盘。一盘一击与 0.80 档共用 (先到先得)。
-    if (!fire && std::isfinite(ps.first_mid) && entry.game_start_ts_sec > 0 &&
-        ps.first_mid_ns <= (entry.game_start_ts_sec + 900) * 1'000'000'000LL) {
-        auto in_dip = [](double m) { return (m >= 0.30 && m < 0.40) || (m >= 0.50 && m < 0.60); };
-        constexpr double kDipMaxAsk = 0.63;  // 支付上限: 不为坑带付出带太多
-        if (ps.first_mid >= 0.65 && in_dip(mid_now) && ya <= kDipMaxAsk &&
-            f.best_ask_size() >= kFlbMinDepthUsdc) {
-            t.token_id = entry.tokens.first;   // YES 是赛前 favorite, 砸坑 → 接
-            t.is_yes = true;
-            t.ask_px = ya;
-            t.ask_sz_usdc = f.best_ask_size();
-            t.dip = true;
-            fire = true;
-        } else if (const double no_first = 1.0 - ps.first_mid, no_mid2 = 1.0 - mid_now,
-                   na2 = 1.0 - yb;
-                   no_first >= 0.65 && in_dip(no_mid2) && na2 <= kDipMaxAsk &&
-                   f.best_bid_size() >= kFlbMinDepthUsdc && !entry.tokens.second.empty()) {
-            t.token_id = entry.tokens.second;  // NO 是赛前 favorite
-            t.is_yes = false;
-            t.ask_px = na2;
-            t.ask_sz_usdc = f.best_bid_size();
-            t.dip = true;
-            fire = true;
-        }
-    }
+    // (抄底档 2026-06-13 老板「停 并且删抄底引擎」: 实盘 4 笔 0 胜 ≈ −27, <0.60 桶跨两窗口
+    //  持续全灭; 641 盘回测正 EV 未在实盘兑现 — 接飞刀设计被证伪。git 史可考。)
     if (!fire) {
         // 区分: 带内但深度薄 vs 真不在带 (老板「机会被错过」核心疑点)
         const double side_hi = std::max(mid_now, 1.0 - mid_now);
@@ -2475,7 +2445,7 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     clv_tracker_.RecordFill(t.token_id, fill.fill_price, fill.fill_price,
                             static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.as_of_ts_ns);
 
-    std::fprintf(stderr, "[flb] FILL%s cond=%.24s... %s %.1fu@%.4f (深度 %.0f)\n", t.dip ? "[dip]" : "",
+    std::fprintf(stderr, "[flb] FILL cond=%.24s... %s %.1fu@%.4f (深度 %.0f)\n",
                  t.condition_id.c_str(), t.is_yes ? "YES" : "NO",
                  static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.fill_price, t.ask_sz_usdc);
 
@@ -2492,8 +2462,8 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     fr.fair = fill.fill_price;  // 无模型 fair (引擎 edge 是统计性的): 声称 edge=0, 诚实
     fr.mark = fill.fill_price;
     fr.fee = fr.size_usdc * FeeCoefFor(t.condition_id) * fill.fill_price * (1.0 - fill.fill_price);
-    fr.engine = t.dip ? "flb-dip" : "flb";  // 抄底档分账 (2026-06-11)
-    engine_by_token_.emplace(t.token_id, t.dip ? "flb-dip" : "flb");  // 引擎归因 (2026-06-12)
+    fr.engine = "flb";
+    engine_by_token_.emplace(t.token_id, "flb");  // 引擎归因 (2026-06-12)
     std::lock_guard<std::mutex> lk(fills_mu_);
     JournalFill(fr);
     fills_ring_.push_back(std::move(fr));
@@ -2546,28 +2516,7 @@ void TradingLoop::SaveLedgerSnapshot() {
     clv_tracker_.ForEachLastMid([fp](const std::string& tok, double mid) {
         std::fprintf(fp, "L %s %.10g\n", tok.c_str(), mid);
     });
-    // D 行: FLB 抄底锚 (first_mid 赛前首见价; 不持久化则重启后锚=重启时价, dip 档失效)。
-    for (const auto& [cid, ps2] : flb_path_) {
-        if (std::isfinite(ps2.first_mid) && ps2.first_mid_ns > 0) {
-            std::fprintf(fp, "D %s %.10g %lld\n", cid.c_str(), ps2.first_mid,
-                         static_cast<long long>(ps2.first_mid_ns));
-        }
-    }
-    // F 行: 成交流水环尾 100 条 (2026-06-11 老板「成交 0 笔」: 仓恢复了流水没恢复, 费显 0 误导)。
-    //   空字符串字段写 "-" 占位 (行式解析); 前端流水/费/engine 标签跨重启连续。
-    {
-        std::lock_guard<std::mutex> lk(fills_mu_);
-        const std::size_t start = fills_ring_.size() > 100 ? fills_ring_.size() - 100 : 0;
-        for (std::size_t i = start; i < fills_ring_.size(); ++i) {
-            const auto& r = fills_ring_[i];
-            std::fprintf(fp, "F %lld %s %d %d %d %.10g %.10g %.10g %.10g %.10g %.10g %.10g %s %s\n",
-                         static_cast<long long>(r.as_of_ts_ns), r.condition_id.c_str(), r.is_yes ? 1 : 0,
-                         r.is_buy ? 1 : 0, r.is_close ? 1 : 0, r.price, r.size_usdc, r.realized,
-                         r.cum_realized, r.fair, r.mark, r.fee,
-                         r.exit_reason.empty() ? "-" : r.exit_reason.c_str(),
-                         r.engine.empty() ? "-" : r.engine.c_str());
-        }
-    }
+    // (D 行 [抄底锚] 2026-06-13 随抄底引擎删除。)
     std::fclose(fp);
     std::rename(tmp.c_str(), cfg_.ledger_snapshot_path.c_str());
 }
@@ -2623,15 +2572,7 @@ void TradingLoop::RestoreLedgerSnapshot() {
                 clv_tracker_.RecordFill(tok, px, mid, szp, ts2);
                 ++n_clv;
             }
-        } else if (line[0] == 'D') {
-            char cid2[80] = {0};
-            double fm = 0.0;
-            long long fmns = 0;
-            if (std::sscanf(line, "D %79s %lf %lld", cid2, &fm, &fmns) == 3 && fm > 0.0 && fm < 1.0) {
-                auto& ps3 = flb_path_[cid2];
-                ps3.first_mid = fm;
-                ps3.first_mid_ns = fmns;
-            }
+        // (D 行恢复 2026-06-13 随抄底引擎删除 — 旧快照 D 行直接忽略)
         } else if (line[0] == 'E') {
             char tok[90] = {0}, eng[20] = {0};
             if (std::sscanf(line, "E %89s %19s", tok, eng) == 2) engine_by_token_[tok] = eng;

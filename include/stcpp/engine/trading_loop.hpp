@@ -579,7 +579,6 @@ public:
         bool is_yes{true};
         double ask_px{0.0};          // 触发刻该边可成交买价 (YES=yes_ask; NO=1−yes_bid 合成)
         double ask_sz_usdc{0.0};     // 该价位深度 (撮合模拟用)
-        bool dip{false};             // 抄底档 (2026-06-11): true=赛前 favorite 砸坑首触, 分账 engine="flb-dip"
         std::int64_t event_ts_ns{0};  // R-20 4ts: 来自 REST book timestamp
         std::int64_t data_source_ts_ns{0};
         std::int64_t ingestion_ts_ns{0};
@@ -982,7 +981,7 @@ private:
     std::int64_t last_funnel_dump_ns_{0};
     std::int64_t last_daily_close_day_{0};  // P5 日级滚账 (UTC 日序号)
     std::int64_t last_deploy_warn_ns_{0};   // P4 部署率告警 5min 节流
-    // 引擎归因 (2026-06-12 老板「能区分开就行」): token → engine ("sharp"/"flb"/"flb-dip"), 入场时记,
+    // 引擎归因 (2026-06-12 老板「能区分开就行」): token → engine ("sharp"/"flb"), 入场时记,
     //   结算/平仓按真实引擎分账 (废 flb_seen_ 猜测)。loop_thread_ 写; 快照 E 行持久化。
     std::unordered_map<std::string, std::string> engine_by_token_;
     struct EngineBook {
@@ -1018,8 +1017,6 @@ private:
         std::int64_t last_miss_ns{0};
         // 抄底锚 (2026-06-11 老板拍板「FLB 加抄底档」): 首见 yes_mid + 时刻 — 赛前/早期首见 ≥0.65 的
         //   favorite 盘中砸坑 (0.30-0.40/+14.5%, 0.50-0.60/+8.4%, 跳 0.40-0.50 死区) 首触即买。
-        double first_mid{std::numeric_limits<double>::quiet_NaN()};
-        std::int64_t first_mid_ns{0};
     };
     std::unordered_map<std::string, FlbPathState> flb_path_;
     void ProcessFlbTrigger(const FlbTrigger& t);  // loop_thread_ only (TickAll 起始排干调用)
