@@ -5,7 +5,9 @@
 
 #include <cstring>
 
-#include <sodium/crypto_auth_hmacsha256.h>
+// 2026-06-12 治理: HMAC-SHA256 由 libsodium 换 OpenSSL (项目唯一 crypto/TLS 外部依赖,
+//   WSS 已用)。换装由 test_clob_wire L2 HMAC 向量 (与 python hmac 对齐) 验证。
+#include <openssl/hmac.h>
 
 namespace stcpp::polymarket {
 
@@ -97,12 +99,11 @@ std::string ComputeL2Signature(std::string_view api_secret_b64url, std::string_v
     base.reserve(timestamp.size() + method.size() + path.size() + body.size());
     base.append(timestamp).append(method).append(path).append(body);
 
-    crypto_auth_hmacsha256_state st;
-    crypto_auth_hmacsha256_init(&st, reinterpret_cast<const unsigned char*>(key.data()), key.size());
-    crypto_auth_hmacsha256_update(&st, reinterpret_cast<const unsigned char*>(base.data()), base.size());
-    unsigned char mac[crypto_auth_hmacsha256_BYTES];
-    crypto_auth_hmacsha256_final(&st, mac);
-    return Base64UrlEncode(mac, sizeof(mac));
+    unsigned char mac[32];  // HMAC-SHA256 输出 32B
+    unsigned int mac_len = 0;
+    HMAC(EVP_sha256(), key.data(), static_cast<int>(key.size()),
+         reinterpret_cast<const unsigned char*>(base.data()), base.size(), mac, &mac_len);
+    return Base64UrlEncode(mac, mac_len);
 }
 
 crypto::Bytes32 ComputeClobAuthDigest(std::string_view address_lc, std::string_view timestamp,

@@ -13,25 +13,13 @@
 #   - WSS sports subscriber 接入 → @小冯 D 单元 W5-02bis
 #   - paper VirtualMatcher 联调 → @小蒋 W5+
 
-if(STCPP_EXEC_MODE STREQUAL "paper")
-    add_library(stcpp_polymarket_paper STATIC
-        paper/paper_pm_client.cpp
-    )
-    target_include_directories(stcpp_polymarket_paper
-        PUBLIC ${CMAKE_SOURCE_DIR}/include
-    )
-    target_compile_features(stcpp_polymarket_paper PUBLIC cxx_std_20)
-    target_compile_definitions(stcpp_polymarket_paper PRIVATE
-        STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1
-    )
-    # paper PM client 依赖 WAL framework (PIT + WalKind tag, R-11 + R-20)
-    target_link_libraries(stcpp_polymarket_paper PUBLIC stcpp_infra_wal)
-endif()
+# (stcpp_polymarket_paper [paper_pm_client mock] + live_pm_client stub + pm_client.hpp 接口
+#  2026-06-12 治理删: W5 旧规划层, 零链接消费者。paper 撮合走 execution/VirtualMatcher,
+#  live 下单走 live_order_submitter (直连 CLOB), IPmClient 抽象从未落地。)
 
 if(STCPP_EXEC_MODE STREQUAL "live")
     find_package(CURL REQUIRED)
     add_library(stcpp_polymarket_live STATIC
-        live/live_pm_client.cpp
         live/live_order_submitter.cpp   # GM 2026-05-31 Phase 3: 实盘下单器 (实盘验证)
     )
     target_include_directories(stcpp_polymarket_live

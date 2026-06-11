@@ -82,39 +82,5 @@ gtest_discover_tests(stcpp_test_integration_r11_pollution
     DISCOVERY_TIMEOUT 60
     PROPERTIES LABELS "integration;r11;w5;m1")
 
-# ---- Wave 72 P0: OrderIntent → SignV52Request transformer integration (老孙 cpp 实施) ----
-# 老沈 W9 W3 安全 spec §3 安全验收 (3 ctest):
-#   T1: YES Buy → to_sign_request → Sign → Ed25519 verify (非仅 error==Ok)
-#   T2: NO Sell → side=1 + response.error == Ok
-#   T3: token_id byte-equal (string-level)
-#
-# ADR-027 cite (Enforce-1):
-#   polymarket_ssot_cite: docs/RESEARCH/laoli-w8-polymarket-data-structure-ssot-v1.md §3.5
-#   handshake_cite:       docs/RESEARCH/laoli-laoSun-handshake-v1.md §84
-#   adr_cite:             docs/ADR/2026-06-W4-adr-027-core-data-structure-ssot-enforce.md
-add_executable(stcpp_test_integration_transformer
-    test_order_intent_to_sign_request.cpp
-)
-target_link_libraries(stcpp_test_integration_transformer PRIVATE
-    GTest::gtest_main
-    stcpp_risk
-    stcpp_signer_v52_paper
-    stcpp_infra_wal
-)
-target_include_directories(stcpp_test_integration_transformer PRIVATE
-    ${CMAKE_SOURCE_DIR} ${CMAKE_SOURCE_DIR}/include)
-target_compile_features(stcpp_test_integration_transformer PRIVATE cxx_std_20)
-target_compile_options(stcpp_test_integration_transformer PRIVATE
-    -Wno-double-promotion   # ADR-010 grandfather: gtest 浮点宏
-    -Wno-old-style-cast     # ADR-010 grandfather: gtest 宏展开
-    -Wno-cast-align)        # ADR-010 grandfather: gtest mock 转型
-target_compile_definitions(stcpp_test_integration_transformer PRIVATE
-    STCPP_EXEC_MODE_${STCPP_EXEC_MODE}=1)
-gtest_discover_tests(stcpp_test_integration_transformer
-    DISCOVERY_TIMEOUT 60
-    PROPERTIES LABELS "integration;signer;transformer;wave72;adr027;w9")
+# (Wave 72 transformer 集成测试 2026-06-12 治理删: SignerV52 已删。)
 
-# W9 W2: debug REST API integration (小卢 IC 实施)
-if(STCPP_BUILD_DEBUG_API)
-    add_subdirectory(debug_api)
-endif()

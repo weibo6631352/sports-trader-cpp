@@ -89,13 +89,13 @@ add_subdirectory(src/stcpp/risk)
 add_subdirectory(src/stcpp/observability)
 # Sprint-2 W4 Wave 19: 小段 Goalserve client adapter v0.1 (stub)
 add_subdirectory(src/stcpp/data)
-# Wave 34 W8: 老孙 stcpp_crypto_ed25519 (libsodium ExternalProject_Add v0.2)
-#   signer v52 + CLI 共用; 必须在 add_subdirectory(src/stcpp/signer) 之前
+# crypto: eip712_v2 + secp256k1 (live 签名) + blake3 (WAL)。
+#   (ed25519+libsodium / signer v52/v62 / bin 三签 CLI 2026-06-12 治理删: 全是被
+#    live_order_submitter 直签路径超越的旧架构层 + 已废会签机器, 零生产消费者。)
 add_subdirectory(src/stcpp/crypto)
 # Sprint-2 W4 Wave 19: 小蒋 paper engine v0.1 (signer + virtual matcher + paper main)
 add_subdirectory(src/stcpp/signer)
 add_subdirectory(src/stcpp/execution)
-add_subdirectory(src/stcpp/bin)
 # Sprint-2 W4 Wave 19: P0-01 Pinnacle no-vig + LiveSection (小程 spec + 小卢 IC 实施)
 add_subdirectory(src/stcpp/strategy)
 # Sprint-2 W4 Wave 20: 小董 M4.5 7 hard gate statistical framework v1
@@ -116,9 +116,8 @@ add_subdirectory(src/stcpp/pricing)
 # R-1 绝不绕 RM (suggested_notional 仅建议); cap 注入 RiskConfig const& 禁字面量 (老高 grep 守护)
 add_subdirectory(src/stcpp/sizing)
 
-# A-NET-01 (老陈 Wave 3): 出站序列化 + 背压队列 (OutboundBuffer / OutboundSerializer / OutboundSubmitQueue)
-# 红线: zero-alloc, R-12 (不进 vCPU0 event loop), 不依赖 glaze / nghttp2 (Sprint-4+)
-add_subdirectory(src/stcpp/net)
+# (src/stcpp/net [A-NET-01 出站序列化+背压队列] 2026-06-12 治理删: Wave3 旧架构层,
+#  被 PersistentHttps/live_order_submitter 直连路径超越, 仅自测试消费。)
 
 # Sprint-3 W9 W2: Debug REST API server (老周 spec, 小卢 IC 实施)
 # ADR-018 (cpp-httplib v0.16.3) + ADR-015 (vCPU 分工) + ADR-011 (paper/live 隔离)

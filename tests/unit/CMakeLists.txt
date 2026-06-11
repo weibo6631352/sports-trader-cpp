@@ -53,7 +53,6 @@ set(EXTRA_LIBS_test_p0_01_goalserve_devig stcpp_strategy)
 set(EXTRA_LIBS_test_gate_evaluator      stcpp_stats)
 set(EXTRA_LIBS_test_fill_rate_model     stcpp_microstructure stcpp_data_goalserve)
 set(EXTRA_LIBS_test_live_section_classifier stcpp_strategy)
-set(EXTRA_LIBS_test_pm_client_abi       stcpp_infra_wal)
 # V2 EIP-712 digest 编码锁定 (GM 2026-05-31 固化, 实盘验证值防回归)
 set(EXTRA_LIBS_test_eip712_v2           stcpp_crypto_eip712)
 # secp256k1 签名/recover/地址推导 (GM 2026-05-31, 公开测试向量)
@@ -77,7 +76,6 @@ set(EXTRA_LIBS_test_blake3_audit        stcpp_observability_audit)
 set(EXTRA_LIBS_test_audit_schema_v13    stcpp_observability_audit)
 set(EXTRA_LIBS_test_audit_schema_v14    stcpp_observability_audit)
 set(EXTRA_LIBS_test_position_ledger_w76 stcpp_risk)
-set(EXTRA_LIBS_test_outbound_serializer stcpp_net_outbound stcpp_infra_wal stcpp_infra_spsc)
 set(EXTRA_LIBS_test_goalserve_adapter   stcpp_data_contract)
 set(EXTRA_LIBS_test_fair_value_estimator stcpp_pricing)
 set(EXTRA_LIBS_test_backtest_types      stcpp_backtest)
@@ -167,7 +165,6 @@ set(EXTRA_DEFS_test_ingest_raw          STCPP_INGEST_RAW_WAL_PREFIX="/var/lib/st
 # (在公共 grandfather 3 项之外追加)
 set(EXTRA_OPTS_test_wal_writer          -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_audit_emitter       -Wno-invalid-offsetof)
-set(EXTRA_OPTS_test_pm_client_abi       -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_position_ledger     -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_blake3_audit        -Wno-invalid-offsetof)
 set(EXTRA_OPTS_test_audit_schema_v13    -Wno-invalid-offsetof)
@@ -181,8 +178,6 @@ set(EXTRA_OPTS_test_backtest_event_replayer -Wno-conversion)
 
 # --- DISCOVERY_TIMEOUT 映射 (默认 30) ---
 set(TIMEOUT_test_spsc_queue         60)
-set(TIMEOUT_test_signer_v53_pit     60)
-set(TIMEOUT_test_signer_v62         60)
 set(TIMEOUT_test_backtest_metrics   60)
 set(TIMEOUT_test_replay_driver      60)
 set(TIMEOUT_test_paper_loop         60)
@@ -204,8 +199,6 @@ set(LABELS_test_gate_evaluator             "unit;stats;gate;w4")
 set(LABELS_test_fill_rate_model            "unit;microstructure;w4")
 set(LABELS_test_fill_rate_model_v2         "unit;microstructure;clob;mode-a;wave3")
 set(LABELS_test_live_section_classifier    "unit;signal;strategy;w4")
-set(LABELS_test_pm_client_abi              "unit;polymarket;abi-lock;w6")
-set(LABELS_test_paper_pm_client            "unit;polymarket;paper;w5")
 set(LABELS_test_single_instance            "unit;process;single-instance;w5;w6")
 set(LABELS_test_position_ledger            "unit;wal;position;w6;p0")
 set(LABELS_test_pm_wss_subscriber          "unit;polymarket;wss;w5")
@@ -213,15 +206,10 @@ set(LABELS_test_clob_subscriber            "unit;polymarket;clob-wss;adr027;wave
 set(LABELS_test_ingest_raw                 "unit;wal;ingest-raw;ds-01;w6")
 set(LABELS_test_spsc_queue                 "unit;spsc;lock-free;w6")
 set(LABELS_test_goalserve_schema           "unit;goalserve;schema;data-contract;adr-008;w6")
-set(LABELS_test_strategy_unlock            "unit;risk;three-sig;strategy-unlock;w6;smell-4")
 set(LABELS_test_blake3_audit               "unit;audit;blake3;w6;m1-a06;smell-a;smell-2")
 set(LABELS_test_audit_schema_v13           "unit;audit;schema-v13;token_id;outcome;side;migration;adr027;w9")
 set(LABELS_test_audit_schema_v14           "unit;audit;schema-v14;timestamp_ms;metadata;builder;pUSD;migration;adr027;wave98;w10")
-set(LABELS_test_signer_v52                 "unit;signer;v52;ed25519;ipc;w6")
-set(LABELS_test_signer_v53_pit             "unit;signer;v53;token_id;side;adr027;w9")
-set(LABELS_test_signer_v62                 "unit;signer;v62;transformer;adr027;wave104;w10")
 set(LABELS_test_position_ledger_w76        "unit;risk;position-ledger;state-machine;adr027;wave76;w9")
-set(LABELS_test_outbound_serializer        "unit;net;outbound;serializer;backpressure;a-net-01;wave3")
 set(LABELS_test_goalserve_adapter          "unit;goalserve;adapter;vendor-agnostic;adr-037")
 set(LABELS_test_fair_value_estimator       "unit;pricing;fair-value;numerical;adr-037")
 set(LABELS_test_backtest_types             "unit;backtest;types;r20;pit;backtest-v0.2")
@@ -314,14 +302,9 @@ stcpp_add_unit_test(stcpp_test_unit_risk risk_enum_coverage_test.cpp)
 # 条件编译 target 文件名集合 (用于从 GLOB 中排除, 避免在不满足条件时尝试注册)
 set(_STCPP_CONDITIONAL_SRCS
     test_fill_rate_model_v2.cpp     # paper only
-    test_paper_pm_client.cpp        # paper only
-    test_signer_v52.cpp             # paper only
-    test_signer_v53_pit.cpp         # paper only
-    test_signer_v62.cpp             # paper only
     test_paper_daemon.cpp           # paper only (links stcpp_paper_app)
     test_market_discovery.cpp       # paper only (links stcpp_paper_app; 小宋 MD-01..47)
     test_event_matcher.cpp          # paper only (links stcpp_paper_app; A0 映射桥)
-    test_strategy_unlock.cpp        # STCPP_BUILD_CLI only
     # deferred / not-yet-buildable stubs (target library not yet implemented):
     test_parquet_writer_stub.cpp    # W7+ HC-06 deferred; stcpp_data_parquet not yet built
 )
@@ -356,11 +339,6 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     stcpp_add_unit_test(test_fill_rate_model_v2 test_fill_rate_model_v2.cpp)
 
     # 老李 W5 Wave 24: PaperPolymarketClient v0.1 (14 接口 paper mock, R-7/R-11/R-20 enforce)
-    set(EXTRA_LIBS_test_paper_pm_client
-        stcpp_polymarket_paper
-        stcpp_infra_wal
-    )
-    stcpp_add_unit_test(test_paper_pm_client test_paper_pm_client.cpp)
 
     # 老雷 PaperDaemon 重构 (老郭 §A.1): 装配 + R-11 detach 生命周期回归 (老韩审计要求)
     set(EXTRA_LIBS_test_paper_daemon
@@ -370,28 +348,11 @@ if(STCPP_EXEC_MODE STREQUAL "paper")
     stcpp_add_unit_test(test_paper_daemon test_paper_daemon.cpp)
 
     # 老孙 W6 Wave 30: signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
-    set(EXTRA_LIBS_test_signer_v52
-        stcpp_signer_v52_paper
-        stcpp_infra_wal
-    )
-    stcpp_add_unit_test(test_signer_v52 test_signer_v52.cpp)
 
     # 老孙 W9 Wave 58: signer v5.3 新增 7 ctest
-    set(EXTRA_LIBS_test_signer_v53_pit
-        stcpp_signer_v52_paper
-        stcpp_infra_wal
-    )
-    stcpp_add_unit_test(test_signer_v53_pit test_signer_v53_pit.cpp)
 
     # 老孙 Wave 104 P0: SignerV62 v6.2 + transformer_v62 5 ctest
-    set(EXTRA_LIBS_test_signer_v62
-        stcpp_signer_v62_paper
-        stcpp_signer_v52_paper
-        stcpp_infra_wal
-    )
     # STCPP_CLOB_V2=1 追加 define
-    list(APPEND EXTRA_DEFS_test_signer_v62 STCPP_CLOB_V2=1)
-    stcpp_add_unit_test(test_signer_v62 test_signer_v62.cpp)
 
     # 小宋 market_discovery 单测草案 MD-01..47
     # discovery_detail 纯函数 + ParseSports* Parse 层 fixture 测试 (无网络)
@@ -408,14 +369,4 @@ endif()
 
 # (test_ml_hook + stcpp_ml [MLDataHook 训练数据捕获] 已砍 2026-06-05「砍掉大模型训练功能」)
 
-# --- STCPP_BUILD_CLI guard ---
-if(STCPP_BUILD_CLI)
-
-    # 老沈 W6 Wave 29: STRATEGY_DECAYED 三签解锁
-    set(EXTRA_LIBS_test_strategy_unlock
-        stcpp_risk
-        stcpp_cli_three_sig
-    )
-    stcpp_add_unit_test(test_strategy_unlock test_strategy_unlock.cpp)
-
-endif()
+# (STCPP_BUILD_CLI 三签解锁 CLI + 测试 2026-06-12 治理删: 废会签机器。)

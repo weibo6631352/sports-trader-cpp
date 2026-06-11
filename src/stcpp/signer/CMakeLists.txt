@@ -36,8 +36,5 @@ endif()
 #     ...
 # endif()
 
-# Sprint-2 W6 Wave 30: 老孙 signer v5.2 cpp v0.1 (撤 Rust 后 C++ 重写)
-add_subdirectory(v52)
-
-# Wave 104 P0: 老孙 signer v6.2 cpp (V2 ABI, ADR-018 build switch)
-add_subdirectory(v62)
+# (signer v52 [ed25519 IPC] / v62 [V2 ABI transformer] 2026-06-12 治理删: 两代均零生产
+#  消费者 — 真 live 签名路径 = live_order_submitter 直用 crypto/eip712_v2 + secp256k1。)
