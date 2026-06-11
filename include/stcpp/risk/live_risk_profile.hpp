@@ -1,0 +1,28 @@
+// include/stcpp/risk/live_risk_profile.hpp — 实盘微注影子期 RM 档 (2026-06-12 实盘准备 v1)
+//
+// owner: 老雷 (GM) | last_review: 2026-06-12
+// 状态: 【未接线】— 仅定义, live 装配 (开闸会签后) 取用; paper 路径零引用零影响。
+// 红线: paper 期关闭的日损熔断/连亏 halt 在此档全部重开且更紧 (docs/RESEARCH/live-readiness-plan-v1.md §2/§4)。
+#pragma once
+
+#include "stcpp/risk/risk_gateway.hpp"
+
+namespace stcpp::risk {
+
+// 微注影子期档 ($1-2/单, 总敞口 $50): 与 paper 同信号并跑两周, 校准 VirtualMatcher 滑点/费。
+[[nodiscard]] inline RiskConfig LiveShadowRiskProfile() noexcept {
+    RiskConfig c;
+    c.per_order_cap_usdc = domain::MicroPUSD::from_pusd(2.0);        // $2/单 (CLOB min $1)
+    c.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(4.0);
+    c.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(6.0);
+    c.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(10.0);
+    c.bankroll_usdc = domain::MicroPUSD::from_pusd(50.0);            // 总敞口 $50
+    c.daily_loss_soft_pct = 10.0;                                    // −$5 软 (拒新仓)
+    c.daily_loss_hard_pct = 20.0;                                    // −$10 硬熔断 (paper 期关闭, live 重开)
+    c.daily_loss_halt_usdc = domain::MicroPUSD::from_pusd(10.0);
+    c.consec_loss_halt_count = 5;                                    // 连亏 5 halt
+    c.edge_ci_lower_floor = 0.0;                                     // CI 门重开 (paper 放宽 −1)
+    return c;
+}
+
+}  // namespace stcpp::risk
