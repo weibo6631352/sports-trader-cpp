@@ -387,6 +387,14 @@ inline std::string grid_market_obj(const StateProvider& sp, const std::string& c
         o += json::num(q.edge_bps);
         o += ",\"sharp_fair\":";
         o += json::num(q.sharp_fair);
+        // 成交量感知 (老板 2026-06-11「交易量能感知到吗」): WSS last_trade_price → 5min 滚动聚合。
+        //   NaN = 该 token 5min 无成交 (深 favorite 常态) 或感知断 (此前从未暴露过, 借此验证管线)。
+        o += ",\"trade_signed_vol_5m\":";
+        o += json::num(q.trade_signed_vol_5m);
+        o += ",\"trade_buy_ratio_5m\":";
+        o += json::num(q.trade_buy_ratio_5m);
+        o += ",\"trade_intensity_5m\":";
+        o += json::num(q.trade_intensity_5m);
         // (大模型 model_confidence/advisory 已砍 2026-06-05「砍掉大模型训练功能」)
     }
     // 比赛时间 + 状态 (2026-06-02 老板「前端要看几点开赛 / 是否进行中」):

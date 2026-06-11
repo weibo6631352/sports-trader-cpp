@@ -442,6 +442,10 @@ struct QuoteParams {
     //   sharp_fair = Goalserve bet365 in-play de-vig 真胜率共识 (盈利修复后 fair_value 锚到它)。
     //   前端用 fair_value(决策) / sharp_fair(源) / market_mid(PM 市场) 三栏看 edge 来源是否正当。
     double sharp_fair{-1.0};         // g_bm_inplay_fair; -1 = 无 bet365 odds (未映射/无 odds plan)
+    // 成交量感知 (老板 2026-06-11「交易量能感知到吗」): WSS last_trade_price → 5min 滚动 (YES token 边)。
+    double trade_signed_vol_5m{std::numeric_limits<double>::quiet_NaN()};
+    double trade_buy_ratio_5m{std::numeric_limits<double>::quiet_NaN()};
+    double trade_intensity_5m{std::numeric_limits<double>::quiet_NaN()};
     bool devig_ok{false};           // de-vig 成功? (区分「de-vig 失败」vs「edge 不足」)
     double g_time_x_lead{0.0};      // 时间感知领先 = score_diff×(1−time_frac) (映射上+in-play 才非0)
     std::int64_t joint_as_of_ts_ns{0};  // 联合新鲜度 = min(score,book).as_of (映射连通时 >0)

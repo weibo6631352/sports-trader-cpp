@@ -887,6 +887,9 @@ private:
         //   语义明确 (探针反馈): sharp ∈ (0,1) = 已映射 Goalserve + 有 bet365 odds;
         //   -1 = 未映射 / 无 odds (g_bm_inplay_fair 默认 0 不可与真 0 混淆)。
         q.sharp_fair = (qf.g_bm_inplay_fair > 0.0 && qf.g_bm_inplay_fair < 1.0) ? qf.g_bm_inplay_fair : -1.0;
+        q.trade_signed_vol_5m = qf.b_trade_signed_vol_5m;   // 成交量感知 (2026-06-11)
+        q.trade_buy_ratio_5m = qf.b_trade_buy_ratio_5m;
+        q.trade_intensity_5m = qf.b_trade_intensity_5m;
         q.devig_ok = qf.devig_ok;
         q.g_time_x_lead = qf.g_time_x_lead;
         q.joint_as_of_ts_ns = qf.joint_as_of_ts_ns;
