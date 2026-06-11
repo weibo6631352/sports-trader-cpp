@@ -2564,6 +2564,13 @@ void PaperLoop::SaveLedgerSnapshot() {
     clv_tracker_.ForEachLastMid([fp](const std::string& tok, double mid) {
         std::fprintf(fp, "L %s %.10g\n", tok.c_str(), mid);
     });
+    // D 行: FLB 抄底锚 (first_mid 赛前首见价; 不持久化则重启后锚=重启时价, dip 档失效)。
+    for (const auto& [cid, ps2] : flb_path_) {
+        if (std::isfinite(ps2.first_mid) && ps2.first_mid_ns > 0) {
+            std::fprintf(fp, "D %s %.10g %lld\n", cid.c_str(), ps2.first_mid,
+                         static_cast<long long>(ps2.first_mid_ns));
+        }
+    }
     // F 行: 成交流水环尾 100 条 (2026-06-11 老板「成交 0 笔」: 仓恢复了流水没恢复, 费显 0 误导)。
     //   空字符串字段写 "-" 占位 (行式解析); 前端流水/费/engine 标签跨重启连续。
     {
@@ -2633,6 +2640,15 @@ void PaperLoop::RestoreLedgerSnapshot() {
             if (std::sscanf(line, "C %89s %lf %lf %lf %lld", tok, &px, &mid, &szp, &ts2) == 5) {
                 clv_tracker_.RecordFill(tok, px, mid, szp, ts2);
                 ++n_clv;
+            }
+        } else if (line[0] == 'D') {
+            char cid2[80] = {0};
+            double fm = 0.0;
+            long long fmns = 0;
+            if (std::sscanf(line, "D %79s %lf %lld", cid2, &fm, &fmns) == 3 && fm > 0.0 && fm < 1.0) {
+                auto& ps3 = flb_path_[cid2];
+                ps3.first_mid = fm;
+                ps3.first_mid_ns = fmns;
             }
         } else if (line[0] == 'L') {
             char tok[90] = {0};
