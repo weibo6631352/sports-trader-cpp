@@ -66,6 +66,11 @@ class SharpFairTrack {
     [[nodiscard]] std::size_t size() const noexcept { return count_; }
     [[nodiscard]] bool empty() const noexcept { return count_ == 0; }
     [[nodiscard]] std::int64_t last_ts_ns() const noexcept { return last_ts_; }
+    // 最新 sharp 值 (YES-canonical; 空 → NaN)。FLB sharp 同意门用 (2026-06-11)。
+    [[nodiscard]] double last_sharp() const noexcept {
+        const Sample* l = newest_();
+        return l != nullptr ? l->sharp : std::numeric_limits<double>::quiet_NaN();
+    }
 
     // 窗口内样本数 (观测质量代理; <2 则 Velocity/Conv 为 NaN)。
     [[nodiscard]] std::size_t WindowSampleCount(std::int64_t window_ns) const noexcept {
