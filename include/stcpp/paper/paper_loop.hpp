@@ -345,15 +345,9 @@ struct PaperLoopConfig {
     //   (feed 停更/掉点, 可能已偏离真实) → 不用 sharp 决策, 回退市场。feed 常态 ~2s/版 (data_source_ts
     //   每版重盖), 仅 feed 真停才触发, 不误伤静默盘。0 = 关 (lib 默认); 生产 daemon 置 3.0。
     double sharp_max_staleness_sec{0.0};
-    // sharp fair 延迟校正 (2026-06-04 实测「goalserve vs bet365 谁快」: 我们落后 bet365 赔率变更 P50 2.3s)。
-    //   我们消费的 bet365 fair 是 ~2.3s 前的快照。若 fair 在移动, 当前真值 ≈ stale_fair + velocity×lag。
-    //   用观测到的 fair 速度把 stale fair 外推到「现在」: 稳定 fair(v≈0) 不变; 下跌 fair 被校正下来 →
-    //   虚假 edge 消失 (老彭「追移动靶」物理根因)。这是【给决策更准的信息】(用实测延迟 de-stale), 非 gate。
-    //   默认关 (契约/管线测试不变); 生产 daemon 置 true。velocity 始终计算供观测/特征, 仅 adjust 受此开关控。
-    bool sharp_lag_adjust{false};
-    double sharp_lag_sec{2.0};                          // 外推时长 (实测 median 落后 ~2.3s, 取 2.0 保守)
-    double sharp_lag_adj_cap{0.04};                     // |外推幅度| 上限 (防趋势过冲, 4 cents)
-    std::int64_t sharp_fair_vel_window_ns{10'000'000'000LL};  // fair 速度回看窗 (feed ~2s/版 → 10s≈5样本)
+    // sharp fair 速度回看窗 (feed ~2s/版 → 10s≈5样本)。velocity 喂方向门/出场判据/观测。
+    //   (sharp_lag_adjust 延迟外推 3 件套 2026-06-12 治理删: 字段从未被读, 外推从未实现; git 史可考。)
+    std::int64_t sharp_fair_vel_window_ns{10'000'000'000LL};
     // edge-生命周期乘子 (持仓管理 Stage 2, 老板 2026-06-05): sharp 时序状态 (Vol 稳定性 + ConvergenceRate
     //   发散谨慎) 缩 target 【量级】∈[floor,1] (抑制噪声驱动过度交易; 不碰方向/不放大)。见
     //   control::ComputeLifecycleMultiplier。组成 control::LifecycleConfig 传入。
@@ -427,11 +421,8 @@ struct PaperLoopConfig {
     bool book_exit_enabled{false};        // 0/false = 关 (契约测试不变); 生产 daemon 置 true
     double book_exit_imb_thr{0.15};       // L1 失衡跌破 −此值 (且 microprice<mid) 才算簿结构转向
 
-    // 必输局保护 (2026-06-04 老板「很接近比赛末尾、比分差距大时, 别买 0.2 以下必输局被套结算」):
-    //   不开新仓买入价(exec_ask) < 此下限 —— 市场实时把该边定到 <此价 = 近乎确定输 (时间+比分已定),
-    //   买进去多半结算归零被套。用【市场价】(实时、对的) 当决出度信号 → 对所有运动鲁棒, 且不被陈旧 sharp 骗。
-    //   0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.10 (拦市场<10%胜率的近必输边)。减仓/平仓不受限。
-    double min_buy_price{0.0};
+    // (min_buy_price 2026-06-12 治理删: 生产恒 0.0 关, 被 min_open_fair 0.65 + near_end_max_buy_price
+    //  双门取代; git 史可考。)
 
     // 临近末尾必输买入闸 (2026-06-05 老板「临近末尾必输的那种, 还得禁止买入」): 末段 (TickOne near_end:
     //   phase_frac>0.85) 且本边新开仓买入价(exec_ask) < 此价 = 市场把该边定为近必输 (临近末尾+低胜率) →

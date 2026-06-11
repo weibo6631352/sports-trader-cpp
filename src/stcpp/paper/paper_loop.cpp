@@ -1076,11 +1076,10 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         constexpr double kMaxPlausibleEdge = 0.45;
         if (std::abs(p_fair - p_market_devig) > kMaxPlausibleEdge) {
             // 2026-06-03 老板「调通模型让其盈利」: 实测 PM 体育盘高效 (事件延迟/信息边验证), 模型源
-            //   (ml_blend/score_prior_blend) 对市场极端背离 (>0.45) = 大概率模型错配/过度自信 (实见
-            //   tennis/esports ml_blend fair 0.35~0.43 vs 市场 0.85~0.95) → 回退市场价 (edge 归零, 不
-            //   产单)。sharp_inplay/derivative 的大 edge 是合法信号 (sharp 钱 / totals 错价), 不拦, 仅记录。
-            const bool model_src = (fr.src == pricing::FairSrc::kMlBlend ||
-                                    fr.src == pricing::FairSrc::kScorePriorBlend);
+            //   (score_prior_blend; ml_blend 已 2026-06-12 治理删) 对市场极端背离 (>0.45) = 大概率
+            //   模型错配/过度自信 → 回退市场价 (edge 归零, 不产单)。
+            //   sharp_inplay/derivative 的大 edge 是合法信号 (sharp 钱 / totals 错价), 不拦, 仅记录。
+            const bool model_src = (fr.src == pricing::FairSrc::kScorePriorBlend);
             static std::atomic<int> sanity_dbg{0};
             if (sanity_dbg.fetch_add(1, std::memory_order_relaxed) < 80)
                 std::fprintf(stderr,
@@ -2049,13 +2048,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         }
     }
 
-    // ---- 必输局保护 (2026-06-04 老板「别买 0.2 以下必输局被套结算」) -------------------------
-    //   开新仓买入价 < min_buy_price = 市场实时把该边定为近必输 (时间+比分已定) → 不买 (避免结算归零被套)。
-    //   用 exec_ask (真市场价, 非陈旧 sharp) 判, 对无时钟运动 (CS2/网球) 同样鲁棒。减仓/平仓不受限。
-    if (cfg_.min_buy_price > 0.0 && action.side == strategy::Side::Buy && exec_ask < cfg_.min_buy_price) {
-        stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
-        return;
-    }
+    // (min_buy_price 必输局保护 2026-06-12 治理删: 生产恒 0.0, 被 min_open_fair + near_end 闸取代。)
 
     // ---- 临近末尾必输买入闸 (2026-06-05 老板「临近末尾必输的那种, 还得禁止买入」) ----------------
     //   末段 (near_end: phase_frac>0.85) 且本边市场买入价(exec_ask) < near_end_max_buy_price (市场把该边定为

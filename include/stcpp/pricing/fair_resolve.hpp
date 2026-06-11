@@ -24,7 +24,7 @@
 namespace stcpp::pricing {
 
 // fair 来源 (provenance; 观测/调试: 这盘 fair 是哪层定的)。
-enum class FairSrc { kMarketDevig, kDerivative, kSharpInplay, kScorePriorBlend, kMlBlend };
+enum class FairSrc { kMarketDevig, kDerivative, kSharpInplay, kScorePriorBlend };
 
 [[nodiscard]] inline const char* to_string(FairSrc s) noexcept {
     switch (s) {
@@ -32,7 +32,6 @@ enum class FairSrc { kMarketDevig, kDerivative, kSharpInplay, kScorePriorBlend, 
         case FairSrc::kDerivative: return "derivative";
         case FairSrc::kSharpInplay: return "sharp_inplay";
         case FairSrc::kScorePriorBlend: return "score_prior_blend";
-        case FairSrc::kMlBlend: return "ml_blend";
     }
     return "?";
 }
@@ -74,7 +73,7 @@ struct FairResult {
     }
 
     // (4. ML-blend 已砍 2026-06-05「砍掉大模型训练功能」: fair 不再有 ONNX 推理 blend。
-    //  FairSrc::kMlBlend 枚举值保留 [兼容旧 case], 但 ResolveFair 永不产出。)
+    //  kMlBlend 枚举值 2026-06-12 治理删除 — 不可达即删, git 史可考。)
 
     return FairResult{p, src};
 }

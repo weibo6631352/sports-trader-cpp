@@ -808,9 +808,8 @@ BuildResult PaperDaemon::Build() {
     //   买不接下跌的刀 (簿下行不进), 盈利骑趋势 (簿支撑不急止盈), 簿结构转向才止盈。持仓管理。
     cfg_.paper_loop.book_exit_enabled = true;
     cfg_.paper_loop.book_exit_imb_thr = 0.15;
-    // 必输局保护 (2026-06-04 老板「用比赛阶段数学模型, 不是价格地板」): 改用既有 game_phase/garbage_time
-    //   模型 (TickOne: 垃圾时间落后方 target=0 不开仓)。价格地板关闭 (boss「不是这样的」)。
-    cfg_.paper_loop.min_buy_price = 0.0;
+    // (min_buy_price 价格地板 2026-06-12 治理删: 2026-06-04 老板已否「不是这样的」恒 0.0 关,
+    //  被 min_open_fair 0.65 + near_end 闸取代。)
     // 临近末尾必输买入闸 (2026-06-05 老板「临近末尾必输的那种, 还得禁止买入」): 末段(phase>0.85)+ 本边
     //   exec_ask<0.15 (市场定为近必输) → 不开新仓, 防末段 longshot 结算归零。窄闸, 中前段/非便宜不受限。
     cfg_.paper_loop.near_end_max_buy_price = 0.15;
