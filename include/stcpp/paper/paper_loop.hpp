@@ -471,7 +471,7 @@ struct PaperLoopConfig {
     // 账本持久化路径 (2026-06-11 老板「迭代部署 vs 攒数据」根治): 每 60s 快照持仓+累计+CLV 到此文件
     //   (tmp+rename 原子写), 启动时 RestoreLedgerSnapshot 恢复 (停机期错过的结算由孤儿 sweep 自动补)。
     //   空=关 (lib 默认)。paper-only (R-11: 不碰真账本)。
-    std::string ledger_snapshot_path;
+    std::string ledger_snapshot_path{};
 
     // 再入场冷却 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」): 同一 token 减仓/平仓后, 冷却窗内禁止
     //   【新开/加仓买入】(减仓/平仓/must_win/force_cross 不受限)。根因: 实测同盘 buy→卖光→rebuy 反复 4+ 往返
