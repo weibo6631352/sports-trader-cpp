@@ -544,6 +544,174 @@ void TradingLoop::TickAll() {
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// [D-阶段1] ResolveGameContext — 比分/赔率源上下文解析 (2026-06-12 业务流分段)
+//   A1 condition→event 映射 + tick 冻结快照 → game_row (比分/时钟/sharp fair/bm_slots/live_stats)。
+//   fail-closed: 无映射/陈旧/非 in-play → game_row 保持 stub。从 TickOne 原样抽出, 行为逐位不变。
+// ---------------------------------------------------------------------------
+void TradingLoop::ResolveGameContext(const std::string& condition_id,
+                                     stcpp::data::feature_store::FeatureStoreGameRow& game_row,
+                                     bool& map_is_draw) {
+    // ---- A1: 解析真实 Goalserve 比分 (condition→event 映射 + tick-local 共享快照) ----
+    // fail-closed: 无 score_store / 无映射 / 未匹配 / 陈旧 / 非 in-play → 保持 stub.
+    // A4: 用 TickAll 入口冻结的 tick_score_snap_/tick_event_map_ (整 tick 同版本, 消 read-skew),
+    //     不再 per-condition 各自 Get()/LoadEventMap()。
+    // [score-flow diag] 地基可观测 (2026-06-03 老板「先打地基才知有什么事件」): 逐环计数 score→game_row
+    //   链掉点 (定位 in-play 事件为何不流入决策); 每 3000 次 emit 一行 (cov-diag 同风格, 临时诊断)。
+    static std::atomic<long long> sf_calls{0}, sf_mapped{0}, sf_scorefound{0}, sf_inplay{0},
+        sf_stale{0}, sf_realfair{0}, sf_sharp{0};
+    const long long sf_n = sf_calls.fetch_add(1, std::memory_order_relaxed) + 1;
+    if (tick_inputs_.score != nullptr && tick_inputs_.event_map != nullptr) {
+        const ConditionEventMap& map = *tick_inputs_.event_map;
+        {
+            const auto it = map.find(condition_id);
+            if (it != map.end() && !it->second.inplay_match_id.empty()) {
+                sf_mapped.fetch_add(1, std::memory_order_relaxed);
+                map_is_draw = it->second.is_draw;
+                game_row.mapping_as_of_ns = it->second.match_as_of_ns;  // 映射新鲜度 (老板「每个源标时间」)
+                const auto sit = tick_inputs_.score->find(it->second.inplay_match_id);
+                if (sit != tick_inputs_.score->end() && sit->second.found) {
+                    sf_scorefound.fetch_add(1, std::memory_order_relaxed);
+                    const auto& es = sit->second;
+                    const auto ev_ts = MapEventScoreStatus(es.status);
+                    // 新鲜度: data_source_ts 不能太旧 (老韩 D4 #8 + 老周 R-20: 冻结比分不当 live fair).
+                    const std::int64_t now_ns = NowNs();
+                    const bool fresh = es.ts.data_source_ts_ns > 0 &&
+                                       (now_ns - es.ts.data_source_ts_ns) <= cfg_.score_staleness_limit_ns;
+                    const bool is_inplay = (ev_ts != stcpp::data::goalserve::TimeStatus::NotStarted);
+                    if (is_inplay) sf_inplay.fetch_add(1, std::memory_order_relaxed);
+                    if (is_inplay && !fresh) sf_stale.fetch_add(1, std::memory_order_relaxed);
+                    if (ev_ts != stcpp::data::goalserve::TimeStatus::NotStarted && fresh) {
+                        sf_realfair.fetch_add(1, std::memory_order_relaxed);
+                        game_row.time_status = ev_ts;
+                        // orientation (老周张冠李戴防护): 把 YES 队比分填进 score_home_total,
+                        //   令 FairValue score_diff = YES队 - 对手 (prior_yes 方向正确).
+                        const int yes_score = it->second.yes_is_home ? es.home_score : es.away_score;
+                        const int opp_score = it->second.yes_is_home ? es.away_score : es.home_score;
+                        game_row.score_home_total = static_cast<std::int32_t>(yes_score);
+                        game_row.score_away_total = static_cast<std::int32_t>(opp_score);
+                        // 网球已打局数 (totals/spreads 用); 同 orientation 翻成 YES-canonical。非网球=0。
+                        const int yes_games = it->second.yes_is_home ? es.games_home : es.games_away;
+                        const int opp_games = it->second.yes_is_home ? es.games_away : es.games_home;
+                        game_row.score_home_games = static_cast<std::int32_t>(yes_games);
+                        game_row.score_away_games = static_cast<std::int32_t>(opp_games);
+                        // A1.5 (小梁): 接真时钟 → time_frac. FairValue::time_fraction_ 用
+                        //   game_row.elapsed_sec / total_game_seconds(sport). 不填则 time_frac=0,
+                        //   先验置信永远压在 base 0.15, 真实领先 edge 被 CI 吃掉 → 几乎不成交.
+                        game_row.elapsed_sec = static_cast<std::int32_t>(es.clock_sec);
+                        game_row.sport = es.sport;  // SportInplaySlug (total_game_seconds 匹配)
+                        // 记队名 (2026-06-04 老板「名字是已知的, 你是没记录吗, 很不严谨」): YES-canonical
+                        //   落 game_row 供审计匹配对错。home_team=YES 队, away_team=对手 (按 yes_is_home 翻)。
+                        game_row.home_team = it->second.yes_is_home ? es.home : es.away;
+                        game_row.away_team = it->second.yes_is_home ? es.away : es.home;
+                        // P1.1 (特征审计): Goalserve period 字符串 → 1-based 节序数, 喂 g_period (#2)。
+                        //   此前 game_row.period 从不赋值 → 恒 0 → g_period 死。无时钟运动 (网球/棒球)
+                        //   也由此拿到 set/inning 进度 (P3.2 phase 锚基础)。
+                        game_row.period = stcpp::pricing::parse_period_ordinal(es.period, es.sport);
+                        // R-20: 4ts 切真 Goalserve ts (禁 book ts / 本地 now() 替代上游).
+                        game_row.event_ts_ns = es.ts.event_ts_ns;
+                        game_row.data_source_ts_ns = es.ts.data_source_ts_ns;
+                        game_row.ingestion_ts_ns = es.ts.ingestion_ts_ns;
+                        game_row.as_of_ts_ns = es.ts.as_of_ts_ns;
+                        // inplay bet365 de-vig fair → game_row, 按 yes_is_home 翻成 YES-canonical
+                        //   (与上面比分同源翻转, 消 home/YES 混淆)。ToYesCanonical 纯函数 BR-1 共用。
+                        // A-step-2 分局盘 (老板「第一局/第二局」): 段盘 (seg_index>0) 用【当前段 fair】, 且
+                        //   PM 段号 == bet365 当前段号 (es.inplay_seg_index) 才用 (过去/未来段无 live 赔率)。
+                        //   不符 → -1 (fail-closed 无 sharp, 绝不回退全场 fair = 修 A-step-1 之前「全场套错段」)。
+                        double src_home = es.inplay_bet365_home_fair;
+                        double src_away = es.inplay_bet365_away_fair;
+                        if (it->second.seg_index > 0) {
+                            if (es.inplay_seg_index == it->second.seg_index &&
+                                es.inplay_seg_home_fair >= 0.0) {
+                                src_home = es.inplay_seg_home_fair;
+                                src_away = es.inplay_seg_away_fair;
+                            } else {
+                                src_home = -1.0;  // 段号不符 / 无段赔率 → 无 sharp (fail-closed)
+                                src_away = -1.0;
+                            }
+                        }
+                        const auto inplay_yc =
+                            stcpp::data::ToYesCanonical(it->second.yes_is_home, src_home, src_away);
+                        game_row.inplay_bet365_home_fair = inplay_yc.yes_fair;  // YES 边胜率
+                        game_row.inplay_bet365_away_fair = inplay_yc.opp_fair;  // 对手边胜率
+                        // [score-flow diag] 匹配上的 in-play 场是否有 sharp (bet365 de-vig 真值)?
+                        //   定位脱节: has_real_fair 场里多少真带 sharp (vs 只 score_prior)。
+                        if (src_home >= 0.0)
+                            sf_sharp.fetch_add(1, std::memory_order_relaxed);
+                        game_row.inplay_bet365_draw_fair = es.inplay_bet365_draw_fair;  // 平局 (与边无关)
+                        // bm_slots: 跨庄家赔率注入 (getodds 经 inplay-mapping join 到 inplay_match_id,
+                        //   RefreshOdds 注入)。按 yes_is_home + map_is_draw 定向 de-vig 折二元 →
+                        //   g_bm_devig_p_yes(#5)/overround(#6)/valid_bm_count(#7)/x_devig_minus_mid(#16)。
+                        //   查不到 → bm_slots 保持默认 (NaN/valid=false), 特征 NaN, 不造假。
+                        if (const auto* mo = OddsFor(it->second.inplay_match_id)) {
+                            stcpp::data::goalserve::FillBmSlotsYesCanonical(
+                                *mo, it->second.yes_is_home, map_is_draw, game_row);
+                        }
+                        // live_stats hop: 按 inplay_match_id join (2026-06-02 实测教训: soccernew/live 与
+                        //   inplay 的 league_id 与队名两者都不同空间 → 原 (league|home|away) join 永不匹配;
+                        //   改 inplay_match_id, RefreshLiveStats 经 inplay-mapping 桥 soccernew→inplay 键)。
+                        //   → game_row.soccer_* (g_danger_attack/shot_on_target/possession/red_card/corner_diff)。
+                        //   查不到 → soccer_* 保持 -1 (fail-safe, 特征 NaN, 绝不造假)。
+                        if (const auto* ls = LiveStatsFor(it->second.inplay_match_id)) {
+                            stcpp::data::livescore::FillLiveStats(game_row, *ls);
+                            game_row.live_stats_as_of_ns = ls->as_of_ts_ns;  // live_stats 新鲜度
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // [score-flow diag] emit: 每 3000 次决策 → 一行链路掉点 (地基可观测; 老板「先打地基才知有什么事件」)。
+    if (sf_n % 3000 == 0) {
+        std::fprintf(stderr,
+                     "[score-flow] calls=%lld mapped=%lld score_found=%lld in-play=%lld stale=%lld "
+                     "→ has_real_fair=%lld 其中有sharp=%lld (链路掉点 + sharp 脱节定位)\n",
+                     sf_n, sf_mapped.load(), sf_scorefound.load(), sf_inplay.load(), sf_stale.load(),
+                     sf_realfair.load(), sf_sharp.load());
+    }
+
+}
+
+
+// ---------------------------------------------------------------------------
+// [D-阶段2] TrySettleResolved — 已定盘结算 (slice-3b/3c; 2026-06-12 业务流分段)
+//   REST resolution 权威 ① / Goalserve 终态兜底 ② → realize+平仓 (幂等 settled_conditions_)。
+//   返回 true = 已定盘 (调用方停止本盘决策)。从 TickOne 原样抽出, 行为逐位不变。
+// ---------------------------------------------------------------------------
+bool TradingLoop::TrySettleResolved(const std::string& condition_id, const BinaryMarketSnapshot& mkt,
+                                    const stcpp::data::feature_store::FeatureStoreGameRow& game_row) {
+
+        bool do_settle = false;
+        double settle_yes = 0.5, settle_no = 0.5;  // 平局/未知 → push
+        const ResolutionEntry* res = ResolutionFor(condition_id);
+        if (res != nullptr && res->status == 2 /*Resolved*/ && res->winner >= 0) {
+            do_settle = true;  // ① REST 权威
+            settle_yes = (res->winner == 1) ? 1.0 : 0.0;
+            settle_no = 1.0 - settle_yes;
+        } else if (game_row.time_status == stcpp::data::goalserve::TimeStatus::Ended) {
+            do_settle = true;  // ② Goalserve 比分兜底
+            const int yes_sc = game_row.score_home_total;  // YES 边比分 (orientation 已应用)
+            const int opp_sc = game_row.score_away_total;
+            if (yes_sc > opp_sc) {
+                settle_yes = 1.0;
+                settle_no = 0.0;
+            } else if (yes_sc < opp_sc) {
+                settle_yes = 0.0;
+                settle_no = 1.0;
+            }
+        }
+        if (do_settle) {
+            if (settled_conditions_.find(condition_id) == settled_conditions_.end()) {
+                SettleCondition(condition_id, mkt.yes_token_id, mkt.no_token_id, settle_yes, settle_no,
+                                game_row);
+                settled_conditions_.emplace(condition_id, char{1});
+            }
+            return true;  // 已定盘口
+        }
+        return false;
+}
+
 // ---------------------------------------------------------------------------
 // TickOne — 对单个 token 执行一次完整 paper 交易流程
 //
@@ -683,124 +851,9 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     }
     game_row.catalog_discovered_at_ns = CatalogDiscoveredAtFor(condition_id);
 
-    // ---- A1: 解析真实 Goalserve 比分 (condition→event 映射 + tick-local 共享快照) ----
-    // fail-closed: 无 score_store / 无映射 / 未匹配 / 陈旧 / 非 in-play → 保持 stub.
-    // A4: 用 TickAll 入口冻结的 tick_score_snap_/tick_event_map_ (整 tick 同版本, 消 read-skew),
-    //     不再 per-condition 各自 Get()/LoadEventMap()。
+    // [D-阶段1] 比分/赔率源上下文解析 → ResolveGameContext (2026-06-12 业务流分段, 行为逐位不变)
     bool map_is_draw = false;  // 盈利修复: 3-way 平局盘 → 下游 sharp fair 取 draw 概率
-    // [score-flow diag] 地基可观测 (2026-06-03 老板「先打地基才知有什么事件」): 逐环计数 score→game_row
-    //   链掉点 (定位 in-play 事件为何不流入决策); 每 3000 次 emit 一行 (cov-diag 同风格, 临时诊断)。
-    static std::atomic<long long> sf_calls{0}, sf_mapped{0}, sf_scorefound{0}, sf_inplay{0},
-        sf_stale{0}, sf_realfair{0}, sf_sharp{0};
-    const long long sf_n = sf_calls.fetch_add(1, std::memory_order_relaxed) + 1;
-    if (tick_inputs_.score != nullptr && tick_inputs_.event_map != nullptr) {
-        const ConditionEventMap& map = *tick_inputs_.event_map;
-        {
-            const auto it = map.find(condition_id);
-            if (it != map.end() && !it->second.inplay_match_id.empty()) {
-                sf_mapped.fetch_add(1, std::memory_order_relaxed);
-                map_is_draw = it->second.is_draw;
-                game_row.mapping_as_of_ns = it->second.match_as_of_ns;  // 映射新鲜度 (老板「每个源标时间」)
-                const auto sit = tick_inputs_.score->find(it->second.inplay_match_id);
-                if (sit != tick_inputs_.score->end() && sit->second.found) {
-                    sf_scorefound.fetch_add(1, std::memory_order_relaxed);
-                    const auto& es = sit->second;
-                    const auto ev_ts = MapEventScoreStatus(es.status);
-                    // 新鲜度: data_source_ts 不能太旧 (老韩 D4 #8 + 老周 R-20: 冻结比分不当 live fair).
-                    const std::int64_t now_ns = NowNs();
-                    const bool fresh = es.ts.data_source_ts_ns > 0 &&
-                                       (now_ns - es.ts.data_source_ts_ns) <= cfg_.score_staleness_limit_ns;
-                    const bool is_inplay = (ev_ts != stcpp::data::goalserve::TimeStatus::NotStarted);
-                    if (is_inplay) sf_inplay.fetch_add(1, std::memory_order_relaxed);
-                    if (is_inplay && !fresh) sf_stale.fetch_add(1, std::memory_order_relaxed);
-                    if (ev_ts != stcpp::data::goalserve::TimeStatus::NotStarted && fresh) {
-                        sf_realfair.fetch_add(1, std::memory_order_relaxed);
-                        game_row.time_status = ev_ts;
-                        // orientation (老周张冠李戴防护): 把 YES 队比分填进 score_home_total,
-                        //   令 FairValue score_diff = YES队 - 对手 (prior_yes 方向正确).
-                        const int yes_score = it->second.yes_is_home ? es.home_score : es.away_score;
-                        const int opp_score = it->second.yes_is_home ? es.away_score : es.home_score;
-                        game_row.score_home_total = static_cast<std::int32_t>(yes_score);
-                        game_row.score_away_total = static_cast<std::int32_t>(opp_score);
-                        // 网球已打局数 (totals/spreads 用); 同 orientation 翻成 YES-canonical。非网球=0。
-                        const int yes_games = it->second.yes_is_home ? es.games_home : es.games_away;
-                        const int opp_games = it->second.yes_is_home ? es.games_away : es.games_home;
-                        game_row.score_home_games = static_cast<std::int32_t>(yes_games);
-                        game_row.score_away_games = static_cast<std::int32_t>(opp_games);
-                        // A1.5 (小梁): 接真时钟 → time_frac. FairValue::time_fraction_ 用
-                        //   game_row.elapsed_sec / total_game_seconds(sport). 不填则 time_frac=0,
-                        //   先验置信永远压在 base 0.15, 真实领先 edge 被 CI 吃掉 → 几乎不成交.
-                        game_row.elapsed_sec = static_cast<std::int32_t>(es.clock_sec);
-                        game_row.sport = es.sport;  // SportInplaySlug (total_game_seconds 匹配)
-                        // 记队名 (2026-06-04 老板「名字是已知的, 你是没记录吗, 很不严谨」): YES-canonical
-                        //   落 game_row 供审计匹配对错。home_team=YES 队, away_team=对手 (按 yes_is_home 翻)。
-                        game_row.home_team = it->second.yes_is_home ? es.home : es.away;
-                        game_row.away_team = it->second.yes_is_home ? es.away : es.home;
-                        // P1.1 (特征审计): Goalserve period 字符串 → 1-based 节序数, 喂 g_period (#2)。
-                        //   此前 game_row.period 从不赋值 → 恒 0 → g_period 死。无时钟运动 (网球/棒球)
-                        //   也由此拿到 set/inning 进度 (P3.2 phase 锚基础)。
-                        game_row.period = stcpp::pricing::parse_period_ordinal(es.period, es.sport);
-                        // R-20: 4ts 切真 Goalserve ts (禁 book ts / 本地 now() 替代上游).
-                        game_row.event_ts_ns = es.ts.event_ts_ns;
-                        game_row.data_source_ts_ns = es.ts.data_source_ts_ns;
-                        game_row.ingestion_ts_ns = es.ts.ingestion_ts_ns;
-                        game_row.as_of_ts_ns = es.ts.as_of_ts_ns;
-                        // inplay bet365 de-vig fair → game_row, 按 yes_is_home 翻成 YES-canonical
-                        //   (与上面比分同源翻转, 消 home/YES 混淆)。ToYesCanonical 纯函数 BR-1 共用。
-                        // A-step-2 分局盘 (老板「第一局/第二局」): 段盘 (seg_index>0) 用【当前段 fair】, 且
-                        //   PM 段号 == bet365 当前段号 (es.inplay_seg_index) 才用 (过去/未来段无 live 赔率)。
-                        //   不符 → -1 (fail-closed 无 sharp, 绝不回退全场 fair = 修 A-step-1 之前「全场套错段」)。
-                        double src_home = es.inplay_bet365_home_fair;
-                        double src_away = es.inplay_bet365_away_fair;
-                        if (it->second.seg_index > 0) {
-                            if (es.inplay_seg_index == it->second.seg_index &&
-                                es.inplay_seg_home_fair >= 0.0) {
-                                src_home = es.inplay_seg_home_fair;
-                                src_away = es.inplay_seg_away_fair;
-                            } else {
-                                src_home = -1.0;  // 段号不符 / 无段赔率 → 无 sharp (fail-closed)
-                                src_away = -1.0;
-                            }
-                        }
-                        const auto inplay_yc =
-                            stcpp::data::ToYesCanonical(it->second.yes_is_home, src_home, src_away);
-                        game_row.inplay_bet365_home_fair = inplay_yc.yes_fair;  // YES 边胜率
-                        game_row.inplay_bet365_away_fair = inplay_yc.opp_fair;  // 对手边胜率
-                        // [score-flow diag] 匹配上的 in-play 场是否有 sharp (bet365 de-vig 真值)?
-                        //   定位脱节: has_real_fair 场里多少真带 sharp (vs 只 score_prior)。
-                        if (src_home >= 0.0)
-                            sf_sharp.fetch_add(1, std::memory_order_relaxed);
-                        game_row.inplay_bet365_draw_fair = es.inplay_bet365_draw_fair;  // 平局 (与边无关)
-                        // bm_slots: 跨庄家赔率注入 (getodds 经 inplay-mapping join 到 inplay_match_id,
-                        //   RefreshOdds 注入)。按 yes_is_home + map_is_draw 定向 de-vig 折二元 →
-                        //   g_bm_devig_p_yes(#5)/overround(#6)/valid_bm_count(#7)/x_devig_minus_mid(#16)。
-                        //   查不到 → bm_slots 保持默认 (NaN/valid=false), 特征 NaN, 不造假。
-                        if (const auto* mo = OddsFor(it->second.inplay_match_id)) {
-                            stcpp::data::goalserve::FillBmSlotsYesCanonical(
-                                *mo, it->second.yes_is_home, map_is_draw, game_row);
-                        }
-                        // live_stats hop: 按 inplay_match_id join (2026-06-02 实测教训: soccernew/live 与
-                        //   inplay 的 league_id 与队名两者都不同空间 → 原 (league|home|away) join 永不匹配;
-                        //   改 inplay_match_id, RefreshLiveStats 经 inplay-mapping 桥 soccernew→inplay 键)。
-                        //   → game_row.soccer_* (g_danger_attack/shot_on_target/possession/red_card/corner_diff)。
-                        //   查不到 → soccer_* 保持 -1 (fail-safe, 特征 NaN, 绝不造假)。
-                        if (const auto* ls = LiveStatsFor(it->second.inplay_match_id)) {
-                            stcpp::data::livescore::FillLiveStats(game_row, *ls);
-                            game_row.live_stats_as_of_ns = ls->as_of_ts_ns;  // live_stats 新鲜度
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // [score-flow diag] emit: 每 3000 次决策 → 一行链路掉点 (地基可观测; 老板「先打地基才知有什么事件」)。
-    if (sf_n % 3000 == 0) {
-        std::fprintf(stderr,
-                     "[score-flow] calls=%lld mapped=%lld score_found=%lld in-play=%lld stale=%lld "
-                     "→ has_real_fair=%lld 其中有sharp=%lld (链路掉点 + sharp 脱节定位)\n",
-                     sf_n, sf_mapped.load(), sf_scorefound.load(), sf_inplay.load(), sf_stale.load(),
-                     sf_realfair.load(), sf_sharp.load());
-    }
+    ResolveGameContext(condition_id, game_row, map_is_draw);
 
     // has_real_fair = true 当 time_status != NotStarted (真实 in-play Goalserve 比分已填).
     // 注: A1 仅打通 fair 计算 + quote 真 edge; advisory gate (Step 4b) 仍拦 intent (A2 解封).
@@ -813,34 +866,9 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //     ② Goalserve 终态 (3b 兜底): Ended → 按终态比分 winner (moneyline; 无 REST 注入时用)。
     //   持仓最终值 = winner 1 / loser 0。realize → cum_realized; 平仓 → 账本归零。
     //   幂等 (settled_conditions_): 首次结算一次, 之后该盘口跳过决策 (已定不再交易)。
-    {
-        bool do_settle = false;
-        double settle_yes = 0.5, settle_no = 0.5;  // 平局/未知 → push
-        const ResolutionEntry* res = ResolutionFor(condition_id);
-        if (res != nullptr && res->status == 2 /*Resolved*/ && res->winner >= 0) {
-            do_settle = true;  // ① REST 权威
-            settle_yes = (res->winner == 1) ? 1.0 : 0.0;
-            settle_no = 1.0 - settle_yes;
-        } else if (game_row.time_status == stcpp::data::goalserve::TimeStatus::Ended) {
-            do_settle = true;  // ② Goalserve 比分兜底
-            const int yes_sc = game_row.score_home_total;  // YES 边比分 (orientation 已应用)
-            const int opp_sc = game_row.score_away_total;
-            if (yes_sc > opp_sc) {
-                settle_yes = 1.0;
-                settle_no = 0.0;
-            } else if (yes_sc < opp_sc) {
-                settle_yes = 0.0;
-                settle_no = 1.0;
-            }
-        }
-        if (do_settle) {
-            if (settled_conditions_.find(condition_id) == settled_conditions_.end()) {
-                SettleCondition(condition_id, mkt.yes_token_id, mkt.no_token_id, settle_yes, settle_no,
-                                game_row);
-                settled_conditions_.emplace(condition_id, char{1});
-            }
-            return;  // 已定盘口: 不产 quote/intent (持仓已 realize)
-        }
+    // [D-阶段2] 已定盘结算 → TrySettleResolved (2026-06-12 业务流分段, 行为逐位不变)
+    if (TrySettleResolved(condition_id, mkt, game_row)) {
+        return;  // 已定盘口: 不产 quote/intent (持仓已 realize)
     }
 
     FeatureStoreBookRow book_row{};

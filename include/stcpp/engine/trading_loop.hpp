@@ -1101,6 +1101,12 @@ private:
     // 目标仓位控制器单边执行 (Step 4-8; 被选边 target=Kelly / 非选边平旧边 target=0 共用)。
     //   M2-a 选边翻转平旧边: TickOne 对盘口两边各调一次驱动到目标。reservation/Decide/intent/RM/
     //   sign/match/apply_fill(卖负 delta)/ledger 全收进来。loop_thread_ 串行 (R-12 不触碰)。
+    // [D-阶段1/2] 业务流分段 (2026-06-12 老板「c d 都改彻底」): TickOne 阶段化抽取, 行为逐位不变。
+    void ResolveGameContext(const std::string& condition_id, stcpp::data::feature_store::FeatureStoreGameRow& game_row,
+                            bool& map_is_draw);
+    bool TrySettleResolved(const std::string& condition_id, const BinaryMarketSnapshot& mkt,
+                           const stcpp::data::feature_store::FeatureStoreGameRow& game_row);
+
     void ExecuteControllerSide(const std::string& condition_id, const std::string& token_id,
                                strategy::Outcome outcome,
                                const polymarket::clob_wss::OrderBookFeatures& side_book,
