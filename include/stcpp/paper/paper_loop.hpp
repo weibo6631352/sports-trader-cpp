@@ -621,6 +621,19 @@ public:
     //   不起 loop_thread_; 调用方负责先注入 catalog + hub book。仅用于 benchmark/单测, 生产走 Start()。
     void TickAllForBench() { TickAll(); }
 
+    // 引擎分账快照 (2026-06-12 老板「能区分开」; 线程安全拷贝)
+    struct EngineSplit {
+        double realized{0.0};
+        std::int64_t settles{0};
+        std::int64_t wins{0};
+    };
+    [[nodiscard]] std::unordered_map<std::string, EngineSplit> engine_split() const {
+        std::lock_guard<std::mutex> lk(engine_mu_);
+        std::unordered_map<std::string, EngineSplit> out;
+        for (const auto& [e, b] : engine_book_) out[e] = {b.realized, b.settles, b.wins};
+        return out;
+    }
+
     // ---- FLB-hold 引擎 (老板 2026-06-11 拍板「与现策略并跑」) -------------------------------------
     //   实证 (299 已结算盘): PM 赛中 favorite 系统性低估 2-3pp, 首穿越 0.80 买入持有到结算净 EV +3.3%/u。
     //   纯订单簿触发 (不需 Goalserve), 只做【非 sharp】盘 (与主引擎物理隔离不抢地盘); 一盘一击 (首穿越,
@@ -1034,6 +1047,16 @@ private:
     std::int64_t last_funnel_dump_ns_{0};
     std::int64_t last_daily_close_day_{0};  // P5 日级滚账 (UTC 日序号)
     std::int64_t last_deploy_warn_ns_{0};   // P4 部署率告警 5min 节流
+    // 引擎归因 (2026-06-12 老板「能区分开就行」): token → engine ("sharp"/"flb"/"flb-dip"), 入场时记,
+    //   结算/平仓按真实引擎分账 (废 flb_seen_ 猜测)。loop_thread_ 写; 快照 E 行持久化。
+    std::unordered_map<std::string, std::string> engine_by_token_;
+    struct EngineBook {
+        double realized{0.0};
+        std::int64_t settles{0};
+        std::int64_t wins{0};
+    };
+    std::unordered_map<std::string, EngineBook> engine_book_;  // engine → 分账 (engine_mu_ 保护)
+    mutable std::mutex engine_mu_;  // loop 写 × HTTP 读 (deque 教训: 跨线程容器必加锁)
     // ---- 三振出局 (老板 2026-06-11 拍板, 治跷跷板循环割肉: 3 个循环盘吃掉 78% realized 亏损) ----
     //   condition_id → 止损 episode 计数 (force_stop 连续段计 1 次); 满 2 次本场不再开新仓。
     //   episode set: force_stop 持续多 tick 只计一次, 清除后再触发算新 episode。loop_thread_ 单 writer。

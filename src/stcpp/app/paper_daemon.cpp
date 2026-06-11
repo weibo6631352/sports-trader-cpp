@@ -919,6 +919,25 @@ BuildResult PaperDaemon::Build() {
         a.bankroll_initial = eq.bankroll_init;
         a.cash_available = eq.cash_available;
         a.deploy_pct = eq.deploy_pct;  // P4 (2026-06-11 晚会)
+        // 引擎分账 (2026-06-12)
+        if (paper_loop_) {
+            const auto es = paper_loop_->engine_split();
+            if (const auto it = es.find("sharp"); it != es.end()) {
+                a.eng_sharp_realized = it->second.realized;
+                a.eng_sharp_settles = it->second.settles;
+                a.eng_sharp_wins = it->second.wins;
+            }
+            if (const auto it = es.find("flb"); it != es.end()) {
+                a.eng_flb_realized = it->second.realized;
+                a.eng_flb_settles = it->second.settles;
+                a.eng_flb_wins = it->second.wins;
+            }
+            if (const auto it = es.find("flb-dip"); it != es.end()) {
+                a.eng_dip_realized = it->second.realized;
+                a.eng_dip_settles = it->second.settles;
+                a.eng_dip_wins = it->second.wins;
+            }
+        }
         a.position_mtm = eq.position_mtm;
         a.equity_mark = eq.equity_mark;
         a.equity_conservative = eq.equity_bid;

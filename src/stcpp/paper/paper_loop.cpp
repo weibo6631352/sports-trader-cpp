@@ -2209,6 +2209,9 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     // ---- 成交流水落 ring (2026-06-04 老板「看懂买卖价」) — 前端流水 + /api/v1/fills ----
     //   event_title 留空: 前端用自己的市场缓存把 condition_id 映射成人读队名 (后端不重复查)。
     {
+        if (intent.side == strategy::Side::Buy) {
+            engine_by_token_.emplace(token_id, "sharp");  // 引擎归因 (2026-06-12): 首次入场记, 不覆盖
+        }
         FillRow fr;
         fr.as_of_ts_ns = fill.as_of_ts_ns;
         fr.condition_id = condition_id;
@@ -2554,6 +2557,7 @@ void PaperLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     fr.mark = fill.fill_price;
     fr.fee = fr.size_usdc * FeeCoefFor(t.condition_id) * fill.fill_price * (1.0 - fill.fill_price);
     fr.engine = t.dip ? "flb-dip" : "flb";  // 抄底档分账 (2026-06-11)
+    engine_by_token_.emplace(t.token_id, t.dip ? "flb-dip" : "flb");  // 引擎归因 (2026-06-12)
     std::lock_guard<std::mutex> lk(fills_mu_);
     fills_ring_.push_back(std::move(fr));
     if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
@@ -2590,6 +2594,17 @@ void PaperLoop::SaveLedgerSnapshot() {
     std::fprintf(fp, "R %llu %llu %.10g %.10g %.10g %.10g\n", static_cast<unsigned long long>(agg.n_settled),
                  static_cast<unsigned long long>(agg.n_positive_close), agg.sum_clv_close, agg.sum_clv_settle,
                  agg.sum_notional, agg.sum_notional_clv_close);
+    // E 行: token→engine 归因 + B 行: 引擎分账 (2026-06-12 老板「能区分开」)
+    for (const auto& [tok, eng] : engine_by_token_) {
+        std::fprintf(fp, "E %s %s\n", tok.c_str(), eng.c_str());
+    }
+    {
+        std::lock_guard<std::mutex> lke(engine_mu_);
+        for (const auto& [eng, eb] : engine_book_) {
+            std::fprintf(fp, "B %s %.10g %lld %lld\n", eng.c_str(), eb.realized,
+                         static_cast<long long>(eb.settles), static_cast<long long>(eb.wins));
+        }
+    }
     // L 行: CLV 末次观测 mid (终局仓估值锚; 无此行重启后赢定仓浮盈回退 0)。
     clv_tracker_.ForEachLastMid([fp](const std::string& tok, double mid) {
         std::fprintf(fp, "L %s %.10g\n", tok.c_str(), mid);
@@ -2680,6 +2695,20 @@ void PaperLoop::RestoreLedgerSnapshot() {
                 ps3.first_mid = fm;
                 ps3.first_mid_ns = fmns;
             }
+        } else if (line[0] == 'E') {
+            char tok[90] = {0}, eng[20] = {0};
+            if (std::sscanf(line, "E %89s %19s", tok, eng) == 2) engine_by_token_[tok] = eng;
+        } else if (line[0] == 'B') {
+            char eng[20] = {0};
+            double r = 0.0;
+            long long st2 = 0, w2 = 0;
+            if (std::sscanf(line, "B %19s %lf %lld %lld", eng, &r, &st2, &w2) == 4) {
+                std::lock_guard<std::mutex> lke(engine_mu_);
+                auto& eb = engine_book_[eng];
+                eb.realized = r;
+                eb.settles = st2;
+                eb.wins = w2;
+            }
         } else if (line[0] == 'L') {
             char tok[90] = {0};
             double mid = 0.0;
@@ -2767,15 +2796,19 @@ void PaperLoop::SettleToken(const std::string& condition_id, const std::string& 
     // realize PnL = (结算值 − 加权入场价) × qty (qty signed; v1 long → 正)。
     cum_realized_pnl_pusd_ += (settle_price - avg) * qty;
     cum_realized_by_market_[condition_id] += (settle_price - avg) * qty;  // 逐盘累计 (对账修: 结算也入逐盘)
-    // P3 损耗率观测 (2026-06-11 晚会): 每笔结算 WIN/LOSE + engine 猜测 (flb_seen_ 含 cid → flb 系)
+    // P3+引擎分账 (2026-06-12 老板「能区分开」): 真实引擎标签 (entry 时记) 分账 + 逐笔日志
     {
-        const char* eng3 = "sharp";
+        const auto eit = engine_by_token_.find(token_id);
+        const std::string eng3 = eit != engine_by_token_.end() ? eit->second : "sharp";
         {
-            std::lock_guard<std::mutex> lk3(flb_mu_);
-            if (flb_seen_.count(condition_id) != 0) eng3 = "flb";
+            std::lock_guard<std::mutex> lke(engine_mu_);
+            auto& eb = engine_book_[eng3];
+            eb.realized += (settle_price - avg) * qty;
+            ++eb.settles;
+            if (settle_price >= 0.5) ++eb.wins;
         }
         std::fprintf(stderr, "[settle] %s engine=%s realized=%+.2f entry=%.3f qty=%.1f cond=%.16s\n",
-                     settle_price >= 0.5 ? "WIN" : "LOSE", eng3, (settle_price - avg) * qty, avg, qty,
+                     settle_price >= 0.5 ? "WIN" : "LOSE", eng3.c_str(), (settle_price - avg) * qty, avg, qty,
                      condition_id.c_str());
     }
     if (avg > 0.0) {  // 逐笔收益 (Sharpe口径)

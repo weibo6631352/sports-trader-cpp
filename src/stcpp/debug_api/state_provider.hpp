@@ -177,6 +177,10 @@ struct AccountSnapshot {
     double bankroll_initial{0.0};   // 起始虚拟本金
     double cash_available{0.0};     // MVP 近似可动用资金 (不含锁定保证金)
     double deploy_pct{0.0};         // P4 部署率 (2026-06-11 晚会)
+    // 引擎分账 (2026-06-12 老板「能区分开」): sharp / flb / flb-dip 各 realized+结算笔+胜
+    double eng_sharp_realized{0.0}; std::int64_t eng_sharp_settles{0}; std::int64_t eng_sharp_wins{0};
+    double eng_flb_realized{0.0};   std::int64_t eng_flb_settles{0};   std::int64_t eng_flb_wins{0};
+    double eng_dip_realized{0.0};   std::int64_t eng_dip_settles{0};   std::int64_t eng_dip_wins{0};
     double position_mtm{0.0};       // 持仓市值 (microprice 展示口径; = Σ qty×mark)
     double equity_mark{0.0};        // 展示净值 = cash + microprice MtM
     double equity_conservative{0.0};// 保守净值 = cash + best_bid MtM (= kelly_bankroll)
