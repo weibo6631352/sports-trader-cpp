@@ -127,8 +127,5 @@ target_link_libraries(bench_tick_one         PRIVATE
 # ----- W6 Wave 28: SPSC queue latency bench (小石 W6 SPSC framework 联调) -----
 # 5 capacity: 64/256/1024/4096/16384; upper guard p99 < 100 ns
 # 注: 小石 W6 SPSC 就位后替换 MockSPSC → stcpp::infra::spsc::SPSCQueue<T,N>
-stcpp_add_perf_bench(bench_spsc_latency      bench_spsc_latency.cpp)
-# bench_spsc_latency: 仅依赖 stcpp_infra_wal (pit::NowRealtimeNs); 无额外 lib
-target_link_libraries(bench_spsc_latency     PRIVATE stcpp_infra_wal)
 
 message(STATUS "stcpp perf bench: 8 target enabled (M1..M6 + e2e_latency + spsc_latency)")

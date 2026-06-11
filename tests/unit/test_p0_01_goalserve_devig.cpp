@@ -24,7 +24,6 @@
 
 #include <gtest/gtest.h>
 
-#include "stcpp/ml/feature_snapshot.hpp"
 #include "stcpp/strategy/live_section_classifier.hpp"
 #include "stcpp/strategy/p0_01_goalserve_devig.hpp"
 #include "stcpp/strategy/signal_iface.hpp"
@@ -46,7 +45,6 @@ using stcpp::strategy::SignalId;
 using stcpp::strategy::SignalOutput;
 using stcpp::strategy::SIX_HOURS_NS;
 using stcpp::strategy::compute_multiplicative_devig;
-using stcpp::ml::FeatureName;
 
 constexpr std::int64_t NOW           = 1'700'000'000'000'000'000LL;
 constexpr std::int64_t SEC_NS        = 1'000'000'000LL;
@@ -476,30 +474,8 @@ TEST(GoalserveDevig_T4, SizeClipAt5K) {
 // T5: feature_snapshot_id ABI — enum 值锁定, ML column index 不变
 // ===========================================================================
 
-TEST(GoalserveDevig_T5, FeatureName_Enum_Values_ABI_Lock) {
-    // 列 index = enum 值 — 锁死 (小邓 ML pipeline column index)
-    // ADR-008 字段名改了, 但 index 4/5 不变
-    EXPECT_EQ(static_cast<int>(FeatureName::Goalserve_devig_p_yes_fair), 4);
-    EXPECT_EQ(static_cast<int>(FeatureName::Goalserve_overround_avg),    5);
-}
 
-TEST(GoalserveDevig_T5, FeatureName_ToStr_NewNames) {
-    // 字段名 cascade: to_string 必须返回新名 (小邓 Parquet schema 列名)
-    EXPECT_EQ(stcpp::ml::to_string(FeatureName::Goalserve_devig_p_yes_fair),
-              "Goalserve_devig_p_yes_fair");
-    EXPECT_EQ(stcpp::ml::to_string(FeatureName::Goalserve_overround_avg),
-              "Goalserve_overround_avg");
-}
 
-TEST(GoalserveDevig_T5, FeatureSnapshot_SetGet_Devig_Fields) {
-    // FeatureSnapshot set/get 用新 enum 正常工作
-    stcpp::ml::FeatureSnapshot snap;
-    snap.set(FeatureName::Goalserve_devig_p_yes_fair, 0.4615f);
-    snap.set(FeatureName::Goalserve_overround_avg,    1.0317f);
-
-    EXPECT_NEAR(snap.get(FeatureName::Goalserve_devig_p_yes_fair), 0.4615f, 1e-4f);
-    EXPECT_NEAR(snap.get(FeatureName::Goalserve_overround_avg),    1.0317f, 1e-4f);
-}
 
 TEST(GoalserveDevig_T5, SignalContext_FieldsUnchanged_ABI) {
     // SignalContext 字段验证 (老周 ABI lock)

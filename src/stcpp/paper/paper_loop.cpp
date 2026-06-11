@@ -1677,7 +1677,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
                           force_cross || sel_force_stop || sel_force_winbuy, n_eff_dyn, margin_floor_dyn,
-                          reservation_noise_free, sel_force_stop, near_end, time_to_resolution_frac);
+                          reservation_noise_free, sel_force_stop, near_end);
 
     // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
     const SideView& other = is_yes ? mkt.no : mkt.yes;
@@ -1715,8 +1715,7 @@ void PaperLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                                       is_yes ? strategy::Outcome::No : strategy::Outcome::Yes, other_feat,
                                       other_depth, 1.0 - p_fair_selected, /*target_mag=*/0.0,
                                       FeeCoefFor(condition_id), force_cross, n_eff_dyn, margin_floor_dyn,
-                                      reservation_noise_free, /*force_stop=*/false, /*near_end=*/false,
-                                      time_to_resolution_frac);
+                                      reservation_noise_free, /*force_stop=*/false, /*near_end=*/false);
             }
         }
     }
@@ -1735,8 +1734,7 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
                                       const polymarket::clob_wss::OrderBookFeatures& side_book,
                                       double book_depth_l1, double p_fair_side, double target_mag,
                                       double fee_coef, bool force_cross, int n_eff, double margin_floor,
-                                      bool noise_free, bool force_stop, bool near_end,
-                                      double time_to_res_frac) noexcept {
+                                      bool noise_free, bool force_stop, bool near_end) noexcept {
     const double exec_ask = side_book.best_ask();
     const double exec_bid = side_book.best_bid();
     const double mark_price = std::isfinite(side_book.microprice) ? side_book.microprice : side_book.mid;
@@ -1745,47 +1743,9 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     clv_tracker_.UpdateMid(token_id, mark_price);
     RepublishLedgerMark(condition_id, token_id, mark_price, side_book);  // 逐盘 PnL 实时 MTM (2026-06-11)
 
-    // 执行层 §4.1 (持仓管理 Stage 2): 毒性/波动信号 → ① 动态 exec_margin (软, 压价) ② 毒性冻结加仓 (硬档)。
-    //   逆选保护 — 毒簿(|OFI| 大 / depth 薄)/高波动/远结算时让 reservation 更被动 (买压低 / 卖抬高);
-    //   严重毒性 (|OFI|/depth 或 BidAbsence 超阈) 直接冻结新增加仓 (减仓照常)。|OFI| 只用幅度 (方向归 sharp)。
-    //   exec_margin 与抽样噪声正交 → 叠进 required_margin。默认 OFF → exec_margin=0, 不冻结 (行为等现状)。
-    //   OFI/RealizedVol/BidAbsence 取 condition 级时序环 (市场级毒性/波动属性, 两边共用); depth 取本边 L1。
-    double exec_margin = 0.0;
-    bool tox_freeze_adds = false;  // 毒性硬档: true → 加仓侧 target clamp 到 current (force_cross 绕过)
-    const bool need_tox_signal =
-        (cfg_.exec_margin_enabled && (cfg_.exec_margin_k_tox > 0.0 || cfg_.exec_margin_k_vol > 0.0)) ||
-        cfg_.tox_gate_enabled;
-    if (need_tox_signal) {
-        const std::int64_t w = cfg_.ts_feature_window_ns;
-        if (const auto th = ts_history_.find(condition_id); th != ts_history_.end()) {
-            const double depth = std::max(book_depth_l1, cfg_.exec_margin_depth_floor);
-            const double ofi = th->second.OFI(w);
-            const double abs_ofi_over_depth =
-                (std::isfinite(ofi) && depth > 0.0) ? std::abs(ofi) / depth : std::numeric_limits<double>::quiet_NaN();
-            // ① 软 exec_margin (毒性项 + 波动项)。
-            if (cfg_.exec_margin_enabled) {
-                double tox_term = 0.0;
-                double vol_term = 0.0;
-                if (cfg_.exec_margin_k_tox > 0.0 && std::isfinite(abs_ofi_over_depth)) {
-                    tox_term = cfg_.exec_margin_k_tox * abs_ofi_over_depth;
-                }
-                if (cfg_.exec_margin_k_vol > 0.0) {
-                    const double rv = th->second.RealizedVol(w);
-                    // ttr NaN (无赛程时钟) → 跳波动项 (fail-open 到基线, 不凭空加 margin), 与乘子 NaN→无改 一致。
-                    if (std::isfinite(rv) && rv > 0.0 && std::isfinite(time_to_res_frac)) {
-                        const double ttr = std::clamp(time_to_res_frac, 0.0, 1.0);
-                        vol_term = cfg_.exec_margin_k_vol * (rv * rv) * ttr;
-                    }
-                }
-                exec_margin = std::clamp(tox_term + vol_term, 0.0, cfg_.exec_margin_cap);
-            }
-            // ② 毒性冻结加仓硬档 (BR-1 纯函数; 默认关 → 恒 false)。
-            tox_freeze_adds = control::ToxicityFreezesAdds(
-                abs_ofi_over_depth, th->second.BidAbsenceFrac(w),
-                control::ToxicityGateConfig{cfg_.tox_gate_enabled, cfg_.tox_gate_ofi_depth_thr,
-                                            cfg_.tox_gate_bid_absence_thr});
-        }
-    }
+    // (执行层 §4.1 exec_margin/tox_gate 2026-06-12 治理删: 默认关从未验证; 逆选保护已由
+    //  dynamic_reservation 的 amihud margin_floor 项 [活跃] 覆盖, hold-to-settlement 后无
+    //  rebalance churn 病灶。git 史可考。)
 
     // reservation 限价界 (小梁 Q-梁-1; BR-1 纯函数)。
     const control::ReservationPrices reservation = control::ComputeReservation(control::ReservationInput{
@@ -1797,7 +1757,6 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
         /*z=*/cfg_.z_90,
         /*n_eff=*/n_eff,  // Phase 0 项1: 动态 (min YES/NO 样本, clamp)
         /*noise_free=*/noise_free,  // sharp/调模型 → 跳二项 z×σ (只留半 vig 地基), 让 sharp 进可下单侧
-        /*exec_margin=*/exec_margin,  // 执行层 §4.1: 毒性+波动逆选保护 (默认 0)
     });
 
     // current = 本边 token 当前持仓 (ledger per-outcome, micro→whole pUSD; long ≥0)。
@@ -1809,11 +1768,11 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
             current_pusd = static_cast<double>(tit->second) / 1'000'000.0;
         }
     }
-    // 防抖死区 (小梁 Q-梁-2 + §4.1 p(1−p) 缩放): threshold = max(floor, 0.10×|target|, fee_k×往返费×|target|)。
-    //   deadband_fee_k=0 (默认) → 逐位等于原 max(floor, 0.10×|target|); 开则费贵处(p≈0.5)放宽抑制 churn。BR-1。
+    // 防抖死区 (小梁 Q-梁-2): threshold = max(floor, 0.10×|target|)。
+    //   (fee_k 费率放宽扩展 2026-06-12 治理删: 恒 0 从未开, hold-to-settlement 后无 rebalance churn。)
     const double min_rebalance = control::ComputeRebalanceDeadband(
         target_mag, p_fair_side, fee_coef,
-        control::DeadbandConfig{cfg_.min_rebalance_floor_pusd, 0.10, cfg_.deadband_fee_k});
+        control::DeadbandConfig{cfg_.min_rebalance_floor_pusd, 0.10});
 
     control::ControlInput cin;
     // DD→target (持仓管理 Stage2, 老板「只停加仓不砍现仓」): 回撤触发 (dd_mult_<1) 时只压【加仓】幅度
@@ -1822,12 +1781,6 @@ void PaperLoop::ExecuteControllerSide(const std::string& condition_id, const std
     double dd_target = target_mag;
     if (dd_mult_ < 1.0 && target_mag > current_pusd) {
         dd_target = current_pusd + dd_mult_ * (target_mag - current_pusd);
-    }
-    // 毒性冻结加仓 (§4.1 硬档): 毒簿 → 加仓侧 target clamp 到 current (不增, 减仓照常); force_cross
-    //   (进球/必赢/止损 事件驱动) 绕过。与 DD 限加仓同范式 (只停加仓不砍现仓)。默认关 → tox_freeze_adds=false。
-    if (tox_freeze_adds && !force_cross && dd_target > current_pusd) {
-        dd_target = current_pusd;
-        stats_.tox_freezes.fetch_add(1, std::memory_order_relaxed);
     }
     cin.target_pusd = dd_target;  // 被选边 = Kelly(×乘子, DD 限加仓); 非选边平旧边 = 0
     cin.current_pusd = current_pusd;

@@ -369,20 +369,8 @@ struct PaperLoopConfig {
     // 执行层 §4.1 (持仓管理 Stage 2, 老板 2026-06-05; A-S 库存项经 microstructure 裁决 SKIP, 见
     //   position_controller.hpp 注)。全部默认 OFF → 行为逐位等于现状; paper 背书后再开 (§8.1: 写默认关
     //   plumbing 不需会签)。
-    //   ① p(1−p) 死区: 死区随往返费率放宽 (费贵处抑制 churn)。见 control::ComputeRebalanceDeadband。
-    double deadband_fee_k{0.0};  // 往返费率倍数 (0=关; 开 e.g. 2.0 = 死区 ≥ 2×往返费)
-    //   ② 动态 exec_margin: 逆选(毒性 k_tox·|OFI|/depth)+ 波动(k_vol·σ²·τ) 加性边际, 叠进 reservation
-    //      required_margin (买侧压低 / 卖侧抬高 → 毒簿/高波动时更被动)。|OFI| 只用幅度 (方向归 sharp)。
-    bool exec_margin_enabled{false};
-    double exec_margin_k_tox{0.0};       // 毒性强度 (×|OFI|/depth)
-    double exec_margin_k_vol{0.0};       // 波动强度 (×RealizedVol²×剩余期限 frac)
-    double exec_margin_cap{0.05};        // exec_margin 上限 (prob; 防脏数据把价压穿)
-    double exec_margin_depth_floor{50.0};  // depth 下限 (pUSD; 防除以极小 depth 爆炸)
-    //   ③ 毒性冻结加仓 (硬档): |OFI|/depth 或 BidAbsence 超阈 → 暂停新增加仓 (减仓照常)。是 exec_margin
-    //      (软, 压价) 的硬档配套。见 control::ToxicityFreezesAdds。force_cross (进球/必赢) 绕过。
-    bool tox_gate_enabled{false};
-    double tox_gate_ofi_depth_thr{0.0};    // |OFI|/depth ≥ 此 → 冻结 (0 = 该判据关)
-    double tox_gate_bid_absence_thr{1.0};  // BidAbsence frac ≥ 此 → 冻结 (1.0 = 该判据关; e.g. 0.5)
+    //   (deadband_fee_k / exec_margin_* / tox_gate_* 三件套 2026-06-12 治理删: 默认关从未验证,
+    //    逆选保护已由 dynamic_reservation amihud 项覆盖, hold-to-settlement 后无 rebalance churn。)
 
     // 相关性折扣乘子 (§4.1 规模层, 小梁裁决): 同赛事已有敞口 (扣本盘) ρ 加权占用 → 缩本盘 target 量级。
     //   与 R6.2c 硬 cap 分工: cap=ρ=1 保命墙, 本乘子=ρ 加权提前 taper。见 control::ComputeCorrelationMultiplier。
@@ -498,7 +486,6 @@ struct PaperLoopStats {
     // 目标仓位控制器 (老雷 spec v1): 控制器决定本 tick 不动 (死区/限价不可成交/已达目标)。
     std::atomic<std::uint64_t> orders_held{0};
     // 执行层 §4.1: 毒性硬档冻结加仓的次数 (观测; 默认关 → 恒 0)。
-    std::atomic<std::uint64_t> tox_freezes{0};
     // slice-3b: 比赛结算时被 realize+平仓的持仓笔数 (winner→1 / loser→0)。
     std::atomic<std::uint64_t> positions_settled{0};
     std::atomic<std::uint64_t> hub_reads_empty{0};
@@ -1119,8 +1106,7 @@ private:
                                const polymarket::clob_wss::OrderBookFeatures& side_book,
                                double book_depth_l1, double p_fair_side, double target_mag,
                                double fee_coef, bool force_cross, int n_eff, double margin_floor,
-                               bool noise_free, bool force_stop, bool near_end,
-                               double time_to_res_frac) noexcept;
+                               bool noise_free, bool force_stop, bool near_end) noexcept;
 
     // slice-3b 结算: 比赛 Ended → 按终态比分把 YES/NO 持仓 realize 到结算值 (winner 1 / loser 0) +
     //   平仓 (apply_fill 负 delta), realized PnL 累加进 cum_realized_pnl_pusd_。loop_thread_ 单 writer。

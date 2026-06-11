@@ -89,11 +89,7 @@ struct ReservationInput {
     //   地基)。否则 (score-prior/ML 噪声估计) 仍 max(floor, z×σ)。与 edge_ci 同源判据 (ResolveEdgeCiLower),
     //   消「sizing 说买 / reservation 说噪声不让买」的双标 —— sharp 进不了可下单侧的真因。
     bool noise_free{false};
-    // exec_margin (持仓管理 Stage 2 §4.1 执行层, 老板 2026-06-05): 逆选/波动保护边际, 调用方算好传入。
-    //   = k_tox·|OFI|/depth (毒性: 簿薄/单流猛 → 易被逆选) + k_vol·σ²·τ (波动×剩余期限)。只用【幅度】
-    //   (|OFI|, 不碰方向 — 方向归 sharp)。与抽样噪声 margin 【正交】(逆选≠估计噪声) → 叠加而非取大,
-    //   且 noise_free 下仍生效 (sharp 信号在毒簿里同样要逆选保护)。≥0; 默认 0 = 无 (向后兼容, CR01-05 不变)。
-    double exec_margin{0.0};
+    // (exec_margin 字段 2026-06-12 治理删: §4.1 执行层下线, 逆选保护归 margin_floor amihud 项。)
 };
 
 struct ReservationPrices {
@@ -116,9 +112,7 @@ struct ReservationPrices {
     // noise_free: sharp 点估计 / 调模型模式 → 跳过二项 z×σ (对点估计是错模型, 见 ResolveEdgeCiLower),
     //   仅留 margin_floor (半 vig 经济地基, 防保证亏交易)。否则噪声估计仍 max(floor, z×σ)。
     const double base_margin = in.noise_free ? floor : std::max(floor, in.z * sigma);
-    // 执行层动态 margin (§4.1): 逆选(毒性)+ 波动保护, 与抽样噪声正交 → 加性 (noise_free 下仍叠加)。
-    const double exec_m = (std::isfinite(in.exec_margin) && in.exec_margin > 0.0) ? in.exec_margin : 0.0;
-    out.required_margin = base_margin + exec_m;
+    out.required_margin = base_margin;
     const double coef = std::isfinite(in.fee_coef) ? std::max(0.0, in.fee_coef) : 0.0;
     // fee 锚在各自触价 (买 ask / 卖 bid); 触价非有限则退回 fair 锚 (保守)。
     const double pa = (std::isfinite(in.exec_ask) && in.exec_ask > 0.0 && in.exec_ask < 1.0) ? in.exec_ask : in.fair;
@@ -132,57 +126,21 @@ struct ReservationPrices {
 
 // ---------------------------------------------------------------------------
 // rebalance 死区 (持仓管理 Stage 2 §4.1 执行层, 老板 2026-06-05「死区随 p(1−p) 缩放防费磨损」)。
-//   死区 = max(绝对 floor, pct×|target|, fee_churn_guard)。BR-1 纯函数 (回测=实盘共用)。
-//   fee_churn_guard = fee_k × 往返费率 × |target|; 往返费率 = 2·fee_coef·p(1−p)。
-//   p(1−p) 在 p≈0.5 处最大 (费最贵) → guard 自动放宽死区 → 抑制被费吃掉的小额 churn;
-//   p 极端处 (p≈0.9) 费小, guard→0 不挡 → 该处可更细 rebalance。纯加性 (max 第三项, 只放宽不收窄)
-//   → 默认 fee_k=0 时逐位等于原 max(floor, pct×|target|), 向后兼容。
+//   死区 = max(绝对 floor, pct×|target|)。BR-1 纯函数。
+//   (fee_k 费率放宽扩展 2026-06-12 治理删: 恒 0 从未开。)
 // ---------------------------------------------------------------------------
 struct DeadbandConfig {
     double floor_pusd{1.0};  // 绝对下限 (cfg_.min_rebalance_floor_pusd 同源)
     double pct{0.10};        // |target| 比例项 (现行 0.10)
-    double fee_k{0.0};       // 往返费率倍数 (默认 0 = 关 = 现行为; 开 e.g. 2.0 = 死区 ≥ 2×往返费)
 };
 
-[[nodiscard]] inline double ComputeRebalanceDeadband(double target_mag, double p_fair, double fee_coef,
+[[nodiscard]] inline double ComputeRebalanceDeadband(double target_mag, double /*p_fair*/, double /*fee_coef*/,
                                                      const DeadbandConfig& cfg) noexcept {
     const double abs_t = std::abs(target_mag);
-    double dz = std::max(cfg.floor_pusd > 0.0 ? cfg.floor_pusd : 0.0, cfg.pct * abs_t);
-    if (cfg.fee_k > 0.0 && std::isfinite(p_fair) && p_fair > 0.0 && p_fair < 1.0 &&
-        std::isfinite(fee_coef) && fee_coef > 0.0) {
-        const double pp = p_fair * (1.0 - p_fair);        // ∈ (0, 0.25]
-        const double rt_fee_frac = 2.0 * fee_coef * pp;   // 往返 (买+卖) 费率
-        dz = std::max(dz, cfg.fee_k * rt_fee_frac * abs_t);
-    }
-    return dz;
+    return std::max(cfg.floor_pusd > 0.0 ? cfg.floor_pusd : 0.0, cfg.pct * abs_t);
 }
 
-// ---------------------------------------------------------------------------
-// 毒性冻结加仓 (持仓管理 Stage 2 §4.1 执行层, 老板 2026-06-05「OFI/BidAbsence 超阈→暂停新单/冻结加仓」)。
-//   毒簿 (|OFI|/depth 超阈 = 单边流冲击 / BidAbsence 超阈 = 簿一侧塌陷) → 暂停【新增加仓】, 减仓/平仓照常
-//   (泄险优先)。这是 exec_margin (软, 渐进压价) 的【硬档】配套: 严重毒性直接冻结, 不只是压价。BR-1 纯函数。
-//   只判「是否冻结加仓」(bool), 调用方据此把加仓侧 target clamp 到 current (不增不减); 减仓不受影响。
-//   force_cross (进球/必赢事件) 由调用方绕过 (事件驱动合法穿越)。默认 enabled=false → 恒 false (现行为)。
-// ---------------------------------------------------------------------------
-struct ToxicityGateConfig {
-    bool enabled{false};
-    double ofi_depth_thr{0.0};    // |OFI|/depth ≥ 此 → 冻结 (0 = 该判据关, 由 bid_absence 单独判)
-    double bid_absence_thr{1.0};  // BidAbsence frac ≥ 此 → 冻结 (1.0 = 该判据关; e.g. 0.5 = 半窗无 bid)
-};
-
-[[nodiscard]] inline bool ToxicityFreezesAdds(double abs_ofi_over_depth, double bid_absence_frac,
-                                              const ToxicityGateConfig& cfg) noexcept {
-    if (!cfg.enabled) return false;
-    if (cfg.ofi_depth_thr > 0.0 && std::isfinite(abs_ofi_over_depth) &&
-        abs_ofi_over_depth >= cfg.ofi_depth_thr) {
-        return true;
-    }
-    if (cfg.bid_absence_thr < 1.0 && std::isfinite(bid_absence_frac) &&
-        bid_absence_frac >= cfg.bid_absence_thr) {
-        return true;
-    }
-    return false;
-}
+// (毒性冻结加仓 ToxicityFreezesAdds §4.1 2026-06-12 治理删: 默认关从未验证。)
 
 // ---------------------------------------------------------------------------
 // A-S 库存 skew — 已审定 SKIP (持仓管理 Stage 2 §4.1, 小袁 microstructure 设计裁决 2026-06-09)。

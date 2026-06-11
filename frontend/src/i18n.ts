@@ -82,12 +82,6 @@ export const MARKET_TYPE_ZH: Record<string, string> = {
   prop:   '特殊盘',
 };
 
-export const WSS_STATE_ZH: Record<string, string> = {
-  CONNECTED:    '已连接',
-  DISCONNECTED: '已断开',
-  unknown:      '未知',
-};
-
 export const REJECT_REASON_ZH: Record<string, string> = {
   MAX_POSITION_EXCEEDED:       '超过最大持仓',
   MARKET_NOT_ACCEPTING_ORDERS: '市场暂不接单',

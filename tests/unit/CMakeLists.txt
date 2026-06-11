@@ -70,7 +70,6 @@ set(EXTRA_LIBS_test_position_ledger     stcpp_infra_wal stcpp_process_lock_test)
 set(EXTRA_LIBS_test_pm_wss_subscriber   stcpp_polymarket_wss)
 set(EXTRA_LIBS_test_clob_subscriber     stcpp_polymarket_clob_wss)
 set(EXTRA_LIBS_test_ingest_raw          stcpp_ingest_raw_writer stcpp_infra_wal)
-set(EXTRA_LIBS_test_spsc_queue          stcpp_infra_spsc)
 set(EXTRA_LIBS_test_goalserve_schema    stcpp_data_contract)
 set(EXTRA_LIBS_test_blake3_audit        stcpp_observability_audit)
 set(EXTRA_LIBS_test_audit_schema_v13    stcpp_observability_audit)
@@ -150,7 +149,6 @@ set(EXTRA_OPTS_test_audit_schema_v14    -Wno-invalid-offsetof)
 # backtest group: -Wno-conversion (size_t → double 统计计算)
 
 # --- DISCOVERY_TIMEOUT 映射 (默认 30) ---
-set(TIMEOUT_test_spsc_queue         60)
 set(TIMEOUT_test_paper_loop         60)
 
 # --- LABELS 映射 (默认 "unit") ---
@@ -175,7 +173,6 @@ set(LABELS_test_position_ledger            "unit;wal;position;w6;p0")
 set(LABELS_test_pm_wss_subscriber          "unit;polymarket;wss;w5")
 set(LABELS_test_clob_subscriber            "unit;polymarket;clob-wss;adr027;wave79;w9;security;overflow-safe;xiaobai-audit")
 set(LABELS_test_ingest_raw                 "unit;wal;ingest-raw;ds-01;w6")
-set(LABELS_test_spsc_queue                 "unit;spsc;lock-free;w6")
 set(LABELS_test_goalserve_schema           "unit;goalserve;schema;data-contract;adr-008;w6")
 set(LABELS_test_blake3_audit               "unit;audit;blake3;w6;m1-a06;smell-a;smell-2")
 set(LABELS_test_audit_schema_v13           "unit;audit;schema-v13;token_id;outcome;side;migration;adr027;w9")
@@ -271,7 +268,6 @@ set(_STCPP_CONDITIONAL_SRCS
     test_market_discovery.cpp       # paper only (links stcpp_paper_app; 小宋 MD-01..47)
     test_event_matcher.cpp          # paper only (links stcpp_paper_app; A0 映射桥)
     # deferred / not-yet-buildable stubs (target library not yet implemented):
-    test_parquet_writer_stub.cpp    # W7+ HC-06 deferred; stcpp_data_parquet not yet built
 )
 
 file(GLOB _ALL_UNIT_SRCS CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/test_*.cpp")
