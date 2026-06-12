@@ -69,8 +69,9 @@ int main(int argc, char** argv) {
             std::fprintf(stderr, "[paper_server] FATAL (R-11): PAPER_MODE=1 与 --mode live 冲突. abort.\n");
             return 2;
         }
-        for (const char* k : {"POLYMARKET_API_KEY", "POLYMARKET_SECRET", "POLYMARKET_PASSPHRASE",
-                              "POLYMARKET_PRIVATE_KEY"}) {
+        // 名单与 LiveCredentials::FromEnv 严格同源 (2026-06-13 烟测逮住名不一致 bug)
+        for (const char* k : {"WALLET_PRIVATE_KEY", "POLYMARKET_FUNDER_ADDRESS", "POLYMARKET_API_KEY",
+                              "POLYMARKET_API_SECRET", "POLYMARKET_API_PASSPHRASE"}) {
             const char* v = std::getenv(k);
             if (v == nullptr || v[0] == '\0') {
                 std::fprintf(stderr, "[paper_server] FATAL (live fail-fast): 缺凭证 %s. abort.\n", k);
