@@ -2,7 +2,7 @@
 
 - **owner:** 老雷 (GM)
 - **last_review:** 2026-06-12
-- **状态:** Phase 2 (sharp) ✅ 部署 / Phase 3 (FLB) ✅ 回测放行 + 落地 (2026-06-13)
+- **状态:** Phase 2 (sharp) ✅ 部署·现行 / Phase 3 (FLB) ⚰️ 已随 FLB 引擎整删 (2026-06-13 老板「flb 砍了吧, 直接删干净」— n=34 实证 73.5% 胜率 < 0.80 盈亏线, realized −59.88; §3.2 及 FLB 回测节仅存档)
 - **配套 ADR:** `docs/ADR/2026-06-12-rm-boundary-risk-vs-execution.md`
 
 ## 0. 一句话

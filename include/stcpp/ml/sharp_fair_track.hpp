@@ -66,7 +66,7 @@ class SharpFairTrack {
     [[nodiscard]] std::size_t size() const noexcept { return count_; }
     [[nodiscard]] bool empty() const noexcept { return count_ == 0; }
     [[nodiscard]] std::int64_t last_ts_ns() const noexcept { return last_ts_; }
-    // 最新 sharp 值 (YES-canonical; 空 → NaN)。FLB sharp 同意门用 (2026-06-11)。
+    // 最新 sharp 值 (YES-canonical; 空 → NaN)。journal 研究上下文用 (fr.sh_fair)。
     [[nodiscard]] double last_sharp() const noexcept {
         const Sample* l = newest_();
         return l != nullptr ? l->sharp : std::numeric_limits<double>::quiet_NaN();

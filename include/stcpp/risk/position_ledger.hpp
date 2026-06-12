@@ -54,7 +54,7 @@ class PositionLedger {
     // 注入一笔虚拟成交
     // last_update_ts 严格透传 fill.as_of_ts_ns (R-20)
     // condition_id + token_id 来自 PositionView 初始化时提供的映射
-    // engine: 引擎归属标签 ("sharp"/"flb"/...; 2026-06-12 per-engine 分仓加性追踪)。聚合账本不变,
+    // engine: 引擎归属标签 ("sharp"/...; 2026-06-12 per-engine 分仓加性追踪)。聚合账本不变,
     //   旁路维护 engine_pos_[(token,engine)] → RM per-engine cap + 离场各管各份。空串退化为单引擎兼容。
     void apply_fill(std::string const& condition_id,
                     std::string const& token_id,

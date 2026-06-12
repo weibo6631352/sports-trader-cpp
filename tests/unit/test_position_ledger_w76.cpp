@@ -300,17 +300,17 @@ TEST(PositionLedgerEngine, TwoEnginesSameTokenSplit) {
     PositionLedger L;
     const std::string cid = "0xc", tok = "900";
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
-    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "flb");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "engB");
     EXPECT_EQ(L.get_position(tok)->size_usdc, 150'000'000);  // 聚合 = 和
     EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 100'000'000);
-    EXPECT_EQ(L.get_engine_position_size(tok, "flb"), 50'000'000);
+    EXPECT_EQ(L.get_engine_position_size(tok, "engB"), 50'000'000);
     EXPECT_EQ(L.get_engine_position_size(tok, "nope"), 0);
     auto ce = L.get_per_condition_engine_exposure();
     EXPECT_EQ(ce.at(cid + '\x1f' + "sharp"), 100'000'000);
-    EXPECT_EQ(ce.at(cid + '\x1f' + "flb"), 50'000'000);
+    EXPECT_EQ(ce.at(cid + '\x1f' + "engB"), 50'000'000);
     // 直查单值访问器 (热路径用) 与整表一致
     EXPECT_EQ(L.get_engine_condition_exposure(cid, "sharp"), 100'000'000);
-    EXPECT_EQ(L.get_engine_condition_exposure(cid, "flb"), 50'000'000);
+    EXPECT_EQ(L.get_engine_condition_exposure(cid, "engB"), 50'000'000);
     EXPECT_EQ(L.get_engine_condition_exposure(cid, "nope"), 0);
     EXPECT_EQ(L.get_engine_condition_exposure("0xother", "sharp"), 0);
 }
@@ -319,10 +319,10 @@ TEST(PositionLedgerEngine, SharpSellOnlyReducesSharpShare) {
     PositionLedger L;
     const std::string cid = "0xc", tok = "900";
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
-    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "flb");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "engB");
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(-40'000'000, 0.55, 1002), "sharp");  // sharp 卖 40
     EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 60'000'000);  // 只减 sharp
-    EXPECT_EQ(L.get_engine_position_size(tok, "flb"), 50'000'000);    // flb 不动
+    EXPECT_EQ(L.get_engine_position_size(tok, "engB"), 50'000'000);    // engB 不动
     EXPECT_EQ(L.get_position(tok)->size_usdc, 110'000'000);           // 聚合 110
 }
 
@@ -330,11 +330,11 @@ TEST(PositionLedgerEngine, FullCloseClearsAllEngineSplits) {
     PositionLedger L;
     const std::string cid = "0xc", tok = "900";
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
-    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "flb");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "engB");
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(-150'000'000, 1.0, 1002), "sharp");  // 结算全平
     EXPECT_EQ(L.get_position(tok)->size_usdc, 0);  // 聚合归零
     EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 0);  // 全部引擎份清空
-    EXPECT_EQ(L.get_engine_position_size(tok, "flb"), 0);
+    EXPECT_EQ(L.get_engine_position_size(tok, "engB"), 0);
     EXPECT_TRUE(L.get_per_condition_engine_exposure().empty());
 }
 
@@ -351,15 +351,15 @@ TEST(PositionLedgerEngine, SnapshotRoundtrip) {
     PositionLedger L;
     const std::string cid = "0xc", tok = "900";
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
-    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "flb");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "engB");
     EXPECT_EQ(L.get_engine_pos_snapshot().size(), 2u);
     // 恢复: 聚合 P 行 (engine 空) + PE split (restore_engine_split)
     PositionLedger L2;
     L2.apply_fill(cid, tok, Outcome::Yes, ev_micro(150'000'000, 0.533, 1000));  // 聚合恢复
     L2.restore_engine_split(tok, "sharp", 100'000'000);
-    L2.restore_engine_split(tok, "flb", 50'000'000);
+    L2.restore_engine_split(tok, "engB", 50'000'000);
     EXPECT_EQ(L2.get_engine_position_size(tok, "sharp"), 100'000'000);
-    EXPECT_EQ(L2.get_engine_position_size(tok, "flb"), 50'000'000);
+    EXPECT_EQ(L2.get_engine_position_size(tok, "engB"), 50'000'000);
     EXPECT_EQ(L2.get_position(tok)->size_usdc, 150'000'000);
 }
 

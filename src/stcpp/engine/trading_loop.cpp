@@ -1401,8 +1401,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   单源同值: 与 FeedRiskGateway 喂 RM 同走 position_ledger get_per_*_exposure (micro), 无双轨。
     {
         // per-engine sizing (2026-06-12 Option A): 主决策环 = sharp → 当前敞口取 sharp 自己那份 →
-        //   sharp 的加仓/cap 按【自己 $50 预算】算, 不被 FLB 那份占用 (sharp 机会不因 FLB 缩水)。
-        //   单源同值: 与 FeedRiskGateway 同走 position_ledger; RM 聚合 cap = 合并上限 (sharp+flb)。
+        //   单源同值: 与 FeedRiskGateway 同走 position_ledger (per-engine 取 sharp 自己那份)。
         // 热路径直查 (性能审计 2026-06-12: 不每 tick 建整张敞口表)。
         // unit-contract-ok: ledger micro → sizing current_*_exposure_usdc 的 whole pUSD 域 (÷1e6)
         sz_in.current_condition_exposure_usdc =
@@ -1747,7 +1746,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   灾难逃生门 —— 2026-06-12 治理修复: 旧版此处把 force_stop 一并撤销, frozen_hard 结构性不可达)
     //   ② game_decided (sign≠0 本块不进) ③ settlement (SettleToken 不经此)。
     if (game_decided_sign == 0.0 && !sel_force_stop) {
-        // per-engine: 持有骑到结算的「现仓」= sharp 自己那份 (FLB 那份由 FLB 自己持有到结算, 不在此)。
+        // per-engine: 持有骑到结算的「现仓」= sharp 自己那份 (历史他引擎份额不在此)。
         const double cur_e =
             std::abs(static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0);
         if (cur_e > 0.0 && sel_target < cur_e) {
@@ -1853,7 +1852,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
 
     // current = 本边 token 当前持仓 (micro→whole pUSD; long ≥0)。
     //   per-engine (2026-06-12 Option A): 主决策环是 sharp 引擎 → 只取【sharp 自己那份】, 控制器据此
-    //   决定加/减/平 → sharp 卖出最多卖到自己份 (FLB 那份不在 sharp current 里 → 永不被 sharp 卖掉)。
+    //   决定加/减/平 → sharp 卖出最多卖到自己份 (历史他引擎份额不在 current 里, 永不被误卖)。
     double current_pusd =
         static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0;
     // 防抖死区 (小梁 Q-梁-2): threshold = max(floor, 0.10×|target|)。

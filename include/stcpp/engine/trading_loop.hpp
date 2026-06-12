@@ -199,7 +199,7 @@ struct PaperMarketEntry {
     // 数据新鲜度 (2026-06-01 老板「每个源标时间」): gamma 发现/重建此 catalog 条目的时刻
     //   (300s 重发现 → 此源可达 300s 陈旧)。喂 g_catalog_age_sec, 模型知道 fee/line/类别元数据多老。0=未知。
     std::int64_t discovered_at_ns{0};
-    // 比赛窗口 (2026-06-11 FLB 触发型: in-play 判定; 加性): gamma gameStartTime/endDate → Unix 秒, 0=缺。
+    // 比赛窗口 (in-play 判定, 通用): gamma gameStartTime/endDate → Unix 秒, 0=缺。
     std::int64_t game_start_ts_sec{0};
     std::int64_t end_ts_sec{0};
 };
@@ -971,7 +971,7 @@ private:
     std::int64_t last_trade_ts_ns_{0};
     std::int64_t last_daily_close_day_{0};  // P5 日级滚账 (UTC 日序号)
     std::int64_t last_deploy_warn_ns_{0};   // P4 部署率告警 5min 节流
-    // 引擎归因 (2026-06-12 老板「能区分开就行」): token → engine ("sharp"/"flb"), 入场时记,
+    // 引擎归因 (2026-06-12 老板「能区分开就行」): token → engine ("sharp"/...), 入场时记,
     //   结算/平仓按真实引擎分账。loop_thread_ 写; 快照 E 行持久化。
     // 持有路径追踪 (2026-06-13 研究级落盘): token → {入场ns, 持有期 min/max mid}。
     //   买入建, RepublishLedgerMark 逐 tick 更, 结算行消费后删。loop_thread_ 单写。

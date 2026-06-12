@@ -318,7 +318,7 @@ void TraderDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovere
                 //   EMEA Masters = 研究诊断的出血二三线 (3 场全败 −62.1)。id 名单作第二通道。
                 const bool title_blocked = ev.title.find("EMEA Masters") != std::string::npos;
                 if (title_blocked || kEsportsLeagueBlocklist.count(ev.sport_id) > 0) {
-                    market_catalog_.erase(dm.condition_id);  // 出血联赛: 不订阅/不报价/不触发 FLB
+                    market_catalog_.erase(dm.condition_id);  // 出血联赛: 不订阅/不报价
                     continue;
                 }
             }
@@ -394,7 +394,7 @@ std::shared_ptr<const engine::PaperCatalog> TraderDaemon::BuildPaperCatalog() co
         if (const auto mit = market_catalog_.find(cid); mit != market_catalog_.end()) {
             e.fee_coef = mit->second.fee_rate;  // R-fee-2: gamma feeSchedule.rate
             e.parent = engine::ParentRef{mit->second.event_id, mit->second.neg_risk_market_id};
-            e.game_start_ts_sec = mit->second.game_start_ts_sec;  // FLB in-play 窗口 (2026-06-11, 加性)
+            e.game_start_ts_sec = mit->second.game_start_ts_sec;  // in-play 窗口 (通用: 匹配/订阅生命周期)
             e.end_ts_sec = mit->second.end_ts_sec;
         }
         if (const auto cit = market_cat_map_.find(cid); cit != market_cat_map_.end()) {

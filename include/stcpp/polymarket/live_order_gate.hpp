@@ -4,7 +4,7 @@
 //   不要多加不必要的限制」)。
 //
 // §8 红线 (任何下单必经 RiskManager) 的 enforcement 点在【决策环】: trading_loop.cpp 两个
-//   下单路径 (主路径 Step 6 / FLB 路径) 都在 sign + executor_->Execute 前 rm_.evaluate,
+//   下单路径在 sign + executor_->Execute 前 rm_.evaluate,
 //   拒单到不了 executor 缝 — 与 paper 链路同一道闸同一处。
 //
 // gate 曾内置第二道 RM re-evaluate + 灰度日单数 RATE_CAP, 2026-06-13 删 (实盘首日全军覆没复盘):
