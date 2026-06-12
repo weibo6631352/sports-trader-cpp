@@ -1297,11 +1297,11 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   不因对面有 edge 就切过去 (放掉赢面仓追对面 = 切边, 老板禁)。对面成赢家由 game_decided 兜底 (处理持有边=必输
     //   方→平仓)。未持仓 → 按 SelectSide(edge 方向)选, min_open_fair(0.58) 保证只开赢面大的一方 (fair≥0.58)。
     {
-        const auto exp_lock = position_ledger_.get_per_outcome_exposure();
-        const auto yit = exp_lock.find(mkt.yes_token_id);
-        const auto nit = exp_lock.find(mkt.no_token_id);
-        const bool hold_yes = (yit != exp_lock.end() && yit->second != 0);
-        const bool hold_no = (nit != exp_lock.end() && nit->second != 0);
+        // 热路径直查 (性能审计 2026-06-12: 不建整张敞口表, 只查这两个 token)。聚合口径 (任一引擎持有即锁边)。
+        const auto ypos = position_ledger_.get_position(mkt.yes_token_id);
+        const auto npos = position_ledger_.get_position(mkt.no_token_id);
+        const bool hold_yes = (ypos && ypos->size_usdc != 0);
+        const bool hold_no = (npos && npos->size_usdc != 0);
         if (hold_yes && !hold_no) {
             is_yes = true;            // 锁 YES (持有 YES, 绝不切 NO)
         } else if (hold_no && !hold_yes) {
@@ -1415,14 +1415,10 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         // per-engine sizing (2026-06-12 Option A): 主决策环 = sharp → 当前敞口取 sharp 自己那份 →
         //   sharp 的加仓/cap 按【自己 $50 预算】算, 不被 FLB 那份占用 (sharp 机会不因 FLB 缩水)。
         //   单源同值: 与 FeedRiskGateway 同走 position_ledger; RM 聚合 cap = 合并上限 (sharp+flb)。
-        const auto ce_eng = position_ledger_.get_per_condition_engine_exposure();
-        std::string ckey = condition_id;
-        ckey.push_back('\x1f');
-        ckey.append("sharp");
-        const auto cit = ce_eng.find(ckey);
+        // 热路径直查 (性能审计 2026-06-12: 不每 tick 建整张敞口表)。
         // unit-contract-ok: ledger micro → sizing current_*_exposure_usdc 的 whole pUSD 域 (÷1e6)
         sz_in.current_condition_exposure_usdc =
-            (cit != ce_eng.end()) ? static_cast<double>(cit->second) / 1'000'000.0 : 0.0;
+            static_cast<double>(position_ledger_.get_engine_condition_exposure(condition_id, "sharp")) / 1'000'000.0;
         sz_in.current_token_exposure_usdc =
             static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0;
     }
@@ -1794,12 +1790,9 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     const SideView& other = is_yes ? mkt.no : mkt.yes;
     if (other.present) {
         const std::string& other_token = is_yes ? mkt.no_token_id : mkt.yes_token_id;
-        bool other_held = false;
-        {
-            const auto tok_exp = position_ledger_.get_per_outcome_exposure();
-            const auto tit = tok_exp.find(other_token);
-            other_held = (tit != tok_exp.end() && tit->second != 0);
-        }
+        // 热路径直查 (性能审计 2026-06-12: 不建整表, 只查 other_token)。聚合口径 (任一引擎持有即视为 held)。
+        const auto other_pos = position_ledger_.get_position(other_token);
+        const bool other_held = (other_pos && other_pos->size_usdc != 0);
         if (other_held) {
             const auto& other_feat = other.book;
             // M2-a 扛一扛门 (2026-06-10 老板「还是割肉了」+「不然都要扛一扛」): 切换选边平旧边是裸割路径。

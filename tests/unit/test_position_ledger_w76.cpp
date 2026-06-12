@@ -308,6 +308,11 @@ TEST(PositionLedgerEngine, TwoEnginesSameTokenSplit) {
     auto ce = L.get_per_condition_engine_exposure();
     EXPECT_EQ(ce.at(cid + '\x1f' + "sharp"), 100'000'000);
     EXPECT_EQ(ce.at(cid + '\x1f' + "flb"), 50'000'000);
+    // 直查单值访问器 (热路径用) 与整表一致
+    EXPECT_EQ(L.get_engine_condition_exposure(cid, "sharp"), 100'000'000);
+    EXPECT_EQ(L.get_engine_condition_exposure(cid, "flb"), 50'000'000);
+    EXPECT_EQ(L.get_engine_condition_exposure(cid, "nope"), 0);
+    EXPECT_EQ(L.get_engine_condition_exposure("0xother", "sharp"), 0);
 }
 
 TEST(PositionLedgerEngine, SharpSellOnlyReducesSharpShare) {

@@ -99,6 +99,11 @@ class PositionLedger {
     [[nodiscard]] std::unordered_map<std::string, std::int64_t>
     get_per_condition_engine_exposure() const noexcept;
 
+    // 单 (condition, engine) 敞口 (signed micro)。热路径直查 —— 避免 get_per_condition_engine_exposure
+    //   每 tick 建整表 + map 分配 (性能审计 2026-06-12)。一次遍历求和, 无分配。
+    [[nodiscard]] std::int64_t get_engine_condition_exposure(std::string const& condition_id,
+                                                             std::string const& engine) const noexcept;
+
     // 某 token 上各引擎的 (engine, size)。结算逐引擎关仓 / 观测用。
     [[nodiscard]] std::vector<std::pair<std::string, std::int64_t>>
     get_token_engine_sizes(std::string const& token_id) const noexcept;

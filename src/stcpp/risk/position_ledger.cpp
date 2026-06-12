@@ -208,6 +208,25 @@ PositionLedger::get_per_condition_engine_exposure() const noexcept {
     return out;
 }
 
+std::int64_t PositionLedger::get_engine_condition_exposure(std::string const& condition_id,
+                                                          std::string const& engine) const noexcept {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    std::string suffix;
+    suffix.push_back('\x1f');
+    suffix.append(engine);
+    std::int64_t sum = 0;
+    for (auto const& [k, size] : engine_pos_) {
+        // k = token_id + '\x1f' + engine; 先匹配 engine 后缀, 再查该 token 的 condition_id。
+        if (k.size() <= suffix.size() ||
+            k.compare(k.size() - suffix.size(), suffix.size(), suffix) != 0)
+            continue;
+        auto pit = token_positions_.find(k.substr(0, k.size() - suffix.size()));
+        if (pit != token_positions_.end() && pit->second.condition_id == condition_id)
+            sum += size;
+    }
+    return sum;
+}
+
 std::vector<std::pair<std::string, std::int64_t>>
 PositionLedger::get_token_engine_sizes(std::string const& token_id) const noexcept {
     std::shared_lock<std::shared_mutex> lk(mu_);
