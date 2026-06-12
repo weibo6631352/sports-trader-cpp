@@ -6,6 +6,10 @@
 # 用法: LIVE_ARMED=1 bash scripts/live/start_live.sh   (不带 LIVE_ARMED 则 disarmed 干跑)
 set -euo pipefail
 cd "$(dirname "$0")/../.."
+
+# 2026-06-13 老板「拷 env 过去」: 凭证(含私钥)从 .env 读, 进程内存 (不再强制交互手输)。
+# 私钥落 .env 的风险由【限额钱包 150u】封顶 (链上硬顶, 泄露上限=钱包余额)。
+set -a; [ -f .env ] && source .env; set +a
 echo "== 实盘预检 =="
 bash scripts/live/live_precheck.sh || { echo "预检未过, 拒绝启动"; exit 1; }
 echo "== build (单 binary, 与 paper 共用) =="
