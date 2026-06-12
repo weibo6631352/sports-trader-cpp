@@ -2293,6 +2293,15 @@ void TradingLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketE
     const auto fopt = hub_.Read(entry.tokens.first);
     if (!fopt || !fopt->valid) { flb_funnel_.no_book.insert(cond_id); return; }
     const auto& f = *fopt;
+    // book 新鲜度门 (2026-06-13 修「订单簿陈旧>60s」FLB 空转拒): 簿快照 >45s 没更新 → 不在陈旧簿上开单。
+    //   RM SlippageModel STALE_MAX_NS=60s 会判 BookTsStale→INVALID_INTENT 拒; 此门 (<RM 阈值, 留 15s 余量)
+    //   让引擎提前自滤, 不发注定被拒的单 (符合「调引擎不调风控」)。FLB 是 book 事件触发, 真有机会时簿是刚
+    //   更新的; 此门只挡【缓存陈旧簿】(WSS 断连窗口 / 冷门久不更新)。now_ns_v=NowRealtimeNs, 与 ingestion 同域。
+    constexpr std::int64_t kFlbBookMaxStaleNs = 45'000'000'000LL;  // 45s (< RM 60s)
+    if (f.ingestion_ts_ns <= 0 || now_ns_v - f.ingestion_ts_ns > kFlbBookMaxStaleNs) {
+        flb_funnel_.no_book.insert(cond_id);  // 复用 no_book 桶 (陈旧 ≈ 无可交易簿)
+        return;
+    }
     const double ya = f.best_ask();
     const double yb = f.best_bid();
     if (!std::isfinite(ya) || !std::isfinite(yb) || ya <= 0.0 || yb <= 0.0) { flb_funnel_.one_sided.insert(cond_id); return; }  // 双边齐才触发
@@ -2448,6 +2457,10 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
         stats_.orders_rejected.fetch_add(1, std::memory_order_relaxed);
         std::fprintf(stderr, "[flb] RM拒 cond=%.24s... code=%d\n", t.condition_id.c_str(),
                      static_cast<int>(rd.reject));  // 观测: FLB 被哪道闸拦 (拒单也进 RM rejects 环)
+        // 退避 (2026-06-13 修 Phase 3 回归): Phase 3 去掉一盘一击锁后, RM 拒不退避 → 每 3s 空转重触刷拒单环。
+        //   复用 miss 退避 (MaybeFlbTrigger 查 last_miss_ns 60s): RM 拒后 60s 不再重触, 拒单从 3s/次 → 60s/次。
+        //   不计 give_up (RM 拒多为瞬态: 陈旧簿/cap 回落后可恢复; 永久放弃只由真撮合 miss 20 次判)。
+        flb_path_[t.condition_id].last_miss_ns = as_of_now;
         return;
     }
     stats_.orders_approved.fetch_add(1, std::memory_order_relaxed);
