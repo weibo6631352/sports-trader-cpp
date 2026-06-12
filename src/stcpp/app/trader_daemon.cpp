@@ -7,6 +7,7 @@
 // 红线 (R-11 / R-12 / R-20) 见头文件; 关键不变量在下方对应位置加 [R-11] / [R-20] 注.
 
 #include "stcpp/app/trader_daemon.hpp"
+#include "stcpp/risk/live_risk_profile.hpp"  // 2026-06-13 live 注码档
 
 #include <algorithm>
 #include <cctype>
@@ -743,6 +744,16 @@ BuildResult TraderDaemon::Build() {
     cfg_.trading_loop.per_order_cap_usdc = 25.0;        // was 50 (2.5% bankroll/单)
     cfg_.trading_loop.per_outcome_cap_usdc = 50.0;      // was 100 (5% bankroll/边)
     cfg_.trading_loop.market_exposure_cap_usdc = 60.0;  // was 120 (6% bankroll/市场)
+    // 实盘注码覆盖 (2026-06-13 老板 100u 入金 + 烟测逮住: LiveRiskProfile 是孤儿从未接 daemon →
+    //   live 错用 paper 注码/bankroll 1000)。改 cfg_.trading_loop = sizing+RM+account 显示单一真相源
+    //   → 三处同步 live 注码。其余行为 (日损永不熔断等) 继承 paper, 符合老板「不乱加封控, live 只差钱是真的」。
+    if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
+        const risk::RiskConfig lp = risk::LiveRiskProfile();
+        cfg_.trading_loop.per_order_cap_usdc = lp.per_order_cap_usdc.to_pusd();
+        cfg_.trading_loop.per_outcome_cap_usdc = lp.per_outcome_cap_usdc.to_pusd();
+        cfg_.trading_loop.market_exposure_cap_usdc = lp.market_exposure_cap_usdc.to_pusd();
+        cfg_.trading_loop.bankroll_usdc = lp.bankroll_usdc.to_pusd();
+    }
     // c3 (P0-2 根治): RM caps 与 sizing 同源 = cfg_.trading_loop (whole pUSD), 同用 from_pusd 转 micro。
     //   RM 直接 micro 比 size_pUSD_micro; sizing 侧 .to_pusd() 回 whole 比 notional。同源同值。
     paper_rm_cfg.per_order_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_order_cap_usdc);
