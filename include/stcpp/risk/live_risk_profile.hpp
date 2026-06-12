@@ -14,11 +14,11 @@ namespace stcpp::risk {
 //   额外熔断 (日损/连亏 halt 全删 — 老板「不要乱加封控」; 出问题人来停)。
 [[nodiscard]] inline RiskConfig LiveRiskProfile() noexcept {
     RiskConfig c;
-    c.per_order_cap_usdc = domain::MicroPUSD::from_pusd(10.0);       // $10/单 (≥5股×0.84 可成交下限)
-    c.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(30.0);
-    c.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(30.0); // 老板「敞口也太严格了」→ 放宽
+    c.per_order_cap_usdc = domain::MicroPUSD::from_pusd(25.0);       // = paper 同款; Kelly 主导, cap 仅防极端单笔
+    c.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(40.0);
+    c.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(50.0);
     c.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(60.0);  // 同事件 (paper 同绝对值)
-    c.bankroll_usdc = domain::MicroPUSD::from_pusd(100.0);           // 老板入金 100u
+    c.bankroll_usdc = domain::MicroPUSD::from_pusd(150.0);          // = 实际钱包; Kelly 用真资金跑
     c.edge_ci_lower_floor = 0.0;
     return c;
 }
