@@ -2,27 +2,28 @@
 //
 // owner: 老雷 (GM) | last_review: 2026-06-12
 // 状态: live 装配取用 (开闸授权 = 老板一句话, 2026-06-13 会签规则废除)。
-// 红线: paper 期关闭的日损熔断/连亏 halt 在此档全部重开且更紧 (docs/RESEARCH/live-readiness-plan-v1.md §2/§4)。
+// 2026-06-13 老板「不要乱加封控」: 日损/连亏额外熔断已删, 与 paper 同构only注码等比。
 #pragma once
 
 #include "stcpp/risk/risk_gateway.hpp"
 
 namespace stcpp::risk {
 
-// 实盘初始档 (2026-06-12 老板「不需要影子系统」: 开闸即实注; 数值开闸时按老板注码改, 结构即保命门重开)。
-[[nodiscard]] inline RiskConfig LiveShadowRiskProfile() noexcept {  // TODO 开闸时更名 LiveRiskProfile + 注码按老板
+// 实盘 100u 档 (2026-06-13 老板: 入金 100u +「不要乱加封控, 2u一单不现实 — CLOB 最小买 5 股」):
+//   注码与 paper 同构按本金等比 (paper 25u/1000 → live 按可成交性取 10u/100); 不加 paper 没有的
+//   额外熔断 (日损/连亏 halt 全删 — 老板「不要乱加封控」; 出问题人来停)。
+[[nodiscard]] inline RiskConfig LiveRiskProfile() noexcept {
     RiskConfig c;
-    c.per_order_cap_usdc = domain::MicroPUSD::from_pusd(2.0);        // $2/单 (CLOB min $1)
-    c.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(4.0);
-    c.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(6.0);
-    c.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(10.0);
-    c.bankroll_usdc = domain::MicroPUSD::from_pusd(50.0);            // 总敞口 $50
-    c.daily_loss_soft_pct = 10.0;                                    // −$5 软 (拒新仓)
-    c.daily_loss_hard_pct = 20.0;                                    // −$10 硬熔断 (paper 期关闭, live 重开)
-    c.daily_loss_halt_usdc = domain::MicroPUSD::from_pusd(10.0);
-    c.consec_loss_halt_count = 5;                                    // 连亏 5 halt
-    c.edge_ci_lower_floor = 0.0;                                     // CI 门重开 (paper 放宽 −1)
+    c.per_order_cap_usdc = domain::MicroPUSD::from_pusd(10.0);       // $10/单 (≥5股×0.84 可成交下限)
+    c.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(30.0);
+    c.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(30.0); // 老板「敞口也太严格了」→ 放宽
+    c.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(60.0);  // 同事件 (paper 同绝对值)
+    c.bankroll_usdc = domain::MicroPUSD::from_pusd(100.0);           // 老板入金 100u
+    c.edge_ci_lower_floor = 0.0;
     return c;
 }
+
+// (旧名兼容: 装配处若仍引用 ShadowProfile)
+[[nodiscard]] inline RiskConfig LiveShadowRiskProfile() noexcept { return LiveRiskProfile(); }
 
 }  // namespace stcpp::risk
