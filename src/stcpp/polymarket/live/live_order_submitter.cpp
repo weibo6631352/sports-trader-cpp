@@ -195,7 +195,12 @@ LiveOrderResult LiveOrderSubmitter::Submit(const LiveOrderRequest& req) noexcept
     curl_easy_setopt(c, CURLOPT_POSTFIELDSIZE, static_cast<long>(body.size()));
     curl_easy_setopt(c, CURLOPT_WRITEFUNCTION, WriteCb);
     curl_easy_setopt(c, CURLOPT_WRITEDATA, &resp);
-    curl_easy_setopt(c, CURLOPT_TIMEOUT, 8L);
+    // 超时收紧 (2026-06-12 性能审计): 下单往返实测 warm ~14ms / 冷 ~31ms; 旧 8s = 560× 冗余且白卡决策线程。
+    //   total 3s (>3s 没回应基本卡死/失败, FOK 更该早放弃) + connect 2s (连接阶段单独上限) →
+    //   worst-case 决策线程阻塞 8s→3s。NOSIGNAL: 多线程 daemon 里 curl 超时禁用 SIGALRM (线程安全, best practice)。
+    curl_easy_setopt(c, CURLOPT_TIMEOUT, 3L);
+    curl_easy_setopt(c, CURLOPT_CONNECTTIMEOUT, 2L);
+    curl_easy_setopt(c, CURLOPT_NOSIGNAL, 1L);
     const CURLcode rc = curl_easy_perform(c);
     long http = 0;
     curl_easy_getinfo(c, CURLINFO_RESPONSE_CODE, &http);
