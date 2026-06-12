@@ -775,12 +775,12 @@ BuildResult TraderDaemon::Build() {
     //   market/per_outcome cap = sharp 自己 base cap + FLB 一注 → FLB 的 25u 能叠在 sharp 满仓之上不被聚合
     //   cap 挡。sharp 的 sizing 仍用 base cap (cfg_.trading_loop, 取 sharp 自己那份敞口) → sharp 不超自己预算。
     //   RM 更宽 = sharp 侧无 surprise-reject (sizing 更紧是 binding)。per_order 不累计, 不加。
-    constexpr double kFlbStake = engine::TradingLoop::kFlbStakeUsdc;
+    // (+kFlbStake cap 垫层 2026-06-13 随 FLB 砍除: FLB 不再占聚合份额, cap 回纯 sharp 精确值。)
     paper_rm_cfg.per_order_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_order_cap_usdc);
     paper_rm_cfg.market_exposure_cap_usdc =
-        domain::MicroPUSD::from_pusd(cfg_.trading_loop.market_exposure_cap_usdc + kFlbStake);
+        domain::MicroPUSD::from_pusd(cfg_.trading_loop.market_exposure_cap_usdc);
     paper_rm_cfg.per_outcome_cap_usdc =
-        domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_outcome_cap_usdc + kFlbStake);
+        domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_outcome_cap_usdc);
     // 2026-06-10 复盘迭代: event 层聚合 cap (同场 ML+Spread+Total 叠仓=隐性 3x 杠杆)。
     //   RM 基建已在 (set_condition_event + Σ|condition| ρ=1 上界), 此前默认 10000u 实际未生效 → 设 120u (12% bankroll/场)。
     // 同事件预算 (2026-06-13 老板拍板「各自预算, 不用共享」): 同场多盘口各走各的单市场
@@ -815,8 +815,12 @@ BuildResult TraderDaemon::Build() {
     cfg_.trading_loop.net_ev_gate = cfg_.enable_phase0_gates;
     // 赢面稳定窗 3min (老板 2026-06-11「入场太早赢面不稳定」拍板): 同随 phase0 gates (A2 等管线测试可关)。
     cfg_.trading_loop.open_stable_window_ns = cfg_.enable_phase0_gates ? 180'000'000'000LL : 0;
-    // FLB-hold 引擎 (老板 2026-06-11 拍板「与现策略并跑」): 生产开; 扫描另有 start_live_feeds 闸 (离线测试不扫)。
-    cfg_.trading_loop.flb_enabled = true;
+    // FLB-hold 引擎: **关 (2026-06-13 老板「flb 砍了吧」)。** 实证 n=34 结算: 73.5% 胜率 < 0.80 入场
+    //   盈亏线(>80%), realized −59.88 — 赔付不对称(赢~+5/输~−20)把正胜率变亏钱; 同期 sharp 16/17 +107.71。
+    //   flb_enabled=false 同时停【触发】(trading_loop TickAll 门) 和【FLB 宇宙 WSS 订阅】(下方 flb_take 门)。
+    //   存量 FLB 持仓不受影响: SettlementPoller(catalog∪held)+孤儿 sweep 照常结算, per-engine 账本保留归因。
+    //   引擎代码/测试保留 (3500 深簿假设若未来想验, 翻开关即可; 本次先止血)。
+    cfg_.trading_loop.flb_enabled = false;
     // 账本持久化 (2026-06-11「迭代部署 vs 攒数据」根治): 60s 快照 + 启动恢复; CWD 相对 (server 在仓库根跑)。
     // live 模式独立文件 (2026-06-12 单参数切换): live 重启绝不能把 paper 仓恢复进真钱账本 (R-11 反向)。
     cfg_.trading_loop.ledger_snapshot_path =
