@@ -2280,7 +2280,11 @@ void TradingLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketE
     constexpr double kFlbMaxPx = 0.84;    // 0.97→0.84 (2026-06-12 数据: ≥0.84 入场带出血 [flb 该带 1/1 全输 −21],
                                           //   0.70-0.84 带 flb 6/6 全胜 +22% — 支付价卡在利润带内)
     constexpr double kFlbMaxSpread = 0.05;
-    constexpr double kFlbMinDepthUsdc = 25.0;
+    // 25→3500 (2026-06-13 老板「安全第一」): 复盘 8 结算的亏损指纹 — 赢单深簿($428-5774),
+    //   输单全薄簿($50-550)。薄 ask 的 favorite = 做市商对该价没信心(逆向选择), 深簿 = 共识扎实。
+    //   3500 只放行最深簿 favorite (复盘中 ≥3500 的 3 笔全赢 +18.97, 3 笔输全被挡)。代价: FLB 触发
+    //   频率大降(预期 -70%+), 接受 — 宁可少做只做最稳的。n=8 小样本, 前向 50 结算后按深度分桶复评。
+    constexpr double kFlbMinDepthUsdc = 3500.0;
     // v2 路径门 (多特征研究 2026-06-11, 593 触发实证):
     constexpr double kFlbMaxMom5 = 0.10;   // 跳升过滤: 5min 边向动量 > +0.10 = gap 追入 (−1.5%), 等稳再触发
     constexpr int kFlbMaxLeadChanges = 3;  // 拉锯过滤: 领先易主 ≥3 次 = 跷跷板局 (−3.5%), 出局

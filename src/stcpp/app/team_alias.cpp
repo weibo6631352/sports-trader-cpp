@@ -206,6 +206,25 @@ const std::vector<TeamEntry>& SoccerTeams() {
         {"fortaleza", {"fortaleza"}}, {"vascodagama", {"vasco da gama"}},
         // ---- 阿甲 / 其它南美豪门 ----
         {"bocajuniors", {"boca juniors", "boca"}}, {"riverplate", {"river plate"}},
+        // ---- 国家队 (ROI-1, 2026-06-13 覆盖研究: 唯一实证名字缺口) ----
+        //   PM 用 FIFA 全称 (Korea Republic / IR Iran / China PR), GS 用通称 (South Korea / Iran / China)
+        //   → 两侧别名同收敛到一个规范 ID。实证 near-miss: PM「Korea Republic」↔GS「South Korea」score=0.50。
+        //   World Cup / 欧国联 / 美洲杯窗口生效; 纯加性不退化 (§8.1 carve-out)。变音符由归一化层折叠。
+        {"southkorea", {"south korea", "korea republic", "korea rep"}},
+        {"northkorea", {"north korea", "korea dpr", "dpr korea"}},
+        {"iran", {"iran", "ir iran"}},
+        {"ivorycoast", {"ivory coast", "cote d ivoire", "cote divoire"}},
+        {"usmnt", {"united states", "usa"}},
+        {"chinanat", {"china", "china pr"}},
+        {"czechia", {"czech republic", "czechia"}},
+        {"drcongo", {"dr congo", "congo dr"}},
+        {"capeverde", {"cape verde", "cabo verde"}},
+        {"turkiye", {"turkey", "turkiye"}},
+        {"bosnia", {"bosnia", "bosnia and herzegovina", "bosnia herzegovina"}},
+        {"uaenat", {"united arab emirates", "uae"}},
+        {"saudinat", {"saudi arabia", "ksa"}},
+        {"hollandnat", {"netherlands", "holland"}},
+        {"trinidad", {"trinidad and tobago", "trinidad tobago"}},
     };
     return t;
 }
