@@ -94,6 +94,31 @@ TEST(LiveOrderGateTranslate, SellAmountsAndNegRisk) {
     EXPECT_TRUE(req.neg_risk);
 }
 
+// CLOB 精度: SELL odd-lot (6 位小数持仓) 必须圆整 — shares 钉 2 位(10'000 倍数), USDC 钉 4 位(100 倍数)。
+//   未圆整会被 CLOB 400 拒 ("maker max 2 decimals, taker max 4 decimals", 2026-06-12 都柏林实测)。
+TEST(LiveOrderGateTranslate, SellOddLotPrecisionFloored) {
+    stcpp::risk::OrderIntent it;
+    it.side = Side::Sell;
+    it.price = 0.19;
+    it.size_pUSD_micro = 1'050'000;  // → shares≈5.526316 (6 位小数)
+    const auto req = TranslateIntent(it, false);
+    EXPECT_EQ(req.maker_amount % 10'000u, 0u) << "卖出 shares 须 2 位小数 (10'000 micro 倍数)";
+    EXPECT_EQ(req.taker_amount % 100u, 0u) << "USDC 须 4 位小数 (100 micro 倍数)";
+    EXPECT_EQ(req.maker_amount, 5'520'000u);  // 5.526.. → 向下钉 5.52 股 (不超卖)
+    EXPECT_LE(req.maker_amount, 5'526'316u);  // 绝不超过原始持仓 (防超卖)
+}
+
+// BUY 同样满足精度 (shares 2 位 / USDC 4 位), 且隐含限价 = intent.price。
+TEST(LiveOrderGateTranslate, BuyPrecisionSatisfied) {
+    stcpp::risk::OrderIntent it;
+    it.side = Side::Buy;
+    it.price = 0.07;
+    it.size_pUSD_micro = 1'000'000;  // $1 @ 0.07 → 14.28.. 股
+    const auto req = TranslateIntent(it, false);
+    EXPECT_EQ(req.taker_amount % 10'000u, 0u) << "买入 shares 须 2 位小数";
+    EXPECT_EQ(req.maker_amount % 100u, 0u) << "USDC 须 4 位小数";
+}
+
 // fail-closed: 默认未开闸 → sink 零调用。
 TEST_F(LiveOrderGateTest, DisarmedBlocks) {
     LiveOrderGate gate(make_counting_sink());
