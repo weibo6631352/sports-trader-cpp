@@ -26,6 +26,7 @@
 #include <string>
 #include <utility>
 
+#include "stcpp/app/dotenv.hpp"  // 程序直读 .env (老板 2026-06-12: 启动不再 shell source)
 #include "stcpp/app/trader_daemon.hpp"
 #include "stcpp/execution/execution_mode.hpp"
 #include "stcpp/infra/process/single_instance.hpp"  // 程序级防多开 (PID+flock)
@@ -61,7 +62,21 @@ int main(int argc, char** argv) {
             }
         }
     }
+    // 程序直读 .env (老板 2026-06-12「东西都在 .env 中了, 程序直接读就好了」):
+    //   CWD 下 .env (server 在仓库根跑); 进程环境优先, live 模式跳过文件里的 PAPER_MODE。
+    //   §8: 只记键名进日志, 值绝不打印。
+    {
+        const auto keys = stcpp::app::LoadDotEnv(
+            ".env", exec_mode == stcpp::execution::ExecutionMode::Live);
+        if (!keys.empty()) {
+            std::string names;
+            for (const auto& k : keys) { if (!names.empty()) names += ","; names += k; }
+            std::fprintf(stderr, "[paper_server] .env 已加载 %zu 项 (进程环境优先): %s\n",
+                         keys.size(), names.c_str());
+        }
+    }
     // R-11 一致性闸: PAPER_MODE=1 环境 (systemd 固化) 与 --mode live 互斥 → 拒启动。
+    //   (.env 里的 PAPER_MODE 已被 live 模式跳过, 此处拦的是 shell/systemd 显式导出的真冲突。)
     // live fail-fast: 凭证四件套入口即查 (不等装配 — 缺凭证的 live 进程一秒都不该跑)。
     if (exec_mode == stcpp::execution::ExecutionMode::Live) {
         const char* pm = std::getenv("PAPER_MODE");

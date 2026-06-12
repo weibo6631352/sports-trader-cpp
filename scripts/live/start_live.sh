@@ -1,26 +1,23 @@
 #!/usr/bin/env bash
 # 实盘启动 (单参数切换的「那个参数」= --mode live) — owner: 老雷 | 2026-06-12
-# 2026-06-12 架构合理化: 单 binary 运行时 mode。与 paper 同一个 build/trader_server,
-#   差异只在 --mode live + 凭证 + LIVE_ARMED。build-live/ 双构建已废。
-# 前置: ① 老板明确同意开闸 ② bash scripts/live/live_precheck.sh 全绿 ③ 钱包已入金
-# 用法: LIVE_ARMED=1 bash scripts/live/start_live.sh   (不带 LIVE_ARMED 则 disarmed 干跑)
+# 2026-06-12 老板「东西都在 .env 中了, 程序直接读就好了」: binary 内置 dotenv
+#   (trader_server_main → LoadDotEnv), 凭证/LIVE_ARMED/STCPP_LIVE_INTENT_OK 全从仓库根
+#   .env 读, 本脚本不再 source/export 任何仪式变量。私钥落 .env 的风险由限额钱包封顶。
+# 前置: ① 老板明确同意开闸 (LIVE_ARMED=1 写在 .env) ② 钱包已入金
+# 用法: bash scripts/live/start_live.sh
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# 2026-06-13 老板「拷 env 过去」: 凭证(含私钥)从 .env 读, 进程内存 (不再强制交互手输)。
-# 私钥落 .env 的风险由【限额钱包 150u】封顶 (链上硬顶, 泄露上限=钱包余额)。
-set -a; [ -f .env ] && source .env; set +a
 echo "== 实盘预检 =="
 bash scripts/live/live_precheck.sh || { echo "预检未过, 拒绝启动"; exit 1; }
 echo "== build (单 binary, 与 paper 共用) =="
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -GNinja >/dev/null
 ninja -C build trader_server
-pkill -f "trader_server --mode live" 2>/dev/null || true
-export STCPP_LIVE_INTENT_OK=1
-unset PAPER_MODE   # R-11: PAPER_MODE=1 与 --mode live 互斥 (main 入口硬拒)
-ARMED=${LIVE_ARMED:-0}
-echo "== 启动 live (LIVE_ARMED=$ARMED; gate $([ "$ARMED" = 1 ] && echo \'⚠开闸\' || echo \'disarmed 干跑\')) =="
-setsid env LIVE_ARMED=$ARMED ./build/src/stcpp/app/trader_server --mode live --host 0.0.0.0 --port 7090 --enable-fills \
+# pkill -x 精确按进程名杀 (-f 模式串会误杀含同字样的 shell 自身, 实测踩过)
+pkill -x trader_server 2>/dev/null || true
+sleep 2; pkill -9 -x trader_server 2>/dev/null || true
+setsid ./build/src/stcpp/app/trader_server --mode live --host 0.0.0.0 --port 7080 --enable-fills \
   > /tmp/live_server.log 2>&1 < /dev/null &
-sleep 3
-pgrep -f "trader_server --mode live" >/dev/null && echo "live_server 已启动 (port 7090, 日志 /tmp/live_server.log)" || { echo "启动失败 (查 /tmp/live_server.log — 缺凭证会 fail-fast)"; exit 1; }
+sleep 4
+pgrep -x trader_server >/dev/null && echo "live_server 已启动 (port 7080, 日志 /tmp/live_server.log; armed 状态看日志 ARMED 行)" \
+  || { echo "启动失败 (查 /tmp/live_server.log — 缺凭证会 fail-fast)"; exit 1; }
