@@ -271,9 +271,6 @@ export function StatusBar() {
           <Button variant="contained" size="small" onClick={saveApiBase}>
             保存并刷新
           </Button>
-          <Typography variant="caption" sx={{ color: 'text.disabled', ml: 1 }}>
-            默认 127.0.0.1:7080 · 加 ?stub=1 使用 mock 数据
-          </Typography>
         </div>
       </Show>
     </>
