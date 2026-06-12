@@ -39,6 +39,7 @@
 #include <gtest/gtest.h>
 
 #include "stcpp/infra/wal/pit.hpp"
+#include "stcpp/numerical/slippage_model.hpp"  // numerical::FILL_RATE_FLOOR (advisory 断言)
 #include "stcpp/risk/risk_gateway.hpp"
 
 namespace stcpp::risk::test {
@@ -536,18 +537,24 @@ TEST_F(RiskGatewayTest, R15_MARKET_NOT_ACTIVE) {
 
 // ---- 流动性 / 滑点 -----------------------------------------------------------
 
-TEST_F(RiskGatewayTest, R16_LOW_FILL_RATE) {
+// ADR 2026-06-12-rm-boundary-risk-vs-execution: LOW_FILL_RATE / EXCESSIVE_SLIPPAGE 从硬拒降级 advisory。
+//   fill_rate / slippage 是执行质量非真实风险, 归引擎 (depth-aware-accumulation 切单累积)。RM 仍【计算并
+//   填充】expected_fill_rate / slippage_bps 供观测, 但不再 set reject → 这两类不再 REJECTED。
+TEST_F(RiskGatewayTest, R16_LOW_FILL_RATE_now_advisory) {
     auto it = make_ok_intent("sig_low_fill");
     auto const now = ::stcpp::infra::wal::pit::NowRealtimeNs();
     it.book_snapshot_ts_ns = now - 40'000'000'000LL;
     it.book_depth_l1_usdc = 1'100;
     auto d = rm_->evaluate(it);
-    expect_rejected(d, RejectCode::LOW_FILL_RATE);
+    // 旧: expect_rejected(LOW_FILL_RATE)。新: 不再因 fill_rate 拒。
+    EXPECT_NE(d.reject, RejectCode::LOW_FILL_RATE) << "fill_rate 已降级 advisory, 不应再拒单";
+    EXPECT_EQ(d.decision, Decision::APPROVED) << "无其他风险门 → 放行 (fill_rate 仅 advisory)";
+    EXPECT_GT(d.expected_fill_rate, 0.0) << "advisory: expected_fill_rate 仍被计算填充供观测";
+    EXPECT_LT(d.expected_fill_rate, numerical::FILL_RATE_FLOOR) << "本例 fill_rate 确实低于 floor (但不拒)";
 }
 
-TEST_F(RiskGatewayTest, R17_EXCESSIVE_SLIPPAGE) {
-    // P1-9: 修正后真实 whole size 喂 ρ。depth=400, size=1100 pUSD → ρ=2.75 → fill=0.158<0.5
-    //   → LOW_FILL_RATE (fill<floor 先于 slip 检; 语义与旧版一致 — 名 EXCESSIVE 实测 LOW_FILL)。
+TEST_F(RiskGatewayTest, R17_low_fill_now_advisory) {
+    // depth=400, size=1100 pUSD → ρ=2.75 → fill=0.158<floor: 旧版拒 LOW_FILL_RATE, 现降级 advisory 放行。
     RiskConfig c = cfg_;
     c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(2'000.0);
     c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(3'000.0);
@@ -557,13 +564,14 @@ TEST_F(RiskGatewayTest, R17_EXCESSIVE_SLIPPAGE) {
     it.book_depth_l1_usdc = 400;
     it.size_pUSD_micro = 1'100'000'000;  // 1100 pUSD whole; ρ=2.75 fill=0.158<0.5
     auto d = local->evaluate(it);
-    EXPECT_EQ(d.reject, RejectCode::LOW_FILL_RATE);
+    EXPECT_NE(d.reject, RejectCode::LOW_FILL_RATE);
+    EXPECT_EQ(d.decision, Decision::APPROVED) << "fill<floor 不再拒 (advisory); caps 已抬 → 放行";
+    EXPECT_LT(d.expected_fill_rate, numerical::FILL_RATE_FLOOR) << "advisory 字段仍填";
 }
 
-TEST_F(RiskGatewayTest, R17b_EXCESSIVE_SLIPPAGE_pure) {
-    // P1-9: 修正后借机真正命中纯 EXCESSIVE_SLIPPAGE (旧版靠 OR 兜底, 实际从没测到纯 EXCESSIVE)。
-    //   低 price(0.05) 放大 tick 占比 → slip>200bps; depth=400 size=85 pUSD → ρ=0.21 fill=0.932≥0.5
-    //   → fill 不触 LOW_FILL, slip=213bps>200 → 纯 EXCESSIVE_SLIPPAGE。
+TEST_F(RiskGatewayTest, R17b_excessive_slippage_now_advisory) {
+    // 低 price(0.05) 放大 tick 占比 → slip=213bps>200(excessive_slippage_bps); fill=0.932≥floor。
+    //   旧版纯 EXCESSIVE_SLIPPAGE 拒; 现降级 advisory → 放行, slippage_bps 仍填供观测。
     RiskConfig c = cfg_;
     c.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(500.0);
     c.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_pusd(1'000.0);
@@ -574,8 +582,10 @@ TEST_F(RiskGatewayTest, R17b_EXCESSIVE_SLIPPAGE_pure) {
     it.book_depth_l1_usdc = 400;
     it.size_pUSD_micro = 85'000'000;  // 85 pUSD whole; ρ=0.21 fill=0.932 slip=213bps
     auto d = local->evaluate(it);
-    EXPECT_EQ(d.reject, RejectCode::EXCESSIVE_SLIPPAGE)
-        << "R17b: fill>=0.5 但 slip>200bps, 应纯 EXCESSIVE_SLIPPAGE, got " << static_cast<int>(d.reject);
+    EXPECT_NE(d.reject, RejectCode::EXCESSIVE_SLIPPAGE) << "slippage 已降级 advisory, 不应再拒单";
+    EXPECT_EQ(d.decision, Decision::APPROVED);
+    auto const slip_abs = d.slippage_bps < 0 ? -d.slippage_bps : d.slippage_bps;
+    EXPECT_GT(slip_abs, c.excessive_slippage_bps) << "advisory: slippage_bps 仍被计算填充 (>200bps 但不拒)";
 }
 
 TEST_F(RiskGatewayTest, R18_EXCEED_BOOK_DEPTH) {

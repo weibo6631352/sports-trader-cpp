@@ -2023,8 +2023,28 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     intent.feature_snapshot_id = "paper-m1-no-snapshot";
     // 定价 (老周 Q-周-1 限价不追前置门已过): marketable-limit 实际成交在触价 (买 ask / 卖 bid)。
     intent.price = (action.side == strategy::Side::Buy) ? exec_ask : exec_bid;
-    // size: 控制器动作 (已 clamp per_order_cap + 卖不超持仓), 转 micro pUSD。
-    intent.size_pUSD_micro = static_cast<std::int64_t>(action.size_pusd * 1'000'000.0);
+    // ---- 深度感知切单 (Phase 2, depth-aware-accumulation 设计 §3.1) -----------------------
+    //   FOK 单若 size > 簿当下可成交深度 → 整单 0 成交 (fill-or-kill 语义)。把【买单】切到 L1 ask 可成交
+    //   深度的 SAFETY_FRAC, 让 FOK 落在能成交的量内; 不足目标 (Kelly residual) 的部分由后续 tick 簿深度
+    //   回补后继续吃 —— 跨 tick 累积 (current=sharp 份额, target=Kelly → 每 tick residual 自然递减)。
+    //   仅买单 (开/加仓); 卖/平不切 (减仓要尽量出清, 别留尾仓)。
+    //   ADR 2026-06-12-rm-boundary: RM 已不再用 LOW_FILL_RATE 毙单, 改由引擎在此主动切单到可成交深度。
+    double order_size_pusd = action.size_pusd;  // 控制器动作 (已 clamp per_order_cap + 卖不超持仓)
+    if (action.side == strategy::Side::Buy) {
+        const double ask_depth = side_book.best_ask_size();  // L1 ask 可成交深度 (USD 口径)
+        if (std::isfinite(ask_depth) && ask_depth > 0.0) {
+            constexpr double kBiteSafetyFrac = 0.80;  // 不抢光显示量, 留并发 taker/撤单余量
+            constexpr double kMinBiteUsd = 5.0;       // 单笔下限, 防小单手续费 churn (PM min $1, 留缓冲)
+            const double fillable = ask_depth * kBiteSafetyFrac;
+            if (order_size_pusd > fillable) order_size_pusd = fillable;  // 切到可成交深度; 余量下 tick 补
+            if (order_size_pusd < kMinBiteUsd) {
+                stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+                return;  // 切完不足单笔下限 → 不下, 等深度回补 (防 churn; 目标仍由后续 tick 累积)
+            }
+        }
+    }
+    // size: 转 micro pUSD。
+    intent.size_pUSD_micro = static_cast<std::int64_t>(order_size_pusd * 1'000'000.0);
     if (intent.size_pUSD_micro <= 0) {
         stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
         return;  // size 舍入到 0 micro → 不臆造 size (防卖侧超卖)

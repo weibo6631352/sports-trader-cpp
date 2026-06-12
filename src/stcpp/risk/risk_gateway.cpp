@@ -709,23 +709,23 @@ bool RiskGateway::check_liquidity_(OrderIntent const& it, RiskDecision& d) const
 
     switch (out.reject) {
         case numerical::RejectCode::Ok:
+        case numerical::RejectCode::FillRateBelowFloor:
+            // LOW_FILL_RATE 降级 advisory (ADR 2026-06-12-rm-boundary-risk-vs-execution):
+            //   fill_rate 是「成交质量」非「真实风险」—— 一笔只吃 40% 不危险, 只是吃不满。
+            //   正确反应是引擎按可成交深度切单累积 (depth-aware-accumulation), 非 RM 毙整单。
+            //   d.expected_fill_rate 已在 L708 填好 → 继续流到拒单面板/audit 作观测仪表, 只是不再当门。
+            //   老板 verbatim: 「风控不能挡我们引擎的逻辑啊, 要调也是调引擎不是调风控。」
             break;
         case numerical::RejectCode::InvalidIntent:
-            d.reject = RejectCode::INVALID_INTENT;
+            d.reject = RejectCode::INVALID_INTENT;  // 保留: 非法 intent = 真实格式风险
             d.sub_reason = map_slippage_sub(out.sub_reason);
             return true;
         case numerical::RejectCode::ExceedBookDepth:
-            d.reject = RejectCode::EXCEED_BOOK_DEPTH;
-            return true;
-        case numerical::RejectCode::FillRateBelowFloor:
-            d.reject = RejectCode::LOW_FILL_RATE;
+            d.reject = RejectCode::EXCEED_BOOK_DEPTH;  // 保留: 纵深 sanity bound (单子>全簿明显 bug, ADR §2.1)
             return true;
     }
-    auto const slip_abs = out.slippage_bps < 0 ? -out.slippage_bps : out.slippage_bps;
-    if (slip_abs > cfg_.excessive_slippage_bps) {
-        d.reject = RejectCode::EXCESSIVE_SLIPPAGE;
-        return true;
-    }
+    // EXCESSIVE_SLIPPAGE 降级 advisory (同 ADR): 限价单本身已封顶滑点, 滑点是执行质量非风险, 归引擎。
+    //   d.slippage_bps 已在 L707 填好供观测; 不再 set reject。
     return false;
 }
 
