@@ -128,7 +128,7 @@
 3. **ABI/字段单位变更必触发下游审计（补 R-4 配套）：** 任何字段重命名/单位变更（如 `size_usdc → size_pUSD_micro`）必须 audit 全部比较点/消费点的单位一致性，否则会「静默架空」依赖该字段的红线（caps/exposure/bankroll）。这类变更走 R-4（schema 静默变更红线）。
 4. **R-NN 命名空间歧义（backlog，派小米）：** 全库 `R-\d` 被三套体系同号异义混用（§8 红线 R-12=WSS / RM 拒单码 R-12=EDGE_NEGATED / 风险登记 R-12=另一回事）。拆命名空间：红线 `RL-` / 拒单码 `RJ-` / 风险项 `RR-`，消 ML-R2 式误传导土壤。
 5. **加性/已通知/非重大 carve-out（2026-05-31 GM 红线复评立，[ADR](docs/ADR/2026-05-31-redline-application-carveout.md)）：** §8 红线 #4 触发词是「**静默**变更」、#5 是「**重大**变更」。**纯加性变更（struct 末尾新增字段，无重命名/单位/语义变更）+ 已在 PR/commit 通知下游 + 非重大 → 不触发 R-4 全审计 / 不需架构评审会签**，走普通 PR review（G-FREEZE-W「只增不改名」本就是低仪式路径）。R-4 全审计仅针对**重命名 / 单位变更 / 语义变更**（原始风险：静默架空 caps/exposure/bankroll）。误把加性 plumbing 当 R-4/重大套会签 = §8.1 自身要消的「约束咬人」。
-6. **人签门画在「真金白银动作」，不画在「写未开闸代码」（2026-05-31 立，同 ADR）：** 需人类会签（老韩 RM + 小白安全）的是**实际开闸真实自动交易**（`LiveOrderGate.Arm()` 对真钱放行）。**编写默认 disarmed 的 live plumbing**（submitter/gate/executor/adapter/ExecReport 4ts/live 账本 plumbing — 不开闸不花钱、fail-closed）走普通 PR review，**不需会签**。风险在「钱动」不在「码写」，混成一步 = 无谓阻塞工程。
+6. **人签门画在「真金白银动作」，不画在「写未开闸代码」（2026-05-31 立，同 ADR）：** ~~需人类会签的是实际开闸~~ **2026-06-13 老板令「不需要会签, 把会签的那些规则删了」: 开闸授权 = 老板明确一句话 → LIVE_ARMED=1**（`LiveOrderGate.Arm()` 对真钱放行）。**编写默认 disarmed 的 live plumbing**（submitter/gate/executor/adapter/ExecReport 4ts/live 账本 plumbing — 不开闸不花钱、fail-closed）走普通 PR review，**不需会签**。风险在「钱动」不在「码写」，混成一步 = 无谓阻塞工程。
 
 **地域 / 法律 / 监管层合规已 GM 2026-05-28 决议暂不纠缠**，未来迁合规地区一次性处理。详见 [`docs/ADR/2026-05-28-gm-policy-jurisdictional-deferral.md`](docs/ADR/2026-05-28-gm-policy-jurisdictional-deferral.md)。
 
@@ -309,7 +309,7 @@ docs/
 **纪律:**
 - **私钥红线 (§8):** `~/stcpp-ops/keys/*.pem` 是 SSH 私钥, **绝不 cat / 不进 git / 不进日志**。运维包整个在仓库外。
 - **改服务器状态前确认** (拉代码/装依赖/编译/起进程 = outward-facing); 只读检查 (uname/df/curl 探活) 低风险可直接跑。
-- **R-11:** systemd unit 强制 `PAPER_MODE=1`; 真钱开闸 (`LiveOrderGate.Arm()`) 需老韩 RM + 小白安全会签 (§8.1)。
+- **R-11:** systemd unit 强制 `PAPER_MODE=1`; 真钱开闸 (`LiveOrderGate.Arm()`) 授权 = 老板一句话 (2026-06-13 会签废除)。
 - 服务器环境: gcc 11.5 / cmake 3.30 / ninja / python3.9 / aws-cli 已装; **onnxruntime 待装** (真模型推理); clang 缺 (用 gcc)。
 
 ---

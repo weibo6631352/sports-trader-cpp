@@ -20,5 +20,5 @@ echo "链上持仓: ${NPOS:-?} 个 $([ "${NPOS:-0}" -gt 0 ] && echo '⚠ 遗留�
 # 4. CLOB 可达性
 curl -s -m8 -o /dev/null -w "CLOB 可达: %{http_code} (%{time_total}s)\n" "https://clob.polymarket.com/ok" 2>/dev/null
 # 5. 编译模式 (live binary 必须 kCompiledMode=Live; paper binary 永不带闸)
-echo "(提醒: 开闸 = 老韩 RM + 小白安全会签 → LiveOrderGate.Arm(); 默认 disarmed fail-closed)"
+echo "(开闸授权 = 老板一句话 [2026-06-13 会签规则废除] → LIVE_ARMED=1; gate 默认 disarmed fail-closed)"
 exit $fail

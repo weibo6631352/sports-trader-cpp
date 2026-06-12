@@ -1,7 +1,7 @@
 // include/stcpp/risk/live_risk_profile.hpp — 实盘微注影子期 RM 档 (2026-06-12 实盘准备 v1)
 //
 // owner: 老雷 (GM) | last_review: 2026-06-12
-// 状态: 【未接线】— 仅定义, live 装配 (开闸会签后) 取用; paper 路径零引用零影响。
+// 状态: live 装配取用 (开闸授权 = 老板一句话, 2026-06-13 会签规则废除)。
 // 红线: paper 期关闭的日损熔断/连亏 halt 在此档全部重开且更紧 (docs/RESEARCH/live-readiness-plan-v1.md §2/§4)。
 #pragma once
 
