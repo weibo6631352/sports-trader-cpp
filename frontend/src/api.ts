@@ -26,13 +26,17 @@ import type {
  *  本地 dev (localhost) 仍连 127.0.0.1:7080。可被 localStorage 覆盖。跨域由后端 CORS 处理。
  *  2026-06-10 端口 8080→7080 (老板「有人窥视, 换端口」)。 */
 function defaultApiBase(): string {
+  // ?api=7090 → 切 live 观测 (2026-06-13 实盘准备; 优先级: query > localStorage > 默认 7080)
+  let port = '7080';
   try {
+    const qp = new URLSearchParams(window.location.search).get('api');
+    if (qp && /^\d+$/.test(qp)) port = qp;
     const h = window.location.hostname;
-    if (h && h !== 'localhost' && h !== '127.0.0.1') return `http://${h}:7080`;
+    if (h && h !== 'localhost' && h !== '127.0.0.1') return `http://${h}:${port}`;
   } catch {
     // SSR / 无 window
   }
-  return 'http://127.0.0.1:7080';
+  return `http://127.0.0.1:${port}`;
 }
 
 function loadBaseUrl(): string {
