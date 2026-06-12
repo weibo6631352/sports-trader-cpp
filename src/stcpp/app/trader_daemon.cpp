@@ -771,11 +771,16 @@ BuildResult TraderDaemon::Build() {
         cfg_.trading_loop.bankroll_usdc = bankroll;
     }
     // c3 (P0-2 根治): RM caps 与 sizing 同源 = cfg_.trading_loop (whole pUSD), 同用 from_pusd 转 micro。
-    //   RM 直接 micro 比 size_pUSD_micro; sizing 侧 .to_pusd() 回 whole 比 notional。同源同值。
+    // per-engine 合并上限 (2026-06-12 Option A 老板「sharp 进的盘 FLB 也能进, 机会不浪费」): RM 的【聚合】
+    //   market/per_outcome cap = sharp 自己 base cap + FLB 一注 → FLB 的 25u 能叠在 sharp 满仓之上不被聚合
+    //   cap 挡。sharp 的 sizing 仍用 base cap (cfg_.trading_loop, 取 sharp 自己那份敞口) → sharp 不超自己预算。
+    //   RM 更宽 = sharp 侧无 surprise-reject (sizing 更紧是 binding)。per_order 不累计, 不加。
+    constexpr double kFlbStake = engine::TradingLoop::kFlbStakeUsdc;
     paper_rm_cfg.per_order_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_order_cap_usdc);
     paper_rm_cfg.market_exposure_cap_usdc =
-        domain::MicroPUSD::from_pusd(cfg_.trading_loop.market_exposure_cap_usdc);
-    paper_rm_cfg.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_outcome_cap_usdc);
+        domain::MicroPUSD::from_pusd(cfg_.trading_loop.market_exposure_cap_usdc + kFlbStake);
+    paper_rm_cfg.per_outcome_cap_usdc =
+        domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_outcome_cap_usdc + kFlbStake);
     // 2026-06-10 复盘迭代: event 层聚合 cap (同场 ML+Spread+Total 叠仓=隐性 3x 杠杆)。
     //   RM 基建已在 (set_condition_event + Σ|condition| ρ=1 上界), 此前默认 10000u 实际未生效 → 设 120u (12% bankroll/场)。
     // 同事件预算 (2026-06-13 老板拍板「各自预算, 不用共享」): 同场多盘口各走各的单市场

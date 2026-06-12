@@ -502,6 +502,10 @@ struct TradingLoopStats {
 // ---------------------------------------------------------------------------
 class TradingLoop {
 public:
+    // FLB 平注 (走量引擎; 老板 2026-06-11「FLB 加注」15→25)。public: per-engine 合并上限 (Option A)
+    //   daemon 用它算 RM 单市场合并 cap = sharp market cap + FLB 一注 → FLB 的份能叠在 sharp 之上不被挡。
+    static constexpr double kFlbStakeUsdc = 25.0;
+
     // 构造 — 注入依赖, 不启动线程
     //   hub:              OrderBookSnapshotHub (只读, live book 快照)
     //   rm:               RiskGateway (写: evaluate; caller 保证此线程是唯一 evaluate 调用方)

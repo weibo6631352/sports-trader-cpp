@@ -1412,15 +1412,19 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   (A5/P0-1 已让 paper 喂真实 exposure 给 RM, 此前 sizing 侧未跟进 = 活跃分叉)。
     //   单源同值: 与 FeedRiskGateway 喂 RM 同走 position_ledger get_per_*_exposure (micro), 无双轨。
     {
-        const auto cond_exp = position_ledger_.get_per_condition_exposure();
-        const auto tok_exp = position_ledger_.get_per_outcome_exposure();
-        const auto cit = cond_exp.find(condition_id);
-        const auto tit = tok_exp.find(token_id);
+        // per-engine sizing (2026-06-12 Option A): 主决策环 = sharp → 当前敞口取 sharp 自己那份 →
+        //   sharp 的加仓/cap 按【自己 $50 预算】算, 不被 FLB 那份占用 (sharp 机会不因 FLB 缩水)。
+        //   单源同值: 与 FeedRiskGateway 同走 position_ledger; RM 聚合 cap = 合并上限 (sharp+flb)。
+        const auto ce_eng = position_ledger_.get_per_condition_engine_exposure();
+        std::string ckey = condition_id;
+        ckey.push_back('\x1f');
+        ckey.append("sharp");
+        const auto cit = ce_eng.find(ckey);
         // unit-contract-ok: ledger micro → sizing current_*_exposure_usdc 的 whole pUSD 域 (÷1e6)
         sz_in.current_condition_exposure_usdc =
-            (cit != cond_exp.end()) ? static_cast<double>(cit->second) / 1'000'000.0 : 0.0;
+            (cit != ce_eng.end()) ? static_cast<double>(cit->second) / 1'000'000.0 : 0.0;
         sz_in.current_token_exposure_usdc =
-            (tit != tok_exp.end()) ? static_cast<double>(tit->second) / 1'000'000.0 : 0.0;
+            static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0;
     }
 
     // c3 (P0-2 根治): caps 单一真值源 = cfg_ (whole pUSD), from_pusd 转正确 micro。sizing/RM 同源
@@ -1694,9 +1698,9 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                 // 市场不确认 (价 >0.20 = 比分判死可能误判/翻盘中) → 【冻结持有】等结算 (2026-06-11
                 //   堵漏: 原版只挡甩卖不冻结 → 仓位漏进普通 Kelly 路径被 kelly_reduce 原价甩 (实测
                 //   20.2u@0.292 −7.26), 所有持有保护都没接住。哲学同 hold-to-settle: 让结算裁决。
-                const auto pos_gd = position_ledger_.get_position(token_id);
-                const double cur_gd =
-                    pos_gd ? std::abs(static_cast<double>(pos_gd->size_usdc) / 1'000'000.0) : 0.0;
+                // per-engine: 冻结的「现仓」= sharp 自己那份 (与 current_pusd 同源, 防 freeze 目标>current 误买)。
+                const double cur_gd = std::abs(
+                    static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0);
                 if (cur_gd > 0.0 && sel_target < cur_gd) sel_target = cur_gd;  // 冻结: 只增不减由后续门管
             }
         }
@@ -1726,8 +1730,10 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   信号开/加/减/平), 等 sharp 回来重评 / 结算。game_decided(比分驱动, 不依赖 sharp) 在上面已处理决出方, 不在此覆盖。
     bool sel_force_stop = false;   // 上移声明: 冻结期硬止损 (下方) 也要置位以绕 loss_cut HOLD
     if (game_decided_sign == 0.0 && !fair_is_sharp) {
-        const auto pos_frz = position_ledger_.get_position(token_id);
-        const double cur_qty = pos_frz ? std::abs(static_cast<double>(pos_frz->size_usdc) / 1'000'000.0) : 0.0;
+        const auto pos_frz = position_ledger_.get_position(token_id);  // 聚合 (取 avg)
+        // per-engine: 冻结现仓 = sharp 自己那份 (与 current_pusd 同源); avg 仍取聚合 (下方硬止损用)。
+        const double cur_qty = std::abs(
+            static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0);
         const double avg_frz = (pos_frz && pos_frz->avg_entry_price > 0.0) ? pos_frz->avg_entry_price : 0.0;
         if (cur_qty > 0.0) sel_target = cur_qty;   // 冻结: sharp 是真值源, 降级时不拿 score-prior 噪声减/平赢家
         // 冻结期硬下行保护 (2026-06-10 持仓策略会 老韩 bug#2 + 老板「下行不够细致 / 两边都要考虑」): 冻结 ≠ 裸暴露。
@@ -1757,8 +1763,9 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   灾难逃生门 —— 2026-06-12 治理修复: 旧版此处把 force_stop 一并撤销, frozen_hard 结构性不可达)
     //   ② game_decided (sign≠0 本块不进) ③ settlement (SettleToken 不经此)。
     if (game_decided_sign == 0.0 && !sel_force_stop) {
-        const auto pos_e = position_ledger_.get_position(token_id);
-        const double cur_e = pos_e ? std::abs(static_cast<double>(pos_e->size_usdc) / 1'000'000.0) : 0.0;
+        // per-engine: 持有骑到结算的「现仓」= sharp 自己那份 (FLB 那份由 FLB 自己持有到结算, 不在此)。
+        const double cur_e =
+            std::abs(static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0);
         if (cur_e > 0.0 && sel_target < cur_e) {
             sel_target = cur_e;  // 持有骑到结算 (撤任何止盈/缩仓卖出)
         }
@@ -1863,15 +1870,11 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
         /*noise_free=*/noise_free,  // sharp/调模型 → 跳二项 z×σ (只留半 vig 地基), 让 sharp 进可下单侧
     });
 
-    // current = 本边 token 当前持仓 (ledger per-outcome, micro→whole pUSD; long ≥0)。
-    double current_pusd = 0.0;
-    {
-        const auto tok_exp = position_ledger_.get_per_outcome_exposure();
-        const auto tit = tok_exp.find(token_id);
-        if (tit != tok_exp.end()) {
-            current_pusd = static_cast<double>(tit->second) / 1'000'000.0;
-        }
-    }
+    // current = 本边 token 当前持仓 (micro→whole pUSD; long ≥0)。
+    //   per-engine (2026-06-12 Option A): 主决策环是 sharp 引擎 → 只取【sharp 自己那份】, 控制器据此
+    //   决定加/减/平 → sharp 卖出最多卖到自己份 (FLB 那份不在 sharp current 里 → 永不被 sharp 卖掉)。
+    double current_pusd =
+        static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0;
     // 防抖死区 (小梁 Q-梁-2): threshold = max(floor, 0.10×|target|)。
     //   (fee_k 费率放宽扩展 2026-06-12 治理删: 恒 0 从未开, hold-to-settlement 后无 rebalance churn。)
     const double min_rebalance = control::ComputeRebalanceDeadband(
@@ -2136,7 +2139,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     ev.data_source_ts_ns = fill.data_source_ts_ns;
     ev.ingestion_ts_ns = fill.ingestion_ts_ns;
     ev.as_of_ts_ns = fill.as_of_ts_ns;  // R-20 透传
-    position_ledger_.apply_fill(condition_id, token_id, intent.outcome, ev);
+    position_ledger_.apply_fill(condition_id, token_id, intent.outcome, ev, "sharp");  // per-engine 归属 (赔率引擎)
 
     // ---- Step 8b/8c: 账本快照 + 喂 RM 敞口 ----------------------------------
     PublishLedgerSnapshot(condition_id, fill, mark_price, side_book);
@@ -2371,9 +2374,7 @@ bool TradingLoop::FlbSeen(const std::string& condition_id) const {
 }
 
 void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
-    // 平注 (老板「策略系数不进配置层」— 代码内常数): 多场分散吃 FLB 统计偏差, 无模型 fair 不做 Kelly。
-    constexpr double kFlbStakeUsdc = 25.0;  // 15→25 (2026-06-11 老板拍板「FLB 加注」: 走量引擎吞吐 +67%;
-                                            //   逐笔验证 52% 带内盘有 ≥30u 真量; = per_order cap, 部署率 ~55% 可控)
+    // 平注: 用类静态常量 TradingLoop::kFlbStakeUsdc (header; daemon 算合并上限共用)。直接引成员名即可。
     constexpr double kFlbMaxPx = 0.97;  // 价格上限双保险 (扫描端同档): 太贵无肉
     if (t.ask_px <= 0.0 || t.ask_px > kFlbMaxPx || t.token_id.empty()) return;
     if (position_ledger_.get_position(t.token_id)) return;  // 已有仓 (理论不达: 非 sharp 盘) → 不叠
@@ -2492,7 +2493,7 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     ev.data_source_ts_ns = fill.data_source_ts_ns;
     ev.ingestion_ts_ns = fill.ingestion_ts_ns;
     ev.as_of_ts_ns = fill.as_of_ts_ns;
-    position_ledger_.apply_fill(t.condition_id, t.token_id, intent.outcome, ev);
+    position_ledger_.apply_fill(t.condition_id, t.token_id, intent.outcome, ev, "flb");  // per-engine 归属 (订单簿引擎)
 
     // 账本快照 (合成 side_book 只供 4ts 透传) + RM 敞口喂数。mark = 成交价 (无 mid, 保守)。
     polymarket::clob_wss::OrderBookFeatures sb{};
@@ -2575,6 +2576,14 @@ void TradingLoop::SaveLedgerSnapshot() {
     for (const auto& [tok, eng] : engine_by_token_) {
         std::fprintf(fp, "E %s %s\n", tok.c_str(), eng.c_str());
     }
+    // PE 行: per-engine 分仓持久化 (2026-06-12; key=token\x1fengine → 拆回 token/engine/size)。
+    //   恢复时聚合仓位走 P 行 (apply_fill), PE 行只补归属层 split → 重启后 sharp/flb 各管各份不丢。
+    for (const auto& [k, sz] : position_ledger_.get_engine_pos_snapshot()) {
+        const auto sep = k.find('\x1f');
+        if (sep == std::string::npos || sz == 0) continue;
+        std::fprintf(fp, "PE %s %s %lld\n", k.substr(0, sep).c_str(), k.substr(sep + 1).c_str(),
+                     static_cast<long long>(sz));
+    }
     {
         std::lock_guard<std::mutex> lke(engine_mu_);
         for (const auto& [eng, eb] : engine_book_) {
@@ -2611,6 +2620,12 @@ void TradingLoop::RestoreLedgerSnapshot() {
             }
         } else if (!header_ok) {
             continue;
+        } else if (line[0] == 'P' && line[1] == 'E') {
+            // PE 行: per-engine 分仓归属 split (聚合仓位由上面 P 行经 apply_fill 恢复; 此处只补归属层)。
+            char tok[90] = {0}, eng[20] = {0};
+            long long sz = 0;
+            if (std::sscanf(line, "PE %89s %19s %lld", tok, eng, &sz) == 3 && sz != 0)
+                position_ledger_.restore_engine_split(tok, eng, sz);
         } else if (line[0] == 'P') {
             char cid[80] = {0}, tok[90] = {0};
             int is_yes = 0;
@@ -2623,6 +2638,7 @@ void TradingLoop::RestoreLedgerSnapshot() {
                 ev.mode_tag = 0;  // R-11 paper
                 ev.event_ts_ns = ev.data_source_ts_ns = ev.ingestion_ts_ns = now - 1;
                 ev.as_of_ts_ns = now;
+                // 聚合恢复 (engine 空): per-engine split 由后续 PE 行补 (重启后各引擎各管各份)。
                 position_ledger_.apply_fill(cid, tok, is_yes != 0 ? strategy::Outcome::Yes : strategy::Outcome::No,
                                             ev);
                 ++n_pos;
@@ -2780,7 +2796,10 @@ void TradingLoop::SettleToken(const std::string& condition_id, const std::string
     ev.data_source_ts_ns = game_row.data_source_ts_ns;
     ev.ingestion_ts_ns = game_row.ingestion_ts_ns;
     ev.as_of_ts_ns = NowNs();
-    position_ledger_.apply_fill(condition_id, token_id, outcome, ev);
+    // 结算全平: 聚合 token→0, 账本「归零清该 token 全部引擎份」收口 (传非空 engine 触发清理; 归属仅作标签)。
+    const auto seit = engine_by_token_.find(token_id);
+    position_ledger_.apply_fill(condition_id, token_id, outcome, ev,
+                                seit != engine_by_token_.end() ? seit->second : std::string("sharp"));
 
     // 成交流水补结算一笔 (2026-06-10 老板「成交流水的累计已实现也与 pnl 对不上」): 结算 realize 此前只进
     //   cum_realized_pnl_pusd_(账本) 不进 fills_ring_ → 流水 cum_realized 漏结算实现 → 与账本 cum_realized 背离。

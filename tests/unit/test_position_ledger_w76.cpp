@@ -281,5 +281,82 @@ TEST(SystemStateW76, TC04_RejectRingTailCopy) {
     EXPECT_FALSE(sm.try_transition(SystemState::DECAYED, SystemState::RUNNING));
 }
 
+// ===========================================================================
+// per-engine 分仓加性追踪 (2026-06-12 Option A): 各引擎独立份 + 聚合不变 + 全平清份 + 快照往返
+// ===========================================================================
+static FillEvent ev_micro(std::int64_t delta_micro, double price, std::int64_t ts) {
+    FillEvent e;
+    e.filled_size_micro = delta_micro;  // signed (负=卖)
+    e.fill_price = price;
+    e.mode_tag = 0;  // R-11 paper
+    e.event_ts_ns = ts - 3;
+    e.data_source_ts_ns = ts - 2;
+    e.ingestion_ts_ns = ts - 1;
+    e.as_of_ts_ns = ts;
+    return e;
+}
+
+TEST(PositionLedgerEngine, TwoEnginesSameTokenSplit) {
+    PositionLedger L;
+    const std::string cid = "0xc", tok = "900";
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "flb");
+    EXPECT_EQ(L.get_position(tok)->size_usdc, 150'000'000);  // 聚合 = 和
+    EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 100'000'000);
+    EXPECT_EQ(L.get_engine_position_size(tok, "flb"), 50'000'000);
+    EXPECT_EQ(L.get_engine_position_size(tok, "nope"), 0);
+    auto ce = L.get_per_condition_engine_exposure();
+    EXPECT_EQ(ce.at(cid + '\x1f' + "sharp"), 100'000'000);
+    EXPECT_EQ(ce.at(cid + '\x1f' + "flb"), 50'000'000);
+}
+
+TEST(PositionLedgerEngine, SharpSellOnlyReducesSharpShare) {
+    PositionLedger L;
+    const std::string cid = "0xc", tok = "900";
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "flb");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(-40'000'000, 0.55, 1002), "sharp");  // sharp 卖 40
+    EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 60'000'000);  // 只减 sharp
+    EXPECT_EQ(L.get_engine_position_size(tok, "flb"), 50'000'000);    // flb 不动
+    EXPECT_EQ(L.get_position(tok)->size_usdc, 110'000'000);           // 聚合 110
+}
+
+TEST(PositionLedgerEngine, FullCloseClearsAllEngineSplits) {
+    PositionLedger L;
+    const std::string cid = "0xc", tok = "900";
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "flb");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(-150'000'000, 1.0, 1002), "sharp");  // 结算全平
+    EXPECT_EQ(L.get_position(tok)->size_usdc, 0);  // 聚合归零
+    EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 0);  // 全部引擎份清空
+    EXPECT_EQ(L.get_engine_position_size(tok, "flb"), 0);
+    EXPECT_TRUE(L.get_per_condition_engine_exposure().empty());
+}
+
+TEST(PositionLedgerEngine, EmptyEngineNoSplitTracking) {
+    PositionLedger L;
+    const std::string cid = "0xc", tok = "900";
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000));  // engine 空 → 不追踪
+    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000);  // 聚合正常
+    EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 0);  // 无 split
+    EXPECT_TRUE(L.get_engine_pos_snapshot().empty());
+}
+
+TEST(PositionLedgerEngine, SnapshotRoundtrip) {
+    PositionLedger L;
+    const std::string cid = "0xc", tok = "900";
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
+    L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "flb");
+    EXPECT_EQ(L.get_engine_pos_snapshot().size(), 2u);
+    // 恢复: 聚合 P 行 (engine 空) + PE split (restore_engine_split)
+    PositionLedger L2;
+    L2.apply_fill(cid, tok, Outcome::Yes, ev_micro(150'000'000, 0.533, 1000));  // 聚合恢复
+    L2.restore_engine_split(tok, "sharp", 100'000'000);
+    L2.restore_engine_split(tok, "flb", 50'000'000);
+    EXPECT_EQ(L2.get_engine_position_size(tok, "sharp"), 100'000'000);
+    EXPECT_EQ(L2.get_engine_position_size(tok, "flb"), 50'000'000);
+    EXPECT_EQ(L2.get_position(tok)->size_usdc, 150'000'000);
+}
+
 }  // namespace
 }  // namespace stcpp::risk

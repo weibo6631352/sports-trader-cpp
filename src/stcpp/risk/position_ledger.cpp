@@ -30,8 +30,17 @@ namespace stcpp::risk {
 
 // ---------- apply_fill -------------------------------------------------------
 
+std::string PositionLedger::engine_key_(std::string const& token_id, std::string const& engine) noexcept {
+    std::string k;
+    k.reserve(token_id.size() + 1 + engine.size());
+    k.append(token_id);
+    k.push_back('\x1f');
+    k.append(engine);
+    return k;
+}
+
 void PositionLedger::apply_fill(std::string const& condition_id, std::string const& token_id, Outcome outcome,
-                                execution::VirtualFill const& fill) noexcept {
+                                execution::VirtualFill const& fill, std::string const& engine) noexcept {
     // 仅处理成功成交 (BernoulliMissed / SlippageModelReject 不更新仓位)。
     //   reject 是 VirtualFill 专有语义 → 在此过滤; 中性 FillEvent 不带 reject (已成交事实)。
     if (fill.reject != execution::MatchReject::Ok)
@@ -45,11 +54,11 @@ void PositionLedger::apply_fill(std::string const& condition_id, std::string con
     ev.data_source_ts_ns = fill.data_source_ts_ns;
     ev.ingestion_ts_ns = fill.ingestion_ts_ns;
     ev.as_of_ts_ns = fill.as_of_ts_ns;  // R-20 透传
-    apply_fill(condition_id, token_id, outcome, ev);
+    apply_fill(condition_id, token_id, outcome, ev, engine);
 }
 
 void PositionLedger::apply_fill(std::string const& condition_id, std::string const& token_id, Outcome outcome,
-                                FillEvent const& ev) noexcept {
+                                FillEvent const& ev, std::string const& engine) noexcept {
     // R-11 (老韩 A2 红线3): mode_tag 运行期 fail-closed — 仅 paper fill (mode_tag==0) 记账。
     //   非 paper (mode_tag!=0) 直接拒, 不写仓位 (release build 也 enforce)。**方向不变** (老郭审计)。
     //   live fill 走另一条真账本, 不该流向此 paper 专用账本。
@@ -62,12 +71,13 @@ void PositionLedger::apply_fill(std::string const& condition_id, std::string con
     // side 语义同前: delta 符号由 filled_size_micro 决定 (平仓语义由 DRAIN state 保证)。
     // A1: filled_size_micro 已 int64 micro pUSD, 直存无 cast。R-20: 透传 as_of_ts_ns, 禁 now()。
     std::unique_lock<std::shared_mutex> lk(mu_);
-    update_position_locked_(condition_id, token_id, outcome, ev.filled_size_micro, ev.fill_price, ev.as_of_ts_ns);
+    update_position_locked_(condition_id, token_id, outcome, ev.filled_size_micro, ev.fill_price, ev.as_of_ts_ns,
+                            engine);
 }
 
 void PositionLedger::update_position_locked_(std::string const& condition_id, std::string const& token_id,
                                              Outcome outcome, std::int64_t delta_usdc, double fill_price,
-                                             std::int64_t as_of_ts_ns) noexcept {
+                                             std::int64_t as_of_ts_ns, std::string const& engine) noexcept {
     auto it = token_positions_.find(token_id);
     if (it == token_positions_.end()) {
         // 新仓
@@ -105,6 +115,29 @@ void PositionLedger::update_position_locked_(std::string const& condition_id, st
 
     // 更新 condition_exposure_ (signed sum)
     condition_exposure_[condition_id] += delta_usdc;
+
+    // ---- per-engine 加性追踪 (聚合层以上不变) ----
+    //   engine 空 → 退化单引擎 (不维护旁路表; 兼容老调用)。聚合 token 全平 → 清该 token 全部引擎份
+    //   (结算/全卖统一收口: 各引擎份归零, per-condition-engine 敞口随之自动消)。
+    if (!engine.empty()) {
+        const auto agg_it = token_positions_.find(token_id);
+        const std::int64_t agg_size = (agg_it != token_positions_.end()) ? agg_it->second.size_usdc : 0;
+        if (agg_size == 0) {
+            // 该 token 全平: 清所有引擎份 (key 前缀 = token_id + '\x1f')
+            const std::string prefix = token_id + '\x1f';
+            for (auto eit = engine_pos_.begin(); eit != engine_pos_.end();) {
+                if (eit->first.compare(0, prefix.size(), prefix) == 0)
+                    eit = engine_pos_.erase(eit);
+                else
+                    ++eit;
+            }
+        } else {
+            const std::string k = engine_key_(token_id, engine);
+            const std::int64_t v = (engine_pos_[k] += delta_usdc);
+            if (v == 0)
+                engine_pos_.erase(k);
+        }
+    }
 }
 
 // ---------- read API ---------------------------------------------------------
@@ -141,6 +174,65 @@ std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_outcome_ex
 std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_condition_exposure() const noexcept {
     std::shared_lock<std::shared_mutex> lk(mu_);
     return condition_exposure_;
+}
+
+// ---------- per-engine 加性追踪 read API ------------------------------------
+
+std::int64_t PositionLedger::get_engine_position_size(std::string const& token_id,
+                                                      std::string const& engine) const noexcept {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    auto it = engine_pos_.find(engine_key_(token_id, engine));
+    return (it != engine_pos_.end()) ? it->second : 0;
+}
+
+std::unordered_map<std::string, std::int64_t>
+PositionLedger::get_per_condition_engine_exposure() const noexcept {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    std::unordered_map<std::string, std::int64_t> out;
+    out.reserve(engine_pos_.size());
+    for (auto const& [k, size] : engine_pos_) {
+        // k = token_id + '\x1f' + engine → 取 token_id 查 condition_id, 重组 condition + '\x1f' + engine。
+        const auto sep = k.find('\x1f');
+        if (sep == std::string::npos)
+            continue;
+        const std::string token_id = k.substr(0, sep);
+        const std::string engine = k.substr(sep + 1);
+        auto pit = token_positions_.find(token_id);
+        if (pit == token_positions_.end())
+            continue;
+        std::string ckey = pit->second.condition_id;
+        ckey.push_back('\x1f');
+        ckey.append(engine);
+        out[ckey] += size;
+    }
+    return out;
+}
+
+std::vector<std::pair<std::string, std::int64_t>>
+PositionLedger::get_token_engine_sizes(std::string const& token_id) const noexcept {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    std::vector<std::pair<std::string, std::int64_t>> out;
+    const std::string prefix = token_id + '\x1f';
+    for (auto const& [k, size] : engine_pos_) {
+        if (k.compare(0, prefix.size(), prefix) == 0)
+            out.emplace_back(k.substr(prefix.size()), size);
+    }
+    return out;
+}
+
+std::unordered_map<std::string, std::int64_t> PositionLedger::get_engine_pos_snapshot() const noexcept {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    return engine_pos_;
+}
+
+void PositionLedger::restore_engine_split(std::string const& token_id, std::string const& engine,
+                                          std::int64_t size) noexcept {
+    std::unique_lock<std::shared_mutex> lk(mu_);
+    const std::string k = engine_key_(token_id, engine);
+    if (size == 0)
+        engine_pos_.erase(k);
+    else
+        engine_pos_[k] = size;
 }
 
 }  // namespace stcpp::risk
