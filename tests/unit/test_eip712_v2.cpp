@@ -63,6 +63,57 @@ TEST(Eip712V2, OrderV2DigestMatchesLiveValidated) {
               "0x56ea6ea81ef77b01e9defeea8688c98b516a9e38dda899f46f84d6b9459f507b");
 }
 
+// Oracle 对拍 (2026-06-13, 老板「不要和旧版 SDK 对标, 有没有更好的方法」)。
+//   标准答案 = 通用 EIP-712 标准库 eth_account 对【我们自己定义的 11 字段 v2 Order type】算的 digest
+//   (生成器: experiments/laolei-clob-oracle-diff/eip712_oracle.py)。**不依赖任何 Polymarket SDK 版本** —
+//   只用 EIP-712 标准本身, 永不过时; 已验证该 oracle 对实盘成交订单 (上方 ReferenceOrder) 逐字节一致。
+//   覆盖: 买/卖 · sigType 1/2 · neg_risk 真/假 · 小/大 tokenId。任一向量变红 = C++ EIP-712 编码 drift。
+//   重新生成: .venv/bin/python experiments/laolei-clob-oracle-diff/eip712_oracle.py
+TEST(Eip712V2, OracleVectorsMatchGenericEip712) {
+    struct Vec {
+        const char* name;
+        std::uint64_t salt;
+        const char* maker;
+        const char* signer;
+        const char* token_id;
+        std::uint64_t maker_amount;
+        std::uint64_t taker_amount;
+        std::uint8_t side;
+        std::uint8_t sig_type;
+        std::uint64_t timestamp_ms;
+        bool neg_risk;
+        const char* expected;
+    };
+    const Vec vecs[] = {
+        {"V1_buy", 1000000ULL, "0x1111111111111111111111111111111111111111",
+         "0x2222222222222222222222222222222222222222", "100", 1000000ULL, 2000000ULL, 0, 1,
+         1700000000000ULL, false, "0xcc03ff2d73cb378832ce974eb44bf000baea75b9bf7706145296549f8df6de74"},
+        {"V2_sell_negrisk", 999999999ULL, "0xabcdef0123456789abcdef0123456789abcdef01",
+         "0x00000000000000000000000000000000deadbeef", "100", 5530000ULL, 1070000ULL, 1, 2,
+         1748476800000ULL, true, "0xca7088a8a76586bb955f429d7111122094ad672bd9b437ee5941c2cd8e592016"},
+        {"V3_big_token", 42ULL, "0x78dE3c8264C546Fffed8D9A1396cddEf7c8686BE",
+         "0xe98BAA12D2EE4be2A68577F47CBD986d9f4576e6",
+         "71321045679252212594626385532706912750332728571942532289631379312455583992563", 1000000ULL,
+         1010101ULL, 0, 1, 1748476800000ULL, false,
+         "0x9d32bb68867fb39fc234b4edd294a97df3aab043efb61661a7910736a152e184"},
+    };
+    for (const auto& v : vecs) {
+        stcpp::crypto::OrderV2 o;
+        o.salt = stcpp::crypto::U256FromU64(v.salt);
+        ASSERT_TRUE(stcpp::crypto::AddressFromHex(v.maker, o.maker)) << v.name;
+        ASSERT_TRUE(stcpp::crypto::AddressFromHex(v.signer, o.signer)) << v.name;
+        ASSERT_TRUE(stcpp::crypto::U256FromDecimal(v.token_id, o.token_id)) << v.name;
+        o.maker_amount = v.maker_amount;
+        o.taker_amount = v.taker_amount;
+        o.side = v.side;
+        o.signature_type = v.sig_type;
+        o.timestamp_ms = v.timestamp_ms;
+        const auto domain = stcpp::crypto::CtfExchangeV2Domain(v.neg_risk);
+        EXPECT_EQ(Hex(stcpp::crypto::ComputeOrderV2Digest(o, domain)), v.expected)
+            << "EIP-712 oracle drift: " << v.name;
+    }
+}
+
 // domain 默认值正确 (name/version/exchange)。
 TEST(Eip712V2, V2DomainFields) {
     const auto d = stcpp::crypto::CtfExchangeV2Domain(false);
