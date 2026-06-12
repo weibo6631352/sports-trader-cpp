@@ -14,7 +14,6 @@ ExecReport LiveExecutor::Execute(const stcpp::risk::OrderIntent& intent, bool ne
     rep.as_of_ts_ns = intent.as_of_ts_ns;
     const GateResult gr = gate_.Submit(intent, neg_risk);
     rep.gate_block = gr.gate_block;
-    rep.rm_approved = gr.rm_approved;
     rep.submitted = gr.submitted;
 
     // FOK: 只有 status=="matched" 才算成交 (老周 C-3); 否则不写账本。

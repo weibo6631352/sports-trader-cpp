@@ -921,8 +921,9 @@ BuildResult TraderDaemon::Build() {
         }
         live_submitter_ = std::make_unique<polymarket::LiveOrderSubmitter>(std::move(creds),
                                                                            "https://clob.polymarket.com");
+        // gate 仅 ARM 总闸 (2026-06-13 简化: §8 RM 闸在决策环, gate 不再二次 RM — 见 gate 头)。
         live_gate_ = std::make_unique<polymarket::LiveOrderGate>(
-            *paper_rm_, [this](const polymarket::LiveOrderRequest& rq) { return live_submitter_->Submit(rq); });
+            [this](const polymarket::LiveOrderRequest& rq) { return live_submitter_->Submit(rq); });
         live_exec_ = std::make_unique<polymarket::LiveExecutor>(*live_gate_);
         trading_loop_->SetExecutor(std::make_unique<polymarket::LiveExecutorAdapter>(*live_exec_));
         const char* armed = std::getenv("LIVE_ARMED");

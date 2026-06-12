@@ -2,8 +2,9 @@
 //
 // Owner: GM (老雷) 2026-05-31 — Phase 4 接线 (执行器层, 老周 G-1 executor 注入 / G-2 中性 fill)。
 //
-// 完整 live 执行链: OrderIntent(RM-approved) → LiveExecutor.Execute → LiveOrderGate
-//   (arm/ratecap/RM) → LiveOrderSubmitter → 回执 → **中性 ExecReport**。
+// 完整 live 执行链: OrderIntent(决策环 RM-approved) → LiveExecutor.Execute → LiveOrderGate
+//   (ARM 总闸) → LiveOrderSubmitter → 回执 → **中性 ExecReport**。
+//   §8 RM 闸在决策环 (trading_loop, 与 paper 同一道); gate 仅 ARM (2026-06-13 简化, 见 gate 头)。
 //
 // ExecReport 是 paper/live 共用的中性成交事件 (FillEvent 中性化思路): 未来 VirtualExecutor
 //   也产同型 ExecReport, 账本只消费一种中性类型, 与 VirtualFill 解耦。
@@ -21,9 +22,8 @@ namespace stcpp::polymarket {
 // 中性成交事件 (账本/RM 回写源; paper 与 live 共用形态)。
 struct ExecReport {
     bool submitted{false};                  // 是否触达 CLOB
-    bool rm_approved{false};
     bool filled{false};                     // 是否成交 (FOK matched)
-    GateBlock gate_block{GateBlock::NONE};   // gate 层拦截 (DISARMED/RATE_CAP)
+    GateBlock gate_block{GateBlock::NONE};   // gate 层拦截 (DISARMED)
     // 实际成交 (回执真相, 非请求量):
     double filled_usdc{0.0};                // BUY:实付 USDC / SELL:实得 USDC
     double filled_shares{0.0};              // BUY:实得 shares / SELL:实卖 shares
@@ -41,7 +41,7 @@ class LiveExecutor {
 public:
     explicit LiveExecutor(LiveOrderGate& gate) noexcept : gate_(gate) {}
 
-    // 入参须为 RM-approved 的 intent (老周 C-1; gate 内部仍会再过 RM, 双保险)。
+    // 入参须为决策环 RM-approved 的 intent (老周 C-1; §8 在决策环 enforce, gate 不重决策)。
     [[nodiscard]] ExecReport Execute(const stcpp::risk::OrderIntent& approved_intent, bool neg_risk) noexcept;
 
 private:

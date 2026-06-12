@@ -1,16 +1,21 @@
-// include/stcpp/polymarket/live_order_gate.hpp — 实盘下单强制风控门 (mode-agnostic)
+// include/stcpp/polymarket/live_order_gate.hpp — 实盘下单闸 (ARM 总闸 + 翻译 + sink)
 //
-// Owner: GM (老雷) 2026-05-31 — Phase 4 D-A (评审会全员共识) + 开闸前安全控制。
+// Owner: GM (老雷) 2026-05-31 Phase 4; 2026-06-13 简化为 paper 同构 (老板「仿照虚拟盘,
+//   不要多加不必要的限制」)。
 //
-// 红线 §8 第一条落地: 任何下单必经 RiskManager。LiveOrderGate 是策略到 CLOB 的**唯一通路**:
-//   策略只持有 LiveOrderGate, 拿不到裸 LiveOrderSubmitter。
+// §8 红线 (任何下单必经 RiskManager) 的 enforcement 点在【决策环】: trading_loop.cpp 两个
+//   下单路径 (主路径 Step 6 / FLB 路径) 都在 sign + executor_->Execute 前 rm_.evaluate,
+//   拒单到不了 executor 缝 — 与 paper 链路同一道闸同一处。
 //
-// 下单前三道门 (fail-closed, 任一不过绝不触达 sink):
-//   1. ARM 开关 — 默认未开闸 (disarmed)。运行期人工 Arm() 才放行 (老韩 arm 层2)。
-//   2. OrderRateCap — 日单数上限 (老韩新红线: 机器连发频控, RM 本身无此维度)。
-//   3. RiskManager — rm_.evaluate() 必须 APPROVED (老周 C-1: gate 不重决策不改 size/price)。
+// gate 曾内置第二道 RM re-evaluate + 灰度日单数 RATE_CAP, 2026-06-13 删 (实盘首日全军覆没复盘):
+//   ① 二次 RM 重复 — 上游决策环已过 RM, paper 链路也只有一道 (仿 paper);
+//   ② 结构性必拒 — adapter 重建 intent 丢 book_snapshot_ts/signal_id/bytes32 → INVALID_INTENT/
+//      BOOK_TS_ZERO 拦死 100% live 单; 即便补字段, 同 signal_id 也必撞 RM DUPLICATE_INTENT 去重集;
+//   ③ RATE_CAP 20/日 是灰度遗留, paper 无此闸, 且生产无人调 ResetDailyCount = 实际终身 20 单。
 //
-// 下单 sink 注入 (OrderSinkFn): 生产绑 LiveOrderSubmitter::Submit; 测试注入 stub → 离线可测。
+// 唯一保留的闸: ARM (真金白银总闸, fail-closed, 默认 disarmed)。
+//   策略只持有 LiveOrderGate, 拿不到裸 LiveOrderSubmitter (仍是 CLOB 唯一通路)。
+//   开闸授权 = 老板一句话 → LIVE_ARMED=1 (2026-06-13 会签废除)。
 #pragma once
 
 #include "stcpp/polymarket/live_order_types.hpp"
@@ -23,33 +28,24 @@ namespace stcpp::polymarket {
 // 下单出口 (生产 = LiveOrderSubmitter::Submit; 测试 = stub)。
 using OrderSinkFn = std::function<LiveOrderResult(const LiveOrderRequest&)>;
 
-// gate 拦截原因 (非 RM 拒单)。
+// gate 拦截原因。
 enum class GateBlock : std::uint8_t {
-    NONE = 0,        // 未被 gate 拦 (通过到 RM)
+    NONE = 0,        // 未被 gate 拦
     DISARMED = 1,    // 未开闸
-    RATE_CAP = 2,    // 日单数超限
-};
-
-// gate 灰度配置 (老韩 Phase4 灰度值; 与 RM 的 LiveRiskConfig 分工: 这里管开闸+频控)。
-struct LiveGateConfig {
-    int max_orders_per_day{20};  // OrderRateCap 日单数上限 (老韩灰度初值)
 };
 
 struct GateResult {
     bool submitted{false};   // 是否真触达 CLOB
-    bool rm_approved{false};
-    GateBlock gate_block{GateBlock::NONE};  // gate 层拦截 (DISARMED/RATE_CAP)
-    // 仅 gate_block==NONE && !rm_approved 时有意义 (默认值同 RiskDecision)。
-    stcpp::risk::RejectCode reject_code{stcpp::risk::RejectCode::INTERNAL_ERROR};
+    GateBlock gate_block{GateBlock::NONE};  // gate 层拦截 (DISARMED)
     LiveOrderResult order;   // 仅 submitted 时有效
 };
 
 class LiveOrderGate {
 public:
-    LiveOrderGate(stcpp::risk::RiskGateway& rm, OrderSinkFn sink, LiveGateConfig cfg = {}) noexcept
-        : rm_(rm), sink_(std::move(sink)), cfg_(cfg) {}
+    explicit LiveOrderGate(OrderSinkFn sink) noexcept : sink_(std::move(sink)) {}
 
-    // 三道门 → 全过才下单。neg_risk 来自市场目录 (gate 不臆造)。
+    // ARM 过 → 翻译下单。入参须为决策环 RM-approved 的 intent (§8 在决策环 enforce,
+    //   gate 不重决策不改 size/price — 老周 C-1)。neg_risk 来自市场目录 (gate 不臆造)。
     [[nodiscard]] GateResult Submit(const stcpp::risk::OrderIntent& intent, bool neg_risk) noexcept;
 
     // ---- ARM 开关 (fail-closed, 默认 disarmed) ----
@@ -57,25 +53,14 @@ public:
     void Disarm() noexcept { armed_ = false; }  // kill: 立即停发
     [[nodiscard]] bool Armed() const noexcept { return armed_; }
 
-    // ---- OrderRateCap ----
-    [[nodiscard]] int OrdersToday() const noexcept { return orders_today_; }
-    void ResetDailyCount() noexcept { orders_today_ = 0; }  // 运营日切
-
 private:
-    stcpp::risk::RiskGateway& rm_;
     OrderSinkFn sink_;
-    LiveGateConfig cfg_;
     bool armed_{false};       // 默认未开闸
-    int orders_today_{0};     // 已触达 CLOB 单数 (RATE_CAP 用)
 };
 
 // intent → LiveOrderRequest 翻译 (size_pUSD_micro + price → maker/taker micro)。
 //   BUY : maker=size_pUSD_micro(USDC), taker=round(size/price)(shares)
 //   SELL: maker=round(size/price)(shares), taker=size_pUSD_micro(USDC)
 [[nodiscard]] LiveOrderRequest TranslateIntent(const stcpp::risk::OrderIntent& intent, bool neg_risk) noexcept;
-
-// 灰度上线 RiskConfig 工厂 (老韩灰度值: per-order $1 / per-cond+outcome $2 / bankroll $25 /
-//   日亏 halt $5 / 连亏 3)。**独立, 绝不复用 paper 100k 默认。** live RM 装配时用。
-[[nodiscard]] stcpp::risk::RiskConfig MakeGrayLaunchRiskConfig() noexcept;
 
 }  // namespace stcpp::polymarket

@@ -1,57 +1,25 @@
 // tests/unit/test_live_executor.cpp — LiveExecutor (决策→gate→中性 ExecReport)
 //
-// Owner: GM (老雷) 2026-05-31 — Phase 4 接线。
+// Owner: GM (老雷) 2026-05-31 — Phase 4 接线; 2026-06-13 随 gate 简化更新 (gate 仅 ARM)。
 // 验证: 中性 ExecReport 取自回执实际成交量 (老韩硬要求, 非请求量) + disarmed 不成交。
 #include "stcpp/polymarket/live_executor.hpp"
 
 #include <gtest/gtest.h>
 
-#include <memory>
-#include <mutex>
 #include <string>
-#include <vector>
 
 #include "stcpp/infra/wal/pit.hpp"
-#include "stcpp/risk/risk_gateway.hpp"
 
 namespace stcpp::polymarket::test {
 
-using stcpp::risk::AuditEmitter;
-using stcpp::risk::AuditRecord;
-using stcpp::risk::MarketState;
 using stcpp::risk::Outcome;
-using stcpp::risk::RiskConfig;
-using stcpp::risk::RiskGateway;
-using stcpp::risk::RmState;
 using stcpp::risk::Side;
 
 constexpr std::int64_t NS_PER_MS = 1'000'000LL;
 constexpr const char* kCid = "0xa9db600590209698097db2fb8382989ea1cf6a9b91f0428b2e1d4f35d724c3ff";
 
-class ExecEmitter : public AuditEmitter {
-public:
-    [[nodiscard]] bool emit(AuditRecord const&) noexcept override { return true; }
-};
-
 class LiveExecutorTest : public ::testing::Test {
 protected:
-    void SetUp() override {
-        emitter_ = std::make_shared<ExecEmitter>();
-        RiskConfig cfg;
-        cfg.per_order_cap_usdc = stcpp::domain::MicroPUSD::from_micro(10'000);
-        cfg.market_exposure_cap_usdc = stcpp::domain::MicroPUSD::from_micro(50'000);
-        cfg.per_outcome_cap_usdc = stcpp::domain::MicroPUSD::from_micro(25'000);
-        cfg.bankroll_usdc = stcpp::domain::MicroPUSD::from_pusd(100'000.0);
-        cfg.daily_loss_halt_usdc = stcpp::domain::MicroPUSD::from_pusd(5'000.0);
-        cfg.consec_loss_halt_count = 5;
-        cfg.excessive_slippage_bps = 200;
-        rm_ = std::make_unique<RiskGateway>(cfg, emitter_);
-        rm_->set_state(RmState::RUNNING);
-        rm_->set_market_state(kCid, MarketState::PREGAME);
-        rm_->set_market_freshness_ms(kCid, 100);
-        rm_->set_market_active(kCid, true);
-    }
-
     stcpp::risk::OrderIntent intent(Side side, std::string sig) {
         auto const now = ::stcpp::infra::wal::pit::NowRealtimeNs();
         stcpp::risk::OrderIntent it;
@@ -89,14 +57,11 @@ protected:
             return r;
         };
     }
-
-    std::shared_ptr<ExecEmitter> emitter_;
-    std::unique_ptr<RiskGateway> rm_;
 };
 
 // disarmed → 不成交, 拦在 gate。
 TEST_F(LiveExecutorTest, DisarmedNoFill) {
-    LiveOrderGate gate(*rm_, matched_sink());
+    LiveOrderGate gate(matched_sink());
     LiveExecutor ex(gate);
     const auto rep = ex.Execute(intent(Side::Buy, "e1"), false);
     EXPECT_FALSE(rep.filled);
@@ -107,13 +72,12 @@ TEST_F(LiveExecutorTest, DisarmedNoFill) {
 
 // armed + matched → 中性 ExecReport 取**回执实际成交量** (非请求量)。
 TEST_F(LiveExecutorTest, BuyFillFromReceipt) {
-    LiveOrderGate gate(*rm_, matched_sink());
+    LiveOrderGate gate(matched_sink());
     gate.Arm();
     LiveExecutor ex(gate);
     const auto rep = ex.Execute(intent(Side::Buy, "e2"), false);
     ASSERT_TRUE(rep.filled);
     EXPECT_TRUE(rep.submitted);
-    EXPECT_TRUE(rep.rm_approved);
     EXPECT_DOUBLE_EQ(rep.filled_usdc, 1.02);     // making (USDC 实付)
     EXPECT_DOUBLE_EQ(rep.filled_shares, 13.78);  // taking (shares 实得)
     EXPECT_NEAR(rep.fill_price, 1.02 / 13.78, 1e-9);
@@ -131,7 +95,7 @@ TEST_F(LiveExecutorTest, SellFillMapping) {
         r.taking_amount = 1.02;   // SELL: USDC 实得
         return r;
     };
-    LiveOrderGate gate(*rm_, sink);
+    LiveOrderGate gate(sink);
     gate.Arm();
     LiveExecutor ex(gate);
     const auto rep = ex.Execute(intent(Side::Sell, "e3"), false);
@@ -142,7 +106,7 @@ TEST_F(LiveExecutorTest, SellFillMapping) {
 
 // R-20: ExecReport 透传 intent 上游 4ts (carve-out C-1; live FillEvent 合规)。
 TEST_F(LiveExecutorTest, Ts4Passthrough) {
-    LiveOrderGate gate(*rm_, matched_sink());
+    LiveOrderGate gate(matched_sink());
     gate.Arm();
     LiveExecutor ex(gate);
     const auto it = intent(Side::Buy, "ts1");
@@ -165,7 +129,7 @@ TEST_F(LiveExecutorTest, UnmatchedNoFill) {
         r.status = "unmatched";
         return r;
     };
-    LiveOrderGate gate(*rm_, sink);
+    LiveOrderGate gate(sink);
     gate.Arm();
     LiveExecutor ex(gate);
     const auto rep = ex.Execute(intent(Side::Buy, "e4"), false);
