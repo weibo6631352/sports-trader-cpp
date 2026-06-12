@@ -8,6 +8,7 @@
 
 #include "stcpp/app/trader_daemon.hpp"
 #include "stcpp/risk/live_risk_profile.hpp"  // 2026-06-13 live 注码档
+#include "stcpp/polymarket/onchain_balance.hpp"  // 2026-06-12 live 真实本金 (链上 pUSD)
 
 #include <algorithm>
 #include <cctype>
@@ -752,7 +753,22 @@ BuildResult TraderDaemon::Build() {
         cfg_.trading_loop.per_order_cap_usdc = lp.per_order_cap_usdc.to_pusd();
         cfg_.trading_loop.per_outcome_cap_usdc = lp.per_outcome_cap_usdc.to_pusd();
         cfg_.trading_loop.market_exposure_cap_usdc = lp.market_exposure_cap_usdc.to_pusd();
-        cfg_.trading_loop.bankroll_usdc = lp.bankroll_usdc.to_pusd();
+        // bankroll = 真实链上 pUSD 余额 (2026-06-12 老板「净值为何还是150」): 启动读一次真本金,
+        //   armed 后 daemon 是钱包唯一交易者 → 起点对则净值一路对。读失败 fail-safe 回落 LiveRiskProfile 档 (loud warn)。
+        double bankroll = lp.bankroll_usdc.to_pusd();  // 兜底默认
+        if (const char* funder = std::getenv("POLYMARKET_FUNDER_ADDRESS"); funder != nullptr && funder[0] != '\0') {
+            std::string rpc = (std::getenv("POLYGON_RPC_URL") != nullptr) ? std::getenv("POLYGON_RPC_URL") : "";
+            std::string bal_err;
+            if (const auto bal = polymarket::ReadPusdBalanceUsd(funder, rpc, bal_err); bal.has_value()) {
+                bankroll = *bal;
+                std::fprintf(stderr, "[live] 链上真实本金 pUSD=$%.2f (替代写死档 $%.2f)\n", bankroll,
+                             lp.bankroll_usdc.to_pusd());
+            } else {
+                std::fprintf(stderr, "[live] ⚠ 链上余额读取失败 (%s) → fail-safe 回落档 $%.2f\n",
+                             bal_err.c_str(), bankroll);
+            }
+        }
+        cfg_.trading_loop.bankroll_usdc = bankroll;
     }
     // c3 (P0-2 根治): RM caps 与 sizing 同源 = cfg_.trading_loop (whole pUSD), 同用 from_pusd 转 micro。
     //   RM 直接 micro 比 size_pUSD_micro; sizing 侧 .to_pusd() 回 whole 比 notional。同源同值。
