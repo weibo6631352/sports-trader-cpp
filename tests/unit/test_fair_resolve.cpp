@@ -61,15 +61,39 @@ TEST(ResolveFair, SharpOutOfRangeFallsBack) {
     EXPECT_DOUBLE_EQ(r.p_fair, 0.6);
 }
 
-// 4. 无真比分 + 无 derivative → 默认市场 de-vig (自己跟自己比, edge≈0)。
-TEST(ResolveFair, DefaultMarketDevigWhenNoRealFair) {
+// 4. 赔率解耦 (老板 2026-06-12 删比分门): sharp 有效 + 无比分 → 仍锚 sharp (进场认赔率不认比分)。
+TEST(ResolveFair, SharpUsedWithoutRealFair) {
     FairInputs in;
     in.p_market_devig = 0.33;
-    in.sharp_yes = 0.9;          // 即便 sharp 有值, 但 has_real_fair=false 不用
-    in.has_real_fair = false;
+    in.sharp_yes = 0.9;          // 有赔率
+    in.has_real_fair = false;    // 无比分
+    const auto r = ResolveFair(in);
+    EXPECT_EQ(r.src, FairSrc::kSharpInplay);  // 解耦后: 赔率即用, 不被比分门锁
+    EXPECT_DOUBLE_EQ(r.p_fair, 0.9);
+}
+
+// 5. 无赔率 + 无比分 → 默认市场 de-vig (edge≈0, 不交易)。
+TEST(ResolveFair, DefaultMarketDevigWhenNeither) {
+    FairInputs in;
+    in.p_market_devig = 0.33;
+    in.sharp_yes = -1.0;         // 无赔率
+    in.has_real_fair = false;    // 无比分
     const auto r = ResolveFair(in);
     EXPECT_EQ(r.src, FairSrc::kMarketDevig);
     EXPECT_DOUBLE_EQ(r.p_fair, 0.33);
+}
+
+// 6. 备用: 赔率消失 (sharp 无效) + 有比分 → score-prior 当备用 (老板「比分作为备用 sharp」)。
+TEST(ResolveFair, ScorePriorBackupWhenSharpGone) {
+    FairInputs in;
+    in.p_market_devig = 0.4;
+    in.sharp_yes = -1.0;          // 赔率没了
+    in.score_prior_yes = 0.65;
+    in.prior_conf = 1.0;          // 纯先验
+    in.has_real_fair = true;      // 还有比分 → 走备用
+    const auto r = ResolveFair(in);
+    EXPECT_EQ(r.src, FairSrc::kScorePriorBlend);
+    EXPECT_DOUBLE_EQ(r.p_fair, 0.65);
 }
 
 }  // namespace

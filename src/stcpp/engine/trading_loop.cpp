@@ -1050,15 +1050,20 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     }
 
     // ---- P0-3 / P1-8 fair 锚定 --------------------------------------------
-    // 默认 (无真实 Goalserve 先验, M1 stub 路径): p_fair = p_market_devig.
-    //   → edge ≈ 0 (锚在去 vig 的市场上自己跟自己比), 配合 has_real_fair gate 不产 intent.
+    // 默认 (无 sharp 赔率 + 无真实 Goalserve 先验): p_fair = p_market_devig.
+    //   → edge ≈ 0 (锚在去 vig 的市场上自己跟自己比); 进场门 = fair_src==sharp_inplay (2026-06-12 删比分门,
+    //   见下方 tradeable_fair), 非 sharp 即不开新仓, market_devig 自然不产 intent.
     //   这根除了"低价 outright 被 stub 强拉 → 假 edge"(Spain 0.169 → fake 1076bps).
     // 有真实 in-play game_row 时: 用 score-prior 置信加权混合到 de-vig 市场锚上,
     //   置信随时钟从 kBasePriorConfidence 升到 kMaxPriorConfidence; 终态 conf=1.0.
     double p_fair = p_market_devig;  // 最终由 ResolveFair 一处解析 (优先级集中在 fair_resolve.hpp; R-2 老周/老郭)
     pricing::FairSrc fair_src_dbg = pricing::FairSrc::kMarketDevig;  // [diag] 捕获 ResolveFair 真实选源
-    // fair-input 标量: has_real_fair 块内填; sharp<0=无效 → ResolveFair 回落 score-prior。derivative 在下面 optional。
-    double fair_sharp_yes = -1.0;
+    // fair-input 标量。derivative 在下面 optional。
+    //   赔率解耦 (老板 2026-06-12「删比分门, 进场认赔率不认比分」): sharp 赔率不再被 has_real_fair(比分)
+    //   门锁 —— 无条件读 bet365 in-play 赔率 (与比分同一 inplay feed; game_row 字段默认 -1, 无赔率自然
+    //   invalid, ResolveFair 据 [0,1] 判)。map_is_draw / game_row 已由上方 ResolveGameContext 填。
+    double fair_sharp_yes =
+        map_is_draw ? game_row.inplay_bet365_draw_fair : game_row.inplay_bet365_home_fair;
     double fair_score_prior = 0.5;
     double fair_prior_conf = 0.0;
     FairCandidates fair_cands;  // 候选 fair 全集 (ResolveFair 块内从 fin 捕获; 显示所有源 + 标记决出)
@@ -1109,7 +1114,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         //   cricket innings 制 runs 差饱和 sigmoid 详见 pricing::score_prior_applicable。
         if (!pricing::score_prior_applicable(game_row.sport))
             fair_prior_conf = 0.0;
-        fair_sharp_yes = map_is_draw ? game_row.inplay_bet365_draw_fair : game_row.inplay_bet365_home_fair;
+        // (fair_sharp_yes 已在上方无条件读取 — 赔率解耦, 不再锁在 has_real_fair 块内)
         time_to_resolution_frac = terminal ? 0.0 : std::clamp(1.0 - time_frac, 0.0, 1.0);
         // 批1 g_time_x_lead: 领先 × 剩余时间占比 (领先 1 球在 80min vs 20min 价值天差地别)。
         g_time_x_lead = score_diff * std::clamp(1.0 - time_frac, 0.0, 1.0);
@@ -1458,10 +1463,13 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 老板「把门都去了」: 调模型模式跳过 net-EV 门。
     const bool net_ev_ok =
         cfg_.paper_no_edge_gates || !cfg_.net_ev_gate || (net_ev_edge >= (2.0 * fee_pu + slippage_frac));
-    // target 放行条件: 常规要 has_real_fair (Goalserve 比分); 调模型模式放行模型驱动 fair (pre-game ml_blend)
-    //   + sharp, 让模型在其训练域 (pre-game) 也能自主交易。sizing_out.valid 已保证 net edge>0 (真有 edge 才动),
-    //   src=market_devig (无 fair) 时 edge=0 → sizing 无效 → 不交易, 故放行安全 (不会在无 fair 盘乱开)。
-    const bool tradeable_fair = has_real_fair || cfg_.paper_no_edge_gates;
+    // 进场门 (老板 2026-06-12「删比分门: 进场必须有赔率源, 不要求比分」): 新开仓只在 fair=sharp
+    //   (bet365 in-play 赔率) 时放行 —— 不再用 has_real_fair(比分) 当进场条件, 也不放行 score-prior /
+    //   裸市场 de-vig / paper_no_edge_gates 的非赔率 fair。
+    //   ⚠ 仅限【进场/新开仓】: 进场后赔率消失, 持仓的离场/备用 (score-prior 估值 / sharp 掉档冻结 /
+    //      game_decided / 结算) 全在 ResolveFair (赔率没了走 score-prior) + 下方 sel_target 逻辑, 不受此门限。
+    //   FLB (订单簿引擎) 独立触发, 不经此门。
+    const bool tradeable_fair = (fair_src_dbg == pricing::FairSrc::kSharpInplay);
     double target_mag =
         (tradeable_fair && sizing_out.valid && devig_ok && net_ev_ok) ? sizing_out.suggested_notional : 0.0;
     // 必输方开仓护栏 (老板 2026-06-09「调试持仓逻辑, 查明真正原因」, 数据驱动): 被选边【模型 fair】太低 = 模型

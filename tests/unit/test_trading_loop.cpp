@@ -927,6 +927,16 @@ static stcpp::debug_api::EventScore MakeFreshScore(const std::string& id, int ho
     return es;
 }
 
+// 带 sharp 赔率的变体 (2026-06-12 删比分门后进场认赔率源): yes_sharp = bet365 de-vig YES 胜率。
+//   tests 用 yes_is_home=true → home_fair=yes_sharp。原本靠 score-prior 驱动进场的端到端测试改用此变体,
+//   把 sharp 赔率设成原 score-prior 同值 → fair 源从 score-prior 变 sharp, 进场门放行 (意图不变)。
+static stcpp::debug_api::EventScore MakeFreshScore(const std::string& id, int home, int away, double yes_sharp) {
+    auto es = MakeFreshScore(id, home, away);
+    es.inplay_bet365_home_fair = yes_sharp;
+    es.inplay_bet365_away_fair = 1.0 - yes_sharp;
+    return es;
+}
+
 // ---------------------------------------------------------------------------
 // T17: A2 第一笔 paper 成交 — advisory 解封 + 真实 fair + 市场低估 → 产生成交
 //   核心: orders_approved>0 (intent 过 gate+RM) + fills>0 (第一笔 paper 成交).
@@ -940,7 +950,7 @@ TEST_F(TradingLoopTest, T17_A2_FirstPaperFill_AdvisoryUnlocked) {
     //   控制器范式: reservation_buy = fair − fee − margin 比 **真实付价 raw ask** (非 de-vig 共识);
     //   raw edge 须 ≥ fee+margin (~4¢) 才过限价门。0.30 ask vs fair~0.54 → 24¢ raw edge → 成交。
     //   (注: 老 T17 的 2¢ raw edge 被控制器正确判 NotMarketable — vig 是真实成本, 限价不追。)
-    auto es17 = MakeFreshScore("gs-1", 2, 0);
+    auto es17 = MakeFreshScore("gs-1", 2, 0, 0.55);
     es17.sport = "soccer";
     es17.clock_sec = 60 * 60;  // 60min → time_frac≈0.67 → conf≈0.45 (先验拉力足)
     auto sm = std::make_shared<ScoreMap>();
@@ -1006,7 +1016,7 @@ TEST_F(TradingLoopTest, T19_A2_ExtremeEdge_NotionalClamped) {
 
     // YesTeam 5:0 大比分领先 + 市场极低估 (ask=0.10) → fair≈0.9 → edge 巨大
     auto sm = std::make_shared<ScoreMap>();
-    (*sm)["gs-x"] = MakeFreshScore("gs-x", 5, 0);
+    (*sm)["gs-x"] = MakeFreshScore("gs-x", 5, 0, 0.80);
     ScoreSnapshotStore store;
     store.Publish(std::shared_ptr<const ScoreMap>(sm));
     auto emap = std::make_shared<ConditionEventMap>();
@@ -1097,7 +1107,7 @@ TEST_F(TradingLoopTest, T22_A15_TimeFrac_UnlocksFillAtProductionNeff) {
     using stcpp::data::ScoreSnapshotStore;
 
     // soccer 2:0 领先, 已踢 60 分钟 (time_frac=3600/5400≈0.67 → conf≈0.45, 远超 base 0.15)
-    auto es = MakeFreshScore("gs-tf", 2, 0);
+    auto es = MakeFreshScore("gs-tf", 2, 0, 0.55);
     es.sport = "soccer";     // total_game_seconds("soccer")=5400
     es.clock_sec = 60 * 60;  // 60min → time_frac≈0.67
     auto sm = std::make_shared<ScoreMap>();
@@ -1452,7 +1462,7 @@ TEST_F(TradingLoopTest, T_PhaseB_BuyNo_EndToEnd) {
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
-    auto es = MakeFreshScore("gs-no", 0, 3);  // YES 队 0:3 落后 → prior_yes 低
+    auto es = MakeFreshScore("gs-no", 0, 3, 0.45);  // YES 队 0:3 落后 → prior_yes 低
     es.sport = "soccer";                      // total_game_seconds=5400
     es.clock_sec = 75 * 60;                   // 75min → time_frac≈0.83 → conf≈0.52
     auto sm = std::make_shared<ScoreMap>();
@@ -1542,7 +1552,7 @@ TEST_F(TradingLoopTest, T_Profit_PipelineProducesProfit) {
     cfg_.n_effective = 150;
     cfg_.advisory_markets_no_intent = false;
 
-    auto es = MakeFreshScore("gs-profit", 2, 0);  // YES 2:0 领先 → 模型 fair_YES 高
+    auto es = MakeFreshScore("gs-profit", 2, 0, 0.65);  // YES 2:0 领先 → 模型 fair_YES 高
     es.sport = "soccer";
     es.clock_sec = 60 * 60;  // 60min → conf~0.45
     auto sm = std::make_shared<ScoreMap>();
@@ -1645,7 +1655,7 @@ TEST_F(TradingLoopTest, TC2_Controller_ConvergesToTarget_NoUnboundedAccumulation
     using stcpp::data::ScoreMap;
     using stcpp::data::ScoreSnapshotStore;
 
-    auto es = MakeFreshScore("gs-conv", 2, 0);
+    auto es = MakeFreshScore("gs-conv", 2, 0, 0.55);
     es.sport = "soccer";
     es.clock_sec = 60 * 60;  // conf~0.45 → fair 足够高 → 有真实 edge → 先买到目标
     auto sm = std::make_shared<ScoreMap>();
@@ -1694,7 +1704,7 @@ TEST_F(TradingLoopTest, TM2a_NoSideFlip_HoldsHeldSide) {  // 2026-06-10 老板�
     using stcpp::data::ScoreSnapshotStore;
 
     // 比分恒定: YES 2:0 领先 (fair_YES~0.55, 60min soccer)。fair 不变, 只动市场价格制造翻转。
-    auto es = MakeFreshScore("gs-flip", 2, 0);
+    auto es = MakeFreshScore("gs-flip", 2, 0, 0.55);
     es.sport = "soccer";
     es.clock_sec = 60 * 60;
     auto sm = std::make_shared<ScoreMap>();
@@ -1896,7 +1906,7 @@ TEST_F(TradingLoopTest, TS4_Settlement_RealizesAndCloses) {
     using stcpp::data::ScoreSnapshotStore;
 
     // ---- Phase 1: in-play YES 2:0 领先 + 市场低估 (ask 0.30) → 建 YES 多仓 ----
-    auto es = MakeFreshScore("gs-settle", 2, 0);
+    auto es = MakeFreshScore("gs-settle", 2, 0, 0.55);
     es.sport = "soccer";
     es.clock_sec = 60 * 60;
     auto sm = std::make_shared<ScoreMap>();
@@ -1926,7 +1936,7 @@ TEST_F(TradingLoopTest, TS4_Settlement_RealizesAndCloses) {
     ASSERT_GT(yes_qty, 0.0) << "TS4 Phase1: 应先建 YES 多仓";
 
     // ---- Phase 2: 比赛结束 (status final → Ended), YES 2:0 胜 → 结算 YES=1.0 ----
-    auto es2 = MakeFreshScore("gs-settle", 2, 0);
+    auto es2 = MakeFreshScore("gs-settle", 2, 0, 0.55);
     es2.status = "final";  // → TimeStatus::Ended (终态)
     es2.sport = "soccer";
     es2.clock_sec = 90 * 60;

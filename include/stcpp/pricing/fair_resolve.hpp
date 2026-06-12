@@ -6,8 +6,9 @@
 //
 // 优先级 (显式钉死, 一处可读 — 原散在 trading_loop TickOne ~571-696 的隐式 if 链):
 //   1. derivative (totals/spreads 专属定价) → 覆盖, 不叠 sharp/score/ML (派生解析模型即该盘 fair)
-//   2. sharp-anchor (Goalserve bet365 in-play de-vig 共识) → 有真比分 + sharp 有效时锚 sharp
-//   3. score-prior blend (FairValueEstimator 先验 × 市场 de-vig, 置信加权) → sharp 无效时回落
+//   2. sharp-anchor (Goalserve bet365 in-play de-vig 共识) → sharp 有效即锚 (2026-06-12 删比分门: 赔率
+//      本身即完整 fair, 不需 has_real_fair; 进场认赔率不认比分)
+//   3. score-prior blend (FairValueEstimator 先验 × 市场 de-vig, 置信加权) → 无赔率 + 有真比分时回落 (备用)
 //   4. ML-blend (真 ONNX) → 仅非 derivative 时叠加在上述结果上 (有效 ml_p 才动)
 //   默认 (无真比分/无 derivative): p_fair = 市场 de-vig (自己跟自己比, edge≈0, has_real_fair gate 兜底)
 //
@@ -61,15 +62,15 @@ struct FairResult {
     double p = in.p_market_devig;
     FairSrc src = FairSrc::kMarketDevig;
 
-    // 2/3. 有真比分: sharp 优先, 无效回落 score-prior blend。
-    if (in.has_real_fair) {
-        if (in.sharp_yes >= 0.0 && in.sharp_yes <= 1.0) {
-            p = in.sharp_yes;
-            src = FairSrc::kSharpInplay;
-        } else {
-            p = blend_prob(in.score_prior_yes, in.p_market_devig, in.prior_conf);
-            src = FairSrc::kScorePriorBlend;
-        }
+    // 2. sharp 优先 (老板 2026-06-12「两个盈利引擎都不硬依赖比分, 删比分门」): 有效 bet365 in-play 赔率
+    //    即用, 不再被 has_real_fair(比分) 门锁 —— 赔率本身就是完整 fair, 进场认赔率不认比分。
+    if (in.sharp_yes >= 0.0 && in.sharp_yes <= 1.0) {
+        p = in.sharp_yes;
+        src = FairSrc::kSharpInplay;
+    } else if (in.has_real_fair) {
+        // 3. 备用: 赔率消失但还有比分 → score-prior blend (它本身需要比分; 老板「比分作为备用 sharp」)。
+        p = blend_prob(in.score_prior_yes, in.p_market_devig, in.prior_conf);
+        src = FairSrc::kScorePriorBlend;
     }
 
     // (4. ML-blend 已砍 2026-06-05「砍掉大模型训练功能」: fair 不再有 ONNX 推理 blend。
