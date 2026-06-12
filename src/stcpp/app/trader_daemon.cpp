@@ -1892,6 +1892,7 @@ void TraderDaemon::RunActiveBookPoller(std::stop_token st) noexcept {
     net::PersistentHttps https("clob.polymarket.com", /*timeout_ms=*/4000);
 
     std::unordered_map<std::string, double> cw;  // smooth-WRR current_weight (跨迭代保留, 仅本线程)
+    std::unordered_map<std::string, double> dyn_w;  // 动态邻近度权重 (每 1s 随 plan 重算; 仅本线程)
     std::shared_ptr<const std::vector<std::pair<std::string, double>>> plan;
     auto last_plan_refresh = steady_clock::now() - seconds(10);  // 立即首刷
     auto next_req = steady_clock::now();
@@ -1910,6 +1911,28 @@ void TraderDaemon::RunActiveBookPoller(std::stop_token st) noexcept {
                     if (live.find(it->first) == live.end()) it = cw.erase(it);
                     else ++it;
                 }
+                // 动态邻近度加权 (2026-06-13 老板「按引擎逻辑判断哪些机会该分配更高, 别饿死其他」):
+                //   在固定 base 地板 (√liq+1 / FLB 2.0; 老板「把 149hz 沾满」暖簿不破, 绝不饿死) 上, 给
+                //   favorite 边 mid 落在【两引擎共同行动带 0.70-0.84】(FLB 触发 + sharp 利润带) 的 token 加权
+                //   → 热点 book 更新更快 (准切单深度 + 高 FOK 成交率); 远/已决出保留地板 (WSS 推送+地板兜底)。
+                //   读 hub_ 当前 mid (R-12 无锁双缓冲读, 安全); 每 1s 随 plan 重算 (mid 不会更快跳带)。
+                dyn_w.clear();
+                dyn_w.reserve(plan->size() * 2);
+                for (const auto& [t, base] : *plan) {
+                    double w = base;  // 地板 = 现有权重 (绝不饿死任何订阅盘)
+                    if (const auto bk = hub_->Read(t); bk && bk->valid) {
+                        const double bid = bk->best_bid(), ask = bk->best_ask();
+                        if (std::isfinite(bid) && std::isfinite(ask) && bid > 0.0 && ask > 0.0) {
+                            const double m = 0.5 * (bid + ask);
+                            const double fav = std::max(m, 1.0 - m);  // favorite 边 (两 token 同值)
+                            if (fav >= 0.70 && fav <= 0.84) w += 4.0;       // 行动带: 现在就能出活
+                            else if (fav >= 0.62 && fav < 0.70) w += 2.0;   // 逼近
+                            else if (fav > 0.84 && fav <= 0.90) w += 0.5;   // 刚过, 可能回落
+                            // 远 (<0.62) / 已决出 (>0.90): 不加, 保留 base 地板
+                        }
+                    }
+                    dyn_w[t] = w;
+                }
             }
         }
         if (!plan || plan->empty()) {
@@ -1919,7 +1942,9 @@ void TraderDaemon::RunActiveBookPoller(std::stop_token st) noexcept {
         // smooth weighted round-robin: 选 current_weight 最大者, 选后减 total_weight (nginx 法)。
         double total_w = 0.0, best = -1e300;
         std::string pick;
-        for (const auto& [t, w] : *plan) {
+        for (const auto& [t, base] : *plan) {
+            const auto wit = dyn_w.find(t);
+            const double w = (wit != dyn_w.end()) ? wit->second : base;  // 动态权重; 缺则回落 base 地板 (双保险防饿死)
             double& c = cw[t];
             c += w;
             total_w += w;
