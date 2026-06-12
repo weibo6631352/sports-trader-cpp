@@ -2069,149 +2069,39 @@ TEST(BookDeteriorate, ExitOnlyWhenBookTurnsDown) {
 }
 
 // ---------------------------------------------------------------------------
-// FLB-hold 引擎 (老板 2026-06-11「与现策略并跑」): 触发→RM→撮合→账本全路径 + 一盘一击去重。
-// ---------------------------------------------------------------------------
-
-TEST_F(TradingLoopTest, FLB01_TriggerProducesFillAndDedupes) {
-    cfg_.flb_enabled = true;
-    RebuildRmHighCap();  // 夹具默认 per_order cap=10u < FLB 平注 15u → 抬 cap 测全路径
-    loop_ = MakeLoop();
-    rm_->set_state(stcpp::risk::RmState::RUNNING);  // bench 不走 Start() (set_rm_running 在 Start 里)
-    rm_->set_bankroll(1'000'000'000);               // 1000 pUSD (micro)
-    loop_->SetPaperCatalog(std::make_shared<engine::PaperCatalog>());  // 非空指针 (TickAll 前置门)
-
-    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            std::chrono::system_clock::now().time_since_epoch())
-                            .count();
-    TradingLoop::FlbTrigger t;
-    t.condition_id = "0x00000000000000000000000000000000000000000000000000000000f1b00001";
-    t.token_id = "910000000000000001";
-    t.is_yes = true;
-    t.ask_px = 0.85;
-    t.ask_sz_usdc = 500.0;
-    t.event_ts_ns = now_ns - 3'000'000'000LL;
-    t.data_source_ts_ns = now_ns - 2'000'000'000LL;
-    t.ingestion_ts_ns = now_ns - 1'000'000'000LL;
-
-    loop_->RequestFlbEntry(t);
-    EXPECT_FALSE(loop_->FlbSeen(t.condition_id)) << "Phase 3 累积: 入队不再即锁, 补到 $25 才锁 seen";
-    loop_->TickAllForBench();  // 排干队列 → RM→sign→matcher→ledger
-    // Phase 3 累积: 驱动到建满锁定 (FlbSeen)。VirtualMatcher 概率撮合 (Bernoulli) + 部分成交 →
-    //   厚簿 (深度 500) 数 tick 内补到 ~$25 cap 并锁 seen。
-    for (int i = 0; i < 80 && !loop_->FlbSeen(t.condition_id); ++i) {
-        loop_->RequestFlbEntry(t);
-        loop_->TickAllForBench();
-    }
-
-    const auto pos = position_ledger_->get_position(t.token_id);
-    ASSERT_TRUE(pos.has_value()) << "FLB 触发应产生持仓";
-    EXPECT_GT(pos->size_usdc, 0);
-    const auto fills = loop_->RecentFills(10);
-    ASSERT_FALSE(fills.empty());
-    EXPECT_EQ(fills.front().engine, "flb") << "FLB 成交应带引擎标签";
-    EXPECT_TRUE(fills.front().is_buy);
-    EXPECT_FALSE(fills.front().is_close);
-
-    // Phase 3 累积到顶: 厚簿(深度 500)首口即吃满 $25 → FLB 份额达标锁定 → 再触发被丢弃, 不超 $25。
-    const double sz_before = static_cast<double>(pos->size_usdc);
-    EXPECT_TRUE(loop_->FlbSeen(t.condition_id)) << "建满 $25 后锁 seen";
-    loop_->RequestFlbEntry(t);
-    loop_->TickAllForBench();
-    const auto pos2 = position_ledger_->get_position(t.token_id);
-    ASSERT_TRUE(pos2.has_value());
-    EXPECT_DOUBLE_EQ(static_cast<double>(pos2->size_usdc), sz_before) << "到顶后重复触发不应加仓";
-}
-
-// Phase 3 (2026-06-13): 薄簿深度感知累积 — 一次性 $25 吃不满的薄簿, 分多口补到 $25 cap。
-//   回测验证: 69% FLB 触发对 $25 一次性太薄(FOK 整单杀=错过), 累积救回且漂移≈0。
-TEST_F(TradingLoopTest, FLB01b_ThinDepthAccumulatesToTarget) {
-    cfg_.flb_enabled = true;
-    RebuildRmHighCap();
-    loop_ = MakeLoop();
-    rm_->set_state(stcpp::risk::RmState::RUNNING);
-    rm_->set_bankroll(1'000'000'000);
-    loop_->SetPaperCatalog(std::make_shared<engine::PaperCatalog>());
-    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            std::chrono::system_clock::now().time_since_epoch())
-                            .count();
-    TradingLoop::FlbTrigger t;
-    t.condition_id = "0x0000000000000000000000000000000000000000000000000000000f1b0001b0";
-    t.token_id = "910000000000000010";
-    t.is_yes = true;
-    t.ask_px = 0.85;
-    t.ask_sz_usdc = 10.0;  // 薄簿: 单口 = min($25, 10×0.8=$8) → 一次性吃不满, 必须分口累积
-    t.event_ts_ns = now_ns - 3'000'000'000LL;
-    t.data_source_ts_ns = now_ns - 2'000'000'000LL;
-    t.ingestion_ts_ns = now_ns - 1'000'000'000LL;
-    // 反复触发 (驱动路径无冷却): 每次吃 ~$8 一口, 补到 $25 cap 后 ProcessFlbTrigger 锁 flb_seen_。
-    for (int i = 0; i < 300 && !loop_->FlbSeen(t.condition_id); ++i) {
-        loop_->RequestFlbEntry(t);
-        loop_->TickAllForBench();
-    }
-    const auto pos = position_ledger_->get_position(t.token_id);
-    ASSERT_TRUE(pos.has_value()) << "薄簿累积应建仓";
-    const double sz = static_cast<double>(pos->size_usdc) / 1'000'000.0;  // micro→whole
-    // 建满判据 = 「距目标 < 单笔下限 $5」→ 锁定; 故终值 ∈ [$25-$5, $25+一口] = [$20, $33]。
-    //   关键: 远大于一次性 FOK 在薄簿(深度 $10 < $25)的 $0 (整单杀) — 累积救回了入场。
-    EXPECT_GE(sz, 25.0 - 5.0) << "应累积到 ≥ $20 (单口 $8, 多口补到距目标<$5 即锁)";
-    EXPECT_LE(sz, 25.0 + 8.0) << "不超目标 + 一口余量 (累积 cap 生效)";
-    EXPECT_TRUE(loop_->FlbSeen(t.condition_id)) << "建满后锁定";
-}
-
-TEST_F(TradingLoopTest, FLB02_DisabledByDefault_NoFill) {
-    // cfg_.flb_enabled 默认 false (lib 契约): 触发入队但 TickAll 不处理
-    loop_ = MakeLoop();
-    loop_->SetPaperCatalog(std::make_shared<engine::PaperCatalog>());
-    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            std::chrono::system_clock::now().time_since_epoch())
-                            .count();
-    TradingLoop::FlbTrigger t;
-    t.condition_id = "0x00000000000000000000000000000000000000000000000000000000f1b00002";
-    t.token_id = "910000000000000002";
-    t.is_yes = true;
-    t.ask_px = 0.85;
-    t.ask_sz_usdc = 500.0;
-    t.event_ts_ns = now_ns - 3'000'000'000LL;
-    t.data_source_ts_ns = now_ns - 2'000'000'000LL;
-    t.ingestion_ts_ns = now_ns - 1'000'000'000LL;
-    loop_->RequestFlbEntry(t);
-    loop_->TickAllForBench();
-    EXPECT_FALSE(position_ledger_->get_position(t.token_id).has_value()) << "flb_enabled=false 不应成交";
-}
-
-// ---------------------------------------------------------------------------
-// 账本持久化 (2026-06-11): Save→新实例 Restore→持仓/累计 round-trip。
+// (FLB 引擎测试 FLB01/01b/02 2026-06-13 随引擎整删; git 史可考。)
+// 账本持久化 (2026-06-11): Save→新实例 Restore→持仓/CLV round-trip。造仓走 sharp 路径 (TS4 同款夹具)。
 // ---------------------------------------------------------------------------
 TEST_F(TradingLoopTest, LP01_LedgerSnapshotRoundTrip) {
+    using stcpp::data::ScoreMap;
+    using stcpp::data::ScoreSnapshotStore;
     const std::string snap = ::testing::TempDir() + "lp01_ledger.tsv";
     std::remove(snap.c_str());
-    cfg_.flb_enabled = true;
+
+    // 造仓 (TS4 Phase1 同款): in-play YES 2:0 领先 + 市场低估 ask 0.30 → sharp 建 YES 多仓
+    auto es = MakeFreshScore("gs-lp01", 2, 0, 0.55);
+    es.sport = "soccer";
+    es.clock_sec = 60 * 60;
+    auto sm = std::make_shared<ScoreMap>();
+    (*sm)["gs-lp01"] = es;
+    ScoreSnapshotStore store;
+    store.Publish(std::shared_ptr<const ScoreMap>(sm));
+    auto emap = std::make_shared<ConditionEventMap>();
+    (*emap)["cond-test-001"] = EventMapEntry{"gs-lp01", true};
+
+    cfg_.advisory_markets_no_intent = false;
+    cfg_.n_effective = 500;
     cfg_.ledger_snapshot_path = snap;
-    RebuildRmHighCap();
     loop_ = MakeLoop();
-    rm_->set_state(stcpp::risk::RmState::RUNNING);
-    rm_->set_bankroll(1'000'000'000);
-    loop_->SetPaperCatalog(std::make_shared<engine::PaperCatalog>());
-    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                            std::chrono::system_clock::now().time_since_epoch())
-                            .count();
-    TradingLoop::FlbTrigger t;
-    t.condition_id = "0x000000000000000000000000000000000000000000000000000000001ed6e401";
-    t.token_id = "920000000000000001";
-    t.is_yes = true;
-    t.ask_px = 0.85;
-    t.ask_sz_usdc = 500.0;
-    t.event_ts_ns = now_ns - 3'000'000'000LL;
-    t.data_source_ts_ns = now_ns - 2'000'000'000LL;
-    t.ingestion_ts_ns = now_ns - 1'000'000'000LL;
-    loop_->RequestFlbEntry(t);
-    loop_->TickAllForBench();
-    for (int i = 0; i < 50 && !position_ledger_->get_position(t.token_id).has_value(); ++i) {
-        loop_->RequestFlbEntry(t);
-        loop_->TickAllForBench();
-    }
-    const auto pos_a = position_ledger_->get_position(t.token_id);
-    ASSERT_TRUE(pos_a.has_value());
+    loop_->SetScoreStore(&store);
+    loop_->SetEventMapping(std::shared_ptr<const ConditionEventMap>(emap));
+    hub_->Publish("1001", MakeFreshBook(0.28, 0.30));
+    loop_->Start();
+    std::this_thread::sleep_for(std::chrono::milliseconds(450));
+    loop_->Stop();
+
+    const auto pos_a = position_ledger_->get_position("1001");
+    ASSERT_TRUE(pos_a.has_value()) << "sharp 路径应建仓 (TS4 同款)";
     loop_->SaveLedgerSnapshot();
 
     // 新实例 (模拟重启): 新 ledger + 新 loop, Restore 后持仓一致
@@ -2219,10 +2109,10 @@ TEST_F(TradingLoopTest, LP01_LedgerSnapshotRoundTrip) {
     TradingLoop loop_b(*hub_, *rm_, *ledger_b, *ledger_hub_, *quote_hub_, rm_snap_.get(), *fv_model_, token_map_,
                      cfg_);
     loop_b.RestoreLedgerSnapshot();
-    const auto pos_b = ledger_b->get_position(t.token_id);
+    const auto pos_b = ledger_b->get_position("1001");
     ASSERT_TRUE(pos_b.has_value()) << "重启恢复应还原持仓";
     EXPECT_EQ(pos_b->size_usdc, pos_a->size_usdc);
     EXPECT_NEAR(pos_b->avg_entry_price, pos_a->avg_entry_price, 1e-9);
-    EXPECT_EQ(loop_b.clv_report().n_pending_fills, 1u) << "CLV pending 应恢复";
+    EXPECT_GE(loop_b.clv_report().n_pending_fills, 1u) << "CLV pending 应恢复";
     std::remove(snap.c_str());
 }

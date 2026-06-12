@@ -348,30 +348,10 @@ void TraderDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovere
     std::vector<std::pair<std::string, double>> poll_plan;  // 149hz 主动轮询计划 (token, √liq+1 权重)
     poll_plan.reserve(token_map_.size() * 2);
     std::size_t passed_no_source = 0;
-    std::size_t flb_subscribed = 0;
     for (const auto& [cond_id, tok_pair] : token_map_) {
         if (!sharp_snap || sharp_snap->count(cond_id) == 0) {
-            // FLB-hold 宇宙 (老板 2026-06-11「触发型」): 非 sharp 的 moneyline 也订 WSS (book 事件即触发,
-            //   亚秒级; 替代 45s 扫描轮询)。【只订 WSS 不进 149hz 轮询计划】(轮询预算仍 sharp 专属);
-            //   eligible 未就绪 (sharp_snap null) 时同样不订 (保持「绝不 bootstrap 全订」不变式)。
-            bool flb_take = false;
-            if (sharp_snap && cfg_.trading_loop.flb_enabled) {
-                if (const auto cit = market_cat_map_.find(cond_id);
-                    cit != market_cat_map_.end() && cit->second.market_type_id == 0) {  // moneyline
-                    flb_take = true;
-                }
-            }
-            if (!flb_take) {
-                ++passed_no_source;  // 无赔率源且非 FLB 宇宙 → 源头 pass, 不订阅
-                continue;
-            }
-            all_token_ids_.push_back(tok_pair.first);
-            all_token_ids_.push_back(tok_pair.second);
-            ++flb_subscribed;
-            // 2026-06-11 老板「把 149hz 沾满, 你省什么」: FLB yes token w=2.0 (vs sharp √liq+1≈3)
-            //   → FLB ~1.5s/token (fill_rate≈0.94, Bernoulli miss 大降), sharp ~1s/token (执行仍佳)。
-            //   产能向产出引擎倾斜, 不留冗余。仅 yes (触发只读 yes 簿, NO 簿无人读=浪费)。
-            poll_plan.emplace_back(tok_pair.first, 2.0);
+            // (FLB 宇宙订阅 2026-06-13 随引擎整删: 无赔率源盘不再订 WSS, 订阅集回纯 sharp。)
+            ++passed_no_source;  // 无赔率源 → 源头 pass, 不订阅
             continue;
         }
         all_token_ids_.push_back(tok_pair.first);
@@ -387,9 +367,9 @@ void TraderDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovere
     PublishPollPlan(std::move(poll_plan));  // 发布给 ActiveBookPoller (流动性加权 149hz)
     if (sharp_snap) {
         std::fprintf(stderr,
-                     "[trader_daemon] 源头 pass: 订阅 %zu/%zu market (跳过 %zu; 其中 FLB 宇宙 %zu), token=%zu\n",
+                     "[trader_daemon] 源头 pass: 订阅 %zu/%zu market (跳过 %zu), token=%zu\n",
                      token_map_.size() - passed_no_source, token_map_.size(), passed_no_source,
-                     flb_subscribed, all_token_ids_.size());
+                     all_token_ids_.size());
     }
     // A1: 发布不可变 token 快照 (OnConnected/seed 等并发读方读它, 不碰裸 all_token_ids_ → 消 race)
     PublishTokenSnapshot();
@@ -771,11 +751,7 @@ BuildResult TraderDaemon::Build() {
         cfg_.trading_loop.bankroll_usdc = bankroll;
     }
     // c3 (P0-2 根治): RM caps 与 sizing 同源 = cfg_.trading_loop (whole pUSD), 同用 from_pusd 转 micro。
-    // per-engine 合并上限 (2026-06-12 Option A 老板「sharp 进的盘 FLB 也能进, 机会不浪费」): RM 的【聚合】
-    //   market/per_outcome cap = sharp 自己 base cap + FLB 一注 → FLB 的 25u 能叠在 sharp 满仓之上不被聚合
-    //   cap 挡。sharp 的 sizing 仍用 base cap (cfg_.trading_loop, 取 sharp 自己那份敞口) → sharp 不超自己预算。
-    //   RM 更宽 = sharp 侧无 surprise-reject (sizing 更紧是 binding)。per_order 不累计, 不加。
-    // (+kFlbStake cap 垫层 2026-06-13 随 FLB 砍除: FLB 不再占聚合份额, cap 回纯 sharp 精确值。)
+    // (per-engine FLB cap 垫层 2026-06-13 随 FLB 引擎整删; cap = 纯 sharp 精确值。)
     paper_rm_cfg.per_order_cap_usdc = domain::MicroPUSD::from_pusd(cfg_.trading_loop.per_order_cap_usdc);
     paper_rm_cfg.market_exposure_cap_usdc =
         domain::MicroPUSD::from_pusd(cfg_.trading_loop.market_exposure_cap_usdc);
@@ -815,12 +791,8 @@ BuildResult TraderDaemon::Build() {
     cfg_.trading_loop.net_ev_gate = cfg_.enable_phase0_gates;
     // 赢面稳定窗 3min (老板 2026-06-11「入场太早赢面不稳定」拍板): 同随 phase0 gates (A2 等管线测试可关)。
     cfg_.trading_loop.open_stable_window_ns = cfg_.enable_phase0_gates ? 180'000'000'000LL : 0;
-    // FLB-hold 引擎: **关 (2026-06-13 老板「flb 砍了吧」)。** 实证 n=34 结算: 73.5% 胜率 < 0.80 入场
-    //   盈亏线(>80%), realized −59.88 — 赔付不对称(赢~+5/输~−20)把正胜率变亏钱; 同期 sharp 16/17 +107.71。
-    //   flb_enabled=false 同时停【触发】(trading_loop TickAll 门) 和【FLB 宇宙 WSS 订阅】(下方 flb_take 门)。
-    //   存量 FLB 持仓不受影响: SettlementPoller(catalog∪held)+孤儿 sweep 照常结算, per-engine 账本保留归因。
-    //   引擎代码/测试保留 (3500 深簿假设若未来想验, 翻开关即可; 本次先止血)。
-    cfg_.trading_loop.flb_enabled = false;
+    // (FLB-hold 引擎 2026-06-13 老板「直接删干净」物理整删: n=34 实证 73.5% 胜率 < 0.80 盈亏线,
+    //  realized −59.88; 同期 sharp 16/17 +107.71。存量 FLB 仓由 SettlementPoller 照常结算。git 史可考。)
     // 账本持久化 (2026-06-11「迭代部署 vs 攒数据」根治): 60s 快照 + 启动恢复; CWD 相对 (server 在仓库根跑)。
     // live 模式独立文件 (2026-06-12 单参数切换): live 重启绝不能把 paper 仓恢复进真钱账本 (R-11 反向)。
     cfg_.trading_loop.ledger_snapshot_path =
@@ -988,16 +960,6 @@ BuildResult TraderDaemon::Build() {
                 a.eng_sharp_settles = it->second.settles;
                 a.eng_sharp_wins = it->second.wins;
             }
-            if (const auto it = es.find("flb"); it != es.end()) {
-                a.eng_flb_realized = it->second.realized;
-                a.eng_flb_settles = it->second.settles;
-                a.eng_flb_wins = it->second.wins;
-            }
-            if (const auto it = es.find("flb-dip"); it != es.end()) {
-                a.eng_dip_realized = it->second.realized;
-                a.eng_dip_settles = it->second.settles;
-                a.eng_dip_wins = it->second.wins;
-            }
         }
         a.position_mtm = eq.position_mtm;
         a.equity_mark = eq.equity_mark;
@@ -1048,7 +1010,7 @@ BuildResult TraderDaemon::Build() {
             v.mark = r.mark;
             v.fee = r.fee;   // 逐笔费 (老板「手续费逐笔体现」)
             v.exit_reason = r.exit_reason;  // 卖出原因 (老板「出现卖出就检查是否合理」)
-            v.engine = r.engine;  // 引擎标签 (FLB 并跑对比, 2026-06-11)
+            v.engine = r.engine;  // 引擎标签 (""=sharp; 历史 "flb" 仓可见)
             out.push_back(std::move(v));
         }
         return out;
@@ -1916,8 +1878,8 @@ void TraderDaemon::RunActiveBookPoller(std::stop_token st) noexcept {
                     else ++it;
                 }
                 // 动态邻近度加权 (2026-06-13 老板「按引擎逻辑判断哪些机会该分配更高, 别饿死其他」):
-                //   在固定 base 地板 (√liq+1 / FLB 2.0; 老板「把 149hz 沾满」暖簿不破, 绝不饿死) 上, 给
-                //   favorite 边 mid 落在【两引擎共同行动带 0.70-0.84】(FLB 触发 + sharp 利润带) 的 token 加权
+                //   在固定 base 地板 (√liq+1; 老板「把 149hz 沾满」暖簿不破, 绝不饿死) 上, 给
+                //   favorite 边 mid 落在【sharp 利润带 0.70-0.84】的 token 加权
                 //   → 热点 book 更新更快 (准切单深度 + 高 FOK 成交率); 远/已决出保留地板 (WSS 推送+地板兜底)。
                 //   读 hub_ 当前 mid (R-12 无锁双缓冲读, 安全); 每 1s 随 plan 重算 (mid 不会更快跳带)。
                 dyn_w.clear();

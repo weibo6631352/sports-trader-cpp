@@ -417,9 +417,6 @@ struct TradingLoopConfig {
     //   【全程】≥ min_open_fair (买稳定赢面, 不买正在经过门槛的钟摆)。0=关 (lib 默认, 契约/管线测试不变);
     //   生产 daemon 随 enable_phase0_gates 置 180s。
     std::int64_t open_stable_window_ns{0};
-    // FLB-hold 引擎开关 (老板 2026-06-11 拍板「与现策略并跑」): false=关 (lib 默认, 契约不变);
-    //   生产 daemon 置 true。stake/触发档为代码内常数 (kFlb*, 老板「策略系数不进配置层」)。
-    bool flb_enabled{false};
     // 账本持久化路径 (2026-06-11 老板「迭代部署 vs 攒数据」根治): 每 60s 快照持仓+累计+CLV 到此文件
     //   (tmp+rename 原子写), 启动时 RestoreLedgerSnapshot 恢复 (停机期错过的结算由孤儿 sweep 自动补)。
     //   空=关 (lib 默认)。paper-only (R-11: 不碰真账本)。
@@ -503,10 +500,6 @@ struct TradingLoopStats {
 // ---------------------------------------------------------------------------
 class TradingLoop {
 public:
-    // FLB 平注 (走量引擎; 老板 2026-06-11「FLB 加注」15→25)。public: per-engine 合并上限 (Option A)
-    //   daemon 用它算 RM 单市场合并 cap = sharp market cap + FLB 一注 → FLB 的份能叠在 sharp 之上不被挡。
-    static constexpr double kFlbStakeUsdc = 25.0;
-
     // 构造 — 注入依赖, 不启动线程
     //   hub:              OrderBookSnapshotHub (只读, live book 快照)
     //   rm:               RiskGateway (写: evaluate; caller 保证此线程是唯一 evaluate 调用方)
@@ -572,26 +565,7 @@ public:
         return out;
     }
 
-    // ---- FLB-hold 引擎 (老板 2026-06-11 拍板「与现策略并跑」) -------------------------------------
-    //   实证 (299 已结算盘): PM 赛中 favorite 系统性低估 2-3pp, 首穿越 0.80 买入持有到结算净 EV +3.3%/u。
-    //   纯订单簿触发 (不需 Goalserve), 只做【非 sharp】盘 (与主引擎物理隔离不抢地盘); 一盘一击 (首穿越,
-    //   one-shot); 永不割 (无 book_det/止损路径 — 这些盘无 book 订阅 TickOne 天然跳过), 结算链复用
-    //   (SettlementPoller catalog∪held + 孤儿 sweep)。daemon 扫描线程发现触发 → RequestFlbEntry 入队 →
-    //   loop_thread_ 在 TickAll 起始排干, 走正常 RM→sign→VirtualMatcher→ledger 全路径 (不绕 RM 红线)。
-    struct FlbTrigger {
-        std::string condition_id;
-        std::string token_id;        // 被买边 token
-        bool is_yes{true};
-        double ask_px{0.0};          // 触发刻该边可成交买价 (YES=yes_ask; NO=1−yes_bid 合成)
-        double ask_sz_usdc{0.0};     // 该价位深度 (撮合模拟用)
-        std::int64_t event_ts_ns{0};  // R-20 4ts: 来自 REST book timestamp
-        std::int64_t data_source_ts_ns{0};
-        std::int64_t ingestion_ts_ns{0};
-    };
-    // 扫描线程 (daemon) 调用: 入队 + 一盘一击去重 (重复 condition 直接丢)。线程安全 (flb_mu_)。
-    void RequestFlbEntry(const FlbTrigger& t);
-    // 该 condition 是否已触发过 (扫描端预过滤省 book 拉取)。线程安全。
-    [[nodiscard]] bool FlbSeen(const std::string& condition_id) const;
+    // (FLB-hold 引擎 2026-06-13 老板「直接删干净」整删 — n=34 实证亏损源; git 史可考。)
 
     // slice-3b: 累计已实现 PnL (whole pUSD; 含结算)。观测/dashboard/测试 (loop_thread_ 写, 读时近似)。
     [[nodiscard]] double cum_realized_pnl_pusd() const noexcept { return cum_realized_pnl_pusd_; }
@@ -636,7 +610,7 @@ public:
         double hold_sec{std::numeric_limits<double>::quiet_NaN()};       // 结算行: 持有秒
         double mae{std::numeric_limits<double>::quiet_NaN()};            // 持有期最大不利偏移 (entry−min_mid)
         double mfe{std::numeric_limits<double>::quiet_NaN()};            // 持有期最大有利偏移 (max_mid−entry)
-        std::string engine;            // 引擎标签 (2026-06-11 FLB 并跑对比): ""=sharp 主引擎 / "flb"=FLB-hold (加性)
+        std::string engine;            // 引擎标签: ""=sharp 主引擎 (历史 "flb" 仓结算归因仍可见)
     };
     // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
     [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200,
@@ -995,20 +969,10 @@ private:
     std::vector<double> gate_trade_pnl_;
     std::int64_t first_trade_ts_ns_{0};
     std::int64_t last_trade_ts_ns_{0};
-    // FLB 漏斗计数器 (2026-06-11 老板「进场怎么那么少, 是不是机会被错过」): 每道门拦截计数,
-    //   loop_thread_ 写, 5min 节流 dump [flb-funnel] 后清零。看清 30 个带内盘没进的真实卡点。
-    // P1 (2026-06-11 晚会): per-tick 计数膨胀 51 万级不可读 → 改 per-市场去重 (5min 窗 distinct cond)。
-    struct FlbFunnel {
-        std::unordered_set<std::string> not_moneyline, sharp_mapped, not_inplay, seen, miss_backoff;
-        std::unordered_set<std::string> no_book, one_sided, wide_spread, leadch, baseball;
-        std::unordered_set<std::string> not_in_band, thin_depth, mom_jump, fired;
-    };
-    FlbFunnel flb_funnel_;
-    std::int64_t last_funnel_dump_ns_{0};
     std::int64_t last_daily_close_day_{0};  // P5 日级滚账 (UTC 日序号)
     std::int64_t last_deploy_warn_ns_{0};   // P4 部署率告警 5min 节流
     // 引擎归因 (2026-06-12 老板「能区分开就行」): token → engine ("sharp"/"flb"), 入场时记,
-    //   结算/平仓按真实引擎分账 (废 flb_seen_ 猜测)。loop_thread_ 写; 快照 E 行持久化。
+    //   结算/平仓按真实引擎分账。loop_thread_ 写; 快照 E 行持久化。
     // 持有路径追踪 (2026-06-13 研究级落盘): token → {入场ns, 持有期 min/max mid}。
     //   买入建, RepublishLedgerMark 逐 tick 更, 结算行消费后删。loop_thread_ 单写。
     struct PosPath {
@@ -1031,35 +995,7 @@ private:
     //   episode set: force_stop 持续多 tick 只计一次, 清除后再触发算新 episode。loop_thread_ 单 writer。
     std::unordered_map<std::string, int> market_stop_count_;
     std::unordered_set<std::string> market_stop_episode_;
-    // ---- FLB-hold 引擎状态 (老板 2026-06-11): 触发队列 (daemon 扫描线程写 / loop_thread_ 排干) +
-    //   一盘一击去重集 (入队刻即记, 重复 condition 丢弃)。flb_mu_ 保护两者 (扫描端 FlbSeen 预过滤同锁)。
-    mutable std::mutex flb_mu_;
-    std::vector<FlbTrigger> flb_pending_;
-    std::unordered_set<std::string> flb_seen_;
-    // FLB v2 路径状态 (多特征研究 2026-06-11, n=593: 跳升追入 −1.5% vs 缓升 +3.8%; 拉锯3+易主 −3.5%):
-    //   per-condition yes_mid 采样环 (30s 格, 16 槽 ≈ 8min) → 5min 动量; 领先易主计数 (mid 穿 0.5)。
-    //   loop_thread_ only (MaybeFlbTrigger 更新), 无锁。
-    struct FlbPathState {
-        std::array<std::pair<std::int64_t, double>, 16> ring{};  // (ts_ns, yes_mid)
-        std::size_t ring_n{0};
-        std::size_t ring_head{0};
-        std::int64_t last_sample_ns{0};
-        int lead_changes{0};
-        int prev_lead{0};  // +1 yes 领先 / −1 no 领先 / 0 未知
-        // 撮合 miss 退避 (2026-06-11: 单盘 tick 频率空转 721 次重试刷屏): miss 后 60s 不重触发;
-        //   累计 20 次 miss = 该簿结构性吃不进 → 永久放弃 (保持 seen)。
-        int miss_count{0};
-        std::int64_t last_miss_ns{0};
-        // 深度感知累积 (Phase 3, 2026-06-13): FLB 一盘一击 → 补到 $25。last_bite_ns = 上次切单时刻,
-        //   切单冷却防单 tick 内连环砸簿 (跨 tick 累积, 见 depth-aware-accumulation 设计 §3.2)。
-        std::int64_t last_bite_ns{0};
-        // 抄底锚 (2026-06-11 老板拍板「FLB 加抄底档」): 首见 yes_mid + 时刻 — 赛前/早期首见 ≥0.65 的
-        //   favorite 盘中砸坑 (0.30-0.40/+14.5%, 0.50-0.60/+8.4%, 跳 0.40-0.50 死区) 首触即买。
-    };
-    std::unordered_map<std::string, FlbPathState> flb_path_;
-    void ProcessFlbTrigger(const FlbTrigger& t);  // loop_thread_ only (TickAll 起始排干调用)
-    // 触发型检测 (loop_thread_, TickAll 每市场调; book 落 hub 即唤醒 → 亚秒级, 老板「要触发型」)。
-    void MaybeFlbTrigger(const std::string& cond_id, const PaperMarketEntry& entry);
+    // (FLB 引擎状态/触发/路径结构 2026-06-13 整删; git 史可考。)
 
     // ---- 逐盘累计已实现/费 (老板 2026-06-09「前端观测做到位, 交易订单对得上 PnL」): condition_id → 累计 ----
     //   修对账 bug: PublishLedgerSnapshot 原硬编码 pnl_realized=0 + pnl_fee 只本笔 → 逐盘 net_pnl 平仓后丢
