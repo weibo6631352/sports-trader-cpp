@@ -37,6 +37,11 @@ public:
     // creds 按值持有 (含私钥)。endpoint 默认生产 CLOB。
     explicit LiveOrderSubmitter(LiveCredentials creds,
                                 std::string endpoint = "https://clob.polymarket.com");
+    ~LiveOrderSubmitter();  // 释放持久 CURL handle (连接复用, 2026-06-13)
+
+    // 持久 curl handle = 裸资源 → 禁拷贝 (防 double-free)。move 不需要 (unique_ptr 持有, CLI 局部)。
+    LiveOrderSubmitter(const LiveOrderSubmitter&) = delete;
+    LiveOrderSubmitter& operator=(const LiveOrderSubmitter&) = delete;
 
     // 构造是否成功 (私钥能否推出 EOA)。false → 不可用。
     [[nodiscard]] bool Ready() const noexcept { return ready_; }
@@ -52,6 +57,10 @@ private:
     std::array<std::uint8_t, 20> eoa_{};
     std::string eoa_lc_;
     bool ready_{false};
+    // 持久 keep-alive CURL handle (2026-06-13 连接复用): 跨 Submit 复用 → libcurl 连接缓存保持 TLS 暖,
+    //   冷 ~31ms → 暖 ~14ms/单 (省握手, 提 FOK 成交率)。void* 避免头文件引 curl.h。
+    //   线程契约: Submit 串行单线程调用 (loop_thread_); handle 非线程安全, 若改并发须 per-thread/加锁。
+    void* curl_{nullptr};
 };
 
 }  // namespace stcpp::polymarket
