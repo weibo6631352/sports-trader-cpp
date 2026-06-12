@@ -92,10 +92,12 @@ namespace {
     return InvalidIntentSubReason::NONE;
 }
 
-// v0.5: token_id 格式校验 (uint256 string: 纯数字, 最多 77 位)
+// v0.5: token_id 格式校验 (uint256 string: 纯数字, 最多 78 位)
 // SSOT: laoli-w8-polymarket-data-structure-ssot-v1.md §2.3 §5 T-05
+// 2026-06-12 off-by-one 修复: uint256 最大值 2^256-1 = 115792...639935 是【78 位】十进制 (旧 77 误拒
+//   合法高 uint256 token → INVALID_TOKEN_ID_FORMAT 漏盘, 如网球 Zhang vs Mannarino 的 78 位 token)。
 [[nodiscard]] bool is_valid_token_id(std::string const& tid) noexcept {
-    if (tid.empty() || tid.size() > 77u)
+    if (tid.empty() || tid.size() > 78u)
         return false;
     for (char c : tid) {
         if (!std::isdigit(static_cast<unsigned char>(c)))

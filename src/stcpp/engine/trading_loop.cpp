@@ -88,11 +88,12 @@ namespace {
     return TimeStatus::NotStarted;  // pregame / 未知 → fail-closed
 }
 
-// token_id 格式校验 (uint256 string: 非空, ≤77 位, 纯数字). 镜像 RM risk_gateway 的 is_valid_token_id
+// token_id 格式校验 (uint256 string: 非空, ≤78 位, 纯数字). 镜像 RM risk_gateway 的 is_valid_token_id
 //   (SSOT: laoli-w8-polymarket-data-structure-ssot §2.3 §5 T-05). 2026-06-10 老板「修啊」: catalog 预热期
 //   token_id 可能畸形 → trading_loop 提前 fail-closed 不构造 intent, 不让 RM 兜底拒 INVALID_TOKEN_ID_FORMAT.
+//   2026-06-12 off-by-one 修复: uint256 最大 2^256-1 是【78 位】十进制 (旧 77 误拒合法高 uint256 token → 漏盘)。
 [[nodiscard]] bool IsValidTokenId(const std::string& tid) noexcept {
-    if (tid.empty() || tid.size() > 77u) {
+    if (tid.empty() || tid.size() > 78u) {
         return false;
     }
     for (char c : tid) {

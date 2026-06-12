@@ -323,6 +323,26 @@ TEST_F(RiskGatewayTest, R06l_INVALID_INTENT_INVALID_TOKEN_ID_FORMAT) {
     EXPECT_EQ(d.sub_reason, InvalidIntentSubReason::INVALID_TOKEN_ID_FORMAT);
 }
 
+// 2026-06-12 off-by-one 修复: 78 位 token_id (uint256 最大 2^256-1 = 78 位十进制) 合法, 不应误判格式非法。
+TEST_F(RiskGatewayTest, R06m_TokenId_78digits_NotRejectedAsFormat) {
+    auto it = make_ok_intent();
+    it.token_id = std::string(78, '9');  // 78 位纯数字 (旧 >77 会误拒)
+    ASSERT_EQ(it.token_id.size(), 78u);
+    auto d = rm_->evaluate(it);
+    // 不该因 token 格式被拒 (78 位合法); 其他门拒可以, 但 sub_reason 绝不是 token format。
+    if (d.reject == RejectCode::INVALID_INTENT)
+        EXPECT_NE(d.sub_reason, InvalidIntentSubReason::INVALID_TOKEN_ID_FORMAT);
+}
+
+// 79 位 token_id 超 uint256 上限 → 仍判格式非法。
+TEST_F(RiskGatewayTest, R06n_TokenId_79digits_StillInvalid) {
+    auto it = make_ok_intent();
+    it.token_id = std::string(79, '9');  // 79 位 → 超 uint256
+    auto d = rm_->evaluate(it);
+    expect_rejected(d, RejectCode::INVALID_INTENT);
+    EXPECT_EQ(d.sub_reason, InvalidIntentSubReason::INVALID_TOKEN_ID_FORMAT);
+}
+
 // ---- 仓位资金 ------------------------------------------------------------------
 
 TEST_F(RiskGatewayTest, R07_EXCEED_PER_ORDER_CAP) {

@@ -29,7 +29,7 @@ using stcpp::strategy::Outcome;
 // last_update_ts: 严格透传 VirtualFill.as_of_ts_ns (R-20 红线, **禁 now()**)
 struct PositionView {
     std::string condition_id;  // bytes32 hex (0x 前缀, 66 char)
-    std::string token_id;      // uint256 string (无 0x, 十进制, ≤77 位)
+    std::string token_id;      // uint256 string (无 0x, 十进制, ≤78 位 = 2^256-1 位数)
     Outcome outcome{Outcome::Yes};
     std::int64_t size_usdc{0};  // signed micro pUSD (A1 账本 micro 化; /1e6 = whole share qty)
     double avg_entry_price{0.0};
