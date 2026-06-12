@@ -242,9 +242,10 @@ function SubscriptionSection() {
   const subMarkets  = () => parseMetricVal(m(), 'stcpp_subscribed_markets_total');
   const reconnectAll = () => parseMetricAll(m(), 'stcpp_wss_reconnect_total');
 
+  // user_channel 行已删 (2026-06-12 老板检查页面): 后端从未接入该通道 (real_state_provider
+  //   「当前无接入→false 标注」), 恒红 DISCONNECTED 是误导告警 — 真接入时再加回。
   const wssChannels = [
-    { key: 'clob',         label: 'clob' },
-    { key: 'user_channel', label: 'user_channel' },
+    { key: 'clob', label: 'clob' },
   ];
 
   const reconnectCount = (channel: string): number | null => {
