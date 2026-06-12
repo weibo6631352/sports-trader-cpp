@@ -280,10 +280,11 @@ void TradingLoop::RunLoop(std::stop_token st) {
 
 // 成交流水持久化 (2026-06-13 C5): append-only JSONL, loop_thread_ 单写, 每笔 fopen/fclose (非热路径)。
 void TradingLoop::JournalFill(const FillRow& fr) {
+    // 异步缓冲落盘 (2026-06-13 老板「独立线程异步写 + 缓冲不高频读写磁盘」): 本函数只【拼字符串 + 入队】(纳秒),
+    //   真正 fopen/fwrite/fflush 在 journal_writer_ 的独立线程批量缓冲写 → 决策环 (loop_thread_) 零磁盘阻塞。
     const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
-    FILE* jf = std::fopen(live ? "data/ml_capture/live_fills_journal.jsonl"
-                               : "data/ml_capture/fills_journal.jsonl", "a");
-    if (jf == nullptr) return;  // 目录不存在等 — 不阻塞交易
+    const char* path = live ? "data/ml_capture/live_fills_journal.jsonl"
+                            : "data/ml_capture/fills_journal.jsonl";
     // 分析维度直出 (老板 2026-06-13「落盘直接划分析: 类型/赛事/盘口」): 后续按
     //   sport×league×mkt_type 切片研究开箱即用, 不再依赖事后 join。
     const MarketCat cat = MarketCatFor(fr.condition_id);
@@ -310,19 +311,33 @@ void TradingLoop::JournalFill(const FillRow& fr) {
         case 5: mt = "series"; break;
         default: break;
     }
-    std::fprintf(jf,
-                 "{\"ts\":%lld,\"cond\":\"%s\",\"yes\":%d,\"buy\":%d,\"close\":%d,\"px\":%.6f,"
-                 "\"qty\":%.4f,\"realized\":%.4f,\"fair\":%.4f,\"mark\":%.4f,\"fee\":%.5f,"
-                 "\"exit\":\"%s\",\"engine\":\"%s\","
-                 "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f",
-                 static_cast<long long>(fr.as_of_ts_ns), fr.condition_id.c_str(), fr.is_yes ? 1 : 0,
-                 fr.is_buy ? 1 : 0, fr.is_close ? 1 : 0, fr.price, fr.size_usdc, fr.realized, fr.fair,
-                 fr.mark, fr.fee, fr.exit_reason.c_str(), fr.engine.c_str(),
-                 fam, static_cast<int>(cat.league_id), mt,
-                 std::isfinite(cat.line) ? cat.line : -1.0);
+    std::string out;
+    out.reserve(768);
+    {
+        char buf[768];
+        const int n = std::snprintf(
+            buf, sizeof(buf),
+            "{\"ts\":%lld,\"cond\":\"%s\",\"yes\":%d,\"buy\":%d,\"close\":%d,\"px\":%.6f,"
+            "\"qty\":%.4f,\"realized\":%.4f,\"fair\":%.4f,\"mark\":%.4f,\"fee\":%.5f,"
+            "\"exit\":\"%s\",\"engine\":\"%s\","
+            "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f",
+            static_cast<long long>(fr.as_of_ts_ns), fr.condition_id.c_str(), fr.is_yes ? 1 : 0,
+            fr.is_buy ? 1 : 0, fr.is_close ? 1 : 0, fr.price, fr.size_usdc, fr.realized, fr.fair, fr.mark,
+            fr.fee, fr.exit_reason.c_str(), fr.engine.c_str(), fam, static_cast<int>(cat.league_id), mt,
+            std::isfinite(cat.line) ? cat.line : -1.0);
+        if (n > 0)
+            out.append(buf, static_cast<std::size_t>(n < static_cast<int>(sizeof(buf)) ? n
+                                                                                       : static_cast<int>(sizeof(buf)) - 1));
+    }
     // 研究级上下文 (2026-06-13 老板「订单簿指标/流动性都落, 以后优化都参照」): 有值才写 (NaN 省略)。
-    auto emit_d = [jf](const char* k, double v) {
-        if (std::isfinite(v)) std::fprintf(jf, ",\"%s\":%.6g", k, v);
+    auto emit_d = [&out](const char* k, double v) {
+        if (std::isfinite(v)) {
+            char b[80];
+            const int m = std::snprintf(b, sizeof(b), ",\"%s\":%.6g", k, v);
+            if (m > 0)
+                out.append(b, static_cast<std::size_t>(m < static_cast<int>(sizeof(b)) ? m
+                                                                                       : static_cast<int>(sizeof(b)) - 1));
+        }
     };
     emit_d("bk_spread", fr.bk_spread);
     emit_d("bk_bid_sz", fr.bk_bid_sz);
@@ -341,8 +356,8 @@ void TradingLoop::JournalFill(const FillRow& fr) {
     emit_d("hold_sec", fr.hold_sec);
     emit_d("mae", fr.mae);
     emit_d("mfe", fr.mfe);
-    std::fprintf(jf, "}\n");
-    std::fclose(jf);
+    out.append("}\n");
+    journal_writer_.AppendLine(path, std::move(out));  // 异步缓冲落盘 (纳秒入队, 不卡 loop_thread_)
 }
 
 // ---------------------------------------------------------------------------

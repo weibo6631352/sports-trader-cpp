@@ -87,6 +87,7 @@
 #include "stcpp/ml/game_score_history.hpp"       // 比分时序 (进球新鲜度/动量) — 量化因子
 // (大模型/训练 includes 已砍 2026-06-05: fair_value_model / seq_arb_model / hot_swap_model /
 //  feature_vector_hub / model_feature_spec。保留上面两个纯统计因子环。)
+#include "stcpp/infra/background_writer.hpp"   // 异步缓冲落盘 (fills journal; 不卡决策环)
 #include "stcpp/execution/order_executor.hpp"
 #include "stcpp/execution/virtual_matcher.hpp"
 #include "stcpp/engine/binary_market_snapshot.hpp"  // 二元双边决策入参 (老周架构)
@@ -951,6 +952,10 @@ public:
     }
 
 private:
+    // 异步缓冲落盘器 (2026-06-13): fills journal 走独立 writer 线程 + 缓冲批量写 → 决策环零磁盘阻塞。
+    //   【声明在 loop_thread_ 之前】→ 析构逆序: loop_thread_ (唯一生产者) 先停, 再 drain+join writer (无悬挂 enqueue)。
+    infra::BackgroundWriter journal_writer_;
+
     // ---- 线程控制 ----
     std::jthread loop_thread_;
     std::atomic<bool> stop_requested_{false};
