@@ -1045,6 +1045,9 @@ private:
         //   累计 20 次 miss = 该簿结构性吃不进 → 永久放弃 (保持 seen)。
         int miss_count{0};
         std::int64_t last_miss_ns{0};
+        // 深度感知累积 (Phase 3, 2026-06-13): FLB 一盘一击 → 补到 $25。last_bite_ns = 上次切单时刻,
+        //   切单冷却防单 tick 内连环砸簿 (跨 tick 累积, 见 depth-aware-accumulation 设计 §3.2)。
+        std::int64_t last_bite_ns{0};
         // 抄底锚 (2026-06-11 老板拍板「FLB 加抄底档」): 首见 yes_mid + 时刻 — 赛前/早期首见 ≥0.65 的
         //   favorite 盘中砸坑 (0.30-0.40/+14.5%, 0.50-0.60/+8.4%, 跳 0.40-0.50 死区) 首触即买。
     };

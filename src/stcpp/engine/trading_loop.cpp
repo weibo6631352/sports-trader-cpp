@@ -2248,8 +2248,10 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
 //   无任何止损路径触达); 结算复用 SettlementPoller(catalog∪held) + 孤儿 sweep。
 // ---------------------------------------------------------------------------
 void TradingLoop::RequestFlbEntry(const FlbTrigger& t) {
+    // Phase 3 累积: 不再「入队即锁一盘一击」。flb_seen_ 现在 = 「已建满 $25 / 永久放弃」的完成标记
+    //   (由 ProcessFlbTrigger 维护)。已完成的盘丢弃, 未完成的允许重复入队 → ProcessFlbTrigger 补到 $25。
     std::lock_guard<std::mutex> lk(flb_mu_);
-    if (!flb_seen_.insert(t.condition_id).second) return;  // 一盘一击: 重复 condition 丢弃
+    if (flb_seen_.count(t.condition_id) != 0) return;  // 已建满或永久放弃 → 丢弃
     flb_pending_.push_back(t);
 }
 
@@ -2309,6 +2311,9 @@ void TradingLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketE
             ps.last_sample_ns = now_ns_v;
         }
     }
+    // 切单冷却 (Phase 3 累积, depth-aware-accumulation §3.2): 距上次切单 < 3s 不再切 → 跨 tick 累积,
+    //   防单 tick 内连环砸簿/打穿深度。FLB 不再「一盘一击」, 由 ProcessFlbTrigger 按 per-engine 目标判建满。
+    if (now_ns_v - ps.last_bite_ns < 3'000'000'000LL) return;
     if (spread > kFlbMaxSpread) { flb_funnel_.wide_spread.insert(cond_id); return; }  // 簿质量门
     if (ps.lead_changes >= kFlbMaxLeadChanges) { flb_funnel_.leadch.insert(cond_id); return; }  // v2 拉锯门
     // v2 动量门输入 (2026-06-11 老板「纯订单簿分支只要进行中就好了」→ 证据制, 不再 5min 黑窗):
@@ -2367,10 +2372,9 @@ void TradingLoop::MaybeFlbTrigger(const std::string& cond_id, const PaperMarketE
         return;
     }
     flb_funnel_.fired.insert(cond_id);
-    {
-        std::lock_guard<std::mutex> lk(flb_mu_);
-        if (!flb_seen_.insert(cond_id).second) return;
-    }
+    // Phase 3 累积: 不再 fire 即锁 flb_seen_ (那是一盘一击)。设切单冷却起点, 让该盘跨 tick 重触发,
+    //   由 ProcessFlbTrigger 按 per-engine FLB 份额补到 $25 后才锁 seen (或 20 次 miss 放弃才锁)。
+    ps.last_bite_ns = now_ns_v;
     // 簿特征研究台账 (老板「结合更多订单簿特征→精确概率利润模型」): 触发刻全特征落日志, 攒够样本
     //   + 结算结果回填 → 标定多特征模型 v2 (价位×价差×深度×失衡×动量 分桶胜率)。
     std::fprintf(stderr,
@@ -2391,7 +2395,22 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     // 平注: 用类静态常量 TradingLoop::kFlbStakeUsdc (header; daemon 算合并上限共用)。直接引成员名即可。
     constexpr double kFlbMaxPx = 0.97;  // 价格上限双保险 (扫描端同档): 太贵无肉
     if (t.ask_px <= 0.0 || t.ask_px > kFlbMaxPx || t.token_id.empty()) return;
-    if (position_ledger_.get_position(t.token_id)) return;  // 已有仓 (理论不达: 非 sharp 盘) → 不叠
+
+    // Phase 3 深度感知累积 (depth-aware-accumulation §3.2, 回测验证: 薄簿占 69% / 漂移≈0 / 救回入场不劣化):
+    //   FLB 一盘一击 $25 → 补到 $25 为止。per-engine: 只看【FLB 自己那份】(sharp 那份不算入 →
+    //   sharp 进的盘 FLB 仍能独立建满自己的仓; 替代旧 get_position 聚合判, 与 per-engine 分仓一致)。
+    constexpr double kFlbBiteSafetyFrac = 0.80;  // 切单吃簿 L1 显示深度比例 (留并发 taker/撤单余量)
+    constexpr double kFlbMinBiteUsd = 5.0;       // 单笔下限, 防碎单手续费 churn (PM min $1, 留缓冲)
+    const double cur_flb =
+        static_cast<double>(position_ledger_.get_engine_position_size(t.token_id, "flb")) / 1'000'000.0;
+    const double remaining = kFlbStakeUsdc - cur_flb;
+    if (remaining < kFlbMinBiteUsd) {  // 距目标 < 单笔下限 → 视为建满 (剩零头不值追, 否则 sub-$5 churn) → 永久锁定
+        std::lock_guard<std::mutex> lk(flb_mu_);
+        flb_seen_.insert(t.condition_id);
+        return;
+    }
+    const double flb_bite = std::min(remaining, t.ask_sz_usdc * kFlbBiteSafetyFrac);
+    if (flb_bite < kFlbMinBiteUsd) return;  // 深度薄(非接近目标) → 不下, 等深度回补 (冷却已设, 不刷屏)
 
     // 4ts 链 (R-20): REST book ts 为上游源; 链不齐 fail-closed。
     const std::int64_t as_of_now = NowNs();
@@ -2415,7 +2434,7 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     intent.signal_id = "flb-" + std::to_string(intent_id);
     intent.feature_snapshot_id = "flb-no-snapshot";
     intent.price = t.ask_px;
-    intent.size_pUSD_micro = static_cast<std::int64_t>(kFlbStakeUsdc * 1'000'000.0);
+    intent.size_pUSD_micro = static_cast<std::int64_t>(flb_bite * 1'000'000.0);  // Phase 3: 切到可成交深度的 bite
     intent.book_depth_l1_usdc = t.ask_sz_usdc * 1'000'000.0;
     intent.book_snapshot_ts_ns = t.ingestion_ts_ns;
     intent.tick_size = 0.01;
@@ -2460,7 +2479,7 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     vord.intent_id = sign_req.intent_id;
     vord.market_id = sign_req.condition_id;
     vord.outcome = t.is_yes ? "YES" : "NO";
-    vord.size_usdc = kFlbStakeUsdc;
+    vord.size_usdc = flb_bite;  // Phase 3: 累积 bite (≤ 剩余目标, ≤ 深度×0.8)
     vord.quote_price = t.ask_px;
     vord.book_depth_l1_usdc = t.ask_sz_usdc;
     vord.tick_size = 0.01;
@@ -2491,9 +2510,9 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
         const bool give_up = ps_miss.miss_count >= 20;
         std::fprintf(stderr, "[flb] 撮合miss cond=%.24s... reject=%d 第%d次%s\n", t.condition_id.c_str(),
                      static_cast<int>(fill.reject), ps_miss.miss_count, give_up ? " → 永久放弃" : "");
-        if (!give_up) {
+        if (give_up) {  // Phase 3: fire 不再锁 seen → 结构性吃不进 (20 次 miss) 才锁定永久放弃
             std::lock_guard<std::mutex> lk(flb_mu_);
-            flb_seen_.erase(t.condition_id);
+            flb_seen_.insert(t.condition_id);
         }
         return;
     }
@@ -2508,6 +2527,11 @@ void TradingLoop::ProcessFlbTrigger(const FlbTrigger& t) {
     ev.ingestion_ts_ns = fill.ingestion_ts_ns;
     ev.as_of_ts_ns = fill.as_of_ts_ns;
     position_ledger_.apply_fill(t.condition_id, t.token_id, intent.outcome, ev, "flb");  // per-engine 归属 (订单簿引擎)
+    // Phase 3 累积: 本笔成交后距目标 < 单笔下限 → 锁定该盘不再切 (与入口判据一致, 提前止血)。
+    if (kFlbStakeUsdc - (cur_flb + static_cast<double>(fill.fill_size_usdc) / 1'000'000.0) < kFlbMinBiteUsd) {
+        std::lock_guard<std::mutex> lk(flb_mu_);
+        flb_seen_.insert(t.condition_id);
+    }
 
     // 账本快照 (合成 side_book 只供 4ts 透传) + RM 敞口喂数。mark = 成交价 (无 mid, 保守)。
     polymarket::clob_wss::OrderBookFeatures sb{};

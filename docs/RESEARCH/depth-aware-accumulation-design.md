@@ -2,7 +2,7 @@
 
 - **owner:** 老雷 (GM)
 - **last_review:** 2026-06-12
-- **状态:** Phase 2 (sharp) 落地中 / Phase 3 (FLB) 待回测放行
+- **状态:** Phase 2 (sharp) ✅ 部署 / Phase 3 (FLB) ✅ 回测放行 + 落地 (2026-06-13)
 - **配套 ADR:** `docs/ADR/2026-06-12-rm-boundary-risk-vs-execution.md`
 
 ## 0. 一句话
@@ -77,14 +77,18 @@ sharp **已天然按 residual 累积**(每 tick sizing 用 `current_token_exposu
 FLB 当前 `flb_seen_` 一盘一击 + 整 $25 FOK。改为累积:
 
 - 触发器从「一盘一击」改为「**补到 $25 为止**」:`current_flb = engine_pos[(token,"flb")]`;每次触发 `bite = min($25 − current_flb, fillable_depth × 0.80)`,`≥ $5` 才下。
-- 退出累积:`current_flb ≥ $25 × (1−ε)` → 标记该 condition 完成(类似现 `flb_seen_` 但语义是「已建满仓」非「已触发一次」);或 mid 跌出 0.77 触发带 → 停止补仓(不追)。
+- 退出累积(实现版,替代「ε 容差」）：`remaining = $25 − current_flb < MIN_BITE($5)` → 标记 condition 完成(`flb_seen_` 语义改为「已建满 / 永久放弃」);区分两种「不切」:`remaining < $5`(接近目标)→ 锁定完成,`depth×0.8 < $5`(本 tick 薄)→ 不锁等深度回补。fire 不再即锁(去一盘一击),切单 3s 冷却跨 tick 累积;20 次 miss → 永久放弃锁定。
 - 持有到结算逻辑不变(FLB 是 hold-to-settlement,平注满仓后只等结算)。
 
-**Phase 3 回测门(GATED):** 实现前先回测验证「累积到 $25 vs 一次性 $25」:
-- **edge 不劣化**:分批吃的均价 ≤ 一次性吃的均价(分批在更薄簿上吃,均价可能更差?需实测;FLB 是 favorite 低估,簿通常厚,预期持平或更优)。
-- **churn 可控**:分批的总手续费增量 < 因「整单 FOK 失败丢失的入场机会」挽回的 EV。
-- 数据:复用 FLB 已采集结算样本(`docs/RESEARCH` FLB 理论 + EV 存档),walk-forward 对比两种 sizing。
-- 回测不过 → FLB 保持一盘一击 $25,Phase 3 搁置。
+**Phase 3 回测门(已通过,2026-06-13):** 用 PM 历史 `/trades`(成交印记)+ 166 settled(权威 outcome via CLOB `/markets/<cid>` `tokens[].winner`)回测,实验存 `experiments/laolei-flb-accumulation-backtest/`。
+- 门的真实判据 = 累积 vs 一次性「不劣化」(非「FLB 赚不赚」,后者早证 +3.3%/u/71%）。稳健结果:
+  - **薄簿占比 35/51 = 69%**:$25 一次性 FOK 在多数触发上整单杀(=错过 +EV 入场)→ 累积救回一大批。
+  - **漂移 ≈ −0.0022**:累积 vwap 不抬反略降 → 「吃簿抬均价侵蚀 edge」不成立,edge 不劣化 ✅。
+  - **入场捕获 2.25×**(一次性 16 vs 累积 36),救回入场质量 == 基线(同档胜率)。
+  - **churn 可控**:bite ≥ $5 + 完成判据避免 sub-$5 零头追逐。
+- ⚠ 样本绝对胜率虚高 100%(n=63 小 + settled 偏 favorite + 二元穿 0.77 token 本就大概率赢)→ **不采信绝对 PnL,edge 绝对值锚定已证 paper 71%/+3.3%u**;门看比较 + 漂移(稳健)。
+- 结构性论证:FOK 下累积弱占优(深度≥$31 与一次性同;$25–31 差一 tick;<$25 一次性整单杀而累积救回)。
+- 放行 → 已实现(§3.2),**arm 后前向观测**真实 fill_rate / 累积笔数复核。
 
 ## 4. 参数表
 
@@ -94,7 +98,8 @@ FLB 当前 `flb_seen_` 一盘一击 + 整 $25 FOK。改为累积:
 | `MIN_BITE_USD` | 5.0 | 单笔下限,防 churn | 引擎常量 |
 | `target`(sharp) | 凯利动态 | residual = target − current | 凯利已定 |
 | `target`(FLB) | 25.0 | `kFlbStakeUsdc` | 已定 |
-| `ε`(到位容差) | 0.05 | current ≥ target×(1−ε) 即停 | 引擎常量 |
+| 完成判据 | `remaining < MIN_BITE` | 距目标 < $5 即锁定(替代 ε;避免 sub-$5 零头 churn) | 引擎常量 |
+| `FLB bite cooldown` | 3s | 切单跨 tick 间隔(防单 tick 连环砸簿) | 引擎常量 |
 
 ## 5. 不变量 / 红线
 

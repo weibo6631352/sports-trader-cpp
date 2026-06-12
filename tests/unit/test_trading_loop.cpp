@@ -2094,10 +2094,11 @@ TEST_F(TradingLoopTest, FLB01_TriggerProducesFillAndDedupes) {
     t.ingestion_ts_ns = now_ns - 1'000'000'000LL;
 
     loop_->RequestFlbEntry(t);
-    EXPECT_TRUE(loop_->FlbSeen(t.condition_id)) << "入队即记 (一盘一击)";
+    EXPECT_FALSE(loop_->FlbSeen(t.condition_id)) << "Phase 3 累积: 入队不再即锁, 补到 $25 才锁 seen";
     loop_->TickAllForBench();  // 排干队列 → RM→sign→matcher→ledger
-    // VirtualMatcher 概率撮合 (Bernoulli): miss 会解除标记待重试 → 测试重试至成交 (p_fill 高, 数次内必中)
-    for (int i = 0; i < 50 && !position_ledger_->get_position(t.token_id).has_value(); ++i) {
+    // Phase 3 累积: 驱动到建满锁定 (FlbSeen)。VirtualMatcher 概率撮合 (Bernoulli) + 部分成交 →
+    //   厚簿 (深度 500) 数 tick 内补到 ~$25 cap 并锁 seen。
+    for (int i = 0; i < 80 && !loop_->FlbSeen(t.condition_id); ++i) {
         loop_->RequestFlbEntry(t);
         loop_->TickAllForBench();
     }
@@ -2111,13 +2112,50 @@ TEST_F(TradingLoopTest, FLB01_TriggerProducesFillAndDedupes) {
     EXPECT_TRUE(fills.front().is_buy);
     EXPECT_FALSE(fills.front().is_close);
 
-    // 一盘一击: 同 condition 再触发被丢弃 (不叠仓)
+    // Phase 3 累积到顶: 厚簿(深度 500)首口即吃满 $25 → FLB 份额达标锁定 → 再触发被丢弃, 不超 $25。
     const double sz_before = static_cast<double>(pos->size_usdc);
+    EXPECT_TRUE(loop_->FlbSeen(t.condition_id)) << "建满 $25 后锁 seen";
     loop_->RequestFlbEntry(t);
     loop_->TickAllForBench();
     const auto pos2 = position_ledger_->get_position(t.token_id);
     ASSERT_TRUE(pos2.has_value());
-    EXPECT_DOUBLE_EQ(static_cast<double>(pos2->size_usdc), sz_before) << "重复触发不应加仓";
+    EXPECT_DOUBLE_EQ(static_cast<double>(pos2->size_usdc), sz_before) << "到顶后重复触发不应加仓";
+}
+
+// Phase 3 (2026-06-13): 薄簿深度感知累积 — 一次性 $25 吃不满的薄簿, 分多口补到 $25 cap。
+//   回测验证: 69% FLB 触发对 $25 一次性太薄(FOK 整单杀=错过), 累积救回且漂移≈0。
+TEST_F(TradingLoopTest, FLB01b_ThinDepthAccumulatesToTarget) {
+    cfg_.flb_enabled = true;
+    RebuildRmHighCap();
+    loop_ = MakeLoop();
+    rm_->set_state(stcpp::risk::RmState::RUNNING);
+    rm_->set_bankroll(1'000'000'000);
+    loop_->SetPaperCatalog(std::make_shared<engine::PaperCatalog>());
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::system_clock::now().time_since_epoch())
+                            .count();
+    TradingLoop::FlbTrigger t;
+    t.condition_id = "0x0000000000000000000000000000000000000000000000000000000f1b0001b0";
+    t.token_id = "910000000000000010";
+    t.is_yes = true;
+    t.ask_px = 0.85;
+    t.ask_sz_usdc = 10.0;  // 薄簿: 单口 = min($25, 10×0.8=$8) → 一次性吃不满, 必须分口累积
+    t.event_ts_ns = now_ns - 3'000'000'000LL;
+    t.data_source_ts_ns = now_ns - 2'000'000'000LL;
+    t.ingestion_ts_ns = now_ns - 1'000'000'000LL;
+    // 反复触发 (驱动路径无冷却): 每次吃 ~$8 一口, 补到 $25 cap 后 ProcessFlbTrigger 锁 flb_seen_。
+    for (int i = 0; i < 300 && !loop_->FlbSeen(t.condition_id); ++i) {
+        loop_->RequestFlbEntry(t);
+        loop_->TickAllForBench();
+    }
+    const auto pos = position_ledger_->get_position(t.token_id);
+    ASSERT_TRUE(pos.has_value()) << "薄簿累积应建仓";
+    const double sz = static_cast<double>(pos->size_usdc) / 1'000'000.0;  // micro→whole
+    // 建满判据 = 「距目标 < 单笔下限 $5」→ 锁定; 故终值 ∈ [$25-$5, $25+一口] = [$20, $33]。
+    //   关键: 远大于一次性 FOK 在薄簿(深度 $10 < $25)的 $0 (整单杀) — 累积救回了入场。
+    EXPECT_GE(sz, 25.0 - 5.0) << "应累积到 ≥ $20 (单口 $8, 多口补到距目标<$5 即锁)";
+    EXPECT_LE(sz, 25.0 + 8.0) << "不超目标 + 一口余量 (累积 cap 生效)";
+    EXPECT_TRUE(loop_->FlbSeen(t.condition_id)) << "建满后锁定";
 }
 
 TEST_F(TradingLoopTest, FLB02_DisabledByDefault_NoFill) {
