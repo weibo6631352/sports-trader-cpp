@@ -1003,9 +1003,6 @@ private:
     //   ② 全局熔断: 滚动窗内 live 下单数超阈 → live_storm_halt_=true → 全停 (fail-safe, 重启才恢复)。封爆炸半径。
     std::deque<std::int64_t> live_exec_times_ns_;
     bool live_storm_halt_{false};
-    // 自校验闸 (防 order_id 格式不一致致全面双记账): 至少 1 笔 WSS 成交与 sync order_id 对账匹配过 (证明
-    //   两侧 id 格式一致) 后, 兜底补记才真生效; 否则只告警不补 (matched==0 = 格式可能不匹配, 不敢动账本)。
-    std::uint64_t user_fill_matched_count_{0};
 
     // ---- A1: 真实比分源 + 映射 ----
     // score_store_: 单 writer (Start 前注入), 之后 loop_thread_ 只读 Get(). 可空 → stub 路径.

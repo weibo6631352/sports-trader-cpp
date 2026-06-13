@@ -476,8 +476,7 @@ void TradingLoop::DrainUserFills() {
     while (user_fill_feed_->Pop(uf)) {
         const bool synced = !uf.order_id.empty() && synced_order_ids_.count(uf.order_id) > 0;
         if (synced) {
-            // sync 路径已记此 order → 对账核对 (本 token 账本有仓), 不重复记。matched++ 解锁兜底自校验闸。
-            ++user_fill_matched_count_;
+            // sync 路径已记此 order → 对账核对 (本 token 账本有仓), 不重复记 (防 double-book)。
             const auto pv = position_ledger_.get_position(uf.token_id);
             const double ledger_sz = pv ? static_cast<double>(pv->net_shares_micro) / 1'000'000.0 : 0.0;
             std::fprintf(stderr,

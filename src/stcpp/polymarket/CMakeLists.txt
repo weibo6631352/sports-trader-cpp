@@ -47,10 +47,8 @@ add_subdirectory(gate)
 add_subdirectory(wire)
 add_subdirectory(wss)
 
-# GM 2026-06-13 一次性诊断: daemon live 执行链断点定位探针 (gate→executor→adapter→apply_fill 单发)
-add_executable(stcpp_live_chain_probe live/live_chain_probe.cpp)
-target_link_libraries(stcpp_live_chain_probe
-    PRIVATE stcpp_polymarket_live stcpp_polymarket_order_gate stcpp_risk stcpp_execution_paper CURL::libcurl)
+# (GM 2026-06-13 一次性诊断探针 stcpp_live_chain_probe 已于 2026-06-14 清理: 调查完成 ——
+#  根因已定位为 CLOB FOK status="delayed" 异步撮合; live_executor 三态分支 + WSS 权威入账已据实修。)
 
 # 小冯 Wave 79 (W9 W3): CLOB WSS subscriber — market + user channel
 #   endpoint: wss://ws-subscriptions-clob.polymarket.com/ws/{market,user}
