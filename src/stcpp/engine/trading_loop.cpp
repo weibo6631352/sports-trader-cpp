@@ -356,6 +356,25 @@ void TradingLoop::JournalFill(const FillRow& fr) {
     emit_d("hold_sec", fr.hold_sec);
     emit_d("mae", fr.mae);
     emit_d("mfe", fr.mfe);
+    // 复盘观测补全 (2026-06-13 老板「都改」): 入场全息 + 结算终局 (NaN 自动省略, 加性)
+    emit_d("devig", fr.p_devig);
+    emit_d("edge_ci", fr.edge_ci);
+    emit_d("kelly_sugg", fr.kelly_sugg);
+    emit_d("m_life", fr.m_life);
+    emit_d("m_clv", fr.m_clv);
+    emit_d("m_corr", fr.m_corr);
+    emit_d("m_dd", fr.m_dd);
+    emit_d("d5_bid", fr.d5_bid);
+    emit_d("d5_ask", fr.d5_ask);
+    emit_d("t_vol5m", fr.t_vol5m);
+    emit_d("t_ratio5m", fr.t_ratio5m);
+    emit_d("odds_age", fr.odds_age_ms);
+    emit_d("g_remain", fr.g_remain);
+    emit_d("g_sdiff", fr.g_sdiff);
+    emit_d("equity", fr.equity);
+    emit_d("close_mid", fr.close_mid);
+    emit_d("final_bid", fr.final_bid);
+    emit_d("final_ask", fr.final_ask);
     out.append("}\n");
     journal_writer_.AppendLine(path, std::move(out));  // 异步缓冲落盘 (纳秒入队, 不卡 loop_thread_)
 }
@@ -467,6 +486,15 @@ void TradingLoop::TickAll() {
         if (snap_now - last_ledger_snapshot_ns_ >= 60'000'000'000LL) {
             last_ledger_snapshot_ns_ = snap_now;
             SaveLedgerSnapshot();
+        }
+    }
+    // ---- 持仓路径采样 60s (2026-06-13 老板「止损分析要路径」): 每开仓一行 (bid/ask/mid/sharp/qty)
+    //   → position_path.jsonl (BackgroundWriter 异步缓冲)。未来任何出场/止损规则的离线回测金料。 ----
+    {
+        const std::int64_t pp_now = NowNs();
+        if (pp_now - last_pos_path_ns_ >= 60'000'000'000LL) {
+            last_pos_path_ns_ = pp_now;
+            SamplePositionPaths();
         }
     }
 
@@ -1466,12 +1494,14 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   bug: set1/3 set 差恒 0, set2 phase 恰=0.5 不 >0.5)。用【模型 fair】(非市场价地板, 老板「用模型」) 当护栏:
     //   下侧 (到 0) 远大于 edge 的低 fair longshot 永远 −EV, 不该开。default 0=关 (lib/契约不变); daemon 置 0.15。
     if (cfg_.min_open_fair > 0.0 && p_fair_selected < cfg_.min_open_fair) {
+        if (target_mag > 0.0) LogGateBlock(condition_id, "min_open_fair", p_fair_selected, exec_ask, target_mag);
         target_mag = 0.0;  // 模型认定近必输方 → 只减不开 (longshot 崩盘护栏)
     }
     // CLV 失效熔断 (2026-06-12 治理): CLV 正率<70% (TickAll 30s 刷新) = 入场质量系统性坏掉
     //   (赔率源断/匹配错/延迟恶化) → sharp 引擎停新开仓直到恢复。减仓/平仓/结算不受限
     
     if (target_mag > 0.0 && clv_breaker_) {
+        LogGateBlock(condition_id, "clv_breaker", p_fair_selected, exec_ask, target_mag);
         target_mag = 0.0;
     }
     // 三振出局 gate (老板 2026-06-11 拍板): 同盘止损满 2 次 → 本场只减不开。首次止损后的再入照常
@@ -1481,6 +1511,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (target_mag > 0.0) {
         if (const auto ms_it = market_stop_count_.find(condition_id);
             ms_it != market_stop_count_.end() && ms_it->second >= kMaxStopsPerMarket) {
+            LogGateBlock(condition_id, "three_strikes", p_fair_selected, exec_ask, target_mag);
             target_mag = 0.0;  // 出局: 不开新仓 (减仓/平仓不受限, 同 min_open_fair 语义)
         }
     }
@@ -1503,7 +1534,10 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                 unstable_evidence = std::isfinite(wmax) && (1.0 - wmax) < cfg_.min_open_fair;
             }
         }
-        if (unstable_evidence) target_mag = 0.0;  // 窗口内实证跌破过门槛 (钟摆) → 只减不开
+        if (unstable_evidence) {
+            LogGateBlock(condition_id, "stable_window", p_fair_selected, exec_ask, target_mag);
+            target_mag = 0.0;  // 窗口内实证跌破过门槛 (钟摆) → 只减不开
+        }
     }
     // edge-生命周期乘子 (持仓管理 Stage 2, 老板 2026-06-05「sharp 速度/收敛接进决策」): 用本盘 sharp 时序
     //   状态 (Vol 稳定性 + ConvergenceRate 发散谨慎) 缩 target 【量级】∈[floor,1], 抑制噪声驱动过度交易。
@@ -1768,10 +1802,22 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
 
     // 被选边: 买增至 Kelly 目标 (target_mag; H-3: 无真 fair/无效 sizing → 0 → 只减不开)。
     last_sell_reason_[token_id] = sel_reason;  // 卖出原因 (老板「出现卖出就检查是否合理」): ApplyFill 对卖出回读填 FillRow
+    // 入场决策上下文 (2026-06-13 复盘观测补全): devig/edge/Kelly/乘子/赔率龄/赛段 → FillRow 落盘
+    EntryCtx ectx;
+    ectx.devig_side = p_devig_selected;
+    ectx.edge_ci = edge_ci_lower;
+    ectx.kelly_sugg = sizing_out.valid ? sizing_out.suggested_notional : 0.0;
+    ectx.m_life = lifecycle_mult;
+    ectx.m_clv = clv_mult;
+    ectx.m_corr = corr_mult;
+    if (game_row.data_source_ts_ns > 0)
+        ectx.odds_age_ms = static_cast<double>(NowNs() - game_row.data_source_ts_ns) / 1e6;
+    if (std::isfinite(g_remaining_sec)) ectx.g_remain = g_remaining_sec;
+    ectx.g_sdiff = static_cast<double>(game_row.score_home_total - game_row.score_away_total);
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
                           force_cross || sel_force_stop || sel_force_winbuy, n_eff_dyn, margin_floor_dyn,
-                          reservation_noise_free, sel_force_stop, near_end);
+                          reservation_noise_free, sel_force_stop, near_end, &ectx);
 
     // M2-a 平旧边: 非选边若有持仓 → target=0 平仓 (旧边 overpriced → bid 高 → reservation_sell 可成交)。
     const SideView& other = is_yes ? mkt.no : mkt.yes;
@@ -1825,7 +1871,8 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
                                       const polymarket::clob_wss::OrderBookFeatures& side_book,
                                       double book_depth_l1, double p_fair_side, double target_mag,
                                       double fee_coef, bool force_cross, int n_eff, double margin_floor,
-                                      bool noise_free, bool force_stop, bool near_end) noexcept {
+                                      bool noise_free, bool force_stop, bool near_end,
+                                      const EntryCtx* ectx) noexcept {
     const double exec_ask = side_book.best_ask();
     const double exec_bid = side_book.best_bid();
     const double mark_price = std::isfinite(side_book.microprice) ? side_book.microprice : side_book.mid;
@@ -1936,6 +1983,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
                 }
             }
             if (!sharp_led) {  // 簿下行 + sharp 没领先 → 假 edge (sharp 滞后) → 不接下跌的刀
+                LogGateBlock(condition_id, "book_down_no_lead", p_fair_side, exec_ask, action.size_pusd);
                 stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
                 return;
             }
@@ -1967,6 +2015,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     //   减仓/平仓/中前段/非便宜边不受限。
     if (cfg_.near_end_max_buy_price > 0.0 && near_end &&
         action.side == strategy::Side::Buy && exec_ask < cfg_.near_end_max_buy_price) {
+        LogGateBlock(condition_id, "near_end", p_fair_side, exec_ask, action.size_pusd);
         stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
         return;
     }
@@ -1980,6 +2029,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     //   减仓/平仓不受限。50 笔新结算后复评 (代码常数, 老板「策略系数不进配置层」)。
     constexpr double kMaxOpenAsk = 0.84;
     if (action.side == strategy::Side::Buy && !force_cross && exec_ask > kMaxOpenAsk) {
+        LogGateBlock(condition_id, "max_open_ask", p_fair_side, exec_ask, action.size_pusd);
         stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
         return;  // 高价带 −EV (数据实证) → 不买; 资金让位给 0.70-0.84 带
     }
@@ -2024,6 +2074,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
             const double fillable = ask_depth * kBiteSafetyFrac;
             if (order_size_pusd > fillable) order_size_pusd = fillable;  // 切到可成交深度; 余量下 tick 补
             if (order_size_pusd < kMinBiteUsd) {
+                LogGateBlock(condition_id, "thin_depth_bite", p_fair_side, exec_ask, action.size_pusd);
                 stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
                 return;  // 切完不足单笔下限 → 不下, 等深度回补 (防 churn; 目标仍由后续 tick 累积)
             }
@@ -2207,6 +2258,27 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
             fr.sh_vel = shj->second.Velocity(cfg_.sharp_fair_vel_window_ns);
         }
         fr.deploy_pct = tick_equity_.deploy_pct;
+        // 复盘观测补全 (2026-06-13): 入场决策全息 — ctx 来自 TickOne (平旧边 nullptr → NaN 省略)
+        if (ectx != nullptr) {
+            fr.p_devig = ectx->devig_side;
+            fr.edge_ci = ectx->edge_ci;
+            fr.kelly_sugg = ectx->kelly_sugg;
+            fr.m_life = ectx->m_life;
+            fr.m_clv = ectx->m_clv;
+            fr.m_corr = ectx->m_corr;
+            fr.odds_age_ms = ectx->odds_age_ms;
+            fr.g_remain = ectx->g_remain;
+            fr.g_sdiff = ectx->g_sdiff;
+        }
+        fr.m_dd = dd_mult_;
+        {
+            const auto dm = polymarket::clob_wss::compute_depth_metrics(side_book);
+            fr.d5_bid = dm.bid_depth_5lvl;
+            fr.d5_ask = dm.ask_depth_5lvl;
+        }
+        fr.t_vol5m = side_book.trade_signed_vol_5m;
+        fr.t_ratio5m = side_book.trade_buy_ratio_5m;
+        fr.equity = tick_equity_.equity_bid;
         // 持有路径: 买入开始追踪 (结算行回填 hold/MAE/MFE)
         if (fr.is_buy) {
             auto& pp = pos_path_[token_id];
@@ -2486,6 +2558,56 @@ void TradingLoop::RestoreFillsJournalTail() {
         std::fprintf(stderr, "[fills-restore] journal 回放 %zu 笔成交流水进环 (%s)\n", restored, path);
 }
 
+// SamplePositionPaths — 持仓路径采样 (2026-06-13 老板「将来想做止损分析」): 60s/仓 一行
+//   (ts/cond/token/边/量/均入/bid/ask/mid/sharp/engine) → position_path.jsonl。loop_thread_ only;
+//   落盘走 journal_writer_ 异步缓冲 (决策环零磁盘阻塞)。
+void TradingLoop::SamplePositionPaths() {
+    const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
+    const char* path = live ? "data/ml_capture/live_position_path.jsonl" : "data/ml_capture/position_path.jsonl";
+    const std::int64_t now = NowNs();
+    for (const auto& pv : position_ledger_.get_all_positions()) {
+        if (pv.size_usdc == 0) continue;
+        double bid = std::numeric_limits<double>::quiet_NaN(), ask = bid, mid = bid, sharp = bid;
+        if (const auto bk = hub_.Read(pv.token_id); bk && bk->valid) {
+            bid = bk->best_bid();
+            ask = bk->best_ask();
+            mid = bk->mid;
+        }
+        if (const auto sh = sharp_history_.find(pv.condition_id); sh != sharp_history_.end())
+            sharp = sh->second.last_sharp();  // YES-canonical
+        const auto eit2 = engine_by_token_.find(pv.token_id);
+        char buf[512];
+        const int n = std::snprintf(
+            buf, sizeof(buf),
+            "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%.24s\",\"yes\":%d,\"qty\":%.4f,\"avg\":%.4f,"
+            "\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"sharp\":%.4f,\"eng\":\"%s\"}\n",
+            static_cast<long long>(now), pv.condition_id.c_str(), pv.token_id.c_str(),
+            pv.outcome == strategy::Outcome::Yes ? 1 : 0,
+            static_cast<double>(pv.size_usdc) / 1'000'000.0, pv.avg_entry_price, bid, ask, mid, sharp,
+            eit2 != engine_by_token_.end() ? eit2->second.c_str() : "sharp");
+        if (n > 0) journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(n)));
+    }
+}
+
+// LogGateBlock — gate 拒点反事实 journal (2026-06-13 老板「评估门值不值」): 入场被门挡时落一行
+//   (盘/门名/fair/参考价/本想下多少) → gate_blocks.jsonl; per cond×gate 5min 节流防爆量。
+//   未来与结算 join → 每道门的真实价值 (省的钱 vs 错过的钱) 可量化。loop_thread_ only。
+void TradingLoop::LogGateBlock(const std::string& cond, const char* gate, double fair, double ref_px,
+                               double would_usd) {
+    const std::int64_t now = NowNs();
+    auto& last = gate_log_ns_[cond + "|" + gate];
+    if (now - last < 300'000'000'000LL) return;  // 5min 节流
+    last = now;
+    const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
+    const char* path = live ? "data/ml_capture/live_gate_blocks.jsonl" : "data/ml_capture/gate_blocks.jsonl";
+    char buf[384];
+    const int n = std::snprintf(buf, sizeof(buf),
+                                "{\"ts\":%lld,\"cond\":\"%s\",\"gate\":\"%s\",\"fair\":%.4f,"
+                                "\"px\":%.4f,\"would\":%.2f}\n",
+                                static_cast<long long>(now), cond.c_str(), gate, fair, ref_px, would_usd);
+    if (n > 0) journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(n)));
+}
+
 // ---------------------------------------------------------------------------
 // SettleCondition / SettleToken (slice-3b 结算, 老板 2026-05-31)
 //
@@ -2582,6 +2704,12 @@ void TradingLoop::SettleToken(const std::string& condition_id, const std::string
         fr.mark = settle_price;
         fr.fee = 0.0;                // 结算无交易费
         fr.exit_reason = "settlement";
+        // 终局簿上下文 (2026-06-13 复盘补全): 收盘线 close_mid → 逐仓 CLV 离线可 derive (close−entry)
+        if (const auto fb = hub_.Read(token_id); fb && fb->valid) {
+            fr.final_bid = fb->best_bid();
+            fr.final_ask = fb->best_ask();
+            if (std::isfinite(fb->mid)) fr.close_mid = fb->mid;
+        }
         // 持有路径回填 (2026-06-13 研究级落盘: 结算行带 hold/MAE/MFE — 出场研究金料)
         if (const auto ppit = pos_path_.find(token_id); ppit != pos_path_.end()) {
             const auto& pp = ppit->second;

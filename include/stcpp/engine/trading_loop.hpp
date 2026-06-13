@@ -610,7 +610,40 @@ public:
         double hold_sec{std::numeric_limits<double>::quiet_NaN()};       // 结算行: 持有秒
         double mae{std::numeric_limits<double>::quiet_NaN()};            // 持有期最大不利偏移 (entry−min_mid)
         double mfe{std::numeric_limits<double>::quiet_NaN()};            // 持有期最大有利偏移 (max_mid−entry)
+        // ---- 复盘观测补全 (2026-06-13 老板「账本缺观测信息, 都改」) ----
+        // 买入行: 入场决策全息 (devig/edge/Kelly/乘子/5档深/成交流/赔率龄/赛段) — 全 NaN-省略, 加性。
+        double p_devig{std::numeric_limits<double>::quiet_NaN()};        // 市场共识 (de-vig, 被交易边)
+        double edge_ci{std::numeric_limits<double>::quiet_NaN()};        // edge CI 下界 (sizing 输入)
+        double kelly_sugg{std::numeric_limits<double>::quiet_NaN()};     // Kelly 建议 notional (乘子前)
+        double m_life{std::numeric_limits<double>::quiet_NaN()};         // lifecycle 乘子
+        double m_clv{std::numeric_limits<double>::quiet_NaN()};          // CLV 乘子
+        double m_corr{std::numeric_limits<double>::quiet_NaN()};         // 相关性乘子
+        double m_dd{std::numeric_limits<double>::quiet_NaN()};           // 回撤乘子
+        double d5_bid{std::numeric_limits<double>::quiet_NaN()};         // 5档 bid 深度 (usdc)
+        double d5_ask{std::numeric_limits<double>::quiet_NaN()};         // 5档 ask 深度
+        double t_vol5m{std::numeric_limits<double>::quiet_NaN()};        // 成交流 5min 签名量
+        double t_ratio5m{std::numeric_limits<double>::quiet_NaN()};      // 成交流 5min 买占比
+        double odds_age_ms{std::numeric_limits<double>::quiet_NaN()};    // 决策刻赔率龄 (now−GS data_source_ts)
+        double g_remain{std::numeric_limits<double>::quiet_NaN()};       // 赛段剩余秒
+        double g_sdiff{std::numeric_limits<double>::quiet_NaN()};        // 比分差 (YES队−对手)
+        double equity{std::numeric_limits<double>::quiet_NaN()};         // 成交刻净值 (Kelly 分母核对)
+        // 结算行: 终局上下文 (close_mid=收盘线 → 逐仓 CLV 离线可derive)
+        double close_mid{std::numeric_limits<double>::quiet_NaN()};      // 结算刻簿 mid (收盘线)
+        double final_bid{std::numeric_limits<double>::quiet_NaN()};      // 终局 best_bid
+        double final_ask{std::numeric_limits<double>::quiet_NaN()};      // 终局 best_ask
         std::string engine;            // 引擎标签: ""=sharp 主引擎 (历史 "flb" 仓结算归因仍可见)
+    };
+    // 入场决策上下文 (TickOne → ExecuteControllerSide 传递, 仅供 FillRow 落盘; 平旧边/无上下文传 nullptr)
+    struct EntryCtx {
+        double devig_side{std::numeric_limits<double>::quiet_NaN()};
+        double edge_ci{std::numeric_limits<double>::quiet_NaN()};
+        double kelly_sugg{std::numeric_limits<double>::quiet_NaN()};
+        double m_life{std::numeric_limits<double>::quiet_NaN()};
+        double m_clv{std::numeric_limits<double>::quiet_NaN()};
+        double m_corr{std::numeric_limits<double>::quiet_NaN()};
+        double odds_age_ms{std::numeric_limits<double>::quiet_NaN()};
+        double g_remain{std::numeric_limits<double>::quiet_NaN()};
+        double g_sdiff{std::numeric_limits<double>::quiet_NaN()};
     };
     // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
     [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200,
@@ -958,6 +991,12 @@ private:
     // ---- 孤儿结算诊断节流 (2026-06-10 老板「查消失的盘结算有没有进账户」): 上次打孤儿诊断的 NowNs (30s 节流) ----
     std::int64_t last_orphan_diag_ns_{0};
     std::int64_t last_ledger_snapshot_ns_{0};  // 账本快照 60s 节流 (loop_thread_, 2026-06-11 持久化)
+    // 复盘观测 (2026-06-13 老板「都改」): 持仓路径采样 (60s/仓 → position_path.jsonl, 止损/出场回测金料)
+    //   + gate 拒点反事实 journal (per cond×gate 5min 节流 → gate_blocks.jsonl)。均 loop_thread_ only。
+    std::int64_t last_pos_path_ns_{0};
+    std::unordered_map<std::string, std::int64_t> gate_log_ns_;
+    void SamplePositionPaths();
+    void LogGateBlock(const std::string& cond, const char* gate, double fair, double ref_px, double would_usd);
     // ---- CLV 失效熔断 (2026-06-12 治理「能利用的利用起来」: CLVTracker 反哺入场) ----
     //   CLV(close口径)正率是入场质量金标准 (实测健康期 82.8%, n=122)。正率跌破 70% (样本≥30) =
     //   模型失效信号 (赔率源断/匹配错/延迟恶化) → 熔断新开仓 (减仓/平仓/结算不受限), 恢复自动解除。
@@ -1089,7 +1128,8 @@ private:
                                const polymarket::clob_wss::OrderBookFeatures& side_book,
                                double book_depth_l1, double p_fair_side, double target_mag,
                                double fee_coef, bool force_cross, int n_eff, double margin_floor,
-                               bool noise_free, bool force_stop, bool near_end) noexcept;
+                               bool noise_free, bool force_stop, bool near_end,
+                               const EntryCtx* ectx = nullptr) noexcept;
 
     // slice-3b 结算: 比赛 Ended → 按终态比分把 YES/NO 持仓 realize 到结算值 (winner 1 / loser 0) +
     //   平仓 (apply_fill 负 delta), realized PnL 累加进 cum_realized_pnl_pusd_。loop_thread_ 单 writer。
