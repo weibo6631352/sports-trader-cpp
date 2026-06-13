@@ -265,7 +265,8 @@ struct TradingLoopConfig {
     double per_order_cap_usdc{10.0};
     double market_exposure_cap_usdc{50.0};
     double per_outcome_cap_usdc{25.0};
-    double min_order_pusd{0.0};       // 最小买单门 (老板 2026-06-09「体育 min 5 单」; 0=关): 买单 < 它跳过
+    // (旧 min_order_pusd「死 $5 美元地板」配置旋钮 2026-06-13 删: 最小单 = PM CLOB【5 股】, 由
+    //  ExecuteControllerSide 内 share_floor_usd = 5×买价 动态算, 非配置项 — 见该处。删除消「还有个$5门」误会。)
 
     // ---- 目标仓位控制器参数 (老雷 controller spec v1 §11 Step 3; 小梁 Q-梁-1/Q-梁-2) ----
     //   edge_ci_lower_floor: reservation required_margin 下限 (与 RM 同名门同源; 默认 0)。

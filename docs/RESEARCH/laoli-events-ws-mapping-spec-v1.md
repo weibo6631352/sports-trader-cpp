@@ -120,7 +120,7 @@ Event (赛事)                      gamma /events[i]
 | `outcomePrices` | **stringified JSON** | (只读, 有延迟) | gamma 缓存价格, 实时价从 WS/clob 拿 |
 | `clobTokenIds` | **stringified JSON** | `token_ids: []string` | **必须二次 parse**, index 与 outcomes 严格对齐 |
 | `orderPriceMinTickSize` | float | `tick_size` | 最小报价步长, 典型值 0.01; 高赔率冷门可能 0.001 |
-| `orderMinSize` | float | `min_order_size_usdc` | 最小订单 USD size, 典型值 5.0 |
+| `orderMinSize` | float | `min_order_size` | ⚠️ **单位是【股】非 USD** (2026-06-13 官方核实修正, 原写 `min_order_size_usdc`/「USD size」是错的): limit order 的 `size`/`minimum_order_size` = 股数(outcome token), 典型值 5 = **5 股**, 低于 → `INVALID_ORDER_MIN_SIZE` 拒单。5 股折 USD = 5×买价 (favorite 0.7-0.84 → $3.5-4.2) |
 | `acceptingOrders` | bool | `is_accepting_orders` | 当前是否接受挂单 (临场可能 false) |
 | `ready` | bool | `is_ready` | 就绪可挂单 |
 | `enableOrderBook` | bool | `is_clob_enabled` | false = 老 fpmm 模式, **禁止 CLOB 下单** |

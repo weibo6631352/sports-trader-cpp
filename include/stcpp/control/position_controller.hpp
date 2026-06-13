@@ -44,7 +44,7 @@ struct ControlInput {
     double best_ask{0.0};             // 被选边市场 best ask
     double best_bid{0.0};             // 被选边市场 best bid
     double min_rebalance_pusd{1.0};   // 防抖死区 (绝对 pUSD; 小梁 = max(1, 0.1·|target|))
-    double min_order_pusd{0.0};       // 最小买单门 (老板 2026-06-09「体育 min 5 单」; 0=关): 买单 < 它跳过 (真盘下不进+砍dust churn)
+    double min_order_pusd{0.0};       // 最小买单【凑整目标】= 5×best_ask (PM CLOB min 5 股; 0=关): Kelly < 它则凑够它下单 (非跳过门; 2026-06-13 老板修正)
     double per_order_cap_pusd{0.0};   // 单笔上限 (clamp; RM per_order_cap 同源)
     bool allow_short{false};          // v1=false (空头 clamp 0); M2 开
     bool force_cross{false};          // 强制穿越 (小梁 Q-梁-2: |Δfair|>0.02 → 绕死区; 比分大跳不堵)
@@ -193,12 +193,21 @@ struct DeadbandConfig {
             a.reason = NoActReason::NotMarketable;
             return a;
         }
-        const double buy_sz = std::min(abs_gap, cap);
-        // 最小买单门 (老板 2026-06-09「体育 min 5 单」): 买单 < min_order_pusd 跳过 —— 真盘 PM 体育 min 5
-        //   下不进 + 砍 dust churn (实测 0.0u/0.1u 碎单污染流水)。卖侧(平仓)不设此门, 允许清掉零头。
+        double buy_sz = std::min(abs_gap, cap);
+        // 最小买单【凑整】(2026-06-13 老板修正「这不是门, 是凑够 5 股」): Polymarket CLOB 不接 <5 股的单,
+        //   min_order_pusd = 5×best_ask (调用方算好喂进来)。买单 < 5 股的钱时, 按是否已进场分两种:
+        //     ① 新开仓 (current < 5 股 = 还没真进场): 【凑够 5 股下单】, 即使违反 Kelly 分配也要凑够 ——
+        //        否则 +EV 机会因「钱凑不够 5 股」全部错失 (老板「因为钱的事错过机会就是问题」)。round-up 不超 cap。
+        //     ② 存量残差补单 (current ≥ 5 股 = 已在场, 只差最后零头): 残差 < 5 股【不补】—— PM 下不进, 且凑整
+        //        会把仓位过冲 target/cap (实测 TC2: 9.0→10.5 越界)。到此已收敛在 5 股粒度内, 跳过即可。
+        //   死区(line 183, min_rebalance)仍在前: Kelly < 死区($1)的近零 edge 信号根本不进场。卖侧不设此门。
         if (in.min_order_pusd > 0.0 && buy_sz < in.min_order_pusd) {
-            a.reason = NoActReason::BelowThreshold;
-            return a;
+            if (current < in.min_order_pusd) {
+                buy_sz = std::min(in.min_order_pusd, cap);  // 新开仓: 凑够 5 股
+            } else {
+                a.reason = NoActReason::BelowThreshold;       // 存量残差 < 5 股: 已收敛, 不过冲
+                return a;
+            }
         }
         a.act = true;
         a.side = strategy::Side::Buy;

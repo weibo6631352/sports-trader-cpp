@@ -719,7 +719,8 @@ BuildResult TraderDaemon::Build() {
     //   bankroll 上仅用 1% 资金/单, 比 Kelly(λ0.35, 5% edge≈$79/单) throttle 8x → +$200 累积极慢。
     //   实测 26 笔 sharp 成交全捕获正 edge (中位 5.3%, 0 笔买在 fair 上方) → 边真实, 放大有据。
     //   放大让 Kelly 主导 (λ0.35 仍是真风控); per-market ≤12% bankroll (守北极星 DD≤15%)。R-11 纯 paper。
-    cfg_.trading_loop.min_order_pusd = 5.0;             // 最小买单 (老板 2026-06-09「体育 min 5 单」): 砍 0.0u/0.1u dust churn + 贴真盘
+    // (最小买单 = Polymarket CLOB【5 股】, 由 ExecuteControllerSide 内 share_floor_usd = 5×买价 动态算,
+    //  非配置项。旧「死 $5 美元地板」旋钮 2026-06-13 删 — 5 股在 favorite 价带=$3.5-4.2, $5 会白挡合格单。)
     // #4 注码定稿 (2026-06-13 老板批): 双模式统一吃 LiveRiskProfile (caps $10/12/15/20 按 $154 等比) —
     //   paper 镜像 live 同款 = live 的精确彩排 (单量/单size/节奏同构, 唯一差别成交模拟 vs 真实)。
     //   cfg_.trading_loop = sizing+RM+account 显示单一真相源。bankroll: paper 用档位值 ($150),

@@ -485,8 +485,8 @@ OrderIntent (token_id + side + price + size) → RiskGateway::evaluate() → All
 
 经 endpoint-matrix v3 实测和官方 SDK 行为分析：
 - `orderMinSize` 字段是 UI 显示层面的提示，CLOB 后端实际最小约束是 `min_order_size` 字段（在 `/book` 或 `/books` 响应里）
-- 对于 `min_order_size`，实测部分 markets 返回 `1.0`（$1 USDC），部分返回 `5.0`（$5 USDC）
-- FOK 单在高流动性 market 上 $1 notional 通常可以成交
+- ⚠️ **`min_order_size` 单位是【股】非 USDC** (2026-06-13 官方文档 + 真盘 API 核实修正, 原文「$1/$5 USDC」是错的): limit order 的 `size` 字段 = 股数(outcome token); 真盘 API 现全市场返 `5` = **5 股**; 低于 → `INVALID_ORDER_MIN_SIZE` 拒单。5 股折成 USD = 5×买价 (价 0.20 → $1; favorite 0.80 → $4)
+- FOK 单按【股数】下 (我们 marketable-limit: taker_amount=股); 5 股在多数价位 notional > $1, 高流动性 market 可成交
 
 **建议重新定义测试目标**：把 "$<$0.1" 调整为 "$1 USDC 最小单"，仍然远低于正式交易规模但符合 CLOB 最小订单约束。若 GM 坚持 <$0.1，需先查目标 market 的 `min_order_size`（用 POST /books 或 GET /book 获取）。
 

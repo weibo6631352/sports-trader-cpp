@@ -122,6 +122,42 @@ TEST(PositionController, PC06_BuyNotMarketable) {
     EXPECT_EQ(a.reason, NoActReason::NotMarketable);
 }
 
+// PC-06b: 最小买单【凑整】(2026-06-13 老板「这不是门, 是凑够 5 股」) — Kelly < 5 股的钱 → 凑够下单 (非跳过)
+TEST(PositionController, PC06b_MinOrderRoundsUpNotSkip) {
+    auto in = base();
+    in.target_pusd = 1.5;        // Kelly 只分到 $1.5 (> 死区 1.0, 过防抖)
+    in.current_pusd = 0.0;       // gap=1.5
+    in.min_order_pusd = 4.0;     // 5 股 × 0.80 = $4 (PM CLOB 下限)
+    const auto a = Decide(in);
+    EXPECT_TRUE(a.act) << "Kelly < 5 股不应跳过, 应凑整下单";
+    EXPECT_EQ(a.side, Side::Buy);
+    EXPECT_DOUBLE_EQ(a.size_pusd, 4.0) << "$1.5 凑够 5 股的 $4";
+}
+
+// PC-06c: 凑整不超 per_order_cap — round-up target 撞 cap 时 clamp 到 cap
+TEST(PositionController, PC06c_MinOrderRoundUpClampedByCap) {
+    auto in = base();
+    in.target_pusd = 1.5;
+    in.current_pusd = 0.0;
+    in.min_order_pusd = 4.0;
+    in.per_order_cap_pusd = 3.0;  // cap < 5 股的钱 (极端窄 cap)
+    const auto a = Decide(in);
+    EXPECT_TRUE(a.act);
+    EXPECT_DOUBLE_EQ(a.size_pusd, 3.0) << "凑整不超 cap";
+}
+
+// PC-06d: 存量残差不凑整 (防过冲) — 已持仓 ≥5 股, 残差 gap < 5 股 → 跳过 (收敛在 5 股粒度, 不过冲 target)
+TEST(PositionController, PC06d_HeldResidualBelowMinSkipsNoOvershoot) {
+    auto in = base();
+    in.target_pusd = 10.0;
+    in.current_pusd = 9.0;       // 已持仓 9 (≥ 5 股的钱); 残差 gap=1.0
+    in.min_order_pusd = 4.0;     // 5 股 × 0.80; 残差 1.0 < 4.0
+    in.min_rebalance_pusd = 0.5; // 放低死区, 让残差越过死区直抵 min_order 判定
+    const auto a = Decide(in);
+    EXPECT_FALSE(a.act) << "存量仓残差 < 5 股不应凑整 (否则 9→13 过冲 target 10)";
+    EXPECT_EQ(a.reason, NoActReason::BelowThreshold);
+}
+
 // PC-07: 限价不追 (卖) — bid < reservation_sell → 不卖
 TEST(PositionController, PC07_SellNotMarketable) {
     auto in = base();

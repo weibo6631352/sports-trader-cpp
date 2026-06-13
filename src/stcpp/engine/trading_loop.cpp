@@ -1924,7 +1924,21 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     cin.best_ask = exec_ask;  // 本边 ask (买入触价 + 限价不追门)
     cin.best_bid = exec_bid;  // 本边 bid (卖出触价 + 限价不追门)
     cin.min_rebalance_pusd = min_rebalance;
-    cin.min_order_pusd = cfg_.min_order_pusd;   // 最小买单门 (老板「体育 min 5 单」)
+    // 最小买单 = Polymarket CLOB 5 股【凑整目标】(2026-06-13 老板「限制的是5股不是5美元, 别再搞错」修正,
+    //   + 官方文档核实: minimum_order_size 单位是【股(outcome token)】非 USD; 真盘 API 全市场返 5;
+    //   limit order 的 size 字段=股数; 低于 → INVALID_ORDER_MIN_SIZE 拒单。我们 marketable-limit 走 size=股):
+    //   旧实现把「5 股」死写成 $5 USD → favorite 价带(5 股=$3.5-4.2)被 $5 过严白挡合格单。
+    //   正确: USD 门 = 5 股 × 买价(exec_ask = intent.price 同值 → shares = size_pUSD/price = 5.00 股)。
+    //   ⚠ 圆整缓冲 (kShareSafetyPad): live_order_gate 把 size_pUSD 转股时有两道向下损失 ——
+    //     ① (int64)(size×1e6) 截断 ② shares floor 到 2 位小数 (0.01 股粒度) —— 实测全价带 96/771 (12.5%) 价位
+    //     会被削成 4.99 股 → INVALID_ORDER_MIN_SIZE 真盘拒。垫 0.05 股 (成本 +1% ≈ $0.04) → 实测 0 拒。
+    constexpr double kClobMinShares = 5.0;
+    constexpr double kShareSafetyPad = 0.05;  // 抗 gate 圆整/截断, 保证落地 ≥5.00 股
+    // share_floor_usd = 「5 股值多少 pUSD」= 把 PM「最小 5 股」(股数约束) 翻译成系统内部 pUSD 量纲的桥梁。
+    //   两处复用: ① cin.min_order_pusd 控制器凑整目标 ② 下方 kMinBiteUsd 引擎切深度下限。
+    const double share_floor_usd =
+        (std::isfinite(exec_ask) && exec_ask > 0.0) ? (kClobMinShares + kShareSafetyPad) * exec_ask : 0.0;
+    cin.min_order_pusd = share_floor_usd;  // (旧 max(cfg_.min_order_pusd,..) 删: cfg 旋钮已废, 见 hpp)
     cin.per_order_cap_pusd = cfg_.per_order_cap_usdc;
     cin.allow_short = false;       // 空头 clamp 0 (sell-to-open 对二元市场 N/A; 见 spec §11.6)
     cin.force_cross = force_cross;  // 小梁 Q-梁-2: fair 大跳绕死区 (买侧加仓; 含 stop 用于绕死区)
@@ -2074,7 +2088,9 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
         const double ask_depth = side_book.best_ask_size();  // L1 ask 可成交深度 (USD 口径)
         if (std::isfinite(ask_depth) && ask_depth > 0.0) {
             constexpr double kBiteSafetyFrac = 0.80;  // 不抢光显示量, 留并发 taker/撤单余量
-            constexpr double kMinBiteUsd = 5.0;       // 单笔下限, 防小单手续费 churn (PM min $1, 留缓冲)
+            // 单笔下限 = Polymarket CLOB 5 股 × 买价 (2026-06-13 老板「5股不是5美元」; 同 cin.min_order):
+            //   favorite 0.70-0.84 → $3.5-4.2 (旧死 $5 过严)。share_floor_usd 已在上方按 5×exec_ask 算好。
+            const double kMinBiteUsd = share_floor_usd;
             const double fillable = ask_depth * kBiteSafetyFrac;
             if (order_size_pusd > fillable) order_size_pusd = fillable;  // 切到可成交深度; 余量下 tick 补
             if (order_size_pusd < kMinBiteUsd) {
@@ -2082,6 +2098,16 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
                 stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
                 return;  // 切完不足单笔下限 → 不下, 等深度回补 (防 churn; 目标仍由后续 tick 累积)
             }
+        }
+        // 手续费 + 现金充足 (2026-06-13 老板「还要算上手续费, 否则钱不够如何交易」): 凑够 5 股的钱必须【含费】,
+        //   否则下单时真实余额不足被拒。fee = size×fee_coef×p×(1−p) (R-fee-2 同公式)。cash_available 已扣
+        //   多头锁定成本 + cum_fee (AccountEquitySnapshot, account_equity())。不够 = 物理下不了单 (非策略门),
+        //   跳过等仓位结算释放现金。tick 入口冻结口径 (同 tick 多单按同一现金基准, 保守)。
+        const double fee_est = order_size_pusd * fee_coef * exec_ask * (1.0 - exec_ask);
+        if (order_size_pusd + fee_est > tick_equity_.cash_available) {
+            LogGateBlock(condition_id, "insufficient_cash", p_fair_side, exec_ask, order_size_pusd);
+            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+            return;  // 现金(含费)不够凑这单 → 等持仓结算回血; 不硬下导致链上 insufficient-funds 失败
         }
     }
     // size: 转 micro pUSD。
