@@ -94,7 +94,7 @@ def main():
     for (cond,yes),b in buys.items():
         if cond not in outcome or b["qty"]<=0: continue
         avg=b["cost"]/b["qty"]; w=1 if yes==outcome[cond] else 0
-        won+=w; lost+=(1-w); settled.append((avg,w))
+        won+=w; lost+=(1-w); settled.append((avg,w,b["qty"]))
         seg_sport[b["sport"]][0]+=w; seg_sport[b["sport"]][1]+=1
         seg_band[min(int(avg*10),9)][0]+=w; seg_band[min(int(avg*10),9)][1]+=1
         seg_ver[b["git"]][0]+=w; seg_ver[b["git"]][1]+=1
@@ -114,10 +114,17 @@ def main():
     if n==0:
         print("⚠ 无已结算可判输赢的仓 → 出不了胜率 (仓还没结算/未 join 上 settlements)"); return
     p,lo,hi=wilson(won,n)
-    avg_entry=sum(a*1 for a,_ in settled)/len(settled)
+    avg_entry=sum(a for a,_,_ in settled)/len(settled)
     print(f"★ 胜率: {won}/{n} = {100*p:.1f}%  Wilson95%CI [{100*lo:.1f}%, {100*hi:.1f}%]")
     print(f"  均入价 {avg_entry:.3f} → 平衡线 {100*avg_entry:.1f}%; 实测 edge {(p-avg_entry)*100:+.1f}pp (CI下界 {(lo-avg_entry)*100:+.1f}pp)")
     print(f"  {'✓ CI下界>平衡线 → 统计上有正edge' if lo>avg_entry else ('✗ CI上界<平衡线 → 负edge' if hi<avg_entry else '? CI跨平衡线 → 样本不足判定')}")
+    # PnL/不对称 (2026-06-14 cycle-3: favorite 赢小输大才是真杀手 — 胜率高也可能净亏, 胜率单看会骗人)。
+    #   逐仓 realized = 赢?(1−avg)×qty : −avg×qty。期望/仓 > 0 才是真赚 (= 胜率 × 均赢 − 败率 × 均输)。
+    pnls=[((1-a) if w else -a)*q for a,w,q in settled]
+    wins=[x for x in pnls if x>0]; losses=[x for x in pnls if x<=0]
+    tot=sum(pnls); aw=sum(wins)/len(wins) if wins else 0.0; al=sum(losses)/len(losses) if losses else 0.0
+    print(f"★ PnL/不对称: 总 ${tot:+.2f} | 期望 ${tot/len(pnls):+.3f}/仓 {'✓正期望' if tot>0 else '✗负期望'}")
+    print(f"  均赢 ${aw:+.2f}×{len(wins)} vs 均输 ${al:+.2f}×{len(losses)} | 赢输额比 {abs(aw/al) if al else 0:.2f} (favorite 常<1=输的更狠)")
     if clv:
         cm=sum(clv)/len(clv); sd=(sum((x-cm)**2 for x in clv)/len(clv))**0.5
         t=cm/(sd/len(clv)**0.5) if sd>0 else 0
