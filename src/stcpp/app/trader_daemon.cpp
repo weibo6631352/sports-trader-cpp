@@ -1891,8 +1891,13 @@ void TraderDaemon::RunActiveBookPoller(std::stop_token st) noexcept {
                             const double fav = std::max(m, 1.0 - m);  // favorite 边 (两 token 同值)
                             if (fav >= 0.70 && fav <= 0.84) w += 4.0;       // 行动带: 现在就能出活
                             else if (fav >= 0.62 && fav < 0.70) w += 2.0;   // 逼近
-                            else if (fav > 0.84 && fav <= 0.90) w += 0.5;   // 刚过, 可能回落
-                            // 远 (<0.62) / 已决出 (>0.90): 不加, 保留 base 地板
+                            else if (fav > 0.84 && fav <= 0.92) w += 0.5;   // 刚过, 可能回落 / game_decided 区
+                            else if (fav > 0.92) w = std::max(0.5, base * 0.25);
+                            // ↑ 已决出降档 (2026-06-13 老板「赢定骑等结算的仓不会触发动作, 让出预算」):
+                            //   不可进 (0.84 上限封死) 不可动 (结算走 REST 非簿) → 0.25×base 让 hz 给行动带。
+                            //   下限 0.5 + WSS 推送仍在 → mark/game_decided 兜底几秒级刷新, 不饿死。
+                            //   轴是「可行动性」非「持仓与否」: 没建满的仓在带内仍享 +4 (补口要新鲜深度)。
+                            // 远 (<0.62): 不加, 保留 base 地板
                         }
                     }
                     dyn_w[t] = w;
