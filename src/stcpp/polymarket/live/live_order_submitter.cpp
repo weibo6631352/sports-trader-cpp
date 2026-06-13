@@ -10,6 +10,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
@@ -244,6 +245,14 @@ LiveOrderResult LiveOrderSubmitter::Submit(const LiveOrderRequest& req) noexcept
     const std::string err = ExtractStr(resp, "error");
     r.error = !errmsg.empty() ? errmsg : err;
     r.success = (http >= 200 && http < 300) && ExtractBool(resp, "success") && r.error.empty();
+    // 2026-06-13 诊断 (FOK 检测漏 → 全走 WSS 兜底, 丢即时 cap + rich journaling): 抓真回执定位
+    //   status/making/taking 实际格式, 据实修 live_executor 的 matched 判定。raw_response 安全 (无私钥/HMAC,
+    //   见 live_order_types.hpp)。submit 路径低频 (仅过闸的真单), 非热决策环, fprintf 无碍。截 400 字防爆量。
+    std::fprintf(stderr,
+                 "[live_submit/diag] http=%ld success=%d status=\"%s\" making=%.6g taking=%.6g err=\"%s\" "
+                 "resp=%.400s\n",
+                 http, static_cast<int>(r.success), r.status.c_str(), r.making_amount, r.taking_amount,
+                 r.error.c_str(), resp.c_str());
     return r;
 }
 
