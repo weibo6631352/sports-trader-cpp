@@ -99,6 +99,11 @@ int main(int argc, char** argv) {
                         ? stcpp::debug_api::ExecMode::Live
                         : stcpp::debug_api::ExecMode::Paper;
 
+    // 2026-06-13 老板「paper 去掉仅观测」: paper 天生 100% 虚拟/不碰钱 → 永远开火 (advisory off + edge 门去掉),
+    //   「仅观测」对 paper 无意义 (paper 自己就是安全模式), 还坑过人 (漏 --enable-fills → 静默空转误判门槛严)。
+    //   开火把关只对 live 有意义 (真钱); live 仍需显式 --enable-fills + STCPP_LIVE_INTENT_OK + LIVE_ARMED。
+    if (exec_mode == stcpp::execution::ExecutionMode::Paper) cfg.enable_paper_fills = true;
+
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         if (a == "--mode" && i + 1 < argc) {
@@ -128,7 +133,7 @@ int main(int argc, char** argv) {
                 "  --host ADDR      bind address (default 127.0.0.1)\n"
                 "  --verbose        extra WSS/parser debug logging\n"
                 "  --no-paper       observe only, do not run TradingLoop\n"
-                "  --enable-fills   解封 paper 成交 (默认仅观测; 保守默认, 显式才开火)\n"
+                "  --enable-fills   解封成交 (仅 live 需要; paper 永远开火, 此 flag 对 paper 无效)\n"
                 "  (大模型训练/ONNX 推理 flags 已砍 2026-06-05; 量化因子/统计计算保留)\n"
                 "\n"
                 "RunMode::TraderDaemon — paper trading loop + HTTP observability API.\n"
