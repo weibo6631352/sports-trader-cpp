@@ -26,7 +26,8 @@ import type {
  *  本地 dev (localhost) 仍连 127.0.0.1:7080。可被 localStorage 覆盖。跨域由后端 CORS 处理。
  *  2026-06-10 端口 8080→7080 (老板「有人窥视, 换端口」)。 */
 function defaultApiBase(): string {
-  // ?api=7090 → 切 live 观测 (2026-06-13 实盘准备; 优先级: query > localStorage > 默认 7080)
+  // 端口统一 7080 — 实盘/虚拟盘同端口不分叉 (2026-06-13 老板「都是7080, 一致, 不要分叉」;
+  //   单 binary 一次只跑一个模式, 同端口零歧义)。?api=<port> 仅留作通用手动覆盖 (特殊调试)。
   let port = '7080';
   try {
     const qp = new URLSearchParams(window.location.search).get('api');

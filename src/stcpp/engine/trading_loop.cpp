@@ -202,10 +202,12 @@ void TradingLoop::Start() {
         running_.store(false, std::memory_order_release);
     });
 
+    const char* loop_mode_str =
+        stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live ? "live" : "paper";
     std::fprintf(stderr,
-                 "[trading_loop] 启动 paper 交易循环 (tick=%lldms, tokens=%zu, "
+                 "[trading_loop] 启动 %s 交易循环 (tick=%lldms, tokens=%zu, "
                  "bankroll=%.0f pUSD)\n",
-                 static_cast<long long>(cfg_.tick_interval_ms),
+                 loop_mode_str, static_cast<long long>(cfg_.tick_interval_ms),
                  (LoadPaperCatalog() ? LoadPaperCatalog()->size() : 0), cfg_.bankroll_usdc);
 }
 

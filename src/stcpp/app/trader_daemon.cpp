@@ -1444,10 +1444,14 @@ void TraderDaemon::Start() {
 
     // ---- Step 4b start: TradingLoop (enable_paper_trading; "仅观测" flag=false 时不起) ----
     if (cfg_.enable_paper_trading && trading_loop_) {
-        std::printf("[trader_daemon] 启动 paper 交易循环 (TradingLoop, 独立线程, 500ms tick)...\n");
-        std::printf("[trader_daemon] [paper] R-11 隔离: PositionLedger 独立实例 (非 live 账本)\n");
-        std::printf("[trader_daemon] [paper] R-20 透传: data_source_ts_ns 来自 CLOB hub 快照\n");
-        std::printf("[trader_daemon] [paper] ToS: 仅 VirtualFill, 不向 CLOB 下单\n");
+        const bool live_mode = cfg_.exec_mode == debug_api::ExecMode::Live;
+        const char* mt = live_mode ? "live" : "paper";
+        std::printf("[trader_daemon] 启动 %s 交易循环 (TradingLoop, 独立线程, 500ms tick)...\n", mt);
+        std::printf("[trader_daemon] [%s] R-11 隔离: PositionLedger %s\n", mt,
+                    live_mode ? "live 账本实例 (mode_tag=1)" : "独立实例 (非 live 账本)");
+        std::printf("[trader_daemon] [%s] R-20 透传: data_source_ts_ns 来自 CLOB hub 快照\n", mt);
+        std::printf("[trader_daemon] [%s] 路由: %s\n", mt,
+                    live_mode ? "真实 CLOB 下单 (LiveExecutor, ARMED 才放行)" : "仅 VirtualFill, 不向 CLOB 下单");
         std::fflush(stdout);
         trading_loop_->Start();
     }

@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
             if (std::strcmp(m, "live") == 0) {
                 exec_mode = stcpp::execution::ExecutionMode::Live;
             } else if (std::strcmp(m, "paper") != 0) {
-                std::fprintf(stderr, "[paper_server] FATAL: --mode 只接受 paper|live (got: %s)\n", m);
+                std::fprintf(stderr, "[trader_server] FATAL: --mode 只接受 paper|live (got: %s)\n", m);
                 return 2;
             }
         }
@@ -71,7 +71,7 @@ int main(int argc, char** argv) {
         if (!keys.empty()) {
             std::string names;
             for (const auto& k : keys) { if (!names.empty()) names += ","; names += k; }
-            std::fprintf(stderr, "[paper_server] .env 已加载 %zu 项 (进程环境优先): %s\n",
+            std::fprintf(stderr, "[trader_server] .env 已加载 %zu 项 (进程环境优先): %s\n",
                          keys.size(), names.c_str());
         }
     }
@@ -81,7 +81,7 @@ int main(int argc, char** argv) {
     if (exec_mode == stcpp::execution::ExecutionMode::Live) {
         const char* pm = std::getenv("PAPER_MODE");
         if (pm != nullptr && std::strcmp(pm, "1") == 0) {
-            std::fprintf(stderr, "[paper_server] FATAL (R-11): PAPER_MODE=1 与 --mode live 冲突. abort.\n");
+            std::fprintf(stderr, "[trader_server] FATAL (R-11): PAPER_MODE=1 与 --mode live 冲突. abort.\n");
             return 2;
         }
         // 名单与 LiveCredentials::FromEnv 严格同源 (2026-06-13 烟测逮住名不一致 bug)
@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
                               "POLYMARKET_API_SECRET", "POLYMARKET_API_PASSPHRASE"}) {
             const char* v = std::getenv(k);
             if (v == nullptr || v[0] == '\0') {
-                std::fprintf(stderr, "[paper_server] FATAL (live fail-fast): 缺凭证 %s. abort.\n", k);
+                std::fprintf(stderr, "[trader_server] FATAL (live fail-fast): 缺凭证 %s. abort.\n", k);
                 return 2;
             }
         }
@@ -143,7 +143,7 @@ int main(int argc, char** argv) {
                 "  (frontend served by Vite dev server, not this process)\n");
             return 0;
         } else {
-            std::fprintf(stderr, "[paper_server] unknown arg: %s (try --help)\n", a.c_str());
+            std::fprintf(stderr, "[trader_server] unknown arg: %s (try --help)\n", a.c_str());
             return 2;
         }
     }
@@ -156,7 +156,7 @@ int main(int argc, char** argv) {
         instance_lock.emplace(stcpp::infra::process::kGlobalEngine);
     } catch (const stcpp::infra::process::SingleInstanceLockFailure& e) {
         std::fprintf(stderr,
-                     "[paper_server] 拒绝多开: 已有引擎实例 (mode=%s) 运行中 (PID %lld)。\n"
+                     "[trader_server] 拒绝多开: 已有引擎实例 (mode=%s) 运行中 (PID %lld)。\n"
                      "  锁文件: %s\n  一台机只许一个引擎; 先停旧实例再起。\n",
                      e.exec_mode_str.c_str(), static_cast<long long>(e.existing_pid),
                      stcpp::infra::process::SingleInstanceLock::global_engine_path().c_str());
@@ -170,12 +170,12 @@ int main(int argc, char** argv) {
 
     const stcpp::app::BuildResult br = daemon.Build();
     if (!br.ok) {
-        std::fprintf(stderr, "[paper_server] FATAL: TraderDaemon::Build 失败: %s\n", br.error.c_str());
+        std::fprintf(stderr, "[trader_server] FATAL: TraderDaemon::Build 失败: %s\n", br.error.c_str());
         return 1;
     }
 
     const int rc = daemon.Run();  // Start + WaitForStop(SIGINT/SIGTERM) + Shutdown
     g_daemon.store(nullptr, std::memory_order_release);
-    std::printf("[paper_server] 已停止\n");
+    std::printf("[trader_server] 已停止\n");
     return rc;
 }

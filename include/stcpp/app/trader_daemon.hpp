@@ -97,7 +97,7 @@ enum class RunMode : std::uint8_t {
 [[nodiscard]] constexpr const char* ToString(RunMode m) noexcept {
     switch (m) {
         case RunMode::TraderDaemon:
-            return "paper-daemon";
+            return "http-daemon";  // 进程角色 (带 HTTP 观测端), 与交易模式正交; 模式看 exec_mode
         case RunMode::Headless:
             return "headless";
     }
