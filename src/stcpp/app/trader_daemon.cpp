@@ -1413,9 +1413,9 @@ void TraderDaemon::Start() {
             std::jthread([this](std::stop_token st) { RunActiveBookPoller(st); });
         std::printf("[trader_daemon] 149hz 主动 book 轮询启动 (热链 /book, 流动性加权, 源头 pass 后 token)\n");
 
-        // ---- Phase 2 (live only): CLOB user 频道成交接收 (shadow) ----
-        //   live 下单成交回执异步通道。当前 shadow: loop_thread 排空 → log + 与 sync 路径对账, 不入账
-        //   (sync 仍是真相源 → 零真钱风险, 用真实成交验证 user 频道 auth/解析/去重)。验证通过后 flip。
+        // ---- Phase 2 (live only): CLOB user 频道成交接收 (对账 + 兜底) ----
+        //   live 成交回执异步通道。loop_thread 排空 → 按 order_id 与 sync 路径对账: sync 已记则核对不重记;
+        //   sync 漏记 (下单回执丢失但链上确成交) 则兜底补记。自校验闸: order_id 格式经匹配证实前只告警不补。
         if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
             const char* ak = std::getenv("POLYMARKET_API_KEY");
             const char* as = std::getenv("POLYMARKET_API_SECRET");
@@ -1432,7 +1432,7 @@ void TraderDaemon::Start() {
                     trading_loop_->SetUserFillFeed(user_fill_feed_.get());  // shadow (log+对账, 不入账)
                 user_fill_watchdog_thread_ =
                     std::jthread([this](std::stop_token st) { UserFillWatchdogLoop(st); });
-                std::printf("[trader_daemon] [live] user 频道成交接收启动 (shadow: 收成交→log+对账不入账; 订阅 %zu condition)\n",
+                std::printf("[trader_daemon] [live] user 频道成交接收启动 (对账+兜底: 收成交→比对sync, 漏记则补; 订阅 %zu condition)\n",
                             cids.size());
             } else {
                 std::fprintf(stderr,
