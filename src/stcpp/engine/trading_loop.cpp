@@ -631,7 +631,7 @@ void TradingLoop::TickAll() {
     //   → position_path.jsonl (BackgroundWriter 异步缓冲)。未来任何出场/止损规则的离线回测金料。 ----
     {
         const std::int64_t pp_now = NowNs();
-        if (pp_now - last_pos_path_ns_ >= 60'000'000'000LL) {
+        if (pp_now - last_pos_path_ns_ >= 30'000'000'000LL) {  // 30s/仓 (2026-06-13 老板, 原 60s → 加密轨迹)
             last_pos_path_ns_ = pp_now;
             SamplePositionPaths();
         }
@@ -2765,7 +2765,7 @@ void TradingLoop::RestoreFillsJournalTail() {
         std::fprintf(stderr, "[fills-restore] journal 回放 %zu 笔成交流水进环 (%s)\n", restored, path);
 }
 
-// SamplePositionPaths — 持仓路径采样 (2026-06-13 老板「将来想做止损分析」): 60s/仓 一行
+// SamplePositionPaths — 持仓路径采样 (2026-06-13 老板「将来想做止损分析」): 30s/仓 一行
 //   (ts/cond/token/边/量/均入/bid/ask/mid/sharp/engine) → position_path.jsonl。loop_thread_ only;
 //   落盘走 journal_writer_ 异步缓冲 (决策环零磁盘阻塞)。
 void TradingLoop::SamplePositionPaths() {
