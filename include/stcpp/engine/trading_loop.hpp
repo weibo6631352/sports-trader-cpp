@@ -644,9 +644,13 @@ public:
         double odds_age_ms{std::numeric_limits<double>::quiet_NaN()};    // 决策刻赔率龄 (now−GS data_source_ts)
         double g_remain{std::numeric_limits<double>::quiet_NaN()};       // 赛段剩余秒
         double g_sdiff{std::numeric_limits<double>::quiet_NaN()};        // 比分差 (YES队−对手)
+        double g_period{std::numeric_limits<double>::quiet_NaN()};       // 离散赛段序数 (第几盘/节/局; 2026-06-14)
+        double cash_avail{std::numeric_limits<double>::quiet_NaN()};     // 入场刻可用现金 (账本快照; 2026-06-14)
+        double n_open{std::numeric_limits<double>::quiet_NaN()};         // 入场刻持仓数 (账本快照; 2026-06-14)
         double equity{std::numeric_limits<double>::quiet_NaN()};         // 成交刻净值 (Kelly 分母核对)
         // 结算行: 终局上下文 (close_mid=收盘线 → 逐仓 CLV 离线可derive)
         double close_mid{std::numeric_limits<double>::quiet_NaN()};      // 结算刻簿 mid (收盘线)
+        double close_bk_age_ms{std::numeric_limits<double>::quiet_NaN()};// close_mid 簿龄 (2026-06-14; 大=陈旧→CLV_close 不可信)
         double final_bid{std::numeric_limits<double>::quiet_NaN()};      // 终局 best_bid
         double final_ask{std::numeric_limits<double>::quiet_NaN()};      // 终局 best_ask
         std::string engine;            // 引擎标签: ""=sharp 主引擎 (历史 "flb" 仓结算归因仍可见)
@@ -662,6 +666,7 @@ public:
         double odds_age_ms{std::numeric_limits<double>::quiet_NaN()};
         double g_remain{std::numeric_limits<double>::quiet_NaN()};
         double g_sdiff{std::numeric_limits<double>::quiet_NaN()};
+        double g_period{std::numeric_limits<double>::quiet_NaN()};  // 2026-06-14: 离散赛段序数 (第几盘/节/局)
     };
     // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
     [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200,

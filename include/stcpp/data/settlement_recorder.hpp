@@ -68,8 +68,11 @@ private:
                     if (!rec.closed) continue;                  // 只落已结算 (终态)
                     if (written_cids_.count(cid)) continue;     // 去重 (结算不变, 落一次)
                     written_cids_.insert(cid);
+                    // parse_ok (2026-06-14): settlement_value!=-1 = winner 解析成功。-1 = 解析失败 (非平局,
+                    //   PM 二元市场无平局) → 离线分析必 drop, 否则污染正负样本比。
                     out << "{\"condition_id\":\"" << cid << "\",\"closed\":1,\"settlement_value\":"
                         << static_cast<int>(rec.settlement_value)
+                        << ",\"parse_ok\":" << (rec.settlement_value != -1 ? 1 : 0)
                         << ",\"end_date_ts_ns\":" << rec.end_date_ts_ns << "}\n";
                     written_.fetch_add(1, std::memory_order_relaxed);
                 }
