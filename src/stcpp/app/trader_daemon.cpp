@@ -1446,7 +1446,8 @@ void TraderDaemon::Start() {
     if (cfg_.enable_paper_trading && trading_loop_) {
         const bool live_mode = cfg_.exec_mode == debug_api::ExecMode::Live;
         const char* mt = live_mode ? "live" : "paper";
-        std::printf("[trader_daemon] 启动 %s 交易循环 (TradingLoop, 独立线程, 500ms tick)...\n", mt);
+        std::printf("[trader_daemon] 启动 %s 交易循环 (TradingLoop, 独立线程, 事件驱动: 数据到达即触发, "
+                    "无数据时 fallback 心跳兜底)...\n", mt);
         std::printf("[trader_daemon] [%s] R-11 隔离: PositionLedger %s\n", mt,
                     live_mode ? "live 账本实例 (mode_tag=1)" : "独立实例 (非 live 账本)");
         std::printf("[trader_daemon] [%s] R-20 透传: data_source_ts_ns 来自 CLOB hub 快照\n", mt);
