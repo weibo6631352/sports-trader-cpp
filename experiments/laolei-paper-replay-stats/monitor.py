@@ -52,8 +52,9 @@ print(f"拒单: {len(gb)} → " + (", ".join(f"{g}:{n}" for g, n in gd.most_comm
 attempts = len(buys) + len(gb)
 if attempts:
     print(f"出单率: {len(buys)}/{attempts} = {100*len(buys)/attempts:.1f}% (过闸/总尝试; 低=策略挑剔/市场efficient)")
-# 持仓 mark 概览 (赢面/水下)
+# 持仓 mark 概览 (赢面/水下) — 显示【水下最深】4 个 (风险仓/崩盘仓不漏看), 非任意前 N
 if pos:
     under = sum(1 for p in pos if p.get("pnl_unrealized", 0) < 0)
-    print(f"持仓 MTM: {len(pos)-under} 浮盈 / {under} 水下" +
-          (" — " + " ".join(f"{p.get('outcome')}{p.get('net_qty',0):.1f}@{p.get('avg_entry_price',0):.2f}→{p.get('mark_price',0):.2f}" for p in pos[:6])))
+    worst = sorted(pos, key=lambda p: p.get("pnl_unrealized", 0))[:4]
+    print(f"持仓 MTM: {len(pos)-under} 浮盈 / {under} 水下; 水下最深: " +
+          " ".join(f"{p.get('outcome')}{p.get('net_qty',0):.1f}@{p.get('avg_entry_price',0):.2f}→{p.get('mark_price',0):.2f}(${p.get('pnl_unrealized',0):+.1f})" for p in worst))
