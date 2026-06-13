@@ -676,6 +676,26 @@ public:
         return out;
     }
 
+    // gate 拒点观测行 (2026-06-13 老板「拒单面板 0 条 修吧」): strategy 闸挡单 = 真正的"为何没下单",
+    //   但只写 journal 没进面板。本结构 = 内存 ring 视图, daemon 经回调接进 /risk/rejects (前端零改可见)。
+    struct GateBlockView {
+        std::int64_t ts_ns{0};
+        std::string condition_id;
+        std::string gate;      // 闸名 (min_open_fair / stable_window / ...)
+        double fair{0.0};      // 决策 fair
+        double ref_px{0.0};    // 参考价
+        double would_usd{0.0}; // 本想下的额度
+    };
+    // 最近 N 条 gate block (最新在前)。loop_thread_ 写 (LogGateBlock), HTTP 线程读 — gate_block_mu_ 短锁拷出。
+    [[nodiscard]] std::vector<GateBlockView> RecentGateBlocks(std::size_t max_n = 50) const {
+        std::lock_guard<std::mutex> lk(gate_block_mu_);
+        std::vector<GateBlockView> out;
+        out.reserve(std::min(max_n, gate_block_ring_.size()));
+        for (std::size_t i = 0; i < gate_block_ring_.size() && out.size() < max_n; ++i)
+            out.push_back(gate_block_ring_[gate_block_ring_.size() - 1 - i]);
+        return out;
+    }
+
     // AccountEquity — 单一账户权益口径 (2026-06-01 凯利评审, docs/MEETINGS/2026-06-01-kelly-equity-review.md)。
     //   收敛原双轨 (RecordEquity@TickAll 与 FeedRiskGateway daily_pnl 各算一套 = 审计噩梦)。
     //   双口径分离 (六席共识): 风控/DD/凯利分母用 best_bid 保守清算价; 展示用 microprice。
@@ -1039,6 +1059,11 @@ private:
     //   + gate 拒点反事实 journal (per cond×gate 5min 节流 → gate_blocks.jsonl)。均 loop_thread_ only。
     std::int64_t last_pos_path_ns_{0};
     std::unordered_map<std::string, std::int64_t> gate_log_ns_;
+    // gate block 内存 ring (2026-06-13: 喂 /risk/rejects 面板, 让"为何没下单"可见)。loop_thread_ 写 (节流后),
+    //   HTTP 线程经 RecentGateBlocks 读; gate_block_mu_ 短锁 (push O(1) / 读拷 ≤cap, <100us, R-12 OK)。
+    static constexpr std::size_t kGateBlockRingCap = 64;
+    mutable std::mutex gate_block_mu_;
+    std::deque<GateBlockView> gate_block_ring_;
     void SamplePositionPaths();
     void LogGateBlock(const std::string& cond, const char* gate, double fair, double ref_px, double would_usd);
     // ---- CLV 失效熔断 (2026-06-12 治理「能利用的利用起来」: CLVTracker 反哺入场) ----

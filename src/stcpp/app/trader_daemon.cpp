@@ -1103,6 +1103,27 @@ BuildResult TraderDaemon::Build() {
         return out;
     });
 
+    // 拒单面板补 strategy 闸 block (2026-06-13 老板「拒单 0 条 修吧」): trading_loop RecentGateBlocks()
+    //   (内存 ring, mutex 保护) → RiskRejectRow, 经 risk_rejects() 接在 RM 拒单后。让"为何没下单"可见。
+    real_provider_->set_gate_blocks_fn([this]() -> std::vector<debug_api::RiskRejectRow> {
+        std::vector<debug_api::RiskRejectRow> out;
+        if (!trading_loop_) return out;
+        for (const auto& g : trading_loop_->RecentGateBlocks(50)) {
+            debug_api::RiskRejectRow r;
+            r.reason_code = g.gate;            // 闸名 (min_open_fair / stable_window / ...)
+            r.market_id = g.condition_id;
+            r.side = "BUY";                    // 闸挡的几乎全是入场买单
+            r.size = g.would_usd;              // 本想下的额度
+            r.price = g.ref_px;                // 参考价
+            r.rejected_ts_ns = g.ts_ns;
+            char sub[40];
+            std::snprintf(sub, sizeof(sub), "fair=%.4f", g.fair);
+            r.sub_reason = sub;                // 决策 fair (前端可读"被哪个闸以什么 fair 挡的")
+            out.push_back(std::move(r));
+        }
+        return out;
+    });
+
     // [mark-staleness fix 2026-06-05] /api/v1/positions 回调: trading_loop positions_mtm() (per-token 真账本
     //   + 当前 live 簿, 与 /account 同源) → HoldingView。修旧 LedgerSnapshotHub 路径的陈旧 mark + YES/NO 误标。
     real_provider_->set_positions_fn([this]() -> std::vector<debug_api::HoldingView> {

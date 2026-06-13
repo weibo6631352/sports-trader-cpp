@@ -286,6 +286,10 @@ public:
     // [mark-staleness fix 2026-06-05] /api/v1/positions 回调: daemon 注入 lambda (捕获 trading_loop, 调
     //   positions_mtm() → per-token live MTM + YES/NO)。注入时 positions() 走它, 不再读冻结的 LedgerSnapshotHub。
     void set_positions_fn(std::function<std::vector<HoldingView>()> fn) { positions_fn_ = std::move(fn); }
+    // gate block 回调 (2026-06-13 老板「拒单面板 0 条 修吧」): daemon 注入 lambda (捕获 trading_loop, 调
+    //   RecentGateBlocks → 翻成 RiskRejectRow)。risk_rejects() 把它接在 RM 拒单后 → "拒单"面板显示真正在挡单
+    //   的 strategy 闸 (RM 多已降 advisory 极少拒, 真过滤在闸)。前端零改。
+    void set_gate_blocks_fn(std::function<std::vector<RiskRejectRow>()> fn) { gate_blocks_fn_ = std::move(fn); }
     std::vector<PnlBucket> pnl_timeseries(std::int64_t window_sec, std::int64_t bucket_sec) const override {
         if (pnl_ts_fn_) return pnl_ts_fn_(window_sec, bucket_sec);
         return {};  // 未注入 → 空 (前端灰显)
@@ -584,33 +588,35 @@ public:
         return q;
     }
 
-    // ---- risk_rejects — 读 RmDebugSnapshot ring; 无数据 → 空 vector ----
+    // ---- risk_rejects — RM 拒单 ring (RmDebugSnapshot) + strategy 闸 block (gate_blocks_fn_) 合并 ----
+    //   2026-06-13: RM 多已降 advisory 极少拒 → 真正在挡单的是 strategy 闸 (min_open_fair/stable_window 等),
+    //   原面板只读 RM ring 显示"0 条" = 误导。合并闸 block 让"为何没下单"可见。
     std::vector<RiskRejectRow> risk_rejects() const override {
-        if (snap_ == nullptr) {
-            return {};  // 无 snapshot 接入 → 空
-        }
-        const std::vector<risk::RejectRow> raw = snap_->snapshot();
-        if (raw.empty()) {
-            return {};  // ring 空 (启动初期尚无拒单) → 空 vector (非 demo)
-        }
         std::vector<RiskRejectRow> out;
-        out.reserve(raw.size());
-        for (const auto& r : raw) {
-            RiskRejectRow row;
-            row.reason_code = r.reason_code;
-            row.market_id = r.market_id;
-            row.intent_ref = r.intent_ref;
-            row.side = r.side;
-            row.size = r.size_usdc;
-            row.price = r.price;
-            row.rejected_ts_ns = r.rejected_ts_ns;
-            // sub_reason: INVALID_INTENT 细分码 → 稳定字符串 (2026-06-10 观测缺口修复).
-            //   仅非 NONE(0) 时填, 让前端拒单表能区分 BOOK_TS_ZERO / TS_V2_STALE / ... 各根因.
-            if (r.sub_reason_code != 0) {
-                row.sub_reason = risk::to_string(
-                    static_cast<risk::InvalidIntentSubReason>(r.sub_reason_code));
+        if (snap_ != nullptr) {
+            const std::vector<risk::RejectRow> raw = snap_->snapshot();
+            out.reserve(raw.size());
+            for (const auto& r : raw) {
+                RiskRejectRow row;
+                row.reason_code = r.reason_code;
+                row.market_id = r.market_id;
+                row.intent_ref = r.intent_ref;
+                row.side = r.side;
+                row.size = r.size_usdc;
+                row.price = r.price;
+                row.rejected_ts_ns = r.rejected_ts_ns;
+                // sub_reason: INVALID_INTENT 细分码 → 稳定字符串 (2026-06-10 观测缺口修复).
+                //   仅非 NONE(0) 时填, 让前端拒单表能区分 BOOK_TS_ZERO / TS_V2_STALE / ... 各根因.
+                if (r.sub_reason_code != 0) {
+                    row.sub_reason = risk::to_string(
+                        static_cast<risk::InvalidIntentSubReason>(r.sub_reason_code));
+                }
+                out.push_back(std::move(row));
             }
-            out.push_back(std::move(row));
+        }
+        // strategy 闸 block 接在 RM 拒单后 (2026-06-13): 让面板显示真正在挡单的闸。
+        if (gate_blocks_fn_) {
+            for (auto& gb : gate_blocks_fn_()) out.push_back(std::move(gb));
         }
         return out;
     }
@@ -768,6 +774,7 @@ private:
     std::function<std::vector<FillView>(const std::string&)> fills_fn_{};  // 成交流水回调(market过滤; daemon注入)
     std::function<std::vector<PnlBucket>(std::int64_t, std::int64_t)> pnl_ts_fn_{};  // 净值时序回调 (daemon 注入)
     std::function<std::vector<HoldingView>()> positions_fn_{};  // per-token live 持仓回调 (daemon 注入; 空→读 ledger_hub_)
+    std::function<std::vector<RiskRejectRow>()> gate_blocks_fn_{};  // strategy 闸 block 回调 (daemon 注入; 合进 risk_rejects)
     mutable std::mutex mapping_mtx_;                       // 保护 mapping_snapshot_ (低频写/读)
     MappingStatusReport mapping_snapshot_;                // daemon push 的映射快照
     // R-4 (老周 D-2): meta_mu_ 守护 token_map_/events_/catalog_ — R-6 周期重发现热刷, HTTP 线程读。

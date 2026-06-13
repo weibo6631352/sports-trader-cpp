@@ -494,8 +494,17 @@ void TradingLoop::RecoverMissedFill(const polymarket::UserFill& uf) {
     ev.order_id = uf.order_id;
     ev.event_ts_ns = ev.data_source_ts_ns = ev.ingestion_ts_ns = uf.data_source_ts_ns;
     ev.as_of_ts_ns = now_ns;
-    const strategy::Outcome oc = uf.is_yes ? strategy::Outcome::Yes : strategy::Outcome::No;
-    position_ledger_.apply_fill(uf.condition_id, uf.token_id, oc, ev, "sharp");
+    // YES/NO 必由 token_id 比对 catalog 定 (2026-06-13 真钱事故: WSS outcome 字段是选手/队名, 非字面 "YES"/
+    //   "NO" → 体育盘 is_yes 恒 false → 全标 NO → 面板拿错边 sharp 比 → 健康仓显示成"反向崩盘")。
+    //   名字串 is_yes 仅 catalog miss 时兜底。LoadPaperCatalog 是线程安全 RCU 快照。
+    strategy::Outcome oc_resolved = uf.is_yes ? strategy::Outcome::Yes : strategy::Outcome::No;
+    if (const auto cat = LoadPaperCatalog(); cat != nullptr) {
+        if (const auto it = cat->find(uf.condition_id); it != cat->end()) {
+            if (uf.token_id == it->second.tokens.first) oc_resolved = strategy::Outcome::Yes;
+            else if (uf.token_id == it->second.tokens.second) oc_resolved = strategy::Outcome::No;
+        }
+    }
+    position_ledger_.apply_fill(uf.condition_id, uf.token_id, oc_resolved, ev, "sharp");
     if (uf.is_buy)
         engine_by_token_.emplace(uf.token_id, "sharp");
     RememberBoundedOrderId(synced_order_ids_, synced_order_fifo_, uf.order_id, kOrderIdMemoryCap);  // 防同 order 其它 trade 再走兜底误判
@@ -506,7 +515,7 @@ void TradingLoop::RecoverMissedFill(const polymarket::UserFill& uf) {
         FillRow fr;
         fr.as_of_ts_ns = ev.as_of_ts_ns;
         fr.condition_id = uf.condition_id;
-        fr.is_yes = uf.is_yes;
+        fr.is_yes = (oc_resolved == strategy::Outcome::Yes);  // token_id 比对 catalog 定 (非名字串)
         fr.is_buy = uf.is_buy;
         fr.is_close = false;
         fr.price = uf.price;
@@ -2889,6 +2898,13 @@ void TradingLoop::LogGateBlock(const std::string& cond, const char* gate, double
                                 "\"px\":%.4f,\"would\":%.2f}\n",
                                 static_cast<long long>(now), cond.c_str(), gate, fair, ref_px, would_usd);
     if (n > 0) journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(n)));
+    // 内存 ring (2026-06-13 老板「拒单面板 0 条 修吧」): 节流后 (只录 distinct cond|gate/5min) 推一行,
+    //   供 /risk/rejects 面板显示真正在挡单的 strategy 闸。短锁, 无 IO (journal 已异步)。
+    {
+        std::lock_guard<std::mutex> lk(gate_block_mu_);
+        gate_block_ring_.push_back(GateBlockView{now, cond, gate, fair, ref_px, would_usd});
+        if (gate_block_ring_.size() > kGateBlockRingCap) gate_block_ring_.pop_front();
+    }
 }
 
 // ---------------------------------------------------------------------------
