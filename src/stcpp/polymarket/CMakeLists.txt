@@ -46,6 +46,11 @@ add_subdirectory(gate)
 add_subdirectory(wire)
 add_subdirectory(wss)
 
+# GM 2026-06-13 一次性诊断: daemon live 执行链断点定位探针 (gate→executor→adapter→apply_fill 单发)
+add_executable(stcpp_live_chain_probe live/live_chain_probe.cpp)
+target_link_libraries(stcpp_live_chain_probe
+    PRIVATE stcpp_polymarket_live stcpp_polymarket_order_gate stcpp_risk stcpp_execution_paper CURL::libcurl)
+
 # 小冯 Wave 79 (W9 W3): CLOB WSS subscriber — market + user channel
 #   endpoint: wss://ws-subscriptions-clob.polymarket.com/ws/{market,user}
 #   spec: 老李 W9 W2 laoli-w9-wss-subscriber-impl-spec-v1.md
