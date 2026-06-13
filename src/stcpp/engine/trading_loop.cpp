@@ -1934,6 +1934,10 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     const control::ControlAction action = control::Decide(cin);
     if (!action.act) {
         // 控制器决定本 tick 不动 (死区/限价不可成交/已达目标/fail-closed)。不产 intent。
+        // gate 反事实 (2026-06-13 老板「限价不追也接日志, 量化纪律价值」): 仅记【真错过】——
+        //   NotMarketable(ask>买保留=不追) + 想加仓(target>current)。死区/已达目标/卖侧不算错过, 不记。
+        if (action.reason == control::NoActReason::NotMarketable && target_mag > current_pusd)
+            LogGateBlock(condition_id, "no_chase", p_fair_side, exec_ask, target_mag - current_pusd);
         stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
         return;
     }

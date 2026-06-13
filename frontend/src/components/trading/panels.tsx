@@ -548,8 +548,9 @@ function ExpandQuotePanel(props: { quote: Quote | null; conditionId: string }) {
 
 function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; perMarketPnl: number | null; conditionId: string }) {
   // 持仓管理 (2026-06-05 老板「持仓管理怎么体现: 凯利系数 / 希望持多少yes多少no / 实际持有 + 估值」):
-  //   凯利系数 + 控制器目标仓位(希望持) vs 实际持仓 + 估值, 按 YES/NO 两边列清楚。数据: quote(凯利/目标/
-  //   选边) + posRows(实际/mark)。希望持: 被选边(fair≥市场=YES, 否则NO)= 凯利目标 suggested_notional, 另一边 0。
+  //   凯利系数 + 凯利理想(门前 suggested_notional) vs 实际持仓 + 估值, 按 YES/NO 两边列清楚。数据: quote +
+  //   posRows。2026-06-13 老板「希望持是谁输出的/从来没成功过」: 标签改「凯利理想」并 tooltip 讲清
+  //   门前理想 vs 门后目标(target_signed) 两阶段 — 宽 vig 盘理想>0 但 reservation 不追 → 目标 0 是正确拦截。
   const quote = () => state.conditionCache[props.conditionId]?.quote ?? null;
   const num = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) ? n : NaN; };
   const kelly = () => { const q = quote(); return q ? num(q.kelly_fraction) : NaN; };
@@ -635,7 +636,7 @@ function ExpandPosPanel(props: { posRows: Position[]; rejectRows: RiskReject[]; 
       }>
         <div class="v8-pos-row" style={{ gap: '8px', color: '#888', 'font-size': '10px' }}>
           <span style={{ width: '32px' }}>边</span>
-          <span style={{ width: '64px', 'text-align': 'right' }} title="控制器凯利目标仓位">希望持</span>
+          <span style={{ width: '64px', 'text-align': 'right' }} title="凯利 sizing 的门前理想仓位 (suggested_notional, 未过入场门); 与下方「目标」(控制器门后真值) 不同 — 理想>0 而目标=0 即被门挡, 看诊断行">凯利理想</span>
           <span style={{ width: '64px', 'text-align': 'right' }} title="账本当前实际持仓">实际持</span>
           <span style={{ 'margin-left': 'auto' }} title="市值 = 实际持仓 × 标记价; 括号内为浮盈 (mark − 入场) × 持仓">市值 (浮盈)</span>
         </div>
