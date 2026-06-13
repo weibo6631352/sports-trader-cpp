@@ -112,8 +112,10 @@ struct VirtualFill {
     MatchReject reject{MatchReject::Ok};
 
     double fill_price{0.0};  // VWAP, SlippageModel 出 (Mode A++) 或 clob 估算 (Mode A)
-    // A1 (老郭钳-3): micro pUSD (1e-6), signed; = to_micro_pusd(order.size_usdc * fill_rate)。
-    //   double→micro 转换唯一走 to_micro_pusd() (禁手写 ×1e6); ledger 直存无截断 (消 <1pUSD 丢仓)。
+    // A1 (老郭钳-3): micro (1e-6), signed; ledger 直存无截断 (消 <1pUSD 丢仓)。
+    // ⚠ 同名异义 (L1 backlog, 早于本会话; 各模式内自洽): paper = notional pUSD micro (to_micro_pusd(
+    //   order.size_usdc × fill_rate)); live = 股数 micro (LiveExecutorAdapter: filled_shares × 1e6)。
+    //   下游 (apply_fill/account_equity/RecoverMissedFill) 在各模式内口径一致, 但字段名 `_usdc` 对 live 误导。
     std::int64_t fill_size_usdc{0};
     double expected_fill_rate{0.0};
     double p_fill_clamped{0.0};  // floor/cap 后的 Bernoulli 参数
@@ -150,12 +152,9 @@ struct VirtualFill {
 };
 
 // VirtualFill ABI 校验 (paper engine 内部 struct, 不跨 binary, 但 sizeof 要显式锁定防意外 padding)
-// Wave 3: outcome(1) + mode_tag(1) → 两字节连续, 后接 6B pad 对齐 int64, 共 120B 不变.
-// 实测布局 (clang++ -std=c++20 arm64/x86-64):
-//   offset  0: reject(1)  →  pad7 → fill_price@8 .. p_fill_clamped@32(+8)
-//   offset 40: slippage_bps(4), bernoulli_draw(1), audit_wal_kind(1) → pad 0
-//   offset 46: market_id[32]@46 → outcome@78(1) → mode_tag@79(1) → pad6
-//   event_ts_ns@86? — 实际依赖编译器; 更新 sizeof 以编译时实测为准
+// 2026-06-13: 末尾 +order_id[72] (Phase 2 对账兜底, live 填 CLOB order_id) → 120B → 192B。
+//   前段布局不变 (reject/价/量/4ts/market_id[32]/outcome/mode_tag); order_id[72] 接在 fill_ts_ns 后。
+//   更新 sizeof 以编译时实测为准。
 static_assert(sizeof(VirtualFill) == 192,
               "VirtualFill sizeof 改变 — 确认后更新此断言 (paper engine 内部 struct, R-2 not affected)。"
               "2026-06-13: +order_id[72] (Phase 2 对账兜底) 120→192。");

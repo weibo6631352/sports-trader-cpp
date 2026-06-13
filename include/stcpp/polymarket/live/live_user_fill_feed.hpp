@@ -102,9 +102,12 @@ public:
         std::vector<std::string> fresh;
         {
             std::lock_guard<std::mutex> lk(sub_mu_);
-            for (const auto& c : condition_ids)
+            for (const auto& c : condition_ids) {
+                if (sub_conditions_.size() >= kSubCap)
+                    break;  // L4: 防多周长跑无界增长 (实际不可达, 几百盘/会话); 不淘汰旧订阅 → 不丢持仓盘成交
                 if (sub_conditions_.insert(c).second)
                     fresh.push_back(c);
+            }
         }
         if (!fresh.empty() && transport_ && transport_->IsConnected())
             transport_->AsyncSendText(MakeSubscribeFrame(fresh));
@@ -246,34 +249,76 @@ private:
         return out;
     }
 
-    // ---- 极简 JSON 字段抽取 (P-02: 数字用 from_chars, locale 无关; 字符串/数字 wire 上均可能带引号) ----
-    // "key":"value"  或  "key":value  → 返回 value 的 string_view (字符串去引号)。无 key → 空。
+    // ---- JSON 顶层字段抽取 (S2 修: brace-depth 感知, 只取 depth==1 的 key) ----
+    //   防 maker_orders[] 等嵌套对象内的同名字段 (price/asset_id/outcome/fee...) 污染顶层抽取。
+    //   不依赖 key 顺序 (JSON 不保证); 跳过嵌套对象/数组 + 字符串值。P-02: 数字由 ExtractNum 走 from_chars。
+    //   返回顶层 "key" 的值 string_view (字符串去引号 / 裸值原样)。无则空。
     [[nodiscard]] static std::string_view ExtractStr(std::string_view body, std::string_view key) noexcept {
-        std::string pat;
-        pat.reserve(key.size() + 3);
-        pat.push_back('"');
-        pat.append(key);
-        pat.append("\":");
-        const auto kpos = body.find(pat);
-        if (kpos == std::string_view::npos)
-            return {};
-        std::size_t i = kpos + pat.size();
-        while (i < body.size() && (body[i] == ' ' || body[i] == '\t'))
-            ++i;
-        if (i >= body.size())
-            return {};
-        if (body[i] == '"') {
-            ++i;
-            const std::size_t start = i;
-            while (i < body.size() && body[i] != '"')
+        const std::size_t n = body.size();
+        int depth = 0;
+        std::size_t i = 0;
+        while (i < n) {
+            const char c = body[i];
+            if (c == '{' || c == '[') {
+                ++depth;
                 ++i;
-            return body.substr(start, i - start);
-        }
-        // 裸值 (数字/bool/null): 到 , } ] 或空白 止。
-        const std::size_t start = i;
-        while (i < body.size() && body[i] != ',' && body[i] != '}' && body[i] != ']' && body[i] != ' ')
+                continue;
+            }
+            if (c == '}' || c == ']') {
+                --depth;
+                ++i;
+                continue;
+            }
+            if (c == '"') {
+                // 扫一个字符串 token [ks, j)
+                const std::size_t ks = i + 1;
+                std::size_t j = ks;
+                while (j < n) {
+                    if (body[j] == '\\') {
+                        j += 2;
+                        continue;
+                    }
+                    if (body[j] == '"')
+                        break;
+                    ++j;
+                }
+                // 仅 depth==1 且其后紧跟 ':' → 顶层 key (值后跟 , } 不会误判)。
+                if (depth == 1) {
+                    std::size_t p = (j < n) ? j + 1 : n;
+                    while (p < n && (body[p] == ' ' || body[p] == '\t'))
+                        ++p;
+                    if (p < n && body[p] == ':' && body.substr(ks, j - ks) == key) {
+                        ++p;  // 跳 ':'
+                        while (p < n && (body[p] == ' ' || body[p] == '\t'))
+                            ++p;
+                        if (p >= n)
+                            return {};
+                        if (body[p] == '"') {
+                            const std::size_t vs = p + 1;
+                            std::size_t q = vs;
+                            while (q < n) {
+                                if (body[q] == '\\') {
+                                    q += 2;
+                                    continue;
+                                }
+                                if (body[q] == '"')
+                                    break;
+                                ++q;
+                            }
+                            return body.substr(vs, (q < n ? q : n) - vs);
+                        }
+                        const std::size_t vs = p;
+                        while (p < n && body[p] != ',' && body[p] != '}' && body[p] != ']' && body[p] != ' ')
+                            ++p;
+                        return body.substr(vs, p - vs);
+                    }
+                }
+                i = (j < n) ? j + 1 : n;  // 跳过本字符串 token (非目标 key / 值 / 嵌套)
+                continue;
+            }
             ++i;
-        return body.substr(start, i - start);
+        }
+        return {};
     }
 
     [[nodiscard]] static double ExtractNum(std::string_view body, std::string_view key) noexcept {
@@ -288,6 +333,7 @@ private:
 
     static constexpr std::size_t kMaxQueue = 4096;  // loop 每 tick 排空, 永不该满
     static constexpr std::size_t kSeenCap = 20000;  // 去重窗 (成交低频 → 覆盖数天)
+    static constexpr std::size_t kSubCap = 5000;    // 订阅集上限 (防多周长跑无界; 几百盘/会话远不可达)
 
     std::unique_ptr<polymarket::wss::IWssTransport> transport_;
     const std::string api_key_, api_secret_, api_passphrase_;

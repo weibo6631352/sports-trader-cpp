@@ -202,10 +202,14 @@ struct DeadbandConfig {
         //        会把仓位过冲 target/cap (实测 TC2: 9.0→10.5 越界)。到此已收敛在 5 股粒度内, 跳过即可。
         //   死区(line 183, min_rebalance)仍在前: Kelly < 死区($1)的近零 edge 信号根本不进场。卖侧不设此门。
         if (in.min_order_pusd > 0.0 && buy_sz < in.min_order_pusd) {
+            if (cap < in.min_order_pusd) {
+                a.reason = NoActReason::BelowThreshold;  // M3: cap 撑不起 5 股 → 凑整也是 <5 股废单(CLOB拒), 不下
+                return a;
+            }
             if (current < in.min_order_pusd) {
-                buy_sz = std::min(in.min_order_pusd, cap);  // 新开仓: 凑够 5 股
+                buy_sz = in.min_order_pusd;  // 新开仓: 凑够 5 股 (cap ≥ min_order 已保证不超 cap)
             } else {
-                a.reason = NoActReason::BelowThreshold;       // 存量残差 < 5 股: 已收敛, 不过冲
+                a.reason = NoActReason::BelowThreshold;  // 存量残差 < 5 股: 已收敛, 不过冲
                 return a;
             }
         }

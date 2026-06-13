@@ -134,16 +134,17 @@ TEST(PositionController, PC06b_MinOrderRoundsUpNotSkip) {
     EXPECT_DOUBLE_EQ(a.size_pusd, 4.0) << "$1.5 凑够 5 股的 $4";
 }
 
-// PC-06c: 凑整不超 per_order_cap — round-up target 撞 cap 时 clamp 到 cap
-TEST(PositionController, PC06c_MinOrderRoundUpClampedByCap) {
+// PC-06c: cap 撑不起 5 股 → 不下废单 (M3 修, 2026-06-13): cap < min_order 时凑整也是 <5 股, CLOB 必拒,
+//   故不下 (BelowThreshold), 而非下个注定被拒的单。(生产 per_order_cap $10 > 5股$5 不可达; 防隐雷。)
+TEST(PositionController, PC06c_NarrowCapBelowMinShareSkips) {
     auto in = base();
     in.target_pusd = 1.5;
     in.current_pusd = 0.0;
     in.min_order_pusd = 4.0;
     in.per_order_cap_pusd = 3.0;  // cap < 5 股的钱 (极端窄 cap)
     const auto a = Decide(in);
-    EXPECT_TRUE(a.act);
-    EXPECT_DOUBLE_EQ(a.size_pusd, 3.0) << "凑整不超 cap";
+    EXPECT_FALSE(a.act) << "cap 撑不起 5 股不应下废单";
+    EXPECT_EQ(a.reason, NoActReason::BelowThreshold);
 }
 
 // PC-06d: 存量残差不凑整 (防过冲) — 已持仓 ≥5 股, 残差 gap < 5 股 → 跳过 (收敛在 5 股粒度, 不过冲 target)

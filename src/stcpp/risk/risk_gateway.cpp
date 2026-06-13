@@ -432,7 +432,7 @@ bool RiskGateway::check_invalid_intent_(OrderIntent const& it, RiskDecision& d) 
     if (it.condition_id.empty())
         return fail(InvalidIntentSubReason::MISSING_CONDITION_ID);
 
-    // (h) v0.5: token_id 非空 + 格式 (uint256 纯数字, ≤77 位)
+    // (h) v0.5: token_id 非空 + 格式 (uint256 纯数字, ≤78 位; 2^256-1 = 78 位十进制, 见 :97 off-by-one 修)
     if (it.token_id.empty())
         return fail(InvalidIntentSubReason::MISSING_TOKEN_ID);
     if (!is_valid_token_id(it.token_id))

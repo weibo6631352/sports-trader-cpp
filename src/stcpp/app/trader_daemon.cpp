@@ -1429,7 +1429,7 @@ void TraderDaemon::Start() {
                     cids.push_back(cid);
                 user_fill_feed_->Start("wss://ws-subscriptions-clob.polymarket.com/ws/user", cids);
                 if (trading_loop_)
-                    trading_loop_->SetUserFillFeed(user_fill_feed_.get());  // shadow (log+对账, 不入账)
+                    trading_loop_->SetUserFillFeed(user_fill_feed_.get());  // 对账 + 漏记兜底 (自校验闸保护)
                 user_fill_watchdog_thread_ =
                     std::jthread([this](std::stop_token st) { UserFillWatchdogLoop(st); });
                 std::printf("[trader_daemon] [live] user 频道成交接收启动 (对账+兜底: 收成交→比对sync, 漏记则补; 订阅 %zu condition)\n",
@@ -1437,7 +1437,7 @@ void TraderDaemon::Start() {
             } else {
                 std::fprintf(stderr,
                              "[trader_daemon] [live] ⚠ user 频道未启 (POLYMARKET_API_KEY/SECRET/PASSPHRASE 缺) "
-                             "— live 成交无异步回执 (Phase 2 shadow 不可用; 不影响 sync 记账)\n");
+                             "— live 成交无异步回执 (Phase 2 对账兜底不可用; sync 仍正常记账, 仅失去回执丢失的兜底)\n");
             }
         }
     }

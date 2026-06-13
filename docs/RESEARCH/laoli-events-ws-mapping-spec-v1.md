@@ -154,7 +154,7 @@ outcomes[i]  ↔  outcomePrices[i]  ↔  clobTokenIds[i]
 
 | 来源字段 | 类型 | 建议 TokenInfo 字段 | 语义说明 |
 |---|---|---|---|
-| `clobTokenIds[i]` (gamma) 或 `tokens[i].token_id` (clob) | uint256 string (无 0x 前缀, 十进制, ≤77 位) | `token_id` | **CLOB 所有操作的主键**: 订阅 WS / 查 orderbook / 挂单 |
+| `clobTokenIds[i]` (gamma) 或 `tokens[i].token_id` (clob) | uint256 string (无 0x 前缀, 十进制, ≤78 位; 2^256-1 是 78 位十进制) | `token_id` | **CLOB 所有操作的主键**: 订阅 WS / 查 orderbook / 挂单 |
 | `outcomes[i]` (gamma) 或 `tokens[i].outcome` (clob) | string | `outcome_label` | outcome 名称, e.g. "Yes" / "No" / "Over 220.5" |
 | `outcomePrices[i]` (gamma, 缓存) 或 `tokens[i].price` (clob) | float | `price_cached` | 当前市价 (0~1), 有延迟, 实时价从 WS |
 | `tokens[i].winner` (clob 专有) | bool | `is_winner` | 结算前 false; 结算后赢方 token = true |
@@ -164,7 +164,7 @@ outcomes[i]  ↔  outcomePrices[i]  ↔  clobTokenIds[i]
 
 | 维度 | condition_id | token_id (= asset_id) |
 |---|---|---|
-| 类型 | bytes32 hex, "0x" 前缀, 66 字符 | uint256 十进制 string, 无 "0x", ≤77 位 |
+| 类型 | bytes32 hex, "0x" 前缀, 66 字符 | uint256 十进制 string, 无 "0x", ≤78 位 |
 | 粒度 | 盘口 (Market) 级 | 单边 (Outcome) 级 |
 | 1:N | 1 condition_id → 2 token_id | 1 token_id → 1 独立 orderbook |
 | 用于下单 | EIP-712 Order 需要两者 (condition_id 在 user channel 订阅; token_id 在 Order.tokenId) | `tokenId` 字段 |

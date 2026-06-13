@@ -121,6 +121,26 @@ TEST(LiveUserFillFeed, SanityGuards) {
         TradeFrame("u", "CONFIRMED", "BUY", "YES", "0", "5"), 1, f));
 }
 
+// S2: maker_orders[] 嵌套同名字段不得污染顶层抽取 (depth-aware)。maker 故意排在顶层字段【之前】
+//   + 带不同的 price/outcome/asset_id/size → 旧的平铺 find 会抓 maker 的; depth-aware 必取顶层。
+TEST(LiveUserFillFeed, MakerOrdersFieldsDoNotContaminate) {
+    const std::string frame =
+        R"({"event_type":"trade","type":"TRADE","id":"TX","status":"CONFIRMED",)"
+        R"("maker_orders":[{"order_id":"mk1","asset_id":"tok-MK","price":"0.20","outcome":"NO","size":"99","fee":"9"}],)"
+        R"("market":"0xTOP","asset_id":"tok-TOP","outcome":"YES","side":"BUY","price":"0.80",)"
+        R"("size":"6.4","fee":"0.03","taker_order_id":"ord-TOP","timestamp":"1700000000000"})";
+    UserFill f;
+    ASSERT_TRUE(LiveUserFillFeed::ParseConfirmedTrade(frame, 1, f));
+    EXPECT_EQ(f.token_id, "tok-TOP") << "不得抓 maker 的 asset_id";
+    EXPECT_EQ(f.condition_id, "0xTOP");
+    EXPECT_TRUE(f.is_yes) << "不得抓 maker 的 outcome=NO";
+    EXPECT_TRUE(f.is_buy);
+    EXPECT_DOUBLE_EQ(f.price, 0.80) << "不得抓 maker 的 price=0.20";
+    EXPECT_DOUBLE_EQ(f.size, 6.4) << "不得抓 maker 的 size=99";
+    EXPECT_DOUBLE_EQ(f.fee, 0.03) << "不得抓 maker 的 fee=9";
+    EXPECT_EQ(f.order_id, "ord-TOP");
+}
+
 // ---- 全链路 (mock transport → 去重 → 队列) -----------------------------------
 
 TEST(LiveUserFillFeed, EndToEndConfirmOnceAndDedup) {

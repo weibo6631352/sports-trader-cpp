@@ -558,6 +558,11 @@ public:
     // bench/test seam (老姜性能评审): 同步跑一次 TickAll, 精确测单 tick 延迟 (不经 RunLoop 的 sleep)。
     //   不起 loop_thread_; 调用方负责先注入 catalog + hub book。仅用于 benchmark/单测, 生产走 Start()。
     void TickAllForBench() { TickAll(); }
+    // 测试钩子 (Phase 2 对账兜底): 预置一个「sync 已记」的 order_id (模拟同步路径已记账此单)。
+    void SeedSyncedOrderIdForTest(const std::string& order_id) {
+        RememberBoundedOrderId(synced_order_ids_, synced_order_fifo_, order_id, 20000);
+    }
+    void DrainUserFillsForTest() { DrainUserFills(); }
 
     // 引擎分账快照 (2026-06-12 老板「能区分开」; 线程安全拷贝)
     struct EngineSplit {
@@ -746,8 +751,8 @@ public:
     void SetScoreStore(const data::ScoreSnapshotStore* s) noexcept { score_store_ = s; }
 
     // Phase 2 (live 成交异步入账): 注入 CLOB user 频道成交接收器 (daemon 管生命周期; loop_thread 每 tick 排空)。
-    //   当前 = shadow (仅 log + 与 sync 路径对账, 不入账): sync 仍是真相源, 零风险验真实成交解析/去重。
-    //   验证通过后 flip (单独提交): DrainUserFills 改登持仓为唯一真相源 + 移除 ExecuteControllerSide 同步 apply_fill。
+    //   行为 = 对账 + 兜底: sync (FOK 回执) 为主真相源; WSS 收 CONFIRMED 成交按 order_id 比对, sync 漏记
+    //   (回执丢失) 则兜底补记 (RecoverMissedFill)。自校验闸: order_id 格式经匹配证实前只告警不补 (防双记账)。
     void SetUserFillFeed(polymarket::LiveUserFillFeed* feed) noexcept { user_fill_feed_ = feed; }
 
     // 事件驱动触发 (2026-06-04 老板「别轮询, 直接触发更快」): 数据源 (WSS book / 149hz poll / 赔率) 到达即调。
@@ -1132,6 +1137,10 @@ private:
     void DrainUserFills();
     // Phase 2: WSS 兜底补记一笔 sync 漏掉的成交 (apply_fill + RM + 恢复流水 + 响亮日志)。
     void RecoverMissedFill(const polymarket::UserFill& uf);
+    // 卖出 realize PnL 入账 (4 处: cum_realized / 逐盘 / trade_returns / gate 记分牌)。返回本笔 realized。
+    //   ⚠ 必须在 apply_fill 【前】调 (读 apply_fill 前的 avg_entry)。sync 卖出 + WSS 兜底卖出共用, 防漂移。
+    double BookSellRealized(const std::string& condition_id, const std::string& token_id, double fill_price,
+                           double sold_qty, std::int64_t as_of_now);
     // order_id 有界记忆 (FIFO 淘汰; loop_thread only 无锁)。
     static void RememberBoundedOrderId(std::unordered_set<std::string>& s, std::deque<std::string>& fifo,
                                        const std::string& id, std::size_t cap);

@@ -44,6 +44,7 @@
 #include "stcpp/data/score_snapshot_store.hpp"  // A1: 真实比分注入
 #include "stcpp/engine/trading_loop.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
+#include "stcpp/polymarket/live/live_user_fill_feed.hpp"  // Phase 2 对账兜底集成测试
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/ledger_snapshot_hub.hpp"
 #include "stcpp/risk/position_ledger.hpp"
@@ -2115,4 +2116,99 @@ TEST_F(TradingLoopTest, LP01_LedgerSnapshotRoundTrip) {
     EXPECT_NEAR(pos_b->avg_entry_price, pos_a->avg_entry_price, 1e-9);
     EXPECT_GE(loop_b.clv_report().n_pending_fills, 1u) << "CLV pending 应恢复";
     std::remove(snap.c_str());
+}
+
+// ===========================================================================
+// Phase 2 对账兜底集成测试 (M1): WSS user 频道成交 → DrainUserFills 对账/兜底/自校验闸。
+//   覆盖 reviewer 点名的 double-book/漏记 核心判定 (此前零测试)。
+// ===========================================================================
+namespace {
+// 最小 mock IWssTransport: 捕获 OnTextFrame, 让测试主动触发收帧。
+class UFMockTransport final : public stcpp::polymarket::wss::IWssTransport {
+public:
+    bool AsyncConnect(std::string_view) override {
+        if (on_conn_) on_conn_();
+        connected_ = true;
+        return true;
+    }
+    bool AsyncSendText(std::string_view) override { return true; }
+    void Close() override { connected_ = false; }
+    void SetOnTextFrame(OnTextFrame cb) override { on_text_ = std::move(cb); }
+    void SetOnConnected(OnConnected cb) override { on_conn_ = std::move(cb); }
+    void SetOnDisconnected(OnDisconnected) override {}
+    [[nodiscard]] bool IsConnected() const noexcept override { return connected_; }
+    void Fire(std::string_view p) { if (on_text_) on_text_(p, 1'000'000'000LL); }
+private:
+    OnTextFrame on_text_;
+    OnConnected on_conn_;
+    bool connected_{false};
+};
+// CONFIRMED trade 帧 (token=cond-test-001 的 YES token 1001, 与 fixture token_map 对齐)。
+std::string UFConfirmed(const std::string& trade_id, const std::string& order_id, const std::string& side,
+                        const std::string& size) {
+    return std::string(R"({"event_type":"trade","type":"TRADE","id":")") + trade_id + R"(","status":"CONFIRMED",)" +
+           R"("market":"cond-test-001","asset_id":"1001","outcome":"YES","side":")" + side +
+           R"(","price":"0.80","size":")" + size + R"(","fee":"0.03","taker_order_id":")" + order_id +
+           R"(","timestamp":"1700000000000"})";
+}
+}  // namespace
+
+// M1-a: 自校验闸 — matched==0 (order_id 格式未证实) → 疑似漏记只告警, 【不动账本】(防双记账灾难)。
+TEST_F(TradingLoopTest, UserFill_UnverifiedGate_NoBookBeforeMatch) {
+    loop_ = MakeLoop();
+    auto tx = std::make_unique<UFMockTransport>();
+    UFMockTransport* m = tx.get();
+    polymarket::LiveUserFillFeed feed(std::move(tx), "K", "S", "P");
+    feed.Start("wss://ws-subscriptions-clob.polymarket.com/ws/user", {"cond-test-001"});
+    loop_->SetUserFillFeed(&feed);
+
+    m->Fire(UFConfirmed("T1", "ORD-NEVER-SYNCED", "BUY", "5"));  // sync 从没记过此 order
+    loop_->DrainUserFillsForTest();
+    // matched==0 → 不补记 → 账本无仓
+    EXPECT_FALSE(position_ledger_->get_position("1001").has_value())
+        << "order_id 匹配未证实前绝不动账本";
+}
+
+// M1-b: 正常对账 — sync 已记此 order → WSS 来同 order 不重复记 (无 double-book) + 解锁 matched 闸。
+TEST_F(TradingLoopTest, UserFill_SyncedOrder_NoDoubleBook) {
+    loop_ = MakeLoop();
+    auto tx = std::make_unique<UFMockTransport>();
+    UFMockTransport* m = tx.get();
+    polymarket::LiveUserFillFeed feed(std::move(tx), "K", "S", "P");
+    feed.Start("wss://ws-subscriptions-clob.polymarket.com/ws/user", {"cond-test-001"});
+    loop_->SetUserFillFeed(&feed);
+
+    loop_->SeedSyncedOrderIdForTest("ORD-A");  // 模拟 sync 已记账此单
+    m->Fire(UFConfirmed("T1", "ORD-A", "BUY", "5"));
+    loop_->DrainUserFillsForTest();
+    // sync 已记 → 对账通过, 不重复补记 → 账本仍无 (本测没真走 sync apply_fill, 只验"不重记")
+    EXPECT_FALSE(position_ledger_->get_position("1001").has_value())
+        << "sync 已记的 order, WSS 不得重复补记 (防 double-book)";
+}
+
+// M1-c: 兜底补记 — matched 解锁后, sync 漏记的 order → WSS 补记一次 (账本出仓) + 同 trade 去重不重补。
+TEST_F(TradingLoopTest, UserFill_RecoverMissedAfterMatchUnlock) {
+    loop_ = MakeLoop();
+    auto tx = std::make_unique<UFMockTransport>();
+    UFMockTransport* m = tx.get();
+    polymarket::LiveUserFillFeed feed(std::move(tx), "K", "S", "P");
+    feed.Start("wss://ws-subscriptions-clob.polymarket.com/ws/user", {"cond-test-001"});
+    loop_->SetUserFillFeed(&feed);
+
+    // 先用一笔 synced 成交解锁 matched 闸 (证明 order_id 格式一致)
+    loop_->SeedSyncedOrderIdForTest("ORD-OK");
+    m->Fire(UFConfirmed("T0", "ORD-OK", "BUY", "5"));
+    loop_->DrainUserFillsForTest();
+    // 现在 matched>0 → 一笔 sync 漏记的 order 应被兜底补记
+    m->Fire(UFConfirmed("T1", "ORD-MISSED", "BUY", "5"));
+    loop_->DrainUserFillsForTest();
+    auto pos = position_ledger_->get_position("1001");
+    ASSERT_TRUE(pos.has_value()) << "matched 解锁后, sync 漏记的成交应被兜底补记";
+    EXPECT_EQ(pos->size_usdc, 5'000'000) << "补记 5 股 (micro)";
+    const auto sz_after_first = pos->size_usdc;
+    // 同 trade_id 再来 → feed 去重 → 不重复补记
+    m->Fire(UFConfirmed("T1", "ORD-MISSED", "BUY", "5"));
+    loop_->DrainUserFillsForTest();
+    EXPECT_EQ(position_ledger_->get_position("1001")->size_usdc, sz_after_first)
+        << "同 trade_id 去重, 不得重复补记";
 }

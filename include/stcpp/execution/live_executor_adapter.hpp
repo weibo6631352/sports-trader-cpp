@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <string>
 
@@ -64,6 +65,10 @@ class LiveExecutorAdapter final : public execution::IOrderExecutor {
         f.fill_size_usdc = static_cast<std::int64_t>(std::llround(r.filled_shares * 1'000'000.0));
         f.expected_fill_rate = 1.0;
         // CLOB order_id → fill (Phase 2 对账兜底: 与 WSS user 频道 taker_order_id 匹配判 sync 是否已记)。
+        //   CLOB order hash = 0x+64hex = 66 字符 < 71; 超长会截断 → 与 WSS 永不匹配 (该单总走兜底), 故 warn 不静默。
+        if (r.order_id.size() > f.order_id.size() - 1)
+            std::fprintf(stderr, "[live_adapter] ⚠ order_id 超 %zu 字符被截断 (len=%zu) — 对账兜底将失配此单\n",
+                         f.order_id.size() - 1, r.order_id.size());
         const std::size_t n = std::min(r.order_id.size(), f.order_id.size() - 1);
         std::memcpy(f.order_id.data(), r.order_id.data(), n);
         f.order_id[n] = '\0';

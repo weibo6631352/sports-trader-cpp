@@ -388,6 +388,30 @@ void TradingLoop::JournalFill(const FillRow& fr) {
 // Phase 2 对账: synced order_id 记忆窗 (成交低频 → 覆盖数天; 防回执晚到/同 order 多 trade 误判兜底)。
 static constexpr std::size_t kOrderIdMemoryCap = 20000;
 
+// BookSellRealized — 卖出 realize PnL 入账 (sync 卖出 + WSS 兜底卖出共用, 防漂移)。
+//   ⚠ 必须在 apply_fill 【前】调 (读 apply_fill 前的 avg_entry; 减仓不改 avg 但前置取更稳)。
+//   公式与 SettleToken / unrealized 同源: (卖价 − 均入) × 卖出 qty。4 处账目: cum_realized / 逐盘 /
+//   trade_returns (Sharpe) / gate_trade_pnl (G1/G5/G6 记分牌)。返回本笔 realized (0 = 无仓/无均入)。
+double TradingLoop::BookSellRealized(const std::string& condition_id, const std::string& token_id,
+                                     double fill_price, double sold_qty, std::int64_t as_of_now) {
+    const auto pos_before = position_ledger_.get_position(token_id);
+    if (!pos_before || pos_before->avg_entry_price <= 0.0)
+        return 0.0;
+    const double r = (fill_price - pos_before->avg_entry_price) * sold_qty;
+    cum_realized_pnl_pusd_ += r;
+    cum_realized_by_market_[condition_id] += r;  // 逐盘累计 (对账修: 平仓不丢 realized)
+    trade_returns_.push_back((fill_price - pos_before->avg_entry_price) / pos_before->avg_entry_price);
+    if (trade_returns_.size() > 5000)
+        trade_returns_.erase(trade_returns_.begin(), trade_returns_.begin() + 2500);
+    gate_trade_pnl_.push_back(r);  // GateEvaluator G1/G5/G6 输入
+    if (gate_trade_pnl_.size() > 5000)
+        gate_trade_pnl_.erase(gate_trade_pnl_.begin(), gate_trade_pnl_.begin() + 2500);
+    if (first_trade_ts_ns_ == 0)
+        first_trade_ts_ns_ = as_of_now;
+    last_trade_ts_ns_ = as_of_now;
+    return r;
+}
+
 // order_id 有界记忆 (FIFO 淘汰; loop_thread only 无锁)。
 void TradingLoop::RememberBoundedOrderId(std::unordered_set<std::string>& s, std::deque<std::string>& fifo,
                                          const std::string& id, std::size_t cap) {
@@ -443,13 +467,17 @@ void TradingLoop::RecoverMissedFill(const polymarket::UserFill& uf) {
                      uf.order_id.c_str(), uf.token_id.c_str(), uf.size);
         return;
     }
+    const std::int64_t now_ns = NowNs();
+    // S1 修: 卖出兜底也须 realize PnL (与 sync 同 BookSellRealized; 必须 apply_fill 【前】算)。
+    const double recovered_realized =
+        uf.is_buy ? 0.0 : BookSellRealized(uf.condition_id, uf.token_id, uf.price, uf.size, now_ns);
     risk::FillEvent ev;
     ev.filled_size_micro = uf.is_buy ? sz_micro : -sz_micro;
     ev.fill_price = uf.price;
     ev.mode_tag = position_ledger_.accepted_mode_tag();  // live → 账本接受
     ev.order_id = uf.order_id;
     ev.event_ts_ns = ev.data_source_ts_ns = ev.ingestion_ts_ns = uf.data_source_ts_ns;
-    ev.as_of_ts_ns = NowNs();
+    ev.as_of_ts_ns = now_ns;
     const strategy::Outcome oc = uf.is_yes ? strategy::Outcome::Yes : strategy::Outcome::No;
     position_ledger_.apply_fill(uf.condition_id, uf.token_id, oc, ev, "sharp");
     if (uf.is_buy)
@@ -468,6 +496,7 @@ void TradingLoop::RecoverMissedFill(const polymarket::UserFill& uf) {
         fr.price = uf.price;
         fr.size_usdc = uf.size;
         fr.fee = uf.fee;
+        fr.realized = recovered_realized;  // S1 修: 卖出兜底的 realized 也落流水 (与账本一致)
         fr.cum_realized = cum_realized_pnl_pusd_;
         fr.exit_reason = uf.is_buy ? "" : "wss_recovered";
         std::lock_guard<std::mutex> lk(fills_mu_);
@@ -484,7 +513,7 @@ void TradingLoop::RecoverMissedFill(const polymarket::UserFill& uf) {
 }
 
 void TradingLoop::TickAll() {
-    // Phase 2: 先排空 user 频道成交 (shadow: log+对账; flip 后登持仓须在 account_equity 之前)。
+    // Phase 2: 先排空 user 频道成交 (对账 + 漏记兜底; 兜底补记须在 account_equity 之前 → 本 tick equity 含补记仓)。
     DrainUserFills();
     // A4 (老板「他们相对都是最近刷新的就行」): tick 入口冻结一次比分快照 + 映射, 整轮全子盘口共享同版本。
     //   消除 read-skew: 否则同 event 的 moneyline/spread 各自 Get(), 采集线程中途 swap → 看不同比分版本。
@@ -2296,20 +2325,8 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     //   取 apply_fill 【前】的 avg_entry (减仓不改 avg, 但前置取更稳)。
     double sell_realized = 0.0;
     if (intent.side == strategy::Side::Sell) {
-        const auto pos_before = position_ledger_.get_position(token_id);
-        if (pos_before && pos_before->avg_entry_price > 0.0) {
-            const double sold_qty = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
-            sell_realized = (fill.fill_price - pos_before->avg_entry_price) * sold_qty;
-            cum_realized_pnl_pusd_ += sell_realized;
-            cum_realized_by_market_[condition_id] += sell_realized;  // 逐盘累计 (对账修: 平仓不丢 realized)
-            trade_returns_.push_back((fill.fill_price - pos_before->avg_entry_price) / pos_before->avg_entry_price);  // 逐笔收益 (Sharpe口径)
-            if (trade_returns_.size() > 5000) trade_returns_.erase(trade_returns_.begin(), trade_returns_.begin() + 2500);
-            // GateEvaluator 记分牌 (2026-06-12 治理): 逐笔已实现 PnL 序列 (G1/G5/G6 输入)
-            gate_trade_pnl_.push_back(sell_realized);
-            if (gate_trade_pnl_.size() > 5000) gate_trade_pnl_.erase(gate_trade_pnl_.begin(), gate_trade_pnl_.begin() + 2500);
-            if (first_trade_ts_ns_ == 0) first_trade_ts_ns_ = as_of_now;
-            last_trade_ts_ns_ = as_of_now;
-        }
+        const double sold_qty = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
+        sell_realized = BookSellRealized(condition_id, token_id, fill.fill_price, sold_qty, as_of_now);
     }
 
     risk::FillEvent ev;
