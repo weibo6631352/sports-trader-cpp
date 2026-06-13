@@ -172,9 +172,12 @@ TEST(VirtualMatcher, FillSizeUsdc_ScaledByExpectedRate) {
     m.SetUniformOverrideForTesting(0.0);
     const auto fill = m.Match(ord);
     ASSERT_EQ(fill.reject, execution::MatchReject::Ok);
-    // A1: fill_size_usdc 现 micro = to_micro_pusd(size_usdc × expected_fill_rate)
-    const std::int64_t expected = domain::to_micro_pusd(ord.size_usdc * fill.expected_fill_rate);
+    // 2026-06-13 单位根治: fill_size 本位=【股数】micro = (size_usdc × rate) / fill_price (与 live adapter 一致)。
+    const double shares = (ord.size_usdc * fill.expected_fill_rate) / fill.fill_price;
+    const std::int64_t expected = static_cast<std::int64_t>(std::llround(shares * 1'000'000.0));
     EXPECT_EQ(fill.fill_size_usdc, expected);
+    // 股数 > 名义 (价 0.55 < 1): 印证本位是股数不是 USD。
+    EXPECT_GT(fill.fill_size_usdc, domain::to_micro_pusd(ord.size_usdc * fill.expected_fill_rate));
 }
 
 // ---------- T9: VirtualFill 含 market_id / outcome 字段 (W6 @小蒋 Wave 29) ----------
@@ -271,5 +274,7 @@ TEST(VirtualMatcher, A1_SubOnePusdFill_NotTruncatedToZero) {
     ASSERT_EQ(fill.reject, execution::MatchReject::Ok);
     EXPECT_GT(fill.fill_size_usdc, 0)
         << "A1: <1pUSD fill 必须保留 micro (老郭丢仓 bug: 旧 (int64)whole 截 0)";
-    EXPECT_EQ(fill.fill_size_usdc, domain::to_micro_pusd(ord.size_usdc * fill.expected_fill_rate));
+    // 2026-06-13 单位根治: 本位股数 = (size × rate) / fill_price。
+    const double shares = (ord.size_usdc * fill.expected_fill_rate) / fill.fill_price;
+    EXPECT_EQ(fill.fill_size_usdc, static_cast<std::int64_t>(std::llround(shares * 1'000'000.0)));
 }

@@ -90,17 +90,30 @@ class PositionLedger {
     [[nodiscard]] std::unordered_map<std::string, std::int64_t>
     get_per_outcome_exposure() const noexcept;
 
-    // per-condition exposure: condition_id → net_size_usdc (signed, sum of all tokens)
+    // per-condition exposure: condition_id → net 持仓【股数】micro (signed, sum of all tokens)
     [[nodiscard]] std::unordered_map<std::string, std::int64_t>
     get_per_condition_exposure() const noexcept;
+
+    // ---------- USD 名义敞口 (2026-06-13 单位根治: 持仓本位=股数, USD 由 股数×均价 导出) -------------
+    //   RM cap (USD cap) / sizing (USD Kelly target) 必须用【名义】(=Σ 股数 × avg_entry_price), 不能直接拿
+    //   股数当 USD 比 (旧 bug: live 股数被当 USD 喂 cap → 价≠1 时单位错 → cap 失真)。signed micro pUSD。
+    [[nodiscard]] std::unordered_map<std::string, std::int64_t> get_per_outcome_notional() const noexcept;
+    [[nodiscard]] std::unordered_map<std::string, std::int64_t> get_per_condition_notional() const noexcept;
+    // 单 (condition, engine) USD 名义 (Σ engine 股数 × 该 token avg_price)。sizing 热路径直查 (无分配)。
+    [[nodiscard]] std::int64_t get_engine_condition_notional(std::string const& condition_id,
+                                                             std::string const& engine) const noexcept;
 
     // ---------- per-engine 加性追踪 (2026-06-12 per-engine 分仓) -----------------
     //   聚合账本不变; 旁路维护 engine_pos_[(token,engine)] = signed size。供 RM per-engine cap
     //   (入场) + 离场各引擎只管自己那份。全平 (聚合 token→0) 时清该 token 所有引擎份。
 
-    // 单引擎在某 token 的持仓 size (signed micro; 0 = 无)。离场各管各份用。
+    // 单引擎在某 token 的持仓【股数】(signed micro; 0 = 无)。离场各管各份 (卖 clamp ≤ 自己股数) 用。
     [[nodiscard]] std::int64_t get_engine_position_size(std::string const& token_id,
                                                         std::string const& engine) const noexcept;
+
+    // 单引擎在某 token 的持仓【USD 名义】(= 股数 × 该 token avg_price, signed micro)。sizing 用 (USD 域)。
+    [[nodiscard]] std::int64_t get_engine_position_notional(std::string const& token_id,
+                                                           std::string const& engine) const noexcept;
 
     // per-(condition, engine) 敞口: key = condition_id + '\x1f' + engine → signed size。
     //   按需从 engine_pos_ + 各 token 的 condition_id 聚合 (结算清份自动正确, 无第二增量表)。RM cap 用。

@@ -177,6 +177,54 @@ std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_condition_
     return condition_exposure_;
 }
 
+// USD 名义 = Σ 股数(micro) × avg_entry_price。股数 micro × price(∈0..1) 仍是 micro USD。
+std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_outcome_notional() const noexcept {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    std::unordered_map<std::string, std::int64_t> out;
+    out.reserve(token_positions_.size());
+    for (auto const& [tid, pv] : token_positions_)
+        out[tid] = static_cast<std::int64_t>(std::llround(static_cast<double>(pv.size_usdc) * pv.avg_entry_price));
+    return out;
+}
+
+std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_condition_notional() const noexcept {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    std::unordered_map<std::string, std::int64_t> out;
+    for (auto const& [tid, pv] : token_positions_)
+        out[pv.condition_id] +=
+            static_cast<std::int64_t>(std::llround(static_cast<double>(pv.size_usdc) * pv.avg_entry_price));
+    return out;
+}
+
+std::int64_t PositionLedger::get_engine_position_notional(std::string const& token_id,
+                                                          std::string const& engine) const noexcept {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    auto eit = engine_pos_.find(engine_key_(token_id, engine));
+    if (eit == engine_pos_.end())
+        return 0;
+    auto pit = token_positions_.find(token_id);
+    const double avg = (pit != token_positions_.end()) ? pit->second.avg_entry_price : 0.0;
+    return static_cast<std::int64_t>(std::llround(static_cast<double>(eit->second) * avg));
+}
+
+std::int64_t PositionLedger::get_engine_condition_notional(std::string const& condition_id,
+                                                           std::string const& engine) const noexcept {
+    std::shared_lock<std::shared_mutex> lk(mu_);
+    std::string suffix;
+    suffix.push_back('\x1f');
+    suffix.append(engine);
+    std::int64_t sum = 0;
+    for (auto const& [k, shares] : engine_pos_) {
+        if (k.size() <= suffix.size() ||
+            k.compare(k.size() - suffix.size(), suffix.size(), suffix) != 0)
+            continue;
+        auto pit = token_positions_.find(k.substr(0, k.size() - suffix.size()));
+        if (pit != token_positions_.end() && pit->second.condition_id == condition_id)
+            sum += static_cast<std::int64_t>(std::llround(static_cast<double>(shares) * pit->second.avg_entry_price));
+    }
+    return sum;
+}
+
 // ---------- per-engine 加性追踪 read API ------------------------------------
 
 std::int64_t PositionLedger::get_engine_position_size(std::string const& token_id,

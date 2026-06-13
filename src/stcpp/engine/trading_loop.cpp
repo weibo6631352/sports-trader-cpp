@@ -1567,14 +1567,15 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   (A5/P0-1 已让 paper 喂真实 exposure 给 RM, 此前 sizing 侧未跟进 = 活跃分叉)。
     //   单源同值: 与 FeedRiskGateway 喂 RM 同走 position_ledger get_per_*_exposure (micro), 无双轨。
     {
-        // per-engine sizing (2026-06-12 Option A): 主决策环 = sharp → 当前敞口取 sharp 自己那份 →
-        //   单源同值: 与 FeedRiskGateway 同走 position_ledger (per-engine 取 sharp 自己那份)。
+        // per-engine sizing (2026-06-12 Option A): 主决策环 = sharp → 当前敞口取 sharp 自己那份。
+        // 2026-06-13 单位根治: sizing 的 current_*_exposure_usdc 是【USD 域】(与 Kelly target USD 比),
+        //   持仓本位是股数 → 必须用 notional getter (股×均价) 导出 USD, 不能直接拿股数 (旧 bug: 价≠1 时
+        //   current 被低/高估 → residual 算错 → 同 token 反复补单 = 风暴; favorite 0.73 时股数>名义)。
         // 热路径直查 (性能审计 2026-06-12: 不每 tick 建整张敞口表)。
-        // unit-contract-ok: ledger micro → sizing current_*_exposure_usdc 的 whole pUSD 域 (÷1e6)
         sz_in.current_condition_exposure_usdc =
-            static_cast<double>(position_ledger_.get_engine_condition_exposure(condition_id, "sharp")) / 1'000'000.0;
+            static_cast<double>(position_ledger_.get_engine_condition_notional(condition_id, "sharp")) / 1'000'000.0;
         sz_in.current_token_exposure_usdc =
-            static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0;
+            static_cast<double>(position_ledger_.get_engine_position_notional(token_id, "sharp")) / 1'000'000.0;
     }
 
     // c3 (P0-2 根治): caps 单一真值源 = cfg_ (whole pUSD), from_pusd 转正确 micro。sizing/RM 同源
@@ -3183,12 +3184,13 @@ std::vector<TradingLoop::PositionMtm> TradingLoop::positions_mtm() const noexcep
 }
 
 void TradingLoop::FeedRiskGateway() noexcept {
-    // A1 (老郭钳-6): 账本 micro 化后 get_*_exposure 已是 micro, 与 RM exposure 同单位 → 删原 ×1e6
-    //   补偿乘 (P0-1 的"whole→micro"对冲乘已无意义)。直喂, 全量覆盖 (PL 真值, 自愈)。
-    for (auto const& [cid, micro] : position_ledger_.get_per_condition_exposure()) {
+    // 2026-06-13 单位根治: cap 是【USD】门, 持仓本位是【股数】→ 必须喂【USD 名义】(=Σ股数×均价), 不能直接
+    //   拿股数当 USD (旧 bug: live 股数被当 USD 喂 → 价≠1 时 cap 单位错 → 真钱风暴根因之一)。
+    //   notional getter 已在 ledger 按 avg_entry_price 导出 USD micro。全量覆盖 (PL 真值, 自愈)。
+    for (auto const& [cid, micro] : position_ledger_.get_per_condition_notional()) {
         rm_.set_condition_exposure(cid, micro);
     }
-    for (auto const& [tid, micro] : position_ledger_.get_per_outcome_exposure()) {
+    for (auto const& [tid, micro] : position_ledger_.get_per_outcome_notional()) {
         rm_.set_outcome_exposure(tid, micro);
     }
 

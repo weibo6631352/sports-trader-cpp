@@ -1200,18 +1200,19 @@ TEST_F(TradingLoopTest, P0_1_ExposureRedLine_UnitGate) {
     auto d_ctrl = rm_->evaluate(MakeP01Intent(cid, tid, "p01_ctrl", 10'000'000LL));
     EXPECT_NE(d_ctrl.reject, RejectCode::EXCEED_CONDITION_EXPOSURE) << "P0-1: 无敞口时不应触 condition cap";
 
-    // 累积敞口: apply_fill 45 whole pUSD → 仓位账本 condition_exposure = 45 (whole pUSD)
+    // 累积敞口 (2026-06-13 单位根治: 持仓本位=股数, cap 喂【名义】=股×均价):
+    //   apply_fill 90 股 @ 0.50 → 名义 = 90 × 0.50 = 45 pUSD。FeedRiskGateway 喂 get_per_condition_notional = 45e6 micro。
     execution::VirtualFill fill{};
-    fill.fill_size_usdc = 45'000'000;  // A1 micro (=45 pUSD)
+    fill.fill_size_usdc = 90'000'000;  // 90 股 micro (本位=股数)
     fill.fill_price = 0.50;
     fill.reject = execution::MatchReject::Ok;
     position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
 
-    // 喂 RM (production FeedRiskGateway): 45 whole × 1e6 = 45e6 micro
+    // 喂 RM (production FeedRiskGateway 走 notional getter): 90 股 × 0.50 均价 = 45e6 micro 名义
     loop_->FeedRiskGatewayForTest();
 
-    // 越 condition cap (50 pUSD=50e6 micro): 45e6 + 10e6 = 55e6 > 50e6 → EXCEED_CONDITION_EXPOSURE
-    //   (condition 在 check_position_caps_ 中先于 per_outcome 检查)
+    // 越 condition cap (50 pUSD=50e6 micro): 名义 45e6 + 10e6 单 = 55e6 > 50e6 → EXCEED_CONDITION_EXPOSURE
+    //   (condition 在 check_position_caps_ 中先于 per_outcome 检查; 若 cap 仍拿股数当 USD 则 90e6>50e6 会误拒控制组)
     rm_->set_edge_ci_lower("p01_over", 0.10);
     auto d_over = rm_->evaluate(MakeP01Intent(cid, tid, "p01_over", 10'000'000LL));
     EXPECT_EQ(d_over.reject, RejectCode::EXCEED_CONDITION_EXPOSURE)
@@ -1683,16 +1684,19 @@ TEST_F(TradingLoopTest, TC2_Controller_ConvergesToTarget_NoUnboundedAccumulation
     EXPECT_GT(loop_->stats().orders_held.load(), static_cast<std::uint64_t>(0))
         << "TC-2: 收敛到目标后控制器进死区 hold (证明非旧一次性 BUY 的每 tick 下单)";
 
-    // 持仓收敛到 target (≤ per_order_cap 10 pUSD), 绝不爆 exposure cap (50 pUSD)
-    double net_qty = 0.0;
+    // 2026-06-13 单位根治: 持仓本位=股数; 收敛检查走【名义】(股×均价=入场成本, USD 域, 与 Kelly target/cap 同单位)。
+    //   绝不爆 exposure cap (50 pUSD)。这正是「无界累加=风暴」的防回归断言。
+    double net_shares = 0.0, avg = 0.0;
     for (const auto& pv : position_ledger_->get_all_positions()) {
         if (pv.token_id == "1001") {
-            net_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+            net_shares = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+            avg = pv.avg_entry_price;
         }
     }
-    EXPECT_GT(net_qty, 0.0) << "TC-2: 应建立 YES 多仓";
-    EXPECT_LE(net_qty, 10.0 + 1e-6)
-        << "TC-2: 持仓收敛到 target (≤ per_order_cap 10), 不无界累加到 exposure cap";
+    EXPECT_GT(net_shares, 0.0) << "TC-2: 应建立 YES 多仓";
+    const double notional = net_shares * avg;  // USD 名义 = 股 × 均价
+    EXPECT_LE(notional, 10.0 + 1e-6)
+        << "TC-2: 持仓【名义】收敛到 target (≤ per_order_cap 10 USD), 不无界累加到 exposure cap (风暴防回归)";
 }
 
 // ===========================================================================

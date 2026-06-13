@@ -92,9 +92,14 @@ VirtualFill VirtualMatcher::Match(const VirtualOrder& order) noexcept {
     }
 
     // 4) Fill: 按 expected_fill_rate 折扣 size (而非 p_clamped, 因 cap 上限只是 Bernoulli 参数,
-    //    实际 size 还是按真实 model rate, 保留 audit 可还原性)
+    //    实际 size 还是按真实 model rate, 保留 audit 可还原性)。
+    // 2026-06-13 单位根治: fill_size 字段本位=【股数】(canonical, 与 live adapter 一致)。order.size_usdc 是
+    //   USD 名义 → 股数 = USD名义 × rate / fill_price。旧实现直存 USD 名义 → 与 live 股数语义冲突 + 下游
+    //   PnL/结算 (按股×价) 偏 1/price。现统一出股数 → 全下游一致。
     out.reject = MatchReject::Ok;
-    out.fill_size_usdc = domain::to_micro_pusd(order.size_usdc * rate01);  // A1: pUSD→micro
+    const double filled_usd = order.size_usdc * rate01;
+    const double shares = (out.fill_price > 0.0) ? filled_usd / out.fill_price : 0.0;
+    out.fill_size_usdc = static_cast<std::int64_t>(std::llround(shares * 1'000'000.0));  // 股数 micro
     return out;
 }
 
@@ -175,13 +180,16 @@ VirtualFill VirtualMatcher::MatchWithBook(const VirtualOrderWithBook& order) noe
     if (out.fill_price >= 1.0)
         out.fill_price = 0.999;
 
-    // === Step 4: fill_size = size_usdc × p_fill ===
+    // === Step 4: fill_size = (size_usdc × p_fill) / fill_price → 【股数】 ===
     //
     // 关键约束: 禁止理想化全成交 (CPO 要求, 基于真实 depth 的部分成交)
-    // p_fill = p_clamped ∈ [0.50, 0.90], 所以 fill_size < size_usdc (保证部分成交逻辑)
+    // p_fill = p_clamped ∈ [0.50, 0.90], 所以成交 < 目标 (保证部分成交逻辑)
+    // 2026-06-13 单位根治: fill_size 本位=股数 (canonical, 同 live)。USD名义 × p / fill_price = 股数。
     out.reject = MatchReject::Ok;
-    out.bernoulli_draw = true;                                                // Mode A: 有成交
-    out.fill_size_usdc = domain::to_micro_pusd(order.size_usdc * p_clamped);  // A1: pUSD→micro
+    out.bernoulli_draw = true;  // Mode A: 有成交
+    const double filled_usd_a = order.size_usdc * p_clamped;
+    const double shares_a = (out.fill_price > 0.0) ? filled_usd_a / out.fill_price : 0.0;
+    out.fill_size_usdc = static_cast<std::int64_t>(std::llround(shares_a * 1'000'000.0));  // 股数 micro
 
     return out;
 }

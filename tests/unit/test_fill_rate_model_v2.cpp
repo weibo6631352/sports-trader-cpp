@@ -303,15 +303,13 @@ TEST(VirtualMatcherModeA, T13_PartialFill_NoIdealFullFill) {
     auto fill = m.MatchWithBook(order);
 
     if (fill.reject == ex::MatchReject::Ok) {
-        // A1: fill_size_usdc 现 micro int64; order.size_usdc 是 whole pUSD → RHS 走 to_micro_pusd 转 micro
-        EXPECT_LT(fill.fill_size_usdc, stcpp::domain::to_micro_pusd(order.size_usdc))
-            << "Mode A 禁止理想全成交: fill_size 必须 < size_usdc";
+        // 2026-06-13 单位根治: fill_size 本位=【股数】; 部分成交 = 成交【名义】(股×价) < 订单名义 size_usdc。
+        const double notional_filled = (static_cast<double>(fill.fill_size_usdc) / 1'000'000.0) * fill.fill_price;
+        EXPECT_LT(notional_filled, order.size_usdc) << "Mode A 禁止理想全成交: 成交名义 < size_usdc";
         EXPECT_GT(fill.fill_size_usdc, 0);
-        // fill_size = size_usdc × p_fill_clamped; p_fill ∈ [0.50, 0.90]
-        EXPECT_GE(fill.fill_size_usdc,
-                  stcpp::domain::to_micro_pusd(order.size_usdc * ex::kFillRateFloor) - 1);
-        EXPECT_LE(fill.fill_size_usdc,
-                  stcpp::domain::to_micro_pusd(order.size_usdc * ex::kFillRateClobCap) + 1);
+        // 成交名义 = size_usdc × p_fill_clamped; p_fill ∈ [floor, cap]
+        EXPECT_GE(notional_filled, order.size_usdc * ex::kFillRateFloor - 0.01);
+        EXPECT_LE(notional_filled, order.size_usdc * ex::kFillRateClobCap + 0.01);
     }
 }
 
