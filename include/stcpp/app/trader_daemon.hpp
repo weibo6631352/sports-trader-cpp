@@ -46,6 +46,7 @@
 #include <vector>
 
 #include "stcpp/polymarket/live/live_order_submitter.hpp"
+#include "stcpp/polymarket/live/live_user_fill_feed.hpp"  // Phase 2: user 频道成交接收 (live)
 #include "stcpp/polymarket/live_executor.hpp"
 #include "stcpp/execution/live_executor_adapter.hpp"
 #include "stcpp/polymarket/live_order_gate.hpp"
@@ -286,6 +287,8 @@ private:
     //   断开 → 指数退避后 AsyncConnect 重连 (独立线程, 非 io_thread, 无自 join) + 后台重 seed。
     //   重连重订由 live_transport_ 的 OnConnected 回调 (读 all_token_ids_) 负责。
     void WssWatchdogLoop(std::stop_token st, std::string url);
+    // Phase 2: user 频道成交接收看门狗 (10s PING 心跳 + 断线/半死重连; 照 market 频道模式)。
+    void UserFillWatchdogLoop(std::stop_token st);
 
     // A1b: 映射刷新线程主体 — 周期跑 EventMatcher (score_store 快照 × market 元数据)
     //   → 构建 condition→event 映射 → trading_loop_->SetEventMapping(). Goalserve event
@@ -459,6 +462,11 @@ private:
     std::unique_ptr<data::livescore::CommentariesPoller> commentaries_poller_;  // commentaries 30s 轮询
     std::unique_ptr<polymarket::clob_wss::LiveBookPublisher> live_publisher_;
     std::unique_ptr<polymarket::clob_wss::LiveWssTransport> live_transport_;
+
+    // ---- Phase 2 (live only): CLOB user 频道成交接收 (异步收自有成交 → loop_thread 排空登持仓) ----
+    //   feed 拥有自己的 LiveWssTransport (/ws/user); user_fill_watchdog 驱动心跳+重连 (照 market 频道模式)。
+    std::unique_ptr<polymarket::LiveUserFillFeed> user_fill_feed_;
+    std::jthread user_fill_watchdog_thread_;
 
     // 读模型 (server_ 持其指针 → real_provider_ 在 server_ 之前声明)
     std::unique_ptr<debug_api::RealStateProvider> real_provider_;

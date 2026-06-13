@@ -39,6 +39,7 @@
 
 #include "stcpp/engine/trading_loop.hpp"
 // (risk/arb_signal.hpp 已砍 2026-06-05: seq_arb 短时套利 advisory 是大模型旁路, 一并删)
+#include "stcpp/polymarket/live/live_user_fill_feed.hpp"  // Phase 2: user 频道成交 (DrainUserFills)
 
 #include <algorithm>
 #include <cassert>
@@ -384,7 +385,29 @@ void TradingLoop::JournalFill(const FillRow& fr) {
 //   (老板原则 C3: 决策带整盘口; 老周架构: 决策线程栈上组装, 零锁; R-12 不触碰)。
 // ---------------------------------------------------------------------------
 
+// DrainUserFills — 排空 CLOB user 频道成交队列 (loop_thread tick 入口, 单 writer)。
+//   【当前 shadow】: 仅 log 每笔已 CONFIRMED 的真实成交 + 与 sync 路径账本对账 (是否已记此 token / size),
+//   不入账 (sync 路径仍是唯一真相源 → 零真钱风险)。目的: 用真实流量验证 user 频道连得上(auth)、真 trade
+//   消息解析对、按 id 去重对。验证通过后 flip (单独提交): 改为从 WSS 登持仓 (唯一真相源) + 移除同步 apply_fill。
+void TradingLoop::DrainUserFills() {
+    if (user_fill_feed_ == nullptr)
+        return;
+    polymarket::UserFill uf;
+    while (user_fill_feed_->Pop(uf)) {
+        const auto pv = position_ledger_.get_position(uf.token_id);
+        const double ledger_sz = pv ? static_cast<double>(pv->size_usdc) / 1'000'000.0 : 0.0;
+        // 对账: WSS 收到 CONFIRMED 成交 vs 同步路径已记账本仓。两者应吻合 (sync 已记则 ledger_sz≠0)。
+        std::fprintf(stderr,
+                     "[user-fill/shadow] cond=%.20s... tok=%.16s... %s %s sz=%.4f px=%.4f fee=%.4f "
+                     "trade=%.8s | ledger_now=%.4f\n",
+                     uf.condition_id.c_str(), uf.token_id.c_str(), uf.is_buy ? "BUY" : "SELL",
+                     uf.is_yes ? "YES" : "NO", uf.size, uf.price, uf.fee, uf.trade_id.c_str(), ledger_sz);
+    }
+}
+
 void TradingLoop::TickAll() {
+    // Phase 2: 先排空 user 频道成交 (shadow: log+对账; flip 后登持仓须在 account_equity 之前)。
+    DrainUserFills();
     // A4 (老板「他们相对都是最近刷新的就行」): tick 入口冻结一次比分快照 + 映射, 整轮全子盘口共享同版本。
     //   消除 read-skew: 否则同 event 的 moneyline/spread 各自 Get(), 采集线程中途 swap → 看不同比分版本。
     //   GetSnapshot()/LoadEventMap() 都是只读 RCU 单次 load (不碰 R-12); shared_ptr 持有保活整 tick。

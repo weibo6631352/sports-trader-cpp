@@ -508,6 +508,14 @@ bool TraderDaemon::RediscoverOnce(std::stop_token st) {
                      "[trader_daemon] 周期重发现: 市场集变化 → +%zu 订阅 / -%zu 退订 (增量, 共 %zu market)\n",
                      n_add, n_del, token_map_.size());
         std::fflush(stderr);
+        // Phase 2: user 频道补订新 condition (feed 内部去重只发未订的; 退订盘留着无害 — 不交易=无成交事件)。
+        if (user_fill_feed_) {
+            std::vector<std::string> cur;
+            cur.reserve(token_map_.size());
+            for (const auto& [cid, _toks] : token_map_)
+                cur.push_back(cid);
+            user_fill_feed_->SubscribeMarkets(cur);
+        }
         // 新增盘补 REST seed (修: 仅 operation:subscribe 不够 — 稀疏体育盘短期无 WSS diff 帧 →
         //   hub book 永远 found:false → 前端"订单簿未接入"。和启动 SeedInitialBooksFromRest 同路, 只打底新增子集)。
         if (!added_tokens.empty()) {
@@ -640,6 +648,56 @@ void TraderDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
             last_progress = steady_clock::now();  // 重连后重置进度基线
             last_frames = (live_publisher_ ? live_publisher_->frames_received() : 0);
             backoff_sec = std::min(backoff_sec * 2, 30);  // 指数退避封顶 30s
+        }
+    }
+}
+
+// UserFillWatchdogLoop — user 频道成交接收看门狗 (照 WssWatchdogLoop 模式; 心跳 + 断线/半死重连)。
+//   user 频道无事件时静默 → 10s PING 是唯一存活探测; 35s 无任何帧 (含 PONG) → 半死, Reconnect。
+void TraderDaemon::UserFillWatchdogLoop(std::stop_token st) {
+    using namespace std::chrono;
+    if (!user_fill_feed_)
+        return;
+    auto sleep_steps = [&st](int steps) {
+        for (int i = 0; i < steps && !st.stop_requested(); ++i)
+            std::this_thread::sleep_for(milliseconds(100));
+    };
+    sleep_steps(30);  // 给初连 ~3s
+    auto last_ping = steady_clock::now();
+    int backoff_sec = 1;
+    std::int64_t last_msg = user_fill_feed_->last_msg_ts_ns();
+    auto last_progress = steady_clock::now();
+    constexpr auto kSilentTimeout = seconds(35);
+    while (!st.stop_requested()) {
+        if (user_fill_feed_->connected()) {
+            backoff_sec = 1;
+            if (steady_clock::now() - last_ping >= seconds(10)) {
+                user_fill_feed_->Ping();  // 心跳: user 频道静默不等于健康 (spec §5)
+                last_ping = steady_clock::now();
+            }
+            const std::int64_t msg_now = user_fill_feed_->last_msg_ts_ns();
+            if (msg_now != last_msg) {
+                last_msg = msg_now;
+                last_progress = steady_clock::now();
+            } else if (steady_clock::now() - last_progress >= kSilentTimeout) {
+                std::fprintf(stderr, "[trader_daemon] [live] user 频道半死 (≥35s 无帧含 PONG), 重连\n");
+                std::fflush(stderr);
+                user_fill_feed_->Reconnect();
+                last_progress = steady_clock::now();
+                last_ping = steady_clock::now();
+            }
+            sleep_steps(10);
+        } else {
+            std::fprintf(stderr, "[trader_daemon] [live] user 频道断开, %ds 后重连...\n", backoff_sec);
+            std::fflush(stderr);
+            sleep_steps(backoff_sec * 10);
+            if (st.stop_requested())
+                break;
+            user_fill_feed_->Reconnect();  // OnConnected 重发 subscribe (含 auth + 全部 condition)
+            last_ping = steady_clock::now();
+            last_progress = steady_clock::now();
+            last_msg = user_fill_feed_->last_msg_ts_ns();
+            backoff_sec = std::min(backoff_sec * 2, 30);
         }
     }
 }
@@ -1354,6 +1412,34 @@ void TraderDaemon::Start() {
         active_poll_thread_ =
             std::jthread([this](std::stop_token st) { RunActiveBookPoller(st); });
         std::printf("[trader_daemon] 149hz 主动 book 轮询启动 (热链 /book, 流动性加权, 源头 pass 后 token)\n");
+
+        // ---- Phase 2 (live only): CLOB user 频道成交接收 (shadow) ----
+        //   live 下单成交回执异步通道。当前 shadow: loop_thread 排空 → log + 与 sync 路径对账, 不入账
+        //   (sync 仍是真相源 → 零真钱风险, 用真实成交验证 user 频道 auth/解析/去重)。验证通过后 flip。
+        if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
+            const char* ak = std::getenv("POLYMARKET_API_KEY");
+            const char* as = std::getenv("POLYMARKET_API_SECRET");
+            const char* ap = std::getenv("POLYMARKET_API_PASSPHRASE");
+            if (ak && as && ap && ak[0] && as[0] && ap[0]) {
+                auto user_tx = std::make_unique<polymarket::clob_wss::LiveWssTransport>(cfg_.verbose);
+                user_fill_feed_ = std::make_unique<polymarket::LiveUserFillFeed>(std::move(user_tx), ak, as, ap);
+                std::vector<std::string> cids;
+                cids.reserve(token_map_.size());
+                for (const auto& [cid, _toks] : token_map_)
+                    cids.push_back(cid);
+                user_fill_feed_->Start("wss://ws-subscriptions-clob.polymarket.com/ws/user", cids);
+                if (trading_loop_)
+                    trading_loop_->SetUserFillFeed(user_fill_feed_.get());  // shadow (log+对账, 不入账)
+                user_fill_watchdog_thread_ =
+                    std::jthread([this](std::stop_token st) { UserFillWatchdogLoop(st); });
+                std::printf("[trader_daemon] [live] user 频道成交接收启动 (shadow: 收成交→log+对账不入账; 订阅 %zu condition)\n",
+                            cids.size());
+            } else {
+                std::fprintf(stderr,
+                             "[trader_daemon] [live] ⚠ user 频道未启 (POLYMARKET_API_KEY/SECRET/PASSPHRASE 缺) "
+                             "— live 成交无异步回执 (Phase 2 shadow 不可用; 不影响 sync 记账)\n");
+            }
+        }
     }
 
     // ---- Step 4b start: TradingLoop (enable_paper_trading; "仅观测" flag=false 时不起) ----
@@ -1463,6 +1549,13 @@ void TraderDaemon::Shutdown() noexcept {
         wss_watchdog_thread_.request_stop();
         wss_watchdog_thread_.join();
     }
+    // 0a''+. Phase 2 user 频道看门狗先停 (它 touch user_fill_feed_), 再停 feed (Close transport io/send 线程)。
+    if (user_fill_watchdog_thread_.joinable()) {
+        user_fill_watchdog_thread_.request_stop();
+        user_fill_watchdog_thread_.join();
+    }
+    if (user_fill_feed_)
+        user_fill_feed_->Stop();
     // 0a'''. 149hz 主动轮询线程停 (它 touch live_publisher_/hub_ + 持 TLS 连接, 必在二者析构前 join).
     if (active_poll_thread_.joinable()) {
         active_poll_thread_.request_stop();

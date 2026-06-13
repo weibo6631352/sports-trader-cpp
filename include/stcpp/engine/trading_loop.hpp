@@ -112,6 +112,11 @@ namespace stcpp::data::feature_store {
 struct FeatureStoreGameRow;
 }  // namespace stcpp::data::feature_store
 
+// Phase 2: CLOB user 频道成交接收器 (live 成交异步入账; 完整定义 include/stcpp/polymarket/live/live_user_fill_feed.hpp)。
+namespace stcpp::polymarket {
+class LiveUserFillFeed;
+}  // namespace stcpp::polymarket
+
 namespace stcpp::engine {
 
 // ---------------------------------------------------------------------------
@@ -739,6 +744,11 @@ public:
     //   单 writer: 仅主线程在 Start() 前调用一次 (score_store_ 之后只读).
     void SetScoreStore(const data::ScoreSnapshotStore* s) noexcept { score_store_ = s; }
 
+    // Phase 2 (live 成交异步入账): 注入 CLOB user 频道成交接收器 (daemon 管生命周期; loop_thread 每 tick 排空)。
+    //   当前 = shadow (仅 log + 与 sync 路径对账, 不入账): sync 仍是真相源, 零风险验真实成交解析/去重。
+    //   验证通过后 flip (单独提交): DrainUserFills 改登持仓为唯一真相源 + 移除 ExecuteControllerSide 同步 apply_fill。
+    void SetUserFillFeed(polymarket::LiveUserFillFeed* feed) noexcept { user_fill_feed_ = feed; }
+
     // 事件驱动触发 (2026-06-04 老板「别轮询, 直接触发更快」): 数据源 (WSS book / 149hz poll / 赔率) 到达即调。
     //   仅短锁 + notify (R-12 安全, 调用线程<1us 不阻塞); loop_thread_ 等 cv 醒来即跑一轮决策 (单写, 无 ledger 竞争)。
     void RequestTick() noexcept {
@@ -927,6 +937,11 @@ private:
     }
     // (大模型成员已砍 2026-06-05: ml_holder_/seq_arb_holder_/fv_hub_。fair 不依赖 ML 推理。)
 
+    // ---- Phase 2: live 成交异步入账 (CLOB user 频道) ----
+    //   daemon 管 feed 生命周期; loop_thread_ 每 tick 排空 (DrainUserFills, 单 writer)。null = 未接 (paper/未装)。
+    //   当前 shadow (log+对账); flip 后改唯一真相源。
+    polymarket::LiveUserFillFeed* user_fill_feed_{nullptr};
+
     // ---- A1: 真实比分源 + 映射 ----
     // score_store_: 单 writer (Start 前注入), 之后 loop_thread_ 只读 Get(). 可空 → stub 路径.
     const data::ScoreSnapshotStore* score_store_{nullptr};
@@ -1104,6 +1119,8 @@ private:
     // ---- 内部实现 ----
     void RunLoop(std::stop_token st);
     void TickAll();
+    // Phase 2: 排空 user 频道成交队列 (loop_thread tick 入口调; shadow=log+对账 / book=登持仓)。
+    void DrainUserFills();
     // 二元市场双边决策 (老周架构 laozhou-binary-dual-side-arch-v1 + 老郭 review APPROVE-with-conditions):
     //   TickOne 改 per-condition, 入参带整盘口 (YES book + NO book), 决策时带双边信息 (老板原则 C3)。
     void TickOne(const BinaryMarketSnapshot& mkt);

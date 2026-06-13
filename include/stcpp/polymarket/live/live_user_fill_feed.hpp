@@ -74,6 +74,7 @@ public:
     bool Start(const std::string& user_url, const std::vector<std::string>& condition_ids) {
         if (!transport_)
             return false;
+        url_ = user_url;
         {
             std::lock_guard<std::mutex> lk(sub_mu_);
             for (const auto& c : condition_ids)
@@ -82,7 +83,18 @@ public:
         transport_->SetOnTextFrame([this](std::string_view p, std::int64_t ts) { OnFrame(p, ts); });
         transport_->SetOnConnected([this]() { OnConnected(); });
         transport_->SetOnDisconnected([this](std::string_view) { connected_.store(false, std::memory_order_release); });
-        return transport_->AsyncConnect(user_url);
+        return transport_->AsyncConnect(url_);
+    }
+
+    // 心跳 (user 频道无事件时静默, 10s PING 维持存活感知; daemon watchdog 驱动)。
+    void Ping() {
+        if (transport_)
+            transport_->AsyncSendText("PING");
+    }
+    // 重连 (daemon watchdog: 断开/半死时调; transport.AsyncConnect 自 join 旧 io_thread; OnConnected 重发订阅)。
+    void Reconnect() {
+        if (transport_ && !url_.empty())
+            transport_->AsyncConnect(url_);
     }
 
     // 动态追加订阅 (新持仓市场未订阅时)。立即发追加帧 + 记录供重连 replay。
@@ -279,6 +291,7 @@ private:
 
     std::unique_ptr<polymarket::wss::IWssTransport> transport_;
     const std::string api_key_, api_secret_, api_passphrase_;
+    std::string url_;  // user 频道 URL (Start 时记录, Reconnect 复用)
 
     std::atomic<bool> connected_{false};
     std::atomic<std::int64_t> last_msg_ts_ns_{0};
