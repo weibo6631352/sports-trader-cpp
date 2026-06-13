@@ -59,7 +59,14 @@ class LiveExecutorAdapter final : public execution::IOrderExecutor {
         if (!r.filled || r.filled_shares <= 0.0) {
             // 2026-06-13 硬化: 区分硬拒 (4xx, 重发必再拒 → 调用方冷却该 token) vs FOK 无对手 (可重试)。
             f.reject = r.hard_reject ? execution::MatchReject::ClobRejected     // 非重试 → trading_loop 冷却闸
-                                     : execution::MatchReject::BernoulliMissed;  // FOK 未成交 → 可重试
+                                     : execution::MatchReject::BernoulliMissed;  // FOK 未成交/delayed → 待 WSS
+            // 2026-06-14: 未成交也回传 order_id (delayed 异步撮合) → 调用方按 order_id stash 决策上下文,
+            //   WSS CONFIRMED 时取出富化入账。order hash 0x+64hex ≤ 71, 不截断。
+            if (!r.order_id.empty()) {
+                const std::size_t n = std::min(r.order_id.size(), f.order_id.size() - 1);
+                std::memcpy(f.order_id.data(), r.order_id.data(), n);
+                f.order_id[n] = '\0';
+            }
             return f;
         }
         f.reject = execution::MatchReject::Ok;

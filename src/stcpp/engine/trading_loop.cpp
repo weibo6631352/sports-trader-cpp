@@ -535,7 +535,13 @@ void TradingLoop::RecoverMissedFill(const polymarket::UserFill& uf) {
 
     // 恢复流水 (前端/journal 可见; 标 exit_reason=wss_recovered 便于复盘)
     {
+        // P3.1 (2026-06-14): fr 起始为下单时 stash 的决策上下文 (fair/edge/kelly/sh/g_*/book/equity 全富) →
+        //   live 行不再轻量。无 stash (非本进程下的单/已淘汰) → 默认空 = 旧轻量行为 (兜底)。
         FillRow fr;
+        if (const auto pit = pending_fill_ctx_.find(uf.order_id); pit != pending_fill_ctx_.end()) {
+            fr = pit->second;  // 取出 entry-context (px/qty/realized 等 fill-specific 字段下面覆盖)
+            pending_fill_ctx_.erase(pit);
+        }
         fr.as_of_ts_ns = ev.as_of_ts_ns;
         fr.condition_id = uf.condition_id;
         fr.token_id = uf.token_id;
@@ -2418,6 +2424,59 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
                    stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
             // #3: live 成交状态未知 → 冷却等 WSS 裁决 (防边成交边不记边重发的累积; 见 kLivePendingConfirmCooldownNs)。
             hard_reject_until_ns_[token_id] = NowNs() + kLivePendingConfirmCooldownNs;
+            // P3.1 (2026-06-14): live delayed 单 → 按 order_id 暂存决策上下文, WSS 该 order CONFIRMED 时取出
+            //   富化入账 (老板「内存里都有」)。复用 FillRow 装 entry-context; px/qty 由 WSS 真成交填。
+            if (fill.order_id[0] != '\0') {
+                FillRow ctx;
+                ctx.condition_id = condition_id;
+                ctx.token_id = token_id;
+                ctx.is_yes = (outcome == strategy::Outcome::Yes);
+                ctx.fair = p_fair_side;
+                ctx.mark = mark_price;
+                ctx.deploy_pct = tick_equity_.deploy_pct;
+                ctx.equity = tick_equity_.equity_bid;
+                ctx.cash_avail = tick_equity_.cash_available;
+                ctx.n_open = static_cast<double>(tick_equity_.open_positions);
+                ctx.m_dd = dd_mult_;
+                ctx.bk_spread = side_book.spread;
+                ctx.bk_imb = side_book.imbalance;
+                ctx.bk_micro_mid = side_book.microprice - side_book.mid;
+                ctx.bk_bid_sz = side_book.best_bid_size();
+                ctx.bk_ask_sz = side_book.best_ask_size();
+                if (side_book.data_source_ts_ns > 0)
+                    ctx.bk_age_ms = static_cast<double>(NowNs() - side_book.data_source_ts_ns) / 1e6;
+                const auto dm = polymarket::clob_wss::compute_depth_metrics(side_book);
+                ctx.d5_bid = dm.bid_depth_5lvl;
+                ctx.d5_ask = dm.ask_depth_5lvl;
+                ctx.t_vol5m = side_book.trade_signed_vol_5m;
+                ctx.t_ratio5m = side_book.trade_buy_ratio_5m;
+                if (const auto sh = sharp_history_.find(condition_id);
+                    sh != sharp_history_.end() &&
+                    sh->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+                    ctx.sh_fair = sh->second.last_sharp();
+                    ctx.sh_vel = sh->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+                }
+                if (ectx != nullptr) {
+                    ctx.p_devig = ectx->devig_side;
+                    ctx.edge_ci = ectx->edge_ci;
+                    ctx.kelly_sugg = ectx->kelly_sugg;
+                    ctx.m_life = ectx->m_life;
+                    ctx.m_clv = ectx->m_clv;
+                    ctx.m_corr = ectx->m_corr;
+                    ctx.odds_age_ms = ectx->odds_age_ms;
+                    ctx.g_remain = ectx->g_remain;
+                    ctx.g_sdiff = ectx->g_sdiff;
+                    ctx.g_period = ectx->g_period;
+                }
+                std::string oid(fill.order_id.data());
+                if (pending_fill_ctx_.emplace(oid, std::move(ctx)).second) {
+                    pending_fill_fifo_.push_back(oid);
+                    if (pending_fill_fifo_.size() > kOrderIdMemoryCap) {  // 有界淘汰
+                        pending_fill_ctx_.erase(pending_fill_fifo_.front());
+                        pending_fill_fifo_.pop_front();
+                    }
+                }
+            }
         }
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
         return;

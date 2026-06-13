@@ -2264,3 +2264,22 @@ TEST_F(TradingLoopTest, OnchainSeed_SkipsDirty) {
     EXPECT_FALSE(position_ledger_->get_position("1001").has_value());
     EXPECT_FALSE(position_ledger_->get_position("1002").has_value());
 }
+
+// P3.1: live 下单 stash 的决策上下文 → WSS 兜底取出富化恢复行 (fair/edge 不再是默认空)。
+TEST_F(TradingLoopTest, UserFill_EnrichesFromStashedCtx) {
+    loop_ = MakeLoop();
+    auto tx = std::make_unique<UFMockTransport>();
+    UFMockTransport* m = tx.get();
+    polymarket::LiveUserFillFeed feed(std::move(tx), "K", "S", "P");
+    feed.Start("wss://ws-subscriptions-clob.polymarket.com/ws/user", {"cond-test-001"});
+    loop_->SetUserFillFeed(&feed);
+
+    loop_->SeedPendingFillCtxForTest("ORD-RICH", /*fair=*/0.88, /*edge_ci=*/0.0531);  // 模拟下单时 stash
+    m->Fire(UFConfirmed("T1", "ORD-RICH", "BUY", "5"));
+    loop_->DrainUserFillsForTest();
+
+    auto fills = loop_->RecentFills(10, "cond-test-001");
+    ASSERT_FALSE(fills.empty()) << "WSS 兜底应产恢复流水";
+    EXPECT_NEAR(fills.front().fair, 0.88, 1e-9) << "恢复行应富化 stash 的 fair (非默认 0)";
+    EXPECT_NEAR(fills.front().edge_ci, 0.0531, 1e-9) << "恢复行应富化 stash 的 edge_ci";
+}

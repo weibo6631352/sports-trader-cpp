@@ -33,12 +33,25 @@ ExecReport LiveExecutor::Execute(const stcpp::risk::OrderIntent& intent, bool ne
         rep.order_id = gr.order.order_id;
         rep.tx_hash = gr.order.transaction_hash;
     } else if (gr.submitted) {
-        // 真触达但没成交: 区分【硬拒 4xx】(精度/最小额/余额, 重发必再拒 → 非重试) vs【FOK 无对手】(可重试)。
+        // 真触达但同步回执未成交。三态区分 (2026-06-13 据实修, 抓到真回执定性):
+        //   ① status="delayed" = Polymarket【异步撮合延迟】: 订单已被接受(success:true)但撮合异步,
+        //      同步回执 making/takingAmount 为空 (此刻不知成交量) → 真成交稍后由 WSS user 频道 CONFIRMED
+        //      送达入账。【物理上无法同步入账】(CLOB 没回量), 非 miss 非错 → 不重试, 待 WSS (调用方 #3 冷却)。
+        //   ② 硬拒 4xx (精度/最小额/余额): 重发必再拒 → 非重试 (冷却)。
+        //   ③ FOK 无对手 (unmatched 等): 可重试。
         rep.hard_reject = (gr.order.http_status >= 400) || (!gr.order.success && !gr.order.error.empty());
-        if (rep.hard_reject)
+        rep.order_id = gr.order.order_id;  // 2026-06-14: delayed/未成交也回传 order_id → 调用方 stash 决策上下文,
+                                           //   WSS 该 order CONFIRMED 时取出富化入账 (live 行与 paper 一样富)。
+        if (rep.hard_reject) {
             std::fprintf(stderr, "[live_exec] ⚠ CLOB 硬拒 http=%d err=\"%s\" token=%s side=%s → 非重试(冷却)\n",
                          gr.order.http_status, gr.order.error.c_str(), intent.token_id.c_str(),
                          intent.side == stcpp::risk::Side::Buy ? "BUY" : "SELL");
+        } else if (gr.order.status == "delayed") {
+            std::fprintf(stderr,
+                         "[live_exec] FOK 异步撮合 (status=delayed, Polymarket 撮合延迟) → 同步回执无成交量, "
+                         "待 WSS user 频道 CONFIRMED 入账 (order=%s token=%s)\n",
+                         gr.order.order_id.c_str(), intent.token_id.c_str());
+        }
     }
     return rep;
 }
