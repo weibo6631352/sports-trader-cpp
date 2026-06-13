@@ -42,8 +42,10 @@
 #include "stcpp/data/inplay_odds_parser.hpp"  // ParseInplayOddsDevig (inplay bet365 单源 de-vig)
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <charconv>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <string_view>
@@ -682,6 +684,34 @@ ParseResult InplayScoreParser::Parse(const std::string& json_body, goalserve::Go
                                     seg_away_fair = seg.away_fair;
                                     seg_index = cur_set;
                                 }
+                            }
+                        }
+                        // 诊断 (2026-06-13 覆盖率审计): 有赔率盘但【选不出全场赛果盘】(home_fair<0) → 把 GS 实际
+                        //   盘口名打出来, 据实修 IsResultMarketName (尤其 esports 命名: To Win at Least One Map /
+                        //   Asian Handicap By Maps 等被正确拒, 但要确认 GS 是否真有我们能认的赛果盘)。别盲猜。
+                        //   节流首 kDiagCap 次 (数据线程非决策热路径; 多 sport 线程并发故 atomic)。
+                        if (home_fair < 0.0) {
+                            static std::atomic<int> diag_n{0};
+                            constexpr int kDiagCap = 60;
+                            if (diag_n.fetch_add(1, std::memory_order_relaxed) < kDiagCap) {
+                                std::string names;
+                                std::size_t p = 0;
+                                constexpr std::string_view nk = "\"name\":\"";
+                                while (names.size() < 700) {
+                                    const auto kp = odds_sv.find(nk, p);
+                                    if (kp == std::string_view::npos) break;
+                                    const std::size_t vs = kp + nk.size();
+                                    const auto ve = odds_sv.find('"', vs);
+                                    if (ve == std::string_view::npos) break;
+                                    names.append(odds_sv.substr(vs, ve - vs));
+                                    names.append(" | ");
+                                    p = ve + 1;
+                                }
+                                if (!names.empty())
+                                    std::fprintf(stderr,
+                                                 "[odds-noresult] sport=%s match='%s vs %s' 有赔率但选不出赛果盘; GS盘口名: %s\n",
+                                                 std::string(goalserve::SportInplaySlug(sport)).c_str(),
+                                                 rec.home_team.c_str(), rec.away_team.c_str(), names.c_str());
                             }
                         }
                     }
