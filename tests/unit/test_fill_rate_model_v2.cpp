@@ -16,7 +16,7 @@
 //   ClobFill_T10: NBA Pregame 高流动性 → fill_rate ≥ FLOOR (充分正期望场景)
 //   MatchWithBook_T11: R-11 audit_wal_kind 硬填 PaperAudit
 //   MatchWithBook_T12: R-20 4 ts 透传正确
-//   MatchWithBook_T13: 部分成交 — fill_size_usdc < size_usdc (禁止理想全成交)
+//   MatchWithBook_T13: 部分成交 — fill_shares_micro < size_usdc (禁止理想全成交)
 //   MatchWithBook_T14: fill_price = price + slippage (buy 方向)
 //   MatchWithBook_T15: InvalidBookSnapshot → ClobModelReject/InvalidBookSnapshot
 //   MatchWithBook_T16: BelowFloor (过大 size) → ClobModelReject
@@ -294,7 +294,7 @@ TEST(VirtualMatcherModeA, T12_R20_FourTsPassthrough) {
     EXPECT_EQ(fill.fill_ts_ns, order.wall_now_ns);
 }
 
-// MatchWithBook_T13: 部分成交 — fill_size_usdc < size_usdc (禁止理想全成交)
+// MatchWithBook_T13: 部分成交 — fill_shares_micro < size_usdc (禁止理想全成交)
 // p_fill ∈ [0.50, 0.90] → fill_size < size_usdc
 TEST(VirtualMatcherModeA, T13_PartialFill_NoIdealFullFill) {
     ex::VirtualMatcher m{0x13};
@@ -304,9 +304,9 @@ TEST(VirtualMatcherModeA, T13_PartialFill_NoIdealFullFill) {
 
     if (fill.reject == ex::MatchReject::Ok) {
         // 2026-06-13 单位根治: fill_size 本位=【股数】; 部分成交 = 成交【名义】(股×价) < 订单名义 size_usdc。
-        const double notional_filled = (static_cast<double>(fill.fill_size_usdc) / 1'000'000.0) * fill.fill_price;
+        const double notional_filled = (static_cast<double>(fill.fill_shares_micro) / 1'000'000.0) * fill.fill_price;
         EXPECT_LT(notional_filled, order.size_usdc) << "Mode A 禁止理想全成交: 成交名义 < size_usdc";
-        EXPECT_GT(fill.fill_size_usdc, 0);
+        EXPECT_GT(fill.fill_shares_micro, 0);
         // 成交名义 = size_usdc × p_fill_clamped; p_fill ∈ [floor, cap]
         EXPECT_GE(notional_filled, order.size_usdc * ex::kFillRateFloor - 0.01);
         EXPECT_LE(notional_filled, order.size_usdc * ex::kFillRateClobCap + 0.01);
@@ -339,7 +339,7 @@ TEST(VirtualMatcherModeA, T15_InvalidBookSnapshot_Rejects) {
     auto fill = m.MatchWithBook(order);
 
     EXPECT_EQ(fill.reject, ex::MatchReject::InvalidBookSnapshot);
-    EXPECT_EQ(fill.fill_size_usdc, 0);
+    EXPECT_EQ(fill.fill_shares_micro, 0);
     // R-11 仍硬填 PaperAudit
     EXPECT_EQ(fill.audit_wal_kind, stcpp::infra::wal::WalKind::PaperAudit);
 }
@@ -353,7 +353,7 @@ TEST(VirtualMatcherModeA, T16_BelowFloor_ClobModelReject) {
     auto fill = m.MatchWithBook(order);
 
     EXPECT_EQ(fill.reject, ex::MatchReject::ClobModelReject);
-    EXPECT_EQ(fill.fill_size_usdc, 0);
+    EXPECT_EQ(fill.fill_shares_micro, 0);
     EXPECT_FALSE(fill.bernoulli_draw);
 }
 

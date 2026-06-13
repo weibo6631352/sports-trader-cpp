@@ -112,7 +112,7 @@ struct MicroPUSD {
 }
 
 // ---- A1 (老郭钳-1): double pUSD → int64 micro 的【唯一】转换入口 ----
-//   VirtualFill.fill_size_usdc / PositionLedger 等存 micro 的 int64 字段, double→micro 一律走此 helper,
+//   VirtualFill.fill_shares_micro / PositionLedger 等存 micro 的 int64 字段, double→micro 一律走此 helper,
 //   禁散落手写 (int64)(x*1e6) / llround(x*1e6) (负值 round 方向会错; 单点便于 CI grep 守护)。
 //   复用 from_pusd 的 round-to-nearest (llround) 语义 (c1 已审)。
 [[nodiscard]] inline std::int64_t to_micro_pusd(double pusd) noexcept {

@@ -184,9 +184,9 @@ struct E2EFixture {
         auto fill = matcher.Match(vord);
         benchmark::DoNotOptimize(fill);
 
-        // [5] Position update (FillQueue mock: inline write; fill_size_usdc 现为 micro int64)
+        // [5] Position update (FillQueue mock: inline write; fill_shares_micro 现为 micro int64)
         if (fill.reject == execution::MatchReject::Ok) {
-            pos.apply(fill.fill_size_usdc);
+            pos.apply(fill.fill_shares_micro);
         }
     }
 };

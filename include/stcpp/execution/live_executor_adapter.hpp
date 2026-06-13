@@ -64,7 +64,7 @@ class LiveExecutorAdapter final : public execution::IOrderExecutor {
         }
         f.reject = execution::MatchReject::Ok;
         f.fill_price = r.fill_price;
-        f.fill_size_usdc = static_cast<std::int64_t>(std::llround(r.filled_shares * 1'000'000.0));
+        f.fill_shares_micro = static_cast<std::int64_t>(std::llround(r.filled_shares * 1'000'000.0));
         f.expected_fill_rate = 1.0;
         // CLOB order_id → fill (Phase 2 对账兜底: 与 WSS user 频道 taker_order_id 匹配判 sync 是否已记)。
         //   CLOB order hash = 0x+64hex = 66 字符 < 71; 超长会截断 → 与 WSS 永不匹配 (该单总走兜底), 故 warn 不静默。

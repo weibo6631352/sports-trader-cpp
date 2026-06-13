@@ -67,12 +67,12 @@ int main(int argc, char** argv) {
 
     std::printf("=== STEP 1: adapter.Execute (真 CLOB; 复刻 daemon executor_->Execute) ===\n");
     const stcpp::execution::VirtualFill fill = adapter.Execute(vord);
-    std::printf("  reject=%d  fill_size_usdc(micro)=%lld  fill_price=%.4f  mode_tag=%d  order_id=%.20s\n",
-                static_cast<int>(fill.reject), static_cast<long long>(fill.fill_size_usdc), fill.fill_price,
+    std::printf("  reject=%d  fill_shares_micro(micro)=%lld  fill_price=%.4f  mode_tag=%d  order_id=%.20s\n",
+                static_cast<int>(fill.reject), static_cast<long long>(fill.fill_shares_micro), fill.fill_price,
                 static_cast<int>(fill.mode_tag), fill.order_id.data());
     std::printf("  解读: reject=0=Ok(成交) / 2=BernoulliMissed(被当未成交→daemon不记账→风暴!) / 6=ClobRejected(硬拒)\n");
 
-    if (fill.reject != stcpp::execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
+    if (fill.reject != stcpp::execution::MatchReject::Ok || fill.fill_shares_micro <= 0) {
         std::printf("  ❌ 断点【adapter】: 真单可能已成交但 adapter 返回非 Ok/零量 → daemon 在这丢成交 → 不 apply_fill →\n"
                     "     cap 瞎 → 同 token 重发风暴 (这就是 $129 风暴的机制!)。看上面 reject 码 + live_exec 日志定性。\n");
         return 0;
@@ -81,16 +81,16 @@ int main(int argc, char** argv) {
     std::printf("=== STEP 2: apply_fill (复刻 daemon line 2341; accepted_mode_tag=%d vs fill.mode_tag=%d) ===\n",
                 static_cast<int>(ledger.accepted_mode_tag()), static_cast<int>(fill.mode_tag));
     stcpp::risk::FillEvent ev;
-    ev.filled_size_micro = fill.fill_size_usdc;
+    ev.filled_size_micro = fill.fill_shares_micro;
     ev.fill_price = fill.fill_price;
     ev.mode_tag = fill.mode_tag;
     ev.order_id = std::string(fill.order_id.data());
     ev.event_ts_ns = ev.data_source_ts_ns = ev.ingestion_ts_ns = ev.as_of_ts_ns = now;
     ledger.apply_fill(cond, tok, stcpp::strategy::Outcome::Yes, ev, "sharp");
     const auto pos = ledger.get_position(tok);
-    if (pos && pos->size_usdc != 0) {
+    if (pos && pos->net_shares_micro != 0) {
         std::printf("  ✅ 入账成功: size_usdc(micro)=%lld avg=%.4f → 此链路【正常】, bug 在 daemon 别处(并发/喂cap/重启)。\n",
-                    static_cast<long long>(pos->size_usdc), pos->avg_entry_price);
+                    static_cast<long long>(pos->net_shares_micro), pos->avg_entry_price);
     } else {
         std::printf("  ❌ 断点【apply_fill】: adapter 返了 Ok 成交但账本没仓 → ledger 拒了 (mode_tag %d vs accepted %d 不匹配?)\n"
                     "     这就是不入账根因。\n",

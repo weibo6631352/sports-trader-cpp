@@ -71,13 +71,13 @@ static OrderIntent make_valid_intent(std::string const& signal_id, bool is_close
     return it;
 }
 
-// Build a VirtualFill (MatchReject::Ok, fill_size_usdc > 0)
+// Build a VirtualFill (MatchReject::Ok, fill_shares_micro > 0)
 static execution::VirtualFill make_fill(std::int64_t as_of_ts_ns, double fill_price = 0.55,
-                                        double fill_size_usdc = 100.0) {
+                                        double fill_shares_micro = 100.0) {
     execution::VirtualFill f{};
     f.reject = execution::MatchReject::Ok;
     f.fill_price = fill_price;
-    f.fill_size_usdc = stcpp::domain::to_micro_pusd(fill_size_usdc);  // A1 whole→micro
+    f.fill_shares_micro = stcpp::domain::to_micro_pusd(fill_shares_micro);  // A1 whole→micro
     f.expected_fill_rate = 0.60;
     f.bernoulli_draw = true;
     // R-20: as_of_ts_ns 严格透传
@@ -112,7 +112,7 @@ TEST(PositionLedgerW76, TC01_SnapshotConsistency) {
     EXPECT_EQ(pv->condition_id, cid);
     EXPECT_EQ(pv->token_id, tid);
     EXPECT_EQ(pv->outcome, Outcome::Yes);
-    EXPECT_EQ(pv->size_usdc, 200'000'000LL);
+    EXPECT_EQ(pv->net_shares_micro, 200'000'000LL);
     EXPECT_NEAR(pv->avg_entry_price, 0.6, 1e-9);
 
     // R-20: last_update_ts == as_of_ts_ns (禁 now())
@@ -122,7 +122,7 @@ TEST(PositionLedgerW76, TC01_SnapshotConsistency) {
     auto all = ledger.get_all_positions();
     ASSERT_EQ(all.size(), 1u);
     EXPECT_EQ(all[0].token_id, tid);
-    EXPECT_EQ(all[0].size_usdc, 200'000'000LL);
+    EXPECT_EQ(all[0].net_shares_micro, 200'000'000LL);
 
     // per_outcome_exposure
     auto outcome_exp = ledger.get_per_outcome_exposure();
@@ -140,7 +140,7 @@ TEST(PositionLedgerW76, TC01_SnapshotConsistency) {
 
     auto pv2 = ledger.get_position(tid);
     ASSERT_TRUE(pv2.has_value());
-    EXPECT_EQ(pv2->size_usdc, 300'000'000LL);
+    EXPECT_EQ(pv2->net_shares_micro, 300'000'000LL);
     // VWAP: (200 * 0.6 + 100 * 0.4) / 300 = (120 + 40) / 300 = 0.5333...
     EXPECT_NEAR(pv2->avg_entry_price, 160.0 / 300.0, 1e-9);
     EXPECT_EQ(pv2->last_update_ts, 2'000'000'001LL);
@@ -301,7 +301,7 @@ TEST(PositionLedgerEngine, TwoEnginesSameTokenSplit) {
     const std::string cid = "0xc", tok = "900";
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "engB");
-    EXPECT_EQ(L.get_position(tok)->size_usdc, 150'000'000);  // 聚合 = 和
+    EXPECT_EQ(L.get_position(tok)->net_shares_micro, 150'000'000);  // 聚合 = 和
     EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 100'000'000);
     EXPECT_EQ(L.get_engine_position_size(tok, "engB"), 50'000'000);
     EXPECT_EQ(L.get_engine_position_size(tok, "nope"), 0);
@@ -323,7 +323,7 @@ TEST(PositionLedgerEngine, SharpSellOnlyReducesSharpShare) {
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(-40'000'000, 0.55, 1002), "sharp");  // sharp 卖 40
     EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 60'000'000);  // 只减 sharp
     EXPECT_EQ(L.get_engine_position_size(tok, "engB"), 50'000'000);    // engB 不动
-    EXPECT_EQ(L.get_position(tok)->size_usdc, 110'000'000);           // 聚合 110
+    EXPECT_EQ(L.get_position(tok)->net_shares_micro, 110'000'000);           // 聚合 110
 }
 
 TEST(PositionLedgerEngine, FullCloseClearsAllEngineSplits) {
@@ -332,7 +332,7 @@ TEST(PositionLedgerEngine, FullCloseClearsAllEngineSplits) {
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000), "sharp");
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(50'000'000, 0.6, 1001), "engB");
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(-150'000'000, 1.0, 1002), "sharp");  // 结算全平
-    EXPECT_EQ(L.get_position(tok)->size_usdc, 0);  // 聚合归零
+    EXPECT_EQ(L.get_position(tok)->net_shares_micro, 0);  // 聚合归零
     EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 0);  // 全部引擎份清空
     EXPECT_EQ(L.get_engine_position_size(tok, "engB"), 0);
     EXPECT_TRUE(L.get_per_condition_engine_exposure().empty());
@@ -342,7 +342,7 @@ TEST(PositionLedgerEngine, EmptyEngineNoSplitTracking) {
     PositionLedger L;
     const std::string cid = "0xc", tok = "900";
     L.apply_fill(cid, tok, Outcome::Yes, ev_micro(100'000'000, 0.5, 1000));  // engine 空 → 不追踪
-    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000);  // 聚合正常
+    EXPECT_EQ(L.get_position(tok)->net_shares_micro, 100'000'000);  // 聚合正常
     EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 0);  // 无 split
     EXPECT_TRUE(L.get_engine_pos_snapshot().empty());
 }
@@ -363,10 +363,10 @@ TEST(PositionLedgerModeTag, DefaultLedgerAcceptsPaperRejectsLive) {
     const std::string cid = "0xc", tok = "900";
     L.apply_fill(cid, tok, Outcome::Yes, ev_tag(100'000'000, 0.5, 1000, /*paper*/ 0), "sharp");
     ASSERT_TRUE(L.get_position(tok).has_value());
-    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000);
+    EXPECT_EQ(L.get_position(tok)->net_shares_micro, 100'000'000);
     // live 成交 (mode_tag=1) 投到 paper 账本 → 拒, 仓位不变 (R-11 方向)
     L.apply_fill(cid, tok, Outcome::Yes, ev_tag(50'000'000, 0.6, 1001, /*live*/ 1), "sharp");
-    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000) << "paper 账本必须拒 live 成交";
+    EXPECT_EQ(L.get_position(tok)->net_shares_micro, 100'000'000) << "paper 账本必须拒 live 成交";
 }
 
 TEST(PositionLedgerModeTag, LiveLedgerAcceptsLiveRejectsPaper) {
@@ -376,11 +376,11 @@ TEST(PositionLedgerModeTag, LiveLedgerAcceptsLiveRejectsPaper) {
     // live 成交 (mode_tag=1) → 入账 (这正是旧实现丢弃、真钱事故的那笔)
     L.apply_fill(cid, tok, Outcome::Yes, ev_tag(100'000'000, 0.8, 1000, /*live*/ 1), "sharp");
     ASSERT_TRUE(L.get_position(tok).has_value()) << "live 账本必须收 live 成交 (修复核心)";
-    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000);
+    EXPECT_EQ(L.get_position(tok)->net_shares_micro, 100'000'000);
     EXPECT_DOUBLE_EQ(L.get_position(tok)->avg_entry_price, 0.8);
     // paper 成交 (mode_tag=0) 投到 live 账本 → 拒 (R-11 反向也隔离)
     L.apply_fill(cid, tok, Outcome::Yes, ev_tag(50'000'000, 0.5, 1001, /*paper*/ 0), "sharp");
-    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000) << "live 账本必须拒 paper 成交";
+    EXPECT_EQ(L.get_position(tok)->net_shares_micro, 100'000'000) << "live 账本必须拒 paper 成交";
 }
 
 // 2026-06-13 真钱风暴根因复现: apply_fill 落账后, FeedRiskGateway 喂 cap 的两个敞口源
@@ -391,7 +391,7 @@ TEST(PositionLedgerModeTag, LiveFillUpdatesCapExposureGetters) {
     const std::string cid = "0xcond1", tok = "tok900";
     L.apply_fill(cid, tok, Outcome::Yes, ev_tag(100'000'000, 0.8, 1000, /*live*/ 1), "sharp");
     ASSERT_TRUE(L.get_position(tok).has_value());
-    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000);
+    EXPECT_EQ(L.get_position(tok)->net_shares_micro, 100'000'000);
     // FeedRiskGateway 喂 cap 的源 — 必须反映 live 成交, 否则 cap 瞎:
     auto cexp = L.get_per_condition_exposure();
     auto oexp = L.get_per_outcome_exposure();
@@ -412,7 +412,7 @@ TEST(PositionLedgerEngine, SnapshotRoundtrip) {
     L2.restore_engine_split(tok, "engB", 50'000'000);
     EXPECT_EQ(L2.get_engine_position_size(tok, "sharp"), 100'000'000);
     EXPECT_EQ(L2.get_engine_position_size(tok, "engB"), 50'000'000);
-    EXPECT_EQ(L2.get_position(tok)->size_usdc, 150'000'000);
+    EXPECT_EQ(L2.get_position(tok)->net_shares_micro, 150'000'000);
 }
 
 }  // namespace

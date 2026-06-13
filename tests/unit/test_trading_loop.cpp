@@ -536,7 +536,7 @@ TEST_F(TradingLoopTest, T11d_BothSidePositions_Captured) {
         execution::VirtualFill f{};
         f.reject = execution::MatchReject::Ok;
         f.fill_price = px;
-        f.fill_size_usdc = static_cast<std::int64_t>(whole_pusd * 1'000'000.0);  // micro
+        f.fill_shares_micro = static_cast<std::int64_t>(whole_pusd * 1'000'000.0);  // micro
         f.as_of_ts_ns = kAsOfTs;
         f.mode_tag = 0;  // paper
         return f;
@@ -1084,7 +1084,7 @@ TEST_F(TradingLoopTest, T21_R11_ApplyFill_RejectsNonPaperModeTag) {
 
     execution::VirtualFill fill{};
     fill.reject = execution::MatchReject::Ok;
-    fill.fill_size_usdc = 5'000'000;  // A1 micro
+    fill.fill_shares_micro = 5'000'000;  // A1 micro
     fill.fill_price = 0.5;
     fill.as_of_ts_ns = now_ns;
     fill.mode_tag = 1;  // 非 paper (e.g. live) → 红线3 应拒, 不记账
@@ -1203,7 +1203,7 @@ TEST_F(TradingLoopTest, P0_1_ExposureRedLine_UnitGate) {
     // 累积敞口 (2026-06-13 单位根治: 持仓本位=股数, cap 喂【名义】=股×均价):
     //   apply_fill 90 股 @ 0.50 → 名义 = 90 × 0.50 = 45 pUSD。FeedRiskGateway 喂 get_per_condition_notional = 45e6 micro。
     execution::VirtualFill fill{};
-    fill.fill_size_usdc = 90'000'000;  // 90 股 micro (本位=股数)
+    fill.fill_shares_micro = 90'000'000;  // 90 股 micro (本位=股数)
     fill.fill_price = 0.50;
     fill.reject = execution::MatchReject::Ok;
     position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
@@ -1252,7 +1252,7 @@ TEST_F(TradingLoopTest, T_A5_1_DD_HardKill_UnitGate) {
 
     // 亏损持仓: 买 YES @0.80, qty=10000 pUSD; best_bid=0.20 → MtM=(0.20-0.80)*10000=-6000 pUSD
     execution::VirtualFill fill{};
-    fill.fill_size_usdc = 10'000'000'000LL;  // 10000 pUSD (micro)
+    fill.fill_shares_micro = 10'000'000'000LL;  // 10000 pUSD (micro)
     fill.fill_price = 0.80;
     fill.reject = execution::MatchReject::Ok;
     position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
@@ -1285,7 +1285,7 @@ TEST_F(TradingLoopTest, T_A5_2_DD_Soft_CloseExempt) {
 
     // 浮亏 4000 pUSD ∈ [3k,5k): 买 @0.80 qty=10000, best_bid=0.40 → (0.40-0.80)*10000=-4000
     execution::VirtualFill fill{};
-    fill.fill_size_usdc = 10'000'000'000LL;
+    fill.fill_shares_micro = 10'000'000'000LL;
     fill.fill_price = 0.80;
     fill.reject = execution::MatchReject::Ok;
     position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
@@ -1322,7 +1322,7 @@ TEST_F(TradingLoopTest, T_A5_3_DD_NoDoubleCount) {
     rm_->set_edge_ci_lower("dd_dbl", 0.10);
 
     execution::VirtualFill fill{};
-    fill.fill_size_usdc = 10'000'000'000LL;  // qty=10000
+    fill.fill_shares_micro = 10'000'000'000LL;  // qty=10000
     fill.fill_price = 0.80;
     fill.reject = execution::MatchReject::Ok;
     position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
@@ -1353,7 +1353,7 @@ TEST_F(TradingLoopTest, T_A5_4_DD_InvalidBid_Conservative) {
 
     // 持仓但 hub 无该 token book → hub_.Read 返回 nullopt → MtM 贡献跳过 (不臆造正浮盈)
     execution::VirtualFill fill{};
-    fill.fill_size_usdc = 10'000'000'000LL;
+    fill.fill_shares_micro = 10'000'000'000LL;
     fill.fill_price = 0.80;
     fill.reject = execution::MatchReject::Ok;
     position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
@@ -1398,7 +1398,7 @@ TEST_F(TradingLoopTest, T_A5_6_DD_BreakEven_ZeroMtM) {
     rm_->set_edge_ci_lower("dd_be", 0.10);
 
     execution::VirtualFill fill{};
-    fill.fill_size_usdc = 10'000'000'000LL;  // qty=10000
+    fill.fill_shares_micro = 10'000'000'000LL;  // qty=10000
     fill.fill_price = 0.50;
     fill.reject = execution::MatchReject::Ok;
     position_ledger_->apply_fill(cid, tid, strategy::Outcome::Yes, fill);
@@ -1428,7 +1428,7 @@ TEST_F(TradingLoopTest, T_A5_7_DD_MultiPositionAggregation) {
         rm_->set_market_freshness_ms(p.cid, 100);
         rm_->set_token_book_freshness_ms(p.tid, 100);
         execution::VirtualFill fill{};
-        fill.fill_size_usdc = 10'000'000'000LL;  // qty=10000
+        fill.fill_shares_micro = 10'000'000'000LL;  // qty=10000
         fill.fill_price = 0.80;
         fill.reject = execution::MatchReject::Ok;
         position_ledger_->apply_fill(p.cid, p.tid, strategy::Outcome::Yes, fill);
@@ -1594,7 +1594,7 @@ TEST_F(TradingLoopTest, T_Profit_PipelineProducesProfit) {
     const double converged_bid = 0.64;
     double total_pnl = 0.0;
     for (auto const& pv : position_ledger_->get_all_positions()) {
-        const double net_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;  // A5 口径
+        const double net_qty = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;  // A5 口径
         total_pnl += (converged_bid - pv.avg_entry_price) * net_qty;
     }
     std::fprintf(stderr, "[PROFIT] 流水线 MtM PnL = %.2f pUSD (买被低估 YES @~0.47 → 收敛 %.2f)\n", total_pnl,
@@ -1689,7 +1689,7 @@ TEST_F(TradingLoopTest, TC2_Controller_ConvergesToTarget_NoUnboundedAccumulation
     double net_shares = 0.0, avg = 0.0;
     for (const auto& pv : position_ledger_->get_all_positions()) {
         if (pv.token_id == "1001") {
-            net_shares = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+            net_shares = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;
             avg = pv.avg_entry_price;
         }
     }
@@ -1733,7 +1733,7 @@ TEST_F(TradingLoopTest, TM2a_NoSideFlip_HoldsHeldSide) {  // 2026-06-10 老板�
 
     double yes_after_p1 = 0.0;
     for (const auto& pv : position_ledger_->get_all_positions()) {
-        if (pv.token_id == "1001") yes_after_p1 = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        if (pv.token_id == "1001") yes_after_p1 = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;
     }
     ASSERT_GT(yes_after_p1, 0.0) << "M2-a Phase1: 应先建立 YES 多仓 (被低估边)";
 
@@ -1755,8 +1755,8 @@ TEST_F(TradingLoopTest, TM2a_NoSideFlip_HoldsHeldSide) {  // 2026-06-10 老板�
 
     double yes_final = 0.0, no_final = 0.0;
     for (const auto& pv : position_ledger_->get_all_positions()) {
-        if (pv.token_id == "1001") yes_final = static_cast<double>(pv.size_usdc) / 1'000'000.0;
-        if (pv.token_id == "1002") no_final = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        if (pv.token_id == "1001") yes_final = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;
+        if (pv.token_id == "1002") no_final = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;
     }
     std::fprintf(stderr, "[M2a] YES: %.4f(p1) → %.4f(final); NO final=%.4f\n", yes_after_p1, yes_final,
                  no_final);
@@ -1934,7 +1934,7 @@ TEST_F(TradingLoopTest, TS4_Settlement_RealizesAndCloses) {
     double yes_qty = 0.0, avg = 0.0;
     for (const auto& pv : position_ledger_->get_all_positions()) {
         if (pv.token_id == "1001") {
-            yes_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+            yes_qty = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;
             avg = pv.avg_entry_price;
         }
     }
@@ -1958,7 +1958,7 @@ TEST_F(TradingLoopTest, TS4_Settlement_RealizesAndCloses) {
     // 核心: 持仓被平掉 (结算归零账本)
     double yes_final = 0.0;
     for (const auto& pv : position_ledger_->get_all_positions()) {
-        if (pv.token_id == "1001") yes_final = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        if (pv.token_id == "1001") yes_final = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;
     }
     EXPECT_DOUBLE_EQ(yes_final, 0.0) << "TS4: 结算后 YES 持仓平掉 (不再永远挂账本)";
     EXPECT_GT(loop_->stats().positions_settled.load(), static_cast<std::uint64_t>(0))
@@ -1986,7 +1986,7 @@ TEST_F(TradingLoopTest, TS4_Settlement_RealizesAndCloses) {
 TEST_F(TradingLoopTest, TS5_RestResolutionInjection_AuthoritativeSettle) {
     // 直接 apply_fill 预建 YES 仓 (avg 0.40, qty 5) — 避免 mid-run 注入 race (Start 前注入)。
     execution::VirtualFill fill{};
-    fill.fill_size_usdc = 5'000'000;  // 5 pUSD
+    fill.fill_shares_micro = 5'000'000;  // 5 pUSD
     fill.fill_price = 0.40;
     fill.reject = execution::MatchReject::Ok;
     position_ledger_->apply_fill("cond-test-001", "1001", strategy::Outcome::Yes, fill);
@@ -2116,7 +2116,7 @@ TEST_F(TradingLoopTest, LP01_LedgerSnapshotRoundTrip) {
     loop_b.RestoreLedgerSnapshot();
     const auto pos_b = ledger_b->get_position("1001");
     ASSERT_TRUE(pos_b.has_value()) << "重启恢复应还原持仓";
-    EXPECT_EQ(pos_b->size_usdc, pos_a->size_usdc);
+    EXPECT_EQ(pos_b->net_shares_micro, pos_a->net_shares_micro);
     EXPECT_NEAR(pos_b->avg_entry_price, pos_a->avg_entry_price, 1e-9);
     EXPECT_GE(loop_b.clv_report().n_pending_fills, 1u) << "CLV pending 应恢复";
     std::remove(snap.c_str());
@@ -2208,11 +2208,11 @@ TEST_F(TradingLoopTest, UserFill_RecoverMissedAfterMatchUnlock) {
     loop_->DrainUserFillsForTest();
     auto pos = position_ledger_->get_position("1001");
     ASSERT_TRUE(pos.has_value()) << "matched 解锁后, sync 漏记的成交应被兜底补记";
-    EXPECT_EQ(pos->size_usdc, 5'000'000) << "补记 5 股 (micro)";
-    const auto sz_after_first = pos->size_usdc;
+    EXPECT_EQ(pos->net_shares_micro, 5'000'000) << "补记 5 股 (micro)";
+    const auto sz_after_first = pos->net_shares_micro;
     // 同 trade_id 再来 → feed 去重 → 不重复补记
     m->Fire(UFConfirmed("T1", "ORD-MISSED", "BUY", "5"));
     loop_->DrainUserFillsForTest();
-    EXPECT_EQ(position_ledger_->get_position("1001")->size_usdc, sz_after_first)
+    EXPECT_EQ(position_ledger_->get_position("1001")->net_shares_micro, sz_after_first)
         << "同 trade_id 去重, 不得重复补记";
 }

@@ -447,7 +447,7 @@ void TradingLoop::DrainUserFills() {
             // sync 路径已记此 order → 对账核对 (本 token 账本有仓), 不重复记。matched++ 解锁兜底自校验闸。
             ++user_fill_matched_count_;
             const auto pv = position_ledger_.get_position(uf.token_id);
-            const double ledger_sz = pv ? static_cast<double>(pv->size_usdc) / 1'000'000.0 : 0.0;
+            const double ledger_sz = pv ? static_cast<double>(pv->net_shares_micro) / 1'000'000.0 : 0.0;
             std::fprintf(stderr,
                          "[user-fill/ok] cond=%.20s... tok=%.16s... %s sz=%.4f px=%.4f order=%.10s "
                          "ledger=%.4f (sync 已记, 对账通过)\n",
@@ -680,7 +680,7 @@ void TradingLoop::TickAll() {
         bool any_orphan_settled = false;
         int orphan_pending = 0, orphan_resolved = 0;  // 诊断: 孤儿持仓(掉出 catalog) 计数 (老板「查结算是否漏」)
         for (const auto& pv : position_ledger_.get_all_positions()) {  // 返回 copy, 迭代中 SettleToken 改账本安全
-            if (pv.size_usdc == 0) continue;
+            if (pv.net_shares_micro == 0) continue;
             if (tick_inputs_.catalog->find(pv.condition_id) != tick_inputs_.catalog->end()) continue;  // 仍在 catalog
             ++orphan_pending;  // 持仓但掉出 catalog = 孤儿 (= 消失在持仓界面的盘)
             const ResolutionEntry* res = ResolutionFor(pv.condition_id);
@@ -1455,8 +1455,8 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         // 热路径直查 (性能审计 2026-06-12: 不建整张敞口表, 只查这两个 token)。聚合口径 (任一引擎持有即锁边)。
         const auto ypos = position_ledger_.get_position(mkt.yes_token_id);
         const auto npos = position_ledger_.get_position(mkt.no_token_id);
-        const bool hold_yes = (ypos && ypos->size_usdc != 0);
-        const bool hold_no = (npos && npos->size_usdc != 0);
+        const bool hold_yes = (ypos && ypos->net_shares_micro != 0);
+        const bool hold_no = (npos && npos->net_shares_micro != 0);
         if (hold_yes && !hold_no) {
             is_yes = true;            // 锁 YES (持有 YES, 绝不切 NO)
         } else if (hold_no && !hold_yes) {
@@ -1857,7 +1857,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
                 //   20.2u@0.292 −7.26), 所有持有保护都没接住。哲学同 hold-to-settle: 让结算裁决。
                 // per-engine: 冻结的「现仓」= sharp 自己那份 (与 current_pusd 同源, 防 freeze 目标>current 误买)。
                 const double cur_gd = std::abs(
-                    static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0);
+                    static_cast<double>(position_ledger_.get_engine_position_notional(token_id, "sharp")) / 1'000'000.0);
                 if (cur_gd > 0.0 && sel_target < cur_gd) sel_target = cur_gd;  // 冻结: 只增不减由后续门管
             }
         }
@@ -1890,7 +1890,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         const auto pos_frz = position_ledger_.get_position(token_id);  // 聚合 (取 avg)
         // per-engine: 冻结现仓 = sharp 自己那份 (与 current_pusd 同源); avg 仍取聚合 (下方硬止损用)。
         const double cur_qty = std::abs(
-            static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0);
+            static_cast<double>(position_ledger_.get_engine_position_notional(token_id, "sharp")) / 1'000'000.0);
         const double avg_frz = (pos_frz && pos_frz->avg_entry_price > 0.0) ? pos_frz->avg_entry_price : 0.0;
         if (cur_qty > 0.0) sel_target = cur_qty;   // 冻结: sharp 是真值源, 降级时不拿 score-prior 噪声减/平赢家
         // 冻结期硬下行保护 (2026-06-10 持仓策略会 老韩 bug#2 + 老板「下行不够细致 / 两边都要考虑」): 冻结 ≠ 裸暴露。
@@ -1922,7 +1922,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (game_decided_sign == 0.0 && !sel_force_stop) {
         // per-engine: 持有骑到结算的「现仓」= sharp 自己那份 (历史他引擎份额不在此)。
         const double cur_e =
-            std::abs(static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0);
+            std::abs(static_cast<double>(position_ledger_.get_engine_position_notional(token_id, "sharp")) / 1'000'000.0);
         if (cur_e > 0.0 && sel_target < cur_e) {
             sel_target = cur_e;  // 持有骑到结算 (撤任何止盈/缩仓卖出)
         }
@@ -1965,7 +1965,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         const std::string& other_token = is_yes ? mkt.no_token_id : mkt.yes_token_id;
         // 热路径直查 (性能审计 2026-06-12: 不建整表, 只查 other_token)。聚合口径 (任一引擎持有即视为 held)。
         const auto other_pos = position_ledger_.get_position(other_token);
-        const bool other_held = (other_pos && other_pos->size_usdc != 0);
+        const bool other_held = (other_pos && other_pos->net_shares_micro != 0);
         if (other_held) {
             const auto& other_feat = other.book;
             // M2-a 扛一扛门 (2026-06-10 老板「还是割肉了」+「不然都要扛一扛」): 切换选边平旧边是裸割路径。
@@ -2063,7 +2063,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     //   per-engine (2026-06-12 Option A): 主决策环是 sharp 引擎 → 只取【sharp 自己那份】, 控制器据此
     //   决定加/减/平 → sharp 卖出最多卖到自己份 (历史他引擎份额不在 current 里, 永不被误卖)。
     double current_pusd =
-        static_cast<double>(position_ledger_.get_engine_position_size(token_id, "sharp")) / 1'000'000.0;
+        static_cast<double>(position_ledger_.get_engine_position_notional(token_id, "sharp")) / 1'000'000.0;
     // 防抖死区 (小梁 Q-梁-2): threshold = max(floor, 0.10×|target|)。
     //   (fee_k 费率放宽扩展 2026-06-12 治理删: 恒 0 从未开, hold-to-settlement 后无 rebalance churn。)
     const double min_rebalance = control::ComputeRebalanceDeadband(
@@ -2362,7 +2362,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
             std::fflush(stderr);
         }
     }
-    if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
+    if (fill.reject != execution::MatchReject::Ok || fill.fill_shares_micro <= 0) {
         if (fill.reject == execution::MatchReject::ClobRejected)
             // 硬拒 (4xx 精度/最小额/余额) → 冷却该 token (重发必再拒), 根治同秒重发风暴。
             hard_reject_until_ns_[token_id] = NowNs() + kHardRejectCooldownNs;
@@ -2373,20 +2373,20 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     hard_reject_until_ns_.erase(token_id);  // 成交成功 → 清该 token 冷却 (若有)
 
     // ---- Step 8: PositionLedger::apply_fill (卖负 delta, 老周 Q-周-2) ----------
-    //   matcher 出 fill_size_usdc 恒正; 符号在此按 side 定。减仓量已被控制器 clamp ≤ 持仓 → new_size≥0。
+    //   matcher 出 fill_shares_micro 恒正; 符号在此按 side 定。减仓量已被控制器 clamp ≤ 持仓 → new_size≥0。
     // 卖减仓 realize PnL (2026-06-04 金融团队会议「动态持仓实现盈利, 非结算」): 平仓卖出 →
     //   (卖价 − avg_entry) × 卖出 qty 累加进 cum_realized。原仅结算 realize → take-profit/收敛退出卖出
     //   realized 永 0 (账面看不到动态盈利)。此处补齐, 与 SettleToken (:1459) / unrealized (:1536) 同公式。
     //   取 apply_fill 【前】的 avg_entry (减仓不改 avg, 但前置取更稳)。
     double sell_realized = 0.0;
     if (intent.side == strategy::Side::Sell) {
-        const double sold_qty = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
+        const double sold_qty = static_cast<double>(fill.fill_shares_micro) / 1'000'000.0;
         sell_realized = BookSellRealized(condition_id, token_id, fill.fill_price, sold_qty, as_of_now);
     }
 
     risk::FillEvent ev;
     ev.filled_size_micro =
-        (intent.side == strategy::Side::Sell) ? -fill.fill_size_usdc : fill.fill_size_usdc;
+        (intent.side == strategy::Side::Sell) ? -fill.fill_shares_micro : fill.fill_shares_micro;
     ev.fill_price = fill.fill_price;
     ev.mode_tag = fill.mode_tag;  // R-11 载体平移 (0=paper)
     ev.event_ts_ns = fill.event_ts_ns;
@@ -2407,7 +2407,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     // M3 CLV 尺子: 记买入(建仓)成交 entry (卖减仓是退出非建仓, 不计 CLV)。
     if (intent.side == strategy::Side::Buy) {
         clv_tracker_.RecordFill(token_id, fill.fill_price, mark_price,
-                                static_cast<double>(fill.fill_size_usdc) / 1'000'000.0,
+                                static_cast<double>(fill.fill_shares_micro) / 1'000'000.0,
                                 fill.as_of_ts_ns);  // 结算口径, 离线 only
         // 实时 CLV (PIT-safe, Stage2 sizing): 决策 fair − 成交价 (买被低估边: 正=入场优于 fair=好入场)。
         //   成交刻 fair 已观测 (无未来参考) → 可驱动 sizing。滚动均值 → control::ComputeClvMultiplier。
@@ -2419,7 +2419,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
                  "fill_sz=%.4f fill_px=%.4f fair=%.4f realized=%.4f\n",
                  condition_id.c_str(), token_id.c_str(),
                  (intent.side == strategy::Side::Buy) ? "BUY" : "SELL", intent.is_close ? 1 : 0,
-                 static_cast<double>(fill.fill_size_usdc) / 1'000'000.0, fill.fill_price, p_fair_side,
+                 static_cast<double>(fill.fill_shares_micro) / 1'000'000.0, fill.fill_price, p_fair_side,
                  sell_realized);
 
     // ---- 成交流水落 ring (2026-06-04 老板「看懂买卖价」) — 前端流水 + /api/v1/fills ----
@@ -2435,7 +2435,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
         fr.is_buy = (intent.side == strategy::Side::Buy);
         fr.is_close = intent.is_close;
         fr.price = fill.fill_price;
-        fr.size_usdc = static_cast<double>(fill.fill_size_usdc) / 1'000'000.0;
+        fr.size_usdc = static_cast<double>(fill.fill_shares_micro) / 1'000'000.0;
         fr.realized = sell_realized;
         fr.cum_realized = cum_realized_pnl_pusd_;
         fr.fair = p_fair_side;  // 模型对被交易边的 fair (FILL 日志 fair= 同源) — 前端算声称 edge
@@ -2521,9 +2521,9 @@ void TradingLoop::SaveLedgerSnapshot() {
     std::fprintf(fp, "V1 %lld %.10g %.10g\n", static_cast<long long>(NowNs()), cum_realized_pnl_pusd_,
                  cum_fee_pusd_);
     for (const auto& pv : position_ledger_.get_all_positions()) {
-        if (pv.size_usdc == 0) continue;
+        if (pv.net_shares_micro == 0) continue;
         std::fprintf(fp, "P %s %s %d %lld %.10g\n", pv.condition_id.c_str(), pv.token_id.c_str(),
-                     pv.outcome == strategy::Outcome::Yes ? 1 : 0, static_cast<long long>(pv.size_usdc),
+                     pv.outcome == strategy::Outcome::Yes ? 1 : 0, static_cast<long long>(pv.net_shares_micro),
                      pv.avg_entry_price);
     }
     for (const auto& [cid, v] : cum_realized_by_market_) {
@@ -2773,7 +2773,7 @@ void TradingLoop::SamplePositionPaths() {
     const char* path = live ? "data/ml_capture/live_position_path.jsonl" : "data/ml_capture/position_path.jsonl";
     const std::int64_t now = NowNs();
     for (const auto& pv : position_ledger_.get_all_positions()) {
-        if (pv.size_usdc == 0) continue;
+        if (pv.net_shares_micro == 0) continue;
         double bid = std::numeric_limits<double>::quiet_NaN(), ask = bid, mid = bid, sharp = bid;
         if (const auto bk = hub_.Read(pv.token_id); bk && bk->valid) {
             bid = bk->best_bid();
@@ -2790,7 +2790,7 @@ void TradingLoop::SamplePositionPaths() {
             "\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"sharp\":%.4f,\"eng\":\"%s\"}\n",
             static_cast<long long>(now), pv.condition_id.c_str(), pv.token_id.c_str(),
             pv.outcome == strategy::Outcome::Yes ? 1 : 0,
-            static_cast<double>(pv.size_usdc) / 1'000'000.0, pv.avg_entry_price, bid, ask, mid, sharp,
+            static_cast<double>(pv.net_shares_micro) / 1'000'000.0, pv.avg_entry_price, bid, ask, mid, sharp,
             eit2 != engine_by_token_.end() ? eit2->second.c_str() : "sharp");
         if (n > 0) journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(n)));
     }
@@ -2844,10 +2844,10 @@ void TradingLoop::SettleToken(const std::string& condition_id, const std::string
 
     // 当前持仓 (signed micro; v1 long-only ≥0)。无仓 → 后续 realize/平仓 no-op (CLV 已上面算过)。
     const auto pos_opt = position_ledger_.get_position(token_id);
-    if (!pos_opt.has_value() || pos_opt->size_usdc == 0) {
+    if (!pos_opt.has_value() || pos_opt->net_shares_micro == 0) {
         return;
     }
-    const std::int64_t qty_micro = pos_opt->size_usdc;
+    const std::int64_t qty_micro = pos_opt->net_shares_micro;
     const double qty = static_cast<double>(qty_micro) / 1'000'000.0;
     const double avg = pos_opt->avg_entry_price;
     // realize PnL = (结算值 − 加权入场价) × qty (qty signed; v1 long → 正)。
@@ -2985,7 +2985,7 @@ void TradingLoop::PublishLedgerSnapshot(const std::string& condition_id, const e
         if (pv.condition_id == condition_id) {
             // A1: size_usdc 现真为 signed micro (账本 micro 化), /1e6 = qty pUSD 正确
             //   (原 size_usdc 存 whole 时此 /1e6 致 PnL 低估 1e6, A1 后数据对了, 式子本就对)。
-            net_qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+            net_qty = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;
             avg_entry = pv.avg_entry_price;
             last_update = pv.last_update_ts;
             break;
@@ -2994,14 +2994,14 @@ void TradingLoop::PublishLedgerSnapshot(const std::string& condition_id, const e
 
     // 未实现 PnL = (mark - avg_entry) * net_qty
     const double pnl_unrealized = (mark_price - avg_entry) * net_qty;
-    // 已实现 PnL: 简化 M1 只跟 fill.fill_size_usdc × (fill.fill_price - best_ask)
+    // 已实现 PnL: 简化 M1 只跟 fill.fill_shares_micro × (fill.fill_price - best_ask)
     // 逐盘已实现 (老板 2026-06-09 对账修): 用持久累计 cum_realized_by_market_ (sell+settle 都加), 非硬编码 0。
     //   原硬编码 0 → 逐盘 net_pnl 永丢 realized → 平仓后和成交流水 fills 对不上 (顶栏早改 account 口径修了, 逐盘漏)。
     const double pnl_realized = cum_realized_by_market_[condition_id];
-    // A1: fill_size_usdc micro → /1e6 转 pUSD 算 fee (unit-contract-ok: micro→pUSD)
+    // A1: fill_shares_micro micro → /1e6 转 pUSD 算 fee (unit-contract-ok: micro→pUSD)
     // R-fee-2: fee 系数 per-market (gamma feeSchedule.rate), 与 RM/sizing 同源 FeeCoefFor(condition).
     //   未填 → kDefaultFeeCoef(0.03), 与旧 sizing::kSportsTakerFeeRate 逐位不变。
-    const double pnl_fee_this = (static_cast<double>(fill.fill_size_usdc) / 1'000'000.0) *
+    const double pnl_fee_this = (static_cast<double>(fill.fill_shares_micro) / 1'000'000.0) *
                            FeeCoefFor(condition_id) * fill.fill_price * (1.0 - fill.fill_price);
     const double pnl_gross = pnl_realized + pnl_unrealized;
 
@@ -3041,9 +3041,9 @@ void TradingLoop::RepublishLedgerMark(const std::string& condition_id, const std
                                     double mark_price,
                                     const polymarket::clob_wss::OrderBookFeatures& feat) noexcept {
     const auto pos = position_ledger_.get_position(token_id);
-    if (!pos.has_value() || pos->size_usdc == 0) return;
+    if (!pos.has_value() || pos->net_shares_micro == 0) return;
     if (!(mark_price > 0.0) || !std::isfinite(mark_price)) return;
-    const double net_qty = static_cast<double>(pos->size_usdc) / 1'000'000.0;
+    const double net_qty = static_cast<double>(pos->net_shares_micro) / 1'000'000.0;
     const double avg_entry = pos->avg_entry_price;
     risk::LedgerFeatures lf{};
     lf.event_ts_ns = feat.event_ts_ns;
@@ -3093,7 +3093,7 @@ TradingLoop::AccountEquitySnapshot TradingLoop::account_equity() const noexcept 
     double locked_cost = 0.0;  // MVP 近似 cash: 多头占用资金 = Σ(avg_entry × qty)
     for (auto const& pv : position_ledger_.get_all_positions()) {
         // unit-contract-ok: signed micro → whole share (qty)
-        const double qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        const double qty = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;
         if (qty == 0.0) continue;
         ++s.open_positions;
         if (qty > 0.0) locked_cost += pv.avg_entry_price * qty;
@@ -3146,7 +3146,7 @@ std::vector<TradingLoop::PositionMtm> TradingLoop::positions_mtm() const noexcep
     std::vector<PositionMtm> out;
     for (auto const& pv : position_ledger_.get_all_positions()) {
         // unit-contract-ok: signed micro → whole share (qty); 同 account_equity()
-        const double qty = static_cast<double>(pv.size_usdc) / 1'000'000.0;
+        const double qty = static_cast<double>(pv.net_shares_micro) / 1'000'000.0;
         if (qty == 0.0) continue;  // 已平仓 → 不列 (与 account_equity open_positions 口径一致)
         PositionMtm p;
         p.condition_id = pv.condition_id;
@@ -3439,17 +3439,18 @@ void TradingLoop::PopulateFeatureColumns(
         const auto tmit = tick_inputs_.catalog->find(condition_id);
         if (tmit != tick_inputs_.catalog->end()) {
             if (const auto yp = position_ledger_.get_position(tmit->second.tokens.first)) {  // YES token
-                qf.pos_yes_qty = static_cast<double>(yp->size_usdc) / 1'000'000.0;
+                qf.pos_yes_qty = static_cast<double>(yp->net_shares_micro) / 1'000'000.0;
                 qf.pos_yes_avg_entry = yp->avg_entry_price;
             }
             if (const auto np = position_ledger_.get_position(tmit->second.tokens.second)) {  // NO token
-                qf.pos_no_qty = static_cast<double>(np->size_usdc) / 1'000'000.0;
+                qf.pos_no_qty = static_cast<double>(np->net_shares_micro) / 1'000'000.0;
                 qf.pos_no_avg_entry = np->avg_entry_price;
             }
         }
         qf.pos_net_qty = qf.pos_yes_qty - qf.pos_no_qty;  // 净 YES 方向 (NO 持仓 = 反向 YES 敞口)
         qf.pos_avg_entry = qf.pos_yes_avg_entry;          // 向后兼容 (YES 边; 双边见 pos_yes/no_avg_entry)
-        const auto cond_exp = position_ledger_.get_per_condition_exposure();
+        // 2026-06-13 单位根治: pos_condition_exposure_usdc 是 USD 字段 → 用 notional (股×均价), 非股数。
+        const auto cond_exp = position_ledger_.get_per_condition_notional();
         const auto cit = cond_exp.find(condition_id);
         qf.pos_condition_exposure_usdc =
             (cit != cond_exp.end()) ? static_cast<double>(cit->second) / 1'000'000.0 : 0.0;

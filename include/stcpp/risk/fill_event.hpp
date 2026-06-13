@@ -16,7 +16,7 @@
 namespace stcpp::risk {
 
 struct FillEvent {
-    // 仓位增量 (VWAP 计算所需)。signed micro pUSD (= VirtualFill.fill_size_usdc 同单位, 直拷无 cast)。
+    // 仓位增量 (VWAP 计算所需)。signed micro pUSD (= VirtualFill.fill_shares_micro 同单位, 直拷无 cast)。
     std::int64_t filled_size_micro{0};
     double fill_price{0.0};  // ∈ (0, 1)
 

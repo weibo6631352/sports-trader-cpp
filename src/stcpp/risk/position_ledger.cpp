@@ -45,9 +45,9 @@ void PositionLedger::apply_fill(std::string const& condition_id, std::string con
     //   reject 是 VirtualFill 专有语义 → 在此过滤; 中性 FillEvent 不带 reject (已成交事实)。
     if (fill.reject != execution::MatchReject::Ok)
         return;
-    // VirtualFill → 中性 FillEvent (直拷无 cast; A1: fill_size_usdc 已 int64 micro, 不丢仓)。
+    // VirtualFill → 中性 FillEvent (直拷无 cast; A1: fill_shares_micro 已 int64 micro, 不丢仓)。
     FillEvent ev;
-    ev.filled_size_micro = fill.fill_size_usdc;
+    ev.filled_size_micro = fill.fill_shares_micro;
     ev.fill_price = fill.fill_price;
     ev.mode_tag = fill.mode_tag;  // R-11 载体平移
     ev.event_ts_ns = fill.event_ts_ns;
@@ -86,13 +86,13 @@ void PositionLedger::update_position_locked_(std::string const& condition_id, st
         pv.condition_id = condition_id;
         pv.token_id = token_id;
         pv.outcome = outcome;
-        pv.size_usdc = delta_usdc;
+        pv.net_shares_micro = delta_usdc;
         pv.avg_entry_price = (delta_usdc != 0 && fill_price > 0.0) ? fill_price : 0.0;
         pv.last_update_ts = as_of_ts_ns;  // R-20: 透传
         token_positions_.emplace(token_id, std::move(pv));
     } else {
         PositionView& pv = it->second;
-        auto const old_size = pv.size_usdc;
+        auto const old_size = pv.net_shares_micro;
         auto const new_size = old_size + delta_usdc;
 
         // avg_entry_price VWAP (加仓更新, 减仓保持)
@@ -110,7 +110,7 @@ void PositionLedger::update_position_locked_(std::string const& condition_id, st
         if (new_size == 0)
             pv.avg_entry_price = 0.0;
 
-        pv.size_usdc = new_size;
+        pv.net_shares_micro = new_size;
         pv.last_update_ts = as_of_ts_ns;  // R-20: 透传
     }
 
@@ -122,7 +122,7 @@ void PositionLedger::update_position_locked_(std::string const& condition_id, st
     //   (结算/全卖统一收口: 各引擎份归零, per-condition-engine 敞口随之自动消)。
     if (!engine.empty()) {
         const auto agg_it = token_positions_.find(token_id);
-        const std::int64_t agg_size = (agg_it != token_positions_.end()) ? agg_it->second.size_usdc : 0;
+        const std::int64_t agg_size = (agg_it != token_positions_.end()) ? agg_it->second.net_shares_micro : 0;
         if (agg_size == 0) {
             // 该 token 全平: 清所有引擎份 (key 前缀 = token_id + '\x1f')
             const std::string prefix = token_id + '\x1f';
@@ -148,7 +148,7 @@ std::vector<PositionView> PositionLedger::get_all_positions() const noexcept {
     std::vector<PositionView> out;
     out.reserve(token_positions_.size());
     for (auto const& [_, pv] : token_positions_) {
-        if (pv.size_usdc != 0)
+        if (pv.net_shares_micro != 0)
             out.push_back(pv);
     }
     return out;
@@ -167,7 +167,7 @@ std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_outcome_ex
     std::unordered_map<std::string, std::int64_t> out;
     out.reserve(token_positions_.size());
     for (auto const& [tid, pv] : token_positions_) {
-        out[tid] = pv.size_usdc;
+        out[tid] = pv.net_shares_micro;
     }
     return out;
 }
@@ -183,7 +183,7 @@ std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_outcome_no
     std::unordered_map<std::string, std::int64_t> out;
     out.reserve(token_positions_.size());
     for (auto const& [tid, pv] : token_positions_)
-        out[tid] = static_cast<std::int64_t>(std::llround(static_cast<double>(pv.size_usdc) * pv.avg_entry_price));
+        out[tid] = static_cast<std::int64_t>(std::llround(static_cast<double>(pv.net_shares_micro) * pv.avg_entry_price));
     return out;
 }
 
@@ -192,7 +192,7 @@ std::unordered_map<std::string, std::int64_t> PositionLedger::get_per_condition_
     std::unordered_map<std::string, std::int64_t> out;
     for (auto const& [tid, pv] : token_positions_)
         out[pv.condition_id] +=
-            static_cast<std::int64_t>(std::llround(static_cast<double>(pv.size_usdc) * pv.avg_entry_price));
+            static_cast<std::int64_t>(std::llround(static_cast<double>(pv.net_shares_micro) * pv.avg_entry_price));
     return out;
 }
 

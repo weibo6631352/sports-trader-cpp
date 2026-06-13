@@ -29,7 +29,7 @@ TEST(FillEventLedger, PaperFillRecorded) {
     led.apply_fill("0xcond", "tok1", Outcome::Yes, paper_fill(1'000'000, 0.5));
     const auto pos = led.get_position("tok1");
     ASSERT_TRUE(pos.has_value());
-    EXPECT_EQ(pos->size_usdc, 1'000'000);
+    EXPECT_EQ(pos->net_shares_micro, 1'000'000);
     EXPECT_DOUBLE_EQ(pos->avg_entry_price, 0.5);
 }
 

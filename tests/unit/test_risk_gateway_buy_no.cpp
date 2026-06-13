@@ -60,7 +60,7 @@ private:
 
 execution::VirtualFill make_fill(std::int64_t size_micro, double price) {
     execution::VirtualFill f{};
-    f.fill_size_usdc = size_micro;  // A1: micro int64
+    f.fill_shares_micro = size_micro;  // A1: micro int64
     f.fill_price = price;
     f.reject = execution::MatchReject::Ok;
     return f;

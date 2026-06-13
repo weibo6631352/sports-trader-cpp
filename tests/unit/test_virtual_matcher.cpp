@@ -68,7 +68,7 @@ TEST(VirtualMatcher, SlippageReject_NaN_Propagates) {
     ord.book_depth_l1_usdc = std::nan("");  // → SlippageModel reject
     const auto fill = m.Match(ord);
     EXPECT_EQ(fill.reject, execution::MatchReject::SlippageModelReject);
-    EXPECT_EQ(fill.fill_size_usdc, 0);
+    EXPECT_EQ(fill.fill_shares_micro, 0);
 }
 
 TEST(VirtualMatcher, SlippageReject_ExceedBookDepth) {
@@ -115,7 +115,7 @@ TEST(VirtualMatcher, BernoulliMissed_WhenUniformAboveP) {
     m.SetUniformOverrideForTesting(0.99);  // > cap=0.65 → miss
     const auto fill = m.Match(ord);
     EXPECT_EQ(fill.reject, execution::MatchReject::BernoulliMissed);
-    EXPECT_EQ(fill.fill_size_usdc, 0);
+    EXPECT_EQ(fill.fill_shares_micro, 0);
     EXPECT_FALSE(fill.bernoulli_draw);
 }
 
@@ -126,7 +126,7 @@ TEST(VirtualMatcher, BernoulliHit_WhenUniformBelowP) {
     const auto fill = m.Match(ord);
     EXPECT_EQ(fill.reject, execution::MatchReject::Ok);
     EXPECT_TRUE(fill.bernoulli_draw);
-    EXPECT_GT(fill.fill_size_usdc, 0);
+    EXPECT_GT(fill.fill_shares_micro, 0);
 }
 
 // Mode A++ 分布稳定性: 1000 抽样下 hit rate 应落在 [floor, cap+eps]
@@ -175,9 +175,9 @@ TEST(VirtualMatcher, FillSizeUsdc_ScaledByExpectedRate) {
     // 2026-06-13 单位根治: fill_size 本位=【股数】micro = (size_usdc × rate) / fill_price (与 live adapter 一致)。
     const double shares = (ord.size_usdc * fill.expected_fill_rate) / fill.fill_price;
     const std::int64_t expected = static_cast<std::int64_t>(std::llround(shares * 1'000'000.0));
-    EXPECT_EQ(fill.fill_size_usdc, expected);
+    EXPECT_EQ(fill.fill_shares_micro, expected);
     // 股数 > 名义 (价 0.55 < 1): 印证本位是股数不是 USD。
-    EXPECT_GT(fill.fill_size_usdc, domain::to_micro_pusd(ord.size_usdc * fill.expected_fill_rate));
+    EXPECT_GT(fill.fill_shares_micro, domain::to_micro_pusd(ord.size_usdc * fill.expected_fill_rate));
 }
 
 // ---------- T9: VirtualFill 含 market_id / outcome 字段 (W6 @小蒋 Wave 29) ----------
@@ -272,9 +272,9 @@ TEST(VirtualMatcher, A1_SubOnePusdFill_NotTruncatedToZero) {
     m.SetUniformOverrideForTesting(0.0);                                     // 强制成交
     const auto fill = m.Match(ord);
     ASSERT_EQ(fill.reject, execution::MatchReject::Ok);
-    EXPECT_GT(fill.fill_size_usdc, 0)
+    EXPECT_GT(fill.fill_shares_micro, 0)
         << "A1: <1pUSD fill 必须保留 micro (老郭丢仓 bug: 旧 (int64)whole 截 0)";
     // 2026-06-13 单位根治: 本位股数 = (size × rate) / fill_price。
     const double shares = (ord.size_usdc * fill.expected_fill_rate) / fill.fill_price;
-    EXPECT_EQ(fill.fill_size_usdc, static_cast<std::int64_t>(std::llround(shares * 1'000'000.0)));
+    EXPECT_EQ(fill.fill_shares_micro, static_cast<std::int64_t>(std::llround(shares * 1'000'000.0)));
 }

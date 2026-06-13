@@ -63,7 +63,7 @@ VirtualFill VirtualMatcher::Match(const VirtualOrder& order) noexcept {
 
     if (so.reject != numerical::RejectCode::Ok) {
         out.reject = MatchReject::SlippageModelReject;
-        out.fill_size_usdc = 0;
+        out.fill_shares_micro = 0;
         out.p_fill_clamped = 0.0;
         out.bernoulli_draw = false;
         return out;
@@ -87,7 +87,7 @@ VirtualFill VirtualMatcher::Match(const VirtualOrder& order) noexcept {
 
     if (!draw) {
         out.reject = MatchReject::BernoulliMissed;
-        out.fill_size_usdc = 0;
+        out.fill_shares_micro = 0;
         return out;
     }
 
@@ -99,7 +99,7 @@ VirtualFill VirtualMatcher::Match(const VirtualOrder& order) noexcept {
     out.reject = MatchReject::Ok;
     const double filled_usd = order.size_usdc * rate01;
     const double shares = (out.fill_price > 0.0) ? filled_usd / out.fill_price : 0.0;
-    out.fill_size_usdc = static_cast<std::int64_t>(std::llround(shares * 1'000'000.0));  // 股数 micro
+    out.fill_shares_micro = static_cast<std::int64_t>(std::llround(shares * 1'000'000.0));  // 股数 micro
     return out;
 }
 
@@ -136,12 +136,12 @@ VirtualFill VirtualMatcher::MatchWithBook(const VirtualOrderWithBook& order) noe
     // ClobModelReject: InvalidSnapshot 或 InvalidIntent → 拒单
     if (clob_out.reject == microstructure::FillRateReject::InvalidSnapshot) {
         out.reject = MatchReject::InvalidBookSnapshot;
-        out.fill_size_usdc = 0;
+        out.fill_shares_micro = 0;
         return out;
     }
     if (clob_out.reject == microstructure::FillRateReject::InvalidIntent) {
         out.reject = MatchReject::ClobModelReject;
-        out.fill_size_usdc = 0;
+        out.fill_shares_micro = 0;
         return out;
     }
     // BelowFloor: 标记但继续, fill_rate < 0.50 会在下面 clamp 到 FLOOR
@@ -157,7 +157,7 @@ VirtualFill VirtualMatcher::MatchWithBook(const VirtualOrderWithBook& order) noe
     // BelowFloor 拒单 (fill_rate < FLOOR 即使 clamp 也无意义)
     if (clob_out.reject == microstructure::FillRateReject::BelowFloor) {
         out.reject = MatchReject::ClobModelReject;
-        out.fill_size_usdc = 0;
+        out.fill_shares_micro = 0;
         out.bernoulli_draw = false;
         return out;
     }
@@ -189,7 +189,7 @@ VirtualFill VirtualMatcher::MatchWithBook(const VirtualOrderWithBook& order) noe
     out.bernoulli_draw = true;  // Mode A: 有成交
     const double filled_usd_a = order.size_usdc * p_clamped;
     const double shares_a = (out.fill_price > 0.0) ? filled_usd_a / out.fill_price : 0.0;
-    out.fill_size_usdc = static_cast<std::int64_t>(std::llround(shares_a * 1'000'000.0));  // 股数 micro
+    out.fill_shares_micro = static_cast<std::int64_t>(std::llround(shares_a * 1'000'000.0));  // 股数 micro
 
     return out;
 }

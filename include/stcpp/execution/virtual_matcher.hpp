@@ -113,11 +113,11 @@ struct VirtualFill {
     MatchReject reject{MatchReject::Ok};
 
     double fill_price{0.0};  // VWAP, SlippageModel 出 (Mode A++) 或 clob 估算 (Mode A)
-    // A1 (老郭钳-3): micro (1e-6), signed; ledger 直存无截断 (消 <1pUSD 丢仓)。
-    // ⚠ 同名异义 (L1 backlog, 早于本会话; 各模式内自洽): paper = notional pUSD micro (to_micro_pusd(
-    //   order.size_usdc × fill_rate)); live = 股数 micro (LiveExecutorAdapter: filled_shares × 1e6)。
-    //   下游 (apply_fill/account_equity/RecoverMissedFill) 在各模式内口径一致, 但字段名 `_usdc` 对 live 误导。
-    std::int64_t fill_size_usdc{0};
+    // 成交【股数】micro (1e-6), signed; ledger 直存无截断 (消 <1股 丢仓)。
+    // 2026-06-13 单位根治: paper(VirtualMatcher)+live(LiveExecutorAdapter) 统一出股数 (canonical=股数,
+    //   原 L1 双语义债已消)。USD 名义由 股×price 在 cap/sizing/equity 处导出。下游 apply_fill→PositionView
+    //   .net_shares_micro 同本位 (股数)。
+    std::int64_t fill_shares_micro{0};
     double expected_fill_rate{0.0};
     double p_fill_clamped{0.0};  // floor/cap 后的 Bernoulli 参数
     std::int32_t slippage_bps{0};

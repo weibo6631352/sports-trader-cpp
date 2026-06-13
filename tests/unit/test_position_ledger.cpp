@@ -64,12 +64,12 @@ namespace {
 
 // 构造 4 ts 合法的 VirtualFill (R-20)
 // fill_ts_ns ≤ ds_ts_ns ≤ ingest_ts_ns ≤ as_of_ts_ns, 全部 ≤ now
-[[nodiscard]] stcpp::execution::VirtualFill MakeValidFill(double fill_price, double fill_size_usdc) {
+[[nodiscard]] stcpp::execution::VirtualFill MakeValidFill(double fill_price, double fill_shares_micro) {
     const std::int64_t base = NowNs() - 1'000'000'000LL;  // now - 1s
     stcpp::execution::VirtualFill f{};
     f.reject = stcpp::execution::MatchReject::Ok;
     f.fill_price = fill_price;
-    f.fill_size_usdc = stcpp::domain::to_micro_pusd(fill_size_usdc);  // A1
+    f.fill_shares_micro = stcpp::domain::to_micro_pusd(fill_shares_micro);  // A1
     f.expected_fill_rate = 0.6;
     f.p_fill_clamped = 0.6;
     f.slippage_bps = 5;
@@ -181,8 +181,8 @@ TEST(PositionLedger, T1_ApplyFill_QueryPosition_SingleFill) {
     // WAL 落了 1 条
     EXPECT_EQ(mock_ptr->records().size(), 1u);
 
-    // position_total = fill_size_usdc * 1e6 = 10_000_000
-    EXPECT_EQ(res.record.position_total, 10'000'000LL) << "position_total = fill_size_usdc * 1e6";
+    // position_total = fill_shares_micro * 1e6 = 10_000_000
+    EXPECT_EQ(res.record.position_total, 10'000'000LL) << "position_total = fill_shares_micro * 1e6";
 
     // position_delta = same as total (首笔)
     EXPECT_EQ(res.record.position_delta, 10'000'000LL);
@@ -319,7 +319,7 @@ TEST(PositionLedger, T4_R20_FourTs_Transparency) {
     stcpp::execution::VirtualFill fill{};
     fill.reject = stcpp::execution::MatchReject::Ok;
     fill.fill_price = 0.55;
-    fill.fill_size_usdc = stcpp::domain::to_micro_pusd(15.0);  // A1
+    fill.fill_shares_micro = stcpp::domain::to_micro_pusd(15.0);  // A1
     fill.bernoulli_draw = true;
     // R-20: 严格递增链
     fill.fill_ts_ns = base;
@@ -362,7 +362,7 @@ TEST(PositionLedger, T4_PitViolation_Rejected) {
     stcpp::execution::VirtualFill fill{};
     fill.reject = stcpp::execution::MatchReject::Ok;
     fill.fill_price = 0.55;
-    fill.fill_size_usdc = stcpp::domain::to_micro_pusd(15.0);  // A1
+    fill.fill_shares_micro = stcpp::domain::to_micro_pusd(15.0);  // A1
     fill.bernoulli_draw = true;
     // 违反 PIT: data_source_ts < fill_ts (DsBeforeEvent)
     fill.fill_ts_ns = base + 1'000;

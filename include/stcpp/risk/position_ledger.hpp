@@ -86,7 +86,8 @@ class PositionLedger {
     // 按 token_id 查单笔 (nullopt = 无仓)
     [[nodiscard]] std::optional<PositionView> get_position(std::string const& token_id) const noexcept;
 
-    // per-outcome exposure: token_id → net_size_usdc (signed)
+    // per-outcome exposure: token_id → net 持仓【股数】micro (signed)。2026-06-13 正名: 返股数非 USD。
+    //   USD 名义用 get_per_outcome_notional (股×均价)。
     [[nodiscard]] std::unordered_map<std::string, std::int64_t>
     get_per_outcome_exposure() const noexcept;
 

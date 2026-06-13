@@ -138,10 +138,10 @@ ApplyResult PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill
         return ApplyResult{ApplyStatus::WalFailed, {}, 0};
     }
 
-    // BernoulliMissed / reject fill: 不记账 (fill_size_usdc == 0 但 reject != Ok)
-    // apply_fill 仅处理成功 fill (MatchReject::Ok + fill_size_usdc > 0)
+    // BernoulliMissed / reject fill: 不记账 (fill_shares_micro == 0 但 reject != Ok)
+    // apply_fill 仅处理成功 fill (MatchReject::Ok + fill_shares_micro > 0)
     // 注: rejected fill 由 PaperAudit WAL 记录 (小蒋负责), 不进 position ledger
-    if (fill.reject != stcpp::execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {  // A1: micro int64
+    if (fill.reject != stcpp::execution::MatchReject::Ok || fill.fill_shares_micro <= 0) {  // A1: micro int64
         return ApplyResult{ApplyStatus::InvalidFill, {}, 0};
     }
 
@@ -160,8 +160,8 @@ ApplyResult PositionLedger::apply_fill(const stcpp::execution::VirtualFill& fill
     {
         std::lock_guard<std::mutex> lk(state_mutex_);
 
-        // A1: fill_size_usdc 已是 int64 micro, 直存无 ×1e6 (原对 whole VirtualFill 的补偿乘已删)
-        const std::int64_t fill_size_micro = fill.fill_size_usdc;
+        // A1: fill_shares_micro 已是 int64 micro, 直存无 ×1e6 (原对 whole VirtualFill 的补偿乘已删)
+        const std::int64_t fill_size_micro = fill.fill_shares_micro;
         // fill_price → micro (int64)
         const std::int64_t fill_price_micro = static_cast<std::int64_t>(fill.fill_price * 1'000'000.0 + 0.5);
 
