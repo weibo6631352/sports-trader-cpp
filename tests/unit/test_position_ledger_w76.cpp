@@ -395,8 +395,23 @@ TEST(PositionLedgerModeTag, LiveFillUpdatesCapExposureGetters) {
     // FeedRiskGateway 喂 cap 的源 — 必须反映 live 成交, 否则 cap 瞎:
     auto cexp = L.get_per_condition_exposure();
     auto oexp = L.get_per_outcome_exposure();
-    EXPECT_EQ(cexp[cid], 100'000'000) << "get_per_condition_exposure 必须反映 live 成交 (→condition cap); =0 则 cap 瞎→风暴";
-    EXPECT_EQ(oexp[tok], 100'000'000) << "get_per_outcome_exposure 必须反映 live 成交 (→outcome cap); =0 则 cap 瞎→风暴";
+    EXPECT_EQ(cexp[cid], 100'000'000) << "get_per_condition_exposure 必须反映 live 成交 (返股数); =0 则瞎";
+    EXPECT_EQ(oexp[tok], 100'000'000) << "get_per_outcome_exposure 必须反映 live 成交 (返股数); =0 则瞎";
+}
+
+// 2026-06-13 单位根治契约: 持仓本位=股数; cap/sizing 用的 notional getter = 股数 × 均价 (USD 名义)。
+//   锁「股→USD」换算: 100 股 @ 0.80 → 名义 80 USD。若 cap 直接拿股数当 USD (旧 bug), 价≠1 时单位错→风暴。
+TEST(PositionLedgerModeTag, NotionalGettersDeriveUsdFromShares) {
+    PositionLedger L(/*accepted_mode_tag=*/1);
+    const std::string cid = "0xcondN", tok = "tokN";
+    L.apply_fill(cid, tok, Outcome::Yes, ev_tag(100'000'000, 0.80, 1000, /*live*/ 1), "sharp");
+    // exposure getter = 股数 (本位); notional getter = 股数 × 均价 = USD 名义。
+    EXPECT_EQ(L.get_per_outcome_exposure()[tok], 100'000'000) << "exposure=股数(100 股)";
+    EXPECT_EQ(L.get_per_outcome_notional()[tok], 80'000'000) << "notional=USD(100股×0.80=80)";
+    EXPECT_EQ(L.get_per_condition_notional()[cid], 80'000'000) << "condition notional=USD";
+    EXPECT_EQ(L.get_engine_condition_notional(cid, "sharp"), 80'000'000) << "engine condition notional=USD";
+    EXPECT_EQ(L.get_engine_position_notional(tok, "sharp"), 80'000'000) << "engine position notional=USD";
+    EXPECT_EQ(L.get_engine_position_size(tok, "sharp"), 100'000'000) << "engine position size=股数";
 }
 
 TEST(PositionLedgerEngine, SnapshotRoundtrip) {
