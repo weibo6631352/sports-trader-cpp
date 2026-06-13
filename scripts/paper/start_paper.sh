@@ -18,6 +18,9 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -GNinja >/dev/null
 ninja -C build trader_server
 
 LOG=/tmp/paper_server.log
+# 残留锁预清 (2026-06-13): 走到这说明无 paper 在跑 (上面 guard 已挡), 若有死锁残留 (上次 kill -9) 清掉。
+#   C++ 端单实例锁也有 2s flock 重试自动回收兜底。
+pgrep -x trader_server >/dev/null || rm -f /tmp/stcpp/engine.pid
 setsid ./build/src/stcpp/app/trader_server --mode paper --port 7080 --host 0.0.0.0 \
   > "$LOG" 2>&1 < /dev/null &
 sleep 4

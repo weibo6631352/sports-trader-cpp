@@ -17,6 +17,7 @@
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <string>
 #include <string_view>
@@ -283,23 +284,46 @@ void SingleInstanceLock::acquire_(const std::string& path, const std::string& mo
     // 4. flock — LOCK_NB: 立即失败不阻塞
     if (::flock(fd_guard_.get(), LOCK_EX | LOCK_NB) != 0) {    // NOLINT(hicpp-signed-bitwise)
         if (errno == EWOULDBLOCK) {
-            // 读旧 PID file 提供诊断 (失败不影响 flock 语义)
-            const auto c = ReadPidFile(fd_guard_.get());
-            fd_guard_.close_now();  // RAII close: releases flock
+            // 2026-06-13 死锁自动回收 (老板「PID 已死自动回收, 不要堆积」): flock 被持 = 持有者进程仍活
+            //   (flock 绑 open fd, 进程死→kernel 释放, PID 文件只是诊断)。但 SIGKILL 后旧进程可能短暂未被
+            //   回收 (D 态网络线程) → flock 未释 → 新实例 EWOULDBLOCK = 误判"已在跑"。重试 ~2s 给其释放,
+            //   期间一旦 flock 成功即【自动回收】上一实例残留锁。仅启动期 (R-12 不进 hot path)。
+            //   2s 后仍被持 = 确有另一实例真在跑 → 拒。
+            const auto c0 = ReadPidFile(fd_guard_.get());
+            const bool prev_dead =
+                (c0.pid <= 0) || (::kill(static_cast<pid_t>(c0.pid), 0) != 0 && errno == ESRCH);
+            constexpr int kRetries = 5;           // 5 × 200ms = 1s 上限 (reap 竞态够; 主防线是 start_*.sh wait-for-death)
+            constexpr useconds_t kSleepUs = 200'000;
+            bool acquired = false;
+            for (int attempt = 0; attempt < kRetries; ++attempt) {
+                ::usleep(kSleepUs);
+                if (::flock(fd_guard_.get(), LOCK_EX | LOCK_NB) == 0) {  // NOLINT(hicpp-signed-bitwise)
+                    acquired = true;
+                    break;
+                }
+            }
+            if (!acquired) {
+                const auto c = ReadPidFile(fd_guard_.get());
+                fd_guard_.close_now();  // RAII close: releases flock
+                throw SingleInstanceLockFailure(
+                    std::string("[single-instance] FATAL: ") + mode_str +
+                        " already running pid=" + std::to_string(c.pid) +
+                        " since=" + std::to_string(c.start_ts_ns) +
+                        " commit=" + c.commit + " (2s retry 后仍被持, 确有实例在跑)",
+                    c.pid, c.start_ts_ns, c.exec_mode, c.commit);
+            }
+            std::fprintf(stderr,
+                         "[single-instance] ⚠ 自动回收上一实例残留锁 (prev pid=%lld %s) → 启动继续\n",
+                         static_cast<long long>(c0.pid), prev_dead ? "已死" : "刚释放");
+        } else {
+            // 其他 errno (ENOLCK 等)
+            const int saved = errno;
+            fd_guard_.close_now();  // RAII close
             throw SingleInstanceLockFailure(
-                std::string("[single-instance] FATAL: ") + mode_str +
-                    " already running pid=" + std::to_string(c.pid) +
-                    " since=" + std::to_string(c.start_ts_ns) +
-                    " commit=" + c.commit,
-                c.pid, c.start_ts_ns, c.exec_mode, c.commit);
+                std::string("[single-instance] FATAL: flock failed errno=") +
+                    std::to_string(saved),
+                0, 0, mode_str, STCPP_BUILD_COMMIT);
         }
-        // 其他 errno (ENOLCK 等)
-        const int saved = errno;
-        fd_guard_.close_now();  // RAII close
-        throw SingleInstanceLockFailure(
-            std::string("[single-instance] FATAL: flock failed errno=") +
-                std::to_string(saved),
-            0, 0, mode_str, STCPP_BUILD_COMMIT);
     }
 
     // 5. 写 PID file 内容

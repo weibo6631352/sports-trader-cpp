@@ -448,8 +448,10 @@ TEST(SingleInstanceLock, T7_RaceCondition_OnlyOneWins) {
                 stcpp::infra::process::SingleInstanceLock lock{
                     stcpp::execution::ExecutionMode::Paper};
                 result = 'S';
-                // hold briefly
-                ::usleep(5000);  // 5ms
+                // 持锁 2s (> C++ acquire 的 1s EWOULDBLOCK 重试窗口): 2026-06-13 死锁自动回收后, 赢家须
+                //   持有到超过对手重试窗, 对手才耗尽重试→拒 → 真测【同时启动的互斥】(只一个赢)。
+                //   原 5ms 秒退在重试语义下会让对手在赢家释放后相继回收 = 全赢 (那是重启回收的正确行为, 非互斥)。
+                ::usleep(2'000'000);  // 2s
             } catch (const stcpp::infra::process::SingleInstanceLockFailure&) {
                 result = 'F';
             }
@@ -703,5 +705,44 @@ TEST(SingleInstanceLock, T8_GlobalEngineLock_SecondFails) {
         stcpp::infra::process::SingleInstanceLockFailure)
         << "第二个引擎实例必须被全局锁拒绝";
 
+    UnlinkIfExists(gpath);
+}
+
+// T9: 死锁自动回收 (2026-06-13 老板「PID 已死自动回收, 不要堆积」)。子进程持全局锁 400ms 后退出 (kill -9
+//   后旧进程未及回收的竞态模型: flock 短暂未释)。父进程在 1s EWOULDBLOCK 重试窗内拿到 = 自动回收成功。
+TEST(SingleInstanceLock, T10_StaleLockAutoReclaim) {
+    EnsureTestDir();
+    const std::string gpath = stcpp::infra::process::SingleInstanceLock::global_engine_path();
+    UnlinkIfExists(gpath);
+    {
+        const auto slash = gpath.rfind('/');
+        const std::string pid_dir = (slash != std::string::npos) ? gpath.substr(0, slash) : "/tmp";
+        ::setenv("STCPP_TEST_PID_DIR", pid_dir.c_str(), 1);
+    }
+
+    const pid_t child = ::fork();
+    ASSERT_GE(child, 0);
+    if (child == 0) {
+        try {
+            stcpp::infra::process::SingleInstanceLock hold{stcpp::infra::process::kGlobalEngine};
+            ::usleep(400'000);  // 持锁 400ms (< 父 1s 重试窗) 后退出 → flock 释放, 父应回收
+        } catch (...) {
+        }
+        ::_exit(0);
+    }
+    ::usleep(100'000);  // 让子进程先抢到锁
+
+    // 父进程: 此刻子持锁 → 首次 flock EWOULDBLOCK → 重试; 子 400ms 后退出释放 → 父在 1s 窗内回收成功。
+    bool acquired = false;
+    try {
+        stcpp::infra::process::SingleInstanceLock g{stcpp::infra::process::kGlobalEngine};
+        acquired = true;
+    } catch (const stcpp::infra::process::SingleInstanceLockFailure&) {
+        acquired = false;
+    }
+    EXPECT_TRUE(acquired) << "子进程释放后, 父应在重试窗内自动回收残留锁 (非永久被拒)";
+
+    int status = 0;
+    ::waitpid(child, &status, 0);
     UnlinkIfExists(gpath);
 }

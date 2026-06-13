@@ -16,6 +16,10 @@ ninja -C build trader_server
 # pkill -x 精确按进程名杀 (-f 模式串会误杀含同字样的 shell 自身, 实测踩过)
 pkill -x trader_server 2>/dev/null || true
 sleep 2; pkill -9 -x trader_server 2>/dev/null || true
+# 等旧进程【真死】再起 (2026-06-13: SIGKILL 后旧进程未及回收 → flock 未释 → 新实例被误判"已在跑"。
+#   C++ 端已加 2s flock 重试自动回收兜底; 这里再等死消竞态 + 进程真没了才清残留 PID 文件)。
+for _i in $(seq 1 25); do pgrep -x trader_server >/dev/null || break; sleep 0.2; done
+pgrep -x trader_server >/dev/null || rm -f /tmp/stcpp/engine.pid
 setsid ./build/src/stcpp/app/trader_server --mode live --host 0.0.0.0 --port 7080 --enable-fills \
   > /tmp/live_server.log 2>&1 < /dev/null &
 sleep 4
