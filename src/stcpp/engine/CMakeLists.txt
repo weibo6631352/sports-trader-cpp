@@ -33,6 +33,18 @@ target_include_directories(stcpp_trading_loop
 
 target_compile_features(stcpp_trading_loop PUBLIC cxx_std_20)
 
+# git commit 注入 (2026-06-14 review #2): version 标签行带 commit, 离线按"代码版本"切段 (同 config 不同 build
+#   也能分)。CI 可 -DSTCPP_BUILD_COMMIT 传; 否则 configure 时自动探 git HEAD (start 脚本每次跑 cmake → 当前)。
+if(NOT DEFINED STCPP_BUILD_COMMIT)
+    execute_process(COMMAND git rev-parse --short HEAD
+                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                    OUTPUT_VARIABLE STCPP_BUILD_COMMIT OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+    if(NOT STCPP_BUILD_COMMIT)
+        set(STCPP_BUILD_COMMIT "unknown")
+    endif()
+endif()
+target_compile_definitions(stcpp_trading_loop PRIVATE STCPP_BUILD_COMMIT="${STCPP_BUILD_COMMIT}")
+
 # ExecutionMode (R-7: paper loop 仅 paper binary 使用; 此 target 不强制 mode,
 # 由使用方 binary 决定; 这里不加 EXEC_MODE define 以便测试用 paper mode 编译)
 

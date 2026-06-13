@@ -789,8 +789,8 @@ public:
     void SetScoreStore(const data::ScoreSnapshotStore* s) noexcept { score_store_ = s; }
 
     // Phase 2 (live 成交异步入账): 注入 CLOB user 频道成交接收器 (daemon 管生命周期; loop_thread 每 tick 排空)。
-    //   行为 = 对账 + 兜底: sync (FOK 回执) 为主真相源; WSS 收 CONFIRMED 成交按 order_id 比对, sync 漏记
-    //   (回执丢失) 则兜底补记 (RecoverMissedFill)。自校验闸: order_id 格式经匹配证实前只告警不补 (防双记账)。
+    //   行为 = WSS 权威入账: CONFIRMED 成交按 order_id 比对 synced_order_ids_, sync 已记则对账核对、未记则
+    //   RecoverMissedFill 补记 (2026-06-13 删自校验死锁闸 → 不再要求"先匹配过"; 去重靠 trade_id + order_id)。
     void SetUserFillFeed(polymarket::LiveUserFillFeed* feed) noexcept { user_fill_feed_ = feed; }
 
     // 事件驱动触发 (2026-06-04 老板「别轮询, 直接触发更快」): 数据源 (WSS book / 149hz poll / 赔率) 到达即调。
@@ -904,6 +904,9 @@ private:
     // ---- R-3: per-condition 静态元数据统一 catalog (RCU 热刷; loop 读 tick 快照, daemon 写 swap) ----
     //   原 token/fee/cat/parent 4 张并行 map 合并; 周期重发现一次原子 swap (消半新半旧定价分派错)。
     static constexpr double kDefaultFeeCoef = 0.03;  // 体育保守 (= RM kSportsTakerFeeRate); 查不到默认
+    // 高价带 −EV 不开仓门 (实证 0.70-0.84 利润带, ≥0.84 出血)。2026-06-14 提为类级单源 —— 入场门(ExecuteControllerSide)
+    //   与 version 标签行共用同一符号, 消"改一处另一处静默说谎"漂移 (review #1)。
+    static constexpr double kMaxOpenAsk = 0.84;
     mutable std::mutex catalog_mu_;
     std::shared_ptr<const PaperCatalog> catalog_;
     TradingLoopConfig cfg_;

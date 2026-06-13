@@ -286,9 +286,9 @@ void SingleInstanceLock::acquire_(const std::string& path, const std::string& mo
         if (errno == EWOULDBLOCK) {
             // 2026-06-13 死锁自动回收 (老板「PID 已死自动回收, 不要堆积」): flock 被持 = 持有者进程仍活
             //   (flock 绑 open fd, 进程死→kernel 释放, PID 文件只是诊断)。但 SIGKILL 后旧进程可能短暂未被
-            //   回收 (D 态网络线程) → flock 未释 → 新实例 EWOULDBLOCK = 误判"已在跑"。重试 ~2s 给其释放,
+            //   回收 (D 态网络线程) → flock 未释 → 新实例 EWOULDBLOCK = 误判"已在跑"。重试 ~1s 给其释放,
             //   期间一旦 flock 成功即【自动回收】上一实例残留锁。仅启动期 (R-12 不进 hot path)。
-            //   2s 后仍被持 = 确有另一实例真在跑 → 拒。
+            //   1s 后仍被持 = 确有另一实例真在跑 → 拒。
             const auto c0 = ReadPidFile(fd_guard_.get());
             const bool prev_dead =
                 (c0.pid <= 0) || (::kill(static_cast<pid_t>(c0.pid), 0) != 0 && errno == ESRCH);
@@ -309,7 +309,7 @@ void SingleInstanceLock::acquire_(const std::string& path, const std::string& mo
                     std::string("[single-instance] FATAL: ") + mode_str +
                         " already running pid=" + std::to_string(c.pid) +
                         " since=" + std::to_string(c.start_ts_ns) +
-                        " commit=" + c.commit + " (2s retry 后仍被持, 确有实例在跑)",
+                        " commit=" + c.commit + " (1s retry 后仍被持, 确有实例在跑)",
                     c.pid, c.start_ts_ns, c.exec_mode, c.commit);
             }
             std::fprintf(stderr,

@@ -53,17 +53,15 @@ def main():
     # version 标签行 → 切段警告
     versions = [r for r in fills if r.get("type") == "version"]
     # 入场行(buy=1, 非 version) 按 cond+yes 聚合
-    buys = defaultdict(lambda: {"qty":0.0,"cost":0.0,"fair_w":0.0,"n":0,"px_w":0.0})
-    nan_fair = nan_edge = total_buy = 0
+    buys = defaultdict(lambda: {"qty":0.0,"cost":0.0,"fair_w":0.0,"n":0})
+    nan_edge = total_buy = 0
     for r in fills:
         if r.get("type")=="version" or r.get("buy")!=1 or r.get("close")==1: continue
         total_buy += 1
         q = r.get("qty",0.0); px = r.get("px",0.0)
         key = (r.get("cond",""), r.get("yes",0))
-        b = buys[key]; b["qty"]+=q; b["cost"]+=q*px; b["px_w"]+=q*px; b["n"]+=1
-        f = r.get("fair")
-        if f is None: nan_fair += 1
-        else: b["fair_w"] += q*f
+        b = buys[key]; b["qty"]+=q; b["cost"]+=q*px; b["fair_w"]+=q*r.get("fair",0.0); b["n"]+=1
+        # edge_ci 是 emit_d 字段 (NaN 省略) → 缺失 = 轻量行 (旧 live WSS 兜底未富化)。fair 是 base 字段恒写, 不查覆盖。
         if r.get("edge_ci") is None: nan_edge += 1
 
     # join 聚合仓 → 结算 outcome
@@ -73,7 +71,7 @@ def main():
         if cond not in outcome: continue          # 该盘未结算/未解析 → 不进胜率分母
         if b["qty"]<=0: continue
         avg = b["cost"]/b["qty"]
-        fair = b["fair_w"]/b["qty"] if b["qty"]>0 else float("nan")
+        fair = b["fair_w"]/b["qty"]  # qty>0 已上面保证
         sv = outcome[cond]
         w = 1 if (yes==sv) else 0                  # 我方边==赢家边 → 赢
         won += w; lost += (1-w)
@@ -90,9 +88,9 @@ def main():
         v=versions[-1]; print(f"  最新版本: min_edge={v.get('sharp_only_min_edge')} min_open_fair={v.get('min_open_fair')} gate={v.get('sharp_only_gate')}")
     print(f"settlements: 已解析 {len(outcome)} / 未解析(-1) {n_unresolved}")
     print(f"入场行: {total_buy} 笔 → 聚合 {len(buys)} 仓; 其中已结算可判输赢 {n} 仓")
-    print(f"NaN 覆盖: fair 缺 {nan_fair}/{total_buy} ({100*nan_fair/max(1,total_buy):.0f}%), edge 缺 {nan_edge}/{total_buy} ({100*nan_edge/max(1,total_buy):.0f}%)")
-    if nan_fair/max(1,total_buy) > 0.2:
-        print("  ⚠ fair 缺失>20% (多为 live WSS 兜底轻量行/warm-up) → 校准分析样本受限")
+    print(f"edge_ci 覆盖: 缺 {nan_edge}/{total_buy} ({100*nan_edge/max(1,total_buy):.0f}%) (缺=轻量行/warm-up)")
+    if total_buy and nan_edge/total_buy > 0.2:
+        print("  ⚠ edge_ci 缺失>20% (旧 live WSS 兜底轻量行/warm-up) → 决策上下文样本受限")
     print("-"*64)
     if n==0:
         print("⚠ 无已结算且可判输赢的仓 → 出不了胜率 (需 join 上 settlements 的盘)"); return
