@@ -41,13 +41,21 @@ namespace stcpp::risk {
 // 所有读 API 返回 snapshot copy, 不持锁到 caller 域
 class PositionLedger {
  public:
-    PositionLedger() = default;
+    // accepted_mode_tag: 本账本实例只接受【匹配本运行模式】的成交 (R-11 双向隔离, 2026-06-13 修正)。
+    //   paper 运行 → 0 (默认, 收 paper fill); live 运行 → 1 (收 live fill)。单 binary 一次只跑一个模式,
+    //   实例由 daemon 按运行模式构造。旧实现写死「只收 0」→ live 成交全被丢弃 (持仓永不入账, 真钱事故)。
+    //   方向不变: paper fill 绝不进 live 账本 / live fill 绝不进 paper 账本 (R-11 红线本意)。
+    explicit PositionLedger(std::uint8_t accepted_mode_tag = 0) noexcept
+        : accepted_mode_tag_(accepted_mode_tag) {}
     ~PositionLedger() = default;
 
     PositionLedger(PositionLedger const&)            = delete;
     PositionLedger& operator=(PositionLedger const&) = delete;
     PositionLedger(PositionLedger&&)                 = delete;
     PositionLedger& operator=(PositionLedger&&)      = delete;
+
+    // 本账本接受的成交 mode_tag (apply_fill 调用方据此给重建/结算 fill 打标, 单一真相源)。
+    [[nodiscard]] std::uint8_t accepted_mode_tag() const noexcept { return accepted_mode_tag_; }
 
     // ---------- Write API (R-1: 所有仓位变更必经此处) --------------------------
 
@@ -63,7 +71,7 @@ class PositionLedger {
                     std::string const& engine = {}) noexcept;
 
     // 中性化重载 (老郭 R-4 审计放行): apply_fill 接中性 FillEvent (paper/live 共用形态)。
-    //   R-11 守卫方向不变 (mode_tag!=0 → 拒, 仍 paper 专用账本)。VirtualFill 版委托至此。
+    //   R-11 守卫: ev.mode_tag != accepted_mode_tag_ → 拒 (双向隔离)。VirtualFill 版委托至此。
     void apply_fill(std::string const& condition_id,
                     std::string const& token_id,
                     Outcome             outcome,
@@ -117,6 +125,7 @@ class PositionLedger {
                               std::int64_t size) noexcept;
 
  private:
+    const std::uint8_t accepted_mode_tag_;  // 本实例只收此 mode_tag 的成交 (R-11 双向隔离; 构造期定, 不可变)
     // (token, engine) 复合键: token_id + '\x1f' + engine (token_id 十进制数字/engine 名均不含 \x1f)。
     [[nodiscard]] static std::string engine_key_(std::string const& token_id, std::string const& engine) noexcept;
     // 内部存储 (老韩 spec §2)

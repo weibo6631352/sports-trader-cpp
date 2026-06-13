@@ -59,10 +59,11 @@ void PositionLedger::apply_fill(std::string const& condition_id, std::string con
 
 void PositionLedger::apply_fill(std::string const& condition_id, std::string const& token_id, Outcome outcome,
                                 FillEvent const& ev, std::string const& engine) noexcept {
-    // R-11 (老韩 A2 红线3): mode_tag 运行期 fail-closed — 仅 paper fill (mode_tag==0) 记账。
-    //   非 paper (mode_tag!=0) 直接拒, 不写仓位 (release build 也 enforce)。**方向不变** (老郭审计)。
-    //   live fill 走另一条真账本, 不该流向此 paper 专用账本。
-    if (ev.mode_tag != 0)
+    // R-11 (老韩 A2 红线3, 2026-06-13 修正为双向隔离): mode_tag 运行期 fail-closed —
+    //   仅接受【匹配本账本运行模式】的成交 (paper 实例收 0 / live 实例收 1)。不匹配直接拒 (release 也 enforce)。
+    //   旧实现写死「只收 0」→ live 实例 (单 binary live 运行) 把所有 live 成交丢弃 = 持仓永不入账 (真钱事故,
+    //   Astros 单实证)。修正方向不变: paper fill 绝不进 live 账本 / live fill 绝不进 paper 账本。
+    if (ev.mode_tag != accepted_mode_tag_)
         return;
     // size==0 最后防线 (调用方应已过滤成功/非零; 防漏判)。
     if (ev.filled_size_micro == 0)

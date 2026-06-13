@@ -698,9 +698,13 @@ BuildResult TraderDaemon::Build() {
     ledger_hub_ = std::make_unique<risk::LedgerSnapshotHub>();
     quote_hub_ = std::make_unique<sizing::QuoteSnapshotHub>(kQuoteMaxKeys);
 
-    // ---- Step 2b: paper 隔离栈 (R-11) ----
-    // [R-11] paper PositionLedger 独立实例, 与 live 路径物理隔离.
-    paper_position_ledger_ = std::make_unique<risk::PositionLedger>();
+    // ---- Step 2b: 持仓账本 (R-11 mode 隔离) ----
+    // PositionLedger 按【运行模式】构造: paper 运行收 paper 成交 (mode_tag 0) / live 运行收 live 成交 (mode_tag 1)。
+    //   单 binary 一次只跑一个模式 → 此实例即该模式专属账本 (R-11 双向隔离, 2026-06-13 修正; 旧写死「只收0」
+    //   令 live 成交全丢, 持仓永不入账 = 真钱事故)。live 快照文件名也按模式分 (live_ledger_snapshot.tsv)。
+    const std::uint8_t ledger_mode_tag =
+        (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) ? 1 : 0;
+    paper_position_ledger_ = std::make_unique<risk::PositionLedger>(ledger_mode_tag);
     paper_rm_snap_ = std::make_unique<risk::RmDebugSnapshot>();
     // [R-11 INV-1] 注册全局 hook (RM 内部 push_reject 经此). Shutdown/dtor 必 detach.
     risk::attach_rm_debug_snapshot(paper_rm_snap_.get());

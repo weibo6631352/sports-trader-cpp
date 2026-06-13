@@ -347,6 +347,42 @@ TEST(PositionLedgerEngine, EmptyEngineNoSplitTracking) {
     EXPECT_TRUE(L.get_engine_pos_snapshot().empty());
 }
 
+// ---------------------------------------------------------------------------
+// R-11 双向隔离 (2026-06-13 修正): 账本按运行模式收成交 — paper 实例收 mode_tag 0 / live 实例收 1。
+//   旧实现写死「只收 0」→ live 成交全丢, 持仓永不入账 (Astros 单真钱事故)。
+// ---------------------------------------------------------------------------
+static FillEvent ev_tag(std::int64_t delta_micro, double price, std::int64_t ts, std::uint8_t mode_tag) {
+    FillEvent e = ev_micro(delta_micro, price, ts);
+    e.mode_tag = mode_tag;
+    return e;
+}
+
+TEST(PositionLedgerModeTag, DefaultLedgerAcceptsPaperRejectsLive) {
+    PositionLedger L;  // 默认 accepted_mode_tag=0 (paper)
+    EXPECT_EQ(L.accepted_mode_tag(), 0);
+    const std::string cid = "0xc", tok = "900";
+    L.apply_fill(cid, tok, Outcome::Yes, ev_tag(100'000'000, 0.5, 1000, /*paper*/ 0), "sharp");
+    ASSERT_TRUE(L.get_position(tok).has_value());
+    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000);
+    // live 成交 (mode_tag=1) 投到 paper 账本 → 拒, 仓位不变 (R-11 方向)
+    L.apply_fill(cid, tok, Outcome::Yes, ev_tag(50'000'000, 0.6, 1001, /*live*/ 1), "sharp");
+    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000) << "paper 账本必须拒 live 成交";
+}
+
+TEST(PositionLedgerModeTag, LiveLedgerAcceptsLiveRejectsPaper) {
+    PositionLedger L(/*accepted_mode_tag=*/1);  // live 实例
+    EXPECT_EQ(L.accepted_mode_tag(), 1);
+    const std::string cid = "0xc", tok = "900";
+    // live 成交 (mode_tag=1) → 入账 (这正是旧实现丢弃、真钱事故的那笔)
+    L.apply_fill(cid, tok, Outcome::Yes, ev_tag(100'000'000, 0.8, 1000, /*live*/ 1), "sharp");
+    ASSERT_TRUE(L.get_position(tok).has_value()) << "live 账本必须收 live 成交 (修复核心)";
+    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000);
+    EXPECT_DOUBLE_EQ(L.get_position(tok)->avg_entry_price, 0.8);
+    // paper 成交 (mode_tag=0) 投到 live 账本 → 拒 (R-11 反向也隔离)
+    L.apply_fill(cid, tok, Outcome::Yes, ev_tag(50'000'000, 0.5, 1001, /*paper*/ 0), "sharp");
+    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000) << "live 账本必须拒 paper 成交";
+}
+
 TEST(PositionLedgerEngine, SnapshotRoundtrip) {
     PositionLedger L;
     const std::string cid = "0xc", tok = "900";

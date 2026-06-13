@@ -2424,7 +2424,7 @@ void TradingLoop::RestoreLedgerSnapshot() {
                 risk::FillEvent ev;
                 ev.filled_size_micro = sz;
                 ev.fill_price = avg;
-                ev.mode_tag = 0;  // R-11 paper
+                ev.mode_tag = position_ledger_.accepted_mode_tag();  // 跟本账本运行模式 (paper=0/live=1); 快照文件按模式分名 → 重建标签一致
                 ev.event_ts_ns = ev.data_source_ts_ns = ev.ingestion_ts_ns = now - 1;
                 ev.as_of_ts_ns = now;
                 // 聚合恢复 (engine 空): per-engine split 由后续 PE 行补 (重启后各引擎各管各份)。
@@ -2701,11 +2701,11 @@ void TradingLoop::SettleToken(const std::string& condition_id, const std::string
         last_trade_ts_ns_ = NowNs();
     }
 
-    // 平仓: apply_fill 负 delta 到 0 (settle_price 作 fill_price; 平仓 avg 归零, R-11 paper)。
+    // 平仓: apply_fill 负 delta 到 0 (settle_price 作 fill_price; 平仓 avg 归零)。
     risk::FillEvent ev;
     ev.filled_size_micro = -qty_micro;  // 平掉全部 (→ 0, 不穿零)
     ev.fill_price = settle_price;
-    ev.mode_tag = 0;  // R-11 paper
+    ev.mode_tag = position_ledger_.accepted_mode_tag();  // 跟本账本运行模式 (live 仓结算必须用 live tag, 否则结算 fill 被门拒→仓平不掉)
     // R-20: 4ts 用终态比分 ts (禁 now() 替代 data_source); as_of = NowNs (结算时刻 ≥ ingestion)。
     ev.event_ts_ns = game_row.event_ts_ns;
     ev.data_source_ts_ns = game_row.data_source_ts_ns;
