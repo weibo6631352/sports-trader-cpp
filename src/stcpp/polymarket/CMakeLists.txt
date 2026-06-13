@@ -22,6 +22,7 @@ find_package(CURL REQUIRED)
 add_library(stcpp_polymarket_live STATIC
     live/live_order_submitter.cpp   # GM 2026-05-31 Phase 3: 实盘下单器 (实盘验证)
     live/onchain_balance.cpp        # GM 2026-06-12: 链上 pUSD 余额读取 (live 真实本金)
+    live/onchain_positions.cpp      # GM 2026-06-13: 链上持仓读取 (live 启动对账; cap 见真敞口)
 )
 target_include_directories(stcpp_polymarket_live
     PUBLIC ${CMAKE_SOURCE_DIR}/include

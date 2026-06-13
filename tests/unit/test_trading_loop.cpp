@@ -45,6 +45,7 @@
 #include "stcpp/engine/trading_loop.hpp"
 #include "stcpp/polymarket/clob_wss/orderbook_snapshot_hub.hpp"
 #include "stcpp/polymarket/live/live_user_fill_feed.hpp"  // Phase 2 对账兜底集成测试
+#include "stcpp/polymarket/onchain_positions.hpp"          // #2 启动链上持仓对账 seed 测试
 #include "stcpp/pricing/fair_value_estimator.hpp"
 #include "stcpp/risk/ledger_snapshot_hub.hpp"
 #include "stcpp/risk/position_ledger.hpp"
@@ -2157,8 +2158,11 @@ std::string UFConfirmed(const std::string& trade_id, const std::string& order_id
 }
 }  // namespace
 
-// M1-a: 自校验闸 — matched==0 (order_id 格式未证实) → 疑似漏记只告警, 【不动账本】(防双记账灾难)。
-TEST_F(TradingLoopTest, UserFill_UnverifiedGate_NoBookBeforeMatch) {
+// M1-a: WSS 权威入账 (2026-06-13 真钱事故修: 删自校验死锁闸)。sync 从没记过此 order (matched==0) →
+//   WSS CONFIRMED 成交【直接权威入账】(不再要求"先匹配过一笔 sync")。原死锁: sync 一坏 → synced 永空 →
+//   闸永不解锁 → 链上真成交进不了账本 → cap 失明累积。WSS 只报我们自己的 CONFIRMED 成交, 去重靠 trade_id +
+//   synced_order_ids_, 故无需"先证实"前提。
+TEST_F(TradingLoopTest, UserFill_AuthoritativeBook_NoSyncPrereq) {
     loop_ = MakeLoop();
     auto tx = std::make_unique<UFMockTransport>();
     UFMockTransport* m = tx.get();
@@ -2168,9 +2172,16 @@ TEST_F(TradingLoopTest, UserFill_UnverifiedGate_NoBookBeforeMatch) {
 
     m->Fire(UFConfirmed("T1", "ORD-NEVER-SYNCED", "BUY", "5"));  // sync 从没记过此 order
     loop_->DrainUserFillsForTest();
-    // matched==0 → 不补记 → 账本无仓
-    EXPECT_FALSE(position_ledger_->get_position("1001").has_value())
-        << "order_id 匹配未证实前绝不动账本";
+    // 删死锁闸后: WSS CONFIRMED 成交直接入账 (权威源), 不再卡在"未证实"
+    auto pos = position_ledger_->get_position("1001");
+    ASSERT_TRUE(pos.has_value()) << "WSS CONFIRMED 成交应直接权威入账 (死锁闸已删)";
+    EXPECT_EQ(pos->net_shares_micro, 5'000'000) << "补记 5 股 (micro)";
+
+    // 同 trade_id 再来 → feed 按 trade_id 去重 → 不重复补记 (防 double-book)
+    m->Fire(UFConfirmed("T1", "ORD-NEVER-SYNCED", "BUY", "5"));
+    loop_->DrainUserFillsForTest();
+    EXPECT_EQ(position_ledger_->get_position("1001")->net_shares_micro, 5'000'000)
+        << "同 trade_id 去重, 不得重复补记";
 }
 
 // M1-b: 正常对账 — sync 已记此 order → WSS 来同 order 不重复记 (无 double-book) + 解锁 matched 闸。
@@ -2190,7 +2201,8 @@ TEST_F(TradingLoopTest, UserFill_SyncedOrder_NoDoubleBook) {
         << "sync 已记的 order, WSS 不得重复补记 (防 double-book)";
 }
 
-// M1-c: 兜底补记 — matched 解锁后, sync 漏记的 order → WSS 补记一次 (账本出仓) + 同 trade 去重不重补。
+// M1-c: 混合对账 — sync 已记的 order 不重补 (跳过), sync 漏记的 order 兜底补记一次, 同 trade 去重不重补。
+//   (2026-06-13: 死锁闸已删, "解锁"不再是前提; 本测仍验 synced-跳过 + missed-补记 + trade_id-去重 三性质。)
 TEST_F(TradingLoopTest, UserFill_RecoverMissedAfterMatchUnlock) {
     loop_ = MakeLoop();
     auto tx = std::make_unique<UFMockTransport>();
@@ -2199,15 +2211,16 @@ TEST_F(TradingLoopTest, UserFill_RecoverMissedAfterMatchUnlock) {
     feed.Start("wss://ws-subscriptions-clob.polymarket.com/ws/user", {"cond-test-001"});
     loop_->SetUserFillFeed(&feed);
 
-    // 先用一笔 synced 成交解锁 matched 闸 (证明 order_id 格式一致)
+    // sync 已记 ORD-OK → WSS 来同 order 应跳过 (不重补; 不入账)
     loop_->SeedSyncedOrderIdForTest("ORD-OK");
     m->Fire(UFConfirmed("T0", "ORD-OK", "BUY", "5"));
     loop_->DrainUserFillsForTest();
-    // 现在 matched>0 → 一笔 sync 漏记的 order 应被兜底补记
+    EXPECT_FALSE(position_ledger_->get_position("1001").has_value()) << "sync 已记的 order 不得 WSS 重补";
+    // sync 漏记的 order → 兜底补记
     m->Fire(UFConfirmed("T1", "ORD-MISSED", "BUY", "5"));
     loop_->DrainUserFillsForTest();
     auto pos = position_ledger_->get_position("1001");
-    ASSERT_TRUE(pos.has_value()) << "matched 解锁后, sync 漏记的成交应被兜底补记";
+    ASSERT_TRUE(pos.has_value()) << "sync 漏记的成交应被兜底补记";
     EXPECT_EQ(pos->net_shares_micro, 5'000'000) << "补记 5 股 (micro)";
     const auto sz_after_first = pos->net_shares_micro;
     // 同 trade_id 再来 → feed 去重 → 不重复补记
@@ -2215,4 +2228,39 @@ TEST_F(TradingLoopTest, UserFill_RecoverMissedAfterMatchUnlock) {
     loop_->DrainUserFillsForTest();
     EXPECT_EQ(position_ledger_->get_position("1001")->net_shares_micro, sz_after_first)
         << "同 trade_id 去重, 不得重复补记";
+}
+
+// #2 启动链上对账: 链上 open 持仓 → SeedLivePositionsFromOnchain → 账本出仓 (cap 见真敞口)。
+//   股数/均价/方向 (outcomeIndex 0=YES/1=NO) 正确; 从 0 seed avg 精确。
+TEST_F(TradingLoopTest, OnchainSeed_PopulatesLedgerWithRealExposure) {
+    loop_ = MakeLoop();
+    std::vector<stcpp::polymarket::OnchainPosition> chain;
+    chain.push_back({/*token*/ "1001", /*cond*/ "cond-test-001", /*idx*/ 0, /*shares*/ 27.3343,
+                     /*avg*/ 0.7737, /*neg*/ false});  // YES
+    chain.push_back({"1002", "cond-test-001", 1, 12.5, 0.40, false});  // NO
+
+    const std::size_t n = loop_->SeedLivePositionsFromOnchain(chain);
+    EXPECT_EQ(n, 2u) << "两笔 open 仓都应 seed";
+
+    auto yes = position_ledger_->get_position("1001");
+    ASSERT_TRUE(yes.has_value()) << "YES 仓应入账";
+    EXPECT_EQ(yes->net_shares_micro, 27'334'300) << "27.3343 股 → micro";
+    EXPECT_NEAR(yes->avg_entry_price, 0.7737, 1e-9) << "均价从 0 seed 应精确等于链上均价";
+
+    auto no = position_ledger_->get_position("1002");
+    ASSERT_TRUE(no.has_value()) << "NO 仓应入账";
+    EXPECT_EQ(no->net_shares_micro, 12'500'000) << "12.5 股 → micro";
+    EXPECT_EQ(no->outcome, strategy::Outcome::No) << "outcomeIndex=1 → NO";
+}
+
+// #2 脏数据防御: 股≤0 / 价越界 / token 空 的链上仓不 seed (脏数据不进真钱账本)。
+TEST_F(TradingLoopTest, OnchainSeed_SkipsDirty) {
+    loop_ = MakeLoop();
+    std::vector<stcpp::polymarket::OnchainPosition> chain;
+    chain.push_back({"1001", "cond-test-001", 0, 0.0, 0.7, false});    // 股=0 → skip
+    chain.push_back({"1002", "cond-test-001", 1, 5.0, 1.5, false});    // 价>1 → skip
+    const std::size_t n = loop_->SeedLivePositionsFromOnchain(chain);
+    EXPECT_EQ(n, 0u) << "脏数据全跳";
+    EXPECT_FALSE(position_ledger_->get_position("1001").has_value());
+    EXPECT_FALSE(position_ledger_->get_position("1002").has_value());
 }

@@ -116,6 +116,7 @@ struct FeatureStoreGameRow;
 namespace stcpp::polymarket {
 class LiveUserFillFeed;
 struct UserFill;
+struct OnchainPosition;  // live 启动对账 (完整定义 include/stcpp/polymarket/onchain_positions.hpp)
 }  // namespace stcpp::polymarket
 
 namespace stcpp::engine {
@@ -551,6 +552,10 @@ public:
     //   测试可直接调。恢复内容: 持仓 (apply_fill 重放) + 累计 realized/fee (总+逐盘) + CLV (聚合+pending)。
     void SaveLedgerSnapshot();
     void RestoreLedgerSnapshot();
+    // live 启动链上对账 (2026-06-13 真钱事故 #2): 用链上【真实持仓】seed PositionLedger, 让 cap 一开机即见
+    //   真敞口 (治"链上有仓但账本空 → cap 失明")。Start 前、RestoreLedgerSnapshot 后调 (live 已跳过快照 P/PE
+    //   恢复 → 此处从 0 apply_fill, avg 精确, 无双计)。每仓 apply_fill(股@均价, engine="sharp")。返回 seed 仓数。
+    std::size_t SeedLivePositionsFromOnchain(const std::vector<polymarket::OnchainPosition>& positions);
     // 逐盘 PnL 实时 MTM 重发 (2026-06-11): 每 tick 用实时 mark 重发 LedgerFeatures (不碰 fee 累计)。
     void RepublishLedgerMark(const std::string& condition_id, const std::string& token_id, double mark_price,
                              const polymarket::clob_wss::OrderBookFeatures& feat) noexcept;

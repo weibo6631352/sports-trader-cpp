@@ -40,6 +40,7 @@
 #include "stcpp/engine/trading_loop.hpp"
 // (risk/arb_signal.hpp 已砍 2026-06-05: seq_arb 短时套利 advisory 是大模型旁路, 一并删)
 #include "stcpp/polymarket/live/live_user_fill_feed.hpp"  // Phase 2: user 频道成交 (DrainUserFills)
+#include "stcpp/polymarket/onchain_positions.hpp"          // #2: live 启动链上持仓对账 (SeedLivePositionsFromOnchain)
 
 #include <algorithm>
 #include <cassert>
@@ -394,6 +395,12 @@ static constexpr std::size_t kOrderIdMemoryCap = 20000;
 //   precision 修复后硬拒本应罕见; 此为纵深防护 (任何未来永久性 4xx 都不再引发风暴)。
 static constexpr std::int64_t kHardRejectCooldownNs = 30'000'000'000LL;  // 30s
 
+// 2026-06-13 真钱事故 #3: live sync 回 !filled (BernoulliMissed) 时 = 【成交状态未知】(可能 FOK 无对手未成交,
+//   也可能链上确成交但 sync 回执没认出 → 本次事故的累积根源)。对 live 一律冷却该 token 等 WSS user 频道
+//   裁决: 真成交 → DrainUserFills 权威入账 → cap 见敞口自动掐后续; 真未成交 → 冷却到期后可重试。
+//   防"边成交边不记边重发"的累积。paper 不受影响 (paper 无 WSS 真成交确认, BernoulliMissed 本就是模型 miss)。
+static constexpr std::int64_t kLivePendingConfirmCooldownNs = 20'000'000'000LL;  // 20s 等 WSS 确认
+
 // 2026-06-13 真钱风暴硬防护 (同 token 18单/秒、$129 超 cap 5x): 与根因无关, 物理封死风暴。
 static constexpr std::int64_t kLiveTokenSerializeNs = 4'000'000'000LL;   // 4s: live 同 token 两单最小间隔 (序列化)
 static constexpr std::int64_t kStormWindowNs = 30'000'000'000LL;          // 30s 滚动窗
@@ -469,15 +476,13 @@ void TradingLoop::RecoverMissedFill(const polymarket::UserFill& uf) {
     const std::int64_t sz_micro = static_cast<std::int64_t>(std::llround(uf.size * 1'000'000.0));
     if (sz_micro <= 0)
         return;
-    // 自校验闸: order_id 格式未经任一笔对账匹配证实前, 绝不动账本 (防格式不一致 → 每笔都误判漏记 → 全面
-    //   双记账灾难)。只告警。格式一致时第一笔正常成交即 matched++ 解锁; 不一致则永远只告警 (安全)。
-    if (user_fill_matched_count_ == 0) {
-        std::fprintf(stderr,
-                     "[user-fill/UNVERIFIED] ⚠ 疑似 sync 漏记 (order=%.12s tok=%.16s sz=%.4f) 但 order_id 匹配尚未"
-                     "经任何成交证实 → 暂不补记 (防双记账)。若持续出现请查 ExecReport.order_id vs WSS taker_order_id 格式\n",
-                     uf.order_id.c_str(), uf.token_id.c_str(), uf.size);
-        return;
-    }
+    // 2026-06-13 真钱事故根治: 删【自校验死锁闸】。原闸要求"WSS order_id 先匹配过一笔 sync 已记的 order"
+    //   才肯补记 — 但 sync 记账一旦坏 (本次事故: FOK 回执 status≠matched → 永不记 → synced_order_ids_ 永空),
+    //   该闸永不解锁 → WSS 兜底全程失效 → 链上真成交进不了账本 → cap 失明累积穿透 (Catch-22: 兜底网以
+    //   sync 至少成功一次为前提, sync 一坏网就废)。
+    //   WSS user 频道只报【我们自己的 CONFIRMED 链上成交】= 持仓唯一真相, 直接权威入账。去重已两层:
+    //   ① feed 按 trade_id ② DrainUserFills 按 synced_order_ids_ (sync 已记则不进此函数)。
+    //   残余双记风险 (sync/WSS order_id 格式不符) 方向安全 (cap 偏保守) + 启动链上对账自愈。
     const std::int64_t now_ns = NowNs();
     // S1 修: 卖出兜底也须 realize PnL (与 sync 同 BookSellRealized; 必须 apply_fill 【前】算)。
     const double recovered_realized =
@@ -2365,9 +2370,14 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
         }
     }
     if (fill.reject != execution::MatchReject::Ok || fill.fill_shares_micro <= 0) {
-        if (fill.reject == execution::MatchReject::ClobRejected)
+        if (fill.reject == execution::MatchReject::ClobRejected) {
             // 硬拒 (4xx 精度/最小额/余额) → 冷却该 token (重发必再拒), 根治同秒重发风暴。
             hard_reject_until_ns_[token_id] = NowNs() + kHardRejectCooldownNs;
+        } else if (fill.reject == execution::MatchReject::BernoulliMissed &&
+                   stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
+            // #3: live 成交状态未知 → 冷却等 WSS 裁决 (防边成交边不记边重发的累积; 见 kLivePendingConfirmCooldownNs)。
+            hard_reject_until_ns_[token_id] = NowNs() + kLivePendingConfirmCooldownNs;
+        }
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
         return;
     }
@@ -2576,6 +2586,12 @@ void TradingLoop::RestoreLedgerSnapshot() {
     bool header_ok = false;
     int n_pos = 0, n_clv = 0;
     const std::int64_t now = NowNs();
+    // 2026-06-13 真钱事故 #2: live 不从快照恢复持仓 (P/PE 行) —— 快照只反映本地记账, 而 live 记账曾漏
+    //   → 快照持仓不可信。live 持仓改由 SeedLivePositionsFromOnchain 从链上真相 seed (唯一权威源)。
+    //   其余行 (V/M/C/R/E/B/L = realized/CLV/逐盘/引擎账/末次 mid) 照常恢复 (本地会计, 链上没有)。
+    //   paper 不变 (无链上, 快照是唯一持仓真相)。
+    const bool skip_positions =
+        stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
     while (std::fgets(line, sizeof(line), fp) != nullptr) {
         if (line[0] == 'V') {
             long long saved_ns = 0;
@@ -2590,11 +2606,13 @@ void TradingLoop::RestoreLedgerSnapshot() {
             continue;
         } else if (line[0] == 'P' && line[1] == 'E') {
             // PE 行: per-engine 分仓归属 split (聚合仓位由上面 P 行经 apply_fill 恢复; 此处只补归属层)。
+            if (skip_positions) continue;  // live: 持仓走链上 seed (#2)
             char tok[90] = {0}, eng[20] = {0};
             long long sz = 0;
             if (std::sscanf(line, "PE %89s %19s %lld", tok, eng, &sz) == 3 && sz != 0)
                 position_ledger_.restore_engine_split(tok, eng, sz);
         } else if (line[0] == 'P') {
+            if (skip_positions) continue;  // live: 持仓走链上 seed (#2; 快照持仓不可信)
             char cid[80] = {0}, tok[90] = {0};
             int is_yes = 0;
             long long sz = 0;
@@ -2690,6 +2708,43 @@ void TradingLoop::RestoreLedgerSnapshot() {
                      n_pos, n_clv, cum_realized_pnl_pusd_);
     }
     RestoreFillsJournalTail();  // 成交流水环回放 (2026-06-13 老板「盯盘成交纪录都没有了」)
+}
+
+// SeedLivePositionsFromOnchain — live 启动用链上真实持仓 seed PositionLedger (2026-06-13 真钱事故 #2)。
+//   背景: live sync 记账曾漏 → 链上有真仓但账本空 → cap 失明 → 累积穿透。链上 = 持仓唯一真相。
+//   时序: RestoreLedgerSnapshot 已跳过 live 的 P/PE 行 (ledger 持仓此刻为空) → 这里从 0 apply_fill →
+//         avg 精确等于链上均价, 无双计。每仓 apply_fill(股@均价, engine="sharp")。Start 前单线程调。
+//   R-1: 走 apply_fill 核心写路径 (非绕过); 这是把【真实链上敞口】导入风控视野, 严格更安全。
+std::size_t TradingLoop::SeedLivePositionsFromOnchain(
+    const std::vector<polymarket::OnchainPosition>& positions) {
+    const std::int64_t now = NowNs();
+    std::size_t seeded = 0;
+    for (const auto& p : positions) {
+        const std::int64_t sz_micro = static_cast<std::int64_t>(std::llround(p.shares * 1'000'000.0));
+        // 防御性自检 (不信调用方; 脏数据不进真钱账本): 股>0 + 价∈(0,1) + token/cid 非空。
+        if (sz_micro <= 0 || !(p.avg_price > 0.0 && p.avg_price < 1.0) || p.token_id.empty() ||
+            p.condition_id.empty())
+            continue;
+        risk::FillEvent ev;
+        ev.filled_size_micro = sz_micro;  // 链上持仓恒为净多头 (我们只买 outcome token, 无做空)
+        ev.fill_price = p.avg_price;
+        ev.mode_tag = position_ledger_.accepted_mode_tag();  // live=1 → 账本接受
+        ev.event_ts_ns = ev.data_source_ts_ns = ev.ingestion_ts_ns = now - 1;
+        ev.as_of_ts_ns = now;
+        const strategy::Outcome oc =
+            (p.outcome_index == 0) ? strategy::Outcome::Yes : strategy::Outcome::No;  // 0=YES/1=NO
+        position_ledger_.apply_fill(p.condition_id, p.token_id, oc, ev, "sharp");
+        engine_by_token_.emplace(p.token_id, "sharp");
+        ++seeded;
+        std::fprintf(stderr,
+                     "[onchain-seed] cond=%.20s... tok=%.16s... %s 股=%.4f 均价=%.4f (链上对账 → cap 已见)\n",
+                     p.condition_id.c_str(), p.token_id.c_str(), oc == strategy::Outcome::Yes ? "YES" : "NO",
+                     p.shares, p.avg_price);
+    }
+    if (seeded > 0) FeedRiskGateway();  // 立即喂 RM 敞口 (caps 生效)
+    std::fprintf(stderr, "[onchain-seed] live 启动对账完成: seed %zu 仓 (链上 open=%zu)\n", seeded,
+                 positions.size());
+    return seeded;
 }
 
 // RestoreFillsJournalTail — 从 fills journal 尾部回放最近 kFillsRingCap 笔进内存环 (2026-06-13)。

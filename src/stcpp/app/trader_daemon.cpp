@@ -8,7 +8,8 @@
 
 #include "stcpp/app/trader_daemon.hpp"
 #include "stcpp/risk/live_risk_profile.hpp"  // 2026-06-13 live 注码档
-#include "stcpp/polymarket/onchain_balance.hpp"  // 2026-06-12 live 真实本金 (链上 pUSD)
+#include "stcpp/polymarket/onchain_balance.hpp"    // 2026-06-12 live 真实本金 (链上 pUSD)
+#include "stcpp/polymarket/onchain_positions.hpp"  // 2026-06-13 #2 live 启动持仓对账 (链上 → ledger seed)
 
 #include <algorithm>
 #include <cctype>
@@ -966,6 +967,31 @@ BuildResult TraderDaemon::Build() {
     //   (净 PnL 飙到 +$7.4M) + 与 loop 线程 SaveLedgerSnapshot 并发 = segfault (core: Thread31 sscanf
     //   × Thread1 Save)。Restore 只许这一处调用。
     trading_loop_->RestoreLedgerSnapshot();
+
+    // ---- live 启动链上持仓对账 (2026-06-13 真钱事故 #2): 链上真实 open 持仓 → seed PositionLedger -------
+    //   治"链上有仓但账本空 → cap 失明累积穿透"。链上 = 持仓唯一真相 (RestoreLedgerSnapshot 已跳过 live 快照
+    //   P/PE → 此处从 0 seed, avg 精确无双计)。fail-safe: 读失败重试 3 次仍败 → 响亮告警但不阻断 (WSS #1
+    //   实时兜底新成交; 仅【既有仓】首次 cap 可能短暂偏松)。Start 前单线程。
+    if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
+        if (const char* funder = std::getenv("POLYMARKET_FUNDER_ADDRESS");
+            funder != nullptr && funder[0] != '\0') {
+            bool seeded = false;
+            for (int attempt = 1; attempt <= 3 && !seeded; ++attempt) {
+                std::string pos_err;
+                if (const auto pos = polymarket::ReadOpenPositions(funder, pos_err); pos.has_value()) {
+                    trading_loop_->SeedLivePositionsFromOnchain(*pos);
+                    seeded = true;
+                } else {
+                    std::fprintf(stderr, "[live] ⚠ 链上持仓对账读取失败 (尝试 %d/3: %s)\n", attempt,
+                                 pos_err.c_str());
+                }
+            }
+            if (!seeded)
+                std::fprintf(stderr,
+                             "[live] ⚠⚠ 链上持仓对账 3 次全失败 → 跳过 seed。WSS user 频道实时兜底新成交; "
+                             "但【既有链上仓】未入账, 首轮 cap 可能偏松 → 建议确认网络后重启再 ARM。\n");
+        }
+    }
 
     // ---- live 装配 (2026-06-12 实盘准备「单参数切换」; 仅 live build 编译进) -----------------------
     //   链: 决策环 → RM → executor 缝 → LiveExecutorAdapter → LiveExecutor → LiveOrderGate
