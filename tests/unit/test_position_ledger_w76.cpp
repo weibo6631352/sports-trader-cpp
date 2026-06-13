@@ -383,6 +383,22 @@ TEST(PositionLedgerModeTag, LiveLedgerAcceptsLiveRejectsPaper) {
     EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000) << "live 账本必须拒 paper 成交";
 }
 
+// 2026-06-13 真钱风暴根因复现: apply_fill 落账后, FeedRiskGateway 喂 cap 的两个敞口源
+//   (get_per_condition_exposure / get_per_outcome_exposure) 必须也反映该成交; 否则 cap 被喂 0 → 瞎 →
+//   同 token 重发风暴 ($129 超 per_outcome cap $12 的 5 倍, armed 真钱事故)。
+TEST(PositionLedgerModeTag, LiveFillUpdatesCapExposureGetters) {
+    PositionLedger L(/*accepted_mode_tag=*/1);  // live 实例
+    const std::string cid = "0xcond1", tok = "tok900";
+    L.apply_fill(cid, tok, Outcome::Yes, ev_tag(100'000'000, 0.8, 1000, /*live*/ 1), "sharp");
+    ASSERT_TRUE(L.get_position(tok).has_value());
+    EXPECT_EQ(L.get_position(tok)->size_usdc, 100'000'000);
+    // FeedRiskGateway 喂 cap 的源 — 必须反映 live 成交, 否则 cap 瞎:
+    auto cexp = L.get_per_condition_exposure();
+    auto oexp = L.get_per_outcome_exposure();
+    EXPECT_EQ(cexp[cid], 100'000'000) << "get_per_condition_exposure 必须反映 live 成交 (→condition cap); =0 则 cap 瞎→风暴";
+    EXPECT_EQ(oexp[tok], 100'000'000) << "get_per_outcome_exposure 必须反映 live 成交 (→outcome cap); =0 则 cap 瞎→风暴";
+}
+
 TEST(PositionLedgerEngine, SnapshotRoundtrip) {
     PositionLedger L;
     const std::string cid = "0xc", tok = "900";

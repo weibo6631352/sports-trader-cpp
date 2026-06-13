@@ -954,6 +954,13 @@ private:
     // 2026-06-13 硬化: per-token CLOB 硬拒冷却 (token_id → 冷却到期 ns)。4xx 硬拒 (精度/最小额/余额) 重发必再拒,
     //   冷却期内不再对该 token 下单 → 根治同秒重发风暴 (Alan 事故纵深防护)。仅 live 触发, 到期自动恢复。全 loop_thread 无锁。
     std::unordered_map<std::string, std::int64_t> hard_reject_until_ns_;
+    // 2026-06-13 真钱风暴硬防护 (Krejcikova 18单/秒 / Fearnley 同秒连发 $129 超 cap 5x 事故): 根因是
+    //   "组件单独都对、daemon 真盘 cap 仍瞎" 的运行时时序 bug, 静态未能定位 → 用两道与根因无关的硬闸物理封死风暴。
+    //   ① per-token 限速: live 同 token 两单最小间隔 kLiveTokenSerializeNs (序列化, 给 booking/喂cap 留时间)。
+    std::unordered_map<std::string, std::int64_t> live_token_next_ok_ns_;
+    //   ② 全局熔断: 滚动窗内 live 下单数超阈 → live_storm_halt_=true → 全停 (fail-safe, 重启才恢复)。封爆炸半径。
+    std::deque<std::int64_t> live_exec_times_ns_;
+    bool live_storm_halt_{false};
     // 自校验闸 (防 order_id 格式不一致致全面双记账): 至少 1 笔 WSS 成交与 sync order_id 对账匹配过 (证明
     //   两侧 id 格式一致) 后, 兜底补记才真生效; 否则只告警不补 (matched==0 = 格式可能不匹配, 不敢动账本)。
     std::uint64_t user_fill_matched_count_{0};

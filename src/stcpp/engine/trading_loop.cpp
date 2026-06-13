@@ -392,6 +392,11 @@ static constexpr std::size_t kOrderIdMemoryCap = 20000;
 //   precision 修复后硬拒本应罕见; 此为纵深防护 (任何未来永久性 4xx 都不再引发风暴)。
 static constexpr std::int64_t kHardRejectCooldownNs = 30'000'000'000LL;  // 30s
 
+// 2026-06-13 真钱风暴硬防护 (同 token 18单/秒、$129 超 cap 5x): 与根因无关, 物理封死风暴。
+static constexpr std::int64_t kLiveTokenSerializeNs = 4'000'000'000LL;   // 4s: live 同 token 两单最小间隔 (序列化)
+static constexpr std::int64_t kStormWindowNs = 30'000'000'000LL;          // 30s 滚动窗
+static constexpr std::size_t kStormMaxLiveOrders = 6;                     // 窗内 live 下单 >此 → 全局熔断 halt
+
 // BookSellRealized — 卖出 realize PnL 入账 (sync 卖出 + WSS 兜底卖出共用, 防漂移)。
 //   ⚠ 必须在 apply_fill 【前】调 (读 apply_fill 前的 avg_entry; 减仓不改 avg 但前置取更稳)。
 //   公式与 SettleToken / unrealized 同源: (卖价 − 均入) × 卖出 qty。4 处账目: cum_realized / 逐盘 /
@@ -2022,6 +2027,20 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
         stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
         return;
     }
+    // 2026-06-13 真钱风暴硬防护 (与根因无关, 物理封死同 token 18单/秒 / $129 超 cap 事故):
+    //   ① 全局熔断: 已触发 → 全停 (fail-safe, 重启才恢复)。② per-token 限速: 同 token 4s 内不重发。
+    //   只 live 生效 (paper 无此风险且要高频喂数据)。MTM/CLV 已在上方更新, 此处仅挡下单。
+    if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
+        if (live_storm_halt_) {
+            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+            return;  // 熔断已开, 不再下任何单 (爆炸半径已封)
+        }
+        if (const auto lc = live_token_next_ok_ns_.find(token_id);
+            lc != live_token_next_ok_ns_.end() && NowNs() < lc->second) {
+            stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+            return;  // 本 token 限速中 (序列化, 防同秒连发)
+        }
+    }
 
     // (执行层 §4.1 exec_margin/tox_gate 2026-06-12 治理删: 默认关从未验证; 逆选保护已由
     //  dynamic_reservation 的 amihud margin_floor 项 [活跃] 覆盖, hold-to-settlement 后无
@@ -2325,6 +2344,23 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     // R-11/R-7 模式断言 (2026-06-12 live 接线): paper build 必 0, live build 必 1 (编译期定)
     assert(fill.mode_tag ==
            (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live ? 1u : 0u));
+    // 2026-06-13 真钱风暴硬防护: 每笔 live 下单尝试 (成交与否, 风暴正是【已成交】的单) 都计入 →
+    //   ① per-token 4s 限速 (同 token 不再同秒连发) ② 全局 30s 窗熔断 (>6 笔 → halt 全停, 封爆炸半径)。
+    if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
+        const std::int64_t now_ex = NowNs();
+        live_token_next_ok_ns_[token_id] = now_ex + kLiveTokenSerializeNs;
+        live_exec_times_ns_.push_back(now_ex);
+        while (!live_exec_times_ns_.empty() && now_ex - live_exec_times_ns_.front() > kStormWindowNs)
+            live_exec_times_ns_.pop_front();
+        if (live_exec_times_ns_.size() > kStormMaxLiveOrders && !live_storm_halt_) {
+            live_storm_halt_ = true;
+            std::fprintf(stderr,
+                         "[trading_loop] 🛑 LIVE 风暴熔断: 30s 内 %zu 笔 live 下单 (>%zu) → 全局 halt 全部交易 "
+                         "(fail-safe, 重启才恢复)。疑似 cap 未生效, 立即查!\n",
+                         live_exec_times_ns_.size(), kStormMaxLiveOrders);
+            std::fflush(stderr);
+        }
+    }
     if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
         if (fill.reject == execution::MatchReject::ClobRejected)
             // 硬拒 (4xx 精度/最小额/余额) → 冷却该 token (重发必再拒), 根治同秒重发风暴。
