@@ -385,24 +385,102 @@ void TradingLoop::JournalFill(const FillRow& fr) {
 //   (老板原则 C3: 决策带整盘口; 老周架构: 决策线程栈上组装, 零锁; R-12 不触碰)。
 // ---------------------------------------------------------------------------
 
-// DrainUserFills — 排空 CLOB user 频道成交队列 (loop_thread tick 入口, 单 writer)。
-//   【当前 shadow】: 仅 log 每笔已 CONFIRMED 的真实成交 + 与 sync 路径账本对账 (是否已记此 token / size),
-//   不入账 (sync 路径仍是唯一真相源 → 零真钱风险)。目的: 用真实流量验证 user 频道连得上(auth)、真 trade
-//   消息解析对、按 id 去重对。验证通过后 flip (单独提交): 改为从 WSS 登持仓 (唯一真相源) + 移除同步 apply_fill。
+// Phase 2 对账: synced order_id 记忆窗 (成交低频 → 覆盖数天; 防回执晚到/同 order 多 trade 误判兜底)。
+static constexpr std::size_t kOrderIdMemoryCap = 20000;
+
+// order_id 有界记忆 (FIFO 淘汰; loop_thread only 无锁)。
+void TradingLoop::RememberBoundedOrderId(std::unordered_set<std::string>& s, std::deque<std::string>& fifo,
+                                         const std::string& id, std::size_t cap) {
+    if (id.empty() || !s.insert(id).second)
+        return;
+    fifo.push_back(id);
+    if (fifo.size() > cap) {
+        s.erase(fifo.front());
+        fifo.pop_front();
+    }
+}
+
+// DrainUserFills — 排空 CLOB user 频道成交队列 (loop_thread tick 入口, 单 writer): 对账 + 兜底补记。
+//   每笔 WSS CONFIRMED 成交 (feed 已按 trade_id 去重): 按 taker_order_id 比对 sync 路径已记的 order —
+//   ∈synced = sync 已正常记账 (回执到了) → 对账核对不重记; ∉synced = sync 漏记 (下单回执丢失但链上确成交)
+//   → RecoverMissedFill 兜底补记。防的是「回执丢失 → 漏记真仓」(Phase 1 已修 mode_tag 丢弃那个根因)。
 void TradingLoop::DrainUserFills() {
     if (user_fill_feed_ == nullptr)
         return;
     polymarket::UserFill uf;
     while (user_fill_feed_->Pop(uf)) {
-        const auto pv = position_ledger_.get_position(uf.token_id);
-        const double ledger_sz = pv ? static_cast<double>(pv->size_usdc) / 1'000'000.0 : 0.0;
-        // 对账: WSS 收到 CONFIRMED 成交 vs 同步路径已记账本仓。两者应吻合 (sync 已记则 ledger_sz≠0)。
-        std::fprintf(stderr,
-                     "[user-fill/shadow] cond=%.20s... tok=%.16s... %s %s sz=%.4f px=%.4f fee=%.4f "
-                     "trade=%.8s | ledger_now=%.4f\n",
-                     uf.condition_id.c_str(), uf.token_id.c_str(), uf.is_buy ? "BUY" : "SELL",
-                     uf.is_yes ? "YES" : "NO", uf.size, uf.price, uf.fee, uf.trade_id.c_str(), ledger_sz);
+        const bool synced = !uf.order_id.empty() && synced_order_ids_.count(uf.order_id) > 0;
+        if (synced) {
+            // sync 路径已记此 order → 对账核对 (本 token 账本有仓), 不重复记。matched++ 解锁兜底自校验闸。
+            ++user_fill_matched_count_;
+            const auto pv = position_ledger_.get_position(uf.token_id);
+            const double ledger_sz = pv ? static_cast<double>(pv->size_usdc) / 1'000'000.0 : 0.0;
+            std::fprintf(stderr,
+                         "[user-fill/ok] cond=%.20s... tok=%.16s... %s sz=%.4f px=%.4f order=%.10s "
+                         "ledger=%.4f (sync 已记, 对账通过)\n",
+                         uf.condition_id.c_str(), uf.token_id.c_str(), uf.is_buy ? "BUY" : "SELL", uf.size,
+                         uf.price, uf.order_id.c_str(), ledger_sz);
+            continue;
+        }
+        // sync 未记此 order (回执丢失/超时但链上确成交) → 兜底补记 (WSS user 频道权威: 只报我们自己的成交)。
+        RecoverMissedFill(uf);
     }
+}
+
+// RecoverMissedFill — WSS 兜底补记一笔 sync 漏掉的真实成交 (apply_fill + RM 敞口 + 恢复流水 + 响亮日志)。
+//   token→condition→outcome 全取自 WSS 字段 (user 频道权威)。轻量补记 (无 per-tick 研究上下文; 下 tick
+//   account_equity 直读 ledger 即反映)。size>0/price∈(0,1) 已由 feed ParseConfirmedTrade 保证。
+void TradingLoop::RecoverMissedFill(const polymarket::UserFill& uf) {
+    const std::int64_t sz_micro = static_cast<std::int64_t>(std::llround(uf.size * 1'000'000.0));
+    if (sz_micro <= 0)
+        return;
+    // 自校验闸: order_id 格式未经任一笔对账匹配证实前, 绝不动账本 (防格式不一致 → 每笔都误判漏记 → 全面
+    //   双记账灾难)。只告警。格式一致时第一笔正常成交即 matched++ 解锁; 不一致则永远只告警 (安全)。
+    if (user_fill_matched_count_ == 0) {
+        std::fprintf(stderr,
+                     "[user-fill/UNVERIFIED] ⚠ 疑似 sync 漏记 (order=%.12s tok=%.16s sz=%.4f) 但 order_id 匹配尚未"
+                     "经任何成交证实 → 暂不补记 (防双记账)。若持续出现请查 ExecReport.order_id vs WSS taker_order_id 格式\n",
+                     uf.order_id.c_str(), uf.token_id.c_str(), uf.size);
+        return;
+    }
+    risk::FillEvent ev;
+    ev.filled_size_micro = uf.is_buy ? sz_micro : -sz_micro;
+    ev.fill_price = uf.price;
+    ev.mode_tag = position_ledger_.accepted_mode_tag();  // live → 账本接受
+    ev.order_id = uf.order_id;
+    ev.event_ts_ns = ev.data_source_ts_ns = ev.ingestion_ts_ns = uf.data_source_ts_ns;
+    ev.as_of_ts_ns = NowNs();
+    const strategy::Outcome oc = uf.is_yes ? strategy::Outcome::Yes : strategy::Outcome::No;
+    position_ledger_.apply_fill(uf.condition_id, uf.token_id, oc, ev, "sharp");
+    if (uf.is_buy)
+        engine_by_token_.emplace(uf.token_id, "sharp");
+    RememberBoundedOrderId(synced_order_ids_, synced_order_fifo_, uf.order_id, kOrderIdMemoryCap);  // 防同 order 其它 trade 再走兜底误判
+    FeedRiskGateway();  // RM 敞口立即反映 (caps 生效)
+
+    // 恢复流水 (前端/journal 可见; 标 exit_reason=wss_recovered 便于复盘)
+    {
+        FillRow fr;
+        fr.as_of_ts_ns = ev.as_of_ts_ns;
+        fr.condition_id = uf.condition_id;
+        fr.is_yes = uf.is_yes;
+        fr.is_buy = uf.is_buy;
+        fr.is_close = false;
+        fr.price = uf.price;
+        fr.size_usdc = uf.size;
+        fr.fee = uf.fee;
+        fr.cum_realized = cum_realized_pnl_pusd_;
+        fr.exit_reason = uf.is_buy ? "" : "wss_recovered";
+        std::lock_guard<std::mutex> lk(fills_mu_);
+        JournalFill(fr);
+        fills_ring_.push_back(std::move(fr));
+        if (fills_ring_.size() > kFillsRingCap)
+            fills_ring_.pop_front();
+    }
+    std::fprintf(stderr,
+                 "[user-fill/RECOVERED] ⚠ sync 漏记 (回执丢失) → WSS 兜底补记: cond=%.24s tok=%.16s %s %s "
+                 "sz=%.4f px=%.4f order=%.12s trade=%.10s\n",
+                 uf.condition_id.c_str(), uf.token_id.c_str(), uf.is_buy ? "BUY" : "SELL",
+                 uf.is_yes ? "YES" : "NO", uf.size, uf.price, uf.order_id.c_str(), uf.trade_id.c_str());
 }
 
 void TradingLoop::TickAll() {
@@ -2244,6 +2322,10 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     ev.ingestion_ts_ns = fill.ingestion_ts_ns;
     ev.as_of_ts_ns = fill.as_of_ts_ns;  // R-20 透传
     position_ledger_.apply_fill(condition_id, token_id, intent.outcome, ev, "sharp");  // per-engine 归属 (赔率引擎)
+    // Phase 2 对账: 记本单 CLOB order_id (live; WSS CONFIRMED 回执来时据此判 sync 已记 → 不重复兜底)。
+    if (fill.order_id[0] != '\0')
+        RememberBoundedOrderId(synced_order_ids_, synced_order_fifo_, std::string(fill.order_id.data()),
+                               kOrderIdMemoryCap);
 
     // ---- Step 8b/8c: 账本快照 + 喂 RM 敞口 ----------------------------------
     PublishLedgerSnapshot(condition_id, fill, mark_price, side_book);

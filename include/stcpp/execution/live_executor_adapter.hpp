@@ -9,7 +9,9 @@
 //      gate 不再二次 RM (2026-06-13 简化: 重建 intent 丢字段必拒 BOOK_TS_ZERO, 拦死全部 live 单)。
 #pragma once
 
+#include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <string>
 
 #include "stcpp/execution/order_executor.hpp"
@@ -61,6 +63,10 @@ class LiveExecutorAdapter final : public execution::IOrderExecutor {
         f.fill_price = r.fill_price;
         f.fill_size_usdc = static_cast<std::int64_t>(std::llround(r.filled_shares * 1'000'000.0));
         f.expected_fill_rate = 1.0;
+        // CLOB order_id → fill (Phase 2 对账兜底: 与 WSS user 频道 taker_order_id 匹配判 sync 是否已记)。
+        const std::size_t n = std::min(r.order_id.size(), f.order_id.size() - 1);
+        std::memcpy(f.order_id.data(), r.order_id.data(), n);
+        f.order_id[n] = '\0';
         return f;
     }
 

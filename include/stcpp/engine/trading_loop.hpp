@@ -115,6 +115,7 @@ struct FeatureStoreGameRow;
 // Phase 2: CLOB user 频道成交接收器 (live 成交异步入账; 完整定义 include/stcpp/polymarket/live/live_user_fill_feed.hpp)。
 namespace stcpp::polymarket {
 class LiveUserFillFeed;
+struct UserFill;
 }  // namespace stcpp::polymarket
 
 namespace stcpp::engine {
@@ -937,10 +938,17 @@ private:
     }
     // (大模型成员已砍 2026-06-05: ml_holder_/seq_arb_holder_/fv_hub_。fair 不依赖 ML 推理。)
 
-    // ---- Phase 2: live 成交异步入账 (CLOB user 频道) ----
+    // ---- Phase 2: live 成交异步入账 + 对账兜底 (CLOB user 频道) ----
     //   daemon 管 feed 生命周期; loop_thread_ 每 tick 排空 (DrainUserFills, 单 writer)。null = 未接 (paper/未装)。
-    //   当前 shadow (log+对账); flip 后改唯一真相源。
+    //   对账兜底: sync 路径正常记账 (FOK 回执整单一次入), 记下其 CLOB order_id; WSS 收到 CONFIRMED 成交 →
+    //   按 taker_order_id 比对: ∈synced=sync 已记(对账核对不重记); ∉synced=sync 漏记(回执丢失)→ WSS 补记。
+    //   WSS 同一 trade 多推由 feed 按 trade_id 去重 (一 order 多 trade 各自补记不漏)。全 loop_thread 无锁。
     polymarket::LiveUserFillFeed* user_fill_feed_{nullptr};
+    std::unordered_set<std::string> synced_order_ids_;  // sync 路径已记账的 CLOB order_id
+    std::deque<std::string> synced_order_fifo_;         //   (FIFO 有界淘汰)
+    // 自校验闸 (防 order_id 格式不一致致全面双记账): 至少 1 笔 WSS 成交与 sync order_id 对账匹配过 (证明
+    //   两侧 id 格式一致) 后, 兜底补记才真生效; 否则只告警不补 (matched==0 = 格式可能不匹配, 不敢动账本)。
+    std::uint64_t user_fill_matched_count_{0};
 
     // ---- A1: 真实比分源 + 映射 ----
     // score_store_: 单 writer (Start 前注入), 之后 loop_thread_ 只读 Get(). 可空 → stub 路径.
@@ -1119,8 +1127,14 @@ private:
     // ---- 内部实现 ----
     void RunLoop(std::stop_token st);
     void TickAll();
-    // Phase 2: 排空 user 频道成交队列 (loop_thread tick 入口调; shadow=log+对账 / book=登持仓)。
+    // Phase 2: 排空 user 频道成交队列 (loop_thread tick 入口调): 对账 (order_id 比对 sync 是否已记) +
+    //   兜底补记 sync 漏掉的成交 (回执丢失 → 链上成交但 sync 未记)。
     void DrainUserFills();
+    // Phase 2: WSS 兜底补记一笔 sync 漏掉的成交 (apply_fill + RM + 恢复流水 + 响亮日志)。
+    void RecoverMissedFill(const polymarket::UserFill& uf);
+    // order_id 有界记忆 (FIFO 淘汰; loop_thread only 无锁)。
+    static void RememberBoundedOrderId(std::unordered_set<std::string>& s, std::deque<std::string>& fifo,
+                                       const std::string& id, std::size_t cap);
     // 二元市场双边决策 (老周架构 laozhou-binary-dual-side-arch-v1 + 老郭 review APPROVE-with-conditions):
     //   TickOne 改 per-condition, 入参带整盘口 (YES book + NO book), 决策时带双边信息 (老板原则 C3)。
     void TickOne(const BinaryMarketSnapshot& mkt);

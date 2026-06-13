@@ -186,8 +186,8 @@ TEST(VirtualMatcher, FillSizeUsdc_ScaledByExpectedRate) {
 TEST(VirtualMatcher, T9_VirtualFill_HasMarketIdAndOutcomeFields) {
     execution::VirtualFill fill{};
 
-    // sizeof 锁定 (内部 struct, paper engine 专用)
-    static_assert(sizeof(execution::VirtualFill) == 120,
+    // sizeof 锁定 (内部 struct, paper engine 专用); 2026-06-13 +order_id[72] (Phase 2 对账兜底) 120→192
+    static_assert(sizeof(execution::VirtualFill) == 192,
                   "T9: VirtualFill sizeof 变化须同步更新 static_assert");
 
     // 字段类型/大小正确

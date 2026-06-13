@@ -142,6 +142,11 @@ struct VirtualFill {
     std::int64_t ingestion_ts_ns{0};
     std::int64_t as_of_ts_ns{0};
     std::int64_t fill_ts_ns{0};
+
+    // CLOB order_id (live: LiveExecutorAdapter 从 ExecReport 填; paper 空)。Phase 2 对账兜底用:
+    //   WSS user 频道成交回执的 taker_order_id 与此匹配 → 判定 sync 路径是否已记此单 (防漏记/双记)。
+    //   CLOB order hash = 0x+64hex = 66 字符, 留 72 余量 + null。
+    std::array<char, 72> order_id{};
 };
 
 // VirtualFill ABI 校验 (paper engine 内部 struct, 不跨 binary, 但 sizeof 要显式锁定防意外 padding)
@@ -151,8 +156,9 @@ struct VirtualFill {
 //   offset 40: slippage_bps(4), bernoulli_draw(1), audit_wal_kind(1) → pad 0
 //   offset 46: market_id[32]@46 → outcome@78(1) → mode_tag@79(1) → pad6
 //   event_ts_ns@86? — 实际依赖编译器; 更新 sizeof 以编译时实测为准
-static_assert(sizeof(VirtualFill) == 120,
-              "VirtualFill sizeof 改变 — 确认后更新此断言 (paper engine 内部 struct, R-2 not affected)");
+static_assert(sizeof(VirtualFill) == 192,
+              "VirtualFill sizeof 改变 — 确认后更新此断言 (paper engine 内部 struct, R-2 not affected)。"
+              "2026-06-13: +order_id[72] (Phase 2 对账兜底) 120→192。");
 
 class VirtualMatcher {
 public:
