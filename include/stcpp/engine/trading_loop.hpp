@@ -1043,6 +1043,9 @@ private:
 
     // 成交流水 ring (2026-06-04 老板「看懂买卖价」): 定长, loop_thread_ 写 / 端点读 mutex 保护。
     static constexpr std::size_t kFillsRingCap = 5000;  // 深环: 模型驱动100+笔/30s, 5000≈数十分钟/单盘历史够深
+    // 成交流水环回放 (2026-06-13 老板「盯盘成交纪录都没有了」): 启动时从 fills journal 尾部回放最近
+    //   kFillsRingCap 笔进 fills_ring_ (流水环纯内存, 重启即丢; journal 是全量真相)。RestoreLedgerSnapshot 末调。
+    void RestoreFillsJournalTail();
     mutable std::mutex fills_mu_;
     std::deque<FillRow> fills_ring_;  // 末尾最新; 超 cap 弹头
 

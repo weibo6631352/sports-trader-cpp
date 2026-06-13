@@ -2408,6 +2408,82 @@ void TradingLoop::RestoreLedgerSnapshot() {
         std::fprintf(stderr, "[ledger-restore] 快照恢复: 持仓 %d, CLV pending %d, cum_realized=%.2f (停机期结算由孤儿 sweep 补)\n",
                      n_pos, n_clv, cum_realized_pnl_pusd_);
     }
+    RestoreFillsJournalTail();  // 成交流水环回放 (2026-06-13 老板「盯盘成交纪录都没有了」)
+}
+
+// RestoreFillsJournalTail — 从 fills journal 尾部回放最近 kFillsRingCap 笔进内存环 (2026-06-13)。
+//   根因: fills_ring_ 纯内存, 重启即丢 (持仓/realized 走快照恢复, 流水没有) → 盯盘成交记录空。
+//   journal 文件 (JournalFill 异步落盘) 在盘上有全量 → 启动时 tail 回放。仅启动期调用 (单线程),
+//   仍取 fills_mu_ 保险。解析容错: 缺键给默认/NaN, 坏行跳过。
+void TradingLoop::RestoreFillsJournalTail() {
+    const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
+    const char* path = live ? "data/ml_capture/live_fills_journal.jsonl" : "data/ml_capture/fills_journal.jsonl";
+    FILE* jf = std::fopen(path, "r");
+    if (jf == nullptr) return;  // 无 journal = 全新开始
+    // 收尾部行 (环形保留最后 kFillsRingCap 行, 文件序=时间序)
+    std::deque<std::string> tail;
+    {
+        char buf[2048];
+        while (std::fgets(buf, sizeof(buf), jf) != nullptr) {
+            tail.emplace_back(buf);
+            if (tail.size() > kFillsRingCap) tail.pop_front();
+        }
+    }
+    std::fclose(jf);
+    // 极简字段提取 (自家 JournalFill 写的扁平 JSON, 无嵌套/无转义)
+    auto num = [](const std::string& s, const char* key, double dflt) -> double {
+        const std::string pat = std::string("\"") + key + "\":";
+        const auto p = s.find(pat);
+        if (p == std::string::npos) return dflt;
+        return std::strtod(s.c_str() + p + pat.size(), nullptr);
+    };
+    auto str = [](const std::string& s, const char* key) -> std::string {
+        const std::string pat = std::string("\"") + key + "\":\"";
+        const auto p = s.find(pat);
+        if (p == std::string::npos) return {};
+        const auto st = p + pat.size();
+        const auto e = s.find('"', st);
+        return e == std::string::npos ? std::string{} : s.substr(st, e - st);
+    };
+    constexpr double kNan = std::numeric_limits<double>::quiet_NaN();
+    std::size_t restored = 0;
+    std::lock_guard<std::mutex> lk(fills_mu_);
+    for (const auto& ln : tail) {
+        if (ln.empty() || ln[0] != '{') continue;
+        FillRow fr;
+        fr.as_of_ts_ns = static_cast<std::int64_t>(num(ln, "ts", 0));
+        fr.condition_id = str(ln, "cond");
+        if (fr.as_of_ts_ns <= 0 || fr.condition_id.empty()) continue;  // 坏行跳过
+        fr.is_yes = num(ln, "yes", 1) != 0;
+        fr.is_buy = num(ln, "buy", 1) != 0;
+        fr.is_close = num(ln, "close", 0) != 0;
+        fr.price = num(ln, "px", 0);
+        fr.size_usdc = num(ln, "qty", 0);
+        fr.realized = num(ln, "realized", 0);
+        fr.fair = num(ln, "fair", 0);
+        fr.mark = num(ln, "mark", 0);
+        fr.fee = num(ln, "fee", 0);
+        fr.exit_reason = str(ln, "exit");
+        fr.engine = str(ln, "engine");
+        fr.bk_spread = num(ln, "bk_spread", kNan);
+        fr.bk_bid_sz = num(ln, "bk_bid_sz", kNan);
+        fr.bk_ask_sz = num(ln, "bk_ask_sz", kNan);
+        fr.bk_imb = num(ln, "bk_imb", kNan);
+        fr.q_ofi = num(ln, "ofi", kNan);
+        fr.q_rvol = num(ln, "rvol", kNan);
+        fr.q_mom5 = num(ln, "mom5", kNan);
+        fr.sh_fair = num(ln, "sh_fair", kNan);
+        fr.sh_vel = num(ln, "sh_vel", kNan);
+        fr.deploy_pct = num(ln, "deploy", kNan);
+        fr.hold_sec = num(ln, "hold_sec", kNan);
+        fr.mae = num(ln, "mae", kNan);
+        fr.mfe = num(ln, "mfe", kNan);
+        fills_ring_.push_back(std::move(fr));
+        if (fills_ring_.size() > kFillsRingCap) fills_ring_.pop_front();
+        ++restored;
+    }
+    if (restored > 0)
+        std::fprintf(stderr, "[fills-restore] journal 回放 %zu 笔成交流水进环 (%s)\n", restored, path);
 }
 
 // ---------------------------------------------------------------------------
