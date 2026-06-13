@@ -57,7 +57,9 @@ class LiveExecutorAdapter final : public execution::IOrderExecutor {
             return f;
         }
         if (!r.filled || r.filled_shares <= 0.0) {
-            f.reject = execution::MatchReject::BernoulliMissed;  // FOK 未成交 → 可重试语义
+            // 2026-06-13 硬化: 区分硬拒 (4xx, 重发必再拒 → 调用方冷却该 token) vs FOK 无对手 (可重试)。
+            f.reject = r.hard_reject ? execution::MatchReject::ClobRejected     // 非重试 → trading_loop 冷却闸
+                                     : execution::MatchReject::BernoulliMissed;  // FOK 未成交 → 可重试
             return f;
         }
         f.reject = execution::MatchReject::Ok;

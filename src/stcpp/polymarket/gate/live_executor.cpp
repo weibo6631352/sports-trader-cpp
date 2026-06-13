@@ -3,6 +3,8 @@
 // Owner: GM (老雷) 2026-05-31 — Phase 4 接线。
 #include "stcpp/polymarket/live_executor.hpp"
 
+#include <cstdio>
+
 namespace stcpp::polymarket {
 
 ExecReport LiveExecutor::Execute(const stcpp::risk::OrderIntent& intent, bool neg_risk) noexcept {
@@ -15,6 +17,10 @@ ExecReport LiveExecutor::Execute(const stcpp::risk::OrderIntent& intent, bool ne
     const GateResult gr = gate_.Submit(intent, neg_risk);
     rep.gate_block = gr.gate_block;
     rep.submitted = gr.submitted;
+    // 2026-06-13 硬化: 无条件回填 CLOB 回执诊断 (此前只在 matched 时填 → daemon 对 400 失明 → 风暴根因之一)。
+    rep.http_status = gr.order.http_status;
+    rep.clob_status = gr.order.status;
+    rep.clob_error = gr.order.error;
 
     // FOK: 只有 status=="matched" 才算成交 (老周 C-3); 否则不写账本。
     if (gr.submitted && gr.order.success && gr.order.status == "matched") {
@@ -26,6 +32,13 @@ ExecReport LiveExecutor::Execute(const stcpp::risk::OrderIntent& intent, bool ne
         rep.fill_price = (rep.filled_shares > 0.0) ? rep.filled_usdc / rep.filled_shares : 0.0;
         rep.order_id = gr.order.order_id;
         rep.tx_hash = gr.order.transaction_hash;
+    } else if (gr.submitted) {
+        // 真触达但没成交: 区分【硬拒 4xx】(精度/最小额/余额, 重发必再拒 → 非重试) vs【FOK 无对手】(可重试)。
+        rep.hard_reject = (gr.order.http_status >= 400) || (!gr.order.success && !gr.order.error.empty());
+        if (rep.hard_reject)
+            std::fprintf(stderr, "[live_exec] ⚠ CLOB 硬拒 http=%d err=\"%s\" token=%s side=%s → 非重试(冷却)\n",
+                         gr.order.http_status, gr.order.error.c_str(), intent.token_id.c_str(),
+                         intent.side == stcpp::risk::Side::Buy ? "BUY" : "SELL");
     }
     return rep;
 }

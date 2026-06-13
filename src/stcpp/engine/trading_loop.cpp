@@ -388,6 +388,10 @@ void TradingLoop::JournalFill(const FillRow& fr) {
 // Phase 2 对账: synced order_id 记忆窗 (成交低频 → 覆盖数天; 防回执晚到/同 order 多 trade 误判兜底)。
 static constexpr std::size_t kOrderIdMemoryCap = 20000;
 
+// 2026-06-13 硬化: CLOB 硬拒 (4xx) 后该 token 冷却 30s 不再下单 → 把失败下单频率封到 ~1 单/30s/token (而非同秒 N 连发)。
+//   precision 修复后硬拒本应罕见; 此为纵深防护 (任何未来永久性 4xx 都不再引发风暴)。
+static constexpr std::int64_t kHardRejectCooldownNs = 30'000'000'000LL;  // 30s
+
 // BookSellRealized — 卖出 realize PnL 入账 (sync 卖出 + WSS 兜底卖出共用, 防漂移)。
 //   ⚠ 必须在 apply_fill 【前】调 (读 apply_fill 前的 avg_entry; 减仓不改 avg 但前置取更稳)。
 //   公式与 SettleToken / unrealized 同源: (卖价 − 均入) × 卖出 qty。4 处账目: cum_realized / 逐盘 /
@@ -2011,6 +2015,14 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     clv_tracker_.UpdateMid(token_id, mark_price);
     RepublishLedgerMark(condition_id, token_id, mark_price, side_book);  // 逐盘 PnL 实时 MTM (2026-06-11)
 
+    // 2026-06-13 硬化: 防重试风暴 — 本 token 上轮被 CLOB 硬拒 (4xx 精度/最小额/余额) → 冷却期内不再下单 (重发必再拒)。
+    //   仅 live 触发 (paper VirtualMatcher 不产 ClobRejected)。MTM/CLV 已在上方更新, 此处仅挡下单。到期自动恢复。
+    if (const auto cd = hard_reject_until_ns_.find(token_id);
+        cd != hard_reject_until_ns_.end() && NowNs() < cd->second) {
+        stats_.orders_held.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
     // (执行层 §4.1 exec_margin/tox_gate 2026-06-12 治理删: 默认关从未验证; 逆选保护已由
     //  dynamic_reservation 的 amihud margin_floor 项 [活跃] 覆盖, hold-to-settlement 后无
     //  rebalance churn 病灶。git 史可考。)
@@ -2314,10 +2326,14 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     assert(fill.mode_tag ==
            (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live ? 1u : 0u));
     if (fill.reject != execution::MatchReject::Ok || fill.fill_size_usdc <= 0) {
+        if (fill.reject == execution::MatchReject::ClobRejected)
+            // 硬拒 (4xx 精度/最小额/余额) → 冷却该 token (重发必再拒), 根治同秒重发风暴。
+            hard_reject_until_ns_[token_id] = NowNs() + kHardRejectCooldownNs;
         stats_.fills_missed.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     stats_.fills_completed.fetch_add(1, std::memory_order_relaxed);
+    hard_reject_until_ns_.erase(token_id);  // 成交成功 → 清该 token 冷却 (若有)
 
     // ---- Step 8: PositionLedger::apply_fill (卖负 delta, 老周 Q-周-2) ----------
     //   matcher 出 fill_size_usdc 恒正; 符号在此按 side 定。减仓量已被控制器 clamp ≤ 持仓 → new_size≥0。

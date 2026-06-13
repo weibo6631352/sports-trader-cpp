@@ -12,6 +12,7 @@
 #include <string>
 
 #include "stcpp/infra/wal/pit.hpp"
+#include "stcpp/polymarket/live_executor.hpp"
 
 namespace stcpp::polymarket::test {
 
@@ -171,6 +172,36 @@ TEST_F(LiveOrderGateTest, ArmedSubmitsOnce) {
     EXPECT_EQ(last_req_.token_id, kTokenId);
     EXPECT_TRUE(last_req_.is_buy);
     EXPECT_TRUE(gr.order.success);
+}
+
+// 2026-06-13 硬化: LiveExecutor 无条件回填 CLOB 回执 + 标记硬拒(4xx) — 此前丢弃 → daemon 把硬拒当可重试 miss → 风暴。
+TEST_F(LiveOrderGateTest, ExecReportSurfacesHardReject) {
+    LiveOrderGate gate([](const LiveOrderRequest&) -> LiveOrderResult {
+        LiveOrderResult r;
+        r.success = false;
+        r.http_status = 400;
+        r.error = "invalid amount for a marketable BUY order ($0.999), min size: 1";
+        return r;
+    });
+    gate.Arm();
+    LiveExecutor exec(gate);
+    const ExecReport rep = exec.Execute(make_ok_intent(), false);
+    EXPECT_TRUE(rep.submitted);
+    EXPECT_FALSE(rep.filled);
+    EXPECT_TRUE(rep.hard_reject) << "4xx 必须标记 hard_reject (→ adapter 出 ClobRejected → loop 冷却, 非重试)";
+    EXPECT_EQ(rep.http_status, 400);
+    EXPECT_FALSE(rep.clob_error.empty()) << "CLOB error 必须透传 (终结 error 被吞)";
+}
+
+// matched → 非硬拒 + filled (回执正常路径)。
+TEST_F(LiveOrderGateTest, ExecReportMatchedNotHardReject) {
+    LiveOrderGate gate(make_counting_sink());  // 返 matched/200
+    gate.Arm();
+    LiveExecutor exec(gate);
+    const ExecReport rep = exec.Execute(make_ok_intent(), false);
+    EXPECT_TRUE(rep.filled);
+    EXPECT_FALSE(rep.hard_reject);
+    EXPECT_EQ(rep.http_status, 200);
 }
 
 }  // namespace stcpp::polymarket::test

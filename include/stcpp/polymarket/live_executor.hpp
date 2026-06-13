@@ -30,6 +30,11 @@ struct ExecReport {
     double fill_price{0.0};                 // = filled_usdc / filled_shares
     std::string order_id;
     std::string tx_hash;
+    // CLOB 回执诊断 (2026-06-13 硬化: 此前丢弃 → daemon 对 400 失明, 把硬拒当可重试 miss → 风暴。无条件回填):
+    int http_status{0};                     // CLOB HTTP 码 (400=硬拒, 不可重试)
+    std::string clob_status;                // "matched"/"live"/"unmatched"
+    std::string clob_error;                 // errorMsg (e.g. "min size: 1" / 精度); 已可安全 log (无私钥/HMAC)
+    bool hard_reject{false};                // 真触达但被 CLOB 硬拒 (4xx) → 非重试语义 (区别于 FOK 无对手成交)
     // R-20 4ts (carve-out C-1 解阻; 透传 intent 上游 4ts, 非 now() 替代): live FillEvent 合规所需。
     std::int64_t event_ts_ns{0};
     std::int64_t data_source_ts_ns{0};

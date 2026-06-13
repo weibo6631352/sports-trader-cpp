@@ -54,6 +54,7 @@ enum class MatchReject : std::uint8_t {
     InvalidConfig = 3,
     ClobModelReject = 4,      // FillRateModel::compute_from_clob_book 拒 (InvalidSnapshot / BelowFloor)
     InvalidBookSnapshot = 5,  // MatchWithBook 入参 book 校验失败
+    ClobRejected = 6,         // (live) 真触达 CLOB 但被 4xx 硬拒 (精度/最小额/余额) → 非重试语义, 调用方冷却该 token
 };
 
 struct VirtualOrder {
