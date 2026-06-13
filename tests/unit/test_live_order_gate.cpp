@@ -108,15 +108,34 @@ TEST(LiveOrderGateTranslate, SellOddLotPrecisionFloored) {
     EXPECT_LE(req.maker_amount, 5'526'316u);  // 绝不超过原始持仓 (防超卖)
 }
 
-// BUY 同样满足精度 (shares 2 位 / USDC 4 位), 且隐含限价 = intent.price。
+// BUY 精度【与 SELL 相反】(2026-06-13 链路探针实测 CLOB 400 坐实): market BUY 的 maker(USDC) ≤ 2 位小数、
+//   taker(shares) ≤ 5 位; 旧实现误套 SELL 规则 (USDC 4 位) → 便宜/odd 价 BUY 几乎全被 400 拒 (Alan 真钱事故根因)。
 TEST(LiveOrderGateTranslate, BuyPrecisionSatisfied) {
     stcpp::risk::OrderIntent it;
     it.side = Side::Buy;
     it.price = 0.07;
-    it.size_pUSD_micro = 1'000'000;  // $1 @ 0.07 → 14.28.. 股
+    it.size_pUSD_micro = 2'000'000;  // $2 @ 0.07 → 28.57.. 股
     const auto req = TranslateIntent(it, false);
-    EXPECT_EQ(req.taker_amount % 10'000u, 0u) << "买入 shares 须 2 位小数";
-    EXPECT_EQ(req.maker_amount % 100u, 0u) << "USDC 须 4 位小数";
+    EXPECT_EQ(req.maker_amount % 10'000u, 0u) << "market BUY: maker(USDC) 须 ≤2 位小数 (10'000 micro 倍数)";
+    EXPECT_EQ(req.taker_amount % 10u, 0u) << "market BUY: taker(shares) 须 ≤5 位小数 (10 micro 倍数)";
+    EXPECT_GE(req.maker_amount, 1'000'000u) << "≥$1 名义门";
+    // 隐含限价 = maker/taker ≥ intent.price → marketable (向下圆整 taker → 限价不低于 ask)。
+    const double implied = static_cast<double>(req.maker_amount) / static_cast<double>(req.taker_amount);
+    EXPECT_GE(implied, it.price - 1e-9) << "BUY 隐含限价须 ≥ ask (marketable)";
+}
+
+// 回归 (Alan 真钱事故): 便宜 token 凑不到 $1 的 marketable BUY → maker 钉到 $1 (而非被 400 拒)。
+//   旧实现: 5 股 × 0.18 = $0.90 < $1 → CLOB "min size: 1" 400 → 不入账 → cap 瞎 → 同秒重试风暴。
+TEST(LiveOrderGateTranslate, BuyCheapTokenFloorsToOneDollar) {
+    stcpp::risk::OrderIntent it;
+    it.side = Side::Buy;
+    it.price = 0.18;
+    it.size_pUSD_micro = 900'000;  // $0.90 (≈5 股) < $1
+    const auto req = TranslateIntent(it, false);
+    EXPECT_GE(req.maker_amount, 1'000'000u) << "便宜 BUY 必须凑够 $1 名义门 (否则 CLOB 400)";
+    EXPECT_EQ(req.maker_amount % 10'000u, 0u) << "maker(USDC) ≤2 位";
+    EXPECT_EQ(req.taker_amount % 10u, 0u) << "taker(shares) ≤5 位";
+    EXPECT_GT(req.taker_amount, 5'000'000u) << "$1 @ 0.18 → >5 股";
 }
 
 // fail-closed: 默认未开闸 → sink 零调用。

@@ -2054,20 +2054,22 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
     cin.best_ask = exec_ask;  // 本边 ask (买入触价 + 限价不追门)
     cin.best_bid = exec_bid;  // 本边 bid (卖出触价 + 限价不追门)
     cin.min_rebalance_pusd = min_rebalance;
-    // 最小买单 = Polymarket CLOB 5 股【凑整目标】(2026-06-13 老板「限制的是5股不是5美元, 别再搞错」修正,
-    //   + 官方文档核实: minimum_order_size 单位是【股(outcome token)】非 USD; 真盘 API 全市场返 5;
-    //   limit order 的 size 字段=股数; 低于 → INVALID_ORDER_MIN_SIZE 拒单。我们 marketable-limit 走 size=股):
-    //   旧实现把「5 股」死写成 $5 USD → favorite 价带(5 股=$3.5-4.2)被 $5 过严白挡合格单。
-    //   正确: USD 门 = 5 股 × 买价(exec_ask = intent.price 同值 → shares = size_pUSD/price = 5.00 股)。
-    //   ⚠ 圆整缓冲 (kShareSafetyPad): live_order_gate 把 size_pUSD 转股时有两道向下损失 ——
-    //     ① (int64)(size×1e6) 截断 ② shares floor 到 2 位小数 (0.01 股粒度) —— 实测全价带 96/771 (12.5%) 价位
-    //     会被削成 4.99 股 → INVALID_ORDER_MIN_SIZE 真盘拒。垫 0.05 股 (成本 +1% ≈ $0.04) → 实测 0 拒。
+    // 最小买单【凑整目标】= max($1 名义, 5 股 × 买价) (2026-06-13 链路探针实测 CLOB 400 回执修正):
+    //   ⚠ marketable FOK BUY 的真实最小是 **$1 名义金额**, 非 5 股 ("invalid amount for a marketable BUY
+    //     order ($0.999), min size: 1")。此前「最小 5 股」是 limit order(GTC) 的 minimum_order_size, 对
+    //     marketable BUY 不成立 —— 便宜 token 5 股 < $1 仍被拒 (0.18×5=$0.9 < $1)。
+    //   floor = max(kClobMinNotionalUsd, (5+pad)×ask): 便宜价带 $1 门主导(>5 股), favorite 价带 5 股主导
+    //     (>$1, 保留老板「favorite 至少凑 5 股」意图)。两者皆 ≥$1 且 ≥5 股, 满足任意组合最小。
+    //   ⚠ 圆整缓冲 (kShareSafetyPad): live_order_gate 转股时有向下损失 (截断 + floor 到精度档), 垫 0.05 股抗削。
+    //   ⚠ 只影响 BUY: position_controller 仅在新开仓买单 < min_order 时凑整 (sell 不受 — SELL 无 $1 门, 实测 $0.975 成交)。
     constexpr double kClobMinShares = 5.0;
-    constexpr double kShareSafetyPad = 0.05;  // 抗 gate 圆整/截断, 保证落地 ≥5.00 股
-    // share_floor_usd = 「5 股值多少 pUSD」= 把 PM「最小 5 股」(股数约束) 翻译成系统内部 pUSD 量纲的桥梁。
+    constexpr double kShareSafetyPad = 0.05;          // 抗 gate 圆整/截断, 保证落地 ≥5.00 股
+    constexpr double kClobMinNotionalUsd = 1.0;        // marketable BUY 最小名义 $1 (CLOB 实测 "min size: 1")
+    // share_floor_usd = 把 PM marketable-BUY 最小额翻译成系统内部 pUSD 量纲的桥梁。
     //   两处复用: ① cin.min_order_pusd 控制器凑整目标 ② 下方 kMinBiteUsd 引擎切深度下限。
-    const double share_floor_usd =
-        (std::isfinite(exec_ask) && exec_ask > 0.0) ? (kClobMinShares + kShareSafetyPad) * exec_ask : 0.0;
+    const double share_floor_usd = (std::isfinite(exec_ask) && exec_ask > 0.0)
+                                       ? std::max(kClobMinNotionalUsd, (kClobMinShares + kShareSafetyPad) * exec_ask)
+                                       : kClobMinNotionalUsd;
     cin.min_order_pusd = share_floor_usd;  // (旧 max(cfg_.min_order_pusd,..) 删: cfg 旋钮已废, 见 hpp)
     cin.per_order_cap_pusd = cfg_.per_order_cap_usdc;
     cin.allow_short = false;       // 空头 clamp 0 (sell-to-open 对二元市场 N/A; 见 spec §11.6)
