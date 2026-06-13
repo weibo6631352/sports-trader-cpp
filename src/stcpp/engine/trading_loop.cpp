@@ -2719,12 +2719,14 @@ std::size_t TradingLoop::SeedLivePositionsFromOnchain(
     const std::vector<polymarket::OnchainPosition>& positions) {
     const std::int64_t now = NowNs();
     std::size_t seeded = 0;
+    double seeded_cost = 0.0;  // Σ(seed 仓 股×均价); 资金锚反推用 (见下)
     for (const auto& p : positions) {
         const std::int64_t sz_micro = static_cast<std::int64_t>(std::llround(p.shares * 1'000'000.0));
         // 防御性自检 (不信调用方; 脏数据不进真钱账本): 股>0 + 价∈(0,1) + token/cid 非空。
         if (sz_micro <= 0 || !(p.avg_price > 0.0 && p.avg_price < 1.0) || p.token_id.empty() ||
             p.condition_id.empty())
             continue;
+        seeded_cost += p.shares * p.avg_price;
         risk::FillEvent ev;
         ev.filled_size_micro = sz_micro;  // 链上持仓恒为净多头 (我们只买 outcome token, 无做空)
         ev.fill_price = p.avg_price;
@@ -2742,6 +2744,23 @@ std::size_t TradingLoop::SeedLivePositionsFromOnchain(
                      p.shares, p.avg_price);
     }
     if (seeded > 0) FeedRiskGateway();  // 立即喂 RM 敞口 (caps 生效)
+
+    // 资金锚对账 (2026-06-13 老板「和链上对不上」): cfg_.bankroll_usdc 此刻 = 启动读的链上现金, 但链上现金
+    //   【已扣过买这些 seed 仓的钱 + 已含历史 realized/fee】。而 equity 模型 (account_equity) 把 bankroll_usdc
+    //   当【毛起始资本】: cash = bankroll − Σ持仓成本 + cum_realized − cum_fee。直接用链上现金当 bankroll →
+    //   持仓成本被双扣 (cash/净值各少一个持仓成本) → 与链上对不上。反推毛本金使恒等式还原到链上真值:
+    //     bankroll_init = 链上现金 + seed持仓成本 − cum_realized + cum_fee
+    //   → cash = 链上现金, equity = 链上现金 + 持仓市值 (= 链上真实净值)。Kelly base 同步变为 ≈ 账户净值 (更对;
+    //   且受 caps 封顶)。仅 live + seed 成功后调一次 (paper 不动, 模型本就自洽)。
+    if (seeded > 0) {
+        const double onchain_cash = cfg_.bankroll_usdc;
+        cfg_.bankroll_usdc = onchain_cash + seeded_cost - cum_realized_pnl_pusd_ + cum_fee_pusd_;
+        rm_.set_bankroll(static_cast<std::int64_t>(cfg_.bankroll_usdc * 1'000'000.0));
+        std::fprintf(stderr,
+                     "[onchain-seed] 资金锚对账: 链上现金=$%.2f + seed持仓成本=$%.2f - 历史realized=$%.2f "
+                     "+ 历史fee=$%.2f → bankroll(毛本金)=$%.2f (使现金/净值与链上吻合)\n",
+                     onchain_cash, seeded_cost, cum_realized_pnl_pusd_, cum_fee_pusd_, cfg_.bankroll_usdc);
+    }
     std::fprintf(stderr, "[onchain-seed] live 启动对账完成: seed %zu 仓 (链上 open=%zu)\n", seeded,
                  positions.size());
     return seeded;
