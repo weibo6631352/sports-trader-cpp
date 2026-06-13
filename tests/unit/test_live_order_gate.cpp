@@ -118,7 +118,7 @@ TEST(LiveOrderGateTranslate, BuyPrecisionSatisfied) {
     it.size_pUSD_micro = 2'000'000;  // $2 @ 0.07 → 28.57.. 股
     const auto req = TranslateIntent(it, false);
     EXPECT_EQ(req.maker_amount % 10'000u, 0u) << "market BUY: maker(USDC) 须 ≤2 位小数 (10'000 micro 倍数)";
-    EXPECT_EQ(req.taker_amount % 10u, 0u) << "market BUY: taker(shares) 须 ≤5 位小数 (10 micro 倍数)";
+    EXPECT_EQ(req.taker_amount % 10'000u, 0u) << "market BUY: taker(shares) 须 ≤2 位小数 (保守, 兼容各市场 4/5 位上限)";
     EXPECT_GE(req.maker_amount, 1'000'000u) << "≥$1 名义门";
     // 隐含限价 = maker/taker ≥ intent.price → marketable (向下圆整 taker → 限价不低于 ask)。
     const double implied = static_cast<double>(req.maker_amount) / static_cast<double>(req.taker_amount);
@@ -135,7 +135,7 @@ TEST(LiveOrderGateTranslate, BuyCheapTokenFloorsToOneDollar) {
     const auto req = TranslateIntent(it, false);
     EXPECT_GE(req.maker_amount, 1'000'000u) << "便宜 BUY 必须凑够 $1 名义门 (否则 CLOB 400)";
     EXPECT_EQ(req.maker_amount % 10'000u, 0u) << "maker(USDC) ≤2 位";
-    EXPECT_EQ(req.taker_amount % 10u, 0u) << "taker(shares) ≤5 位";
+    EXPECT_EQ(req.taker_amount % 10'000u, 0u) << "taker(shares) ≤2 位 (保守, 兼容各市场上限)";
     EXPECT_GT(req.taker_amount, 5'000'000u) << "$1 @ 0.18 → >5 股";
 }
 

@@ -22,7 +22,7 @@ LiveOrderRequest TranslateIntent(const stcpp::risk::OrderIntent& intent, bool ne
     };
 
     // CLOB 下单精度/最小额硬约束 (2026-06-13 链路探针实测 CLOB 400 回执坐实, 买卖【相反】, 必须分开):
-    //   market BUY : maker(USDC) ≤ 2 位小数 (step 10'000 micro), taker(shares) ≤ 5 位 (step 10);
+    //   market BUY : maker(USDC) ≤ 2 位小数 (step 10'000 micro), taker(shares) ≤ 2 位 (step 10'000, 见下保守理由);
     //                且 maker(USDC 名义) ≥ $1 ("invalid amount for a marketable BUY order, min size: 1")。
     //   market SELL: maker(shares) ≤ 2 位 (step 10'000), taker(USDC) ≤ 4 位 (step 100)。SELL 无 $1 门。
     //   ⚠ 旧实现对买卖【套用同一套】(shares 2 位 / USDC 4 位) → 对 SELL 对、对 BUY 全错 (maker=USDC 做成 4 位):
@@ -33,11 +33,14 @@ LiveOrderRequest TranslateIntent(const stcpp::risk::OrderIntent& intent, bool ne
     if (req.is_buy) {
         std::uint64_t maker_usdc = floor_to(size_micro, 10'000ULL);    // USDC 付出, 2 位小数
         if (maker_usdc < 1'000'000ULL) maker_usdc = 1'000'000ULL;       // $1 最小名义门 (round-up 凑够, 老板「凑够最小额」)
-        std::uint64_t taker_shares = 0;                                 // shares 获得, 5 位小数
+        // taker(shares) 圆整到【2 位小数】: 2026-06-13 live 实测 CLOB「max accuracy」按市场不一 (US-Iran 盘 5 位 /
+        //   网球盘 4 位) → 5 位会被部分市场 400 拒。2 位 = 最保守 (与 SELL shares 同档, 实测可接受); 对任意
+        //   「max ≥2 位」市场都合法, 一劳永逸不再赌每盘是 4 还是 5 位。圆整代价 ≤0.01 股 (≪$0.01) 可忽略。
+        std::uint64_t taker_shares = 0;                                 // shares 获得, 2 位小数
         if (intent.price > 0.0)
             taker_shares = floor_to(
-                static_cast<std::uint64_t>(std::llround(static_cast<double>(maker_usdc) / intent.price)), 10ULL);
-        if (taker_shares == 0) taker_shares = 10ULL;                    // price≈0 兜底, 不产 0 量
+                static_cast<std::uint64_t>(std::llround(static_cast<double>(maker_usdc) / intent.price)), 10'000ULL);
+        if (taker_shares == 0) taker_shares = 10'000ULL;               // price≈0 兜底, 不产 0 量 (最小 0.01 股)
         req.maker_amount = maker_usdc;
         req.taker_amount = taker_shares;
     } else {
