@@ -720,32 +720,30 @@ BuildResult TraderDaemon::Build() {
     //   实测 26 笔 sharp 成交全捕获正 edge (中位 5.3%, 0 笔买在 fair 上方) → 边真实, 放大有据。
     //   放大让 Kelly 主导 (λ0.35 仍是真风控); per-market ≤12% bankroll (守北极星 DD≤15%)。R-11 纯 paper。
     cfg_.trading_loop.min_order_pusd = 5.0;             // 最小买单 (老板 2026-06-09「体育 min 5 单」): 砍 0.0u/0.1u dust churn + 贴真盘
-    // 2026-06-10 仓位止血 (老板「你怎么看」+ 实测 −12.14 单笔 blowup: NO 从赢面 0.55 骑到 0.34 + 大仓): caps 砍半
-    //   → 单笔 blowup 减半 (−12→−6)。止血非治本 (赛中 −EV 结构性, 治本靠 CLV 判决/转赛前)。不碰离场逻辑。
-    cfg_.trading_loop.per_order_cap_usdc = 25.0;        // was 50 (2.5% bankroll/单)
-    cfg_.trading_loop.per_outcome_cap_usdc = 50.0;      // was 100 (5% bankroll/边)
-    cfg_.trading_loop.market_exposure_cap_usdc = 60.0;  // was 120 (6% bankroll/市场)
-    // 实盘注码覆盖 (2026-06-13 老板 100u 入金 + 烟测逮住: LiveRiskProfile 是孤儿从未接 daemon →
-    //   live 错用 paper 注码/bankroll 1000)。改 cfg_.trading_loop = sizing+RM+account 显示单一真相源
-    //   → 三处同步 live 注码。其余行为 (日损永不熔断等) 继承 paper, 符合老板「不乱加封控, live 只差钱是真的」。
-    if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
+    // #4 注码定稿 (2026-06-13 老板批): 双模式统一吃 LiveRiskProfile (caps $10/12/15/20 按 $154 等比) —
+    //   paper 镜像 live 同款 = live 的精确彩排 (单量/单size/节奏同构, 唯一差别成交模拟 vs 真实)。
+    //   cfg_.trading_loop = sizing+RM+account 显示单一真相源。bankroll: paper 用档位值 ($150),
+    //   live 启动链上实读真本金 (读失败 fail-safe 回落档位, loud warn)。
+    {
         const risk::RiskConfig lp = risk::LiveRiskProfile();
         cfg_.trading_loop.per_order_cap_usdc = lp.per_order_cap_usdc.to_pusd();
         cfg_.trading_loop.per_outcome_cap_usdc = lp.per_outcome_cap_usdc.to_pusd();
         cfg_.trading_loop.market_exposure_cap_usdc = lp.market_exposure_cap_usdc.to_pusd();
-        // bankroll = 真实链上 pUSD 余额 (2026-06-12 老板「净值为何还是150」): 启动读一次真本金,
-        //   armed 后 daemon 是钱包唯一交易者 → 起点对则净值一路对。读失败 fail-safe 回落 LiveRiskProfile 档 (loud warn)。
-        double bankroll = lp.bankroll_usdc.to_pusd();  // 兜底默认
-        if (const char* funder = std::getenv("POLYMARKET_FUNDER_ADDRESS"); funder != nullptr && funder[0] != '\0') {
-            std::string rpc = (std::getenv("POLYGON_RPC_URL") != nullptr) ? std::getenv("POLYGON_RPC_URL") : "";
-            std::string bal_err;
-            if (const auto bal = polymarket::ReadPusdBalanceUsd(funder, rpc, bal_err); bal.has_value()) {
-                bankroll = *bal;
-                std::fprintf(stderr, "[live] 链上真实本金 pUSD=$%.2f (替代写死档 $%.2f)\n", bankroll,
-                             lp.bankroll_usdc.to_pusd());
-            } else {
-                std::fprintf(stderr, "[live] ⚠ 链上余额读取失败 (%s) → fail-safe 回落档 $%.2f\n",
-                             bal_err.c_str(), bankroll);
+        double bankroll = lp.bankroll_usdc.to_pusd();  // paper 直接用; live 兜底默认
+        if (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live) {
+            // bankroll = 真实链上 pUSD 余额 (2026-06-12 老板「净值为何还是150」): 启动读一次真本金,
+            //   armed 后 daemon 是钱包唯一交易者 → 起点对则净值一路对。
+            if (const char* funder = std::getenv("POLYMARKET_FUNDER_ADDRESS"); funder != nullptr && funder[0] != '\0') {
+                std::string rpc = (std::getenv("POLYGON_RPC_URL") != nullptr) ? std::getenv("POLYGON_RPC_URL") : "";
+                std::string bal_err;
+                if (const auto bal = polymarket::ReadPusdBalanceUsd(funder, rpc, bal_err); bal.has_value()) {
+                    bankroll = *bal;
+                    std::fprintf(stderr, "[live] 链上真实本金 pUSD=$%.2f (替代写死档 $%.2f)\n", bankroll,
+                                 lp.bankroll_usdc.to_pusd());
+                } else {
+                    std::fprintf(stderr, "[live] ⚠ 链上余额读取失败 (%s) → fail-safe 回落档 $%.2f\n",
+                                 bal_err.c_str(), bankroll);
+                }
             }
         }
         cfg_.trading_loop.bankroll_usdc = bankroll;
@@ -762,7 +760,7 @@ BuildResult TraderDaemon::Build() {
     // 同事件预算 (2026-06-13 老板拍板「各自预算, 不用共享」): 同场多盘口各走各的单市场
     //   cap (60), 事件级合并上限名存实亡 (置 10000 = lib 默认, 等效关)。Partizan 同源叠仓
     //   风险由 corr taper 软乘子继续观测; 数据再说话再议。
-    paper_rm_cfg.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(10000.0);
+    paper_rm_cfg.event_exposure_cap_usdc = risk::LiveRiskProfile().event_exposure_cap_usdc;  // #4 定稿: $20 (13%) 同事件上限
     paper_rm_cfg.bankroll_usdc =
         domain::MicroPUSD::from_pusd(cfg_.trading_loop.bankroll_usdc);  // c2b: 与 cap 对称
     paper_rm_cfg.edge_ci_lower_floor = -1.0;                          // M1 放宽 CI 门

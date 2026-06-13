@@ -9,16 +9,18 @@
 
 namespace stcpp::risk {
 
-// 实盘 100u 档 (2026-06-13 老板: 入金 100u +「不要乱加封控, 2u一单不现实 — CLOB 最小买 5 股」):
-//   注码与 paper 同构按本金等比 (paper 25u/1000 → live 按可成交性取 10u/100); 不加 paper 没有的
-//   额外熔断 (日损/连亏 halt 全删 — 老板「不要乱加封控」; 出问题人来停)。
+// 实盘档 (2026-06-13 #4 注码定稿, 老板批: caps 按 $154 真本金等比收口 + paper 镜像同款 = live 精确彩排):
+//   per_order $10(6.5%) / outcome $12(8%) / market $15(10%=单场保命线) / event $20(13%)。
+//   Kelly 自缩(分母=实时净值)是主 sizing, cap 只防极端单笔; min_order $5 不动 (老板「体育 min 5 单」)。
+//   体感: 典型仓 $5-10, 最坏单场 −10%, 连崩 4 场 ≈ −17% (对照旧 caps 可达 −52%)。
+//   不加 paper 没有的额外熔断 (日损/连亏 halt 全删 — 老板「不要乱加封控」; 出问题人来停)。
 [[nodiscard]] inline RiskConfig LiveRiskProfile() noexcept {
     RiskConfig c;
-    c.per_order_cap_usdc = domain::MicroPUSD::from_pusd(25.0);       // = paper 同款; Kelly 主导, cap 仅防极端单笔
-    c.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(40.0);
-    c.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(50.0);
-    c.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(60.0);  // 同事件 (paper 同绝对值)
-    c.bankroll_usdc = domain::MicroPUSD::from_pusd(150.0);          // = 实际钱包; Kelly 用真资金跑
+    c.per_order_cap_usdc = domain::MicroPUSD::from_pusd(10.0);
+    c.per_outcome_cap_usdc = domain::MicroPUSD::from_pusd(12.0);
+    c.market_exposure_cap_usdc = domain::MicroPUSD::from_pusd(15.0);
+    c.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(20.0);
+    c.bankroll_usdc = domain::MicroPUSD::from_pusd(150.0);  // 兜底; live 启动链上实读替代, paper 直接用
     c.edge_ci_lower_floor = 0.0;
     return c;
 }
