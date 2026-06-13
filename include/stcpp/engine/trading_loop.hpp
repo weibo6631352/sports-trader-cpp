@@ -595,6 +595,7 @@ public:
     struct FillRow {
         std::int64_t as_of_ts_ns{0};   // 成交观测刻 (R-20, 上游 ts)
         std::string condition_id;      // 盘口
+        std::string token_id;          // 成交 token (2026-06-14: 离线 join settlements/position_path 的直键, 免 cond+side 反查)
         std::string event_title;       // 人读队名/比赛 (前端展示; loop 填)
         bool is_yes{true};             // 被交易边 (YES/NO)
         bool is_buy{true};             // 买/卖

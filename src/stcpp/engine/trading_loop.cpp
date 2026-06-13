@@ -210,6 +210,25 @@ void TradingLoop::Start() {
                  "bankroll=%.0f pUSD)\n",
                  loop_mode_str, static_cast<long long>(cfg_.tick_interval_ms),
                  (LoadPaperCatalog() ? LoadPaperCatalog()->size() : 0), cfg_.bankroll_usdc);
+
+    // 版本标签行 (2026-06-14 复盘攒数据): 每次启动往 fills_journal 写一条策略配置快照。离线分析按
+    //   version 行切段, 避免把【改参前后/不同策略版本】的样本混在一起算 (回测 agent 命门: 不打标签 = 污染)。
+    //   含决定入场行为的核心旋钮 + bankroll + mode; 加性, 不影响成交行解析 (type 字段区分)。
+    {
+        const char* vpath = (stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live)
+                                ? "data/ml_capture/live_fills_journal.jsonl"
+                                : "data/ml_capture/fills_journal.jsonl";
+        char vbuf[512];
+        const int vn = std::snprintf(
+            vbuf, sizeof(vbuf),
+            "{\"type\":\"version\",\"ts\":%lld,\"mode\":\"%s\",\"sharp_only_gate\":%d,"
+            "\"sharp_only_min_edge\":%.4f,\"min_open_fair\":%.4f,\"sharp_max_gap\":%.4f,"
+            "\"max_open_ask\":%.4f,\"bankroll\":%.2f}\n",
+            static_cast<long long>(NowNs()), loop_mode_str, cfg_.sharp_only_gate ? 1 : 0,
+            cfg_.sharp_only_min_edge, cfg_.min_open_fair, cfg_.sharp_max_gap, 0.84 /*kMaxOpenAsk*/,
+            cfg_.bankroll_usdc);
+        if (vn > 0) journal_writer_.AppendLine(vpath, std::string(vbuf, static_cast<std::size_t>(vn)));
+    }
 }
 
 void TradingLoop::Stop() noexcept {
@@ -321,14 +340,14 @@ void TradingLoop::JournalFill(const FillRow& fr) {
         char buf[768];
         const int n = std::snprintf(
             buf, sizeof(buf),
-            "{\"ts\":%lld,\"cond\":\"%s\",\"yes\":%d,\"buy\":%d,\"close\":%d,\"px\":%.6f,"
+            "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"yes\":%d,\"buy\":%d,\"close\":%d,\"px\":%.6f,"
             "\"qty\":%.4f,\"realized\":%.4f,\"fair\":%.4f,\"mark\":%.4f,\"fee\":%.5f,"
             "\"exit\":\"%s\",\"engine\":\"%s\","
             "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f",
-            static_cast<long long>(fr.as_of_ts_ns), fr.condition_id.c_str(), fr.is_yes ? 1 : 0,
-            fr.is_buy ? 1 : 0, fr.is_close ? 1 : 0, fr.price, fr.size_usdc, fr.realized, fr.fair, fr.mark,
-            fr.fee, fr.exit_reason.c_str(), fr.engine.c_str(), fam, static_cast<int>(cat.league_id), mt,
-            std::isfinite(cat.line) ? cat.line : -1.0);
+            static_cast<long long>(fr.as_of_ts_ns), fr.condition_id.c_str(), fr.token_id.c_str(),
+            fr.is_yes ? 1 : 0, fr.is_buy ? 1 : 0, fr.is_close ? 1 : 0, fr.price, fr.size_usdc, fr.realized,
+            fr.fair, fr.mark, fr.fee, fr.exit_reason.c_str(), fr.engine.c_str(), fam,
+            static_cast<int>(cat.league_id), mt, std::isfinite(cat.line) ? cat.line : -1.0);
         if (n > 0)
             out.append(buf, static_cast<std::size_t>(n < static_cast<int>(sizeof(buf)) ? n
                                                                                        : static_cast<int>(sizeof(buf)) - 1));
@@ -515,6 +534,7 @@ void TradingLoop::RecoverMissedFill(const polymarket::UserFill& uf) {
         FillRow fr;
         fr.as_of_ts_ns = ev.as_of_ts_ns;
         fr.condition_id = uf.condition_id;
+        fr.token_id = uf.token_id;
         fr.is_yes = (oc_resolved == strategy::Outcome::Yes);  // token_id 比对 catalog 定 (非名字串)
         fr.is_buy = uf.is_buy;
         fr.is_close = false;
@@ -2452,6 +2472,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
         FillRow fr;
         fr.as_of_ts_ns = fill.as_of_ts_ns;
         fr.condition_id = condition_id;
+        fr.token_id = token_id;
         fr.is_yes = (intent.outcome == strategy::Outcome::Yes);
         fr.is_buy = (intent.side == strategy::Side::Buy);
         fr.is_close = intent.is_close;
@@ -2817,6 +2838,7 @@ void TradingLoop::RestoreFillsJournalTail() {
         FillRow fr;
         fr.as_of_ts_ns = static_cast<std::int64_t>(num(ln, "ts", 0));
         fr.condition_id = str(ln, "cond");
+        fr.token_id = str(ln, "tok");  // 老行无 tok → 空 (2026-06-14 加)
         if (fr.as_of_ts_ns <= 0 || fr.condition_id.empty()) continue;  // 坏行跳过
         fr.is_yes = num(ln, "yes", 1) != 0;
         fr.is_buy = num(ln, "buy", 1) != 0;
@@ -2857,26 +2879,45 @@ void TradingLoop::SamplePositionPaths() {
     const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
     const char* path = live ? "data/ml_capture/live_position_path.jsonl" : "data/ml_capture/position_path.jsonl";
     const std::int64_t now = NowNs();
+    const double kNan = std::numeric_limits<double>::quiet_NaN();
     for (const auto& pv : position_ledger_.get_all_positions()) {
         if (pv.net_shares_micro == 0) continue;
-        double bid = std::numeric_limits<double>::quiet_NaN(), ask = bid, mid = bid, sharp = bid;
+        // 订单簿深度历史 (2026-06-14 老板「订单簿挺重要的」): L1 价/量 + spread/imb/microprice + 5 档深度 +
+        //   簿龄。读 hub 快照 (无新网络), 给持仓期订单簿深度时间序列 (流动性/执行/逆选离线研究金料)。
+        double bid = kNan, ask = bid, mid = bid, micro = bid, spread = bid, imb = bid, b1sz = bid, a1sz = bid,
+               bd5 = bid, ad5 = bid, d5imb = bid, age_ms = bid, sharp = bid;
         if (const auto bk = hub_.Read(pv.token_id); bk && bk->valid) {
             bid = bk->best_bid();
             ask = bk->best_ask();
             mid = bk->mid;
+            micro = bk->microprice;
+            spread = bk->spread;
+            imb = bk->imbalance;
+            b1sz = bk->best_bid_size();
+            a1sz = bk->best_ask_size();
+            const auto dm = polymarket::clob_wss::compute_depth_metrics(*bk);
+            bd5 = dm.bid_depth_5lvl;
+            ad5 = dm.ask_depth_5lvl;
+            d5imb = dm.depth_imbalance_5lvl;
+            if (bk->data_source_ts_ns > 0) age_ms = static_cast<double>(now - bk->data_source_ts_ns) / 1e6;
         }
         if (const auto sh = sharp_history_.find(pv.condition_id); sh != sharp_history_.end())
             sharp = sh->second.last_sharp();  // YES-canonical
         const auto eit2 = engine_by_token_.find(pv.token_id);
-        char buf[512];
+        // 有限才写 (NaN 省略, 同 fills_journal emit_d 范式): 拼基础段 + 深度段。
+        auto nf = [](double v) { return std::isfinite(v) ? v : 0.0; };  // snprintf NaN 防呆 (下游按 0 容错)
+        char buf[640];
         const int n = std::snprintf(
             buf, sizeof(buf),
-            "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%.24s\",\"yes\":%d,\"qty\":%.4f,\"avg\":%.4f,"
-            "\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"sharp\":%.4f,\"eng\":\"%s\"}\n",
+            "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"yes\":%d,\"qty\":%.4f,\"avg\":%.4f,"
+            "\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"micro\":%.4f,\"spread\":%.4f,\"imb\":%.4f,"
+            "\"b1sz\":%.1f,\"a1sz\":%.1f,\"bd5\":%.1f,\"ad5\":%.1f,\"d5imb\":%.4f,\"bk_age_ms\":%.0f,"
+            "\"sharp\":%.4f,\"eng\":\"%s\"}\n",
             static_cast<long long>(now), pv.condition_id.c_str(), pv.token_id.c_str(),
             pv.outcome == strategy::Outcome::Yes ? 1 : 0,
-            static_cast<double>(pv.net_shares_micro) / 1'000'000.0, pv.avg_entry_price, bid, ask, mid, sharp,
-            eit2 != engine_by_token_.end() ? eit2->second.c_str() : "sharp");
+            static_cast<double>(pv.net_shares_micro) / 1'000'000.0, pv.avg_entry_price, nf(bid), nf(ask),
+            nf(mid), nf(micro), nf(spread), nf(imb), nf(b1sz), nf(a1sz), nf(bd5), nf(ad5), nf(d5imb),
+            nf(age_ms), nf(sharp), eit2 != engine_by_token_.end() ? eit2->second.c_str() : "sharp");
         if (n > 0) journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(n)));
     }
 }
@@ -2992,6 +3033,7 @@ void TradingLoop::SettleToken(const std::string& condition_id, const std::string
         FillRow fr;
         fr.as_of_ts_ns = ev.as_of_ts_ns;
         fr.condition_id = condition_id;
+        fr.token_id = token_id;
         fr.is_yes = (outcome == strategy::Outcome::Yes);
         fr.is_buy = false;          // 结算 = 平仓 realize (非买)
         fr.is_close = true;
