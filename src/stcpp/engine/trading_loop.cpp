@@ -2055,11 +2055,8 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 赛况绝对比分 + 盘内进度 (2026-06-14 老板「时间/阶段是复盘重要依据」, YES 定向): 网球补盘内 games。
     ectx.g_home = static_cast<double>(game_row.score_home_total);
     ectx.g_away = static_cast<double>(game_row.score_away_total);
-    if (game_row.period >= 1 && game_row.period <= game_row.score_home_periods.size()) {  // 当前盘/节内比分 (越界保护)
-        const std::size_t pi = static_cast<std::size_t>(game_row.period) - 1;  // size_t 索引 (避免 int→size_t sign-conv)
-        ectx.g_hcur = static_cast<double>(game_row.score_home_periods[pi]);
-        ectx.g_acur = static_cast<double>(game_row.score_away_periods[pi]);
-    }
+    ectx.g_hcur = static_cast<double>(game_row.score_home_games);  // 当前局【实时】games (网球本盘比分; 修: 原用
+    ectx.g_acur = static_cast<double>(game_row.score_away_games);  //   score_home_periods 只存已完成盘 → 进行中盘恒0)
     ectx.fair_src = static_cast<int>(fair_src_dbg);  // 账单「说清用哪个源」(2026-06-14 老板): 同 tape, 决策刻一处定
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
@@ -3059,6 +3056,8 @@ void TradingLoop::MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
     const double sharp = shj->second.last_sharp();
     const double sh_age_ms = static_cast<double>(now - shj->second.last_ts_ns()) / 1e6;
     if (sh_age_ms > 120000.0) return;  // "正在比赛"闸 (老板「正在比赛并有赔率的就行」)
+    const MarketCat mc = MarketCatFor(cond);
+    if (mc.sport_family_id < 0) return;  // 无映射(无 sport 分类)不录 (老板 2026-06-14「无映射的就不要录了」)
 
     const bool bvalid = mkt.yes.present;  // 决策已读的簿 (不重读 hub)
     const double mid = bvalid ? mkt.yes.book.mid : std::numeric_limits<double>::quiet_NaN();
@@ -3109,12 +3108,8 @@ void TradingLoop::MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
     // 赛况绝对比分 + 盘内进度 (2026-06-14 老板「阶段是复盘依据」): 从决策已算的 game_row 取 (YES 定向; 网球补盘内 games)。
     const double g_home = static_cast<double>(game_row.score_home_total);
     const double g_away = static_cast<double>(game_row.score_away_total);
-    double g_hcur = kNan, g_acur = kNan;
-    if (game_row.period >= 1 && game_row.period <= game_row.score_home_periods.size()) {  // 越界保护
-        const std::size_t pi = static_cast<std::size_t>(game_row.period) - 1;  // size_t 索引 (避免 int→size_t sign-conv)
-        g_hcur = static_cast<double>(game_row.score_home_periods[pi]);
-        g_acur = static_cast<double>(game_row.score_away_periods[pi]);
-    }
+    const double g_hcur = static_cast<double>(game_row.score_home_games);  // 当前局【实时】games (网球本盘比分)
+    const double g_acur = static_cast<double>(game_row.score_away_games);  //   修: 原 score_home_periods 只存已完成盘
     // 持仓标记 (决策标记: 复盘"这帧我们是否持有这盘"; 任一边有仓即 1)。
     int held = 0;
     if (const auto yp = position_ledger_.get_position(yes_tok); yp && yp->net_shares_micro != 0) {
@@ -3123,7 +3118,7 @@ void TradingLoop::MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
         if (const auto np = position_ledger_.get_position(mkt.no_token_id); np && np->net_shares_micro != 0)
             held = 1;
     }
-    const MarketCat mc = MarketCatFor(cond);
+    // (mc 已在顶部"正在比赛闸"后算 + 无映射跳过)
 
     // 事件门状态推进 (落了才更新; mid 无效保留上次)。
     st.last_sharp = sharp;
