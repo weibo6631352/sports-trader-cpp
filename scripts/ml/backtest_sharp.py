@@ -12,8 +12,8 @@
 
 ⚠ 伪重复 (同 param_research/market_discovery): market_tape 每盘多条 60s 快照, 但只 1 个独立结局 →
   按快照算 trades 会高估有效样本。故同时报【独立结算盘数】, 显著性/可信度按盘看, 不按快照。
-⚠ 陈旧/冻结 sharp: 停盘的盘 sharp 是死值(假 edge) → 过滤 sh_age_ms 过大的快照 (未来 market_tape 落
-  core_frozen 后可精确排除; 现用新鲜度近似)。
+⚠ 冻结/陈旧 sharp: 停盘的盘 sharp 是死值(假 edge) → 用 tape 的 core 旗(停表/封盘/完赛)精确排除 +
+  sh_age_ms 兜底滤 feed 停更 (2026-06-14: core 旗已落, 不再纯靠新鲜度近似)。
 
 用法: python3 backtest_sharp.py [market_tape.jsonl] [settlements.jsonl] [--stale-ms N]
 """
@@ -59,7 +59,10 @@ def run(rows, outcome, min_edge, moneyline_only=True, use_ask_proxy=True):
             continue
         n_settled_snap += 1
         settled_conds.add(cond)
-        # 陈旧/冻结过滤: sharp 太旧 = 死值, 排除 (假 edge 污染)
+        # 冻结过滤 (2026-06-14: tape 已落真 core 旗 → 精确排除停表/封盘/完赛的死值 sharp, 替代纯新鲜度近似)
+        if r.get("core", 0):  # bit0=停表|bit1=封盘|bit2=完赛, 任一=赔率冻死, 假 edge
+            continue
+        # 陈旧过滤: sharp 太旧 = 死值, 排除 (feed 停更/掉点; core 旗外的兜底)
         if r.get("sh_age_ms", 0) > STALE_MS:
             continue
         if r.get("bvalid") != 1:

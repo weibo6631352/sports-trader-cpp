@@ -70,7 +70,6 @@ class InplayFeedThread;
 class SettlementStore;     // M2 收盘/结算 store (forward; .cpp 实体化)
 class SettlementPoller;    // M2 结算轮询线程 (forward)
 class SettlementRecorder;  // Phase 2 缺口E 结算落盘 (forward; label y 来源)
-class ScoreFrameRecorder;  // 回测 P0 比分帧落盘 (forward; 红线#3 闭合数据前提)
 namespace livescore {
 class LiveStatsStore;     // live_stats 快照 store (forward; .cpp 实体化)
 class CommentariesPoller;  // commentaries 轮询线程 (forward)
@@ -474,7 +473,6 @@ private:
 
     // (ML 训练采集成员已砍 2026-06-05: ml_recorder_/fv_hub_/fv_recorder_)
     std::unique_ptr<data::SettlementRecorder> settlement_recorder_;  // 结算落盘 (回测数据)
-    std::unique_ptr<data::ScoreFrameRecorder> score_recorder_;       // 回测 P0: 比分帧落盘 (红线#3 闭合数据前提)
 
     // HTTP 观测端 (最后声明, 最先析构; 仅 RunMode::TraderDaemon)
     std::unique_ptr<debug_api::HttpServer> server_;

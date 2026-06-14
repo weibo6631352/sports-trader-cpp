@@ -1,5 +1,10 @@
 # 数据基建 + 统计分析计划 — 让"捡漏 / 该离场"可推断
 
+> ⚠ 后续整合 (2026-06-14 晚): 本计划里的 `position_path.jsonl`(持仓 30s 轨迹) 已退役 —— 其市场状态与
+>   `market_tape` 重复 (老板「写入点别太散」)；复盘语料整合成**决策处** market_tape (事件驱动 + held 旗)，
+>   exit_research 改读 fills×tape。`scores.jsonl` 同期退役 (0 消费者)。详见
+>   docs/RESEARCH/replay-tape-consolidation-2026-06-14.md。下文 position_path 相关条目作历史执行记录。
+
 owner: 老雷 (GM) | last_review: 2026-06-14 | 状态: ✅ A/B/C 全部已执行 + 部署 (老板「按顺序一次做完, 合理高效不留债」)
 
 ## 执行结果 (2026-06-14)

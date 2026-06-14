@@ -347,14 +347,16 @@ void TradingLoop::JournalFill(const FillRow& fr) {
             "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"yes\":%d,\"buy\":%d,\"close\":%d,\"px\":%.6f,"
             "\"qty\":%.4f,\"realized\":%.4f,\"fair\":%.4f,\"mark\":%.4f,\"fee\":%.5f,"
             "\"exit\":\"%s\",\"engine\":\"%s\","
-            "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f",
+            "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f,\"fsrc\":\"%s\"",
             static_cast<long long>(fr.as_of_ts_ns), fr.condition_id.c_str(), fr.token_id.c_str(),
             fr.is_yes ? 1 : 0, fr.is_buy ? 1 : 0, fr.is_close ? 1 : 0, fr.price, fr.size_usdc, fr.realized,
             // NaN 防呆 (2026-06-14 review): mark=microprice?:mid 退化簿下可 NaN → "%.4f" 打出 "nan" = 非法
             //   JSON → Python json.loads 整行丢 (数据缺口)。fair 同防。其余 (px/qty/realized/fee) 成交刻必 finite。
             std::isfinite(fr.fair) ? fr.fair : 0.0, std::isfinite(fr.mark) ? fr.mark : 0.0, fr.fee,
             fr.exit_reason.c_str(), fr.engine.c_str(), fam, static_cast<int>(cat.league_id), mt,
-            std::isfinite(cat.line) ? cat.line : -1.0);
+            std::isfinite(cat.line) ? cat.line : -1.0,
+            // 账单 fair 选源 (2026-06-14 老板「说清用 sharp/赔率源/比分源」): 序数→名 (买入行有意义; 平/结算行=进场时源)
+            pricing::to_string(static_cast<pricing::FairSrc>(fr.fair_src)));
         if (n > 0)
             out.append(buf, static_cast<std::size_t>(n < static_cast<int>(sizeof(buf)) ? n
                                                                                        : static_cast<int>(sizeof(buf)) - 1));
@@ -682,20 +684,9 @@ void TradingLoop::TickAll() {
             SaveLedgerSnapshot();
         }
     }
-    // ---- 持仓路径采样 60s (2026-06-13 老板「止损分析要路径」): 每开仓一行 (bid/ask/mid/sharp/qty)
-    //   → position_path.jsonl (BackgroundWriter 异步缓冲)。未来任何出场/止损规则的离线回测金料。 ----
-    {
-        const std::int64_t pp_now = NowNs();
-        if (pp_now - last_pos_path_ns_ >= 30'000'000'000LL) {  // 30s/仓 (2026-06-13 老板, 原 60s → 加密轨迹)
-            last_pos_path_ns_ = pp_now;
-            SamplePositionPaths();
-        }
-        // market_tape: 全 sharp 源盘 60s 一次全因子快照 (2026-06-14 老板「收集信息进化」) — 进化语料, 加性
-        if (pp_now - last_market_tape_ns_ >= 60'000'000'000LL) {
-            last_market_tape_ns_ = pp_now;
-            SampleMarketTape();
-        }
-    }
+    // 持仓轨迹/市场轨迹采样均不在此 (2026-06-14 老板「决策附近信息都处理好了, 写入点别太散」):
+    //   market_tape 由 TickOne 决策处 MaybeEmitMarketTape 事件驱动落帧 (含 held 旗 → 持仓轨迹也从 tape 取);
+    //   position_path 已退役 (市场状态与 tape 重复; 持仓上下文 avg/qty 在 fills; MAE/MFE 仍由 pos_path_ 喂结算账单)。
 
     for (const auto& [cond_id, entry] : *tick_inputs_.catalog) {
         const std::string& yes_tok = entry.tokens.first;   // YES token
@@ -1339,7 +1330,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         g_time_x_lead = score_diff * std::clamp(1.0 - time_frac, 0.0, 1.0);
         // 批1 补漏 g_remaining_sec: 剩余秒 = total × 剩余占比。
         g_remaining_sec = (total_sec > 0) ? static_cast<double>(total_sec) * time_to_resolution_frac : 0.0;
-        // 比赛进度快照缓存 (2026-06-14 老板「比赛进度也非常关键」): 供 SamplePositionPaths 给持仓轨迹标当前进度
+        // 比赛进度快照缓存 (2026-06-14 老板「比赛进度也非常关键」): 供 MaybeEmitMarketTape 给 tape 帧标当前进度
         //   (离场推断: 剩余时间=翻盘空间)。与 ectx.g_* 同源 (g_sdiff 用 game_row 比分, 与 line ~2018 一致)。
         {
             auto& gp = game_prog_[condition_id];
@@ -1537,6 +1528,11 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             p_fair = p_market_devig;  // 非高置信 sharp (无信号/离谱大滞后) → 不产单
         }
     }
+
+    // ---- 复盘 tape 落帧 (2026-06-14 老板「决策附近信息都处理好了, 写入点别太散」) ----
+    //   就在此决策刻落: 决策已算好的 mkt.yes.book/p_fair/fair_src_dbg/game_row.core_* 直接用 (不重读 hub/不桥接)。
+    //   事件驱动 (动了才落 + 心跳) 内部判; 覆盖所有到达此处的 sharp 源盘 (下不下单都落)。
+    MaybeEmitMarketTape(mkt, game_row, p_fair, fair_src_dbg);
 
     // ---- Phase B Step E (小梁 spec): 选边 (de-vig 锚定; p_fair 即 p_fair_yes, YES-canonical) ----
     const DecisionSide decision = SelectSide(p_fair, p_market_devig);
@@ -2048,6 +2044,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (std::isfinite(g_remaining_sec)) ectx.g_remain = g_remaining_sec;
     ectx.g_sdiff = static_cast<double>(game_row.score_home_total - game_row.score_away_total);
     if (game_row.period > 0) ectx.g_period = static_cast<double>(game_row.period);  // 离散赛段序数
+    ectx.fair_src = static_cast<int>(fair_src_dbg);  // 账单「说清用哪个源」(2026-06-14 老板): 同 tape, 决策刻一处定
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
                           force_cross || sel_force_stop || sel_force_winbuy, n_eff_dyn, margin_floor_dyn,
@@ -2519,6 +2516,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
                     ctx.g_remain = ectx->g_remain;
                     ctx.g_sdiff = ectx->g_sdiff;
                     ctx.g_period = ectx->g_period;
+                    ctx.fair_src = ectx->fair_src;  // 账单 fsrc (pending live 单: WSS CONFIRMED 时富化入账)
                 }
                 std::string oid(fill.order_id.data());
                 if (pending_fill_ctx_.emplace(oid, std::move(ctx)).second) {
@@ -2647,6 +2645,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
             fr.g_remain = ectx->g_remain;
             fr.g_sdiff = ectx->g_sdiff;
             fr.g_period = ectx->g_period;
+            fr.fair_src = ectx->fair_src;  // 账单 fsrc「说清用 sharp/赔率源/比分源」(2026-06-14 老板)
         }
         fr.cash_avail = tick_equity_.cash_available;                          // 入场账本快照 (2026-06-14)
         fr.n_open = static_cast<double>(tick_equity_.open_positions);
@@ -3019,154 +3018,108 @@ void TradingLoop::RestoreFillsJournalTail() {
         std::fprintf(stderr, "[fills-restore] journal 回放 %zu 笔成交流水进环 (%s)\n", restored, path);
 }
 
-// SamplePositionPaths — 持仓路径采样 (2026-06-13 老板「将来想做止损分析」): 30s/仓 一行
-//   (ts/cond/token/边/量/均入/bid/ask/mid/sharp/engine) → position_path.jsonl。loop_thread_ only;
-//   落盘走 journal_writer_ 异步缓冲 (决策环零磁盘阻塞)。
-void TradingLoop::SamplePositionPaths() {
-    const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
-    const char* path = live ? "data/ml_capture/live_position_path.jsonl" : "data/ml_capture/position_path.jsonl";
+// MaybeEmitMarketTape — 复盘 tape【就在 TickOne 决策处】落帧 (2026-06-14 老板「决策附近信息都处理好了,
+//   写入点别太散」): 不再单独扫全 catalog + 不再 hub_ 重读 + 不再 fair_cache 桥接 —— 决策当场已算好的
+//   mkt.yes.book / p_fair / fair_src / game_row.core_* 直接用, cond-keyed 因子(sh_*/quant/g_*/held)廉价补读。
+//   事件驱动 (老板「动了才落 + 心跳兜底」): sharp/mid 变动超阈值 / 冻结翻转 / 心跳 → 才落一帧; 静默盘几乎不写,
+//   崩盘逐变化忠实记录。覆盖 = 所有到达决策的 sharp 源盘(下不下单都落; 进化语料: 决策中心→市场中心)。
+//   YES-canonical(Python 自行定向)。R-12: 决策已读的簿(无新网络) + 异步 journal。
+void TradingLoop::MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
+                                      const data::feature_store::FeatureStoreGameRow& game_row,
+                                      double p_fair, pricing::FairSrc fair_src) {
+    const std::string& cond = mkt.condition_id;
+    const std::string& yes_tok = mkt.yes_token_id;
+    if (yes_tok.empty()) return;
+    // 只录 sharp 源盘 + 正在比赛 (有 sharp 时序 + 最近更新; pregame/已结束 sharp 停更 → age 大 → 跳过)。
+    const auto shj = sharp_history_.find(cond);
+    if (shj == sharp_history_.end() || shj->second.last_ts_ns() <= 0) return;
     const std::int64_t now = NowNs();
-    const double kNan = std::numeric_limits<double>::quiet_NaN();
-    for (const auto& pv : position_ledger_.get_all_positions()) {
-        if (pv.net_shares_micro == 0) continue;
-        // 订单簿深度历史 (2026-06-14 老板「订单簿挺重要的」): L1 价/量 + spread/imb/microprice + 5 档深度 +
-        //   簿龄。读 hub 快照 (无新网络), 给持仓期订单簿深度时间序列 (流动性/执行/逆选离线研究金料)。
-        double bid = kNan, ask = bid, mid = bid, micro = bid, spread = bid, imb = bid, b1sz = bid, a1sz = bid,
-               bd5 = bid, ad5 = bid, d5imb = bid, age_ms = bid, sharp = bid, sh_conv = bid, sh_vel = bid,
-               sh_age_ms = bid, g_remain = bid, g_sdiff = bid, g_period = bid, g_age_ms = bid;
-        int bvalid = 0;  // 簿有效标志 (2026-06-14 review #10): 区分"无簿→nf填0" vs 真实0 (消语义陷阱)
-        if (const auto bk = hub_.Read(pv.token_id); bk && bk->valid) {
-            bvalid = 1;
-            bid = bk->best_bid();
-            ask = bk->best_ask();
-            mid = bk->mid;
-            micro = bk->microprice;
-            spread = bk->spread;
-            imb = bk->imbalance;
-            b1sz = bk->best_bid_size();
-            a1sz = bk->best_ask_size();
-            const auto dm = polymarket::clob_wss::compute_depth_metrics(*bk);
-            bd5 = dm.bid_depth_5lvl;
-            ad5 = dm.ask_depth_5lvl;
-            d5imb = dm.depth_imbalance_5lvl;
-            if (bk->data_source_ts_ns > 0) age_ms = static_cast<double>(now - bk->data_source_ts_ns) / 1e6;
-        }
-        if (const auto sh = sharp_history_.find(pv.condition_id); sh != sharp_history_.end()) {
-            sharp = sh->second.last_sharp();  // YES-canonical
-            // sharp 新鲜度 (2026-06-14 老板「这么依赖 sharp, 新鲜度也很关键」): 最近 sharp 样本龄。
-            //   feed 静默/滞后 → sharp 陈旧 → 下面 conv/vel 失真(看似守住实为停更)。是信念信号有效性的前提。
-            if (sh->second.last_ts_ns() > 0) sh_age_ms = static_cast<double>(now - sh->second.last_ts_ns()) / 1e6;
-            // 持仓中信念信号时序 (2026-06-14 老板「基建支撑离场推断」): 细窗(~10s)收敛率/速度 — 30s 采样重建不出,
-            //   故落引擎估计。YES-canon (Python 按 yes 定向)。<0 收敛=持仓变对 / >0 发散=变错。
-            if (sh->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
-                sh_conv = sh->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns);
-                sh_vel = sh->second.Velocity(cfg_.sharp_fair_vel_window_ns);
-            }
-        }
-        // 比赛进度 (2026-06-14 老板「比赛进度也非常关键」): 当前剩余时间/比分差/赛段 + 进度新鲜度 (score feed
-        //   停更则陈旧, 同 sharp 新鲜度原则)。离场推断: 剩余时间=翻盘空间, 近结束该收紧。
-        if (const auto gp = game_prog_.find(pv.condition_id); gp != game_prog_.end()) {
-            g_remain = gp->second.g_remain;
-            g_sdiff = gp->second.g_sdiff;
-            g_period = gp->second.g_period;
-            if (gp->second.as_of_ns > 0) g_age_ms = static_cast<double>(now - gp->second.as_of_ns) / 1e6;
-        }
-        const auto eit2 = engine_by_token_.find(pv.token_id);
-        std::int64_t entry_ns = 0;  // 入场时刻 (2026-06-14: 离线算持有时长/入场后 Δmid 逆选, 免反查 fills)
-        if (const auto pp = pos_path_.find(pv.token_id); pp != pos_path_.end()) entry_ns = pp->second.entry_ns;
-        // 有限才写 (NaN 省略, 同 fills_journal emit_d 范式): 拼基础段 + 深度段。
-        auto nf = [](double v) { return std::isfinite(v) ? v : 0.0; };  // snprintf NaN 防呆 (下游按 0 容错)
-        char buf[820];
-        const int n = std::snprintf(
-            buf, sizeof(buf),
-            "{\"ts\":%lld,\"et\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"yes\":%d,\"qty\":%.4f,\"avg\":%.4f,"
-            "\"bvalid\":%d,\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"micro\":%.4f,\"spread\":%.4f,\"imb\":%.4f,"
-            "\"b1sz\":%.1f,\"a1sz\":%.1f,\"bd5\":%.1f,\"ad5\":%.1f,\"d5imb\":%.4f,\"bk_age_ms\":%.0f,"
-            "\"sharp\":%.4f,\"sh_conv\":%.5g,\"sh_vel\":%.5g,\"sh_age_ms\":%.0f,"
-            "\"g_remain\":%.0f,\"g_sdiff\":%.0f,\"g_period\":%.0f,\"g_age_ms\":%.0f,\"eng\":\"%s\"}\n",
-            static_cast<long long>(now), static_cast<long long>(entry_ns), pv.condition_id.c_str(),
-            pv.token_id.c_str(), pv.outcome == strategy::Outcome::Yes ? 1 : 0,
-            static_cast<double>(pv.net_shares_micro) / 1'000'000.0, pv.avg_entry_price, bvalid, nf(bid), nf(ask),
-            nf(mid), nf(micro), nf(spread), nf(imb), nf(b1sz), nf(a1sz), nf(bd5), nf(ad5), nf(d5imb),
-            nf(age_ms), nf(sharp), nf(sh_conv), nf(sh_vel), nf(sh_age_ms),
-            nf(g_remain), nf(g_sdiff), nf(g_period), nf(g_age_ms),
-            eit2 != engine_by_token_.end() ? eit2->second.c_str() : "sharp");
-        if (n > 0)
-            journal_writer_.AppendLine(  // 截断 clamp (F-3 review): snprintf 截断返"本应长度"可 ≥sizeof, 防 OOB read
-                path, std::string(buf, static_cast<std::size_t>(n < static_cast<int>(sizeof(buf)) ? n
-                                                                                                  : static_cast<int>(sizeof(buf)) - 1)));
-    }
-}
+    const double sharp = shj->second.last_sharp();
+    const double sh_age_ms = static_cast<double>(now - shj->second.last_ts_ns()) / 1e6;
+    if (sh_age_ms > 120000.0) return;  // "正在比赛"闸 (老板「正在比赛并有赔率的就行」)
 
-// SampleMarketTape — 全市场因子轨迹 (2026-06-14 老板「收集信息进化, 非只评估当前策略」):
-//   对所有【sharp 源盘】(有 sharp_history) 每 ~60s 落一次全因子快照 → market_tape.jsonl。不管我们下不下单,
-//   都记下这盘"长什么样 + 后来怎么走 + 最终什么结局(离线 join settlements)"。这是发现【现有策略够不着的 edge】
-//   的进化语料(决策中心 → 市场中心)。YES-canonical(Python 自行定向)。hub_.Read 原子非阻塞 + 异步 journal (R-12)。
-void TradingLoop::SampleMarketTape() {
+    const bool bvalid = mkt.yes.present;  // 决策已读的簿 (不重读 hub)
+    const double mid = bvalid ? mkt.yes.book.mid : std::numeric_limits<double>::quiet_NaN();
+    // 冻结位 (决策已算 game_row.core_*): bit0=停表 | bit1=封盘 | bit2=完赛。
+    const std::uint8_t core = static_cast<std::uint8_t>((game_row.core_stopped ? 1 : 0) |
+                                                        (game_row.core_blocked ? 2 : 0) |
+                                                        (game_row.core_finished ? 4 : 0));
+    // ---- 事件驱动门: sharp/mid 变动超阈值 / 冻结翻转 / 心跳兜底 → 落帧 (否则静默盘省量) ----
+    auto& st = tape_state_[cond];
+    constexpr double kTapeEps = 0.004;                       // 0.4pp 变动阈
+    constexpr std::int64_t kHeartbeatNs = 20'000'000'000LL;  // 20s 心跳兜底 (没动也留锚)
+    const bool moved_sharp = (st.last_sharp < 0.0) || std::abs(sharp - st.last_sharp) >= kTapeEps;
+    const bool moved_mid = bvalid && (st.last_mid < 0.0 || std::abs(mid - st.last_mid) >= kTapeEps);
+    const bool core_changed = (core != st.last_core);
+    const bool heartbeat = (now - st.last_emit_ns) >= kHeartbeatNs;
+    if (!moved_sharp && !moved_mid && !core_changed && !heartbeat) return;
+
+    // ---- 落帧: 决策已算好的 + cond-keyed 廉价补读 (仅在真落帧时, 静默盘走不到这) ----
+    const double kNan = std::numeric_limits<double>::quiet_NaN();
+    auto nf = [](double v) { return std::isfinite(v) ? v : 0.0; };
+    double sh_vel = kNan, sh_conv = kNan, sh_vol = kNan;
+    if (shj->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+        sh_vel = shj->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+        sh_conv = shj->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns);
+        sh_vol = shj->second.Vol(cfg_.sharp_fair_vel_window_ns);
+    }
+    double bid = kNan, ask = kNan, micro = kNan, spread = kNan, imb = kNan, b1 = kNan, a1 = kNan,
+           bd5 = kNan, ad5 = kNan, bk_age = kNan;
+    if (bvalid) {
+        const auto& bk = mkt.yes.book;
+        bid = bk.best_bid(); ask = bk.best_ask(); micro = bk.microprice; spread = bk.spread;
+        imb = bk.imbalance; b1 = bk.best_bid_size(); a1 = bk.best_ask_size();
+        const auto dm = polymarket::clob_wss::compute_depth_metrics(bk);
+        bd5 = dm.bid_depth_5lvl; ad5 = dm.ask_depth_5lvl;
+        if (bk.data_source_ts_ns > 0) bk_age = static_cast<double>(now - bk.data_source_ts_ns) / 1e6;
+    }
+    double ofi = kNan, rvol = kNan, mom5 = kNan;
+    if (const auto th = ts_history_.find(cond); th != ts_history_.end()) {
+        const std::int64_t w = cfg_.ts_feature_window_ns;
+        ofi = th->second.OFI(w); rvol = th->second.RealizedVol(w);
+        mom5 = th->second.RateOfChangePerSec(300'000'000'000LL);
+    }
+    double g_remain = kNan, g_sdiff = kNan, g_period = kNan, g_age = kNan;
+    if (const auto gp = game_prog_.find(cond); gp != game_prog_.end()) {
+        g_remain = gp->second.g_remain; g_sdiff = gp->second.g_sdiff; g_period = gp->second.g_period;
+        if (gp->second.as_of_ns > 0) g_age = static_cast<double>(now - gp->second.as_of_ns) / 1e6;
+    }
+    // 持仓标记 (决策标记: 复盘"这帧我们是否持有这盘"; 任一边有仓即 1)。
+    int held = 0;
+    if (const auto yp = position_ledger_.get_position(yes_tok); yp && yp->net_shares_micro != 0) {
+        held = 1;
+    } else if (!mkt.no_token_id.empty()) {
+        if (const auto np = position_ledger_.get_position(mkt.no_token_id); np && np->net_shares_micro != 0)
+            held = 1;
+    }
+    const MarketCat mc = MarketCatFor(cond);
+
+    // 事件门状态推进 (落了才更新; mid 无效保留上次)。
+    st.last_sharp = sharp;
+    if (bvalid) st.last_mid = mid;
+    st.last_emit_ns = now;
+    st.last_core = core;
+
     const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
     const char* path = live ? "data/ml_capture/live_market_tape.jsonl" : "data/ml_capture/market_tape.jsonl";
-    const std::int64_t now = NowNs();
-    const double kNan = std::numeric_limits<double>::quiet_NaN();
-    auto cat = catalog_;  // RCU 快照按值持有 (重发现中途 swap 不影响本次)
-    if (!cat) return;
-    auto nf = [](double v) { return std::isfinite(v) ? v : 0.0; };
-    for (const auto& kv : *cat) {
-        const std::string& cond = kv.first;
-        const std::string& yes_tok = kv.second.tokens.first;
-        if (yes_tok.empty()) continue;
-        // 只录 sharp 源盘 (有 sharp 时序 = 有赔率; Goalserve inplay feed 本身仅体育 → 满足"限体育+有赔率")
-        const auto shj = sharp_history_.find(cond);
-        if (shj == sharp_history_.end() || shj->second.last_ts_ns() <= 0) continue;
-        double sharp = shj->second.last_sharp(), sh_vel = kNan, sh_conv = kNan, sh_vol = kNan;
-        const double sh_age_ms = static_cast<double>(now - shj->second.last_ts_ns()) / 1e6;
-        // "正在比赛"闸 (2026-06-14 老板「正在比赛并且有赔率的就行」): sharp 必须在流(最近更新)才算 in-play;
-        //   pregame/已结束的盘 sharp 停更 → age 大 → 跳过。120s 容忍 feed 短暂 gap, 排掉非活跃盘。
-        if (sh_age_ms > 120000.0) continue;
-        if (shj->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
-            sh_vel = shj->second.Velocity(cfg_.sharp_fair_vel_window_ns);
-            sh_conv = shj->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns);
-            sh_vol = shj->second.Vol(cfg_.sharp_fair_vel_window_ns);
-        }
-        // 簿快照 (无 → 仍落, bvalid=0; 卖不出本身是信号)
-        double bid = kNan, ask = bid, mid = bid, micro = bid, spread = bid, imb = bid, b1 = bid, a1 = bid,
-               bd5 = bid, ad5 = bid, age_ms = bid;
-        int bvalid = 0;
-        if (const auto bk = hub_.Read(yes_tok); bk && bk->valid) {
-            bvalid = 1; bid = bk->best_bid(); ask = bk->best_ask(); mid = bk->mid; micro = bk->microprice;
-            spread = bk->spread; imb = bk->imbalance; b1 = bk->best_bid_size(); a1 = bk->best_ask_size();
-            const auto dm = polymarket::clob_wss::compute_depth_metrics(*bk);
-            bd5 = dm.bid_depth_5lvl; ad5 = dm.ask_depth_5lvl;
-            if (bk->data_source_ts_ns > 0) age_ms = static_cast<double>(now - bk->data_source_ts_ns) / 1e6;
-        }
-        double ofi = kNan, rvol = kNan, mom5 = kNan;
-        if (const auto th = ts_history_.find(cond); th != ts_history_.end()) {
-            const std::int64_t w = cfg_.ts_feature_window_ns;
-            ofi = th->second.OFI(w); rvol = th->second.RealizedVol(w);
-            mom5 = th->second.RateOfChangePerSec(300'000'000'000LL);
-        }
-        double g_remain = kNan, g_sdiff = kNan, g_period = kNan, g_age = kNan;
-        if (const auto gp = game_prog_.find(cond); gp != game_prog_.end()) {
-            g_remain = gp->second.g_remain; g_sdiff = gp->second.g_sdiff; g_period = gp->second.g_period;
-            if (gp->second.as_of_ns > 0) g_age = static_cast<double>(now - gp->second.as_of_ns) / 1e6;
-        }
-        const MarketCat mc = MarketCatFor(cond);
-        char buf[760];
-        const int n = std::snprintf(
-            buf, sizeof(buf),
-            "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"sport_id\":%d,\"mkt_id\":%d,\"vol24h\":%.6g,\"liq\":%.6g,"
-            "\"sharp\":%.4f,\"sh_vel\":%.5g,\"sh_conv\":%.5g,\"sh_vol\":%.5g,\"sh_age_ms\":%.0f,"
-            "\"bvalid\":%d,\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"micro\":%.4f,\"spread\":%.4f,\"imb\":%.4f,"
-            "\"b1sz\":%.1f,\"a1sz\":%.1f,\"bd5\":%.1f,\"ad5\":%.1f,\"bk_age_ms\":%.0f,"
-            "\"ofi\":%.6g,\"rvol\":%.6g,\"mom5\":%.6g,\"g_remain\":%.0f,\"g_sdiff\":%.0f,\"g_period\":%.0f,\"g_age_ms\":%.0f}\n",
-            static_cast<long long>(now), cond.c_str(), yes_tok.c_str(), static_cast<int>(mc.sport_family_id),
-            static_cast<int>(mc.market_type_id), nf(mc.volume_24h), nf(mc.liquidity),
-            nf(sharp), nf(sh_vel), nf(sh_conv), nf(sh_vol), nf(sh_age_ms),
-            bvalid, nf(bid), nf(ask), nf(mid), nf(micro), nf(spread), nf(imb), nf(b1), nf(a1), nf(bd5), nf(ad5),
-            nf(age_ms), nf(ofi), nf(rvol), nf(mom5), nf(g_remain), nf(g_sdiff), nf(g_period), nf(g_age));
-        if (n > 0)
-            journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(
-                n < static_cast<int>(sizeof(buf)) ? n : static_cast<int>(sizeof(buf)) - 1)));
-    }
+    char buf[900];
+    const int n = std::snprintf(
+        buf, sizeof(buf),
+        "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"sport_id\":%d,\"mkt_id\":%d,\"vol24h\":%.6g,\"liq\":%.6g,"
+        "\"sharp\":%.4f,\"sh_vel\":%.5g,\"sh_conv\":%.5g,\"sh_vol\":%.5g,\"sh_age_ms\":%.0f,"
+        "\"bvalid\":%d,\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"micro\":%.4f,\"spread\":%.4f,\"imb\":%.4f,"
+        "\"b1sz\":%.1f,\"a1sz\":%.1f,\"bd5\":%.1f,\"ad5\":%.1f,\"bk_age_ms\":%.0f,"
+        "\"ofi\":%.6g,\"rvol\":%.6g,\"mom5\":%.6g,\"g_remain\":%.0f,\"g_sdiff\":%.0f,\"g_period\":%.0f,\"g_age_ms\":%.0f,"
+        "\"fair\":%.4f,\"fsrc\":\"%s\",\"core\":%d,\"held\":%d}\n",
+        static_cast<long long>(now), cond.c_str(), yes_tok.c_str(), static_cast<int>(mc.sport_family_id),
+        static_cast<int>(mc.market_type_id), nf(mc.volume_24h), nf(mc.liquidity),
+        nf(sharp), nf(sh_vel), nf(sh_conv), nf(sh_vol), nf(sh_age_ms),
+        bvalid ? 1 : 0, nf(bid), nf(ask), nf(mid), nf(micro), nf(spread), nf(imb), nf(b1), nf(a1), nf(bd5), nf(ad5),
+        nf(bk_age), nf(ofi), nf(rvol), nf(mom5), nf(g_remain), nf(g_sdiff), nf(g_period), nf(g_age),
+        nf(p_fair), pricing::to_string(fair_src), static_cast<int>(core), held);
+    if (n > 0)
+        journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(
+            n < static_cast<int>(sizeof(buf)) ? n : static_cast<int>(sizeof(buf)) - 1)));
 }
 
 // LogGateBlock — gate 拒点反事实 journal (2026-06-13 老板「评估门值不值」): 入场被门挡时落一行
@@ -3257,6 +3210,15 @@ void TradingLoop::LogGateBlock(const std::string& cond, const char* gate, double
         emit_d("g_remain", ectx->g_remain);
         emit_d("g_sdiff", ectx->g_sdiff);
         emit_d("g_period", ectx->g_period);
+        // fair 选源 (2026-06-14 老板「说清用哪个源」): 被挡盘当时 fair 是哪层定的 (序数→名)。
+        {
+            char b[48];
+            const int m = std::snprintf(b, sizeof(b), ",\"fsrc\":\"%s\"",
+                                        pricing::to_string(static_cast<pricing::FairSrc>(ectx->fair_src)));
+            if (m > 0)
+                out.append(b, static_cast<std::size_t>(m < static_cast<int>(sizeof(b)) ? m
+                                                                                       : static_cast<int>(sizeof(b)) - 1));
+        }
     }
     out.append("}\n");
     journal_writer_.AppendLine(path, std::move(out));

@@ -1,5 +1,9 @@
 # 多输入回测等价性 — 项目 spec v1
 
+> ⚠ 部分退役 (2026-06-14): 本 spec 的 P0 配套 `ScoreFrameRecorder` (scores.jsonl 比分帧落盘) 已删 —— 0 消费者
+>   (回测模块本身 2026-06 治理已裁，backtest_sharp 改读 market_tape)。复盘语料现整合为决策处 market_tape
+>   (见 docs/RESEARCH/replay-tape-consolidation-2026-06-14.md)。本文保留作历史 spec / 设计推理记录。
+
 > owner: 老雷 (GM) · last_review: 2026-06-01 · 性质: 红线#3 闭合工程计划 (三方架构评审 P0 配套)
 > 触发: 2026-06-01 全系统评审 (老周架构 / 老姜性能 / 老郭红线) — 老郭头号发现:
 >   **回测=实盘红线 (§8 #3) 当前只覆盖 6 个决策输入里的 1 个。**

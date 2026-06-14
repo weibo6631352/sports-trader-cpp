@@ -30,7 +30,6 @@
 #include "stcpp/data/live_stats_store.hpp"      // live_stats LiveStatsStore
 #include "stcpp/data/settlement_poller.hpp"     // M2 SettlementPoller (clob /markets 轮询)
 #include "stcpp/data/settlement_recorder.hpp"   // Phase 2 缺口E 结算落盘 (label y)
-#include "stcpp/data/score_frame_recorder.hpp"  // 回测 P0 比分帧落盘 (红线#3 闭合数据前提)
 #include "stcpp/data/settlement_store.hpp"      // M2 SettlementStore
 #include "stcpp/data/score_snapshot_store.hpp"  // A1b: ScoreSnapshotStore::GetSnapshot
 
@@ -1341,15 +1340,6 @@ BuildResult TraderDaemon::Build() {
             se_cfg.output_path = cfg_.ml_path + ".settlements.jsonl";
             settlement_recorder_ = std::make_unique<data::SettlementRecorder>(*settlement_store_, se_cfg);
         }
-
-        // 回测等价性 P0 (红线#3 闭合数据前提): 比分帧落盘。读 score_store_ 落 scores.jsonl, 是小蒋 P2
-        //   ReplayImpl 喂帧解锁回测 in-play 分支/下单/结算的原始数据 (resolution 由上方 settlement_recorder
-        //   覆盖, book 由 ReplayDriver 覆盖, 比分是分叉杀伤力最大的缺口)。详见 spec / DecisionInputSnapshot。
-        if (score_store_) {
-            data::ScoreFrameRecorder::Config sf_cfg;
-            sf_cfg.output_path = cfg_.ml_path + ".scores.jsonl";
-            score_recorder_ = std::make_unique<data::ScoreFrameRecorder>(*score_store_, sf_cfg);
-        }
     }
 
     // ---- Step 5: HttpServer (仅 RunMode::TraderDaemon; Headless 无 HTTP) ----
@@ -1536,11 +1526,6 @@ void TraderDaemon::Start() {
         std::printf("[trader_daemon] 结算落盘启动 (SettlementRecorder -> %s.settlements.jsonl, label y)\n",
                     cfg_.ml_path.c_str());
     }
-    if (score_recorder_) {
-        score_recorder_->Start();
-        std::printf("[trader_daemon] 比分帧落盘启动 (ScoreFrameRecorder -> %s.scores.jsonl, 回测 P0)\n",
-                    cfg_.ml_path.c_str());
-    }
 
     // ---- Step 5 start: HttpServer ----
     if (server_) {
@@ -1628,12 +1613,9 @@ void TraderDaemon::Shutdown() noexcept {
         server_->stop();
     }
 
-    // 2. (ML 特征 recorder 已砍 2026-06-05) 结算/比分 recorder Stop (先于 store 析构)
+    // 2. (ML 特征 + 比分帧 recorder 已砍) 结算 recorder Stop (先于 store 析构)
     if (settlement_recorder_) {
         settlement_recorder_->Stop();  // 停读 settlement_store_ (先于其析构)
-    }
-    if (score_recorder_) {
-        score_recorder_->Stop();  // 停读 score_store_ (先于其析构, 同 InplayFeedThread 之前)
     }
 
     // 3. TradingLoop (先于 hub/ledger/rm 析构; Stop 内含 jthread join)

@@ -50,10 +50,11 @@ def main():
 
     settle_rows = jl(f"{D}/quotes.jsonl.settlements.jsonl")
     have = set(s.get("condition_id") for s in settle_rows)       # 已有记录(不论 parse_ok)的 cond, 不重查
-    # 我们碰过的盘 + 自带 yes_tok (market_tape/position_path/fills 都带 tok=yes token; gate_blocks 无 tok)
+    # 我们碰过的盘 + 自带 yes_tok (market_tape/fills 都带 tok=yes token; gate_blocks 无 tok)
+    #   (position_path 已退役 2026-06-14: market_tape 覆盖全 in-play 盘 + fills 覆盖成交盘, 二者已够)
     yt = {}
     touched = set()
-    for f in ("market_tape.jsonl", "position_path.jsonl", "fills_journal.jsonl"):
+    for f in ("market_tape.jsonl", "fills_journal.jsonl"):
         for r in jl(f"{D}/{f}"):
             c = r.get("cond")
             if not c: continue

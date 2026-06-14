@@ -13,10 +13,10 @@
 #   ① 赢家 vs 输家画像 + 判别力(AUC) → 自动标【候选新参数】(判别力强但当前没设门的因子)
 #   ② 参数阈值扫描 × 赢家捕获 → 每个参数扫一遍门槛, 看赢家捕获/拖进输家/PnL → 推荐最优门槛(调参)
 #   ③ 2 维组合挖矿 → 找 (因子A×因子B) 高胜率+正PnL+够样本的组合(获利模式)
-#   ④ 单个标志性赢家深挖 → 最大盈利赢家的进场→出场全程轨迹(position_path)
+#   ④ 单个标志性赢家深挖 → 最大盈利赢家的进场→出场全程轨迹(market_tape held 帧; position_path 已退役 2026-06-14)
 #
 # 用法: python3 param_research.py <fills_journal.jsonl> <gate_blocks.jsonl> <settlements.jsonl> \
-#            [position_path.jsonl] [--min-support N] [--ver <git>]
+#            [market_tape.jsonl] [--min-support N] [--ver <git>]
 import sys, json, math, collections
 
 def wilson(k, n, z=1.96):
@@ -102,7 +102,7 @@ def main():
     json_mode = "--json" in flags  # 机器可读结构化输出 (老板「喂第三方agent决策」); 文本仍打, JSON 附在末尾 marker 内
     J = {"tool": "param_research", "version": ver}  # 结构化结果累积, 末尾 dump
     if len(a) < 3:
-        print("用法: param_research.py <fills.jsonl> <gate_blocks.jsonl> <settlements.jsonl> [position_path.jsonl] [--min-support N] [--ver <git>]")
+        print("用法: param_research.py <fills.jsonl> <gate_blocks.jsonl> <settlements.jsonl> [market_tape.jsonl] [--min-support N] [--ver <git>]")
         return
     fills_p, gates_p, settle_p = a[0], a[1], a[2]
     pp_p = a[3] if len(a) > 3 else None
@@ -655,12 +655,14 @@ def main():
               f"簿失衡 {f.get('bk_imb')} 阶段 {f.get('g_period')} 赔率龄 {f.get('odds_age')}")
         if pp_p and tok:
             star_yes = f.get("yes")
-            traj = [r for r in load(pp_p) if r.get("tok") == tok and r.get("bvalid") == 1 and r.get("mid", 0) > 0]
+            # 2026-06-14: 轨迹源 position_path → market_tape 的 held==1 帧 (position_path 退役; tape 事件驱动 held 旗界定持有窗)
+            traj = [r for r in load(pp_p)
+                    if r.get("tok") == tok and r.get("held") and r.get("bvalid") == 1 and r.get("mid", 0) > 0]
             traj.sort(key=lambda r: r.get("ts", 0))
             if traj:
                 t0 = traj[0].get("ts", 0)
                 # F-4: mid/sharp 都换算到【持仓边】(NO 仓取 1−x), 否则 NO 仓两者在不同边, 收敛对比无意义
-                print(f"  轨迹 ({len(traj)} 有效采样点, 30s/点; 均持仓边: 边fair=赔率源真值, 边mid=PM价, 二者收敛=持仓变对):")
+                print(f"  轨迹 ({len(traj)} 帧, 事件驱动; 均持仓边: 边fair=赔率源真值, 边mid=PM价, 二者收敛=持仓变对):")
                 step = max(1, len(traj)//14)  # 最多 ~14 行
                 for r in traj[::step]:
                     hm = r.get("mid",0) if star_yes==1 else 1.0-r.get("mid",0)
@@ -669,7 +671,7 @@ def main():
                     print(f"    +{(r.get('ts',0)-t0)//1_000_000_000:>5}s 边mid {hm:.3f} 边fair {hf:.3f} "
                           f"簿失衡 {r.get('imb',0):+.2f} L1卖 {r.get('a1sz',0):>7.0f} 簿龄 {r.get('bk_age_ms',0):.0f}ms{gtxt}")
             else:
-                print("  (无该 token 的有效 position_path 采样)")
+                print("  (无该 token 的有效 market_tape held 采样)")
     print("=" * 78)
     print(f"样本: 已结算决策点 {len(settled)} (进场{len(ent)}+被挡{len(blk)}). 被挡盘是大数据主力, 越积越准。")
     print("读法(评审后): ①只信★过Bonferroni的强候选(假设, 需OOS); ②看赢面单调性别取in-sample峰值; ③当线索非结论。")

@@ -1,5 +1,9 @@
 # Paper 长跑攒数据 + 复盘统计 — 执行计划
 
+> ⚠ 后续整合 (2026-06-14 晚): 本计划的 `position_path.jsonl` 已退役 (含 §1.4 Tier1「扩 position_path 加深度」
+>   等条目作废) —— 复盘语料整合成**决策处** `market_tape` (事件驱动 + 全簿深度 + held 旗)，市场状态不再两处落。
+>   `scores.jsonl` 同期退役。详见 docs/RESEARCH/replay-tape-consolidation-2026-06-14.md。
+
 > owner: 老雷 (GM) | last_review: 2026-06-14
 > 背景: 真钱已停 (LIVE_ARMED=0, 后端 halted)。结论 (三方调研: GM + data-stats 小董 + quant-backtest):
 > 要回答"策略到底有没有 edge / 预期 vs 实际胜率偏差"——数据已 ~80% 够,真瓶颈是

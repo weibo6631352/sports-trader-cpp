@@ -112,6 +112,12 @@ namespace stcpp::data::feature_store {
 struct FeatureStoreGameRow;
 }  // namespace stcpp::data::feature_store
 
+// MaybeEmitMarketTape 形参用 fair 选源枚举 (复盘 tape 标"这盘 fair 哪个源定的"); 完整定义在
+//   stcpp/pricing/fair_resolve.hpp, 此处仅前向声明 (scoped enum 默认底层 int, 声明即足) 避免重头耦合。
+namespace stcpp::pricing {
+enum class FairSrc;
+}  // namespace stcpp::pricing
+
 // Phase 2: CLOB user 频道成交接收器 (live 成交异步入账; 完整定义 include/stcpp/polymarket/live/live_user_fill_feed.hpp)。
 namespace stcpp::polymarket {
 class LiveUserFillFeed;
@@ -605,7 +611,7 @@ public:
     struct FillRow {
         std::int64_t as_of_ts_ns{0};   // 成交观测刻 (R-20, 上游 ts)
         std::string condition_id;      // 盘口
-        std::string token_id;          // 成交 token (2026-06-14: 离线 join settlements/position_path 的直键, 免 cond+side 反查)
+        std::string token_id;          // 成交 token (2026-06-14: 离线 join settlements/market_tape 的直键, 免 cond+side 反查)
         std::string event_title;       // 人读队名/比赛 (前端展示; loop 填)
         bool is_yes{true};             // 被交易边 (YES/NO)
         bool is_buy{true};             // 买/卖
@@ -617,6 +623,8 @@ public:
         // 模型决策上下文 (2026-06-04 老板「分析交易调模型」): 成交刻模型 fair + 市场 mark,
         //   供前端模型诊断 (声称 edge = fair−price; 模型偏差 = fair−mark; 看是否反指标/系统偏高)。
         double fair{0.0};              // 成交刻模型对【被交易边】的 fair (= p_fair_side, FILL 日志同源)
+        int fair_src{0};               // 成交刻 fair 选源 (账单「说清用 sharp/赔率源/比分源」, 2026-06-14 老板):
+                                       //   pricing::FairSrc 序数 0=market_devig/1=derivative/2=sharp_inplay/3=score_prior_blend
         double mark{0.0};              // 成交刻市场 mark price
         double fee{0.0};               // 本笔手续费 (老板 2026-06-09「手续费逐笔体现」): size×fee_coef×p×(1−p)
         std::string exit_reason;       // 卖出原因 (2026-06-10 老板「出现卖出就检查是否合理」): rel_stop/vel_exit/
@@ -680,6 +688,7 @@ public:
         double g_remain{std::numeric_limits<double>::quiet_NaN()};
         double g_sdiff{std::numeric_limits<double>::quiet_NaN()};
         double g_period{std::numeric_limits<double>::quiet_NaN()};  // 2026-06-14: 离散赛段序数 (第几盘/节/局)
+        int fair_src{0};  // fair 选源序数 (账单 fsrc 来源; = pricing::FairSrc, TickOne 决策刻设)
     };
     // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
     [[nodiscard]] std::vector<FillRow> RecentFills(std::size_t max_n = 200,
@@ -1078,21 +1087,21 @@ private:
     // ---- 孤儿结算诊断节流 (2026-06-10 老板「查消失的盘结算有没有进账户」): 上次打孤儿诊断的 NowNs (30s 节流) ----
     std::int64_t last_orphan_diag_ns_{0};
     std::int64_t last_ledger_snapshot_ns_{0};  // 账本快照 60s 节流 (loop_thread_, 2026-06-11 持久化)
-    // 复盘观测 (2026-06-13 老板「都改」): 持仓路径采样 (60s/仓 → position_path.jsonl, 止损/出场回测金料)
-    //   + gate 拒点反事实 journal (per cond×gate 5min 节流 → gate_blocks.jsonl)。均 loop_thread_ only。
-    std::int64_t last_pos_path_ns_{0};
-    std::int64_t last_market_tape_ns_{0};  // market_tape 采样节流 (2026-06-14 老板「收集信息进化非只评估」)
+    // 复盘观测 (2026-06-13 老板「都改」): gate 拒点反事实 journal (per cond×gate 5min 节流 → gate_blocks.jsonl)。
+    //   (持仓路径 position_path 已退役 2026-06-14: 市场状态与 market_tape 重复, 持仓上下文在 fills)。loop_thread_ only。
     std::unordered_map<std::string, std::int64_t> gate_log_ns_;
     // gate block 内存 ring (2026-06-13: 喂 /risk/rejects 面板, 让"为何没下单"可见)。loop_thread_ 写 (节流后),
     //   HTTP 线程经 RecentGateBlocks 读; gate_block_mu_ 短锁 (push O(1) / 读拷 ≤cap, <100us, R-12 OK)。
     static constexpr std::size_t kGateBlockRingCap = 64;
     mutable std::mutex gate_block_mu_;
     std::deque<GateBlockView> gate_block_ring_;
-    void SamplePositionPaths();
-    // market_tape (2026-06-14 老板「我们是收集信息进化, 不只评估当前策略」): 对【所有 sharp 源盘】(不管下不下单)
-    //   每 ~60s 落全因子快照 → market_tape.jsonl, join 结算 → 全市场因子轨迹+结局语料, 挖现有策略够不着的 edge。
-    //   纯加性(新文件); hub_.Read 原子非阻塞 + 异步 journal (R-12); loop_thread_ only。
-    void SampleMarketTape();
+    // market_tape 复盘 tape (2026-06-14 老板「决策附近信息都处理好了, 写入点别太散」): 【在 TickOne 决策处】
+    //   用决策已算好的 mkt.yes.book/p_fair/fair_src/game_row 当场事件驱动落帧 → market_tape.jsonl (不再单独扫 +
+    //   不重读 hub + 不 fair_cache 桥接)。所有到达决策的 sharp 源盘(下不下单都落), join 结算 → 全市场因子轨迹+
+    //   结局语料, 挖现有策略够不着的 edge。事件驱动(动了才落+心跳)→ tape_state_; 异步 journal (R-12); loop_thread_。
+    void MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
+                            const data::feature_store::FeatureStoreGameRow& game_row,
+                            double p_fair, pricing::FairSrc fair_src);
     // 2026-06-14 老板「以前的量化因子用得上」+「发现新增参数」: 被挡盘落全因子向量 (被挡盘=进场盘 10-20×,
     //   大数据全在此; 候选新门评估靠这批, 尤其 sh_conv=持仓对错实时判据)。book/ectx 仅 ExecuteControllerSide
     //   挡点有 (传指针补簿/决策上下文); TickOne 挡点传 nullptr, 仍从 cond-keyed 成员 map 得 sharp/ofi/cat/equity 因子。
@@ -1171,7 +1180,7 @@ private:
     // ---- 批1 体育动态: 比分时序 (进球新鲜度/动量; game_row.score 派生) ----
     std::unordered_map<std::string, ml::GameScoreHistory> game_history_;
 
-    // ---- 比赛进度快照 (2026-06-14 老板「比赛进度也非常关键」): TickOne 写 / SamplePositionPaths 读 ----
+    // ---- 比赛进度快照 (2026-06-14 老板「比赛进度也非常关键」): TickOne 写 / MaybeEmitMarketTape 读 ----
     //   离场推断需"采样点打到比赛哪了"(剩余时间=翻盘空间); 轨迹本身无 ectx, 故走 cond-keyed 缓存。
     //   带 as_of_ns → 算进度新鲜度 (score feed 停更则进度陈旧失真, 同 sharp 新鲜度原则)。loop_thread_ 单写。
     struct GameProgSnap {
@@ -1181,6 +1190,18 @@ private:
         std::int64_t as_of_ns{0};                                  // 比分数据源时刻 (算 g_age)
     };
     std::unordered_map<std::string, GameProgSnap> game_prog_;
+
+    // ---- market_tape 事件驱动采样状态 (2026-06-14 复盘 tape 升级: 60s 粗 → 动了才落 + 心跳兜底) ----
+    //   每盘上次落帧的 sharp/mid/冻结位/时刻 → diff 判定。崩盘逐变化忠实记录, 静默盘只心跳。loop_thread_ 单写。
+    //   tape 落盘点【就在 TickOne 决策处】(老板 2026-06-14「决策附近信息都处理好了, 写入点别太散」):
+    //   不再单独扫 + 不再 fair_cache 桥接, 直接用决策已算好的 mkt.yes.book/p_fair/fair_src/game_row 当场落帧。
+    struct TapeSampleState {
+        double last_sharp{-1.0};
+        double last_mid{-1.0};
+        std::int64_t last_emit_ns{0};
+        std::uint8_t last_core{0};
+    };
+    std::unordered_map<std::string, TapeSampleState> tape_state_;
 
     // ---- A5 (老韩 spec §4): 累计已付 taker fee (whole pUSD, 单调加) ----
     //   DD 喂数: daily_pnl = 时点净 MtM − cum_fee。PublishLedgerSnapshot 算 pnl_fee 后累加,
