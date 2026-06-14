@@ -70,6 +70,7 @@
 
 // OpenSSL
 #include <openssl/err.h>
+#include <openssl/rand.h>
 #include <openssl/ssl.h>
 
 #include "stcpp/polymarket/wss/pm_wss_subscriber.hpp"  // IWssTransport
@@ -176,6 +177,13 @@ public:
         //   不会在销毁后再调 AsyncConnect, 无 use-after-free 风险。
         // Join any previous thread (transient stop_ to break its loop, then reset)
         if (io_thread_.joinable()) {
+            // 防御 (2026-06-14 网络审计): on_disconnected_ 回调链可在 io_thread_ 内重入到 AsyncConnect
+            //   (IoLoop 末 →on_disconnected_→OnMarketDisconnected→ScheduleMarketReconnect→AsyncConnect)。
+            //   此时 io_thread_.join() = join 自身 = EDEADLK → 异常逸出线程函数 → std::terminate (潜伏 landmine,
+            //   仅 RecvLoop 干净返回时触发; 平时由 WssWatchdogLoop 在独立线程重连绕开)。检测重入则跳过本次
+            //   join+重连: stop_ 已在 IoLoop 置 true, io_thread_ 随回调返回自然退出, 由看门狗(独立 jthread)兜底重连。
+            if (io_thread_.get_id() == std::this_thread::get_id())
+                return false;
             stop_.store(true, std::memory_order_release);
             io_thread_.join();
             stop_.store(false, std::memory_order_release);
@@ -486,9 +494,11 @@ private:
     // -----------------------------------------------------------------------
     static bool WsHandshake(SSL* ssl, const std::string& host, const std::string& path) {
         // Random 16-byte key, base64-encoded
+        // 2026-06-14 网络审计: 原用 ::rand()(全局状态, io_thread_/send_thread_ 跨 market+user transport
+        //   并发调 = data race UB)。改 RAND_bytes(线程安全 CSPRNG, RFC 6455 §10.3 要求 mask 不可预测)。
         unsigned char raw_key[16];
-        for (std::size_t i = 0; i < sizeof(raw_key); ++i) {
-            raw_key[i] = static_cast<unsigned char>(::rand() % 256);  // NOLINT
+        if (RAND_bytes(raw_key, sizeof(raw_key)) != 1) {
+            for (std::size_t i = 0; i < sizeof(raw_key); ++i) raw_key[i] = static_cast<unsigned char>(i * 31 + 7);
         }
         // Base64 encode
         char b64[32];
@@ -699,10 +709,11 @@ private:
                 frame.push_back(static_cast<std::uint8_t>((plen >> (8 * i)) & 0xFF));
             }
         }
-        // 4-byte random mask key
+        // 4-byte random mask key (2026-06-14 网络审计: ::rand() 全局状态多线程 race → RAND_bytes 线程安全)
         std::uint8_t mask[4];
-        for (std::size_t i = 0; i < 4; ++i) {
-            mask[i] = static_cast<std::uint8_t>(::rand() % 256);  // NOLINT
+        if (RAND_bytes(mask, sizeof(mask)) != 1) {
+            const auto t = static_cast<std::uint32_t>(reinterpret_cast<std::uintptr_t>(&mask));
+            for (std::size_t i = 0; i < 4; ++i) mask[i] = static_cast<std::uint8_t>((t >> (8 * i)) & 0xFF);
         }
         frame.insert(frame.end(), mask, mask + 4);
         // Masked payload

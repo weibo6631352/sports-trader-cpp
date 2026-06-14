@@ -536,7 +536,12 @@ private:
         if (pos >= body.size() || !std::isdigit(static_cast<unsigned char>(body[pos])))
             return false;
         std::int64_t v = 0;
+        int ndigits = 0;
+        // 2026-06-14 网络审计: 原无位数上限 → 19+ 位数字串触发 int64 有符号溢出 (UB) 于热路径。
+        //   仅解析 "timestamp"(毫秒 epoch ≤14 位), 18 位上限拒掉畸形/恶意溢出, 不误伤合法值。
         while (pos < body.size() && std::isdigit(static_cast<unsigned char>(body[pos]))) {
+            if (++ndigits > 18)
+                return false;
             v = v * 10 + (body[pos] - '0');
             ++pos;
         }

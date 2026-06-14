@@ -331,8 +331,9 @@ TEST_F(RiskGatewayTest, R06m_TokenId_78digits_NotRejectedAsFormat) {
     ASSERT_EQ(it.token_id.size(), 78u);
     auto d = rm_->evaluate(it);
     // 不该因 token 格式被拒 (78 位合法); 其他门拒可以, 但 sub_reason 绝不是 token format。
-    if (d.reject == RejectCode::INVALID_INTENT)
+    if (d.reject == RejectCode::INVALID_INTENT) {  // 括号必需: gtest EXPECT_NE 宏内含 else, 否则 -Werror=dangling-else
         EXPECT_NE(d.sub_reason, InvalidIntentSubReason::INVALID_TOKEN_ID_FORMAT);
+    }
 }
 
 // 79 位 token_id 超 uint256 上限 → 仍判格式非法。

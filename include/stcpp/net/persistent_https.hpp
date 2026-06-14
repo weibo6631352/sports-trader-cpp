@@ -13,17 +13,21 @@
 // 红线: 不在 WSS event loop 调用 (本客户端在独立 ActiveBookPoller 线程, R-12 合规)。
 #pragma once
 
+#include <fcntl.h>
 #include <netdb.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
 #include <string>
 
 #include <openssl/ssl.h>
+#include <openssl/x509.h>
 
 namespace stcpp::net {
 
@@ -140,28 +144,61 @@ private:
         tv.tv_usec = (timeout_ms_ % 1000) * 1000;
         ::setsockopt(fd_, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
         ::setsockopt(fd_, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-        if (::connect(fd_, res->ai_addr, res->ai_addrlen) != 0) {
+        // 非阻塞 connect + poll 超时 (2026-06-14 网络审计): Linux 上 SO_*TIMEO 不影响 connect() 本身,
+        //   跨洋目标 DROP SYN 时阻塞 connect 默认 ~127s(内核 SYN 重传)→ 冻结整个 ActiveBookPoller 线程,
+        //   book 价格停更、决策跑陈旧数据。改非阻塞 connect + poll(timeout_ms_) 上限, 然后恢复阻塞。
+        const int fl = ::fcntl(fd_, F_GETFL, 0);
+        ::fcntl(fd_, F_SETFL, fl | O_NONBLOCK);
+        int crc = ::connect(fd_, res->ai_addr, res->ai_addrlen);
+        if (crc != 0 && errno != EINPROGRESS) {
             freeaddrinfo(res);
             Shut();
             return false;
         }
+        if (crc != 0) {  // EINPROGRESS: 等可写(连上)或超时
+            struct pollfd pfd{};
+            pfd.fd = fd_;
+            pfd.events = POLLOUT;
+            const int pr = ::poll(&pfd, 1, timeout_ms_);
+            int soerr = 0;
+            socklen_t sl = sizeof(soerr);
+            if (pr <= 0 || ::getsockopt(fd_, SOL_SOCKET, SO_ERROR, &soerr, &sl) != 0 || soerr != 0) {
+                freeaddrinfo(res);
+                Shut();
+                return false;
+            }
+        }
+        ::fcntl(fd_, F_SETFL, fl);  // 恢复阻塞 (后续 SSL_connect/读写用阻塞 + SO_*TIMEO)
         freeaddrinfo(res);
         ctx_ = SSL_CTX_new(TLS_client_method());
         if (ctx_ == nullptr) {
             Shut();
             return false;
         }
+        // TLS 加固 (2026-06-14 网络审计; 与 live_wss_transport.hpp:332-381 一致): 验证服务端证书链 +
+        //   hostname。原仅设 SNI 无校验 → 149Hz 喂价热链对 MITM 透明, 攻击者可注入伪造 bid/ask 诱发反向下单。
+        SSL_CTX_set_min_proto_version(ctx_, TLS1_2_VERSION);
+        SSL_CTX_set_verify(ctx_, SSL_VERIFY_PEER, nullptr);
+        SSL_CTX_set_default_verify_paths(ctx_);
         ssl_ = SSL_new(ctx_);
         if (ssl_ == nullptr) {
             Shut();
             return false;
         }
         SSL_set_tlsext_host_name(ssl_, host_.c_str());
+        SSL_set1_host(ssl_, host_.c_str());  // CN/SAN hostname 校验 (RFC 6125), SSL_connect 时自动比对
         SSL_set_fd(ssl_, fd_);
         if (SSL_connect(ssl_) != 1) {
             Shut();
             return false;
         }
+        // VERIFY_PEER 下 SSL_connect!=1 已挡掉验证失败; 显式确认 peer cert 已呈现 (兜底)。
+        X509* peer = SSL_get_peer_certificate(ssl_);
+        if (peer == nullptr) {
+            Shut();
+            return false;
+        }
+        X509_free(peer);
         return true;
     }
 
