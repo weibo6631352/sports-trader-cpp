@@ -935,6 +935,12 @@ BuildResult TraderDaemon::Build() {
     //   的强 favorite, 再低(<0.65)赢面太小不进。更强 favorite 有更多 cushion, fair 场内反转不到 underdog 概率小。
     //   注: 历史 0.65 曾 starve(0 交易, 市场少时); 现 261 市场盘子大 + 仓位砍半, 应有量。量太少则松。
     cfg_.trading_loop.min_open_fair = 0.65;
+    // 流动性地板 (2026-06-15 数据驱动, +$300 目标): 只在 gamma book liquidity≥$30k 的盘开新仓。
+    //   实测 paper fills n=87 join 结算: liq≥30k 23 笔 96%胜 +$101 / liq<30k 64 笔几乎全亏 (10-30k ~20%胜
+    //   −$188)。机理 = 薄盘 PM 价是噪声, sharp-vs-PM edge 测量失真被逆选接刀。loss-center 棒球内部独立成立
+    //   (liq≥30k 94%胜+$77 / liq<30k 35%胜−$133), 独立于价格地板 (liq≥30k & px<0.80 仍 93%胜) → 非近已决代理。
+    //   30k 是数据 cliff (20-30k 桶 20%胜 / 30k+ 95%胜)。减仓/平仓/must_win 不受限。
+    cfg_.trading_loop.min_open_liquidity_usdc = 30000.0;
     // 2026-06-09 风控老韩: 开同赛事相关性 taper (现 default false) —— 多 favorite=N倍押"热门赢"同向暴露, 冷门日齐崩;
     //   taper 零成本(只柔性缩量级不碰方向, fail-open), 是比反向腿对冲更对的组合层护栏。
     cfg_.trading_loop.corr_mult_enabled = true;

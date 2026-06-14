@@ -428,6 +428,14 @@ struct TradingLoopConfig {
     //   平仓/must_win 不受限。修「game_decided 必输保护对 tennis best-of-3 永不触发 (phase 边界 bug) → 买崩盘
     //   underdog 单笔 −0.87/−2.00」。0 = 关 (lib 默认, 契约测试不变); 生产 daemon 置 0.15。
     double min_open_fair{0.0};
+    // 流动性地板 (2026-06-15 数据驱动, +$300 目标): gamma book liquidity < 此值 → 不开新仓。
+    //   实测 (paper fills n=87 join 结算): liq≥30k 的 23 笔 96% 胜 +$101, liq<30k 的 64 笔几乎全亏
+    //   (10-30k 桶仅 ~20% 胜 −$188)。机理: 薄盘 PM 价是噪声 → 我们的 sharp-vs-PM edge 测量失真 → 被逆选
+    //   接刀。在 loss-center 棒球内部独立成立 (liq≥30k 94%胜+$77 / liq<30k 35%胜−$133), 且独立于价格
+    //   地板 (liq≥30k & px<0.80 仍 93%胜 +$78) → 非「近必输/近已决」代理, 是结构性微观结构门。
+    //   NaN/缺失 liquidity 一并 fail-closed (无可靠流动性 = 不交易)。0 = 关 (lib 默认, 契约测试不变);
+    //   生产 daemon 置 30000。减仓/平仓/must_win 不受限 (同 min_open_fair 语义)。
+    double min_open_liquidity_usdc{0.0};
     // 赢面稳定窗 (老板 2026-06-11「入场太早赢面不稳定」): 开新仓要求被选边 sharp 在过去此窗口内
     //   【全程】≥ min_open_fair (买稳定赢面, 不买正在经过门槛的钟摆)。0=关 (lib 默认, 契约/管线测试不变);
     //   生产 daemon 随 enable_phase0_gates 置 180s。

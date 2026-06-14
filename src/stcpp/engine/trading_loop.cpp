@@ -227,10 +227,11 @@ void TradingLoop::Start() {
         const int vn = std::snprintf(
             vbuf, sizeof(vbuf),
             "{\"type\":\"version\",\"ts\":%lld,\"mode\":\"%s\",\"git\":\"%s\",\"sharp_only_gate\":%d,"
-            "\"sharp_only_min_edge\":%.4f,\"min_open_fair\":%.4f,\"sharp_max_gap\":%.4f,"
+            "\"sharp_only_min_edge\":%.4f,\"min_open_fair\":%.4f,\"min_open_liq\":%.0f,\"sharp_max_gap\":%.4f,"
             "\"max_open_ask\":%.4f,\"bankroll\":%.2f}\n",
             static_cast<long long>(NowNs()), loop_mode_str, STCPP_BUILD_COMMIT, cfg_.sharp_only_gate ? 1 : 0,
-            cfg_.sharp_only_min_edge, cfg_.min_open_fair, cfg_.sharp_max_gap, kMaxOpenAsk, cfg_.bankroll_usdc);
+            cfg_.sharp_only_min_edge, cfg_.min_open_fair, cfg_.min_open_liquidity_usdc, cfg_.sharp_max_gap,
+            kMaxOpenAsk, cfg_.bankroll_usdc);
         if (vn > 0) journal_writer_.AppendLine(vpath, std::string(vbuf, static_cast<std::size_t>(vn)));
     }
 }
@@ -1733,6 +1734,15 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (cfg_.min_open_fair > 0.0 && p_fair_selected < cfg_.min_open_fair) {
         if (target_mag > 0.0) LogGateBlock(condition_id, "min_open_fair", p_fair_selected, exec_ask, target_mag, is_yes ? 1 : 0);
         target_mag = 0.0;  // 模型认定近必输方 → 只减不开 (longshot 崩盘护栏)
+    }
+    // 流动性地板 (2026-06-15 数据驱动, +$300 目标): 薄盘 PM 价 = 噪声 → sharp-vs-PM edge 测量失真 → 逆选接刀。
+    //   实测 paper fills n=87: liq≥30k 23 笔 96%胜 +$101 / liq<30k 64 笔几乎全亏 (10-30k 桶 ~20%胜)。
+    //   在 loss-center 棒球内部 + 独立于价格地板均成立 (非近已决代理)。NaN/缺失 liquidity 一并 fail-closed。
+    //   仅限新开仓 (减仓/平仓/must_win 不受限, 同 min_open_fair 语义)。0 = 关。
+    if (target_mag > 0.0 && cfg_.min_open_liquidity_usdc > 0.0 &&
+        !(std::isfinite(mc.liquidity) && mc.liquidity >= cfg_.min_open_liquidity_usdc)) {
+        LogGateBlock(condition_id, "thin_liquidity", p_fair_selected, exec_ask, target_mag, is_yes ? 1 : 0);
+        target_mag = 0.0;  // 薄盘/缺流动性 → 只减不开 (逆选护栏)
     }
     // CLV 失效熔断 (2026-06-12 治理): CLV 正率<70% (TickAll 30s 刷新) = 入场质量系统性坏掉
     //   (赔率源断/匹配错/延迟恶化) → sharp 引擎停新开仓直到恢复。减仓/平仓/结算不受限

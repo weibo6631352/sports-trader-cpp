@@ -44,6 +44,10 @@ std::vector<DiscoveredEvent> MakeInjectedMarkets() {
     m.outcome0_name = "Team A";  // YES
     m.outcome1_name = "Team B";  // NO
     m.game_start_ts_sec = 1'000'000;
+    // 流动性 (2026-06-15 流动性地板门): 真实 gamma 盘带 liquidity; 给一个高于生产地板 (30k) 的值,
+    //   让此可成交盘正常过门 (薄盘 fail-closed 由 trading_loop 单测覆盖)。
+    m.liquidity = 100'000.0;
+    m.volume_24h = 200'000.0;
 
     DiscoveredEvent ev;
     ev.event_id = "EVT_TEST_1";
