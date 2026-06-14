@@ -411,6 +411,10 @@ void TradingLoop::JournalFill(const FillRow& fr) {
     emit_d("g_remain", fr.g_remain);
     emit_d("g_sdiff", fr.g_sdiff);
     emit_d("g_period", fr.g_period);
+    emit_d("g_home", fr.g_home);  // 赛况绝对比分 + 盘内进度 (2026-06-14 老板「阶段是复盘依据」)
+    emit_d("g_away", fr.g_away);
+    emit_d("g_hcur", fr.g_hcur);
+    emit_d("g_acur", fr.g_acur);
     emit_d("cash_avail", fr.cash_avail);
     emit_d("n_open", fr.n_open);
     emit_d("equity", fr.equity);
@@ -2048,6 +2052,13 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (std::isfinite(g_remaining_sec)) ectx.g_remain = g_remaining_sec;
     ectx.g_sdiff = static_cast<double>(game_row.score_home_total - game_row.score_away_total);
     if (game_row.period > 0) ectx.g_period = static_cast<double>(game_row.period);  // 离散赛段序数
+    // 赛况绝对比分 + 盘内进度 (2026-06-14 老板「时间/阶段是复盘重要依据」, YES 定向): 网球补盘内 games。
+    ectx.g_home = static_cast<double>(game_row.score_home_total);
+    ectx.g_away = static_cast<double>(game_row.score_away_total);
+    if (game_row.period >= 1 && game_row.period <= game_row.score_home_periods.size()) {  // 当前盘/节内比分 (越界保护)
+        ectx.g_hcur = static_cast<double>(game_row.score_home_periods[game_row.period - 1]);
+        ectx.g_acur = static_cast<double>(game_row.score_away_periods[game_row.period - 1]);
+    }
     ectx.fair_src = static_cast<int>(fair_src_dbg);  // 账单「说清用哪个源」(2026-06-14 老板): 同 tape, 决策刻一处定
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
                           exec_feat, book_depth_l1, p_fair_selected, sel_target, sz_in.fee_rate_coef,
@@ -2520,6 +2531,8 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
                     ctx.g_remain = ectx->g_remain;
                     ctx.g_sdiff = ectx->g_sdiff;
                     ctx.g_period = ectx->g_period;
+                    ctx.g_home = ectx->g_home; ctx.g_away = ectx->g_away;  // 赛况比分 (复盘阶段)
+                    ctx.g_hcur = ectx->g_hcur; ctx.g_acur = ectx->g_acur;  // 盘内进度 (网球 games)
                     ctx.fair_src = ectx->fair_src;  // 账单 fsrc (pending live 单: WSS CONFIRMED 时富化入账)
                 }
                 ctx.trig = static_cast<int>(cur_tick_trig_);  // 账单 trig (触发本决策的源; pending live 单)
@@ -2650,6 +2663,8 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
             fr.g_remain = ectx->g_remain;
             fr.g_sdiff = ectx->g_sdiff;
             fr.g_period = ectx->g_period;
+            fr.g_home = ectx->g_home; fr.g_away = ectx->g_away;  // 赛况绝对比分 (复盘阶段)
+            fr.g_hcur = ectx->g_hcur; fr.g_acur = ectx->g_acur;  // 盘内进度 (网球 games)
             fr.fair_src = ectx->fair_src;  // 账单 fsrc「说清用 sharp/赔率源/比分源」(2026-06-14 老板)
         }
         fr.trig = static_cast<int>(cur_tick_trig_);  // 账单 trig「记录是谁触发的」(本笔决策的触发源掩码)
@@ -3090,6 +3105,14 @@ void TradingLoop::MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
         g_remain = gp->second.g_remain; g_sdiff = gp->second.g_sdiff; g_period = gp->second.g_period;
         if (gp->second.as_of_ns > 0) g_age = static_cast<double>(now - gp->second.as_of_ns) / 1e6;
     }
+    // 赛况绝对比分 + 盘内进度 (2026-06-14 老板「阶段是复盘依据」): 从决策已算的 game_row 取 (YES 定向; 网球补盘内 games)。
+    const double g_home = static_cast<double>(game_row.score_home_total);
+    const double g_away = static_cast<double>(game_row.score_away_total);
+    double g_hcur = kNan, g_acur = kNan;
+    if (game_row.period >= 1 && game_row.period <= game_row.score_home_periods.size()) {  // 越界保护
+        g_hcur = static_cast<double>(game_row.score_home_periods[game_row.period - 1]);
+        g_acur = static_cast<double>(game_row.score_away_periods[game_row.period - 1]);
+    }
     // 持仓标记 (决策标记: 复盘"这帧我们是否持有这盘"; 任一边有仓即 1)。
     int held = 0;
     if (const auto yp = position_ledger_.get_position(yes_tok); yp && yp->net_shares_micro != 0) {
@@ -3108,7 +3131,7 @@ void TradingLoop::MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
 
     const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
     const char* path = live ? "data/ml_capture/live_market_tape.jsonl" : "data/ml_capture/market_tape.jsonl";
-    char buf[900];
+    char buf[1024];  // +4 赛况字段 (g_home/away/hcur/acur), 留足余量
     const int n = std::snprintf(
         buf, sizeof(buf),
         "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"sport_id\":%d,\"mkt_id\":%d,\"vol24h\":%.6g,\"liq\":%.6g,"
@@ -3116,13 +3139,15 @@ void TradingLoop::MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
         "\"bvalid\":%d,\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"micro\":%.4f,\"spread\":%.4f,\"imb\":%.4f,"
         "\"b1sz\":%.1f,\"a1sz\":%.1f,\"bd5\":%.1f,\"ad5\":%.1f,\"bk_age_ms\":%.0f,"
         "\"ofi\":%.6g,\"rvol\":%.6g,\"mom5\":%.6g,\"g_remain\":%.0f,\"g_sdiff\":%.0f,\"g_period\":%.0f,\"g_age_ms\":%.0f,"
-        "\"fair\":%.4f,\"fsrc\":\"%s\",\"core\":%d,\"held\":%d,\"trig\":%d}\n",
+        "\"fair\":%.4f,\"fsrc\":\"%s\",\"core\":%d,\"held\":%d,\"trig\":%d,"
+        "\"g_home\":%.0f,\"g_away\":%.0f,\"g_hcur\":%.0f,\"g_acur\":%.0f}\n",
         static_cast<long long>(now), cond.c_str(), yes_tok.c_str(), static_cast<int>(mc.sport_family_id),
         static_cast<int>(mc.market_type_id), nf(mc.volume_24h), nf(mc.liquidity),
         nf(sharp), nf(sh_vel), nf(sh_conv), nf(sh_vol), nf(sh_age_ms),
         bvalid ? 1 : 0, nf(bid), nf(ask), nf(mid), nf(micro), nf(spread), nf(imb), nf(b1), nf(a1), nf(bd5), nf(ad5),
         nf(bk_age), nf(ofi), nf(rvol), nf(mom5), nf(g_remain), nf(g_sdiff), nf(g_period), nf(g_age),
-        nf(p_fair), pricing::to_string(fair_src), static_cast<int>(core), held, static_cast<int>(cur_tick_trig_));
+        nf(p_fair), pricing::to_string(fair_src), static_cast<int>(core), held, static_cast<int>(cur_tick_trig_),
+        nf(g_home), nf(g_away), nf(g_hcur), nf(g_acur));
     if (n > 0)
         journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(
             n < static_cast<int>(sizeof(buf)) ? n : static_cast<int>(sizeof(buf)) - 1)));
@@ -3216,6 +3241,10 @@ void TradingLoop::LogGateBlock(const std::string& cond, const char* gate, double
         emit_d("g_remain", ectx->g_remain);
         emit_d("g_sdiff", ectx->g_sdiff);
         emit_d("g_period", ectx->g_period);
+        emit_d("g_home", ectx->g_home);  // 赛况绝对比分 + 盘内进度 (被挡盘也带阶段, 判门值不值)
+        emit_d("g_away", ectx->g_away);
+        emit_d("g_hcur", ectx->g_hcur);
+        emit_d("g_acur", ectx->g_acur);
         // fair 选源 (2026-06-14 老板「说清用哪个源」): 被挡盘当时 fair 是哪层定的 (序数→名)。
         {
             char b[48];

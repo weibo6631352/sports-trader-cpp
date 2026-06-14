@@ -681,6 +681,11 @@ public:
         double g_remain{std::numeric_limits<double>::quiet_NaN()};       // 赛段剩余秒
         double g_sdiff{std::numeric_limits<double>::quiet_NaN()};        // 比分差 (YES队−对手)
         double g_period{std::numeric_limits<double>::quiet_NaN()};       // 离散赛段序数 (第几盘/节/局; 2026-06-14)
+        // 赛况绝对比分 + 盘内进度 (2026-06-14 老板「时间/阶段是复盘重要依据」): 网球补盘内 games (主力运动缺口最大)。
+        double g_home{std::numeric_limits<double>::quiet_NaN()};         // YES边总比分 (网球=已赢盘数; 篮球=总分)
+        double g_away{std::numeric_limits<double>::quiet_NaN()};         // 对手总比分
+        double g_hcur{std::numeric_limits<double>::quiet_NaN()};         // YES边当前盘/节内比分 (网球=本盘 games)
+        double g_acur{std::numeric_limits<double>::quiet_NaN()};         // 对手当前盘/节内比分
         double cash_avail{std::numeric_limits<double>::quiet_NaN()};     // 入场刻可用现金 (账本快照; 2026-06-14)
         double n_open{std::numeric_limits<double>::quiet_NaN()};         // 入场刻持仓数 (账本快照; 2026-06-14)
         double equity{std::numeric_limits<double>::quiet_NaN()};         // 成交刻净值 (Kelly 分母核对)
@@ -703,6 +708,11 @@ public:
         double g_remain{std::numeric_limits<double>::quiet_NaN()};
         double g_sdiff{std::numeric_limits<double>::quiet_NaN()};
         double g_period{std::numeric_limits<double>::quiet_NaN()};  // 2026-06-14: 离散赛段序数 (第几盘/节/局)
+        // 赛况绝对比分 + 盘内进度 (2026-06-14 老板「时间/阶段是复盘重要依据」): YES 定向, 网球补盘内 games。
+        double g_home{std::numeric_limits<double>::quiet_NaN()};   // YES边总比分 (网球=已赢盘数)
+        double g_away{std::numeric_limits<double>::quiet_NaN()};   // 对手总比分
+        double g_hcur{std::numeric_limits<double>::quiet_NaN()};   // YES边当前盘/节内比分 (网球=本盘 games)
+        double g_acur{std::numeric_limits<double>::quiet_NaN()};   // 对手当前盘/节内比分
         int fair_src{0};  // fair 选源序数 (账单 fsrc 来源; = pricing::FairSrc, TickOne 决策刻设)
     };
     // 最近 N 笔成交 (最新在前)。market 非空 → 只取该 condition 的成交 (盯盘按盘看, 不受全局churn丢失)。
