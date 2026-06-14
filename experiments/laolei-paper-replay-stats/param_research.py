@@ -408,6 +408,127 @@ def main():
                 "layers": [{"q": qn, "n": n, "win_rate": round(wr,4), "mean_pnl": round(pp,4),
                             "range": [round(lov,4), round(hiv,4)]} for qn,n,wr,pp,lov,hiv in layers]}
 
+    # ============ ①e 因子正交化 (量化大师): 去高相关共线后净IC还剩多少 ============
+    print("\n" + "-" * 78)
+    print("①e 因子正交化净IC (高相关对残差化后看净判别; n<300误差大, 仅方向; 净≈0=信息全在另一因子里=可删)")
+    J["orthogonal_net_ic"] = []
+    done_orth = False
+    for ar, r, ka, kb, _n in [c for c in corr if c[0] > 0.7][:6]:
+        rows = [(u["f"][ka], u["f"][kb], u["won"]) for u in settled
+                if isinstance(u["f"].get(ka),(int,float)) and math.isfinite(u["f"][ka])
+                and isinstance(u["f"].get(kb),(int,float)) and math.isfinite(u["f"][kb])]
+        if len(rows) < 15: continue
+        xa=[x[0] for x in rows]; xb=[x[1] for x in rows]; ws=[x[2] for x in rows]
+        ma=sum(xa)/len(xa); mb=sum(xb)/len(xb); va=sum((x-ma)**2 for x in xa)
+        if va<=0: continue
+        beta=sum((xa[i]-ma)*(xb[i]-mb) for i in range(len(xa)))/va
+        resid=[xb[i]-beta*xa[i] for i in range(len(xa))]
+        rw=[resid[i] for i in range(len(rows)) if ws[i]==1]; rl=[resid[i] for i in range(len(rows)) if ws[i]==0]
+        if len(rw)>=4 and len(rl)>=4:
+            au=auc(rw,rl)
+            if au is not None:
+                print(f"  {lab(kb)} 去掉{lab(ka)}共线后 净IC {2*au-1:+.2f} (与原IC比, 净≈0=信息全在{lab(ka)})"); done_orth=True
+                J["orthogonal_net_ic"].append({"factor": kb, "removed": ka, "net_ic": round(2*au-1,3)})
+    if not done_orth: print("  无高相关对(|r|>0.7)或样本不足 → 跳过")
+
+    # ============ ①f 乘积交互 (量化大师): 标准化因子乘积的IC 是否超单因子 (真交互非冗余) ============
+    print("\n" + "-" * 78)
+    print("①f 乘积交互IC (top因子两两标准化乘积 za·zb 的IC; >max(单因子IC)=有真交互信息, 值得做组合)")
+    def zvals(k):
+        vs = [(u, u["f"][k]) for u in settled if isinstance(u["f"].get(k),(int,float)) and math.isfinite(u["f"][k])]
+        if len(vs) < 10: return None
+        m = sum(v for _,v in vs)/len(vs); sd = math.sqrt(sum((v-m)**2 for _,v in vs)/len(vs))
+        if sd<=0: return None
+        return {id(u): (u, (v-m)/sd) for u, v in vs}
+    top_k = [k for d,k,*_ in scored[:6] if d >= 0.08]
+    J["interaction_ic"] = []; done_int = False
+    for i in range(len(top_k)):
+        for j in range(i+1, len(top_k)):
+            ka, kb = top_k[i], top_k[j]
+            za = zvals(ka); zb = zvals(kb)
+            if not za or not zb: continue
+            common = set(za) & set(zb)
+            if len(common) < 12: continue
+            prod = [(za[c][0]["won"], za[c][1]*zb[c][1]) for c in common]
+            pw=[p for w,p in prod if w==1]; pl=[p for w,p in prod if w==0]
+            if len(pw)>=4 and len(pl)>=4:
+                au=auc(pw,pl)
+                if au is not None:
+                    ic_prod=abs(2*au-1)
+                    ic_a=next((abs(2*a-1) for d,k,a,*_ in scored if k==ka),0)
+                    ic_b=next((abs(2*a-1) for d,k,a,*_ in scored if k==kb),0)
+                    flag = "  ★交互>单因子" if ic_prod > max(ic_a,ic_b)+0.03 else ""
+                    print(f"  {lab(ka)}·{lab(kb)} 乘积IC {2*au-1:+.2f} (vs单 max{max(ic_a,ic_b):.2f}){flag}"); done_int=True
+                    J["interaction_ic"].append({"a":ka,"b":kb,"product_ic":round(2*au-1,3),
+                                                "max_single_ic":round(max(ic_a,ic_b),3),"interaction_adds":ic_prod>max(ic_a,ic_b)+0.03})
+    if not done_int: print("  top因子不足或共同样本<12 → 跳过")
+
+    # ============ ①g 滚动IC稳定性 (量化大师): IC随时间漂移? sharp信号会随市场学习衰减 ============
+    print("\n" + "-" * 78)
+    print("①g 滚动IC稳定性 (按结算时间分3窗, top因子各窗IC; 一致=稳, 翻号/衰减=慎用; n<30窗内噪声大)")
+    by_ts = sorted([u for u in settled if u["f"].get("ts")], key=lambda u: u["f"]["ts"])
+    J["rolling_ic"] = {}
+    if len(by_ts) >= 30:
+        nwin = 3; wsz = len(by_ts)//nwin
+        for d, k, *_ in scored[:3]:
+            if d < 0.08: break
+            ics = []
+            for wi in range(nwin):
+                seg = by_ts[wi*wsz:(wi+1)*wsz] if wi < nwin-1 else by_ts[wi*wsz:]
+                wv = [u["f"][k] for u in seg if u["won"]==1 and isinstance(u["f"].get(k),(int,float)) and math.isfinite(u["f"][k])]
+                lv = [u["f"][k] for u in seg if u["won"]==0 and isinstance(u["f"].get(k),(int,float)) and math.isfinite(u["f"][k])]
+                au = auc(wv, lv) if len(wv)>=3 and len(lv)>=3 else None
+                ics.append(round(2*au-1,2) if au is not None else None)
+            print(f"  {lab(k)}: 各窗IC {ics}")
+            J["rolling_ic"][k] = ics
+    else:
+        print(f"  已结算{len(by_ts)}<30 → 滚动窗等累积")
+
+    # ============ ①h regime条件IC (量化大师): 不同市场状态下因子预测力是否不同 ============
+    print("\n" + "-" * 78)
+    print("①h regime条件IC (按sharp动态/赛段切, 各regime下top因子IC; 不同=因子有状态依赖)")
+    def regime_ic(name, regfn):
+        groups = collections.defaultdict(list)
+        for u in settled:
+            g = regfn(u)
+            if g is not None: groups[g].append(u)
+        out = {}
+        for d, k, *_ in scored[:2]:
+            if d < 0.08: break
+            row = []
+            for g, us in sorted(groups.items()):
+                wv = [u["f"][k] for u in us if u["won"]==1 and isinstance(u["f"].get(k),(int,float)) and math.isfinite(u["f"][k])]
+                lv = [u["f"][k] for u in us if u["won"]==0 and isinstance(u["f"].get(k),(int,float)) and math.isfinite(u["f"][k])]
+                au = auc(wv, lv) if len(wv)>=3 and len(lv)>=3 else None
+                row.append((g, round(2*au-1,2) if au is not None else None, len(us)))
+            if any(r[1] is not None for r in row):
+                print(f"  [{name}] {lab(k)}: " + "  ".join(f"{g}:IC{ic}(n{n})" for g,ic,n in row))
+                out[k] = [{"regime":str(g),"ic":ic,"n":n} for g,ic,n in row]
+        return out
+    def sv_reg(u):
+        v = u["f"].get("sh_vel")
+        if not isinstance(v,(int,float)) or not math.isfinite(v): return None
+        return "sharp动" if abs(v) > 0.0005 else "sharp静"
+    def phase_reg(u):
+        v = u["f"].get("g_period")
+        if not isinstance(v,(int,float)): return None
+        return "前段" if v <= 2 else "后段"
+    J["regime_ic"] = {"sharp动态": regime_ic("sharp动态", sv_reg), "赛段": regime_ic("赛段", phase_reg)}
+
+    # ============ ①i 持仓间相关性 (金融专家): 同场结算相关→独立假设错→组合VaR ============
+    print("\n" + "-" * 78)
+    print("①i 持仓间相关性 (同cond=同场, 结算高度相关; 独立同分布假设在体育盘是错的, 组合敞口要按相关折算)")
+    by_cond = collections.defaultdict(list)
+    for u in settled: by_cond[u["f"].get("cond")].append(u)
+    multi = {c: us for c, us in by_cond.items() if c and len(us) > 1}
+    n_multi_pos = sum(len(us) for us in multi.values())
+    print(f"  {len(by_cond)} 个 cond / {len(multi)} 个含多仓(共{n_multi_pos}仓) → 这些仓结算相关, 别当独立")
+    if multi:
+        agree = sum(1 for us in multi.values() for a in range(len(us)) for b in range(a+1,len(us)) if us[a]["won"]==us[b]["won"])
+        tot_pair = sum(len(us)*(len(us)-1)//2 for us in multi.values())
+        if tot_pair: print(f"  同cond内 {tot_pair} 对, 结局一致率 {100*agree/tot_pair:.0f}% (高=同场强相关, 组合VaR要按此折算非独立相加)")
+    J["position_correlation"] = {"n_cond": len(by_cond), "n_multi_cond": len(multi), "multi_positions": n_multi_pos}
+
     # ============ ② 参数阈值扫描 × 赢家捕获 (调参) ============
     print("\n" + "-" * 78)
     print("② 参数阈值扫描 × 赢家捕获 (每因子扫门槛: 过门盘 赢面/错过赢家/PnL)")
