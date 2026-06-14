@@ -1078,6 +1078,7 @@ private:
     // 复盘观测 (2026-06-13 老板「都改」): 持仓路径采样 (60s/仓 → position_path.jsonl, 止损/出场回测金料)
     //   + gate 拒点反事实 journal (per cond×gate 5min 节流 → gate_blocks.jsonl)。均 loop_thread_ only。
     std::int64_t last_pos_path_ns_{0};
+    std::int64_t last_market_tape_ns_{0};  // market_tape 采样节流 (2026-06-14 老板「收集信息进化非只评估」)
     std::unordered_map<std::string, std::int64_t> gate_log_ns_;
     // gate block 内存 ring (2026-06-13: 喂 /risk/rejects 面板, 让"为何没下单"可见)。loop_thread_ 写 (节流后),
     //   HTTP 线程经 RecentGateBlocks 读; gate_block_mu_ 短锁 (push O(1) / 读拷 ≤cap, <100us, R-12 OK)。
@@ -1085,6 +1086,10 @@ private:
     mutable std::mutex gate_block_mu_;
     std::deque<GateBlockView> gate_block_ring_;
     void SamplePositionPaths();
+    // market_tape (2026-06-14 老板「我们是收集信息进化, 不只评估当前策略」): 对【所有 sharp 源盘】(不管下不下单)
+    //   每 ~60s 落全因子快照 → market_tape.jsonl, join 结算 → 全市场因子轨迹+结局语料, 挖现有策略够不着的 edge。
+    //   纯加性(新文件); hub_.Read 原子非阻塞 + 异步 journal (R-12); loop_thread_ only。
+    void SampleMarketTape();
     // 2026-06-14 老板「以前的量化因子用得上」+「发现新增参数」: 被挡盘落全因子向量 (被挡盘=进场盘 10-20×,
     //   大数据全在此; 候选新门评估靠这批, 尤其 sh_conv=持仓对错实时判据)。book/ectx 仅 ExecuteControllerSide
     //   挡点有 (传指针补簿/决策上下文); TickOne 挡点传 nullptr, 仍从 cond-keyed 成员 map 得 sharp/ofi/cat/equity 因子。

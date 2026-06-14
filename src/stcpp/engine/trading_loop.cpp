@@ -690,6 +690,11 @@ void TradingLoop::TickAll() {
             last_pos_path_ns_ = pp_now;
             SamplePositionPaths();
         }
+        // market_tape: 全 sharp 源盘 60s 一次全因子快照 (2026-06-14 老板「收集信息进化」) — 进化语料, 加性
+        if (pp_now - last_market_tape_ns_ >= 60'000'000'000LL) {
+            last_market_tape_ns_ = pp_now;
+            SampleMarketTape();
+        }
     }
 
     for (const auto& [cond_id, entry] : *tick_inputs_.catalog) {
@@ -3065,6 +3070,74 @@ void TradingLoop::SamplePositionPaths() {
             journal_writer_.AppendLine(  // 截断 clamp (F-3 review): snprintf 截断返"本应长度"可 ≥sizeof, 防 OOB read
                 path, std::string(buf, static_cast<std::size_t>(n < static_cast<int>(sizeof(buf)) ? n
                                                                                                   : static_cast<int>(sizeof(buf)) - 1)));
+    }
+}
+
+// SampleMarketTape — 全市场因子轨迹 (2026-06-14 老板「收集信息进化, 非只评估当前策略」):
+//   对所有【sharp 源盘】(有 sharp_history) 每 ~60s 落一次全因子快照 → market_tape.jsonl。不管我们下不下单,
+//   都记下这盘"长什么样 + 后来怎么走 + 最终什么结局(离线 join settlements)"。这是发现【现有策略够不着的 edge】
+//   的进化语料(决策中心 → 市场中心)。YES-canonical(Python 自行定向)。hub_.Read 原子非阻塞 + 异步 journal (R-12)。
+void TradingLoop::SampleMarketTape() {
+    const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
+    const char* path = live ? "data/ml_capture/live_market_tape.jsonl" : "data/ml_capture/market_tape.jsonl";
+    const std::int64_t now = NowNs();
+    const double kNan = std::numeric_limits<double>::quiet_NaN();
+    auto cat = catalog_;  // RCU 快照按值持有 (重发现中途 swap 不影响本次)
+    if (!cat) return;
+    auto nf = [](double v) { return std::isfinite(v) ? v : 0.0; };
+    for (const auto& kv : *cat) {
+        const std::string& cond = kv.first;
+        const std::string& yes_tok = kv.second.tokens.first;
+        if (yes_tok.empty()) continue;
+        // 只录 sharp 源盘 (有 sharp 时序 = 研究/可交易宇宙; 控量, 非全 catalog)
+        const auto shj = sharp_history_.find(cond);
+        if (shj == sharp_history_.end() || shj->second.last_ts_ns() <= 0) continue;
+        double sharp = shj->second.last_sharp(), sh_vel = kNan, sh_conv = kNan, sh_vol = kNan;
+        const double sh_age_ms = static_cast<double>(now - shj->second.last_ts_ns()) / 1e6;
+        if (shj->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+            sh_vel = shj->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+            sh_conv = shj->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns);
+            sh_vol = shj->second.Vol(cfg_.sharp_fair_vel_window_ns);
+        }
+        // 簿快照 (无 → 仍落, bvalid=0; 卖不出本身是信号)
+        double bid = kNan, ask = bid, mid = bid, micro = bid, spread = bid, imb = bid, b1 = bid, a1 = bid,
+               bd5 = bid, ad5 = bid, age_ms = bid;
+        int bvalid = 0;
+        if (const auto bk = hub_.Read(yes_tok); bk && bk->valid) {
+            bvalid = 1; bid = bk->best_bid(); ask = bk->best_ask(); mid = bk->mid; micro = bk->microprice;
+            spread = bk->spread; imb = bk->imbalance; b1 = bk->best_bid_size(); a1 = bk->best_ask_size();
+            const auto dm = polymarket::clob_wss::compute_depth_metrics(*bk);
+            bd5 = dm.bid_depth_5lvl; ad5 = dm.ask_depth_5lvl;
+            if (bk->data_source_ts_ns > 0) age_ms = static_cast<double>(now - bk->data_source_ts_ns) / 1e6;
+        }
+        double ofi = kNan, rvol = kNan, mom5 = kNan;
+        if (const auto th = ts_history_.find(cond); th != ts_history_.end()) {
+            const std::int64_t w = cfg_.ts_feature_window_ns;
+            ofi = th->second.OFI(w); rvol = th->second.RealizedVol(w);
+            mom5 = th->second.RateOfChangePerSec(300'000'000'000LL);
+        }
+        double g_remain = kNan, g_sdiff = kNan, g_period = kNan, g_age = kNan;
+        if (const auto gp = game_prog_.find(cond); gp != game_prog_.end()) {
+            g_remain = gp->second.g_remain; g_sdiff = gp->second.g_sdiff; g_period = gp->second.g_period;
+            if (gp->second.as_of_ns > 0) g_age = static_cast<double>(now - gp->second.as_of_ns) / 1e6;
+        }
+        const MarketCat mc = MarketCatFor(cond);
+        char buf[760];
+        const int n = std::snprintf(
+            buf, sizeof(buf),
+            "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"sport_id\":%d,\"mkt_id\":%d,\"vol24h\":%.6g,\"liq\":%.6g,"
+            "\"sharp\":%.4f,\"sh_vel\":%.5g,\"sh_conv\":%.5g,\"sh_vol\":%.5g,\"sh_age_ms\":%.0f,"
+            "\"bvalid\":%d,\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"micro\":%.4f,\"spread\":%.4f,\"imb\":%.4f,"
+            "\"b1sz\":%.1f,\"a1sz\":%.1f,\"bd5\":%.1f,\"ad5\":%.1f,\"bk_age_ms\":%.0f,"
+            "\"ofi\":%.6g,\"rvol\":%.6g,\"mom5\":%.6g,\"g_remain\":%.0f,\"g_sdiff\":%.0f,\"g_period\":%.0f,\"g_age_ms\":%.0f}\n",
+            static_cast<long long>(now), cond.c_str(), yes_tok.c_str(), static_cast<int>(mc.sport_family_id),
+            static_cast<int>(mc.market_type_id), nf(mc.volume_24h), nf(mc.liquidity),
+            nf(sharp), nf(sh_vel), nf(sh_conv), nf(sh_vol), nf(sh_age_ms),
+            bvalid, nf(bid), nf(ask), nf(mid), nf(micro), nf(spread), nf(imb), nf(b1), nf(a1), nf(bd5), nf(ad5),
+            nf(age_ms), nf(ofi), nf(rvol), nf(mom5), nf(g_remain), nf(g_sdiff), nf(g_period), nf(g_age));
+        if (n > 0)
+            journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(
+                n < static_cast<int>(sizeof(buf)) ? n : static_cast<int>(sizeof(buf)) - 1)));
     }
 }
 
