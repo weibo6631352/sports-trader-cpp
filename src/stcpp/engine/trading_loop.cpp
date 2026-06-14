@@ -2672,55 +2672,64 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
 // ---------------------------------------------------------------------------
 void TradingLoop::SaveLedgerSnapshot() {
     if (cfg_.ledger_snapshot_path.empty()) return;
-    const std::string tmp = cfg_.ledger_snapshot_path + ".tmp";
-    FILE* fp = std::fopen(tmp.c_str(), "w");
-    if (fp == nullptr) return;
-    std::fprintf(fp, "V1 %lld %.10g %.10g\n", static_cast<long long>(NowNs()), cum_realized_pnl_pusd_,
-                 cum_fee_pusd_);
+    // 2026-06-14 性能审计 P0: 原在 loop_thread_(决策环)同步 fopen/fprintf×N/fclose/rename, 每60s 卡决策环
+    //   5-100ms(EBS 抖动更久)→ 期间赔率变更触发的决策全延后。改为决策环只内存序列化(snprintf→string), 落盘
+    //   (写tmp+rename)甩给 journal_writer_ 独立线程(同 fills journal 的异步落盘设计)→ 决策环零磁盘阻塞。
+    std::string buf;
+    buf.reserve(4096);
+    char ln[512];
+    auto emit = [&buf, &ln](int n) {
+        if (n > 0)
+            buf.append(ln, static_cast<std::size_t>(n < static_cast<int>(sizeof(ln)) ? n : static_cast<int>(sizeof(ln)) - 1));
+    };
+    emit(std::snprintf(ln, sizeof(ln), "V1 %lld %.10g %.10g\n", static_cast<long long>(NowNs()),
+                       cum_realized_pnl_pusd_, cum_fee_pusd_));
     for (const auto& pv : position_ledger_.get_all_positions()) {
         if (pv.net_shares_micro == 0) continue;
-        std::fprintf(fp, "P %s %s %d %lld %.10g\n", pv.condition_id.c_str(), pv.token_id.c_str(),
-                     pv.outcome == strategy::Outcome::Yes ? 1 : 0, static_cast<long long>(pv.net_shares_micro),
-                     pv.avg_entry_price);
+        emit(std::snprintf(ln, sizeof(ln), "P %s %s %d %lld %.10g\n", pv.condition_id.c_str(), pv.token_id.c_str(),
+                           pv.outcome == strategy::Outcome::Yes ? 1 : 0,
+                           static_cast<long long>(pv.net_shares_micro), pv.avg_entry_price));
     }
     for (const auto& [cid, v] : cum_realized_by_market_) {
         const auto fit = cum_fee_by_market_.find(cid);
-        std::fprintf(fp, "M %s %.10g %.10g\n", cid.c_str(), v, fit != cum_fee_by_market_.end() ? fit->second : 0.0);
+        emit(std::snprintf(ln, sizeof(ln), "M %s %.10g %.10g\n", cid.c_str(), v,
+                           fit != cum_fee_by_market_.end() ? fit->second : 0.0));
     }
-    clv_tracker_.ForEachPendingFill([fp](const std::string& tok, const eval::CLVTracker::FillRec& r) {
-        std::fprintf(fp, "C %s %.10g %.10g %.10g %lld\n", tok.c_str(), r.entry_price, r.entry_mid, r.size_pusd,
-                     static_cast<long long>(r.entry_ts_ns));
+    clv_tracker_.ForEachPendingFill([&emit, &ln](const std::string& tok, const eval::CLVTracker::FillRec& r) {
+        emit(std::snprintf(ln, sizeof(ln), "C %s %.10g %.10g %.10g %lld\n", tok.c_str(), r.entry_price, r.entry_mid,
+                           r.size_pusd, static_cast<long long>(r.entry_ts_ns)));
     });
     const auto agg = clv_tracker_.aggregates();
-    std::fprintf(fp, "R %llu %llu %.10g %.10g %.10g %.10g\n", static_cast<unsigned long long>(agg.n_settled),
-                 static_cast<unsigned long long>(agg.n_positive_close), agg.sum_clv_close, agg.sum_clv_settle,
-                 agg.sum_notional, agg.sum_notional_clv_close);
+    emit(std::snprintf(ln, sizeof(ln), "R %llu %llu %.10g %.10g %.10g %.10g\n",
+                       static_cast<unsigned long long>(agg.n_settled),
+                       static_cast<unsigned long long>(agg.n_positive_close), agg.sum_clv_close, agg.sum_clv_settle,
+                       agg.sum_notional, agg.sum_notional_clv_close));
     // E 行: token→engine 归因 + B 行: 引擎分账 (2026-06-12 老板「能区分开」)
     for (const auto& [tok, eng] : engine_by_token_) {
-        std::fprintf(fp, "E %s %s\n", tok.c_str(), eng.c_str());
+        emit(std::snprintf(ln, sizeof(ln), "E %s %s\n", tok.c_str(), eng.c_str()));
     }
     // PE 行: per-engine 分仓持久化 (2026-06-12; key=token\x1fengine → 拆回 token/engine/size)。
     //   恢复时聚合仓位走 P 行 (apply_fill), PE 行只补归属层 split → 重启后 sharp/flb 各管各份不丢。
     for (const auto& [k, sz] : position_ledger_.get_engine_pos_snapshot()) {
         const auto sep = k.find('\x1f');
         if (sep == std::string::npos || sz == 0) continue;
-        std::fprintf(fp, "PE %s %s %lld\n", k.substr(0, sep).c_str(), k.substr(sep + 1).c_str(),
-                     static_cast<long long>(sz));
+        emit(std::snprintf(ln, sizeof(ln), "PE %s %s %lld\n", k.substr(0, sep).c_str(), k.substr(sep + 1).c_str(),
+                           static_cast<long long>(sz)));
     }
     {
         std::lock_guard<std::mutex> lke(engine_mu_);
         for (const auto& [eng, eb] : engine_book_) {
-            std::fprintf(fp, "B %s %.10g %lld %lld\n", eng.c_str(), eb.realized,
-                         static_cast<long long>(eb.settles), static_cast<long long>(eb.wins));
+            emit(std::snprintf(ln, sizeof(ln), "B %s %.10g %lld %lld\n", eng.c_str(), eb.realized,
+                               static_cast<long long>(eb.settles), static_cast<long long>(eb.wins)));
         }
     }
     // L 行: CLV 末次观测 mid (终局仓估值锚; 无此行重启后赢定仓浮盈回退 0)。
-    clv_tracker_.ForEachLastMid([fp](const std::string& tok, double mid) {
-        std::fprintf(fp, "L %s %.10g\n", tok.c_str(), mid);
+    clv_tracker_.ForEachLastMid([&emit, &ln](const std::string& tok, double mid) {
+        emit(std::snprintf(ln, sizeof(ln), "L %s %.10g\n", tok.c_str(), mid));
     });
     // (D 行 [抄底锚] 2026-06-13 随抄底引擎删除。)
-    std::fclose(fp);
-    std::rename(tmp.c_str(), cfg_.ledger_snapshot_path.c_str());
+    // 落盘甩给独立 writer 线程 (写tmp+rename), 决策环零磁盘阻塞。
+    journal_writer_.WriteFileAtomic(cfg_.ledger_snapshot_path, std::move(buf));
 }
 
 void TradingLoop::RestoreLedgerSnapshot() {

@@ -45,9 +45,36 @@ public:
                 return;
             }
             q_.push_back(Item{std::move(path), std::move(line)});
+            ++enqueued_;
             notify = true;
         }
         if (notify) cv_.notify_one();
+    }
+
+    // 决策线程调用: 入队"原子替换整个文件"(writer 线程写 .tmp + rename), 非追加。用于账本快照等需整体替换语义
+    //   的小文件 → 决策环零磁盘阻塞 (2026-06-14 网络/性能审计 P0: 原 SaveLedgerSnapshot 在 loop_thread_ 同步
+    //   fopen/fprintf×N/rename, 每60s 卡决策环 5-100ms)。纳秒级入队, 实际 IO 全在 writer 线程。
+    void WriteFileAtomic(std::string path, std::string content) noexcept {
+        bool notify = false;
+        {
+            std::lock_guard<std::mutex> lk(mu_);
+            if (q_.size() >= kMaxQueue) {
+                dropped_.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+            q_.push_back(Item{std::move(path), std::move(content), true});
+            ++enqueued_;
+            notify = true;
+        }
+        if (notify) cv_.notify_one();
+    }
+
+    // 同步等待: 阻塞到【调用时刻已入队的全部项】都被 writer 线程处理完(含 replace 的 tmp+rename 落盘)。
+    //   用于测试 Save→Restore round-trip + 生产关停前确保最终快照落盘。调用后入队的不阻塞。
+    void Flush() noexcept {
+        std::unique_lock<std::mutex> lk(mu_);
+        const std::uint64_t target = enqueued_;
+        flush_cv_.wait(lk, [this, target] { return processed_ >= target || stop_; });
     }
 
     [[nodiscard]] std::uint64_t dropped() const noexcept {
@@ -58,6 +85,7 @@ private:
     struct Item {
         std::string path;
         std::string line;
+        bool replace{false};  // true=原子替换整文件(写tmp+rename); false=追加缓冲
     };
     struct Sink {
         std::FILE* fp{nullptr};
@@ -81,18 +109,40 @@ private:
                 batch.swap(q_);  // 一次性取走整批 (writer 持锁极短)
                 stopping = stop_;
             }
-            for (auto& it : batch) sinks_[it.path].buf += it.line;  // 入 per-file 缓冲 (内存)
+            for (auto& it : batch) {
+                if (it.replace) {
+                    WriteFileAtomic_(it.path, it.line);  // 整文件原子替换 (写tmp+rename), 不进追加缓冲
+                } else {
+                    sinks_[it.path].buf += it.line;  // 入 per-file 缓冲 (内存)
+                }
+            }
             const bool time_up = clock::now() - last_flush >= std::chrono::milliseconds(kFlushIntervalMs);
             for (auto& [path, sink] : sinks_) {
                 if (stopping || time_up || sink.buf.size() >= kFlushBytes) FlushSink_(path, sink);
             }
             if (time_up || stopping) last_flush = clock::now();
+            if (!batch.empty()) {  // Flush() 同步点: 标记本批已处理 (replace 已 rename 落盘; append 已入缓冲)
+                std::lock_guard<std::mutex> lk(mu_);
+                processed_ += static_cast<std::uint64_t>(batch.size());
+                flush_cv_.notify_all();
+            }
             if (stopping) break;  // stop: 本轮已 drain+flush batch, 退出
         }
         for (auto& [path, sink] : sinks_) {  // 终关: 兜底 flush + 关 handle
             FlushSink_(path, sink);
             if (sink.fp != nullptr) std::fclose(sink.fp);
         }
+    }
+
+    // 原子替换整文件 (writer 线程内): 写 .tmp + rename。tmp 复用 path+".tmp"。失败静默 (账本快照容忍单次丢失,
+    //   60s 后下次再写; 内存账本才是真值源)。
+    static void WriteFileAtomic_(const std::string& path, const std::string& content) {
+        const std::string tmp = path + ".tmp";
+        std::FILE* fp = std::fopen(tmp.c_str(), "w");
+        if (fp == nullptr) return;
+        std::fwrite(content.data(), 1, content.size(), fp);
+        std::fclose(fp);
+        std::rename(tmp.c_str(), path.c_str());
     }
 
     void FlushSink_(const std::string& path, Sink& sink) {
@@ -106,8 +156,11 @@ private:
 
     std::mutex mu_;
     std::condition_variable cv_;
+    std::condition_variable flush_cv_;       // Flush() 等此 cv; writer 处理完一批后 notify
     std::deque<Item> q_;
     bool stop_{false};
+    std::uint64_t enqueued_{0};              // 累计入队项数 (mu_ 保护); Flush() 的目标
+    std::uint64_t processed_{0};             // 累计已处理项数 (mu_ 保护); writer 每批后 +=
     std::atomic<std::uint64_t> dropped_{0};
     std::unordered_map<std::string, Sink> sinks_;  // 仅 writer 线程访问 (无需锁)
     std::thread th_;  // 末声明: 其他成员先就绪, 再启 writer 线程

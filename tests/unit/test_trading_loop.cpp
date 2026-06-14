@@ -2109,6 +2109,7 @@ TEST_F(TradingLoopTest, LP01_LedgerSnapshotRoundTrip) {
     const auto pos_a = position_ledger_->get_position("1001");
     ASSERT_TRUE(pos_a.has_value()) << "sharp 路径应建仓 (TS4 同款)";
     loop_->SaveLedgerSnapshot();
+    loop_->FlushJournals();  // 2026-06-14: 快照写已异步(甩 BackgroundWriter), 等其落盘再 Restore
 
     // 新实例 (模拟重启): 新 ledger + 新 loop, Restore 后持仓一致
     auto ledger_b = std::make_unique<stcpp::risk::PositionLedger>();
