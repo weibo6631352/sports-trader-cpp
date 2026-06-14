@@ -185,6 +185,7 @@ def main():
     # ============ B1 赢家 vs 输家 持仓轨迹画像 ============
     print("\n"+"-"*80)
     print("B1 赢家 vs 输家 持仓轨迹画像 (持有期均值; 看输家怎么退化、赢家怎么抖动守住)")
+    print("   注: '解读'列是【预期方向】; n 小时实际数据可能与之不符(如收敛率), 看大趋势别看个例; 速度类 e-4 量级需 n 够才有意义。")
     def agg(pset, fn):
         vals = [fn(p) for p in pset]; vals = [v for v in vals if v is not None]
         return sum(vals)/len(vals) if vals else None
@@ -255,6 +256,7 @@ def main():
     print("\n"+"-"*80)
     print("B2b 赢家×未来 结合: 在'水下但【仍是赢家】(held_fair≥0.5)'的仓里, 看【未来】信号能否分'守住 vs 退化'")
     print("   = 离场真判据: [赢家]说还是不是赢家 × [未来]说正朝哪变, 结合不混淆")
+    print("   注: 此处'仍是赢家'=持有期 held_fair≥0.5(实时身份); 与 B1/B2 的'最终赢家'(结算赢)定义不同, 故仓数可能不一致。")
     uw_pos = [p for p in positions if p["uw"]]
     still_win = [p for p in uw_pos if (pos_uw_mean(p,"held_fair") or 0) >= 0.5]  # 水下期均仍是赢家
     lost_stat = [p for p in uw_pos if 0 < (pos_uw_mean(p,"held_fair") or 0) < 0.5]  # 水下期已失赢家身份

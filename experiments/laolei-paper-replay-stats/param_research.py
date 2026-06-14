@@ -155,8 +155,10 @@ def main():
     settled = [u for u in universe if u["pnl"] is not None]
     print("=" * 78)
     print(f"参数研究 (老板「调参/发现新参数/挖获利模式」)  版本={ver or '全部'}")
-    print(f"决策全集: 进场 {len(ent)} (真实结局) + 被挡 {len(blk)} (反事实) = 已结算 {len(settled)} 个决策点")
+    print(f"决策全集: 进场 {len(ent)} (真实成交,真实结局) + 被挡 {len(blk)} (【反事实模拟】:假设当时入场) = 已结算 {len(settled)} 个决策点")
     print(f"settlements: 已解析 {len(outcome)} / 丢弃 {n_unres}")
+    print(f"⚠⚠ 口径警告: 下面 ①②③ 的 赢面/PnL 是【{len(settled)} 个决策点的混合统计(含 {len(blk)} 个反事实模拟)】,")
+    print(f"   不是 {len(ent)} 笔真实成交的账面战绩! 反事实有逆选偏差(被挡盘真入场更差)→ 当上界看, 别当真实盈亏。")
     if len(settled) < 12:
         print(f"⚠ 已结算决策点 {len(settled)} < 12 → 结论不可信, 仅演示能力。等大数据累积 (被挡盘是主力)。")
     print("=" * 78)
@@ -166,7 +168,7 @@ def main():
     wins = [u for u in settled if u["won"] == 1]
     loss = [u for u in settled if u["won"] == 0]
     base_wr = len(wins) / len(settled)
-    print(f"全集基准: 赢面 {len(wins)}/{len(settled)} = {100*base_wr:.0f}% | "
+    print(f"全集基准(含反事实,非真实账面): 赢面 {len(wins)}/{len(settled)} = {100*base_wr:.0f}% | "
           f"均PnL/股 {sum(u['pnl'] for u in settled)/len(settled):+.4f}")
 
     def feat_vals(rows, k):
@@ -179,7 +181,9 @@ def main():
     # ============ ① 赢家 vs 输家画像 + 判别力 → 候选新参数【假设清单】 ============
     print("\n" + "-" * 78)
     bonf = 0.05 / max(1, len(POOL))  # Bonferroni: 扫 len(POOL) 个因子, 校正后阈值
-    print(f"① 赢家 vs 输家画像 (判别力=|AUC−0.5|×2; p=Mann-Whitney两侧; ★=过Bonferroni p<{bonf:.4f} 的强候选)")
+    print(f"① 赢家 vs 输家画像 (判别力=|AUC−0.5|×2, 越大越能分输赢; p=Mann-Whitney两侧; ★=过Bonferroni p<{bonf:.4f} 强候选)")
+    print("   ★【赢均/输均 = 该因子本身在赢家/输家上的均值, 不是 PnL!】 例: [赢家]模型fair 赢均0.46 = 赢家进场时 fair 均值 0.46")
+    print("   '赢家低'= 赢的盘该因子反而更低(如 fair 低=被低估的便宜货才有 edge, 合理); '赢家高'反之。")
     print("   评审小蒋: 扫 27 因子=多重比较, 未校正的'判别≥0.3'在 n<100 时 30-50% 是噪声 → 只信过 Bonferroni 的;")
     print("   且这只是【假设清单】(生成待验, 非结论), 入参前必须 OOS 独立验证。")
     scored = []
