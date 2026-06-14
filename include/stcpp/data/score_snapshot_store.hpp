@@ -36,6 +36,7 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -129,9 +130,17 @@ public:
     // ------------------------------------------------------------------------
     [[nodiscard]] std::size_t Size() const noexcept;
 
+    // SetOnChange — 注册"赔率源内容变动"回调 (2026-06-14 老板「赔率源状态变动也该触发决策」)。
+    //   Publish 时若新 map 的内容签名 (比分+赔率+状态 core/status/period) 与上次不同 → 锁外调此回调
+    //   (上层接 TradingLoop::RequestTick(kOdds))。无变动 → 不调 (只更新 front_ 保新鲜)。
+    //   须在采集线程 Start() 前注册 (启动期单线程, 之后只读)。回调极快 (RequestTick <1us, R-12)。
+    void SetOnChange(std::function<void()> cb) { on_change_ = std::move(cb); }
+
 private:
     mutable std::mutex mu_;
     std::shared_ptr<const ScoreMap> front_;  // nullptr = 尚未 Publish
+    std::uint64_t last_sig_{0};              // 上次 Publish 的内容签名 (mu_ 下; 变动检测)
+    std::function<void()> on_change_;        // 内容变动回调 (Start 前设, 之后只读)
 };
 
 // ============================================================================

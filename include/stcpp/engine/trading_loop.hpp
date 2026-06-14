@@ -509,6 +509,18 @@ struct TradingLoopStats {
     TradingLoopStats& operator=(const TradingLoopStats&) = delete;
 };
 
+// 决策触发源 (2026-06-14 老板「触发要记录是谁触发的」): 哪个数据源的【变动】唤醒了本轮决策。
+//   位掩码累加 (一轮 tick 合并了多个源的触发 → 多 bit); 落 market_tape/fills 的 trig 字段供复盘。
+enum class TickSource : std::uint8_t {
+    kBookWss = 0,   // 订单簿 WSS 推送变动
+    kBookPoll = 1,  // 订单簿 149Hz 轮询变动
+    kOdds = 2,      // 赔率源变动 (比分/赔率/状态 stopped/blocked/finished/赛段)
+    kHeartbeat = 3  // 无源变动, fallback 心跳兜底跑的一轮 (tick_interval_ms)
+};
+[[nodiscard]] inline std::uint8_t TickSourceBit(TickSource s) noexcept {
+    return static_cast<std::uint8_t>(1u << static_cast<unsigned>(s));
+}
+
 // ---------------------------------------------------------------------------
 // TradingLoop — 最小 paper 交易循环
 // ---------------------------------------------------------------------------
@@ -625,6 +637,8 @@ public:
         double fair{0.0};              // 成交刻模型对【被交易边】的 fair (= p_fair_side, FILL 日志同源)
         int fair_src{0};               // 成交刻 fair 选源 (账单「说清用 sharp/赔率源/比分源」, 2026-06-14 老板):
                                        //   pricing::FairSrc 序数 0=market_devig/1=derivative/2=sharp_inplay/3=score_prior_blend
+        int trig{0};                   // 触发本笔决策的源位掩码 (2026-06-14 老板「记录是谁触发的」):
+                                       //   bit0=book WSS | bit1=book 149Hz轮询 | bit2=赔率源 | bit3=心跳
         double mark{0.0};              // 成交刻市场 mark price
         double fee{0.0};               // 本笔手续费 (老板 2026-06-09「手续费逐笔体现」): size×fee_coef×p×(1−p)
         std::string exit_reason;       // 卖出原因 (2026-06-10 老板「出现卖出就检查是否合理」): rel_stop/vel_exit/
@@ -808,12 +822,15 @@ public:
     //   RecoverMissedFill 补记 (2026-06-13 删自校验死锁闸 → 不再要求"先匹配过"; 去重靠 trade_id + order_id)。
     void SetUserFillFeed(polymarket::LiveUserFillFeed* feed) noexcept { user_fill_feed_ = feed; }
 
-    // 事件驱动触发 (2026-06-04 老板「别轮询, 直接触发更快」): 数据源 (WSS book / 149hz poll / 赔率) 到达即调。
-    //   仅短锁 + notify (R-12 安全, 调用线程<1us 不阻塞); loop_thread_ 等 cv 醒来即跑一轮决策 (单写, 无 ledger 竞争)。
-    void RequestTick() noexcept {
+    // 事件驱动触发 (2026-06-04 老板「别轮询, 直接触发更快」+ 2026-06-14「触发=变动 + 记录是谁触发」):
+    //   数据源【内容真变动】时调 (book WSS / 149hz poll / 赔率源状态)。仅短锁 + notify (R-12 安全, 调用线程
+    //   <1us 不阻塞); loop_thread_ 等 cv 醒来即跑一轮决策。src 累加进 pending_trig_mask_ (合并多源 → 多 bit),
+    //   RunLoop 消费时快照给 cur_tick_trig_ → 落 market_tape/fills 的 trig (复盘「这轮决策谁触发的」)。
+    void RequestTick(TickSource src) noexcept {
         {
             std::lock_guard<std::mutex> lk(tick_mu_);
             tick_pending_ = true;
+            pending_trig_mask_ |= TickSourceBit(src);
         }
         tick_cv_.notify_one();
     }
@@ -1070,6 +1087,8 @@ private:
     std::mutex tick_mu_;
     std::condition_variable tick_cv_;
     bool tick_pending_{false};
+    std::uint8_t pending_trig_mask_{0};  // 触发源累加位掩码 (tick_mu_ 下; RequestTick 置位, RunLoop 消费快照清零)
+    std::uint8_t cur_tick_trig_{0};      // 本轮 tick 的触发源快照 (loop_thread_ only; 落 tape/fills 的 trig)
 
     // ---- 统计 ----
     mutable TradingLoopStats stats_;

@@ -957,6 +957,11 @@ BuildResult TraderDaemon::Build() {
                                                      token_map_, cfg_.trading_loop);
     // A1b: 注入真实比分源 (Start 前; 之后 loop_thread_ 只读). 映射由刷新线程 SetEventMapping.
     trading_loop_->SetScoreStore(score_store_.get());
+    // 赔率源变动触发决策 (2026-06-14 老板「赔率源状态变动也该触发」): 比分/赔率/状态(停表/封盘/完赛)任一变 →
+    //   ScoreSnapshotStore::Publish 检测到内容变 → 此回调 → RequestTick(kOdds)。Start 前注册 (之后只读)。
+    score_store_->SetOnChange([this]() {
+        if (trading_loop_) trading_loop_->RequestTick(engine::TickSource::kOdds);
+    });
 
     // (大模型 ONNX 推理装配已砍 2026-06-05「砍掉大模型训练功能」: 原 make_onnx_fair_value_model /
     //  StubFairValueModel / SetMlModelShared。fair_value 由 paper_fv_model_ baseline (score-prior 统计)
@@ -1281,11 +1286,13 @@ BuildResult TraderDaemon::Build() {
     //   R-6: 周期重发现开启时, 即便 0 起始 token 也构造 WSS (连上等重发现订阅; 否则 live 比赛来了无处订)。
     if (!all_token_ids_.empty() || cfg_.rediscover_interval_sec > 0) {
         live_publisher_ = std::make_unique<polymarket::clob_wss::LiveBookPublisher>(*hub_, all_token_ids_, cfg_.verbose);
-        // 事件驱动 (2026-06-04 老板「别轮询直接触发」): book 落 hub 即唤醒决策。WSS frame + 149hz poll
-        //   都经 publisher → Publish → 此回调 → RequestTick (短锁+notify, R-12 安全, 不阻塞数据线程)。
+        // 事件驱动 (2026-06-04「别轮询直接触发」+ 2026-06-14「触发=变动 + 记录是谁触发」): book 内容【变动】才
+        //   唤醒决策 (变动检测在 publisher 内)。from_rest 区分触发源: false=WSS 推送 / true=149hz REST 轮询。
         if (trading_loop_) {
-            live_publisher_->SetOnPublish(
-                [this](const std::string& /*token_id*/) { trading_loop_->RequestTick(); });
+            live_publisher_->SetOnPublish([this](const std::string& /*token_id*/, bool from_rest) {
+                trading_loop_->RequestTick(from_rest ? engine::TickSource::kBookPoll
+                                                     : engine::TickSource::kBookWss);
+            });
         }
         live_transport_ = std::make_unique<polymarket::clob_wss::LiveWssTransport>(cfg_.verbose);
 

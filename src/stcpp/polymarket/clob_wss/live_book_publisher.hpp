@@ -84,7 +84,8 @@ public:
     // 事件驱动 hook (2026-06-04 老板「别轮询直接触发」): 每次 hub.Publish 后回调(token_id)。
     //   TradingLoop 注册 → RequestTick() 即时唤醒决策。WSS io_thread_ + 149hz poll 线程都经此 Publish → 都触发。
     //   R-12: 回调须极快 (TradingLoop::RequestTick 仅短锁 + cv.notify, <1us); 绝不在此做重活/阻塞 IO。
-    void SetOnPublish(std::function<void(const std::string&)> cb) { on_publish_ = std::move(cb); }
+    // 回调 (token_id, from_rest): from_rest=false WSS 推送变动 / true 149hz REST 轮询变动 (2026-06-14 老板「记录是谁触发的」)。
+    void SetOnPublish(std::function<void(const std::string&, bool)> cb) { on_publish_ = std::move(cb); }
 
     // -----------------------------------------------------------------------
     // OnFrame — called by io_thread_ on each received WSS text frame
@@ -313,11 +314,18 @@ private:
             feat.trade_intensity_5m = tm.intensity;
         }
 
-        // hub.Publish (even if !valid, so hub knows the token exists with invalid state)
+        // 变动检测 (2026-06-14 老板「触发=变动, 没变也要更新保新鲜」): 比 hub 当前已存的同 token 簿。
+        //   用 hub_.Read (R-12 原子) 当"上次", 不引入新的跨线程 map (WSS io_thread + 149hz poll 线程都走本路径)。
+        //   读 prev 必须在 Publish 之前 (否则 prev==feat)。竞态下偶尔多触发=无害 (多醒一轮决策, 不漏)。
+        const auto prev = hub_.Read(token_id);
+        const bool book_changed =
+            !prev.has_value() || !prev->valid || (BookSig(*prev) != BookSig(feat));
+        // hub.Publish 一律执行 (even if !valid / 没变): 刷新鲜度 (staleness 门/正在比赛闸靠 data_source_ts; 老板)。
         hub_.Publish(token_id, feat);
         books_published_.fetch_add(1, std::memory_order_relaxed);
-        // 事件驱动: book 落 hub 即通知 TradingLoop 即时决策 (老板「别轮询直接触发」)。R-12: 回调极快。
-        if (on_publish_) on_publish_(token_id);
+        // 事件驱动: 只有 book 内容【真变动】才通知 TradingLoop 决策 (老板「触发=变动」)。R-12: 回调极快。
+        //   from_rest 区分触发源: false=WSS 推送 / true=149hz REST 轮询 → 上层映射 TickSource::kBookWss/kBookPoll。
+        if (book_changed && on_publish_) on_publish_(token_id, from_rest);
 
         if (verbose_) {
             std::fprintf(stderr, "[live_pub] Publish token=%.40s bid=%.4f ask=%.4f ts_ms=%lld\n",
@@ -601,7 +609,22 @@ private:
     // Data members
     // -----------------------------------------------------------------------
     OrderBookSnapshotHub& hub_;
-    std::function<void(const std::string&)> on_publish_;  // 事件驱动: Publish 后通知 (TradingLoop::RequestTick)
+    std::function<void(const std::string&, bool)> on_publish_;  // 事件驱动: book【变动】后通知(token, from_rest) → RequestTick
+
+    // BookSig — 订单簿内容签名 (2026-06-14「触发=变动」): L1-L5 价/量 + valid 的 FNV-1a 哈希。
+    //   同 token 两次签名相同 = 簿没变 → 不触发决策 (只刷新鲜度)。纯函数, 无状态, 线程安全。
+    static std::uint64_t BookSig(const OrderBookFeatures& f) noexcept {
+        std::uint64_t h = 1469598103934665603ULL;  // FNV-1a 64 offset
+        const std::hash<double> hd{};
+        auto mix = [&h, &hd](double v) { h = (h ^ hd(v)) * 1099511628211ULL; };
+        for (std::size_t i = 0; i < f.bids.size(); ++i) {
+            mix(f.bids[i].price);
+            mix(f.bids[i].size_usdc);
+            mix(f.asks[i].price);
+            mix(f.asks[i].size_usdc);
+        }
+        return h ^ static_cast<std::uint64_t>(f.valid ? 1 : 0);
+    }
     std::vector<std::string> subscribed_tokens_;
     bool verbose_;
 

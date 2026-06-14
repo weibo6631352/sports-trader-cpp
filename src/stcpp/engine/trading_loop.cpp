@@ -288,9 +288,9 @@ void TradingLoop::RunLoop(std::stop_token st) {
                          rows.size());
         }
 
-        // 事件驱动等待 (2026-06-04 老板「别轮询, 直接触发更快」): 不再定时 sleep, 改等 cv ——
-        //   数据源 (WSS book / 149hz poll / 赔率) 到达即 RequestTick() notify → 立即醒来跑下一轮决策。
-        //   tick_interval_ms 退化为【fallback 心跳】上限 (无数据时也定期跑一轮: staleness/结算/feed-liveness)。
+        // 事件驱动等待 (2026-06-04 老板「别轮询, 直接触发更快」+ 2026-06-14「触发=变动」): 不定时 sleep, 等 cv ——
+        //   任一数据源【内容真变动】(WSS book / 149hz poll / 赔率源状态) → RequestTick(src) notify → 立即醒来跑一轮。
+        //   无变动的重复到达不触发 (省空转); tick_interval_ms 退化为【fallback 心跳】上限 (无变动也定期跑: staleness/结算)。
         //   R-12: 仅 loop_thread_ 阻塞在 cv (非 WSS io_thread); 数据线程 notify 不阻塞。
         {
             const auto fallback = std::chrono::milliseconds(cfg_.tick_interval_ms);
@@ -299,7 +299,10 @@ void TradingLoop::RunLoop(std::stop_token st) {
                 return tick_pending_ || st.stop_requested() ||
                        stop_requested_.load(std::memory_order_acquire);
             });
-            tick_pending_ = false;  // 消费触发标志 (本轮 TickAll 已覆盖到达的更新)
+            // 触发源快照 (老板「记录是谁触发的」): 有 pending → 累加的源掩码; 否则 = fallback 心跳醒。供下一轮 TickAll 落 trig。
+            cur_tick_trig_ = tick_pending_ ? pending_trig_mask_ : TickSourceBit(TickSource::kHeartbeat);
+            tick_pending_ = false;       // 消费触发标志 (本轮 TickAll 已覆盖到达的更新)
+            pending_trig_mask_ = 0;      // 清零累加掩码 (下一批变动重新累加)
         }
     }
 }
@@ -347,7 +350,7 @@ void TradingLoop::JournalFill(const FillRow& fr) {
             "{\"ts\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"yes\":%d,\"buy\":%d,\"close\":%d,\"px\":%.6f,"
             "\"qty\":%.4f,\"realized\":%.4f,\"fair\":%.4f,\"mark\":%.4f,\"fee\":%.5f,"
             "\"exit\":\"%s\",\"engine\":\"%s\","
-            "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f,\"fsrc\":\"%s\"",
+            "\"sport\":\"%s\",\"league\":%d,\"mkt\":\"%s\",\"line\":%.2f,\"fsrc\":\"%s\",\"trig\":%d",
             static_cast<long long>(fr.as_of_ts_ns), fr.condition_id.c_str(), fr.token_id.c_str(),
             fr.is_yes ? 1 : 0, fr.is_buy ? 1 : 0, fr.is_close ? 1 : 0, fr.price, fr.size_usdc, fr.realized,
             // NaN 防呆 (2026-06-14 review): mark=microprice?:mid 退化簿下可 NaN → "%.4f" 打出 "nan" = 非法
@@ -356,7 +359,8 @@ void TradingLoop::JournalFill(const FillRow& fr) {
             fr.exit_reason.c_str(), fr.engine.c_str(), fam, static_cast<int>(cat.league_id), mt,
             std::isfinite(cat.line) ? cat.line : -1.0,
             // 账单 fair 选源 (2026-06-14 老板「说清用 sharp/赔率源/比分源」): 序数→名 (买入行有意义; 平/结算行=进场时源)
-            pricing::to_string(static_cast<pricing::FairSrc>(fr.fair_src)));
+            pricing::to_string(static_cast<pricing::FairSrc>(fr.fair_src)),
+            fr.trig);  // 触发本决策的源位掩码 (老板「记录是谁触发的」)
         if (n > 0)
             out.append(buf, static_cast<std::size_t>(n < static_cast<int>(sizeof(buf)) ? n
                                                                                        : static_cast<int>(sizeof(buf)) - 1));
@@ -2518,6 +2522,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
                     ctx.g_period = ectx->g_period;
                     ctx.fair_src = ectx->fair_src;  // 账单 fsrc (pending live 单: WSS CONFIRMED 时富化入账)
                 }
+                ctx.trig = static_cast<int>(cur_tick_trig_);  // 账单 trig (触发本决策的源; pending live 单)
                 std::string oid(fill.order_id.data());
                 if (pending_fill_ctx_.emplace(oid, std::move(ctx)).second) {
                     pending_fill_fifo_.push_back(oid);
@@ -2647,6 +2652,7 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
             fr.g_period = ectx->g_period;
             fr.fair_src = ectx->fair_src;  // 账单 fsrc「说清用 sharp/赔率源/比分源」(2026-06-14 老板)
         }
+        fr.trig = static_cast<int>(cur_tick_trig_);  // 账单 trig「记录是谁触发的」(本笔决策的触发源掩码)
         fr.cash_avail = tick_equity_.cash_available;                          // 入场账本快照 (2026-06-14)
         fr.n_open = static_cast<double>(tick_equity_.open_positions);
         fr.m_dd = dd_mult_;
@@ -3110,13 +3116,13 @@ void TradingLoop::MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
         "\"bvalid\":%d,\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"micro\":%.4f,\"spread\":%.4f,\"imb\":%.4f,"
         "\"b1sz\":%.1f,\"a1sz\":%.1f,\"bd5\":%.1f,\"ad5\":%.1f,\"bk_age_ms\":%.0f,"
         "\"ofi\":%.6g,\"rvol\":%.6g,\"mom5\":%.6g,\"g_remain\":%.0f,\"g_sdiff\":%.0f,\"g_period\":%.0f,\"g_age_ms\":%.0f,"
-        "\"fair\":%.4f,\"fsrc\":\"%s\",\"core\":%d,\"held\":%d}\n",
+        "\"fair\":%.4f,\"fsrc\":\"%s\",\"core\":%d,\"held\":%d,\"trig\":%d}\n",
         static_cast<long long>(now), cond.c_str(), yes_tok.c_str(), static_cast<int>(mc.sport_family_id),
         static_cast<int>(mc.market_type_id), nf(mc.volume_24h), nf(mc.liquidity),
         nf(sharp), nf(sh_vel), nf(sh_conv), nf(sh_vol), nf(sh_age_ms),
         bvalid ? 1 : 0, nf(bid), nf(ask), nf(mid), nf(micro), nf(spread), nf(imb), nf(b1), nf(a1), nf(bd5), nf(ad5),
         nf(bk_age), nf(ofi), nf(rvol), nf(mom5), nf(g_remain), nf(g_sdiff), nf(g_period), nf(g_age),
-        nf(p_fair), pricing::to_string(fair_src), static_cast<int>(core), held);
+        nf(p_fair), pricing::to_string(fair_src), static_cast<int>(core), held, static_cast<int>(cur_tick_trig_));
     if (n > 0)
         journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(
             n < static_cast<int>(sizeof(buf)) ? n : static_cast<int>(sizeof(buf)) - 1)));
