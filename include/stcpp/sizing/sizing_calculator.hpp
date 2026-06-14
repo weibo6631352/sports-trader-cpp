@@ -138,7 +138,10 @@ inline constexpr double kMaxBankrollFraction = 0.10;  // 单注 ≤ 10% bankroll
 // λ_base: 2026-06-09 专家组(金融小梁)裁决 0.35→0.25 —— edge 真伪未由 CLV 确认期间的 estimation-risk
 //   haircut: Kelly 增长率对 edge 估计极敏感, 高估会致负增长。验证期(降阈试 2-5% bucket)用小仓限噪声损失
 //   (老板「不放大风险」)。CLV 实测确认 edge≥4% 后再回 0.35。原 0.35(老板 2026-06-01); 更原 0.25 quarter。
-inline constexpr double kLambdaBase = 0.25;
+// 2026-06-15 恢复 0.25→0.35 (老板 +$300 自主授权 + 验证条件已满足): CLV 实测正(首批 10/10 +0.289)+
+//   moneyline 真实 realized net +12.57(15 平仓, 胜率 80%, 反事实 +0.075/股 n=25) = edge 已确认 → 执行
+//   文档既定的 λ 恢复 (非投机: 是把已验证的 +EV 按计划 size 回正常水位)。单注仍受 kMaxBankrollFraction 0.10 兜底。
+inline constexpr double kLambdaBase = 0.35;
 
 // fee 率同源常量 (与 RM risk_gateway.cpp kSportsTakerFeeRate 同值; 防自定义漂移)
 // 若此常量与 RM 同 TU 共享则引用同一 header (老周/老沈 跨 TU 提公共 header 时更新)
