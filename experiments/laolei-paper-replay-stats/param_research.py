@@ -292,6 +292,18 @@ def main():
     print("   '赢家低'(IC<0)= 赢的盘该因子反而更低(如 fair 低=被低估的便宜货才有 edge, 合理); '赢家高'(IC>0)反之。")
     print("   量化评审: 用 BH-FDR(q<5%)替 Bonferroni(27因子相关→Bonf过杀); IC 是量化标准语言(可跨因子/跨时间比+可合成)。")
     print("   仍是【假设清单】非结论, 入参前须 OOS 独立验证。")
+    # 伪重复校正 (2026-06-14 实测踩坑, 老板「不合理就改」): 决策点严重聚簇于少数结算盘
+    #   (同cond多决策共享同结局 + cond级因子如24h量/liq/vol是【盘级常量】) → 决策级 n 远高估有效样本。
+    #   实测 125决策点仅摊在 4个独立结算盘 → 把4个值当125独立点, 盘级常量因子必假阳性"过FDR"。
+    #   修: p/FDR 按【独立结算盘数】的有效n算 (设计效应保守近似: 决策计数按盘/决策比例缩, 至少各1)。
+    n_mkt = len(set(u["f"].get("cond") for u in settled if u["f"].get("cond")))
+    n_dec = len(settled)
+    def eff_p(au, nw, nl):
+        if n_dec <= 0 or n_mkt <= 0: return auc_p(au, nw, nl)
+        scale = n_mkt / n_dec
+        return auc_p(au, max(1, int(round(nw*scale))), max(1, int(round(nl*scale))))
+    print(f"   ⚠ 伪重复校正: 决策population {n_dec}点仅 {n_mkt}个独立结算盘 → p/FDR 按有效n={n_mkt}盘算(非{n_dec}点);"
+          f" {'有效n太小→几乎不可能过FDR(诚实)' if n_mkt < 12 else ''}")
     scored = []
     for k in POOL:
         wv = feat_vals(wins, k); lv = feat_vals(loss, k)
@@ -302,8 +314,8 @@ def main():
         wm = sum(wv)/len(wv); lm = sum(lv)/len(lv)
         scored.append((disc, k, au, wm, lm, len(wv), len(lv), quart(wv), quart(lv)))
     scored.sort(reverse=True)
-    # BH-FDR (Benjamini-Hochberg, q<5%): 比 Bonferroni 少过杀 (量化大师建议)
-    ps = sorted([(auc_p(au,nw,nl), k) for d,k,au,wm,lm,nw,nl,wq,lq in scored])
+    # BH-FDR (Benjamini-Hochberg, q<5%): 比 Bonferroni 少过杀 (量化大师建议); p 用伪重复校正的 eff_p
+    ps = sorted([(eff_p(au,nw,nl), k) for d,k,au,wm,lm,nw,nl,wq,lq in scored])
     m = len(ps); fdr_pass = set()
     for rank, (p, k) in enumerate(ps, 1):
         if p <= (rank/m)*0.05: fdr_pass = set(kk for _, kk in ps[:rank])  # 最大通过秩
@@ -312,19 +324,21 @@ def main():
     print("   信号族(老板「标清意义,结合用」): [赢家]终局胜负 | [未来]动态方向(对预测赢家也有用) | [窗口]剩余时间 | [执行]成本/新鲜度")
     print("   列: IC(signed) | p | 赢家[p25/中位/p75] vs 输家[p25/中位/p75] (分布非只均值)")
     for disc, k, au, wm, lm, nw, nl, wq, lq in scored:
-        p = auc_p(au, nw, nl); ic = 2*au - 1  # signed RankIC
+        p = eff_p(au, nw, nl); ic = 2*au - 1  # signed RankIC; p 已伪重复校正(按独立盘有效n)
         strong = (k not in GATED) and (k in fdr_pass)
         arrow = "赢家高" if au > 0.5 else "赢家低"
         tag = "  ★强候选(过FDR)" if strong else ("  ·候选·未过FDR(仅假设)" if k not in GATED and p < 0.05 else "")
         wqs = f"[{wq[0]:+.3g}/{wq[1]:+.3g}/{wq[2]:+.3g}]" if wq[0] is not None else "—"
         lqs = f"[{lq[0]:+.3g}/{lq[1]:+.3g}/{lq[2]:+.3g}]" if lq[0] is not None else "—"
-        print(f"  [{fam(k)}] {lab(k):<10} IC{ic:+.2f} ({arrow}) p={p:.3f} n{nw}/{nl} | 赢{wqs} vs 输{lqs}{tag}")
+        print(f"  [{fam(k)}] {lab(k):<10} IC{ic:+.2f} ({arrow}) p={p:.3f}(eff_n={n_mkt}盘) n决策{nw}/{nl} | 赢{wqs} vs 输{lqs}{tag}")
     cands = [k for d,k,au,wm,lm,nw,nl,wq,lq in scored if k not in GATED and k in fdr_pass]
     print(f"  → ★强候选假设 (过BH-FDR q<5%, 仍需OOS验证): {', '.join(lab(k) for k in cands) if cands else '暂无(n不够/信号弱)'}")
+    J["effective_n_markets"] = n_mkt  # 伪重复校正: p/FDR 的真实有效n=独立结算盘数, 非决策点数
     J["factors"] = [{"key": k, "label": lab(k), "family": fam(k), "gated": k in GATED,
-                     "ic_rank": round(2*au-1,4), "disc": round(disc,4), "auc": round(au,4), "p": round(auc_p(au,nw,nl),4),
+                     "ic_rank": round(2*au-1,4), "disc": round(disc,4), "auc": round(au,4),
+                     "p_cluster_adj": round(eff_p(au,nw,nl),4), "p_naive_decision": round(auc_p(au,nw,nl),4),
                      "direction": "winner_high" if au>0.5 else "winner_low",
-                     "n_win": nw, "n_loss": nl, "win_p25_med_p75": [wq[0],wq[1],wq[2]],
+                     "n_win": nw, "n_loss": nl, "n_eff_markets": n_mkt, "win_p25_med_p75": [wq[0],wq[1],wq[2]],
                      "loss_p25_med_p75": [lq[0],lq[1],lq[2]],
                      "fdr_strong": (k not in GATED) and (k in fdr_pass)}
                     for disc,k,au,wm,lm,nw,nl,wq,lq in scored]
