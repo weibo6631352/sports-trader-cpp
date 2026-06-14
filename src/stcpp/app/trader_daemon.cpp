@@ -874,7 +874,11 @@ BuildResult TraderDaemon::Build() {
     //   配 λ haircut 0.25(小仓限噪声损失)。【验证假设】2.5-5% bucket 是否 +EV (by-(fair−fill_px)分桶看胜率/净)。
     //   42 万回测只验过 ≥5%(77%); <5% 待实测。某桶 -EV(博彩老张警告的逆选噪声)→ 提阈回该桶上沿。
     // 2026-06-09 策略会 (老姜): 收紧入场, 0.025→0.03 (多点 cushion 抗 fair 漂移; 老姜「先 0.03 别一步到 0.04 starve」).
-    cfg_.trading_loop.sharp_only_min_edge = 0.03;
+    // 2026-06-14 老板拍板 0.03→0.015 (砍半): gate-efficacy 显示 sharp_gap_low 挡了 107 个赢面 78% 盘(would-PnL
+    //   +0.056/股, 但反事实有逆选偏差); 出单率仅 3.7% 累积慢。放进 1.5-3pp 边际盘 = 既加速攒数据, 又【实测】
+    //   这批盘真实 realized PnL 以解反事实偏差(光看被挡盘永远判不清门紧不紧)。留 1.5pp 地板不裸奔。
+    //   可追溯: version 行记录此值, 改前(0.03)/改后(0.015)数据按 git 版本切开, 量化组据此评估是否再调。
+    cfg_.trading_loop.sharp_only_min_edge = 0.015;
     // sharp 偏离上界 (2026-06-04 老板「这个差的太多了」): >15pt 的 sharp-市场 gap 判为滞后/错配假信号,
     //   不产单 (实测快变盘 CS2/网球 sharp 滞后 2.3s 造 20-26pt 假 gap → 逆市场正确移动下单必亏)。
     cfg_.trading_loop.sharp_max_gap = 0.15;
