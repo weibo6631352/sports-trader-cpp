@@ -607,48 +607,42 @@ void TraderDaemon::WssWatchdogLoop(std::stop_token st, std::string url) {
     };
     sleep_steps(30);  // 给初次连接 ~3s 建立再监测
     auto last_ping = steady_clock::now();
-    int backoff_sec = 1;
-    // A2 半死检测: 跟踪收帧进度。连着且发了 PING 却长时间无任何帧(含 PONG/book)→ 连接半死
-    //   (TCP 没断但服务端静默, IsConnected() 仍 true) → 主动 Close 触发重连。
+    // A2 半死/断线检测 + (B) 2026-06-14 老板「砍自动恢复, 留保活, 真死响亮报警让它躺着, 起码能知道」:
+    //   只发 PING 保活 (健康连接维护, 非自动恢复) + 检测死/半死并【大声报一次】, 但【绝不自动重连】——
+    //   自动恢复会把真 bug (我们 WSS 处理卡死/半死) 默默盖住; 让 WSS 真死了就躺着, 一眼知道去查根因。
+    //   book 数据有 149Hz 轮询独立兜底, WSS 死了是降级不是断粮。(url 参数保留: 初次连接在 Step 4; 此处不再连。)
+    (void)url;
     std::uint64_t last_frames = (live_publisher_ ? live_publisher_->frames_received() : 0);
     auto last_progress = steady_clock::now();
     constexpr auto kSilentTimeout = seconds(35);  // > 心跳 10s × 3, 留足 PONG 往返
+    bool reported_dead = false;  // 只报一次防刷屏; 帧恢复则复位
     while (!st.stop_requested()) {
         if (live_transport_->IsConnected()) {
-            backoff_sec = 1;
             if (steady_clock::now() - last_ping >= seconds(10)) {
-                live_transport_->AsyncSendText("PING");  // 心跳: 防 idle 超时被踢 (真因)
+                live_transport_->AsyncSendText("PING");  // 保活: 防 idle 超时被踢 (协议维护, 非重启)
                 last_ping = steady_clock::now();
             }
-            // A2: 收帧进度检测
             const std::uint64_t frames_now = (live_publisher_ ? live_publisher_->frames_received() : last_frames);
             if (frames_now != last_frames) {
                 last_frames = frames_now;
                 last_progress = steady_clock::now();
-            } else if (steady_clock::now() - last_progress >= kSilentTimeout) {
+                reported_dead = false;  // 帧恢复 → 允许下次再报
+            } else if (!reported_dead && steady_clock::now() - last_progress >= kSilentTimeout) {
                 std::fprintf(stderr,
-                             "[trader_daemon] WSS 半死 (≥%llds 无帧响应, 服务端静默), 主动 Close 触发重连\n",
+                             "[trader_daemon] ⚠⚠ WSS 半死 (≥%llds 无帧, 服务端静默) — 【不自动重连】(老板「让它躺着,"
+                             " 起码能知道」); 簿走 149Hz 轮询兜底, 查清根因后手动重启进程\n",
                              static_cast<long long>(duration_cast<seconds>(kSilentTimeout).count()));
                 std::fflush(stderr);
-                live_transport_->Close();  // → 下一轮 IsConnected()==false → 走重连
-                last_progress = steady_clock::now();  // 防连环 Close
+                reported_dead = true;
             }
-            sleep_steps(10);  // 1s 检查间隔
-        } else {
-            std::fprintf(stderr, "[trader_daemon] WSS 断开, %ds 后重连 (idle/网络/半死)...\n", backoff_sec);
+        } else if (!reported_dead) {
+            std::fprintf(stderr,
+                         "[trader_daemon] ⚠⚠ WSS 断开 — 【不自动重连】(老板「让它躺着, 起码能知道」); "
+                         "簿走 149Hz 轮询兜底, 查清根因后手动重启进程\n");
             std::fflush(stderr);
-            sleep_steps(backoff_sec * 10);
-            if (st.stop_requested())
-                break;
-            live_transport_->AsyncConnect(url);  // OnConnected 回调用 token 快照重发 subscribe
-            wss_reconnect_total_.fetch_add(1, std::memory_order_relaxed);  // A4: 重连计数 → /metrics
-            // 重连后台重 seed (books 重新打底; 复用初次 seed 逻辑, 不阻塞看门狗)
-            seed_thread_ = std::jthread([this](std::stop_token s) { SeedInitialBooksFromRest(s); });
-            last_ping = steady_clock::now();
-            last_progress = steady_clock::now();  // 重连后重置进度基线
-            last_frames = (live_publisher_ ? live_publisher_->frames_received() : 0);
-            backoff_sec = std::min(backoff_sec * 2, 30);  // 指数退避封顶 30s
+            reported_dead = true;
         }
+        sleep_steps(10);  // 1s 检查间隔 (仍循环以响应 stop + 帧恢复复位; 但绝不 AsyncConnect/Close 重连)
     }
 }
 
@@ -664,41 +658,39 @@ void TraderDaemon::UserFillWatchdogLoop(std::stop_token st) {
     };
     sleep_steps(30);  // 给初连 ~3s
     auto last_ping = steady_clock::now();
-    int backoff_sec = 1;
+    // (B) 2026-06-14 老板「砍自动恢复, 留保活, 真死响亮报警让它躺着」: 只 PING 保活 + 死/半死大声报一次,
+    //   【绝不 Reconnect】—— 自动重连会盖住真问题。user 频道是 live 真钱入账通道, 它死了【必须人知道去查】,
+    //   不能默默重连假装没事 (重连可能漏成交/重复入账)。初连在 Start; 此处不再连。
     std::int64_t last_msg = user_fill_feed_->last_msg_ts_ns();
     auto last_progress = steady_clock::now();
     constexpr auto kSilentTimeout = seconds(35);
+    bool reported_dead = false;
     while (!st.stop_requested()) {
         if (user_fill_feed_->connected()) {
-            backoff_sec = 1;
             if (steady_clock::now() - last_ping >= seconds(10)) {
-                user_fill_feed_->Ping();  // 心跳: user 频道静默不等于健康 (spec §5)
+                user_fill_feed_->Ping();  // 保活: user 频道静默不等于健康 (spec §5)
                 last_ping = steady_clock::now();
             }
             const std::int64_t msg_now = user_fill_feed_->last_msg_ts_ns();
             if (msg_now != last_msg) {
                 last_msg = msg_now;
                 last_progress = steady_clock::now();
-            } else if (steady_clock::now() - last_progress >= kSilentTimeout) {
-                std::fprintf(stderr, "[trader_daemon] [live] user 频道半死 (≥35s 无帧含 PONG), 重连\n");
+                reported_dead = false;
+            } else if (!reported_dead && steady_clock::now() - last_progress >= kSilentTimeout) {
+                std::fprintf(stderr,
+                             "[trader_daemon] ⚠⚠ [live] user 成交频道半死 (≥35s 无帧含 PONG) — 【不自动重连】"
+                             "(老板「让它躺着, 起码能知道」); 真钱入账通道死了, 立即查根因并手动重启进程\n");
                 std::fflush(stderr);
-                user_fill_feed_->Reconnect();
-                last_progress = steady_clock::now();
-                last_ping = steady_clock::now();
+                reported_dead = true;
             }
-            sleep_steps(10);
-        } else {
-            std::fprintf(stderr, "[trader_daemon] [live] user 频道断开, %ds 后重连...\n", backoff_sec);
+        } else if (!reported_dead) {
+            std::fprintf(stderr,
+                         "[trader_daemon] ⚠⚠ [live] user 成交频道断开 — 【不自动重连】(老板「让它躺着, 起码能知道」); "
+                         "真钱入账通道死了, 立即查根因并手动重启进程\n");
             std::fflush(stderr);
-            sleep_steps(backoff_sec * 10);
-            if (st.stop_requested())
-                break;
-            user_fill_feed_->Reconnect();  // OnConnected 重发 subscribe (含 auth + 全部 condition)
-            last_ping = steady_clock::now();
-            last_progress = steady_clock::now();
-            last_msg = user_fill_feed_->last_msg_ts_ns();
-            backoff_sec = std::min(backoff_sec * 2, 30);
+            reported_dead = true;
         }
+        sleep_steps(10);  // 1s 检查 (响应 stop + 帧恢复复位; 绝不 Reconnect)
     }
 }
 
