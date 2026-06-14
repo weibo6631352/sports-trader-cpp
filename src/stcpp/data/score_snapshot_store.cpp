@@ -28,7 +28,8 @@ namespace {
         std::uint64_t h = 1469598103934665603ULL;  // FNV-1a 64 offset
         auto mix = [&h](std::uint64_t v) { h = (h ^ v) * 1099511628211ULL; };
         mix(hs(k));
-        mix(static_cast<std::uint64_t>(es.home_score) * 2654435761ULL + static_cast<std::uint64_t>(es.away_score));
+        mix(static_cast<std::uint64_t>(es.home_score));  // 分开 mix (避免 uint64_t*ULL 在 Linux 产 sign-conversion)
+        mix(static_cast<std::uint64_t>(es.away_score));
         mix(hd(es.inplay_bet365_home_fair));
         mix(hd(es.inplay_bet365_away_fair));
         mix(hd(es.inplay_bet365_draw_fair));

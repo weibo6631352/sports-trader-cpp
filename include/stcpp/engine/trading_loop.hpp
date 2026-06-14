@@ -841,7 +841,7 @@ public:
         {
             std::lock_guard<std::mutex> lk(tick_mu_);
             tick_pending_ = true;
-            pending_trig_mask_ |= TickSourceBit(src);
+            pending_trig_mask_ = static_cast<std::uint8_t>(pending_trig_mask_ | TickSourceBit(src));
         }
         tick_cv_.notify_one();
     }

@@ -2056,8 +2056,9 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     ectx.g_home = static_cast<double>(game_row.score_home_total);
     ectx.g_away = static_cast<double>(game_row.score_away_total);
     if (game_row.period >= 1 && game_row.period <= game_row.score_home_periods.size()) {  // 当前盘/节内比分 (越界保护)
-        ectx.g_hcur = static_cast<double>(game_row.score_home_periods[game_row.period - 1]);
-        ectx.g_acur = static_cast<double>(game_row.score_away_periods[game_row.period - 1]);
+        const std::size_t pi = static_cast<std::size_t>(game_row.period) - 1;  // size_t 索引 (避免 int→size_t sign-conv)
+        ectx.g_hcur = static_cast<double>(game_row.score_home_periods[pi]);
+        ectx.g_acur = static_cast<double>(game_row.score_away_periods[pi]);
     }
     ectx.fair_src = static_cast<int>(fair_src_dbg);  // 账单「说清用哪个源」(2026-06-14 老板): 同 tape, 决策刻一处定
     ExecuteControllerSide(condition_id, token_id, is_yes ? strategy::Outcome::Yes : strategy::Outcome::No,
@@ -3110,8 +3111,9 @@ void TradingLoop::MaybeEmitMarketTape(const BinaryMarketSnapshot& mkt,
     const double g_away = static_cast<double>(game_row.score_away_total);
     double g_hcur = kNan, g_acur = kNan;
     if (game_row.period >= 1 && game_row.period <= game_row.score_home_periods.size()) {  // 越界保护
-        g_hcur = static_cast<double>(game_row.score_home_periods[game_row.period - 1]);
-        g_acur = static_cast<double>(game_row.score_away_periods[game_row.period - 1]);
+        const std::size_t pi = static_cast<std::size_t>(game_row.period) - 1;  // size_t 索引 (避免 int→size_t sign-conv)
+        g_hcur = static_cast<double>(game_row.score_home_periods[pi]);
+        g_acur = static_cast<double>(game_row.score_away_periods[pi]);
     }
     // 持仓标记 (决策标记: 复盘"这帧我们是否持有这盘"; 任一边有仓即 1)。
     int held = 0;
