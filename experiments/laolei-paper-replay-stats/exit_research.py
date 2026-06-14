@@ -319,8 +319,9 @@ def main():
                 au=auc(wv,lv)
                 if au is not None: rows.append((abs(au-0.5)*2,k,au))
         rows.sort(reverse=True)
+        print("    (条件IC=在'仍是赢家'子集里 该未来信号 对'守住vs退化'的 rank-biserial IC; 量化大师『条件IC』)")
         for d,k,au in rows:
-            print(f"    [未来] {slab(k):<12} 判别 {d:.2f} ({'守住高' if au>0.5 else '守住低'})")
+            print(f"    [未来] {slab(k):<12} 条件IC {2*au-1:+.2f} ({'守住高' if au>0.5 else '守住低'})")
     else:
         print(f"  '仍是赢家'子集 守住/退化 不足各≥3 (当前 {len(sw_w)}/{len(sw_l)}) → 等累积")
 
@@ -359,6 +360,16 @@ def main():
     print("   只读结构: '省亏损 vs 卖飞利润'的量级权衡 + 大方向。真要定阈值须样本外(OOS≥60仓含20+水下)再验。")
     base = sum((p["won"]-p["epx"]) for p in positions)/len(positions)
     print(f"   基准(持有到底): 均PnL/股 {base:+.4f}  总 {sum((p['won']-p['epx']) for p in positions):+.2f}")
+    # exit-Kelly: 持有到底的几何增长 g (金融专家『exit侧Kelly』) — 出场决策也看几何不只算术
+    hold_r = [(p["won"]-p["epx"])/p["epx"] for p in positions if p["epx"] > 0]  # return on stake
+    if len(hold_r) >= 3:
+        fK, gK = 0.0, 0.0
+        for fi in [i/100 for i in range(1,100)]:
+            if all(1+fi*r > 0 for r in hold_r):
+                g = sum(math.log(1+fi*r) for r in hold_r)/len(hold_r)
+                if g > gK: gK, fK = g, fi
+        flag = f"f*={fK:.2f} 1/4-Kelly={fK/4:.2f}" if gK > 0 else "⚠g≤0(持有到底几何不增长/破产)"
+        print(f"   exit-Kelly(持有到底几何): g_max={gK:+.4f} {flag} ← 出场策略也要看几何增长非只算术EV")
     # 方向: 由 B2 该信号 au 定 (赢家低→信号<阈值时离=坏边在低; 赢家高→反)
     au_sig = next((au for d,k,au,*_ in disc if k==sweep_sig), None)
     if au_sig is None:
