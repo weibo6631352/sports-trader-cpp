@@ -168,6 +168,12 @@ def main():
     print(f"⚠⚠ 口径(量化评审修正): 进场{len(ent)}(过门)与被挡{len(blk)}(未过门)是【两个不同总体】, 混合统计无干净'策略表现'含义。")
     print(f"   → ①②③ 是在【决策population(进场+被挡)】上找【信号方向 + 因子覆盖】, 不是策略盈亏; 结局由市场定(对门外生)故方向有效。")
     print(f"   → 【真实策略表现见下方 ⓪(仅进场盘)】; 被挡盘反事实仅供 per-gate 机会错过 + 因子分布覆盖, 且有逆选偏差(记录价高估), 当线索别当真。")
+    # PIT 前视校验展示 (量化大师P0): 所有 POOL 因子都是【进场/挡单决策时刻的快照】(fills/gate_blocks 落盘=决策刻),
+    #   不含任何结算后才知的量(mae/mfe/close_mid/final_*/won 仅作标签不入因子池) → 无 look-ahead。
+    POST_HOC = {"mae","mfe","close_mid","close_bk_age_ms","final_bid","final_ask","hold_sec","won","pnl","realized"}
+    leak = [k for k in POOL if k in POST_HOC]
+    print(f"PIT校验: 因子池均为决策刻快照(无前视); 结算后字段{sorted(POST_HOC)}仅作标签不入因子池 → "
+          f"{'✓干净' if not leak else '⚠泄漏:'+str(leak)}")
     if len(settled) < 12:
         print(f"⚠ 已结算决策点 {len(settled)} < 12 → 结论不可信, 仅演示能力。等大数据累积 (被挡盘是主力)。")
     print("=" * 78)
