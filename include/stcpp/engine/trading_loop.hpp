@@ -1163,6 +1163,17 @@ private:
     // ---- 批1 体育动态: 比分时序 (进球新鲜度/动量; game_row.score 派生) ----
     std::unordered_map<std::string, ml::GameScoreHistory> game_history_;
 
+    // ---- 比赛进度快照 (2026-06-14 老板「比赛进度也非常关键」): TickOne 写 / SamplePositionPaths 读 ----
+    //   离场推断需"采样点打到比赛哪了"(剩余时间=翻盘空间); 轨迹本身无 ectx, 故走 cond-keyed 缓存。
+    //   带 as_of_ns → 算进度新鲜度 (score feed 停更则进度陈旧失真, 同 sharp 新鲜度原则)。loop_thread_ 单写。
+    struct GameProgSnap {
+        double g_remain{std::numeric_limits<double>::quiet_NaN()};  // 剩余秒
+        double g_sdiff{std::numeric_limits<double>::quiet_NaN()};   // 比分差 (YES队−对手)
+        double g_period{std::numeric_limits<double>::quiet_NaN()};  // 赛段序数
+        std::int64_t as_of_ns{0};                                  // 比分数据源时刻 (算 g_age)
+    };
+    std::unordered_map<std::string, GameProgSnap> game_prog_;
+
     // ---- A5 (老韩 spec §4): 累计已付 taker fee (whole pUSD, 单调加) ----
     //   DD 喂数: daily_pnl = 时点净 MtM − cum_fee。PublishLedgerSnapshot 算 pnl_fee 后累加,
     //   FeedRiskGateway 读。loop_thread_ 单 writer (两者同线程顺序调), 无需 atomic。

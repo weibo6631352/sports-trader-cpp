@@ -56,6 +56,14 @@ POOL = ["fair","px","edge_ci","devig","kelly_sugg","sh_fair","sh_vel","sh_conv",
 
 def lab(k): return LABEL.get(k,k)
 
+def auc_p(au, nw, nl):
+    # Mann-Whitney AUC 两侧 p (正态近似): z=(AUC-0.5)/SE, SE=sqrt((nw+nl+1)/(12·nw·nl))
+    if nw < 1 or nl < 1: return 1.0
+    se = math.sqrt((nw+nl+1)/(12.0*nw*nl))
+    if se <= 0: return 1.0
+    z = abs(au-0.5)/se
+    return 2.0*(1.0 - 0.5*(1.0+math.erf(z/math.sqrt(2.0))))  # 两侧
+
 def auc(wins, loss):
     # rank-based AUC = P(win 的 f > loss 的 f); 0.5=无区分, →1 赢家高, →0 赢家低
     if not wins or not loss: return None
@@ -161,9 +169,12 @@ def main():
             if isinstance(v, (int, float)) and math.isfinite(v): out.append(v)
         return out
 
-    # ============ ① 赢家 vs 输家画像 + 判别力 → 候选新参数 ============
+    # ============ ① 赢家 vs 输家画像 + 判别力 → 候选新参数【假设清单】 ============
     print("\n" + "-" * 78)
-    print("① 赢家 vs 输家画像 (判别力=|AUC−0.5|×2, 大=能分输赢; ★候选新参数=判别强但当前无门)")
+    bonf = 0.05 / max(1, len(POOL))  # Bonferroni: 扫 len(POOL) 个因子, 校正后阈值
+    print(f"① 赢家 vs 输家画像 (判别力=|AUC−0.5|×2; p=Mann-Whitney两侧; ★=过Bonferroni p<{bonf:.4f} 的强候选)")
+    print("   评审小蒋: 扫 27 因子=多重比较, 未校正的'判别≥0.3'在 n<100 时 30-50% 是噪声 → 只信过 Bonferroni 的;")
+    print("   且这只是【假设清单】(生成待验, 非结论), 入参前必须 OOS 独立验证。")
     scored = []
     for k in POOL:
         wv = feat_vals(wins, k); lv = feat_vals(loss, k)
@@ -177,17 +188,23 @@ def main():
     if not scored:
         print("  样本不足, 无可算判别的因子")
     for disc, k, au, wm, lm, nw, nl in scored[:18]:
-        cand = "" if k in GATED else "  ★候选新门"
+        p = auc_p(au, nw, nl)
+        strong = (k not in GATED) and (p < bonf)
         arrow = "赢家高" if au > 0.5 else "赢家低"
-        print(f"  {lab(k):<10} 判别 {disc:.2f} ({arrow}) | 赢均 {wm:+.4g} vs 输均 {lm:+.4g}{cand}")
-    cands = [k for d,k,*_ in scored[:18] if k not in GATED and d >= 0.30]
+        tag = "  ★强候选(过Bonf)" if strong else ("  ·候选(未过Bonf)" if k not in GATED and p < 0.05 else "")
+        print(f"  {lab(k):<10} 判别 {disc:.2f} ({arrow}) p={p:.3f} | 赢均 {wm:+.4g} vs 输均 {lm:+.4g}{tag}")
+    cands = [k for d,k,au,wm,lm,nw,nl in scored[:18] if k not in GATED and auc_p(au,nw,nl) < bonf]
     if cands:
-        print(f"  → 候选新参数 (判别≥0.30 且当前无门): {', '.join(lab(k) for k in cands)}")
+        print(f"  → ★强候选假设 (过Bonferroni, 仍需OOS验证): {', '.join(lab(k) for k in cands)}")
+    else:
+        print("  → 暂无过 Bonferroni 的强候选 (n 不够 / 信号弱); 别拿'·候选'当结论, 等累积")
 
     # ============ ② 参数阈值扫描 × 赢家捕获 (调参) ============
     print("\n" + "-" * 78)
-    print("② 参数阈值扫描 × 赢家捕获 (每个强判别因子扫门槛: 过门盘的 赢面/PnL/捕获; 推最优门槛)")
-    print("   方向: 赢家高→设「≥门槛」入场; 赢家低→设「≤门槛」入场。★=候选新参数")
+    print("② 参数阈值扫描 × 赢家捕获 (每因子扫门槛: 过门盘 赢面/错过赢家/PnL)")
+    print("   方向: 赢家高→「≥门槛」入场; 赢家低→「≤门槛」。★=候选新参数")
+    print("   ⚠ 评审小蒋: '◀最优总PnL'是 in-sample 拟合噪声峰值, 照搬调参会过拟合上线更差(老板红线: in-sample假象)!")
+    print("   正确读法: 看【赢面是否随门槛收紧单调上升】(结构规律可信), 别取峰值; 定阈值须 OOS≥150结算点再验。")
     total_w = sum(u["won"] for u in settled)  # 全集赢家总数 (算"错过赢家"=机会错过前沿)
     def sweep(k, direction):
         vals = sorted(set(round(v, 4) for v in feat_vals(settled, k)))
@@ -216,15 +233,20 @@ def main():
         cand = "★" if k not in GATED else ""
         best = max(rows, key=lambda r: r[4])  # 总PnL 最大
         print(f"\n  {cand}{lab(k)} ({direction}门槛, 判别{disc:.2f}) [捡漏↔错过前沿: 全集共{total_w}赢家]:")
+        # 赢面单调性 (结构规律, 比峰值可信): 门槛由松到紧赢面是否上升
+        wr_seq = [r[2] for r in rows]
+        mono = "单调↑(结构稳)" if all(wr_seq[i] <= wr_seq[i+1]+0.02 for i in range(len(wr_seq)-1)) else "非单调(慎)"
         for c, n, wr, ppl, tot, mw in rows:
-            mark = "  ◀最优总PnL" if (c,n)==(best[0],best[1]) else ""
+            mark = "  ◀in-sample峰值(勿照搬)" if (c,n)==(best[0],best[1]) else ""
             print(f"    {direction}{c:<10.4g} → 过门{n:>3} 赢面{100*wr:>3.0f}% 错过赢{mw:>3} 均PnL{ppl:+.4f} 总PnL{tot:+.2f}{mark}")
-        print(f"    基准(全进): 赢面{100*base_wr:.0f}% 错过赢0 总PnL{sum(u['pnl'] for u in settled):+.2f}  → "
-              f"门槛{direction}{best[0]:.4g} 总PnL{best[4]:+.2f} 但错过{best[5]}个赢家 (收得越紧每笔越净, 错过越多→看总PnL拐点)")
+        print(f"    基准(全进): 赢面{100*base_wr:.0f}% 错过赢0 总PnL{sum(u['pnl'] for u in settled):+.2f}  | "
+              f"赢面随收紧: {mono} ← 看这个(结构可信), 别取峰值阈值(in-sample); 收越紧每笔越净但错过越多")
 
-    # ============ ③ 2维组合挖矿 (获利模式) ============
+    # ============ ③ 2维组合挖矿 (获利模式)【假设清单, 非结论】 ============
     print("\n" + "-" * 78)
-    print(f"③ 2维组合挖矿 (top因子两两组合, 同时满足时的 赢面/PnL; 样本≥{min_support})")
+    print(f"③ 2维组合挖矿 (top因子两两, 同时满足时 赢面/PnL; 样本≥{min_support})")
+    print(f"   ⚠ 评审小蒋: 组合挖矿=多重比较×多重选择, n<200 时 top 组合几乎全是噪声 → 仅【生成假设清单】,")
+    print("   每条必须 OOS 独立验证(每组合 cell n≥30)才能当'获利模式'。现阶段当线索看, 别当结论。")
     top = [(k, au) for d,k,au,*_ in scored if d >= 0.20][:7]
     def split_mask(k, au):
         # 用中位数二分, 取"有利侧" (赢家方向)
@@ -269,20 +291,25 @@ def main():
         print(f"  进场因子: edge {f.get('edge_ci')} sharp速度 {f.get('sh_vel')} 收敛率 {f.get('sh_conv')} "
               f"簿失衡 {f.get('bk_imb')} 阶段 {f.get('g_period')} 赔率龄 {f.get('odds_age')}")
         if pp_p and tok:
+            star_yes = f.get("yes")
             traj = [r for r in load(pp_p) if r.get("tok") == tok and r.get("bvalid") == 1 and r.get("mid", 0) > 0]
             traj.sort(key=lambda r: r.get("ts", 0))
             if traj:
                 t0 = traj[0].get("ts", 0)
-                print(f"  轨迹 ({len(traj)} 有效采样点, 30s/点; mid=PM中价 sharp=赔率源真值, 二者收敛=持仓变对):")
+                # F-4: mid/sharp 都换算到【持仓边】(NO 仓取 1−x), 否则 NO 仓两者在不同边, 收敛对比无意义
+                print(f"  轨迹 ({len(traj)} 有效采样点, 30s/点; 均持仓边: 边fair=赔率源真值, 边mid=PM价, 二者收敛=持仓变对):")
                 step = max(1, len(traj)//14)  # 最多 ~14 行
                 for r in traj[::step]:
-                    print(f"    +{(r.get('ts',0)-t0)//1_000_000_000:>5}s mid {r.get('mid',0):.3f} sharp {r.get('sharp',0):.3f} "
-                          f"簿失衡 {r.get('imb',0):+.2f} L1卖 {r.get('a1sz',0):>7.0f} 簿龄 {r.get('bk_age_ms',0):.0f}ms")
+                    hm = r.get("mid",0) if star_yes==1 else 1.0-r.get("mid",0)
+                    hf = r.get("sharp",0) if star_yes==1 else 1.0-r.get("sharp",0)
+                    gr = r.get("g_remain"); gtxt = f" 剩{gr/60:.0f}min" if isinstance(gr,(int,float)) and gr>0 else ""
+                    print(f"    +{(r.get('ts',0)-t0)//1_000_000_000:>5}s 边mid {hm:.3f} 边fair {hf:.3f} "
+                          f"簿失衡 {r.get('imb',0):+.2f} L1卖 {r.get('a1sz',0):>7.0f} 簿龄 {r.get('bk_age_ms',0):.0f}ms{gtxt}")
             else:
                 print("  (无该 token 的有效 position_path 采样)")
     print("=" * 78)
     print(f"样本: 已结算决策点 {len(settled)} (进场{len(ent)}+被挡{len(blk)}). 被挡盘是大数据主力, 越积越准。")
-    print("用法: 候选新门→看②扫描验证→定门槛; 组合→看③获利模式; 调参→对比②基准 vs 最优门槛 PnL")
+    print("读法(评审后): ①只信★过Bonferroni的强候选(假设, 需OOS); ②看赢面单调性别取in-sample峰值; ③当线索非结论。")
 
 if __name__ == "__main__":
     main()

@@ -190,9 +190,16 @@ def main():
     for g in gbs:
         cond=g.get("cond")
         if cond not in outcome: continue
-        ys=g.get("yes",-1); side=ys if ys in (0,1) else (1 if g.get("fair",0)>=0.5 else 0)  # -1→fair推
+        px=g.get("px",0.5); ys=g.get("yes",-1)
+        # side-对齐定价 (F-2 review, 同 param_research): 选中边(ys∈{0,1}) px 已是该边 ask 直接用;
+        #   派生边(yes=-1, 仅 sharp_gap_low, px=YES-canon) → NO 取对侧 1-px, 否则押大热门 would-PnL 虚高。
+        if ys in (0,1):
+            side=ys; cost=px
+        else:
+            side=1 if g.get("fair",0)>=0.5 else 0
+            cost=px if side==1 else 1.0-px
         won_if=1 if side==outcome[cond] else 0
-        px=g.get("px",0.5); pn=(1-px) if won_if else -px
+        pn=(1-cost) if won_if else -cost
         e=geff[g.get("gate")]; e[0]+=won_if; e[1]+=1; e[2]+=pn
     print("-"*64)
     if any(t for _,t,_ in geff.values()):

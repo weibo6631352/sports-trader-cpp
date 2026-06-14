@@ -55,10 +55,12 @@ def auc(wins, loss):
     nw=len(wins); nl=len(loss)
     return (sw-nw*(nw+1)/2.0)/(nw*nl)
 
-# 持仓边信号 (按 yes 定向) — 离场研究的候选信号池
-SIGS = ["held_fair","held_vel","sh_conv","gap","drawdown","imb","sh_age_ms","a1sz"]
+# 持仓边信号 (按 yes 定向) — 离场研究的候选信号池 (含比赛进度: 老板「比赛进度也非常关键」)
+SIGS = ["held_fair","held_vel","sh_conv","gap","drawdown","imb","sh_age_ms","a1sz",
+        "g_remain","held_sdiff","g_period","g_age_ms"]
 SLAB = {"held_fair":"持仓边fair","held_vel":"持仓边fair速度","sh_conv":"收敛率","gap":"fair−mid缺口",
-        "drawdown":"水下深度","imb":"簿失衡","sh_age_ms":"sharp新鲜度ms","a1sz":"卖1量"}
+        "drawdown":"水下深度","imb":"簿失衡","sh_age_ms":"sharp新鲜度ms","a1sz":"卖1量",
+        "g_remain":"剩余秒(翻盘空间)","held_sdiff":"持仓边比分差","g_period":"赛段","g_age_ms":"进度新鲜度ms"}
 def slab(k): return SLAB.get(k,k)
 
 def main():
@@ -136,10 +138,18 @@ def main():
                         gy0 = abs((prev["sharp"] - prev["mid_yes"])) if prev["sharp"] is not None else None
                         gy1 = abs((sharp - (mid if yes==1 else 1.0-mid))) if fin(sharp) else None
                         if gy0 is not None and gy1 is not None: sh_conv = (gy1-gy0)/dt
+            # F-5: 标 sh_conv 来源 (eng=引擎细窗~10s / derived=兜底粗30s), B2 跨窗口混算时提示
+            conv_src = "eng" if ("sh_conv" in r and fin(r.get("sh_conv"))) else "derived"
+            # 比赛进度 (2026-06-14 老板「比赛进度也非常关键」): g_remain剩余秒(=翻盘空间)/g_period赛段/g_age新鲜度;
+            #   g_sdiff 按持仓边定向 (YES队−对手 → NO 仓取负, 正=我方领先)。归档无这些字段 → None。
+            g_rem = r.get("g_remain"); g_per = r.get("g_period"); g_age = r.get("g_age_ms"); g_sd = r.get("g_sdiff")
+            held_sdiff = (g_sd if yes==1 else -g_sd) if fin(g_sd) else None
             s = {"ts":ts, "held_fair":held_fair, "held_mid":held_mid, "held_bid":held_bid, "gap":gap,
                  "drawdown":drawdown, "held_vel":held_vel, "sh_conv":sh_conv if fin(sh_conv) else None,
-                 "imb":r.get("imb"), "a1sz":r.get("a1sz"),
+                 "conv_src":conv_src, "imb":r.get("imb"), "a1sz":r.get("a1sz"),
                  "sh_age_ms":sh_age if fin(sh_age) else None,
+                 "g_remain":g_rem if fin(g_rem) else None, "held_sdiff":held_sdiff,
+                 "g_period":g_per if fin(g_per) else None, "g_age_ms":g_age if fin(g_age) else None,
                  "sharp":sharp if fin(sharp) else None, "mid_yes":(mid if yes==1 else 1.0-mid)}
             samples.append(s); prev = s
         if not samples: continue
@@ -193,38 +203,42 @@ def main():
         ls = f"{l:+.4g}" if l is not None else "—"
         print(f"  {name:<18}{ws:>12}{ls:>12}   {hints.get(name,'')}")
 
-    # ============ B2 回撤 vs 退化 判别力 ============
+    # ============ B2 回撤 vs 退化 判别力 (per-position; 评审小蒋: 按样本点会被长持仓主导+自相关→CI虚窄) ============
     print("\n"+"-"*80)
-    print("B2 回撤 vs 退化 判别力 (水下样本: 赢家=暂时回撤 vs 输家=结构退化, 各信号 AUC; 大=能分'该离/不该离')")
-    print("   不预设答案 — 哪个信号判别强, 哪个就是离场该看的; sharp陈旧样本单列(信号失真)")
-    def collect_uw(pset, fresh_only):
-        out = collections.defaultdict(list)
-        for p in pset:
-            for s in p["uw"]:
-                if fresh_only and s.get("sh_age_ms") is not None and s["sh_age_ms"] > stale_ms: continue
-                for k in SIGS:
-                    v = s.get(k)
-                    if v is not None and math.isfinite(v): out[k].append(v)
-        return out
-    wu = collect_uw(W, True); lu = collect_uw(L, True)
+    print("B2 回撤 vs 退化 判别力 [per-position: 每仓取水下期信号均值=1点, n=仓数, 非样本点]")
+    print("   赢家=暂时回撤 vs 输家=结构退化, 各信号 AUC; 大=能分'该离/不该离'。不预设答案, 数据说话。")
+    print("   sharp 陈旧(>--stale-ms)样本先剔除(信号失真); n 小=噪声, 看判别方向别看精确值")
+    def pos_uw_mean(p, k):  # 一仓的水下期(剔陈旧)某信号均值 = 该仓代表值
+        vs = [s.get(k) for s in p["uw"] if not (s.get("sh_age_ms") is not None and s["sh_age_ms"] > stale_ms)]
+        vs = [v for v in vs if v is not None and math.isfinite(v)]
+        return sum(vs)/len(vs) if vs else None
+    Wd = [p for p in W if p["uw"]]; Ld = [p for p in L if p["uw"]]  # 曾水下的赢/输仓
     disc = []
     for k in SIGS:
         if k=="drawdown": continue
-        if len(wu[k]) < 4 or len(lu[k]) < 4: continue
-        au = auc(wu[k], lu[k])
+        wv = [v for v in (pos_uw_mean(p,k) for p in Wd) if v is not None]
+        lv = [v for v in (pos_uw_mean(p,k) for p in Ld) if v is not None]
+        if len(wv) < 3 or len(lv) < 3: continue
+        au = auc(wv, lv)
         if au is None: continue
-        disc.append((abs(au-0.5)*2, k, au, sum(wu[k])/len(wu[k]), sum(lu[k])/len(lu[k]), len(wu[k]), len(lu[k])))
+        disc.append((abs(au-0.5)*2, k, au, sum(wv)/len(wv), sum(lv)/len(lv), len(wv), len(lv)))
     disc.sort(reverse=True)
     if not disc:
-        print("  水下样本不足 → 等累积")
+        print(f"  曾水下的赢/输仓不足(各需≥3) → 等累积 (当前 水下赢仓{len(Wd)}/输仓{len(Ld)})")
     for d,k,au,wm,lm,nw,nl in disc:
         arrow = "赢家高" if au>0.5 else "赢家低"
-        print(f"  {slab(k):<14} 判别 {d:.2f} ({arrow}) | 回撤中赢家均 {wm:+.4g} vs 输家均 {lm:+.4g}  (n赢{nw}/输{nl})")
+        warn = " ⚠n小慎读" if (nw<8 or nl<8) else ""
+        print(f"  {slab(k):<14} 判别 {d:.2f} ({arrow}) | 回撤中赢仓均 {wm:+.4g} vs 输仓均 {lm:+.4g}  (n赢仓{nw}/输仓{nl}){warn}")
+    # F-5: sh_conv 窗口混合提示 (引擎细窗 vs 兜底粗窗口)
+    n_eng = sum(1 for p in positions for s in p["uw"] if s.get("conv_src")=="eng")
+    n_der = sum(1 for p in positions for s in p["uw"] if s.get("conv_src")=="derived")
+    if n_eng and n_der:
+        print(f"  注(F-5): sh_conv 来源混合 — 引擎细窗~10s {n_eng}点 / 兜底粗30s {n_der}点; 口径不一, 同源(同版本)数据更可信")
     # 陈旧样本占比 (新鲜度坑提示)
     n_uw_all = sum(len(p["uw"]) for p in positions)
     n_stale = sum(1 for p in positions for s in p["uw"] if s.get("sh_age_ms") is not None and s["sh_age_ms"]>stale_ms)
     if n_uw_all:
-        print(f"  ⚠ 水下样本中 sharp 陈旧(>{stale_ms:.0f}ms)占 {n_stale}/{n_uw_all}={100*n_stale/n_uw_all:.0f}% → 这些样本信念信号不可信")
+        print(f"  ⚠ 水下样本中 sharp 陈旧(>{stale_ms:.0f}ms)占 {n_stale}/{n_uw_all}={100*n_stale/n_uw_all:.0f}% → 已剔除(信念信号失真)")
 
     # ============ B3 翻盘率 by 信号分桶 ============
     print("\n"+"-"*80)
@@ -255,7 +269,8 @@ def main():
     # ============ B4 离场阈值假设回放 ============
     print("\n"+"-"*80)
     print(f"B4 离场阈值假设回放 (信号=【{slab(sweep_sig)}】, 扫离场阈值: 水下且信号触线即离, 算总PnL/股)")
-    print("   信息性非推荐: 看'省亏损 vs 卖飞利润'权衡曲线, 净收益最大处供我们参考")
+    print("   ⚠ in-sample 双重选择(方向取自B2同数据 + 阈值同数据扫) → '净收益最大处'是拟合噪声, 不可直接当离场参数!")
+    print("   只读结构: '省亏损 vs 卖飞利润'的量级权衡 + 大方向。真要定阈值须样本外(OOS≥60仓含20+水下)再验。")
     base = sum((p["won"]-p["epx"]) for p in positions)/len(positions)
     print(f"   基准(持有到底): 均PnL/股 {base:+.4f}  总 {sum((p['won']-p['epx']) for p in positions):+.2f}")
     # 方向: 由 B2 该信号 au 定 (赢家低→信号<阈值时离=坏边在低; 赢家高→反)

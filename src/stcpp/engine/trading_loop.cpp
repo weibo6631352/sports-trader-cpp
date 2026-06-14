@@ -1330,6 +1330,16 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         g_time_x_lead = score_diff * std::clamp(1.0 - time_frac, 0.0, 1.0);
         // 批1 补漏 g_remaining_sec: 剩余秒 = total × 剩余占比。
         g_remaining_sec = (total_sec > 0) ? static_cast<double>(total_sec) * time_to_resolution_frac : 0.0;
+        // 比赛进度快照缓存 (2026-06-14 老板「比赛进度也非常关键」): 供 SamplePositionPaths 给持仓轨迹标当前进度
+        //   (离场推断: 剩余时间=翻盘空间)。与 ectx.g_* 同源 (g_sdiff 用 game_row 比分, 与 line ~2018 一致)。
+        {
+            auto& gp = game_prog_[condition_id];
+            gp.g_remain = std::isfinite(g_remaining_sec) ? g_remaining_sec : std::numeric_limits<double>::quiet_NaN();
+            gp.g_sdiff = static_cast<double>(game_row.score_home_total - game_row.score_away_total);
+            gp.g_period = game_row.period > 0 ? static_cast<double>(game_row.period)
+                                              : std::numeric_limits<double>::quiet_NaN();
+            gp.as_of_ns = game_row.data_source_ts_ns;
+        }
 
         // 批1 体育动态: 比赛阶段/垃圾时间/关键时段 (点) + 进球新鲜度/动量 (game ring) + live_stats 差。
         // P3.2 (特征审计): 无时钟运动 (网球/棒球/排球 total_sec=0) 用 period 进度当 phase 锚,
@@ -1703,7 +1713,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   (赔率源断/匹配错/延迟恶化) → sharp 引擎停新开仓直到恢复。减仓/平仓/结算不受限
     
     if (target_mag > 0.0 && clv_breaker_) {
-        LogGateBlock(condition_id, "clv_breaker", p_fair_selected, exec_ask, target_mag);
+        LogGateBlock(condition_id, "clv_breaker", p_fair_selected, exec_ask, target_mag, is_yes ? 1 : 0);
         target_mag = 0.0;
     }
     // 三振出局 gate (老板 2026-06-11 拍板): 同盘止损满 2 次 → 本场只减不开。首次止损后的再入照常
@@ -1713,7 +1723,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     if (target_mag > 0.0) {
         if (const auto ms_it = market_stop_count_.find(condition_id);
             ms_it != market_stop_count_.end() && ms_it->second >= kMaxStopsPerMarket) {
-            LogGateBlock(condition_id, "three_strikes", p_fair_selected, exec_ask, target_mag);
+            LogGateBlock(condition_id, "three_strikes", p_fair_selected, exec_ask, target_mag, is_yes ? 1 : 0);
             target_mag = 0.0;  // 出局: 不开新仓 (减仓/平仓不受限, 同 min_open_fair 语义)
         }
     }
@@ -1737,7 +1747,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             }
         }
         if (unstable_evidence) {
-            LogGateBlock(condition_id, "stable_window", p_fair_selected, exec_ask, target_mag);
+            LogGateBlock(condition_id, "stable_window", p_fair_selected, exec_ask, target_mag, is_yes ? 1 : 0);
             target_mag = 0.0;  // 窗口内实证跌破过门槛 (钟摆) → 只减不开
         }
     }
@@ -2993,7 +3003,7 @@ void TradingLoop::SamplePositionPaths() {
         //   簿龄。读 hub 快照 (无新网络), 给持仓期订单簿深度时间序列 (流动性/执行/逆选离线研究金料)。
         double bid = kNan, ask = bid, mid = bid, micro = bid, spread = bid, imb = bid, b1sz = bid, a1sz = bid,
                bd5 = bid, ad5 = bid, d5imb = bid, age_ms = bid, sharp = bid, sh_conv = bid, sh_vel = bid,
-               sh_age_ms = bid;
+               sh_age_ms = bid, g_remain = bid, g_sdiff = bid, g_period = bid, g_age_ms = bid;
         int bvalid = 0;  // 簿有效标志 (2026-06-14 review #10): 区分"无簿→nf填0" vs 真实0 (消语义陷阱)
         if (const auto bk = hub_.Read(pv.token_id); bk && bk->valid) {
             bvalid = 1;
@@ -3023,25 +3033,38 @@ void TradingLoop::SamplePositionPaths() {
                 sh_vel = sh->second.Velocity(cfg_.sharp_fair_vel_window_ns);
             }
         }
+        // 比赛进度 (2026-06-14 老板「比赛进度也非常关键」): 当前剩余时间/比分差/赛段 + 进度新鲜度 (score feed
+        //   停更则陈旧, 同 sharp 新鲜度原则)。离场推断: 剩余时间=翻盘空间, 近结束该收紧。
+        if (const auto gp = game_prog_.find(pv.condition_id); gp != game_prog_.end()) {
+            g_remain = gp->second.g_remain;
+            g_sdiff = gp->second.g_sdiff;
+            g_period = gp->second.g_period;
+            if (gp->second.as_of_ns > 0) g_age_ms = static_cast<double>(now - gp->second.as_of_ns) / 1e6;
+        }
         const auto eit2 = engine_by_token_.find(pv.token_id);
         std::int64_t entry_ns = 0;  // 入场时刻 (2026-06-14: 离线算持有时长/入场后 Δmid 逆选, 免反查 fills)
         if (const auto pp = pos_path_.find(pv.token_id); pp != pos_path_.end()) entry_ns = pp->second.entry_ns;
         // 有限才写 (NaN 省略, 同 fills_journal emit_d 范式): 拼基础段 + 深度段。
         auto nf = [](double v) { return std::isfinite(v) ? v : 0.0; };  // snprintf NaN 防呆 (下游按 0 容错)
-        char buf[760];
+        char buf[820];
         const int n = std::snprintf(
             buf, sizeof(buf),
             "{\"ts\":%lld,\"et\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"yes\":%d,\"qty\":%.4f,\"avg\":%.4f,"
             "\"bvalid\":%d,\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"micro\":%.4f,\"spread\":%.4f,\"imb\":%.4f,"
             "\"b1sz\":%.1f,\"a1sz\":%.1f,\"bd5\":%.1f,\"ad5\":%.1f,\"d5imb\":%.4f,\"bk_age_ms\":%.0f,"
-            "\"sharp\":%.4f,\"sh_conv\":%.5g,\"sh_vel\":%.5g,\"sh_age_ms\":%.0f,\"eng\":\"%s\"}\n",
+            "\"sharp\":%.4f,\"sh_conv\":%.5g,\"sh_vel\":%.5g,\"sh_age_ms\":%.0f,"
+            "\"g_remain\":%.0f,\"g_sdiff\":%.0f,\"g_period\":%.0f,\"g_age_ms\":%.0f,\"eng\":\"%s\"}\n",
             static_cast<long long>(now), static_cast<long long>(entry_ns), pv.condition_id.c_str(),
             pv.token_id.c_str(), pv.outcome == strategy::Outcome::Yes ? 1 : 0,
             static_cast<double>(pv.net_shares_micro) / 1'000'000.0, pv.avg_entry_price, bvalid, nf(bid), nf(ask),
             nf(mid), nf(micro), nf(spread), nf(imb), nf(b1sz), nf(a1sz), nf(bd5), nf(ad5), nf(d5imb),
             nf(age_ms), nf(sharp), nf(sh_conv), nf(sh_vel), nf(sh_age_ms),
+            nf(g_remain), nf(g_sdiff), nf(g_period), nf(g_age_ms),
             eit2 != engine_by_token_.end() ? eit2->second.c_str() : "sharp");
-        if (n > 0) journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(n)));
+        if (n > 0)
+            journal_writer_.AppendLine(  // 截断 clamp (F-3 review): snprintf 截断返"本应长度"可 ≥sizeof, 防 OOB read
+                path, std::string(buf, static_cast<std::size_t>(n < static_cast<int>(sizeof(buf)) ? n
+                                                                                                  : static_cast<int>(sizeof(buf)) - 1)));
     }
 }
 
