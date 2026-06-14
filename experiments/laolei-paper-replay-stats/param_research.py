@@ -220,12 +220,51 @@ def main():
             print(f"  Kelly: f*={f_star:.2f} 几何增长g={g_star:+.4f}>0 → 建议 1/4-Kelly={f_star/4:.2f} bankroll/仓")
         else:
             print(f"  Kelly: 无正增长f → ⚠g≤0: 算术EV{('正' if ev>0 else '负')}但几何会破产/不增长, 此策略当前不可投")
-        print(f"  费: 总${fee_tot:.2f} (毛EV→净EV的拖累; churn是头号成本)")
+        # 费瀑布: 毛→费→净 (金融P1, churn是memory头号成本)
+        gross_tot = sum(u["pnl"]*u["f"].get("qty",1) for u in ent_s if isinstance(u["f"].get("qty"),(int,float)))
+        net_tot = gross_tot  # pnl已含成交,fee另计拖累; 毛=未扣fee近似=gross+fee
+        print(f"  费瀑布: 毛${gross_tot+fee_tot:+.2f} − 费${fee_tot:.2f} = 净${gross_tot:+.2f} (费占毛{100*fee_tot/abs(gross_tot+fee_tot):.0f}%)" if abs(gross_tot+fee_tot)>1e-9 else f"  费: 总${fee_tot:.2f}")
+        # Sharpe/Sortino (per-bet, return on stake r) + 单位时间EV (金融P1/P2)
+        sharpe = sortino = None
+        if len(rs) >= 2:
+            mr = sum(rs)/len(rs); sdr = math.sqrt(sum((x-mr)**2 for x in rs)/len(rs))
+            dn = [x for x in rs if x < 0]; sdd = math.sqrt(sum(x*x for x in dn)/len(dn)) if dn else 0.0
+            sharpe = mr/sdr if sdr>0 else None
+            sortino = mr/sdd if sdd>0 else None
+        ts_list = sorted(u["f"].get("ts",0) for u in ent_s if u["f"].get("ts"))
+        span_h = (ts_list[-1]-ts_list[0])/3.6e12 if len(ts_list)>=2 and ts_list[-1]>ts_list[0] else None
+        bets_per_h = ns/span_h if span_h else None
+        pnl_per_h = gross_tot/span_h if span_h else None
+        sh_s = f"{sharpe:+.2f}" if sharpe is not None else "—"; so_s = f"{sortino:+.2f}" if sortino is not None else "—"
+        print(f"  Sharpe(每注) {sh_s} | Sortino(每注,只罚下行) {so_s} | 单位时间: {bets_per_h:.1f}注/h ${pnl_per_h:+.2f}/h" if bets_per_h else f"  Sharpe {sh_s} | Sortino {so_s} | 单位时间:时间跨度不足")
+        # 回撤+破产: 按 1/4-Kelly(或flat 0.05)在序列上重放bankroll, 算MDD (金融P0)
+        seq = [u["pnl"]/u["f"]["px"] for u in sorted(ent_s, key=lambda x:x["f"].get("ts",0))
+               if isinstance(u["f"].get("px"),(int,float)) and u["f"]["px"]>0]
+        mdd = None
+        if seq:
+            f_use = max(0.01, f_star/4) if g_star>0 else 0.02
+            bk = 1.0; peak = 1.0; mdd = 0.0
+            for r in seq:
+                bk *= (1 + f_use*r); peak = max(peak, bk); mdd = max(mdd, (peak-bk)/peak)
+            print(f"  回撤模拟(用f={f_use:.2f}重放{len(seq)}注): bankroll {bk:.3f}× 最大回撤MDD {100*mdd:.0f}%")
+        # VaR/CVaR (历史模拟法, 非正态 — 博彩损失双峰偏态; 金融P2)
+        var5 = cvar5 = None
+        if len(rs) >= 5:
+            sr = sorted(rs); kk = max(1, int(0.05*len(sr)))
+            var5 = sr[kk-1]; cvar5 = sum(sr[:kk])/kk
+            print(f"  VaR/CVaR(历史法,return on stake): 5%VaR {var5:+.3f} | 5%CVaR {cvar5:+.3f} (尾部损失; 博彩偏态故用历史非正态)")
         J["strategy_real"] = {"n": ns, "win_rate": round(nw/ns,4), "win_ci": [round(wlo,3),round(whi,3)],
             "ev_per_share": round(ev,4), "ev_ci": [round(ev_lo,4),round(ev_hi,4)], "t_stat": round(tstat,2),
             "ev_significant": tstat > 1.96, "per_unit_risk_ev": round(per_risk,4),
-            "kelly_f_star": round(f_star,3), "geom_growth_g": round(g_star,4),
-            "geom_positive": g_star > 0, "fee_total": round(fee_tot,2)}
+            "kelly_f_star": round(f_star,3), "geom_growth_g": round(g_star,4), "geom_positive": g_star > 0,
+            "fee_total": round(fee_tot,2), "gross_pnl": round(gross_tot+fee_tot,2), "net_pnl": round(gross_tot,2),
+            "sharpe_per_bet": round(sharpe,3) if sharpe is not None else None,
+            "sortino_per_bet": round(sortino,3) if sortino is not None else None,
+            "bets_per_hour": round(bets_per_h,2) if bets_per_h else None,
+            "pnl_per_hour": round(pnl_per_h,2) if pnl_per_h else None,
+            "max_drawdown": round(mdd,4) if mdd is not None else None,
+            "var5_return": round(var5,4) if var5 is not None else None,
+            "cvar5_return": round(cvar5,4) if cvar5 is not None else None}
 
     def feat_vals(rows, k):
         out = []
