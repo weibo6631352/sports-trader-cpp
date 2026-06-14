@@ -31,6 +31,10 @@ closes = [r for r in fills if r.get("close") == 1]
 settle = [r for r in closes if r.get("exit") == "settlement"]
 gb     = jl(f"{DATA}/gate_blocks.jsonl")
 vers   = [r for r in fills if r.get("type") == "version"]
+# 结算 outcome (分析就绪判定用): drop -1 / parse_ok=0
+_st    = jl(f"{DATA}/quotes.jsonl.settlements.jsonl")
+outc   = {s["condition_id"]: s.get("settlement_value") for s in _st
+          if s.get("parse_ok") != 0 and s.get("settlement_value", -1) != -1}
 
 hz = get("/healthz"); acct = get("/api/v1/account").get("account", {}); pos = get("/api/v1/positions").get("positions", [])
 gd = collections.Counter(g.get("gate") for g in gb)
@@ -52,6 +56,12 @@ print(f"拒单: {len(gb)} → " + (", ".join(f"{g}:{n}" for g, n in gd.most_comm
 attempts = len(buys) + len(gb)
 if attempts:
     print(f"出单率: {len(buys)}/{attempts} = {100*len(buys)/attempts:.1f}% (过闸/总尝试; 低=策略挑剔/市场efficient)")
+# 分析就绪判定 (跨重启偏差已修: exit_research 从轨迹建仓, 不依赖 fills 进场)
+blk_settled = sum(1 for g in gb if g.get("cond") in outc)
+ent_settled = sum(1 for b in buys if b.get("cond") in outc)
+pm = "✓就绪" if blk_settled >= 30 else f"✗差{max(0,30-blk_settled)}"
+print(f"分析就绪: settlements {len(outc)} | 被挡已结算 {blk_settled} | 进场已结算 {ent_settled} "
+      f"→ param_research {pm} (被挡已结算≥30)")
 # 持仓 mark 概览 (赢面/水下) — 显示【水下最深】4 个 (风险仓/崩盘仓不漏看), 非任意前 N
 if pos:
     under = sum(1 for p in pos if p.get("pnl_unrealized", 0) < 0)
