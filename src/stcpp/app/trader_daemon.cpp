@@ -805,18 +805,22 @@ BuildResult TraderDaemon::Build() {
                 }
             }
         } else {
-            // PAPER-only 规模化 (2026-06-15 老板 +$300 paper 验证授权): paper 是沙盒(不碰真钱), 把已验证
-            //   +EV 策略(moneyline realized +12.57/胜率80%)的 bankroll+caps 按比例放大, 让它在合理窗口累积
-            //   到 +$300。**仅此 else(paper)分支**, 上面 live 分支完全不动 = 真钱零影响。成交仍受 L1 ask
-            //   深度×0.8 上限(trading_loop.cpp:2360) → 不假成交, 大单只在流动盘成交 = 真实。cash_available
-            //   由 bankroll_usdc 派生(trading_loop.cpp:3590)故自动同步放大。可逆: paper_scale 改回 1.0 即恢复 live 精确镜像。
-            paper_scale = 20.0;
-            bankroll *= paper_scale;
+            // PAPER (2026-06-15): 20× 实验失败回退中。20× 把单注放到 ~$176(>整个 $150 基准本金), 总部署 ~$900
+            //   (6× 基准, 老板「下单总量不符预期」实证); 一个 favorite 场内崩盘(sharp 0.728→0.05) hold-to-settlement
+            //   = −$168/笔, 冷门日叠加 = −$274 回撤。根因 20× 放大 in-play 方向性风险。
+            //   ⚠ 不能 mid-flight 把 bankroll 砍回 $150: 已开 ~$900 仓按 $3000 本金买的, 砍 bankroll → cash/equity
+            //      账目不一致(花了 $900 却说只有 $150, equity 变负)。故分两步:
+            //   ① 现在: caps 回基准(per_order $10 等), 新单回预期 size(~$15), 治单注过大; bankroll 暂留($3000)保账目一致,
+            //      已开仓持有到结算。② 旧 $900 仓结算清后: 把下面 kPaperBankrollScale 改 1.0(完整镜像 $150)。
+            constexpr double kPaperBankrollScale = 20.0;  // 暂留(账目一致); 旧仓结算清后改 1.0
+            paper_scale = 1.0;                            // caps 用此 → 全回基准(含下方 event cap), 新单回预期 size
+            bankroll *= kPaperBankrollScale;
+            // caps ×paper_scale(=1.0) → 基准值(line 786-788 已设); 新单 ≤ 基准 cap, 治 20× 的单注过大
             cfg_.trading_loop.per_order_cap_usdc *= paper_scale;
             cfg_.trading_loop.per_outcome_cap_usdc *= paper_scale;
             cfg_.trading_loop.market_exposure_cap_usdc *= paper_scale;
-            std::fprintf(stderr, "[paper] 规模化 ×%.0f: bankroll=$%.0f per_order_cap=$%.0f (仅 paper; live 不变; 成交受深度上限保真)\n",
-                         paper_scale, bankroll, cfg_.trading_loop.per_order_cap_usdc);
+            std::fprintf(stderr, "[paper] 20× 回退中: bankroll=$%.0f(暂留待旧仓结算) per_order_cap=$%.0f(回基准, 新单回预期)\n",
+                         bankroll, cfg_.trading_loop.per_order_cap_usdc);
         }
         cfg_.trading_loop.bankroll_usdc = bankroll;
     }
