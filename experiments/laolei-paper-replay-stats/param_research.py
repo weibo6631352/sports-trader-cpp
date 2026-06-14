@@ -188,6 +188,7 @@ def main():
     print("\n" + "-" * 78)
     print("② 参数阈值扫描 × 赢家捕获 (每个强判别因子扫门槛: 过门盘的 赢面/PnL/捕获; 推最优门槛)")
     print("   方向: 赢家高→设「≥门槛」入场; 赢家低→设「≤门槛」入场。★=候选新参数")
+    total_w = sum(u["won"] for u in settled)  # 全集赢家总数 (算"错过赢家"=机会错过前沿)
     def sweep(k, direction):
         vals = sorted(set(round(v, 4) for v in feat_vals(settled, k)))
         if len(vals) < 4: return None
@@ -201,7 +202,8 @@ def main():
             if len(passed) < min_support: continue
             nw = sum(u["won"] for u in passed)
             tot = sum(u["pnl"] for u in passed)
-            rows.append((c, len(passed), nw/len(passed), tot/len(passed), tot))
+            missed_w = total_w - nw  # 被该门槛挡掉的赢家数 (机会错过前沿: 收门→错过赢家↑)
+            rows.append((c, len(passed), nw/len(passed), tot/len(passed), tot, missed_w))
         return rows
     shown = 0
     for disc, k, au, *_ in scored:
@@ -213,12 +215,12 @@ def main():
         shown += 1
         cand = "★" if k not in GATED else ""
         best = max(rows, key=lambda r: r[4])  # 总PnL 最大
-        print(f"\n  {cand}{lab(k)} ({direction}门槛, 判别{disc:.2f}):")
-        for c, n, wr, ppl, tot in rows:
+        print(f"\n  {cand}{lab(k)} ({direction}门槛, 判别{disc:.2f}) [捡漏↔错过前沿: 全集共{total_w}赢家]:")
+        for c, n, wr, ppl, tot, mw in rows:
             mark = "  ◀最优总PnL" if (c,n)==(best[0],best[1]) else ""
-            print(f"    {direction}{c:<10.4g} → 过门{n:>3} 赢面{100*wr:>3.0f}% 均PnL{ppl:+.4f} 总PnL{tot:+.2f}{mark}")
-        print(f"    基准(全进): 赢面{100*base_wr:.0f}% 总PnL{sum(u['pnl'] for u in settled):+.2f}  → "
-              f"门槛{direction}{best[0]:.4g} 把总PnL 提到 {best[4]:+.2f} (过门{best[1]})")
+            print(f"    {direction}{c:<10.4g} → 过门{n:>3} 赢面{100*wr:>3.0f}% 错过赢{mw:>3} 均PnL{ppl:+.4f} 总PnL{tot:+.2f}{mark}")
+        print(f"    基准(全进): 赢面{100*base_wr:.0f}% 错过赢0 总PnL{sum(u['pnl'] for u in settled):+.2f}  → "
+              f"门槛{direction}{best[0]:.4g} 总PnL{best[4]:+.2f} 但错过{best[5]}个赢家 (收得越紧每笔越净, 错过越多→看总PnL拐点)")
 
     # ============ ③ 2维组合挖矿 (获利模式) ============
     print("\n" + "-" * 78)
