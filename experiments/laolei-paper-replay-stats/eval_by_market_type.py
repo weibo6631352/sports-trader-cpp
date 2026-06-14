@@ -42,11 +42,19 @@ def main():
     # ---- ① 真实成交: 按 mkt 分组 (买入开仓 + 对应平仓 realized) ----
     buys=[r for r in fills if r.get("buy")==1 and r.get("close")!=1 and r.get("type")!="version"]
     closes=[r for r in fills if r.get("close")==1]
-    print("\n=== ① 真实成交表现 (按盘口类型; realized=平仓+结算真实) ===")
+    # 平仓盘 mkt 修正 (2026-06-15): 平仓/结算时市场已掉出 catalog(orphan) → JournalFill 的 MarketCatFor
+    #   查不到 → mkt="unknown"。买单 mkt 是对的(开仓时市场还在 catalog) → 按 cond 回填平仓 mkt,
+    #   让 realized PnL 能归到正确盘口(否则全堆 unknown, totals/spreads +EV 永远评不出来)。
+    cond2mkt={r.get("cond"):r.get("mkt") for r in buys if r.get("mkt") and r.get("mkt")!="unknown"}
+    def mkt_of(r):
+        m=r.get("mkt")
+        if m and m!="unknown": return m
+        return cond2mkt.get(r.get("cond"), m or "unknown")
+    print("\n=== ① 真实成交表现 (按盘口类型; realized=平仓+结算真实; 平仓 mkt 按 cond 回填) ===")
     print(f"{'盘口':<12}{'开仓':>5}{'平仓':>5}{'realized':>10}{'fee':>8}{'净':>9}")
     by_mkt_buys=collections.defaultdict(list); by_mkt_closes=collections.defaultdict(list)
-    for r in buys: by_mkt_buys[r.get("mkt","?")].append(r)
-    for r in closes: by_mkt_closes[r.get("mkt","?")].append(r)
+    for r in buys: by_mkt_buys[mkt_of(r)].append(r)
+    for r in closes: by_mkt_closes[mkt_of(r)].append(r)
     allmkts=set(by_mkt_buys)|set(by_mkt_closes)
     for m in sorted(allmkts, key=lambda x:-len(by_mkt_buys.get(x,[]))):
         nb=len(by_mkt_buys.get(m,[])); nc=len(by_mkt_closes.get(m,[]))
