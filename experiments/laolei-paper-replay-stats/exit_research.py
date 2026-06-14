@@ -393,10 +393,37 @@ def main():
                 delta = (tot-base)
                 print(f"   阈值{c:+.4g} → 触发离场 赢{n_exit_w}/输{n_exit_l} | 省亏损{saved:+.2f} 卖飞利润{forfeit:+.2f} | "
                       f"均PnL/股{tot:+.4f} (Δ基准{delta:+.4f})")
+    # ============ B5 α-decay 曲线 (量化大师#3): edge(gap=持仓边fair−mid) 随持有时长怎么衰减 → 调出场时机核心 ============
+    print("\n"+"-"*80)
+    print("B5 α-decay: edge(=持仓边fair−边mid) 随进场后时长的衰减 (>0=还有低估空间; 归零=edge吃完该走)")
+    print("   赢家应: 入场有正edge → 持有中市场收敛 → edge趋0 (alpha被市场吃完=该离的时点); 看几分钟归零")
+    bins = [(0,60),(60,180),(180,300),(300,600),(600,1200),(1200,3600),(3600,10**9)]
+    blab = ["0-1m","1-3m","3-5m","5-10m","10-20m","20-60m",">60m"]
+    def decay_for(pset):
+        out = []
+        for (b0,b1),bl in zip(bins, blab):
+            gaps = []
+            for p in pset:
+                t0 = p["samples"][0]["ts"]
+                for s in p["samples"]:
+                    el = (s["ts"]-t0)/1e9
+                    if b0 <= el < b1 and s.get("gap") is not None and math.isfinite(s["gap"]): gaps.append(s["gap"])
+            if gaps: out.append((bl, len(gaps), sum(gaps)/len(gaps)))
+        return out
+    dw = decay_for(W); dl = decay_for(L)
+    if dw:
+        print("  赢家 edge 衰减:  " + "  ".join(f"{bl}:{g:+.3f}(n{n})" for bl,n,g in dw))
+    if dl:
+        print("  输家 edge 衰减:  " + "  ".join(f"{bl}:{g:+.3f}(n{n})" for bl,n,g in dl))
+    if not dw and not dl:
+        print("  轨迹不足 → 等累积")
+    J["alpha_decay"] = {"winners": [{"bin":bl,"n":n,"mean_edge":round(g,4)} for bl,n,g in dw],
+                        "losers": [{"bin":bl,"n":n,"mean_edge":round(g,4)} for bl,n,g in dl]}
+
     print("="*80)
     print(f"仓位 {len(positions)} (曾水下 {len(drew) if 'drew' in dir() else '?'}). 越积越准。")
     print("读法: B2 判别力强的信号=离场该看的(数据说话, 非预设); B3 看该信号多少值还值得等翻盘;")
-    print("      B4 看该信号离场阈值的省亏损/卖飞权衡。结论与阈值我们一起定, 脚本只摆信息。")
+    print("      B4 看该信号离场阈值的省亏损/卖飞权衡; B5 edge衰减到0=alpha吃完该离。结论与阈值我们一起定, 脚本只摆信息。")
     if json_mode:
         J["b2_discrimination"] = [{"key": k, "family": fam(k), "disc": round(d,4), "auc": round(au,4),
                                    "direction": "winner_high" if au>0.5 else "winner_low",
