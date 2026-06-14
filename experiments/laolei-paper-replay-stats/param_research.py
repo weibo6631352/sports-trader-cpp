@@ -269,6 +269,34 @@ def main():
     seg("赛段g_period", lambda u: u["f"].get("g_period"))
     seg("时段UTC", hourkey)
 
+    # ============ ①c 因子相关性 (老板「能加的都加」): 哪些因子冗余, agent 别双重计数 ============
+    print("\n" + "-" * 78)
+    print("①c 因子相关性 (Pearson, 共同样本≥10; |r|大=冗余/同源, 供 agent 去重不双算)")
+    def pearson(xs, ys):
+        n = len(xs)
+        if n < 3: return None
+        mx = sum(xs)/n; my = sum(ys)/n
+        sx = sum((x-mx)**2 for x in xs); sy = sum((y-my)**2 for y in ys)
+        if sx <= 0 or sy <= 0: return None
+        return sum((xs[i]-mx)*(ys[i]-my) for i in range(n)) / math.sqrt(sx*sy)
+    corr = []
+    for i in range(len(POOL)):
+        for j in range(i+1, len(POOL)):
+            ka, kb = POOL[i], POOL[j]
+            pairs = [(u["f"][ka], u["f"][kb]) for u in settled
+                     if isinstance(u["f"].get(ka),(int,float)) and math.isfinite(u["f"].get(ka))
+                     and isinstance(u["f"].get(kb),(int,float)) and math.isfinite(u["f"].get(kb))]
+            if len(pairs) < 10: continue
+            r = pearson([p[0] for p in pairs], [p[1] for p in pairs])
+            if r is not None: corr.append((abs(r), r, ka, kb, len(pairs)))
+    corr.sort(reverse=True)
+    if corr:
+        for ar, r, ka, kb, n in corr[:12]:
+            print(f"  {lab(ka)}[{fam(ka)}] ~ {lab(kb)}[{fam(kb)}]  r={r:+.2f} (n{n}){'  ⚠高度冗余' if ar>0.8 else ''}")
+    else:
+        print("  共同样本不足 → 等累积")
+    J["correlations_top"] = [{"a": ka, "b": kb, "r": round(r,3), "n": n} for ar,r,ka,kb,n in corr[:20]]
+
     # ============ ② 参数阈值扫描 × 赢家捕获 (调参) ============
     print("\n" + "-" * 78)
     print("② 参数阈值扫描 × 赢家捕获 (每因子扫门槛: 过门盘 赢面/错过赢家/PnL)")
