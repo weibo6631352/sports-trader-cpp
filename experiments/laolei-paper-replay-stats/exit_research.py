@@ -61,7 +61,15 @@ SIGS = ["held_fair","held_vel","sh_conv","gap","drawdown","imb","sh_age_ms","a1s
 SLAB = {"held_fair":"持仓边fair","held_vel":"持仓边fair速度","sh_conv":"收敛率","gap":"fair−mid缺口",
         "drawdown":"水下深度","imb":"簿失衡","sh_age_ms":"sharp新鲜度ms","a1sz":"卖1量",
         "g_remain":"剩余秒(翻盘空间)","held_sdiff":"持仓边比分差","g_period":"赛段","g_age_ms":"进度新鲜度ms"}
+# 信号族标注 (老板「未来一段时间 vs 赢家 别混淆, 但结合用; 未来信号对预测赢家也有用; 标清意义即可」):
+#   不排除任一信号(未来信号也留在赢/输判别里), 只打族标让专业人士看清每个数字的意义、自行结合。
+FAM = {"held_fair":"赢家","held_sdiff":"赢家","gap":"赢家","edge_ci":"赢家",        # 终局胜负/赢面
+       "held_vel":"未来","sh_conv":"未来","imb":"未来","ofi":"未来","mom5":"未来","rvol":"未来",  # 动态方向(对赢家预测也有用)
+       "g_remain":"窗口","g_period":"窗口",                                          # 剩余时间/赛段
+       "sh_age_ms":"执行","g_age_ms":"执行","a1sz":"执行","bk_spread":"执行",        # 成本/新鲜度
+       "drawdown":"状态"}                                                            # 当前水下(条件量)
 def slab(k): return SLAB.get(k,k)
+def fam(k):  return FAM.get(k,"?")
 
 def main():
     a = [x for x in sys.argv[1:] if not x.startswith("--")]
@@ -209,6 +217,7 @@ def main():
     print("\n"+"-"*80)
     print("B2 回撤 vs 退化 判别力 [per-position: 每仓取水下期信号均值=1点, n=仓数, 非样本点]")
     print("   赢家=暂时回撤 vs 输家=结构退化, 各信号 AUC; 大=能分'该离/不该离'。不预设答案, 数据说话。")
+    print("   信号族(老板「标清意义, 结合用」): [赢家]终局胜负 | [未来]动态方向(对预测赢家也有用) | [窗口]剩余时间 | [执行]成本/新鲜度")
     print("   sharp 陈旧(>--stale-ms)样本先剔除(信号失真); n 小=噪声, 看判别方向别看精确值")
     def pos_uw_mean(p, k):  # 一仓的水下期(剔陈旧)某信号均值 = 该仓代表值
         vs = [s.get(k) for s in p["uw"] if not (s.get("sh_age_ms") is not None and s["sh_age_ms"] > stale_ms)]
@@ -230,7 +239,7 @@ def main():
     for d,k,au,wm,lm,nw,nl in disc:
         arrow = "赢家高" if au>0.5 else "赢家低"
         warn = " ⚠n小慎读" if (nw<8 or nl<8) else ""
-        print(f"  {slab(k):<14} 判别 {d:.2f} ({arrow}) | 回撤中赢仓均 {wm:+.4g} vs 输仓均 {lm:+.4g}  (n赢仓{nw}/输仓{nl}){warn}")
+        print(f"  [{fam(k)}] {slab(k):<14} 判别 {d:.2f} ({arrow}) | 回撤中赢仓均 {wm:+.4g} vs 输仓均 {lm:+.4g}  (n赢仓{nw}/输仓{nl}){warn}")
     # F-5: sh_conv 窗口混合提示 (引擎细窗 vs 兜底粗窗口)
     n_eng = sum(1 for p in positions for s in p["uw"] if s.get("conv_src")=="eng")
     n_der = sum(1 for p in positions for s in p["uw"] if s.get("conv_src")=="derived")
@@ -241,6 +250,35 @@ def main():
     n_stale = sum(1 for p in positions for s in p["uw"] if s.get("sh_age_ms") is not None and s["sh_age_ms"]>stale_ms)
     if n_uw_all:
         print(f"  ⚠ 水下样本中 sharp 陈旧(>{stale_ms:.0f}ms)占 {n_stale}/{n_uw_all}={100*n_stale/n_uw_all:.0f}% → 已剔除(信念信号失真)")
+
+    # ============ B2b 赢家×未来 结合 (老板「别混淆但结合用」) — 离场真判据 ============
+    print("\n"+"-"*80)
+    print("B2b 赢家×未来 结合: 在'水下但【仍是赢家】(held_fair≥0.5)'的仓里, 看【未来】信号能否分'守住 vs 退化'")
+    print("   = 离场真判据: [赢家]说还是不是赢家 × [未来]说正朝哪变, 结合不混淆")
+    uw_pos = [p for p in positions if p["uw"]]
+    still_win = [p for p in uw_pos if (pos_uw_mean(p,"held_fair") or 0) >= 0.5]  # 水下期均仍是赢家
+    lost_stat = [p for p in uw_pos if 0 < (pos_uw_mean(p,"held_fair") or 0) < 0.5]  # 水下期已失赢家身份
+    if still_win:
+        sw = sum(p["won"] for p in still_win)
+        print(f"  '仍是赢家'水下仓 {len(still_win)}: 最终翻盘 {sw}/{len(still_win)}={100*sw/len(still_win):.0f}%")
+    if lost_stat:
+        lw = sum(p["won"] for p in lost_stat)
+        print(f"  '已失赢家身份'水下仓 {len(lost_stat)}: 最终翻盘 {lw}/{len(lost_stat)}={100*lw/len(lost_stat):.0f}% (失身份→该离的候选信号?)")
+    sw_w = [p for p in still_win if p["won"]==1]; sw_l = [p for p in still_win if p["won"]==0]
+    if len(sw_w)>=3 and len(sw_l)>=3:
+        print(f"  在'仍是赢家'子集里, [未来]信号判别(守住{len(sw_w)} vs 退化{len(sw_l)}):")
+        rows=[]
+        for k in [s for s in SIGS if fam(s)=="未来"]:
+            wv=[v for v in (pos_uw_mean(p,k) for p in sw_w) if v is not None]
+            lv=[v for v in (pos_uw_mean(p,k) for p in sw_l) if v is not None]
+            if len(wv)>=3 and len(lv)>=3:
+                au=auc(wv,lv)
+                if au is not None: rows.append((abs(au-0.5)*2,k,au))
+        rows.sort(reverse=True)
+        for d,k,au in rows:
+            print(f"    [未来] {slab(k):<12} 判别 {d:.2f} ({'守住高' if au>0.5 else '守住低'})")
+    else:
+        print(f"  '仍是赢家'子集 守住/退化 不足各≥3 (当前 {len(sw_w)}/{len(sw_l)}) → 等累积")
 
     # ============ B3 翻盘率 by 信号分桶 ============
     print("\n"+"-"*80)

@@ -55,6 +55,13 @@ POOL = ["fair","px","edge_ci","devig","kelly_sugg","sh_fair","sh_vel","sh_conv",
         "odds_age","g_remain","g_sdiff","g_period","m_clv","t_vol5m","t_ratio5m"]
 
 def lab(k): return LABEL.get(k,k)
+# 信号族 (老板「未来一段时间 vs 赢家 别混淆但结合用; 未来信号对预测赢家也有用; 标清意义」): 不排除, 只打标
+FAM = {"fair":"赢家","devig":"赢家","edge_ci":"赢家","sh_fair":"赢家","kelly_sugg":"赢家","g_sdiff":"赢家","m_clv":"赢家",
+       "sh_vel":"未来","sh_conv":"未来","sh_vol":"未来","ofi":"未来","rvol":"未来","mom5":"未来","bk_imb":"未来","bk_micro_mid":"未来",
+       "g_remain":"窗口","g_period":"窗口",
+       "px":"执行","bk_spread":"执行","d5_bid":"执行","d5_ask":"执行","odds_age":"执行","vol24h":"执行","liq":"执行","deploy":"执行",
+       "t_vol5m":"未来","t_ratio5m":"未来"}
+def fam(k): return FAM.get(k,"?")
 
 def auc_p(au, nw, nl):
     # Mann-Whitney AUC 两侧 p (正态近似): z=(AUC-0.5)/SE, SE=sqrt((nw+nl+1)/(12·nw·nl))
@@ -187,12 +194,13 @@ def main():
     scored.sort(reverse=True)
     if not scored:
         print("  样本不足, 无可算判别的因子")
+    print("   信号族(老板「标清意义,结合用」): [赢家]终局胜负 | [未来]动态方向(对预测赢家也有用) | [窗口]剩余时间 | [执行]成本/新鲜度")
     for disc, k, au, wm, lm, nw, nl in scored[:18]:
         p = auc_p(au, nw, nl)
         strong = (k not in GATED) and (p < bonf)
         arrow = "赢家高" if au > 0.5 else "赢家低"
         tag = "  ★强候选(过Bonf)" if strong else ("  ·候选(未过Bonf)" if k not in GATED and p < 0.05 else "")
-        print(f"  {lab(k):<10} 判别 {disc:.2f} ({arrow}) p={p:.3f} | 赢均 {wm:+.4g} vs 输均 {lm:+.4g}{tag}")
+        print(f"  [{fam(k)}] {lab(k):<10} 判别 {disc:.2f} ({arrow}) p={p:.3f} | 赢均 {wm:+.4g} vs 输均 {lm:+.4g}{tag}")
     cands = [k for d,k,au,wm,lm,nw,nl in scored[:18] if k not in GATED and auc_p(au,nw,nl) < bonf]
     if cands:
         print(f"  → ★强候选假设 (过Bonferroni, 仍需OOS验证): {', '.join(lab(k) for k in cands)}")
