@@ -136,9 +136,12 @@ def main():
         pnl = (won - px) if isinstance(px, (int, float)) else None
         universe.append({"src": "entered", "won": won, "pnl": pnl, "yes": yes, "f": r})
     # 被挡盘 (gate_blocks, 反事实结局): side = yes 或 fair≥0.5 推; won = (side==settle); would-pnl = won - px
+    #   ⚠ 版本过滤【不】施于被挡盘 (2026-06-14 修--ver陷阱): 被挡=①②③信号挖掘的决策population,
+    #     结局由市场外生(对我们的门版本无关), 方向跨版本有效(见下方口径说明)。--ver 仅隔离 ⓪(进场盘
+    #     真实策略表现, 才需分版本)。否则刚重启(新git)时被挡盘几乎全在版本切点前 → 被--ver清空 →
+    #     误报"0结算点无法分析"(数据其实早就绪, 被挡已结算可达上百)。monitor.py 的就绪判定从不分版本即此理。
     gates = load(gates_p)
     for r in gates:
-        if ver_cut is not None and r.get("ts", 0) < ver_cut: continue
         cond = r.get("cond")
         if cond not in outcome: continue
         yes_orig = r.get("yes", -1)
@@ -195,6 +198,8 @@ def main():
     # ============ ⓪ 策略真实表现 (仅进场盘真实结局, 金融专家P0) — 这才是"该不该投钱"的口径 ============
     print("\n" + "-" * 78)
     print("⓪ 策略真实表现 (仅【进场盘】真实结局; 这才是策略盈亏, 与上面决策population口径分开)")
+    if ver:
+        print(f"  (--ver {ver}: ⓪ 仅算该版本进场盘=版本隔离; ①②③ 用全量被挡盘=信号方向跨版本)")
     ent_s = [u for u in ent if u["pnl"] is not None]
     if len(ent_s) < 3:
         print(f"  进场已结算 {len(ent_s)} < 3 → 策略真实表现等累积 (这块要进场盘结算, 比被挡盘慢)")

@@ -86,6 +86,26 @@ def main():
         return
     fills_p, pp_p, settle_p = a[0], a[1], a[2]
 
+    # 防御: 参数顺序传错(fills/pp/settle 互换)时旧行为是【静默】给"0仓,等累积"的貌似合理假象
+    #   (2026-06-14 实测踩坑: 把 pp/settle/fills 乱序 → outcome 空 → 假报无数据)。按文件签名字段校验角色,
+    #   传错立即报错 (老板「遇到问题及时改」: 静默误导比报错更坏)。
+    def _peek(p):
+        try:
+            for l in open(p):
+                l = l.strip()
+                if l:
+                    try: return json.loads(l)
+                    except: return {}
+        except FileNotFoundError: pass
+        return {}
+    sig_settle, sig_pp = _peek(settle_p), _peek(pp_p)
+    if sig_settle and "condition_id" not in sig_settle and "settlement_value" not in sig_settle:
+        print(f"✗ 第3参数 {settle_p} 不像 settlements (缺 condition_id/settlement_value)。"
+              f" 正确顺序: <fills> <position_path> <settlements>"); return
+    if sig_pp and "tok" not in sig_pp:
+        print(f"✗ 第2参数 {pp_p} 不像 position_path (缺 tok)。"
+              f" 正确顺序: <fills> <position_path> <settlements>"); return
+
     outcome = {}
     for s in load(settle_p):
         if s.get("parse_ok") == 0 or s.get("settlement_value",-1) == -1: continue
