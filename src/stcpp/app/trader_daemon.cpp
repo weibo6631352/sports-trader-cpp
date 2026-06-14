@@ -925,12 +925,10 @@ BuildResult TraderDaemon::Build() {
     //   = 精确套住赢家 V 底。与止损反事实研究 (R1-R4 全负) 同向。0 = 关; 5 个未结算反事实待验,
     //   若后续证明真崩盘场景存在再以更严条件 (如 + 比分判负确认) 重议。
     cfg_.trading_loop.frozen_hard_stop_pct = 0.0;
-    // 决策节拍 = fallback 心跳上限 (2026-06-14 老板「无源兜底心跳已不重要, 降频」): 100ms → 1000ms。
-    //   背景: 100ms 原是为「定时采样新鲜簿」(2026-06-04 怕 500ms 卡住簿反应)。但 2026-06-14「触发=变动」后,
-    //   book/赔率源/状态【变动】已直接 RequestTick 即时唤醒决策 (簿转向/吃单/sharp 动 0 延迟反应) —— 心跳不再
-    //   承担簿反应, 只剩【无数据变动时】的安全网: staleness 检测(阈值 5-120s)/结算 housekeeping(poller ~30s)/
-    //   漏触发兜底。这些 1s 绰绰有余。降到 1000ms = 砍掉 ~10× 无变动空转重算, 反应性由变动触发保证不受影响。
-    cfg_.trading_loop.tick_interval_ms = 1000;
+    // 决策节拍 = fallback 心跳上限 (2026-06-14 老板「无源兜底心跳已不重要, 降频」): 默认已挪到 TradingLoopConfig
+    //   结构体 (1000ms); 此处【不再覆盖】, 以保留 caller 显式设的值 (如单测 50ms 快 tick)。背景: 原 100ms 是为
+    //   「定时采样新鲜簿」, 但「触发=变动」后 book/赔率源/状态变动已直接 RequestTick 即时唤醒, 心跳只剩无变动时的
+    //   安全网 (staleness/结算 poller/漏触发兜底), 1s 绰绰有余, 反应性由变动触发保证。
     // 老板 2026-06-03「把门都去了, 虚拟盘专门调模型, 模型自主, 识别各种情况」: 调模型模式 —
     //   去掉所有 edge 边门 (edge_ci/slippage/fee/net_ev + has_real_fair 对模型驱动放行), 让模型/sharp/
     //   score-prior 的任意正净 edge 在 paper 自由成交 → 全反馈供调模型。与 enable_paper_fills 同开同关

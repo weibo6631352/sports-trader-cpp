@@ -264,8 +264,9 @@ struct FairCandidates {
 // TradingLoopConfig — 运行参数
 // ---------------------------------------------------------------------------
 struct TradingLoopConfig {
-    // 每次 tick 间隔 (ms). 默认 500ms 适合 debug 观测.
-    std::int64_t tick_interval_ms{500};
+    // fallback 心跳上限 (ms): 无数据变动时多久兜底跑一轮 (staleness/结算)。生产默认 1000ms
+    //   (2026-06-14 老板「无源兜底心跳降频」; 反应性由变动触发保证)。测试可显式覆盖 (如 50ms 快 tick)。
+    std::int64_t tick_interval_ms{1000};
 
     // bankroll (pUSD). 用于 SizingCalculator.
     double bankroll_usdc{100'000.0};
