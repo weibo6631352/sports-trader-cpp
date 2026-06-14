@@ -63,6 +63,12 @@ FAM = {"fair":"赢家","devig":"赢家","edge_ci":"赢家","sh_fair":"赢家","k
        "t_vol5m":"未来","t_ratio5m":"未来"}
 def fam(k): return FAM.get(k,"?")
 
+def quart(vals):  # (p25, 中位, p75) — 给分布而非只均值 (老板「提供更多数据挖掘信息」)
+    if not vals: return (None, None, None)
+    s = sorted(vals); n = len(s)
+    q = lambda f: s[min(n-1, int(f*(n-1)+0.5))]
+    return (q(0.25), q(0.50), q(0.75))
+
 def auc_p(au, nw, nl):
     # Mann-Whitney AUC 两侧 p (正态近似): z=(AUC-0.5)/SE, SE=sqrt((nw+nl+1)/(12·nw·nl))
     if nw < 1 or nl < 1: return 1.0
@@ -195,22 +201,49 @@ def main():
         if au is None: continue
         disc = abs(au - 0.5) * 2
         wm = sum(wv)/len(wv); lm = sum(lv)/len(lv)
-        scored.append((disc, k, au, wm, lm, len(wv), len(lv)))
+        scored.append((disc, k, au, wm, lm, len(wv), len(lv), quart(wv), quart(lv)))
     scored.sort(reverse=True)
     if not scored:
         print("  样本不足, 无可算判别的因子")
     print("   信号族(老板「标清意义,结合用」): [赢家]终局胜负 | [未来]动态方向(对预测赢家也有用) | [窗口]剩余时间 | [执行]成本/新鲜度")
-    for disc, k, au, wm, lm, nw, nl in scored[:18]:
+    print("   列: 判别力 | p | 赢家[p25/中位/p75] vs 输家[p25/中位/p75] (给分布非只均值, 供 agent 自行挖)")
+    # 全因子(不截断), 供下游 agent 完整挖 (老板「信息太少, 脚本职责=数据挖掘+信息供给」)
+    for disc, k, au, wm, lm, nw, nl, wq, lq in scored:
         p = auc_p(au, nw, nl)
         strong = (k not in GATED) and (p < bonf)
         arrow = "赢家高" if au > 0.5 else "赢家低"
-        tag = "  ★强候选(过Bonf)" if strong else ("  ·候选·未过校正·勿入参(仅假设)" if k not in GATED and p < 0.05 else "")
-        print(f"  [{fam(k)}] {lab(k):<10} 判别 {disc:.2f} ({arrow}) p={p:.3f} | 赢均 {wm:+.4g} vs 输均 {lm:+.4g}{tag}")
-    cands = [k for d,k,au,wm,lm,nw,nl in scored[:18] if k not in GATED and auc_p(au,nw,nl) < bonf]
-    if cands:
-        print(f"  → ★强候选假设 (过Bonferroni, 仍需OOS验证): {', '.join(lab(k) for k in cands)}")
-    else:
-        print("  → 暂无过 Bonferroni 的强候选 (n 不够 / 信号弱); 别拿'·候选'当结论, 等累积")
+        tag = "  ★强候选(过Bonf)" if strong else ("  ·候选·未过校正(仅假设)" if k not in GATED and p < 0.05 else "")
+        wqs = f"[{wq[0]:+.3g}/{wq[1]:+.3g}/{wq[2]:+.3g}]" if wq[0] is not None else "—"
+        lqs = f"[{lq[0]:+.3g}/{lq[1]:+.3g}/{lq[2]:+.3g}]" if lq[0] is not None else "—"
+        print(f"  [{fam(k)}] {lab(k):<10} 判别{disc:.2f} ({arrow}) p={p:.3f} n{nw}/{nl} | 赢{wqs} vs 输{lqs}{tag}")
+    cands = [k for d,k,au,wm,lm,nw,nl,wq,lq in scored if k not in GATED and auc_p(au,nw,nl) < bonf]
+    print(f"  → ★强候选假设 (过Bonferroni, 仍需OOS验证): {', '.join(lab(k) for k in cands) if cands else '暂无(n不够/信号弱)'}")
+
+    # ============ ①b 分段画像 (老板「更多数据挖掘」): 运动/盘口/价带/赛段 切片 ============
+    print("\n" + "-" * 78)
+    print("①b 分段画像 (决策全集切片, 含反事实; 每段 n/赢面/均PnL — 供 agent 挖'哪类盘更值得入')")
+    def seg(name, keyfn, minn=5):
+        groups = collections.defaultdict(list)
+        for u in settled:
+            kv = keyfn(u)
+            if kv is not None and kv != "": groups[kv].append(u)
+        rows = [(g, len(us), sum(x["won"] for x in us)/len(us), sum(x["pnl"] for x in us)/len(us))
+                for g, us in groups.items() if len(us) >= minn]
+        rows.sort(key=lambda r: -r[1])
+        if rows:
+            print(f"  按{name}:")
+            for g, n, wr, pp in rows:
+                lo, hi = wilson(int(round(wr*n)), n)
+                print(f"    {str(g):<16} n{n:>3} 赢面{100*wr:>3.0f}%(CI[{100*lo:.0f},{100*hi:.0f}]) 均PnL{pp:+.4f}")
+    def pxband(u):
+        v = u["f"].get("px")
+        if not isinstance(v, (int, float)): return None
+        lo = int(v*10)/10.0
+        return f"[{lo:.1f},{lo+0.1:.1f})"
+    seg("运动", lambda u: u["f"].get("sport"))
+    seg("盘口", lambda u: u["f"].get("mkt"))
+    seg("价带", pxband)
+    seg("赛段g_period", lambda u: u["f"].get("g_period"))
 
     # ============ ② 参数阈值扫描 × 赢家捕获 (调参) ============
     print("\n" + "-" * 78)
