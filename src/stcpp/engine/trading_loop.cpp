@@ -382,6 +382,7 @@ void TradingLoop::JournalFill(const FillRow& fr) {
     emit_d("sh_vel", fr.sh_vel);
     emit_d("sh_conv", fr.sh_conv);  // 持仓对错实时判据 (2026-06-14 老板「量化因子用得上」)
     emit_d("sh_vol", fr.sh_vol);
+    emit_d("sh_age_ms", fr.sh_age_ms);  // sharp 新鲜度 (2026-06-14 老板「依赖sharp则新鲜度关键」)
     emit_d("deploy", fr.deploy_pct);
     emit_d("vol24h", cat.volume_24h);
     emit_d("liq", cat.liquidity);
@@ -2592,12 +2593,15 @@ void TradingLoop::ExecuteControllerSide(const std::string& condition_id, const s
             fr.q_rvol = th->second.RealizedVol(w);
             fr.q_mom5 = th->second.RateOfChangePerSec(300'000'000'000LL);
         }
-        if (const auto shj = sharp_history_.find(condition_id);
-            shj != sharp_history_.end() && shj->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
-            fr.sh_fair = shj->second.last_sharp();
-            fr.sh_vel = shj->second.Velocity(cfg_.sharp_fair_vel_window_ns);
-            fr.sh_conv = shj->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns);  // 持仓对错实时判据 (2026-06-14)
-            fr.sh_vol = shj->second.Vol(cfg_.sharp_fair_vel_window_ns);
+        if (const auto shj = sharp_history_.find(condition_id); shj != sharp_history_.end()) {
+            if (shj->second.last_ts_ns() > 0)  // sharp 新鲜度 (2026-06-14 老板「依赖sharp则新鲜度关键」), 放守卫外
+                fr.sh_age_ms = static_cast<double>(fill.as_of_ts_ns - shj->second.last_ts_ns()) / 1e6;
+            if (shj->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+                fr.sh_fair = shj->second.last_sharp();
+                fr.sh_vel = shj->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+                fr.sh_conv = shj->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns);  // 持仓对错实时判据 (2026-06-14)
+                fr.sh_vol = shj->second.Vol(cfg_.sharp_fair_vel_window_ns);
+            }
         }
         fr.deploy_pct = tick_equity_.deploy_pct;
         // 复盘观测补全 (2026-06-13): 入场决策全息 — ctx 来自 TickOne (平旧边 nullptr → NaN 省略)
@@ -2988,7 +2992,8 @@ void TradingLoop::SamplePositionPaths() {
         // 订单簿深度历史 (2026-06-14 老板「订单簿挺重要的」): L1 价/量 + spread/imb/microprice + 5 档深度 +
         //   簿龄。读 hub 快照 (无新网络), 给持仓期订单簿深度时间序列 (流动性/执行/逆选离线研究金料)。
         double bid = kNan, ask = bid, mid = bid, micro = bid, spread = bid, imb = bid, b1sz = bid, a1sz = bid,
-               bd5 = bid, ad5 = bid, d5imb = bid, age_ms = bid, sharp = bid;
+               bd5 = bid, ad5 = bid, d5imb = bid, age_ms = bid, sharp = bid, sh_conv = bid, sh_vel = bid,
+               sh_age_ms = bid;
         int bvalid = 0;  // 簿有效标志 (2026-06-14 review #10): 区分"无簿→nf填0" vs 真实0 (消语义陷阱)
         if (const auto bk = hub_.Read(pv.token_id); bk && bk->valid) {
             bvalid = 1;
@@ -3006,25 +3011,36 @@ void TradingLoop::SamplePositionPaths() {
             d5imb = dm.depth_imbalance_5lvl;
             if (bk->data_source_ts_ns > 0) age_ms = static_cast<double>(now - bk->data_source_ts_ns) / 1e6;
         }
-        if (const auto sh = sharp_history_.find(pv.condition_id); sh != sharp_history_.end())
+        if (const auto sh = sharp_history_.find(pv.condition_id); sh != sharp_history_.end()) {
             sharp = sh->second.last_sharp();  // YES-canonical
+            // sharp 新鲜度 (2026-06-14 老板「这么依赖 sharp, 新鲜度也很关键」): 最近 sharp 样本龄。
+            //   feed 静默/滞后 → sharp 陈旧 → 下面 conv/vel 失真(看似守住实为停更)。是信念信号有效性的前提。
+            if (sh->second.last_ts_ns() > 0) sh_age_ms = static_cast<double>(now - sh->second.last_ts_ns()) / 1e6;
+            // 持仓中信念信号时序 (2026-06-14 老板「基建支撑离场推断」): 细窗(~10s)收敛率/速度 — 30s 采样重建不出,
+            //   故落引擎估计。YES-canon (Python 按 yes 定向)。<0 收敛=持仓变对 / >0 发散=变错。
+            if (sh->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+                sh_conv = sh->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns);
+                sh_vel = sh->second.Velocity(cfg_.sharp_fair_vel_window_ns);
+            }
+        }
         const auto eit2 = engine_by_token_.find(pv.token_id);
         std::int64_t entry_ns = 0;  // 入场时刻 (2026-06-14: 离线算持有时长/入场后 Δmid 逆选, 免反查 fills)
         if (const auto pp = pos_path_.find(pv.token_id); pp != pos_path_.end()) entry_ns = pp->second.entry_ns;
         // 有限才写 (NaN 省略, 同 fills_journal emit_d 范式): 拼基础段 + 深度段。
         auto nf = [](double v) { return std::isfinite(v) ? v : 0.0; };  // snprintf NaN 防呆 (下游按 0 容错)
-        char buf[680];
+        char buf[760];
         const int n = std::snprintf(
             buf, sizeof(buf),
             "{\"ts\":%lld,\"et\":%lld,\"cond\":\"%s\",\"tok\":\"%s\",\"yes\":%d,\"qty\":%.4f,\"avg\":%.4f,"
             "\"bvalid\":%d,\"bid\":%.4f,\"ask\":%.4f,\"mid\":%.4f,\"micro\":%.4f,\"spread\":%.4f,\"imb\":%.4f,"
             "\"b1sz\":%.1f,\"a1sz\":%.1f,\"bd5\":%.1f,\"ad5\":%.1f,\"d5imb\":%.4f,\"bk_age_ms\":%.0f,"
-            "\"sharp\":%.4f,\"eng\":\"%s\"}\n",
+            "\"sharp\":%.4f,\"sh_conv\":%.5g,\"sh_vel\":%.5g,\"sh_age_ms\":%.0f,\"eng\":\"%s\"}\n",
             static_cast<long long>(now), static_cast<long long>(entry_ns), pv.condition_id.c_str(),
             pv.token_id.c_str(), pv.outcome == strategy::Outcome::Yes ? 1 : 0,
             static_cast<double>(pv.net_shares_micro) / 1'000'000.0, pv.avg_entry_price, bvalid, nf(bid), nf(ask),
             nf(mid), nf(micro), nf(spread), nf(imb), nf(b1sz), nf(a1sz), nf(bd5), nf(ad5), nf(d5imb),
-            nf(age_ms), nf(sharp), eit2 != engine_by_token_.end() ? eit2->second.c_str() : "sharp");
+            nf(age_ms), nf(sharp), nf(sh_conv), nf(sh_vel), nf(sh_age_ms),
+            eit2 != engine_by_token_.end() ? eit2->second.c_str() : "sharp");
         if (n > 0) journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(n)));
     }
 }
@@ -3077,12 +3093,16 @@ void TradingLoop::LogGateBlock(const std::string& cond, const char* gate, double
         emit_d("rvol", th->second.RealizedVol(w));
         emit_d("mom5", th->second.RateOfChangePerSec(300'000'000'000LL));
     }
-    if (const auto shj = sharp_history_.find(cond);
-        shj != sharp_history_.end() && shj->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
-        emit_d("sh_fair", shj->second.last_sharp());
-        emit_d("sh_vel", shj->second.Velocity(cfg_.sharp_fair_vel_window_ns));
-        emit_d("sh_conv", shj->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns));  // 持仓对错实时判据
-        emit_d("sh_vol", shj->second.Vol(cfg_.sharp_fair_vel_window_ns));
+    if (const auto shj = sharp_history_.find(cond); shj != sharp_history_.end()) {
+        // sharp 新鲜度 (2026-06-14 老板「这么依赖 sharp, 新鲜度也很关键」): 放 >=3 守卫外, 陈旧/样本少也记。
+        if (shj->second.last_ts_ns() > 0)
+            emit_d("sh_age_ms", static_cast<double>(now - shj->second.last_ts_ns()) / 1e6);
+        if (shj->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
+            emit_d("sh_fair", shj->second.last_sharp());
+            emit_d("sh_vel", shj->second.Velocity(cfg_.sharp_fair_vel_window_ns));
+            emit_d("sh_conv", shj->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns));  // 持仓对错实时判据
+            emit_d("sh_vol", shj->second.Vol(cfg_.sharp_fair_vel_window_ns));
+        }
     }
     // ③ 账本快照 (tick_equity_, loop_thread_ 单写)
     emit_d("deploy", tick_equity_.deploy_pct);

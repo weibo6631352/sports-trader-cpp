@@ -633,6 +633,7 @@ public:
         double sh_vel{std::numeric_limits<double>::quiet_NaN()};         // sharp velocity (10s)
         double sh_conv{std::numeric_limits<double>::quiet_NaN()};        // sharp 收敛率 (<0 市场向sharp收敛=持仓变对 / >0 发散=变错) — 持仓对错实时判据
         double sh_vol{std::numeric_limits<double>::quiet_NaN()};         // sharp 抖动度 (窗口内sharp变化RMS)
+        double sh_age_ms{std::numeric_limits<double>::quiet_NaN()};      // sharp 新鲜度 (最近sharp样本龄ms; 陈旧→conv/vel失真)
         double deploy_pct{std::numeric_limits<double>::quiet_NaN()};     // 成交刻部署率
         double hold_sec{std::numeric_limits<double>::quiet_NaN()};       // 结算行: 持有秒
         double mae{std::numeric_limits<double>::quiet_NaN()};            // 持有期最大不利偏移 (entry−min_mid)
