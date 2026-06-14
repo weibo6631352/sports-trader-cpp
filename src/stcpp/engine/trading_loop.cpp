@@ -3089,11 +3089,14 @@ void TradingLoop::SampleMarketTape() {
         const std::string& cond = kv.first;
         const std::string& yes_tok = kv.second.tokens.first;
         if (yes_tok.empty()) continue;
-        // 只录 sharp 源盘 (有 sharp 时序 = 研究/可交易宇宙; 控量, 非全 catalog)
+        // 只录 sharp 源盘 (有 sharp 时序 = 有赔率; Goalserve inplay feed 本身仅体育 → 满足"限体育+有赔率")
         const auto shj = sharp_history_.find(cond);
         if (shj == sharp_history_.end() || shj->second.last_ts_ns() <= 0) continue;
         double sharp = shj->second.last_sharp(), sh_vel = kNan, sh_conv = kNan, sh_vol = kNan;
         const double sh_age_ms = static_cast<double>(now - shj->second.last_ts_ns()) / 1e6;
+        // "正在比赛"闸 (2026-06-14 老板「正在比赛并且有赔率的就行」): sharp 必须在流(最近更新)才算 in-play;
+        //   pregame/已结束的盘 sharp 停更 → age 大 → 跳过。120s 容忍 feed 短暂 gap, 排掉非活跃盘。
+        if (sh_age_ms > 120000.0) continue;
         if (shj->second.WindowSampleCount(cfg_.sharp_fair_vel_window_ns) >= 3) {
             sh_vel = shj->second.Velocity(cfg_.sharp_fair_vel_window_ns);
             sh_conv = shj->second.ConvergenceRate(cfg_.sharp_fair_vel_window_ns);
