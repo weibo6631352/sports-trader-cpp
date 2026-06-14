@@ -44,6 +44,10 @@ struct FairInputs {
     double score_prior_yes{0.5};                 // FairValueEstimator 先验
     double prior_conf{0.0};                      // 先验置信 (随时钟升)
     bool has_real_fair{false};                   // 有真实 in-play Goalserve 比分?
+    bool sharp_frozen{false};                    // sharp 源盘冻结 (Goalserve core.stopped/blocked/finished:
+                                                 //   停表/封盘/完赛 → 赔率是死值)。true → sharp 失格, 不当锚,
+                                                 //   自然回落 score-prior/市场。2026-06-14 老板「冻结要在赔率
+                                                 //   策略引擎里就考虑, 不在事后 gate」。时间戳救不了(停盘 ts 照常重盖)。
     // (大模型 ml_p_yes / ml_blend_weight 已砍 2026-06-05「砍掉大模型训练功能」: fair 不再有 ONNX blend)
 };
 
@@ -64,7 +68,9 @@ struct FairResult {
 
     // 2. sharp 优先 (老板 2026-06-12「两个盈利引擎都不硬依赖比分, 删比分门」): 有效 bet365 in-play 赔率
     //    即用, 不再被 has_real_fair(比分) 门锁 —— 赔率本身就是完整 fair, 进场认赔率不认比分。
-    if (in.sharp_yes >= 0.0 && in.sharp_yes <= 1.0) {
+    //    ⚠ 但【冻结盘】(core.stopped/blocked/finished) 的赔率是死值 → sharp_frozen 时 sharp 失格,
+    //      不当锚 (2026-06-14 老板「在赔率策略引擎里就考虑」); 落到下方 score-prior/市场 → fair_src 自然非 sharp。
+    if (in.sharp_yes >= 0.0 && in.sharp_yes <= 1.0 && !in.sharp_frozen) {
         p = in.sharp_yes;
         src = FairSrc::kSharpInplay;
     } else if (in.has_real_fair) {

@@ -358,6 +358,34 @@ static constexpr int kMaxJsonDepth = 32;
         rec.gs_state_code = state_str;
     }
 
+    // --- core: event-level 时钟/盘态 (2026-06-14 老板「源字段没充分利用」+ LoL 停盘 bug) ---
+    //   stopped=时钟停表(暂停/局间) / blocked=盘口封(暂停接注) / finished=赛果定。任一="1" → 赔率非活(冻结值),
+    //   下游 sharp 定价回退市场。⚠ 必须限定在 core 块内取: "stopped"/"blocked" 在 stats 等别处也可能出现
+    //   (soccer "shots blocked")→ 锚 "core": 块再 ExtractStringValue, 防误匹配。core 是 info 的兄弟(event 级)。
+    const auto core_key_pos = event_block.find("\"core\":");
+    if (core_key_pos != std::string_view::npos) {
+        const auto core_brace = event_block.find('{', core_key_pos);
+        if (core_brace != std::string_view::npos) {
+            int cdepth = 0;
+            std::size_t core_end = core_brace;
+            for (std::size_t i = core_brace; i < event_block.size(); ++i) {
+                if (event_block[i] == '{') {
+                    if (++cdepth > kMaxJsonDepth) break;
+                } else if (event_block[i] == '}') {
+                    if (--cdepth == 0) {
+                        core_end = i;
+                        break;
+                    }
+                }
+            }
+            const std::string_view core_block = event_block.substr(core_brace, core_end - core_brace + 1);
+            std::string cv;
+            if (ExtractStringValue(core_block, "stopped", cv, 0)) rec.core_stopped = (cv == "1");
+            if (ExtractStringValue(core_block, "blocked", cv, 0)) rec.core_blocked = (cv == "1");
+            if (ExtractStringValue(core_block, "finished", cv, 0)) rec.core_finished = (cv == "1");
+        }
+    }
+
     // --- minute / seconds (时钟) ---
     std::string minute_str;
     std::string seconds_str;

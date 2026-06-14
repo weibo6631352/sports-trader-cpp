@@ -897,6 +897,10 @@ void TradingLoop::ResolveGameContext(const std::string& condition_id,
                         game_row.data_source_ts_ns = es.ts.data_source_ts_ns;
                         game_row.ingestion_ts_ns = es.ts.ingestion_ts_ns;
                         game_row.as_of_ts_ns = es.ts.as_of_ts_ns;
+                        // inplay core 冻结标志透传 (2026-06-14): EventScore → game_row → 保守门。
+                        game_row.core_stopped  = es.core_stopped;
+                        game_row.core_blocked  = es.core_blocked;
+                        game_row.core_finished = es.core_finished;
                         // inplay bet365 de-vig fair → game_row, 按 yes_is_home 翻成 YES-canonical
                         //   (与上面比分同源翻转, 消 home/YES 混淆)。ToYesCanonical 纯函数 BR-1 共用。
                         // A-step-2 分局盘 (老板「第一局/第二局」): 段盘 (seg_index>0) 用【当前段 fair】, 且
@@ -1419,6 +1423,9 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         fin.score_prior_yes = fair_score_prior;
         fin.prior_conf = fair_prior_conf;
         fin.has_real_fair = has_real_fair;
+        // 冻结盘 → sharp 失格 (在赔率策略引擎 ResolveFair 里就考虑, 不在事后 gate; 2026-06-14 老板)。
+        //   core.stopped(停表)/blocked(封盘)/finished(完赛) = Goalserve bet365 赔率冻成死值。
+        fin.sharp_frozen = game_row.core_stopped || game_row.core_blocked || game_row.core_finished;
         if (market_implied) {
             // outright/prop/series 市场兜底: 挡 score-prior/sharp/derivative → fair = 纯市场 de-vig。
             //   单场比分/匹配的 sharp 对"冠军/系列"语义错误, 必须挡 (防垃圾 fair); edge≈0 不交易。
@@ -1437,6 +1444,14 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         const auto fr = pricing::ResolveFair(fin);
         p_fair = fr.p_fair;
         fair_src_dbg = fr.src;  // [diag] 真实选源 (sharp_inplay / score_prior_blend / ...)
+        // [sharp-frozen] 观测 (非 gate, 不改行为; 冻结已在 ResolveFair 让 sharp 失格): sharp 本有效却被
+        //   停盘/封盘/完赛挡掉 → 记一条便于盯盘看哪些盘在冻结 + fair 回落到了哪个源。
+        if (fin.sharp_frozen && fin.sharp_yes >= 0.0 && fin.sharp_yes <= 1.0) {
+            static std::atomic<int> frozen_dbg{0};
+            if (frozen_dbg.fetch_add(1, std::memory_order_relaxed) < 40)
+                std::fprintf(stderr, "[sharp-frozen] cond=%.24s 赔率源停盘/封盘/完赛 → sharp 失格, fair源=%s\n",
+                             condition_id.c_str(), pricing::to_string(fr.src));
+        }
         // [fair-sanity] 防垃圾门 (2026-06-03): fair 与市场极端背离 (>kMaxPlausibleEdge) = 大概率
         //   orientation 翻转 / EventMatcher 误配 / 模型饱和 (实测 inplay sharp de-vig clamp 0.9995 被
         //   贴到便宜 underdog YES → 假 86% edge → 垃圾成交)。真实体育 edge 极少 >0.45 → fail-closed
@@ -1504,6 +1519,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
             fair_src_dbg = pricing::FairSrc::kMarketDevig;  // 标记已回退 (下游 sharp_only_gate 不再当 sharp)
         }
     }
+
 
     if (cfg_.sharp_only_gate) {
         const double sharp_gap = std::abs(p_fair - p_market_devig);

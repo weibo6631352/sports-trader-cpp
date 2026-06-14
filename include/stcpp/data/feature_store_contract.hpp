@@ -182,6 +182,13 @@ struct FeatureStoreGameRow {
     double inplay_bet365_away_fair = -1.0;  // = 对手边 de-vig 胜率
     double inplay_bet365_draw_fair = -1.0;  // = 平局 de-vig 概率 (3-way; binary=0)
 
+    // ---- inplay core 冻结标志 (2026-06-14 老板「源字段没充分利用」+ LoL 停盘 bug) ----
+    //   bet365 event-level stopped/blocked/finished → 赔率冻结(死值)。
+    //   trading_loop 据此回退 sharp → market devig (不产假 edge 单)。G-FREEZE-W 只增。
+    bool core_stopped  = false;
+    bool core_blocked  = false;
+    bool core_finished = false;
+
     // ---- ABI 版本 (写入 Parquet metadata 用) ----
     std::string_view bm_abi_version = goalserve::kBookmakerAbiVersion;
     std::string_view schema_version = kFeatureStoreSchemaVersion;

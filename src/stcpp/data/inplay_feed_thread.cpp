@@ -891,6 +891,10 @@ debug_api::EventScore InplayFeedThread::ToEventScore(const data::adapter::GameSc
     //   排定 gameStartTime 差 >窗口 → EventMatcher 误拒 (实测电竞 0 匹配根因 2026-06-01)。
     //   0=未知 → 匹配器跳过时间窗 (只按队名匹配); 有真 start_ts(网球等) → 时间窗正常生效。
     es.kickoff_ts_sec = rec.scheduled_kickoff_ts_sec;
+    // inplay core 冻结标志透传 (2026-06-14): ParseEventInfo 已读 rec.core_* → 透传到 EventScore。
+    es.core_stopped  = rec.core_stopped;
+    es.core_blocked  = rec.core_blocked;
+    es.core_finished = rec.core_finished;
 
     return es;
 }

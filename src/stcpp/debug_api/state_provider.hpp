@@ -407,6 +407,11 @@ struct EventScore {
     //   此 bool 由 ToEventScore 在源头按 IsTerminal 填, 供 daemon 判定完赛 → 立即退订 (不经 trading_loop,
     //   不动 has_real_fair: 误判终态仍 status="pregame"→NotStarted→fail-closed 不交易)。G-FREEZE-W 只增。
     bool is_terminal{false};
+    // inplay core 冻结标志 (2026-06-14 老板「源字段没充分利用」+ LoL 停盘 bug):
+    //   bet365 event-level stopped/blocked/finished → 赔率冻结(死值), trading_loop 回退市场。
+    bool core_stopped{false};
+    bool core_blocked{false};
+    bool core_finished{false};
 };
 
 // ============================================================

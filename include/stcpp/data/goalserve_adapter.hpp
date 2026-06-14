@@ -142,6 +142,14 @@ struct GameScoreRecord {
     //   "now vs PM 排定时间" 误判超窗拒绝 — 实测电竞 0 匹配根因, 2026-06-01)。
     std::int64_t scheduled_kickoff_ts_sec = 0;
 
+    // inplay core 时钟/盘态 (2026-06-14 老板「源字段没充分利用」: event-level 冻结标志, 实测 LoL 停盘 bug)。
+    //   stopped=时钟停表(暂停/局间, bet365冻盘) / blocked=盘口封(暂停接注) / finished=赛果定。
+    //   任一 true → 该盘赔率【非活】(冻结值), 下游 sharp 定价应回退市场, 不当活 sharp 用。
+    //   ⚠ 时间戳救不了: 停盘时 core.updated_ts 照常重盖 → 只有这些显式标志可靠 (实测确认)。
+    bool core_stopped = false;
+    bool core_blocked = false;
+    bool core_finished = false;
+
     // R-20 合规检查
     [[nodiscard]] bool RespectsR20() const noexcept {
         return ts.IsMonotonic() && ts.ds_origin != goalserve::DataSourceTsOrigin::IngestionFallback;
