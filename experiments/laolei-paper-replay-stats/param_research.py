@@ -165,9 +165,9 @@ def main():
     print(f"参数研究 (老板「调参/发现新参数/挖获利模式」)  版本={ver or '全部'}")
     print(f"决策全集: 进场 {len(ent)} (真实成交,真实结局) + 被挡 {len(blk)} (【反事实模拟】:假设当时入场) = 已结算 {len(settled)} 个决策点")
     print(f"settlements: 已解析 {len(outcome)} / 丢弃 {n_unres}")
-    print(f"⚠⚠ 口径警告: 下面 ①②③ 的 赢面/PnL 是【{len(settled)} 个决策点的混合统计(含 {len(blk)} 个反事实模拟)】,")
-    print(f"   不是 {len(ent)} 笔真实成交的账面战绩! 反事实有逆选偏差 → 【真实期望 ≤ 此值, 即真入场会更亏】,")
-    print(f"   别把负数当'最坏情况会回正'(恰相反: 上界已是最好情形, 实盘更差)。")
+    print(f"⚠⚠ 口径(量化评审修正): 进场{len(ent)}(过门)与被挡{len(blk)}(未过门)是【两个不同总体】, 混合统计无干净'策略表现'含义。")
+    print(f"   → ①②③ 是在【决策population(进场+被挡)】上找【信号方向 + 因子覆盖】, 不是策略盈亏; 结局由市场定(对门外生)故方向有效。")
+    print(f"   → 【真实策略表现见下方 ⓪(仅进场盘)】; 被挡盘反事实仅供 per-gate 机会错过 + 因子分布覆盖, 且有逆选偏差(记录价高估), 当线索别当真。")
     if len(settled) < 12:
         print(f"⚠ 已结算决策点 {len(settled)} < 12 → 结论不可信, 仅演示能力。等大数据累积 (被挡盘是主力)。")
     print("=" * 78)
@@ -178,13 +178,54 @@ def main():
     loss = [u for u in settled if u["won"] == 0]
     base_wr = len(wins) / len(settled)
     base_pnl = sum(u['pnl'] for u in settled)/len(settled)
-    print(f"全集基准(含反事实,非真实账面): 赢面 {len(wins)}/{len(settled)} = {100*base_wr:.0f}% | "
-          f"均PnL/股 {base_pnl:+.4f}")
+    print(f"决策population基准(信号挖掘口径, 非策略盈亏): 赢面 {len(wins)}/{len(settled)} = {100*base_wr:.0f}% | "
+          f"均PnL/股 {base_pnl:+.4f}(含反事实, 无策略含义)")
     J["universe"] = {"entered_real": len(ent), "blocked_counterfactual": len(blk),
                      "settled": len(settled), "settlements": len(outcome)}
-    J["baseline"] = {"win_rate": base_wr, "mean_pnl_per_share": base_pnl,
-                     "is_counterfactual_mixed": True, "note": "含反事实, 真实期望≤此值(逆选→更亏)"}
+    J["baseline_decision_population"] = {"win_rate": base_wr, "mean_pnl_per_share": base_pnl,
+        "is_mixed_population": True, "note": "进场+被挡两总体混合, 仅信号挖掘口径, 非策略表现; 策略表现见strategy_real"}
     J["segments"] = {}; J["sweep"] = {}
+
+    # ============ ⓪ 策略真实表现 (仅进场盘真实结局, 金融专家P0) — 这才是"该不该投钱"的口径 ============
+    print("\n" + "-" * 78)
+    print("⓪ 策略真实表现 (仅【进场盘】真实结局; 这才是策略盈亏, 与上面决策population口径分开)")
+    ent_s = [u for u in ent if u["pnl"] is not None]
+    if len(ent_s) < 3:
+        print(f"  进场已结算 {len(ent_s)} < 3 → 策略真实表现等累积 (这块要进场盘结算, 比被挡盘慢)")
+        J["strategy_real"] = {"n": len(ent_s), "note": "进场已结算不足, 等累积"}
+    else:
+        ns = len(ent_s); nw = sum(u["won"] for u in ent_s)
+        pnls = [u["pnl"] for u in ent_s]
+        costs = [u["f"].get("px") for u in ent_s if isinstance(u["f"].get("px"), (int, float))]
+        ev = sum(pnls)/ns
+        var = sum((x-ev)**2 for x in pnls)/ns; sd = math.sqrt(var)
+        se = sd/math.sqrt(ns); ev_lo, ev_hi = ev-1.96*se, ev+1.96*se
+        tstat = ev/se if se > 0 else 0.0
+        wlo, whi = wilson(nw, ns)
+        avg_cost = sum(costs)/len(costs) if costs else 0.5
+        per_risk = ev/avg_cost if avg_cost > 0 else 0.0  # EV/每股最大损失(≈进场价) — 跨价带可比
+        # 经验 Kelly: 每仓 return on stake r=pnl/cost; g(f)=mean ln(1+f·r); 网格找 f*
+        rs = [u["pnl"]/u["f"]["px"] for u in ent_s if isinstance(u["f"].get("px"),(int,float)) and u["f"]["px"]>0]
+        f_star, g_star = 0.0, 0.0
+        if rs:
+            for fi in [i/100 for i in range(1, 100)]:
+                if all(1+fi*r > 0 for r in rs):
+                    g = sum(math.log(1+fi*r) for r in rs)/len(rs)
+                    if g > g_star: g_star, f_star = g, fi
+        fee_tot = sum(u["f"].get("fee",0) for u in ent_s if isinstance(u["f"].get("fee"),(int,float)))
+        print(f"  n={ns} 真实进场已结算 | 赢面 {nw}/{ns}={100*nw/ns:.0f}% (Wilson[{100*wlo:.0f},{100*whi:.0f}])")
+        print(f"  EV/股 {ev:+.4f} (95%CI[{ev_lo:+.4f},{ev_hi:+.4f}], t={tstat:+.2f}) {'✓EV>0显著' if tstat>1.96 else '✗EV未显著(CI跨0)'}")
+        print(f"  单位风险EV {per_risk:+.4f} (=EV/均进场价{avg_cost:.2f}; 跨价带可比, 修'偏向longshot'坑)")
+        if rs and g_star > 0:
+            print(f"  Kelly: f*={f_star:.2f} 几何增长g={g_star:+.4f}>0 → 建议 1/4-Kelly={f_star/4:.2f} bankroll/仓")
+        else:
+            print(f"  Kelly: 无正增长f → ⚠g≤0: 算术EV{('正' if ev>0 else '负')}但几何会破产/不增长, 此策略当前不可投")
+        print(f"  费: 总${fee_tot:.2f} (毛EV→净EV的拖累; churn是头号成本)")
+        J["strategy_real"] = {"n": ns, "win_rate": round(nw/ns,4), "win_ci": [round(wlo,3),round(whi,3)],
+            "ev_per_share": round(ev,4), "ev_ci": [round(ev_lo,4),round(ev_hi,4)], "t_stat": round(tstat,2),
+            "ev_significant": tstat > 1.96, "per_unit_risk_ev": round(per_risk,4),
+            "kelly_f_star": round(f_star,3), "geom_growth_g": round(g_star,4),
+            "geom_positive": g_star > 0, "fee_total": round(fee_tot,2)}
 
     def feat_vals(rows, k):
         out = []
