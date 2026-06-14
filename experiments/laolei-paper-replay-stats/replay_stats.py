@@ -73,15 +73,17 @@ def main():
         b=buys[(r.get("cond",""), r.get("yes",0))]
         b["qty"]+=q; b["cost"]+=q*px; b["fair_w"]+=q*r.get("fair",0.0)
         b["sport"]=r.get("sport","?"); b["mkt"]=r.get("mkt","?"); b["ts"]=ts; b["git"]=g
+        if "feat" not in b: b["feat"]=r   # 首单全特征 (开仓决策上下文; 全方位信号分析用)
         e=r.get("edge_ci")
         if e is None: nan_edge+=1
         else: b["edge_w"]+=q*e; b["edge_n"]+=1
 
-    # 逐笔 CLV (close=1 & exit=settlement 行, 过滤陈旧收盘簿) → close_mid − 入场均价
-    clv=[]
+    # 结算行 (close=1 & exit=settlement): 风险/CLV 字段 (mae/mfe/hold/close_mid) by (cond,yes)
+    closerow={}; clv=[]
     for r in fills:
         if r.get("close")!=1 or r.get("exit")!="settlement": continue
         if ver_filter and ver_of(r.get("ts",0))!=ver_filter: continue
+        closerow[(r.get("cond",""), r.get("yes",0))]=r
         cm=r.get("close_mid"); age=r.get("close_bk_age_ms")
         b=buys.get((r.get("cond",""), r.get("yes",0)))
         if cm is None or not b or b["qty"]<=0: continue
@@ -89,12 +91,14 @@ def main():
         clv.append(cm - b["cost"]/b["qty"])
 
     # join 聚合仓 → 结算 outcome (胜率分母)
-    won=lost=0; settled=[]
+    won=lost=0; settled=[]; feat_rows=[]
     seg_sport=defaultdict(lambda:[0,0]); seg_band=defaultdict(lambda:[0,0]); seg_edge=defaultdict(lambda:[0,0]); seg_ver=defaultdict(lambda:[0,0])
     for (cond,yes),b in buys.items():
         if cond not in outcome or b["qty"]<=0: continue
         avg=b["cost"]/b["qty"]; w=1 if yes==outcome[cond] else 0
         won+=w; lost+=(1-w); settled.append((avg,w,b["qty"]))
+        # 全方位: 每仓 = 首单进场特征 + 结算风险 + 输赢 (供 信号→输赢 判别 + 风险分析)
+        feat_rows.append({"won":w, "avg":avg, "feat":b.get("feat",{}), "close":closerow.get((cond,yes),{})})
         seg_sport[b["sport"]][0]+=w; seg_sport[b["sport"]][1]+=1
         seg_band[min(int(avg*10),9)][0]+=w; seg_band[min(int(avg*10),9)][1]+=1
         seg_ver[b["git"]][0]+=w; seg_ver[b["git"]][1]+=1
@@ -136,8 +140,48 @@ def main():
         print("分edge_ci桶 (校准: edge 越高胜率应越高):"); [print(fmt_rate(w,t,f'edge[{e*2}pp,{e*2+2}pp)')) for e,(w,t) in sorted(seg_edge.items())]
     if len(seg_ver)>1:
         print("分版本 (跨版本勿混读):"); [print(fmt_rate(w,t,g)) for g,(w,t) in sorted(seg_ver.items(),key=lambda x:-x[1][1])]
+
+    # ===== 全方位: 进场信号 → 输赢判别 (2026-06-14 老板「全字段挖信号」) =====
+    #   每个进场特征: 赢家均值 vs 输家均值。差越大 = 该特征越能区分输赢 (单变量信号强度)。
+    #   按 |判别力| 排序, 最能分输赢的特征浮上来。n 小=噪声, 预注册看 sh_vel/odds_age/edge/g_*/imb/liq。
+    # 特征源: feat(首单进场全息) + close(结算风险)。(key, 取值函数, 单位提示)
+    EFEAT = [("edge_ci","edge",1),("devig","devig",1),("fair","fair",1),("kelly_sugg","kelly",1),
+             ("sh_fair","sh_fair",1),("sh_vel","sh_vel(领先>0)",1),("m_clv","m_clv",1),("m_dd","m_dd",1),
+             ("bk_spread","spread",1),("bk_imb","簿失衡imb",1),("bk_micro_mid","micro压",1),("bk_age_ms","簿龄ms",1),
+             ("ofi","OFI流",1),("rvol","实波动",1),("mom5","5m动量",1),("t_ratio5m","买占比",1),
+             ("d5_bid","5档买深",1),("d5_ask","5档卖深",1),("odds_age","赔率龄ms",1),
+             ("g_remain","赛剩余s",1),("g_sdiff","比分差",1),("g_period","赛段",1),
+             ("vol24h","24h量",1),("liq","流动性",1),("deploy","部署率",1),("n_open","并发仓",1)]
+    def m(rows, key):
+        vs=[r["feat"].get(key) for r in rows if isinstance(r["feat"].get(key),(int,float))]
+        return (sum(vs)/len(vs), len(vs)) if vs else (None,0)
+    wr=[r for r in feat_rows if r["won"]]; lr=[r for r in feat_rows if not r["won"]]
     print("-"*64)
-    print(f"样本量: n={n}." + (" n<50 仅 CI 可信, 点估计勿当结论" if n<50 else " n≥50 可做显著性"))
-    print("目标 ~150-200 独立结算 (4-6周不重置不改参) 才能把 94% vs 67% 分开")
+    if lr and wr:
+        rankings=[]
+        for key,lab,_ in EFEAT:
+            mw,nw=m(wr,key); ml,nl=m(lr,key)
+            if mw is None or ml is None: continue
+            sep=abs(mw-ml)/(abs(mw)+abs(ml)+1e-9)  # 归一化判别力
+            rankings.append((sep,lab,mw,ml,nw,nl))
+        rankings.sort(reverse=True)
+        print(f"进场信号→输赢判别 (赢{len(wr)} vs 输{len(lr)}; 按判别力排序, 差大=能分输赢):")
+        for sep,lab,mw,ml,nw,nl in rankings[:12]:
+            print(f"  {lab:14} 赢均 {mw:+.4g} | 输均 {ml:+.4g}  (判别力 {sep:.2f})")
+    else:
+        print(f"进场信号→输赢判别: 需赢和输都有样本 (当前 赢{len(wr)}/输{len(lr)}) → 等出现输仓")
+    # 风险信号 (MAE/MFE/hold by 输赢): 输家是否入场后更早/更深走低?
+    def cm_(rows,key):
+        vs=[r["close"].get(key) for r in rows if isinstance(r["close"].get(key),(int,float))]
+        return sum(vs)/len(vs) if vs else None
+    print("风险信号 (持有期, by 输赢):")
+    for key,lab in [("mae","MAE最大不利"),("mfe","MFE最大有利"),("hold_sec","持有秒")]:
+        aw_=cm_(wr,key); al_=cm_(lr,key)
+        if aw_ is not None or al_ is not None:
+            print(f"  {lab:12} 赢 {aw_ if aw_ is None else round(aw_,3)} | 输 {al_ if al_ is None else round(al_,3)}")
+
+    print("-"*64)
+    print(f"样本量: n={n}." + (" n<50 仅 CI 可信, 点估计勿当结论; 信号判别 n太小=噪声" if n<50 else " n≥50 可做显著性"))
+    print("目标 ~150-200 独立结算 (4-6周不重置不改参) 才能把 94% vs 67% 分开 + 信号判别才稳")
 
 if __name__=="__main__": main()
