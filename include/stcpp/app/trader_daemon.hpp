@@ -152,11 +152,15 @@ struct TraderDaemonConfig {
     //   false → 通用 fill 管线 (管线机制测试用 score-prior/任意 edge 出成交; sharp 选盘逻辑另有单测)。
     bool sharp_only_gate{true};
 
-    // 只收录 moneyline 赛果盘 (2026-06-04 老板「Dota2 Roshan 等 prop 多了」): 发现/catalog 阶段只留
-    //   moneyline (MarketTypeCode==0, 含 tennis To Win), 丢弃 props (Roshan/Rampage/completed_match)/
-    //   totals/handicap/outright/series —— 它们无 bet365 sharp 源 (market_implied 本就不交易) → 不入
-    //   catalog 免污染 matching/grid/订阅。true (生产默认, 聚焦 sharp 赔率 edge); 全盘口 dispatch 需要时置 false。
-    bool moneyline_only{true};
+    // 盘口准入 (2026-06-15 老板 +$300 自主授权: 扩 totals/spreads 覆盖加 +EV 出单量):
+    //   原 2026-06-04 设 true 的前提「totals/handicap 无 sharp 源不可交易」已过时 —— totals(mkt_type=2)/
+    //   spreads(mkt_type=1) 现由 derivative 定价(TotalsFairYes/SpreadsFairYes: 现场比分+时钟 Poisson/Normal
+    //   外推, trading_loop.cpp:1225-1267, 带极端值兜底), 经同一 min_open_fair(0.65)+sharp_gap(0.015) 质量门,
+    //   且匹配/订阅复用同 event 的 bet365 eligibility(同 inplay_match_id) → 全链路就绪, 唯一缺口就是此 flag。
+    //   false = 放行 totals/spreads(每场 moneyline 之外 +2-3 倍候选盘, 同质量门, 不松门=不加输家)。
+    //   仍丢 props/outright/series(mkt_type>2, 无 score 模型 → market_implied 不交易)。
+    //   实验性: 若 totals/spreads 实测 -EV(派生定价不准), 改回 true 或加运动级守卫。
+    bool moneyline_only{false};
 
     // 离线测试 seam (小宋): false → Start() 不起真 WSS/inplay 网络线程.
     // Build() 仍完整装配 (供装配正确性单测, 不发外网请求).

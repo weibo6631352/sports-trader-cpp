@@ -194,11 +194,13 @@ void TraderDaemon::PopulateCatalog(const std::vector<DiscoveredEvent>& discovere
         ei.icon_url = ev.icon_url;  // 赛事图 → 前端事件头
 
         for (const auto& dm : ev.markets) {
-            // 只收录 moneyline 赛果盘 (2026-06-04 老板「prop 多了」): 非 moneyline (props/totals/handicap/
-            //   outright/series) 无 bet365 sharp 源 → 不入 catalog (免污染 matching/grid/订阅)。
-            //   MarketTypeCode==0 = moneyline (含 tennis To Win); !=0 跳过。
-            if (cfg_.moneyline_only &&
-                stcpp::data::taxonomy::MarketTypeCode(dm.sports_market_type) != 0) {
+            // 盘口准入 (2026-06-15 老板 +$300 自主授权扩 totals/spreads): 收录【可交易盘口】=
+            //   moneyline(0)/spread(1)/totals(2) —— 后两者由 derivative 定价(现场比分+时钟模型,
+            //   trading_loop.cpp:1225, 经同一质量门)。丢 outright/prop/series(MarketTypeCode>2): 无 score
+            //   模型 → market_implied 永不交易, 订阅它们纯浪费 book 槽。
+            //   moneyline_only=true(逃生开关) → 退回仅 moneyline (旧行为)。
+            const int mtc = stcpp::data::taxonomy::MarketTypeCode(dm.sports_market_type);
+            if (cfg_.moneyline_only ? (mtc != 0) : (mtc > 2)) {
                 continue;
             }
             std::printf("[trader_daemon]    market %.28s... | type=%s | gi=%s\n", dm.condition_id.c_str(),
