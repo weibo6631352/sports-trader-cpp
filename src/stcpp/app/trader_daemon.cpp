@@ -781,6 +781,8 @@ BuildResult TraderDaemon::Build() {
     //   paper 镜像 live 同款 = live 的精确彩排 (单量/单size/节奏同构, 唯一差别成交模拟 vs 真实)。
     //   cfg_.trading_loop = sizing+RM+account 显示单一真相源。bankroll: paper 用档位值 ($150),
     //   live 启动链上实读真本金 (读失败 fail-safe 回落档位, loud warn)。
+    //   paper_scale (2026-06-15 老板 +$300 paper 验证授权): paper-only bankroll/cap 放大因子, live 恒 1.0。
+    double paper_scale = 1.0;
     {
         const risk::RiskConfig lp = risk::LiveRiskProfile();
         cfg_.trading_loop.per_order_cap_usdc = lp.per_order_cap_usdc.to_pusd();
@@ -802,6 +804,19 @@ BuildResult TraderDaemon::Build() {
                                  bal_err.c_str(), bankroll);
                 }
             }
+        } else {
+            // PAPER-only 规模化 (2026-06-15 老板 +$300 paper 验证授权): paper 是沙盒(不碰真钱), 把已验证
+            //   +EV 策略(moneyline realized +12.57/胜率80%)的 bankroll+caps 按比例放大, 让它在合理窗口累积
+            //   到 +$300。**仅此 else(paper)分支**, 上面 live 分支完全不动 = 真钱零影响。成交仍受 L1 ask
+            //   深度×0.8 上限(trading_loop.cpp:2360) → 不假成交, 大单只在流动盘成交 = 真实。cash_available
+            //   由 bankroll_usdc 派生(trading_loop.cpp:3590)故自动同步放大。可逆: paper_scale 改回 1.0 即恢复 live 精确镜像。
+            paper_scale = 20.0;
+            bankroll *= paper_scale;
+            cfg_.trading_loop.per_order_cap_usdc *= paper_scale;
+            cfg_.trading_loop.per_outcome_cap_usdc *= paper_scale;
+            cfg_.trading_loop.market_exposure_cap_usdc *= paper_scale;
+            std::fprintf(stderr, "[paper] 规模化 ×%.0f: bankroll=$%.0f per_order_cap=$%.0f (仅 paper; live 不变; 成交受深度上限保真)\n",
+                         paper_scale, bankroll, cfg_.trading_loop.per_order_cap_usdc);
         }
         cfg_.trading_loop.bankroll_usdc = bankroll;
     }
@@ -817,7 +832,8 @@ BuildResult TraderDaemon::Build() {
     // 同事件预算 (2026-06-13 老板拍板「各自预算, 不用共享」): 同场多盘口各走各的单市场
     //   cap (60), 事件级合并上限名存实亡 (置 10000 = lib 默认, 等效关)。Partizan 同源叠仓
     //   风险由 corr taper 软乘子继续观测; 数据再说话再议。
-    paper_rm_cfg.event_exposure_cap_usdc = risk::LiveRiskProfile().event_exposure_cap_usdc;  // #4 定稿: $20 (13%) 同事件上限
+    paper_rm_cfg.event_exposure_cap_usdc = domain::MicroPUSD::from_pusd(
+        risk::LiveRiskProfile().event_exposure_cap_usdc.to_pusd() * paper_scale);  // #4 $20 × paper_scale (paper 放大同步)
     paper_rm_cfg.bankroll_usdc =
         domain::MicroPUSD::from_pusd(cfg_.trading_loop.bankroll_usdc);  // c2b: 与 cap 对称
     paper_rm_cfg.edge_ci_lower_floor = -1.0;                          // M1 放宽 CI 门
