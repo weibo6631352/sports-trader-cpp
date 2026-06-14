@@ -199,7 +199,7 @@ def main():
     shown = 0
     for disc, k, au, *_ in scored:
         if shown >= 8: break
-        if disc < 0.20: break
+        if disc < 0.08: break
         direction = ">=" if au > 0.5 else "<="
         rows = sweep(k, direction)
         if not rows: continue
@@ -260,15 +260,17 @@ def main():
         print(f"  进场因子: edge {f.get('edge_ci')} sharp速度 {f.get('sh_vel')} 收敛率 {f.get('sh_conv')} "
               f"簿失衡 {f.get('bk_imb')} 阶段 {f.get('g_period')} 赔率龄 {f.get('odds_age')}")
         if pp_p and tok:
-            traj = [r for r in load(pp_p) if r.get("tok") == tok]
+            traj = [r for r in load(pp_p) if r.get("tok") == tok and r.get("bvalid") == 1 and r.get("mid", 0) > 0]
             traj.sort(key=lambda r: r.get("ts", 0))
             if traj:
-                print(f"  轨迹 ({len(traj)} 采样点, 30s/点):")
-                for r in traj[:12]:
-                    print(f"    +{(r.get('ts',0)-traj[0].get('ts',0))//1_000_000_000:>4}s mid {r.get('micro', r.get('mid','?'))} "
-                          f"簿失衡 {r.get('imb','?')} L1卖 {r.get('ask_sz','?')} 簿龄 {r.get('bk_age','?')}")
+                t0 = traj[0].get("ts", 0)
+                print(f"  轨迹 ({len(traj)} 有效采样点, 30s/点; mid=PM中价 sharp=赔率源真值, 二者收敛=持仓变对):")
+                step = max(1, len(traj)//14)  # 最多 ~14 行
+                for r in traj[::step]:
+                    print(f"    +{(r.get('ts',0)-t0)//1_000_000_000:>5}s mid {r.get('mid',0):.3f} sharp {r.get('sharp',0):.3f} "
+                          f"簿失衡 {r.get('imb',0):+.2f} L1卖 {r.get('a1sz',0):>7.0f} 簿龄 {r.get('bk_age_ms',0):.0f}ms")
             else:
-                print("  (无该 token 的 position_path 采样)")
+                print("  (无该 token 的有效 position_path 采样)")
     print("=" * 78)
     print(f"样本: 已结算决策点 {len(settled)} (进场{len(ent)}+被挡{len(blk)}). 被挡盘是大数据主力, 越积越准。")
     print("用法: 候选新门→看②扫描验证→定门槛; 组合→看③获利模式; 调参→对比②基准 vs 最优门槛 PnL")
