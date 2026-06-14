@@ -227,11 +227,11 @@ void TradingLoop::Start() {
         const int vn = std::snprintf(
             vbuf, sizeof(vbuf),
             "{\"type\":\"version\",\"ts\":%lld,\"mode\":\"%s\",\"git\":\"%s\",\"sharp_only_gate\":%d,"
-            "\"sharp_only_min_edge\":%.4f,\"min_open_fair\":%.4f,\"min_open_liq\":%.0f,\"sharp_max_gap\":%.4f,"
-            "\"max_open_ask\":%.4f,\"bankroll\":%.2f}\n",
+            "\"sharp_only_min_edge\":%.4f,\"min_open_fair\":%.4f,\"min_open_liq\":%.0f,\"relax_timing_liq\":%d,"
+            "\"sharp_max_gap\":%.4f,\"max_open_ask\":%.4f,\"bankroll\":%.2f}\n",
             static_cast<long long>(NowNs()), loop_mode_str, STCPP_BUILD_COMMIT, cfg_.sharp_only_gate ? 1 : 0,
-            cfg_.sharp_only_min_edge, cfg_.min_open_fair, cfg_.min_open_liquidity_usdc, cfg_.sharp_max_gap,
-            kMaxOpenAsk, cfg_.bankroll_usdc);
+            cfg_.sharp_only_min_edge, cfg_.min_open_fair, cfg_.min_open_liquidity_usdc,
+            cfg_.relax_timing_gates_when_liquid ? 1 : 0, cfg_.sharp_max_gap, kMaxOpenAsk, cfg_.bankroll_usdc);
         if (vn > 0) journal_writer_.AppendLine(vpath, std::string(vbuf, static_cast<std::size_t>(vn)));
     }
 }
@@ -1744,6 +1744,17 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
         LogGateBlock(condition_id, "thin_liquidity", p_fair_selected, exec_ask, target_mag, is_yes ? 1 : 0);
         target_mag = 0.0;  // 薄盘/缺流动性 → 只减不开 (逆选护栏)
     }
+    // 厚盘标志 (2026-06-15 iteration-2): 已过流动性地板 = 厚盘。下游 stable_window「赢面稳定窗」打的是
+    //   【薄盘 + 钟摆逆选】—— 和流动性门同一个敌人; gate-efficacy 实测它在厚盘误挡 24 笔 88%胜 +0.37/股的
+    //   +EV 赢面 (win%≫entry)。厚盘里它冗余且 throttle 量 (0 成交/35min = 全门交集近零量, +$300 够不着) →
+    //   厚盘放行换 +EV 量。可逆 (cfg flag), CLV 监控转负即回退 false。
+    //   ⚠ no_chase 不在此放松 —— 它是执行控制器的 reservation 价格纪律 (ask>买保留=不追), 放松=越过价差追高
+    //      = 改核心执行机器, 风险远大于跳过一个硬门, 故只放松 stable_window。
+    //      book_down_no_lead (延迟逆选最后防线) + min_open_fair (longshot 护栏, 独立风险) 也全程生效。
+    const bool liquid_market =
+        (cfg_.min_open_liquidity_usdc > 0.0 && std::isfinite(mc.liquidity) &&
+         mc.liquidity >= cfg_.min_open_liquidity_usdc);
+    const bool relax_timing_gates = liquid_market && cfg_.relax_timing_gates_when_liquid;
     // CLV 失效熔断 (2026-06-12 治理): CLV 正率<70% (TickAll 30s 刷新) = 入场质量系统性坏掉
     //   (赔率源断/匹配错/延迟恶化) → sharp 引擎停新开仓直到恢复。减仓/平仓/结算不受限
     
@@ -1770,7 +1781,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     // 2026-06-11 老板「进场条件只要进行中+有赔率源」: 稳定窗改【证据制】—— 窗口历史不全 (重启后/新盘/
     //   sharp 稀疏) 不再 fail-closed 黑窗 (原版每次重启全员 3min 进不了场), 只有【实际观测到】窗口内
     //   sharp 跌破过门槛 (= 钟摆证据) 才拦。
-    if (target_mag > 0.0 && cfg_.min_open_fair > 0.0 && cfg_.open_stable_window_ns > 0) {
+    if (target_mag > 0.0 && !relax_timing_gates && cfg_.min_open_fair > 0.0 && cfg_.open_stable_window_ns > 0) {
         bool unstable_evidence = false;
         if (const auto sh_st = sharp_history_.find(condition_id); sh_st != sharp_history_.end()) {
             if (is_yes) {

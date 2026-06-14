@@ -436,6 +436,12 @@ struct TradingLoopConfig {
     //   NaN/缺失 liquidity 一并 fail-closed (无可靠流动性 = 不交易)。0 = 关 (lib 默认, 契约测试不变);
     //   生产 daemon 置 30000。减仓/平仓/must_win 不受限 (同 min_open_fair 语义)。
     double min_open_liquidity_usdc{0.0};
+    // 厚盘放松时机门 (2026-06-15 iteration-2): true = 在厚盘 (liq≥min_open_liquidity_usdc) 跳过 stable_window
+    //   「赢面稳定窗」。依据: gate-efficacy 实测它在厚盘误挡 24 笔 88%胜 +0.37/股的 +EV 赢面 (它打的薄盘+钟摆
+    //   逆选已被流动性门根治, 厚盘里冗余且 throttle 量 → +$300 够不着)。⚠ 只放松 stable_window: no_chase 是
+    //   执行控制器价格纪律 (放松=追高), book_down_no_lead + min_open_fair 是独立护栏, 都不放松。
+    //   false = 关 (lib 默认, 契约不变); 生产 daemon 置 true。可逆, CLV 监控转负即回退 false。
+    bool relax_timing_gates_when_liquid{false};
     // 赢面稳定窗 (老板 2026-06-11「入场太早赢面不稳定」): 开新仓要求被选边 sharp 在过去此窗口内
     //   【全程】≥ min_open_fair (买稳定赢面, 不买正在经过门槛的钟摆)。0=关 (lib 默认, 契约/管线测试不变);
     //   生产 daemon 随 enable_phase0_gates 置 180s。

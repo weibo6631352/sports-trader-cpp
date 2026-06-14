@@ -941,6 +941,10 @@ BuildResult TraderDaemon::Build() {
     //   (liq≥30k 94%胜+$77 / liq<30k 35%胜−$133), 独立于价格地板 (liq≥30k & px<0.80 仍 93%胜) → 非近已决代理。
     //   30k 是数据 cliff (20-30k 桶 20%胜 / 30k+ 95%胜)。减仓/平仓/must_win 不受限。
     cfg_.trading_loop.min_open_liquidity_usdc = 30000.0;
+    // 厚盘放松 stable_window (2026-06-15 iteration-2, +$300 volume 杠杆): 流动性门已根治薄盘逆选 →
+    //   厚盘里 stable_window 冗余且 throttle 量 (0 成交/35min)。gate-efficacy 实测它在厚盘误挡 24 笔 88%胜
+    //   +0.37/股的 +EV 赢面。厚盘放行换量。可逆 (CLV 监控转负即回 false)。no_chase/book_down/min_open_fair 不放松。
+    cfg_.trading_loop.relax_timing_gates_when_liquid = true;
     // 2026-06-09 风控老韩: 开同赛事相关性 taper (现 default false) —— 多 favorite=N倍押"热门赢"同向暴露, 冷门日齐崩;
     //   taper 零成本(只柔性缩量级不碰方向, fail-open), 是比反向腿对冲更对的组合层护栏。
     cfg_.trading_loop.corr_mult_enabled = true;
