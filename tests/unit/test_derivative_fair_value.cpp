@@ -111,6 +111,43 @@ TEST(TotalsFairValue, TerminalDeterministic) {
     EXPECT_EQ(r.p_yes, 1.0);
 }
 
+// ---- BASEBALL (无时钟, 局数估进度; 2026-06-15 修) ---------------------------
+
+// 构造棒球 in-play: 局数驱动 time_frac = (last_completed+0.5)/9 (非 elapsed_sec)。
+static FeatureStoreGameRow MakeBaseball(int home, int away, int completed_innings) {
+    FeatureStoreGameRow g;
+    g.sport = "baseball";
+    g.score_home_total = home;
+    g.score_away_total = away;
+    g.time_status = TimeStatus::InPlay;
+    g.elapsed_sec = -1;  // 棒球无时钟 (clock-based 路径会失败 → 必须走局数路径)
+    g.last_completed_period = static_cast<std::uint8_t>(completed_innings);
+    g.period = static_cast<std::uint8_t>(completed_innings + 1);
+    return g;
+}
+
+TEST(TotalsFairValue, BaseballOverWhenPaceHigh) {
+    // 4 局完 5 分 → f=(4.5)/9=0.5, 外推终场 10 > line 8.5 → Over 概率 > 0.5。
+    auto g = MakeBaseball(3, 2, 4);
+    auto r = pricing::TotalsFairYes(g, 8.5);
+    ASSERT_TRUE(r.valid) << "棒球必须能定价 (局数驱动, 不再恒 0)";
+    EXPECT_GT(r.p_yes, 0.5);
+}
+
+TEST(TotalsFairValue, BaseballUnderWhenPaceLow) {
+    // 5 局完 3 分 → 外推终场 ~4.9 < line 8.5 → Over 概率低。
+    auto g = MakeBaseball(2, 1, 5);
+    auto r = pricing::TotalsFairYes(g, 8.5);
+    ASSERT_TRUE(r.valid);
+    EXPECT_LT(r.p_yes, 0.2);
+}
+
+TEST(TotalsFairValue, BaseballTooEarlyFailClosed) {
+    // 1 局未完 (completed=0) → f=0.5/9≈0.056 < 0.10 → fail-closed (早盘节奏外推不可靠)。
+    auto g = MakeBaseball(1, 0, 0);
+    EXPECT_FALSE(pricing::TotalsFairYes(g, 8.5).valid);
+}
+
 // ---- SPREADS (让分) -------------------------------------------------------
 
 TEST(SpreadsFairValue, FavoriteCoveringWhenLeadLarge) {

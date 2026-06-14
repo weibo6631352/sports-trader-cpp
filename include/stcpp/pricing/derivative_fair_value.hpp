@@ -92,6 +92,18 @@ namespace detail {
         return 0.0;
     if (stcpp::data::goalserve::IsTerminal(g.time_status))
         return 1.0;
+    // 无时钟运动 (棒球): clock-based 路径恒 0 → totals/spreads 从不定价 (2026-06-15 修: 棒球是最强运动
+    //   + O/U 大市场, 不能放着不定价)。用局数估进度 (9 局制): completed=已完成局 (last_completed_period,
+    //   缺则当前局 period−1); +0.5 取当前局中点, 去系统性 Over/Under 偏 (避免 pace 外推单边偏)。
+    if (g.sport == "baseball") {
+        double completed = static_cast<double>(g.last_completed_period);
+        if (completed <= 0.0 && g.period > 0)
+            completed = static_cast<double>(g.period) - 1.0;
+        if (completed < 0.0)
+            completed = 0.0;
+        const double f = (completed + 0.5) / 9.0;
+        return (f > 1.0) ? 1.0 : f;
+    }
     if (g.elapsed_sec < 0)
         return 0.0;
     const int total_sec = total_game_seconds(g.sport);
