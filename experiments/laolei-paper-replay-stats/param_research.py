@@ -203,7 +203,7 @@ def main():
         p = auc_p(au, nw, nl)
         strong = (k not in GATED) and (p < bonf)
         arrow = "赢家高" if au > 0.5 else "赢家低"
-        tag = "  ★强候选(过Bonf)" if strong else ("  ·候选(未过Bonf)" if k not in GATED and p < 0.05 else "")
+        tag = "  ★强候选(过Bonf)" if strong else ("  ·候选·未过校正·勿入参(仅假设)" if k not in GATED and p < 0.05 else "")
         print(f"  [{fam(k)}] {lab(k):<10} 判别 {disc:.2f} ({arrow}) p={p:.3f} | 赢均 {wm:+.4g} vs 输均 {lm:+.4g}{tag}")
     cands = [k for d,k,au,wm,lm,nw,nl in scored[:18] if k not in GATED and auc_p(au,nw,nl) < bonf]
     if cands:
@@ -251,7 +251,7 @@ def main():
         for c, n, wr, ppl, tot, mw in rows:
             mark = "  ◀in-sample峰值(勿照搬)" if (c,n)==(best[0],best[1]) else ""
             print(f"    {direction}{c:<10.4g} → 过门{n:>3} 赢面{100*wr:>3.0f}% 错过赢{mw:>3} 均PnL{ppl:+.4f} 总PnL{tot:+.2f}{mark}")
-        print(f"    基准(全进): 赢面{100*base_wr:.0f}% 错过赢0 总PnL{sum(u['pnl'] for u in settled):+.2f}  | "
+        print(f"    基准(全进,含反事实非真实账面): 赢面{100*base_wr:.0f}% 错过赢0 总PnL{sum(u['pnl'] for u in settled):+.2f}  | "
               f"赢面随收紧: {mono} ← 看这个(结构可信), 别取峰值阈值(in-sample); 收越紧每笔越净但错过越多")
 
     # ============ ③ 2维组合挖矿 (获利模式)【假设清单, 非结论】 ============

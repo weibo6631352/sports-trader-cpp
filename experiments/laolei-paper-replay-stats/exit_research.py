@@ -195,24 +195,30 @@ def main():
         elif phase=="late": ss = ss[-max(1,len(ss)//3):]
         vs = [s[key] for s in ss if s.get(key) is not None]
         return sum(vs)/len(vs) if vs else None
+    # (name, fn, 预期方向): "hi"=赢家应更高 / "lo"=赢家应更低 / None=无强预期。解读列就地 ✓/✗ 数据感知,
+    #   防"列了预期但数据相反却没就地标"→赶时间的人照预期设反规则 (盲读agent#2 逮的残留)。
     rows = [
-        ("持仓边fair 入场", lambda p: smean(p,"held_fair","early")),
-        ("持仓边fair 后段", lambda p: smean(p,"held_fair","late")),
-        ("持仓边fair速度 均", lambda p: smean(p,"held_vel")),
-        ("收敛率 均(<0收敛)", lambda p: smean(p,"sh_conv")),
-        ("fair−mid缺口 均", lambda p: smean(p,"gap")),
-        ("最深水下 MAE", lambda p: p["mae"]),
-        ("水下时长 s", lambda p: p["uw_dur_s"] if p["uw"] else 0),
-        ("sharp新鲜度ms 均", lambda p: smean(p,"sh_age_ms")),
+        ("持仓边fair 入场", lambda p: smean(p,"held_fair","early"), None),
+        ("持仓边fair 后段", lambda p: smean(p,"held_fair","late"),  "hi"),
+        ("持仓边fair速度 均", lambda p: smean(p,"held_vel"),         "hi"),
+        ("收敛率 均",        lambda p: smean(p,"sh_conv"),           "lo"),
+        ("fair−mid缺口 均",  lambda p: smean(p,"gap"),               None),
+        ("最深水下 MAE",     lambda p: p["mae"],                     "lo"),
+        ("水下时长 s",       lambda p: p["uw_dur_s"] if p["uw"] else 0, None),
+        ("sharp新鲜度ms 均", lambda p: smean(p,"sh_age_ms"),         "lo"),
     ]
-    print(f"  {'指标':<18}{'赢家':>12}{'输家':>12}   解读")
-    hints = {"持仓边fair速度 均":"赢>0=sharp越来越认我们", "收敛率 均(<0收敛)":"赢应更负(收敛)",
-             "最深水下 MAE":"赢家也会回撤(别误杀)", "sharp新鲜度ms 均":"输家更陈旧?=信号失真坑"}
-    for name, fn in rows:
+    hints = {"持仓边fair 后段":"赢家应更高(守住涨)","持仓边fair速度 均":"赢应>0(sharp越认我们)",
+             "收敛率 均":"赢应更低(更收敛)","最深水下 MAE":"赢应更浅(别误杀回撤)","sharp新鲜度ms 均":"输家应更陈旧?"}
+    print(f"  {'指标':<18}{'赢家':>12}{'输家':>12}   预期 / ✓符合·✗与预期反(n小勿据此设规则)")
+    for name, fn, exp in rows:
         w = agg(W, fn); l = agg(L, fn)
         ws = f"{w:+.4g}" if w is not None else "—"
         ls = f"{l:+.4g}" if l is not None else "—"
-        print(f"  {name:<18}{ws:>12}{ls:>12}   {hints.get(name,'')}")
+        mark = ""
+        if exp and w is not None and l is not None:
+            ok = (w > l) if exp == "hi" else (w < l)
+            mark = "  ✓符合" if ok else "  ✗与预期反(n小,勿据此设规则)"
+        print(f"  {name:<18}{ws:>12}{ls:>12}   {hints.get(name,''):<18}{mark}")
 
     # ============ B2 回撤 vs 退化 判别力 (per-position; 评审小蒋: 按样本点会被长持仓主导+自相关→CI虚窄) ============
     print("\n"+"-"*80)
@@ -306,7 +312,9 @@ def main():
             ws = buckets[b]
             if ws:
                 lo,hi = wilson(sum(ws),len(ws))
-                print(f"    {b}桶 n{len(ws):>2} 翻盘率 {100*sum(ws)/len(ws):>3.0f}% (CI[{100*lo:.0f},{100*hi:.0f}])")
+                # 就地标 CI 过宽=噪声 (盲读agent#2: 防有人据'低桶100%'设规则, 实则纯噪声)
+                noise = "  ⚠CI过宽=噪声,勿据此设规则" if (hi-lo) > 0.5 else ""
+                print(f"    {b}桶 n{len(ws):>2} 翻盘率 {100*sum(ws)/len(ws):>3.0f}% (CI[{100*lo:.0f},{100*hi:.0f}]){noise}")
 
     # ============ B4 离场阈值假设回放 ============
     print("\n"+"-"*80)
