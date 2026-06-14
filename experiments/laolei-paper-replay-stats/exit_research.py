@@ -87,29 +87,31 @@ def main():
         for r in fills:
             if r.get("type")=="version" and r.get("git")==ver: ver_cut=r.get("ts",0); break
 
-    # 进场: tok → 首次 buy 的入场信息 (price/yes/cond/ts)
-    entry = {}
+    # fills 仅作可选富化 (sport 标签); 离场分析【不依赖 fills 进场行】
+    fills_meta = {}
     for r in fills:
-        if r.get("buy")!=1 or r.get("close")==1 or r.get("type")=="version": continue
-        if ver_cut is not None and r.get("ts",0) < ver_cut: continue
-        tok = r.get("tok");
-        if not tok or tok in entry: continue
-        entry[tok] = {"cond":r.get("cond"), "yes":r.get("yes"), "px":r.get("px"), "ts":r.get("ts",0),
-                      "qty":r.get("qty",0), "sport":r.get("sport"), "mkt":r.get("mkt")}
+        if r.get("buy")==1 and r.get("type")!="version":
+            tok = r.get("tok")
+            if tok and tok not in fills_meta: fills_meta[tok] = r.get("sport")
 
-    # 轨迹: tok → 按 ts 排序的样本 (只取入场后 + 簿有效)
+    # 轨迹: tok → 按 ts 排序的样本。进场信息(avg成本基/yes持仓边/cond)直接从轨迹自带取。
+    #   【修重启选择偏差, 老板「遇到问题就赶快解决」】原从 fills 取进场 → 持仓跨重启carry时进场fill在归档里
+    #   → carry仓被排除 → 重启越多长持仓越被系统性挤出离场分析。position_path 自带 avg/yes/cond,
+    #   离场分析无需 fills → carry仓全纳入, 偏差根除。ver_cut 改按轨迹ts切段(=离场行为所属版本, 更对)。
     traj = collections.defaultdict(list)
     for r in load(pp_p):
+        if ver_cut is not None and r.get("ts",0) < ver_cut: continue
         tok = r.get("tok")
-        if tok in entry: traj[tok].append(r)
+        if tok: traj[tok].append(r)
     for t in traj: traj[t].sort(key=lambda r: r.get("ts",0))
 
-    # 建仓位记录: 已结算 + 有轨迹; 每样本派生持仓边信号 (+ sharp 时序兜底 vel/conv)
+    # 建仓位记录: 进场(avg/yes/cond)取自轨迹末样本; 已结算 + 有有效样本
     positions = []
-    for tok, e in entry.items():
-        cond = e["cond"]; yes = e["yes"]; epx = e["px"]
-        if cond not in outcome or yes not in (0,1) or not fin(epx): continue
-        if tok not in traj or not traj[tok]: continue
+    for tok, trows in traj.items():
+        if not trows: continue
+        last = trows[-1]; cond = last.get("cond"); yes = last.get("yes"); epx = last.get("avg")
+        if cond not in outcome or yes not in (0,1) or not fin(epx) or epx <= 0: continue
+        e = {"sport": fills_meta.get(tok, "?")}  # sport 标签 (可选, 无 fills 则 "?")
         won = 1 if yes == outcome[cond] else 0
         samples = []
         prev = None
