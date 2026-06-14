@@ -1082,7 +1082,8 @@ private:
     mutable std::mutex gate_block_mu_;
     std::deque<GateBlockView> gate_block_ring_;
     void SamplePositionPaths();
-    void LogGateBlock(const std::string& cond, const char* gate, double fair, double ref_px, double would_usd);
+    void LogGateBlock(const std::string& cond, const char* gate, double fair, double ref_px, double would_usd,
+                      int yes_side = -1);  // yes_side: 被挡边 1=YES/0=NO/-1=未定 (机会错过分析)
     // ---- CLV 失效熔断 (2026-06-12 治理「能利用的利用起来」: CLVTracker 反哺入场) ----
     //   CLV(close口径)正率是入场质量金标准 (实测健康期 82.8%, n=122)。正率跌破 70% (样本≥30) =
     //   模型失效信号 (赔率源断/匹配错/延迟恶化) → 熔断新开仓 (减仓/平仓/结算不受限), 恢复自动解除。

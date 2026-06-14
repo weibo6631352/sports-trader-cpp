@@ -1693,7 +1693,7 @@ void TradingLoop::TickOne(const BinaryMarketSnapshot& mkt) {
     //   bug: set1/3 set 差恒 0, set2 phase 恰=0.5 不 >0.5)。用【模型 fair】(非市场价地板, 老板「用模型」) 当护栏:
     //   下侧 (到 0) 远大于 edge 的低 fair longshot 永远 −EV, 不该开。default 0=关 (lib/契约不变); daemon 置 0.15。
     if (cfg_.min_open_fair > 0.0 && p_fair_selected < cfg_.min_open_fair) {
-        if (target_mag > 0.0) LogGateBlock(condition_id, "min_open_fair", p_fair_selected, exec_ask, target_mag);
+        if (target_mag > 0.0) LogGateBlock(condition_id, "min_open_fair", p_fair_selected, exec_ask, target_mag, is_yes ? 1 : 0);
         target_mag = 0.0;  // 模型认定近必输方 → 只减不开 (longshot 崩盘护栏)
     }
     // CLV 失效熔断 (2026-06-12 治理): CLV 正率<70% (TickAll 30s 刷新) = 入场质量系统性坏掉
@@ -3023,18 +3023,20 @@ void TradingLoop::SamplePositionPaths() {
 //   (盘/门名/fair/参考价/本想下多少) → gate_blocks.jsonl; per cond×gate 5min 节流防爆量。
 //   未来与结算 join → 每道门的真实价值 (省的钱 vs 错过的钱) 可量化。loop_thread_ only。
 void TradingLoop::LogGateBlock(const std::string& cond, const char* gate, double fair, double ref_px,
-                               double would_usd) {
+                               double would_usd, int yes_side) {
     const std::int64_t now = NowNs();
     auto& last = gate_log_ns_[cond + "|" + gate];
     if (now - last < 300'000'000'000LL) return;  // 5min 节流
     last = now;
     const bool live = stcpp::execution::ExecutionContext::Mode() == stcpp::execution::ExecutionMode::Live;
     const char* path = live ? "data/ml_capture/live_gate_blocks.jsonl" : "data/ml_capture/gate_blocks.jsonl";
-    char buf[384];
+    // yes_side (2026-06-14 老板「机会错过」): 被挡的边 (1=YES/0=NO; -1=未定/pre-SelectSide)。离线 join settlements
+    //   算"被挡的盘最终赢面" → 每道门错过的赢 vs 避开的输 (门太紧还是对)。-1 时分析按 fair≥0.5 推favored边。
+    char buf[416];
     const int n = std::snprintf(buf, sizeof(buf),
-                                "{\"ts\":%lld,\"cond\":\"%s\",\"gate\":\"%s\",\"fair\":%.4f,"
+                                "{\"ts\":%lld,\"cond\":\"%s\",\"gate\":\"%s\",\"yes\":%d,\"fair\":%.4f,"
                                 "\"px\":%.4f,\"would\":%.2f}\n",
-                                static_cast<long long>(now), cond.c_str(), gate, fair, ref_px, would_usd);
+                                static_cast<long long>(now), cond.c_str(), gate, yes_side, fair, ref_px, would_usd);
     if (n > 0) journal_writer_.AppendLine(path, std::string(buf, static_cast<std::size_t>(n)));
     // 内存 ring (2026-06-13 老板「拒单面板 0 条 修吧」): 节流后 (只录 distinct cond|gate/5min) 推一行,
     //   供 /risk/rejects 面板显示真正在挡单的 strategy 闸。短锁, 无 IO (journal 已异步)。
