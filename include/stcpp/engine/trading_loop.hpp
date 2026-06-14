@@ -631,6 +631,8 @@ public:
         double q_mom5{std::numeric_limits<double>::quiet_NaN()};         // mid 5min 动量
         double sh_fair{std::numeric_limits<double>::quiet_NaN()};        // sharp fair (YES-canon)
         double sh_vel{std::numeric_limits<double>::quiet_NaN()};         // sharp velocity (10s)
+        double sh_conv{std::numeric_limits<double>::quiet_NaN()};        // sharp 收敛率 (<0 市场向sharp收敛=持仓变对 / >0 发散=变错) — 持仓对错实时判据
+        double sh_vol{std::numeric_limits<double>::quiet_NaN()};         // sharp 抖动度 (窗口内sharp变化RMS)
         double deploy_pct{std::numeric_limits<double>::quiet_NaN()};     // 成交刻部署率
         double hold_sec{std::numeric_limits<double>::quiet_NaN()};       // 结算行: 持有秒
         double mae{std::numeric_limits<double>::quiet_NaN()};            // 持有期最大不利偏移 (entry−min_mid)
@@ -1082,8 +1084,13 @@ private:
     mutable std::mutex gate_block_mu_;
     std::deque<GateBlockView> gate_block_ring_;
     void SamplePositionPaths();
+    // 2026-06-14 老板「以前的量化因子用得上」+「发现新增参数」: 被挡盘落全因子向量 (被挡盘=进场盘 10-20×,
+    //   大数据全在此; 候选新门评估靠这批, 尤其 sh_conv=持仓对错实时判据)。book/ectx 仅 ExecuteControllerSide
+    //   挡点有 (传指针补簿/决策上下文); TickOne 挡点传 nullptr, 仍从 cond-keyed 成员 map 得 sharp/ofi/cat/equity 因子。
     void LogGateBlock(const std::string& cond, const char* gate, double fair, double ref_px, double would_usd,
-                      int yes_side = -1);  // yes_side: 被挡边 1=YES/0=NO/-1=未定 (机会错过分析)
+                      int yes_side = -1,
+                      const polymarket::clob_wss::OrderBookFeatures* book = nullptr,
+                      const EntryCtx* ectx = nullptr);  // yes_side: 被挡边 1=YES/0=NO/-1=未定 (机会错过分析)
     // ---- CLV 失效熔断 (2026-06-12 治理「能利用的利用起来」: CLVTracker 反哺入场) ----
     //   CLV(close口径)正率是入场质量金标准 (实测健康期 82.8%, n=122)。正率跌破 70% (样本≥30) =
     //   模型失效信号 (赔率源断/匹配错/延迟恶化) → 熔断新开仓 (减仓/平仓/结算不受限), 恢复自动解除。
