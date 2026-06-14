@@ -158,7 +158,8 @@ def main():
     print(f"决策全集: 进场 {len(ent)} (真实成交,真实结局) + 被挡 {len(blk)} (【反事实模拟】:假设当时入场) = 已结算 {len(settled)} 个决策点")
     print(f"settlements: 已解析 {len(outcome)} / 丢弃 {n_unres}")
     print(f"⚠⚠ 口径警告: 下面 ①②③ 的 赢面/PnL 是【{len(settled)} 个决策点的混合统计(含 {len(blk)} 个反事实模拟)】,")
-    print(f"   不是 {len(ent)} 笔真实成交的账面战绩! 反事实有逆选偏差(被挡盘真入场更差)→ 当上界看, 别当真实盈亏。")
+    print(f"   不是 {len(ent)} 笔真实成交的账面战绩! 反事实有逆选偏差 → 【真实期望 ≤ 此值, 即真入场会更亏】,")
+    print(f"   别把负数当'最坏情况会回正'(恰相反: 上界已是最好情形, 实盘更差)。")
     if len(settled) < 12:
         print(f"⚠ 已结算决策点 {len(settled)} < 12 → 结论不可信, 仅演示能力。等大数据累积 (被挡盘是主力)。")
     print("=" * 78)

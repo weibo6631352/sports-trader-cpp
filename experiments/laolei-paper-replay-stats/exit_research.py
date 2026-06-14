@@ -170,9 +170,13 @@ def main():
                           "samples":samples, "mae":mae, "uw":uw, "uw_dur_s":uw_dur,
                           "t0":samples[0]["ts"], "t1":samples[-1]["ts"]})
 
+    nW = sum(p['won'] for p in positions); nL = len(positions)-nW
     print("="*80)
     print(f"离场研究 (老板「基建支撑离场推断」)  版本={ver or '全部'}")
-    print(f"已结算且有轨迹的仓: {len(positions)} (赢 {sum(p['won'] for p in positions)} / 输 {sum(1-p['won'] for p in positions)})")
+    print(f"数据口径: 【真实持仓轨迹】(position_path, 我们真的持有过的仓, 非反事实模拟) + 真实结算。")
+    print(f"已结算且有轨迹的仓: {len(positions)} (赢 {nW} / 输 {nL})   ← 全程注意这个 n!")
+    print(f"  ⚠ 当前 n 极小: 输家仅 {nL} 个 → 任何'赢家 vs 输家'对比都接近零信息(单点不成均值), 下面全是【方向演示】非结论。")
+    print(f"  注: 此处仓数(轨迹口径)可能与 param_research 的'进场N笔'(成交口径)不同 — 同token多笔/无轨迹/未结算所致, 非矛盾。")
     print(f"sharp 陈旧阈值 --stale-ms={stale_ms:.0f} (超此 sh_conv/vel 视为失真)")
     print("="*80)
     if len(positions) < 6:
