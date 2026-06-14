@@ -179,6 +179,46 @@ def main():
         aw_=cm_(wr,key); al_=cm_(lr,key)
         if aw_ is not None or al_ is not None:
             print(f"  {lab:12} 赢 {aw_ if aw_ is None else round(aw_,3)} | 输 {al_ if al_ is None else round(al_,3)}")
+        # MFE未兑现 (留桌上利润): 赢仓 MFE 远大于实际 realized → 出场太晚/可锁更多 (仅赢仓有意义)
+    mfe_left=[r["close"].get("mfe") for r in wr if isinstance(r["close"].get("mfe"),(int,float))]
+    if mfe_left: print(f"  赢仓 MFE 均 {sum(mfe_left)/len(mfe_left):+.3f} (>实际涨幅=利润留桌上, 出场偏晚)")
+
+    # ===== C. 机会错过 (gate-efficacy): 被挡盘最终赢面 → 错过的赢 vs 避开的输 =====
+    import os
+    gbs=load(os.path.join(os.path.dirname(args[0]) or ".","gate_blocks.jsonl"))
+    geff=defaultdict(lambda:[0,0,0.0])  # gate → [若入场赢数, 已结算被挡数, would-PnL/股 累计]
+    for g in gbs:
+        cond=g.get("cond")
+        if cond not in outcome: continue
+        ys=g.get("yes",-1); side=ys if ys in (0,1) else (1 if g.get("fair",0)>=0.5 else 0)  # -1→fair推
+        won_if=1 if side==outcome[cond] else 0
+        px=g.get("px",0.5); pn=(1-px) if won_if else -px
+        e=geff[g.get("gate")]; e[0]+=won_if; e[1]+=1; e[2]+=pn
+    print("-"*64)
+    if any(t for _,t,_ in geff.values()):
+        print("机会错过 (被挡盘若入场会怎样; 赢面高+正PnL=门挡了赢的=可能太紧; 负PnL=避开了输的=门对):")
+        for gt,(w,t,pn) in sorted(geff.items(),key=lambda x:-x[1][1]):
+            if t==0: continue
+            pp,lo,hi=wilson(w,t)
+            v="⚠可能太紧(挡了赢)" if (pn>0 and pp>0.55) else ("✓避损(门对)" if pn<0 else "中性")
+            print(f"  {gt:16} 被挡已结算 {t} | 若入场赢面 {100*pp:.0f}%(CI[{100*lo:.0f},{100*hi:.0f}]) | would-PnL {pn/t:+.3f}/股 {v}")
+    else:
+        print("机会错过: 暂无【被挡且已结算】的盘 (gate_blocks×settlements 还没 join 上) → 等累积")
+
+    # ===== D. 执行/费用 + H. 样本累积速率 =====
+    fees=[r.get("fee",0.0) for r in fills if r.get("buy")==1 and isinstance(r.get("fee"),(int,float))]
+    tot_fee=sum(fees)
+    print(f"执行: 总费 ${tot_fee:.2f}" + (f" (占毛赢 {100*tot_fee/sum(wins):.0f}%)" if wins and sum(wins)>0 else ""))
+    # 出场分布
+    exits=defaultdict(int)
+    for r in fills:
+        if r.get("close")==1: exits[r.get("exit","?") or "(空)"]+=1
+    if exits: print("出场分布: " + ", ".join(f"{k}:{v}" for k,v in sorted(exits.items(),key=lambda x:-x[1])))
+    # 累积速率 → ETA 到 n=150 (用结算行 ts)
+    sts=sorted(c.get("ts",0) for c in [x["close"] for x in feat_rows] if c.get("ts"))
+    if len(sts)>=2:
+        span_h=(sts[-1]-sts[0])/3.6e12; rate=len(sts)/span_h if span_h>0 else 0
+        if rate>0: print(f"累积: {n} 结算/{span_h:.1f}h = {rate:.1f}/h → 到 n=150 还需 ~{(150-n)/rate:.0f}h ({(150-n)/rate/24:.1f}天)")
 
     print("-"*64)
     print(f"样本量: n={n}." + (" n<50 仅 CI 可信, 点估计勿当结论; 信号判别 n太小=噪声" if n<50 else " n≥50 可做显著性"))
