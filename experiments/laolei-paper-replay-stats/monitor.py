@@ -62,6 +62,17 @@ ent_settled = sum(1 for b in buys if b.get("cond") in outc)
 pm = "✓就绪" if blk_settled >= 30 else f"✗差{max(0,30-blk_settled)}"
 print(f"分析就绪: settlements {len(outc)} | 被挡已结算 {blk_settled} | 进场已结算 {ent_settled} "
       f"→ param_research {pm} (被挡已结算≥30)")
+# 三器就绪全貌 (老板「在等数据够量出可信结论」→ 把等待变可观测: 各分析器离可信结论还差多少)
+pp_conds = set(r.get("cond") for r in jl(f"{DATA}/position_path.jsonl") if r.get("cond"))
+exit_settled = len(pp_conds & set(outc))                                    # exit_research: 有轨迹且已结算的盘
+mt           = jl(f"{DATA}/market_tape.jsonl")
+mt_conds     = set(r.get("cond") for r in mt if r.get("cond"))
+disc_settled = len(mt_conds & set(outc))                                    # market_discovery: 已结算的in-play宇宙盘
+exr = "✓就绪" if exit_settled >= 6 else f"✗差{max(0,6-exit_settled)}"
+dsc = "✓就绪" if disc_settled >= 6 else f"✗差{max(0,6-disc_settled)}"
+print(f"   exit_research {exr} (有轨迹已结算盘 {exit_settled}/≥6) | "
+      f"market_discovery {dsc} (宇宙已结算盘 {disc_settled}/{len(mt_conds)}, ≥6=可信; 当前market_tape {len(mt)}快照)")
+print(f"   注: ✓就绪=过最低演示门; 真OOS结论要被挡≥150结算/进场结算够/宇宙跨多比赛时段。")
 # 持仓 mark 概览 (赢面/水下) — 显示【水下最深】4 个 (风险仓/崩盘仓不漏看), 非任意前 N
 if pos:
     under = sum(1 for p in pos if p.get("pnl_unrealized", 0) < 0)
