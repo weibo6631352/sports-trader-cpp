@@ -79,6 +79,8 @@ def main():
     stale_ms = float(flagval("--stale-ms", "20000"))
     sweep_sig = flagval("--signal", "held_vel")
     ver = flagval("--ver")
+    json_mode = "--json" in flags  # 机器可读 (老板「喂第三方agent决策」); 文本仍打, JSON 末尾 marker 内
+    J = {"tool": "exit_research", "version": ver, "data_source": "real_positions(position_path)"}
     if len(a) < 3:
         print("用法: exit_research.py <fills.jsonl> <position_path.jsonl> <settlements.jsonl> [--signal held_vel] [--stale-ms 20000] [--ver git]")
         return
@@ -185,6 +187,36 @@ def main():
         print("无可分析仓位。等累积。"); return
     W = [p for p in positions if p["won"]==1]
     L = [p for p in positions if p["won"]==0]
+
+    # 逐仓明细辅助: 某仓某信号在某阶段的均值
+    def psig(p, key, phase=None):
+        ss = p["samples"]
+        if phase=="early": ss = ss[:max(1,len(ss)//3)]
+        elif phase=="late": ss = ss[-max(1,len(ss)//3):]
+        vs = [s.get(key) for s in ss if s.get(key) is not None and math.isfinite(s.get(key))]
+        return sum(vs)/len(vs) if vs else None
+    def hold_sec(p): return (p["t1"]-p["t0"])/1e9
+    # ============ B0 逐仓明细 (老板「逐仓明细」): 每仓一行, 供 agent 逐仓挖, 非只聚合 ============
+    print("\n"+"-"*80)
+    print(f"B0 逐仓明细 ({len(positions)} 仓真实持仓; 列: 运动/边/进场价→结局/MAE最深水下/持有s/fair入→末/速度均/收敛均/剩余s)")
+    pos_json = []
+    for p in sorted(positions, key=lambda x: -x["mae"]):  # 按最深水下排序 (最危险的在前)
+        f0 = psig(p,"held_fair","early"); f1 = psig(p,"held_fair","late")
+        vel = psig(p,"held_vel"); conv = psig(p,"sh_conv"); grem = psig(p,"g_remain"); shage = psig(p,"sh_age_ms")
+        side = "YES" if p["yes"]==1 else "NO"
+        res = "赢" if p["won"]==1 else "输"
+        f0s = f"{f0:.2f}" if f0 is not None else "—"; f1s = f"{f1:.2f}" if f1 is not None else "—"
+        vels = f"{vel:+.1e}" if vel is not None else "—"; convs = f"{conv:+.1e}" if conv is not None else "—"
+        grems = f"{grem:.0f}" if grem is not None else "—"
+        print(f"  {(p['sport'] or '?'):<9} {side} @{p['epx']:.3f}→{res} MAE{p['mae']:+.3f} 持{hold_sec(p):.0f}s "
+              f"fair{f0s}→{f1s} vel{vels} conv{convs} 剩{grems}s")
+        pos_json.append({"tok": p["tok"], "sport": p["sport"], "side": side, "entry_px": round(p["epx"],4),
+                         "won": p["won"], "mae": round(p["mae"],4), "hold_sec": round(hold_sec(p),0),
+                         "uw_dur_s": p["uw_dur_s"], "n_samples": len(p["samples"]),
+                         "held_fair_early": f0, "held_fair_late": f1, "held_vel_mean": vel,
+                         "sh_conv_mean": conv, "g_remain_mean": grem, "sh_age_ms_mean": shage})
+    J["positions_total"] = len(positions); J["won"] = len(W); J["lost"] = len(L)
+    J["positions"] = pos_json
 
     # ============ B1 赢家 vs 输家 持仓轨迹画像 ============
     print("\n"+"-"*80)
@@ -365,6 +397,18 @@ def main():
     print(f"仓位 {len(positions)} (曾水下 {len(drew) if 'drew' in dir() else '?'}). 越积越准。")
     print("读法: B2 判别力强的信号=离场该看的(数据说话, 非预设); B3 看该信号多少值还值得等翻盘;")
     print("      B4 看该信号离场阈值的省亏损/卖飞权衡。结论与阈值我们一起定, 脚本只摆信息。")
+    if json_mode:
+        J["b2_discrimination"] = [{"key": k, "family": fam(k), "disc": round(d,4), "auc": round(au,4),
+                                   "direction": "winner_high" if au>0.5 else "winner_low",
+                                   "n_win_pos": nw, "n_loss_pos": nl}
+                                  for d,k,au,wm,lm,nw,nl in disc] if disc else []
+        J["caveats"] = ["这些是真实持仓轨迹(非反事实); 但 n 极小(输家少), 全是方向演示非结论",
+                        "B2/B2b/B4 多因样本不足跳过; B4阈值是in-sample双重选择不可直接当离场参数",
+                        "信号族: [赢家]终局胜负/[未来]动态方向(对预测赢家也有用)/[窗口]剩余/[执行]成本新鲜度",
+                        f"positions={len(positions)}(赢{len(W)}/输{len(L)}); OOS须≥60仓含20+水下才能定离场参数"]
+        print("\n===JSON_BEGIN===")
+        print(json.dumps(J, ensure_ascii=False, default=lambda o: None))
+        print("===JSON_END===")
 
 if __name__ == "__main__":
     main()
