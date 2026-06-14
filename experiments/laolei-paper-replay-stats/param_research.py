@@ -99,6 +99,8 @@ def main():
     min_support = 8
     if "--min-support" in flags: min_support = int(flags[flags.index("--min-support")+1])
     ver = flags[flags.index("--ver")+1] if "--ver" in flags else None
+    json_mode = "--json" in flags  # 机器可读结构化输出 (老板「喂第三方agent决策」); 文本仍打, JSON 附在末尾 marker 内
+    J = {"tool": "param_research", "version": ver}  # 结构化结果累积, 末尾 dump
     if len(a) < 3:
         print("用法: param_research.py <fills.jsonl> <gate_blocks.jsonl> <settlements.jsonl> [position_path.jsonl] [--min-support N] [--ver <git>]")
         return
@@ -175,8 +177,14 @@ def main():
     wins = [u for u in settled if u["won"] == 1]
     loss = [u for u in settled if u["won"] == 0]
     base_wr = len(wins) / len(settled)
+    base_pnl = sum(u['pnl'] for u in settled)/len(settled)
     print(f"全集基准(含反事实,非真实账面): 赢面 {len(wins)}/{len(settled)} = {100*base_wr:.0f}% | "
-          f"均PnL/股 {sum(u['pnl'] for u in settled)/len(settled):+.4f}")
+          f"均PnL/股 {base_pnl:+.4f}")
+    J["universe"] = {"entered_real": len(ent), "blocked_counterfactual": len(blk),
+                     "settled": len(settled), "settlements": len(outcome)}
+    J["baseline"] = {"win_rate": base_wr, "mean_pnl_per_share": base_pnl,
+                     "is_counterfactual_mixed": True, "note": "含反事实, 真实期望≤此值(逆选→更亏)"}
+    J["segments"] = {}; J["sweep"] = {}
 
     def feat_vals(rows, k):
         out = []
@@ -218,6 +226,14 @@ def main():
         print(f"  [{fam(k)}] {lab(k):<10} 判别{disc:.2f} ({arrow}) p={p:.3f} n{nw}/{nl} | 赢{wqs} vs 输{lqs}{tag}")
     cands = [k for d,k,au,wm,lm,nw,nl,wq,lq in scored if k not in GATED and auc_p(au,nw,nl) < bonf]
     print(f"  → ★强候选假设 (过Bonferroni, 仍需OOS验证): {', '.join(lab(k) for k in cands) if cands else '暂无(n不够/信号弱)'}")
+    J["factors"] = [{"key": k, "label": lab(k), "family": fam(k), "gated": k in GATED,
+                     "disc": round(disc,4), "auc": round(au,4), "p": round(auc_p(au,nw,nl),4),
+                     "direction": "winner_high" if au>0.5 else "winner_low",
+                     "n_win": nw, "n_loss": nl, "win_p25_med_p75": [wq[0],wq[1],wq[2]],
+                     "loss_p25_med_p75": [lq[0],lq[1],lq[2]],
+                     "bonferroni_strong": (k not in GATED) and (auc_p(au,nw,nl) < bonf)}
+                    for disc,k,au,wm,lm,nw,nl,wq,lq in scored]
+    J["candidates_strong"] = cands
 
     # ============ ①b 分段画像 (老板「更多数据挖掘」): 运动/盘口/价带/赛段 切片 ============
     print("\n" + "-" * 78)
@@ -235,15 +251,23 @@ def main():
             for g, n, wr, pp in rows:
                 lo, hi = wilson(int(round(wr*n)), n)
                 print(f"    {str(g):<16} n{n:>3} 赢面{100*wr:>3.0f}%(CI[{100*lo:.0f},{100*hi:.0f}]) 均PnL{pp:+.4f}")
+        J["segments"][name] = [{"value": str(g), "n": n, "win_rate": round(wr,4),
+                                "ci": [round(wilson(int(round(wr*n)),n)[0],3), round(wilson(int(round(wr*n)),n)[1],3)],
+                                "mean_pnl": round(pp,4)} for g,n,wr,pp in rows]
     def pxband(u):
         v = u["f"].get("px")
         if not isinstance(v, (int, float)): return None
         lo = int(v*10)/10.0
         return f"[{lo:.1f},{lo+0.1:.1f})"
+    def hourkey(u):  # 时段 (UTC 小时, 从 ts ns) — 老板「能加的都加」
+        ts = u["f"].get("ts")
+        if not isinstance(ts, (int, float)) or ts <= 0: return None
+        return f"{int((ts//1_000_000_000//3600)%24):02d}h"
     seg("运动", lambda u: u["f"].get("sport"))
     seg("盘口", lambda u: u["f"].get("mkt"))
     seg("价带", pxband)
     seg("赛段g_period", lambda u: u["f"].get("g_period"))
+    seg("时段UTC", hourkey)
 
     # ============ ② 参数阈值扫描 × 赢家捕获 (调参) ============
     print("\n" + "-" * 78)
@@ -287,6 +311,10 @@ def main():
             print(f"    {direction}{c:<10.4g} → 过门{n:>3} 赢面{100*wr:>3.0f}% 错过赢{mw:>3} 均PnL{ppl:+.4f} 总PnL{tot:+.2f}{mark}")
         print(f"    基准(全进,含反事实非真实账面): 赢面{100*base_wr:.0f}% 错过赢0 总PnL{sum(u['pnl'] for u in settled):+.2f}  | "
               f"赢面随收紧: {mono} ← 看这个(结构可信), 别取峰值阈值(in-sample); 收越紧每笔越净但错过越多")
+        J["sweep"][k] = {"direction": direction, "monotonic": mono.startswith("单调"),
+                         "rows": [{"cut": round(c,4), "n_pass": n, "win_rate": round(wr,4),
+                                   "missed_winners": mw, "mean_pnl": round(ppl,4), "total_pnl": round(tot,2)}
+                                  for c,n,wr,ppl,tot,mw in rows]}
 
     # ============ ③ 2维组合挖矿 (获利模式)【假设清单, 非结论】 ============
     print("\n" + "-" * 78)
@@ -322,6 +350,10 @@ def main():
     for ppl, wr, n, ka, hia, meda, kb, hib, medb, tot in combos[:10]:
         oa = "≥" if hia else "≤"; ob = "≥" if hib else "≤"
         print(f"  {lab(ka)}{oa}{meda:.4g} & {lab(kb)}{ob}{medb:.4g} → n{n} 赢面{100*wr:.0f}% 均PnL{ppl:+.4f} 总{tot:+.2f}")
+    J["combos"] = [{"a": ka, "a_op": ("≥" if hia else "≤"), "a_thr": round(meda,4),
+                    "b": kb, "b_op": ("≥" if hib else "≤"), "b_thr": round(medb,4),
+                    "n": n, "win_rate": round(wr,4), "mean_pnl": round(ppl,4), "total_pnl": round(tot,2)}
+                   for ppl,wr,n,ka,hia,meda,kb,hib,medb,tot in combos[:20]]
 
     # ============ ④ 单个标志性赢家深挖 ============
     print("\n" + "-" * 78)
@@ -356,6 +388,15 @@ def main():
     print("=" * 78)
     print(f"样本: 已结算决策点 {len(settled)} (进场{len(ent)}+被挡{len(blk)}). 被挡盘是大数据主力, 越积越准。")
     print("读法(评审后): ①只信★过Bonferroni的强候选(假设, 需OOS); ②看赢面单调性别取in-sample峰值; ③当线索非结论。")
+    if json_mode:
+        J["caveats"] = ["赢面/PnL含反事实(被挡盘假设入场), 非真实成交战绩; 真实期望≤此值(逆选→更亏)",
+                        "candidates/combos/sweep峰值=in-sample假设清单, 入参前须OOS独立验证(进场≥150结算/组合每cell≥30)",
+                        "factors的win/loss_p25_med_p75是该因子本身的分布值, 不是PnL",
+                        "未过bonferroni_strong的因子=噪声候选, 仅假设不可入参",
+                        f"样本n={len(settled)}决策点(进场{len(ent)}真实+被挡{len(blk)}反事实)"]
+        print("\n===JSON_BEGIN===")
+        print(json.dumps(J, ensure_ascii=False, default=lambda o: None))
+        print("===JSON_END===")
 
 if __name__ == "__main__":
     main()
