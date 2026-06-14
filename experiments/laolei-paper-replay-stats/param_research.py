@@ -237,11 +237,11 @@ def main():
     # ============ ① 赢家 vs 输家画像 + 判别力 → 候选新参数【假设清单】 ============
     print("\n" + "-" * 78)
     bonf = 0.05 / max(1, len(POOL))  # Bonferroni: 扫 len(POOL) 个因子, 校正后阈值
-    print(f"① 赢家 vs 输家画像 (判别力=|AUC−0.5|×2, 越大越能分输赢; p=Mann-Whitney两侧; ★=过Bonferroni p<{bonf:.4f} 强候选)")
+    print(f"① 赢家 vs 输家画像 (IC=rank-biserial=2·AUC−1∈[-1,1] |IC|>.05弱/.1中/.15强; 判别力=|IC|; p=Mann-Whitney; ★=过BH-FDR q<5%)")
     print("   ★【赢均/输均 = 该因子本身在赢家/输家上的均值, 不是 PnL!】 例: [赢家]模型fair 赢均0.46 = 赢家进场时 fair 均值 0.46")
-    print("   '赢家低'= 赢的盘该因子反而更低(如 fair 低=被低估的便宜货才有 edge, 合理); '赢家高'反之。")
-    print("   评审小蒋: 扫 27 因子=多重比较, 未校正的'判别≥0.3'在 n<100 时 30-50% 是噪声 → 只信过 Bonferroni 的;")
-    print("   且这只是【假设清单】(生成待验, 非结论), 入参前必须 OOS 独立验证。")
+    print("   '赢家低'(IC<0)= 赢的盘该因子反而更低(如 fair 低=被低估的便宜货才有 edge, 合理); '赢家高'(IC>0)反之。")
+    print("   量化评审: 用 BH-FDR(q<5%)替 Bonferroni(27因子相关→Bonf过杀); IC 是量化标准语言(可跨因子/跨时间比+可合成)。")
+    print("   仍是【假设清单】非结论, 入参前须 OOS 独立验证。")
     scored = []
     for k in POOL:
         wv = feat_vals(wins, k); lv = feat_vals(loss, k)
@@ -252,27 +252,31 @@ def main():
         wm = sum(wv)/len(wv); lm = sum(lv)/len(lv)
         scored.append((disc, k, au, wm, lm, len(wv), len(lv), quart(wv), quart(lv)))
     scored.sort(reverse=True)
+    # BH-FDR (Benjamini-Hochberg, q<5%): 比 Bonferroni 少过杀 (量化大师建议)
+    ps = sorted([(auc_p(au,nw,nl), k) for d,k,au,wm,lm,nw,nl,wq,lq in scored])
+    m = len(ps); fdr_pass = set()
+    for rank, (p, k) in enumerate(ps, 1):
+        if p <= (rank/m)*0.05: fdr_pass = set(kk for _, kk in ps[:rank])  # 最大通过秩
     if not scored:
         print("  样本不足, 无可算判别的因子")
     print("   信号族(老板「标清意义,结合用」): [赢家]终局胜负 | [未来]动态方向(对预测赢家也有用) | [窗口]剩余时间 | [执行]成本/新鲜度")
-    print("   列: 判别力 | p | 赢家[p25/中位/p75] vs 输家[p25/中位/p75] (给分布非只均值, 供 agent 自行挖)")
-    # 全因子(不截断), 供下游 agent 完整挖 (老板「信息太少, 脚本职责=数据挖掘+信息供给」)
+    print("   列: IC(signed) | p | 赢家[p25/中位/p75] vs 输家[p25/中位/p75] (分布非只均值)")
     for disc, k, au, wm, lm, nw, nl, wq, lq in scored:
-        p = auc_p(au, nw, nl)
-        strong = (k not in GATED) and (p < bonf)
+        p = auc_p(au, nw, nl); ic = 2*au - 1  # signed RankIC
+        strong = (k not in GATED) and (k in fdr_pass)
         arrow = "赢家高" if au > 0.5 else "赢家低"
-        tag = "  ★强候选(过Bonf)" if strong else ("  ·候选·未过校正(仅假设)" if k not in GATED and p < 0.05 else "")
+        tag = "  ★强候选(过FDR)" if strong else ("  ·候选·未过FDR(仅假设)" if k not in GATED and p < 0.05 else "")
         wqs = f"[{wq[0]:+.3g}/{wq[1]:+.3g}/{wq[2]:+.3g}]" if wq[0] is not None else "—"
         lqs = f"[{lq[0]:+.3g}/{lq[1]:+.3g}/{lq[2]:+.3g}]" if lq[0] is not None else "—"
-        print(f"  [{fam(k)}] {lab(k):<10} 判别{disc:.2f} ({arrow}) p={p:.3f} n{nw}/{nl} | 赢{wqs} vs 输{lqs}{tag}")
-    cands = [k for d,k,au,wm,lm,nw,nl,wq,lq in scored if k not in GATED and auc_p(au,nw,nl) < bonf]
-    print(f"  → ★强候选假设 (过Bonferroni, 仍需OOS验证): {', '.join(lab(k) for k in cands) if cands else '暂无(n不够/信号弱)'}")
+        print(f"  [{fam(k)}] {lab(k):<10} IC{ic:+.2f} ({arrow}) p={p:.3f} n{nw}/{nl} | 赢{wqs} vs 输{lqs}{tag}")
+    cands = [k for d,k,au,wm,lm,nw,nl,wq,lq in scored if k not in GATED and k in fdr_pass]
+    print(f"  → ★强候选假设 (过BH-FDR q<5%, 仍需OOS验证): {', '.join(lab(k) for k in cands) if cands else '暂无(n不够/信号弱)'}")
     J["factors"] = [{"key": k, "label": lab(k), "family": fam(k), "gated": k in GATED,
-                     "disc": round(disc,4), "auc": round(au,4), "p": round(auc_p(au,nw,nl),4),
+                     "ic_rank": round(2*au-1,4), "disc": round(disc,4), "auc": round(au,4), "p": round(auc_p(au,nw,nl),4),
                      "direction": "winner_high" if au>0.5 else "winner_low",
                      "n_win": nw, "n_loss": nl, "win_p25_med_p75": [wq[0],wq[1],wq[2]],
                      "loss_p25_med_p75": [lq[0],lq[1],lq[2]],
-                     "bonferroni_strong": (k not in GATED) and (auc_p(au,nw,nl) < bonf)}
+                     "fdr_strong": (k not in GATED) and (k in fdr_pass)}
                     for disc,k,au,wm,lm,nw,nl,wq,lq in scored]
     J["candidates_strong"] = cands
 
@@ -337,6 +341,33 @@ def main():
     else:
         print("  共同样本不足 → 等累积")
     J["correlations_top"] = [{"a": ka, "b": kb, "r": round(r,3), "n": n} for ar,r,ka,kb,n in corr[:20]]
+
+    # ============ ①d 因子分层 (quantile, 量化大师建议): 比扫阈值更标准, 看分位单调性 ============
+    print("\n" + "-" * 78)
+    print("①d 因子5分位分层 (top判别因子; 每位 n/赢面/均PnL; 单调=真信号, 非单调=噪声; 比②扫阈值更直观)")
+    J["quantile_layers"] = {}
+    for disc, k, au, *_ in scored[:6]:
+        if disc < 0.08: break
+        vals = [(u["f"][k], u) for u in settled if isinstance(u["f"].get(k),(int,float)) and math.isfinite(u["f"][k])]
+        if len(vals) < 15: continue
+        vals.sort(key=lambda x: x[0])
+        nq = len(vals); layers = []
+        for qi in range(5):
+            seg_us = [u for _, u in vals[qi*nq//5:(qi+1)*nq//5]]
+            if not seg_us: continue
+            wr = sum(u["won"] for u in seg_us)/len(seg_us); pp = sum(u["pnl"] for u in seg_us)/len(seg_us)
+            lo_v = vals[qi*nq//5][0]; hi_v = vals[min(nq-1,(qi+1)*nq//5-1)][0]
+            layers.append((qi+1, len(seg_us), wr, pp, lo_v, hi_v))
+        if layers:
+            wseq = [L[2] for L in layers]
+            mono = "单调" if (all(wseq[i]<=wseq[i+1]+0.03 for i in range(len(wseq)-1)) or
+                              all(wseq[i]>=wseq[i+1]-0.03 for i in range(len(wseq)-1))) else "非单调(噪声?)"
+            print(f"  [{fam(k)}] {lab(k)} (5分位, 赢面{mono}):")
+            for qn, n, wr, pp, lov, hiv in layers:
+                print(f"    Q{qn} [{lov:+.3g},{hiv:+.3g}] n{n:>3} 赢面{100*wr:>3.0f}% 均PnL{pp:+.4f}")
+            J["quantile_layers"][k] = {"monotonic": mono.startswith("单调"),
+                "layers": [{"q": qn, "n": n, "win_rate": round(wr,4), "mean_pnl": round(pp,4),
+                            "range": [round(lov,4), round(hiv,4)]} for qn,n,wr,pp,lov,hiv in layers]}
 
     # ============ ② 参数阈值扫描 × 赢家捕获 (调参) ============
     print("\n" + "-" * 78)
