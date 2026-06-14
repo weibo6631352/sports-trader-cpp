@@ -118,14 +118,21 @@ def main():
         if ver_cut is not None and r.get("ts", 0) < ver_cut: continue
         cond = r.get("cond")
         if cond not in outcome: continue
-        yes = r.get("yes", -1)
+        yes_orig = r.get("yes", -1)
+        yes = yes_orig
         if yes not in (0, 1):
             fr = r.get("fair")
             if not isinstance(fr, (int, float)): continue
             yes = 1 if fr >= 0.5 else 0
         sv = outcome[cond]; won = 1 if yes == sv else 0
         px = r.get("px")
-        pnl = (won - px) if isinstance(px, (int, float)) else None
+        # entry cost 必须 side-对齐: 选中边(yes_orig∈{0,1})px 已是该边 ask 直接用;
+        #   派生边(原 yes=-1, 如 sharp_gap_low 记的是 YES 价)→ NO 边取对侧 1−px, 否则押大热门 PnL 虚高。
+        if isinstance(px, (int, float)):
+            cost = px if yes_orig in (0, 1) else (px if yes == 1 else 1.0 - px)
+            pnl = won - cost
+        else:
+            pnl = None
         universe.append({"src": "blocked", "won": won, "pnl": pnl, "yes": yes, "gate": r.get("gate"), "f": r})
 
     ent = [u for u in universe if u["src"] == "entered"]
