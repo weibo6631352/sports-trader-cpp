@@ -765,7 +765,7 @@ bool InplayFeedThread::FetchGz(goalserve::GoalserveSport sport, std::string& gz_
 //   gzip → magic byte (1f 8b) 检测兜底解压。
 bool InplayFeedThread::FetchDict(goalserve::GoalserveSport sport, std::string& json_body) noexcept {
     const std::string path =
-        "/dictionaries/odds-markets/" + std::string(goalserve::SportInplaySlug(sport)) + "?json=1";
+        "/dictionaries/odds-markets/" + std::string(goalserve::SportDictSlug(sport)) + "?json=1";
     const auto result =
         HttpGetGz(cfg_.inplay_host, cfg_.inplay_port, path, cfg_.http_proxy, cfg_.http_timeout_ms);
     if (result.status != 200 || result.body.empty()) return false;

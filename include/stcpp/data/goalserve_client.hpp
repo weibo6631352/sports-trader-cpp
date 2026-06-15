@@ -94,6 +94,15 @@ inline constexpr std::size_t kNumSports = 8;
     return "";
 }
 
+// /dictionaries/odds-markets/<slug> 的 slug。多数运动与 inplay slug 相同, 但 esports 是 Goalserve
+//   命名不一致: inplay gz 用 "esports", 字典 endpoint 用 "esport" (无 s) —— 用 inplay slug 打字典会 500
+//   (实测 2026-06-15: /dictionaries/odds-markets/esports → HTTP 500; .../esport → 80+ 市场 id 含 id=410
+//   Home/Away)。字典失败会回退 IsResultMarketName 启发式 (moneyline 仍命中), 但 per-map 精确匹配需要字典。
+[[nodiscard]] constexpr std::string_view SportDictSlug(GoalserveSport s) noexcept {
+    if (s == GoalserveSport::Esports) return "esport";  // ⚠ Goalserve 字典命名: 无 s
+    return SportInplaySlug(s);
+}
+
 // www.goalserve.com /<slug>/ 主路径 (与 feeds_urls.txt 一致, 不是 inplay 命名)
 [[nodiscard]] constexpr std::string_view SportPregameSlug(GoalserveSport s) noexcept {
     switch (s) {
